@@ -51,7 +51,7 @@ func InitCommand(input *pflag.FlagSet, cliConfig ParsedGlobalFlags) {
 		instancePath = path.Join(dirPath, alias)
 	}
 
-	// YOUAREHERE: create a dir for the instance, unless it already exists
+	// Create a dir for the host, unless it already exists
 	fi, err := os.Stat(instancePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -66,12 +66,8 @@ func InitCommand(input *pflag.FlagSet, cliConfig ParsedGlobalFlags) {
 	} else if !fi.IsDir() {
 		fmt.Printf("Path %s already exists but is not a directory\n", instancePath)
 		os.Exit(1)
-	} else {
-		// dir already exists -- for now let's bail
-		// TODO: implement updating of existing dir?!
-		fmt.Printf("Path %s already exists, refusing to overwrite!\n", instancePath)
-		os.Exit(1)
 	}
+	fmt.Printf("Initializing %s\n", instancePath)
 
 	driver := "mysql"
 	instance := &tengo.Instance{Driver: driver, DSN: target.DSN()}
@@ -89,6 +85,34 @@ func InitCommand(input *pflag.FlagSet, cliConfig ParsedGlobalFlags) {
 	}
 
 	for _, s := range schemas {
-		fmt.Println("found schema: ", s.Name) // TODO
+		schemaPath := path.Join(instancePath, s.Name)
+		fi, err = os.Stat(schemaPath)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				fmt.Printf("Unable to use directory %s: %s\n", schemaPath, err)
+				os.Exit(1)
+			}
+			err = os.Mkdir(schemaPath, 0777)
+			if err != nil {
+				fmt.Printf("Unable to create directory %s: %s\n", schemaPath, err)
+				os.Exit(1)
+			}
+		}
+		fmt.Printf("Populating %s...\n", schemaPath)
+		for _, t := range s.Tables() {
+			createStmt, err := instance.ShowCreateTable(s, t)
+			if err != nil {
+				panic(err)
+			}
+			if createStmt != t.CreateStatement() {
+				fmt.Printf("!!! unable to handle DDL for table %s.%s; aborting\n", s.Name, t.Name)
+				fmt.Printf("FOUND:\n%s\n\nEXPECTED:\n%s\n", createStmt, t.CreateStatement())
+				os.Exit(2)
+			}
+			tablePath := path.Join(schemaPath, fmt.Sprintf("%s.sql", t.Name))
+
+			// TODO: do the write
+			fmt.Printf("    Wrote %s (%d bytes)\n", tablePath, len(createStmt))
+		}
 	}
 }
