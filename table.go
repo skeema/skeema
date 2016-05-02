@@ -7,13 +7,14 @@ import (
 )
 
 type Table struct {
-	Name             string
-	Engine           string
-	CharacterSet     string
-	Collation        string
-	Columns          []*Column
-	PrimaryKey       *Index
-	SecondaryIndexes []*Index
+	Name              string
+	Engine            string
+	CharacterSet      string
+	Collation         string
+	Columns           []*Column
+	PrimaryKey        *Index
+	SecondaryIndexes  []*Index
+	NextAutoIncrement uint64
 }
 
 func (t Table) AlterStatement() string {
@@ -31,14 +32,19 @@ func (t Table) CreateStatement() string {
 	for _, idx := range t.SecondaryIndexes {
 		defs = append(defs, idx.Definition())
 	}
+	var autoIncClause string
+	if t.NextAutoIncrement > 1 {
+		autoIncClause = fmt.Sprintf(" AUTO_INCREMENT=%d", t.NextAutoIncrement)
+	}
 	var collate string
 	if t.Collation != "" {
 		collate = fmt.Sprintf(" COLLATE=%s", t.Collation)
 	}
-	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n) ENGINE=%s DEFAULT CHARSET=%s%s",
+	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n) ENGINE=%s%s DEFAULT CHARSET=%s%s",
 		EscapeIdentifier(t.Name),
 		strings.Join(defs, ",\n  "),
 		t.Engine,
+		autoIncClause,
 		t.CharacterSet,
 		collate,
 	)

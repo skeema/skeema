@@ -71,6 +71,9 @@ func (s *Schema) Tables() []*Table {
 		if rawTable.CollationIsDefault == "" {
 			s.tables[n].Collation = rawTable.TableCollation
 		}
+		if rawTable.AutoIncrement.Valid {
+			s.tables[n].NextAutoIncrement = uint64(rawTable.AutoIncrement.Int64)
+		}
 	}
 
 	// Obtain the columns in all tables in the schema
@@ -100,6 +103,7 @@ func (s *Schema) Tables() []*Table {
 			Nullable:      strings.ToUpper(rawColumn.IsNullable) == "YES",
 			AutoIncrement: strings.Contains(rawColumn.Extra, "auto_increment"),
 		}
+		// TODO: handle defaults!
 		if columnsByTableName[rawColumn.TableName] == nil {
 			columnsByTableName[rawColumn.TableName] = make([]*Column, 0)
 		}
