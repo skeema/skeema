@@ -2,11 +2,8 @@ package main
 
 import (
 	"fmt"
-	//"io/ioutil"
 	"os"
 	"path"
-	//"path/filepath"
-	//"strings"
 
 	"github.com/skeema/tengo"
 	"github.com/spf13/pflag"
@@ -30,49 +27,97 @@ in the schema.`
 	}
 }
 
-func InitCommand(input *pflag.FlagSet, cliConfig ParsedGlobalFlags) {
-	// Figure out what dir path we're using
-	dirPath, err := cliConfig.DirPath(true)
+func InitCommand(cfg Config) {
+	// Figure out base path. If it's brand-new, and there's a user param
+	// on the CLI, copy that cli param into a new .skeema file for the dir.
+	rootDir := NewSkeemaDir(cfg.GlobalFlags.Path, false)
+	isNewRoot, err := rootDir.CreateIfMissing()
 	if err != nil {
-		fmt.Println("Invalid --dir option:", err)
+		fmt.Println("Unable to use specified directory:", err)
 		os.Exit(1)
 	}
-
-	cfg := NewConfig(dirPath)
-	target := cfg.TargetList("master", &cliConfig)[0] // TODO: handle branches appropriately, and ditto for multiple targets
-
-	alias, _ := input.GetString("alias")
-	var instancePath string
-	if alias == "<host>" {
-		instancePath = path.Join(dirPath, target.HostAndOptionalPort())
-	} else if alias == "." {
-		instancePath = dirPath
+	if isNewRoot {
+		fmt.Println("Initializing skeema root dir ", rootDir.Path)
 	} else {
-		instancePath = path.Join(dirPath, alias)
+		fmt.Println("Using skeema root dir", rootDir.Path)
 	}
 
-	// Create a dir for the host, unless it already exists
-	fi, err := os.Stat(instancePath)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			fmt.Println("Unable to use specified directory: ", err)
-			os.Exit(1)
-		}
-		err = os.MkdirAll(instancePath, 0777)
-		if err != nil {
-			fmt.Println("Unable to create specified directory: ", err)
-			os.Exit(1)
-		}
-	} else if !fi.IsDir() {
-		fmt.Printf("Path %s already exists but is not a directory\n", instancePath)
-		os.Exit(1)
-	}
-	fmt.Printf("Initializing %s\n", instancePath)
+	// Build a preliminary Target just to conveniently get a properly-merged combination of
+	// any global config files, root dir config file, and command-line params.
+	target := rootDir.Targets(cfg, "master")[0]
 
+	// Ordinarily, we use a dir structure of: skeema_root/host_or_alias/schema_name/*.sql
+	// However, if the user has configured a particular host or schema in a global config
+	// file (NOT via cli flags), we assume this means a single-db-host environment or
+	// single-schemaname environment, respectively. This means we skip the corresponding
+	// extra level of subdir.
+	separateHostSubdir, separateSchemaSubdir := true, true
+	if cfg.GlobalFlags.Schema == "" && target.Schema != "" {
+		separateSchemaSubdir = false
+	}
+
+	// Create a subdir for the host (or alias)
+	// alias can be:
+	// * special value "." means use the current dir, instead of making per-host subdirs.
+	// * default of "<host>" means use the hostname (with port if non-3306) for subdir name,
+	//   UNLESS we're doing a single-db-host environment, in which case works like "."
+	// * any other string, meaning use this string as the subdir name instead of basing it
+	//   on the host.
+	alias, _ := cfg.CommandFlags.GetString("alias")
+	if alias == "." {
+		separateHostSubdir = false
+	} else if alias == "<host>" {
+		if cfg.GlobalFlags.Host == "" && target.Host != "127.0.0.1" {
+			separateHostSubdir = false
+		} else {
+			alias = target.HostAndOptionalPort()
+		}
+	}
+	var hostDir *SkeemaDir
+	if separateHostSubdir {
+		// Since the hostDir and rootDir are different in this case, write out the rootDir's
+		// .skeema file if a user was specified via the command-line
+		if isNewRoot && cfg.GlobalFlags.User != "" {
+			skf := &SkeemaFile{
+				Dir:  rootDir,
+				User: &cfg.GlobalFlags.User,
+			}
+			if err = skf.Write(false); err != nil {
+				fmt.Printf("Unable to write to %s: %s\n", skf.Path(), err)
+			}
+		}
+		// Now create the hostDir if needed
+		hostDir = NewSkeemaDir(path.Join(rootDir.Path, alias), false)
+		if _, err := hostDir.CreateIfMissing(); err != nil {
+			fmt.Printf("Unable to create host directory %s: %s\n", hostDir.Path, err)
+			os.Exit(1)
+		}
+		fmt.Println("Initializing host dir ", hostDir.Path)
+	} else {
+		hostDir = rootDir
+		fmt.Println("Skipping host-level subdir structure; using skeema root", hostDir.Path, "directly")
+	}
+
+	// Write out a .skeema file for the hostDir
+	skf := &SkeemaFile{
+		Dir:  hostDir,
+		Host: &target.Host,
+		Port: &target.Port,
+	}
+	if !separateHostSubdir && cfg.GlobalFlags.User != "" {
+		skf.User = &cfg.GlobalFlags.User
+	}
+	if !separateSchemaSubdir {
+		skf.Schema = &target.Schema
+		fmt.Println("Skipping schema-level subdir structure; using", hostDir.Path)
+	}
+	if err = skf.Write(false); err != nil {
+		fmt.Printf("Unable to write to %s: %s\n", skf.Path(), err)
+	}
+
+	// Build list of schemas
 	driver := "mysql"
 	instance := &tengo.Instance{Driver: driver, DSN: target.DSN()}
-
-	// iterate over the schemas; create a dir w/ .skeema and .sql files
 	var schemas []*tengo.Schema
 	if target.Schema != "" {
 		if !instance.HasSchema(target.Schema) {
@@ -84,21 +129,26 @@ func InitCommand(input *pflag.FlagSet, cliConfig ParsedGlobalFlags) {
 		schemas = instance.Schemas()
 	}
 
+	// Iterate over the schemas; create a dir with .skeema and *.sql files for each
 	for _, s := range schemas {
-		schemaPath := path.Join(instancePath, s.Name)
-		fi, err = os.Stat(schemaPath)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				fmt.Printf("Unable to use directory %s: %s\n", schemaPath, err)
-				os.Exit(1)
-			}
-			err = os.Mkdir(schemaPath, 0777)
-			if err != nil {
-				fmt.Printf("Unable to create directory %s: %s\n", schemaPath, err)
-				os.Exit(1)
+		schemaDir := NewSkeemaDir(path.Join(hostDir.Path, s.Name), true)
+		if _, err := schemaDir.CreateIfMissing(); err != nil {
+			fmt.Printf("Unable to use directory %s for schema %s: %s\n", schemaDir.Path, s.Name, err)
+			os.Exit(1)
+		}
+		fmt.Printf("Populating %s...\n", schemaDir.Path)
+		if separateSchemaSubdir {
+			if _, err := schemaDir.SkeemaFile(); err != nil {
+				skf := &SkeemaFile{
+					Dir:    schemaDir,
+					Schema: &s.Name,
+				}
+				if err = skf.Write(false); err != nil {
+					fmt.Printf("Unable to write to %s: %s\n", skf.Path(), err)
+				}
 			}
 		}
-		fmt.Printf("Populating %s...\n", schemaPath)
+
 		for _, t := range s.Tables() {
 			createStmt, err := instance.ShowCreateTable(s, t)
 			if err != nil {
@@ -109,7 +159,7 @@ func InitCommand(input *pflag.FlagSet, cliConfig ParsedGlobalFlags) {
 				fmt.Printf("FOUND:\n%s\n\nEXPECTED:\n%s\n", createStmt, t.CreateStatement())
 				os.Exit(2)
 			}
-			tablePath := path.Join(schemaPath, fmt.Sprintf("%s.sql", t.Name))
+			tablePath := path.Join(schemaDir.Path, fmt.Sprintf("%s.sql", t.Name))
 
 			// TODO: do the write
 			fmt.Printf("    Wrote %s (%d bytes)\n", tablePath, len(createStmt))

@@ -4,6 +4,8 @@ import (
 	//"errors"
 	"fmt"
 	"os"
+	"path"
+	"path/filepath"
 
 	//"github.com/skeema/tengo"
 	"github.com/spf13/pflag"
@@ -16,7 +18,7 @@ type Command struct {
 	Short   string
 	Long    string
 	Flags   *pflag.FlagSet
-	Handler func(*pflag.FlagSet, ParsedGlobalFlags)
+	Handler func(Config)
 }
 
 var GlobalFlags *pflag.FlagSet
@@ -83,7 +85,31 @@ func main() {
 		os.Exit(1)
 	}
 
-	cmd.Handler(flags, parsedGlobalFlags)
+	globalFilenames := []string{"/etc/skeema", "/usr/local/etc/skeema"}
+	home := filepath.Clean(os.Getenv("HOME"))
+	if home != "" {
+		globalFilenames = append(globalFilenames, path.Join(home, ".my.cnf"), path.Join(home, ".skeema"))
+	}
+	globalFiles := make([]*SkeemaFile, 0, len(globalFilenames))
+	for _, filename := range globalFilenames {
+		dir, base := path.Dir(filename), path.Base(filename)
+		sd := NewSkeemaDir(dir, false)
+		skf := &SkeemaFile{
+			Dir:      sd,
+			FileName: base,
+		}
+		err := skf.Read()
+		if err == nil {
+			globalFiles = append(globalFiles, skf)
+		}
+	}
+
+	cfg := Config{
+		GlobalFiles:  globalFiles,
+		GlobalFlags:  parsedGlobalFlags,
+		CommandFlags: flags,
+	}
+	cmd.Handler(cfg)
 }
 
 func (cmd Command) Usage() {

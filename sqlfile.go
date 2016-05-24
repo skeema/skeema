@@ -28,27 +28,6 @@ type SQLFile struct {
 	fileInfo os.FileInfo
 }
 
-// SQLFilesInDir returns a slice of SQLFile values, representing the valid
-// *.sql files found in a directory. Does not recursively search subdirs.
-// An error will only be returned if we are unable to read the directory.
-func SQLFilesInDir(dirPath string) ([]SQLFile, error) {
-	fileInfos, err := ioutil.ReadDir(dirPath)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]SQLFile, 0, len(fileInfos))
-	for _, fi := range fileInfos {
-		sf := SQLFile{
-			Path:     path.Join(dirPath, fi.Name()),
-			fileInfo: fi,
-		}
-		if sf.ValidatePath(true) == nil {
-			result = append(result, sf)
-		}
-	}
-	return result, nil
-}
-
 func (sf *SQLFile) Read() (string, error) {
 	byteContents, err := ioutil.ReadFile(sf.Path)
 	if err != nil {
@@ -98,6 +77,7 @@ func (sf *SQLFile) ValidatePath(mustExist bool) error {
 		return err
 	}
 
+	// TODO: add support for symlinks?
 	if !fi.Mode().IsRegular() {
 		sf.Error = errors.New("SQLFile.ValidatePath: Existing file is not a regular file")
 		return sf.Error

@@ -3,15 +3,9 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"os"
-	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/go-ini/ini"
 	"github.com/spf13/pflag"
 )
 
@@ -81,6 +75,12 @@ func (t *Target) MergeCLIConfig(cliConfig *ParsedGlobalFlags) {
 	}
 }
 
+type Config struct {
+	GlobalFiles  []*SkeemaFile
+	GlobalFlags  *ParsedGlobalFlags
+	CommandFlags *pflag.FlagSet
+}
+
 type ParsedGlobalFlags struct {
 	Path     string
 	Host     string
@@ -90,7 +90,8 @@ type ParsedGlobalFlags struct {
 	Schema   string
 }
 
-func ParseGlobalFlags(flags *pflag.FlagSet) (parsed ParsedGlobalFlags, err error) {
+func ParseGlobalFlags(flags *pflag.FlagSet) (parsed *ParsedGlobalFlags, err error) {
+	parsed = new(ParsedGlobalFlags)
 	if parsed.Path, err = flags.GetString("dir"); err != nil {
 		return parsed, errors.New("Invalid value for --dir option")
 	}
@@ -110,137 +111,4 @@ func ParseGlobalFlags(flags *pflag.FlagSet) (parsed ParsedGlobalFlags, err error
 		return parsed, errors.New("Invalid value for --schema option")
 	}
 	return parsed, nil
-}
-
-// DirPath returns an absolute, cleaned version of the directory supplied on the
-// command-line.
-func (cliConfig ParsedGlobalFlags) DirPath(createIfMissing bool) (string, error) {
-	dirPath, err := filepath.Abs(filepath.Clean(cliConfig.Path))
-	if err != nil {
-		return "", err
-	}
-
-	// Ensure the path exists and is a dir. If it doesn't exist, attempt
-	// to create it if requested
-	fi, err := os.Stat(dirPath)
-	if err != nil {
-		if !os.IsNotExist(err) || !createIfMissing {
-			return "", err
-		}
-		err = os.MkdirAll(dirPath, 0777)
-		if err != nil {
-			return "", err
-		}
-	} else if !fi.IsDir() {
-		return "", fmt.Errorf("Path %s is not a directory", dirPath)
-	}
-	return dirPath, nil
-}
-
-type DirConfig struct {
-	Path       string
-	cfg        *ini.File
-	lastReload time.Time
-}
-
-// TODO: this is pretty gross, will need a full rewrite in the near future:
-// * replace with an interface that permits more-generic configuration
-// * support multiple targets from a single directory?
-// * go-ini/ini has some oddness that we have to jump through hoops to avoid
-func NewConfig(dirPath string) *DirConfig {
-	dirPath, err := filepath.Abs(filepath.Clean(dirPath))
-	if err != nil {
-		panic(err)
-	}
-	dcfg := DirConfig{Path: dirPath}
-	perUserFiles := make([]interface{}, 0, 2)
-	home := filepath.Clean(os.Getenv("HOME"))
-	if home != "" {
-		perUserFiles = append(perUserFiles, path.Join(home, ".my.cnf"), path.Join(home, ".skeema"))
-	}
-	perDirFiles := possibleDirFiles(dirPath, home)
-
-	allConfigFiles := make([]interface{}, 2, 2+len(perUserFiles)+len(perDirFiles))
-	allConfigFiles[0] = "/etc/skeema"
-	allConfigFiles[1] = "/usr/local/etc/skeema"
-	allConfigFiles = append(allConfigFiles, perUserFiles...)
-	allConfigFiles = append(allConfigFiles, perDirFiles...)
-
-	dcfg.cfg, _ = ini.LooseLoad([]byte(""))
-	dcfg.cfg.BlockMode = false
-	dcfg.cfg.Append([]byte(""), allConfigFiles...)
-	dcfg.cfg.Reload()
-	return &dcfg
-}
-
-// dirPath and home should both be pre-Clean'ed and Abs'ed prior to calling this
-func possibleDirFiles(dirPath, home string) []interface{} {
-	// we know the first character will be a /, so discard the first split result
-	// which we know will be an empty string
-	components := strings.Split(dirPath, string(os.PathSeparator))[1:]
-
-	// Examine parent dirs, going up one level at a time, stopping early if we
-	// hit either the user's home directory or a directory containing a .git subdir.
-	base := 0
-	for n := len(components) - 1; n >= 0 && base == 0; n++ {
-		curPath := path.Join(components[0 : n+1]...)
-		if curPath == home {
-			base = n
-			break
-		}
-		fileInfos, err := ioutil.ReadDir(dirPath)
-		if err != nil {
-			// Probably a permissions issue
-			continue
-		}
-		for _, fi := range fileInfos {
-			if fi.Name() == ".git" {
-				base = n
-			}
-		}
-	}
-
-	result := make([]interface{}, 0, len(components)-base)
-	for n := base; n < len(components); n++ {
-		result = append(result, path.Join(path.Join(components[0:n+1]...), ".skeema"))
-	}
-	return result
-}
-
-func (dcfg *DirConfig) Reload() {
-	if err := dcfg.cfg.Reload(); err != nil {
-		panic(err)
-	}
-	dcfg.lastReload = time.Now()
-}
-
-func (dcfg *DirConfig) TargetList(branch string, cliConfig *ParsedGlobalFlags) []Target {
-	section := dcfg.cfg.Section(branch)
-	if branch == "master" && len(section.Keys()) == 0 {
-		section = dcfg.cfg.Section("")
-	}
-	kv := section.KeysHash()
-
-	//var schema string
-	var port int
-	if section.HasKey("port") {
-		port, _ = strconv.Atoi(kv["port"])
-	}
-	// TODO: this seems wrong, figure out if it is ever actually the right behavior and remove if not
-	/*
-		if !section.HasKey("schema") {
-			schema = path.Base(dcfg.Path)
-		}
-	*/
-
-	t := Target{
-		Host:     kv["host"],
-		Port:     port,
-		User:     kv["user"],
-		Password: kv["password"],
-		Schema:   kv["schema"],
-	}
-	t.MergeCLIConfig(cliConfig)
-
-	return []Target{t}
 }
