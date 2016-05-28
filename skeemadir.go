@@ -51,7 +51,7 @@ func (sd SkeemaDir) CreateIfMissing() (created bool, err error) {
 // An error will only be returned if we are unable to read the directory.
 // This method attempts to call Read() on each SQLFile to populate it; per-file
 // read errors are tracked within each SQLFile struct.
-func (sd SkeemaDir) SQLFiles() ([]*SQLFile, error) {
+func (sd *SkeemaDir) SQLFiles() ([]*SQLFile, error) {
 	fileInfos, err := ioutil.ReadDir(sd.Path)
 	if err != nil {
 		return nil, err
@@ -59,7 +59,8 @@ func (sd SkeemaDir) SQLFiles() ([]*SQLFile, error) {
 	result := make([]*SQLFile, 0, len(fileInfos))
 	for _, fi := range fileInfos {
 		sf := &SQLFile{
-			Path:     path.Join(sd.Path, fi.Name()),
+			Dir:      sd,
+			FileName: fi.Name(),
 			fileInfo: fi,
 		}
 		if sf.ValidatePath(true) == nil {
@@ -172,11 +173,3 @@ func (sd SkeemaDir) Targets(cfg Config, branch string) []Target {
 	target.MergeCLIConfig(cfg.GlobalFlags)
 	return []Target{target}
 }
-
-/*
-func (sd SkeemaDir) WriteSQLFiles(schema tengo.Schema, instance tengo.Instance, deleteOthers bool) error {
-
-}
-
-
-*/

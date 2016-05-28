@@ -21,15 +21,20 @@ var reParseCreate = regexp.MustCompile(`^(.*)\s*create\s+table\s+(?:if\s+not\s+e
 var reBodyDisallowed = regexp.MustCompile(`^(as\s+select|select|like|[(]\s+like)`)
 
 type SQLFile struct {
-	Path     string
+	Dir      *SkeemaDir
+	FileName string
 	Contents string
 	Error    error
 	Warnings []error
 	fileInfo os.FileInfo
 }
 
+func (sf *SQLFile) Path() string {
+	return path.Join(sf.Dir.Path, sf.FileName)
+}
+
 func (sf *SQLFile) Read() (string, error) {
-	byteContents, err := ioutil.ReadFile(sf.Path)
+	byteContents, err := ioutil.ReadFile(sf.Path())
 	if err != nil {
 		sf.Error = err
 		return "", err
@@ -48,14 +53,18 @@ func (sf SQLFile) Write() error {
 	if sf.Contents == "" {
 		return errors.New("SQLFile.Write: refusing to write blank / unpopulated file contents")
 	}
-	return ioutil.WriteFile(sf.Path, []byte(sf.Contents), 0666)
+	return ioutil.WriteFile(sf.Path(), []byte(sf.Contents), 0666)
 }
 
 func (sf *SQLFile) FileInfo() (os.FileInfo, error) {
 	if sf.fileInfo != nil {
 		return sf.fileInfo, nil
 	}
-	sf.fileInfo, sf.Error = os.Stat(sf.Path)
+	var err error
+	sf.fileInfo, err = os.Stat(sf.Path())
+	if err != nil {
+		sf.Error = err
+	}
 	return sf.fileInfo, sf.Error
 }
 
@@ -63,18 +72,18 @@ func (sf *SQLFile) FileInfo() (os.FileInfo, error) {
 // what existing file (if any) is at that path.
 func (sf *SQLFile) ValidatePath(mustExist bool) error {
 	// First, validations that are run regardless of whether the file exists
-	if !strings.HasSuffix(sf.Path, ".sql") {
+	if !strings.HasSuffix(sf.FileName, ".sql") {
 		sf.Error = errors.New("SQLFile.ValidatePath: Filename does not end in .sql")
 		return sf.Error
 	}
 
 	// Any validations from here down are only run if the file exists
 	fi, err := sf.FileInfo()
-	if err == os.ErrNotExist && !mustExist {
+	if os.IsNotExist(err) && !mustExist {
 		return nil
 	} else if err != nil {
 		sf.Error = err
-		return err
+		return sf.Error
 	}
 
 	// TODO: add support for symlinks?
@@ -103,7 +112,7 @@ func (sf *SQLFile) ValidateContents() error {
 		warning := fmt.Errorf("SQLFile.ValidateContents: Ignoring %d chars before CREATE TABLE and %d chars after CREATE TABLE", matches[1], matches[4])
 		sf.Warnings = append(sf.Warnings, warning)
 	}
-	if path.Base(sf.Path) != fmt.Sprintf("%s.sql", matches[2]) {
+	if sf.FileName != fmt.Sprintf("%s.sql", matches[2]) {
 		warning := fmt.Errorf("SQLFile.ValidateContents: filename does not match table name of %s", matches[2])
 		sf.Warnings = append(sf.Warnings, warning)
 	}

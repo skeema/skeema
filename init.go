@@ -113,6 +113,7 @@ func InitCommand(cfg Config) {
 	}
 	if err = skf.Write(false); err != nil {
 		fmt.Printf("Unable to write to %s: %s\n", skf.Path(), err)
+		os.Exit(1)
 	}
 
 	// Build list of schemas
@@ -132,7 +133,8 @@ func InitCommand(cfg Config) {
 	// Iterate over the schemas; create a dir with .skeema and *.sql files for each
 	for _, s := range schemas {
 		schemaDir := NewSkeemaDir(path.Join(hostDir.Path, s.Name), true)
-		if _, err := schemaDir.CreateIfMissing(); err != nil {
+		created, err := schemaDir.CreateIfMissing()
+		if err != nil {
 			fmt.Printf("Unable to use directory %s for schema %s: %s\n", schemaDir.Path, s.Name, err)
 			os.Exit(1)
 		}
@@ -148,6 +150,15 @@ func InitCommand(cfg Config) {
 				}
 			}
 		}
+		if !created {
+			if sqlfiles, err := schemaDir.SQLFiles(); err != nil {
+				fmt.Printf("Unable to list files in %s: %s\n", schemaDir.Path, err)
+				os.Exit(1)
+			} else if len(sqlfiles) > 0 {
+				fmt.Printf("%s already contains *.sql files; cannot proceed with init\n", schemaDir.Path)
+				os.Exit(1)
+			}
+		}
 
 		for _, t := range s.Tables() {
 			createStmt, err := instance.ShowCreateTable(s, t)
@@ -159,10 +170,18 @@ func InitCommand(cfg Config) {
 				fmt.Printf("FOUND:\n%s\n\nEXPECTED:\n%s\n", createStmt, t.CreateStatement())
 				os.Exit(2)
 			}
-			tablePath := path.Join(schemaDir.Path, fmt.Sprintf("%s.sql", t.Name))
 
-			// TODO: do the write
-			fmt.Printf("    Wrote %s (%d bytes)\n", tablePath, len(createStmt))
+			sf := SQLFile{
+				Dir:      schemaDir,
+				FileName: fmt.Sprintf("%s.sql", t.Name),
+				Contents: createStmt,
+			}
+			if err := sf.Write(); err != nil {
+				fmt.Printf("Unable to write to %s: %s\n", sf.Path(), err)
+				os.Exit(1)
+			} else {
+				fmt.Printf("    Wrote %s (%d bytes)\n", sf.Path(), len(createStmt))
+			}
 		}
 	}
 }
