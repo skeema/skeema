@@ -103,7 +103,10 @@ func (s *Schema) Tables() []*Table {
 			Nullable:      strings.ToUpper(rawColumn.IsNullable) == "YES",
 			AutoIncrement: strings.Contains(rawColumn.Extra, "auto_increment"),
 		}
-		// TODO: handle defaults!
+		if rawColumn.Default.Valid {
+			defaultVal := rawColumn.Default.String
+			col.Default = &defaultVal
+		}
 		if columnsByTableName[rawColumn.TableName] == nil {
 			columnsByTableName[rawColumn.TableName] = make([]*Column, 0)
 		}

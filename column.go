@@ -10,7 +10,7 @@ type Column struct {
 	TypeInDB      string
 	Nullable      bool
 	AutoIncrement bool
-	Default       string
+	Default       *string
 	//Comment string
 }
 
@@ -19,16 +19,15 @@ func (c Column) Definition() string {
 	emitDefault := c.CanHaveDefault()
 	if !c.Nullable {
 		notNull = " NOT NULL"
-	} else if c.Default == "" && emitDefault {
+	} else if c.Default == nil && emitDefault {
 		defaultValue = " DEFAULT NULL"
 	}
 	if c.AutoIncrement {
 		autoIncrement = " AUTO_INCREMENT"
 	}
-	if c.Default != "" && emitDefault {
+	if c.Default != nil && emitDefault {
 		// TODO: within the default, needs proper escaping
-		// TODO: handle explicit blank string defaults
-		defaultValue = fmt.Sprintf(" DEFAULT '%s'", c.Default)
+		defaultValue = fmt.Sprintf(" DEFAULT '%s'", *c.Default)
 	}
 	return fmt.Sprintf("%s %s%s%s%s", EscapeIdentifier(c.Name), c.TypeInDB, notNull, autoIncrement, defaultValue)
 }
