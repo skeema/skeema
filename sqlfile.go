@@ -46,14 +46,20 @@ func (sf *SQLFile) Read() (string, error) {
 	return sf.Contents, nil
 }
 
-func (sf SQLFile) Write() error {
+func (sf SQLFile) Write() (int, error) {
 	if sf.ValidatePath(false) != nil {
-		return sf.Error
+		return 0, sf.Error
 	}
 	if sf.Contents == "" {
-		return errors.New("SQLFile.Write: refusing to write blank / unpopulated file contents")
+		return 0, errors.New("SQLFile.Write: refusing to write blank / unpopulated file contents")
 	}
-	return ioutil.WriteFile(sf.Path(), []byte(sf.Contents), 0666)
+	value := fmt.Sprintf("%s;\n", sf.Contents)
+	err := ioutil.WriteFile(sf.Path(), []byte(value), 0666)
+	if err == nil {
+		return len(value), nil
+	} else {
+		return 0, err
+	}
 }
 
 func (sf *SQLFile) FileInfo() (os.FileInfo, error) {

@@ -176,11 +176,11 @@ func InitCommand(cfg Config) {
 				FileName: fmt.Sprintf("%s.sql", t.Name),
 				Contents: createStmt,
 			}
-			if err := sf.Write(); err != nil {
+			if length, err := sf.Write(); err != nil {
 				fmt.Printf("Unable to write to %s: %s\n", sf.Path(), err)
 				os.Exit(1)
 			} else {
-				fmt.Printf("    Wrote %s (%d bytes)\n", sf.Path(), len(createStmt))
+				fmt.Printf("    Wrote %s (%d bytes)\n", sf.Path(), length)
 			}
 		}
 	}
