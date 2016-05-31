@@ -91,14 +91,33 @@ func (skf *SkeemaFile) Read() error {
 			key = key[6:]
 		}
 
+		if len(tokens) < 2 {
+			value = "1"
+		} else {
+			value = strings.TrimFunc(tokens[1], unicode.IsSpace)
+			switch strings.ToLower(value) {
+			case "off", "false":
+				value = "0"
+			case "on", "true":
+				value = "1"
+			}
+		}
+
+		var negated bool
 		if strings.HasPrefix(key, "skip_") {
 			key = key[5:]
-			value = "0"
-		} else {
-			if len(tokens) < 2 {
+			negated = true
+		} else if strings.HasPrefix(key, "disable_") {
+			key = key[8:]
+			negated = true
+		} else if strings.HasPrefix(key, "enable_") {
+			key = key[7:]
+		}
+		if negated {
+			if value == "0" {
 				value = "1"
 			} else {
-				value = strings.TrimFunc(tokens[1], unicode.IsSpace)
+				value = "0"
 			}
 		}
 
