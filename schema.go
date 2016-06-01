@@ -103,9 +103,15 @@ func (s *Schema) Tables() []*Table {
 			Nullable:      strings.ToUpper(rawColumn.IsNullable) == "YES",
 			AutoIncrement: strings.Contains(rawColumn.Extra, "auto_increment"),
 		}
-		if rawColumn.Default.Valid {
-			defaultVal := rawColumn.Default.String
-			col.Default = &defaultVal
+		if !rawColumn.Default.Valid {
+			col.Default = ColumnDefaultNull
+		} else if rawColumn.Default.String == "CURRENT_TIMESTAMP" && rawColumn.Type == "timestamp" {
+			col.Default = ColumnDefaultCurrentTimestamp
+		} else {
+			col.Default = ColumnDefaultValue(rawColumn.Default.String)
+		}
+		if strings.Contains(strings.ToLower(rawColumn.Extra), "on update") {
+			col.Extra = strings.ToUpper(rawColumn.Extra)
 		}
 		if columnsByTableName[rawColumn.TableName] == nil {
 			columnsByTableName[rawColumn.TableName] = make([]*Column, 0)

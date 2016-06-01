@@ -5,31 +5,62 @@ import (
 	"strings"
 )
 
+type ColumnDefault struct {
+	Null   bool
+	Quoted bool
+	Value  string
+}
+
+var ColumnDefaultNull = ColumnDefault{Null: true}
+var ColumnDefaultCurrentTimestamp = ColumnDefault{Value: "CURRENT_TIMESTAMP"}
+
+func ColumnDefaultValue(Value string) ColumnDefault {
+	return ColumnDefault{
+		Quoted: true,
+		Value:  Value,
+	}
+}
+
+func (cd ColumnDefault) Clause() string {
+	if cd.Null {
+		return "DEFAULT NULL"
+	} else if cd.Quoted {
+		// TODO: need to escape any quotes already here!!!
+		return fmt.Sprintf("DEFAULT '%s'", cd.Value)
+	} else {
+		return fmt.Sprintf("DEFAULT %s", cd.Value)
+	}
+}
+
 type Column struct {
 	Name          string
 	TypeInDB      string
 	Nullable      bool
 	AutoIncrement bool
-	Default       *string
-	//Comment string
+	Default       ColumnDefault
+	Extra         string
+	//Comment       string
 }
 
 func (c Column) Definition() string {
-	var notNull, autoIncrement, defaultValue string
+	var notNull, autoIncrement, defaultValue, extraModifiers string
 	emitDefault := c.CanHaveDefault()
 	if !c.Nullable {
 		notNull = " NOT NULL"
-	} else if c.Default == nil && emitDefault {
-		defaultValue = " DEFAULT NULL"
+		if c.Default.Null {
+			emitDefault = false
+		}
 	}
 	if c.AutoIncrement {
 		autoIncrement = " AUTO_INCREMENT"
 	}
-	if c.Default != nil && emitDefault {
-		// TODO: within the default, needs proper escaping
-		defaultValue = fmt.Sprintf(" DEFAULT '%s'", *c.Default)
+	if emitDefault {
+		defaultValue = fmt.Sprintf(" %s", c.Default.Clause())
 	}
-	return fmt.Sprintf("%s %s%s%s%s", EscapeIdentifier(c.Name), c.TypeInDB, notNull, autoIncrement, defaultValue)
+	if c.Extra != "" {
+		extraModifiers = fmt.Sprintf(" %s", c.Extra)
+	}
+	return fmt.Sprintf("%s %s%s%s%s%s", EscapeIdentifier(c.Name), c.TypeInDB, notNull, autoIncrement, defaultValue, extraModifiers)
 }
 
 func (c *Column) Equals(other *Column) bool {
