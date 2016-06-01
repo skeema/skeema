@@ -120,7 +120,9 @@ func (s *Schema) Tables() []*Table {
 
 	// Obtain the indexes of all tables in the schema. Since multi-column indexes
 	// have multiple rows in the result set, we do two passes over the result: one
-	// to figure out which indexes exist, and one to stitch together the col info
+	// to figure out which indexes exist, and one to stitch together the col info.
+	// We cannot use an ORDER BY on this query, since only the unsorted result
+	// matches the same order of secondary indexes as the CREATE TABLE statement.
 	var rawIndexes []struct {
 		Name       string        `db:"index_name"`
 		TableName  string        `db:"table_name"`
@@ -132,8 +134,7 @@ func (s *Schema) Tables() []*Table {
 	query = `
 		SELECT   index_name, table_name, non_unique, seq_in_index, column_name, sub_part
 		FROM     information_schema.statistics
-		WHERE    table_schema = ?
-		ORDER BY table_name, index_name, seq_in_index`
+		WHERE    table_schema = ?`
 	if err := db.Select(&rawIndexes, query, s.Name); err != nil {
 		panic(err)
 	}
@@ -173,7 +174,10 @@ func (s *Schema) Tables() []*Table {
 		if !ok {
 			panic(fmt.Errorf("Cannot find indexed column %s for index %s", fullColNameStr, fullIndexNameStr))
 		}
-		index.Columns = append(index.Columns, col)
+		for len(index.Columns) < int(rawIndex.SeqInIndex) {
+			index.Columns = append(index.Columns, new(Column))
+		}
+		index.Columns[rawIndex.SeqInIndex-1] = col
 		if rawIndex.SubPart.Valid {
 			index.SubParts = append(index.SubParts, uint16(rawIndex.SubPart.Int64))
 		} else {
