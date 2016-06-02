@@ -14,19 +14,27 @@ type ColumnDefault struct {
 var ColumnDefaultNull = ColumnDefault{Null: true}
 var ColumnDefaultCurrentTimestamp = ColumnDefault{Value: "CURRENT_TIMESTAMP"}
 
-func ColumnDefaultValue(Value string) ColumnDefault {
+func ColumnDefaultValue(value string) ColumnDefault {
 	return ColumnDefault{
 		Quoted: true,
-		Value:  Value,
+		Value:  value,
 	}
 }
 
+// EscapedValue returns Value escaped in the same manner as SHOW CREATE TABLE
+func (cd ColumnDefault) EscapedValue() string {
+	value := strings.Replace(cd.Value, "\\", "\\\\", -1)
+	value = strings.Replace(value, "\000", "\\0", -1)
+	value = strings.Replace(value, "'", "''", -1)
+	return value
+}
+
+// Clause returns the DEFAULT clause for use in DDL
 func (cd ColumnDefault) Clause() string {
 	if cd.Null {
 		return "DEFAULT NULL"
 	} else if cd.Quoted {
-		// TODO: need to escape any quotes already here!!!
-		return fmt.Sprintf("DEFAULT '%s'", cd.Value)
+		return fmt.Sprintf("DEFAULT '%s'", cd.EscapedValue())
 	} else {
 		return fmt.Sprintf("DEFAULT %s", cd.Value)
 	}

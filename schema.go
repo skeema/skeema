@@ -105,7 +105,7 @@ func (s *Schema) Tables() []*Table {
 		}
 		if !rawColumn.Default.Valid {
 			col.Default = ColumnDefaultNull
-		} else if rawColumn.Default.String == "CURRENT_TIMESTAMP" && rawColumn.Type == "timestamp" {
+		} else if rawColumn.Default.String == "CURRENT_TIMESTAMP" && (rawColumn.Type == "timestamp" || rawColumn.Type == "datetime") {
 			col.Default = ColumnDefaultCurrentTimestamp
 		} else {
 			col.Default = ColumnDefaultValue(rawColumn.Default.String)
