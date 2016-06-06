@@ -3,6 +3,7 @@ package tengo
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
@@ -12,14 +13,30 @@ type Instance struct {
 	DSN            string
 	Driver         string
 	schemas        []*Schema
-	connectionPool *sqlx.DB
+	connectionPool map[string]*sqlx.DB
 }
 
-func (instance *Instance) Connect() *sqlx.DB {
-	if instance.connectionPool == nil {
-		instance.connectionPool = sqlx.MustConnect(instance.Driver, instance.DSN).Unsafe()
+// Returns the DSN with the trailing database (schema) name stripped
+func BaseDSN(dsn string) string {
+	tokens := strings.SplitAfter(dsn, "/")
+	return strings.Join(tokens[0:len(tokens)-1], "")
+}
+
+func NewInstance(driver, dsn string) *Instance {
+	// Strip DB name from end of DSN, since each schema needs a separate connection pool
+	dsn = BaseDSN(dsn)
+	return &Instance{
+		DSN:            dsn,
+		Driver:         driver,
+		connectionPool: make(map[string]*sqlx.DB),
 	}
-	return instance.connectionPool
+}
+
+func (instance *Instance) Connect(defaultSchema string) *sqlx.DB {
+	if instance.connectionPool[defaultSchema] == nil {
+		instance.connectionPool[defaultSchema] = sqlx.MustConnect(instance.Driver, instance.DSN+defaultSchema).Unsafe()
+	}
+	return instance.connectionPool[defaultSchema]
 }
 
 func (instance *Instance) Schemas() []*Schema {
@@ -27,7 +44,7 @@ func (instance *Instance) Schemas() []*Schema {
 		return instance.schemas
 	}
 
-	db := instance.Connect()
+	db := instance.Connect("information_schema")
 
 	var rawSchemas []struct {
 		Name             string `db:"schema_name"`
@@ -36,7 +53,7 @@ func (instance *Instance) Schemas() []*Schema {
 	}
 	query := `
 		SELECT schema_name, default_character_set_name, default_collation_name
-		FROM   information_schema.schemata
+		FROM   schemata
 		WHERE  schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'test')`
 	if err := db.Select(&rawSchemas, query); err != nil {
 		panic(err)
@@ -73,13 +90,13 @@ func (instance *Instance) HasSchema(name string) bool {
 }
 
 func (instance *Instance) ShowCreateTable(schema *Schema, table *Table) (string, error) {
-	db := instance.Connect()
+	db := instance.Connect(schema.Name)
 
 	var createRows []struct {
 		TableName       string `db:"Table"`
 		CreateStatement string `db:"Create Table"`
 	}
-	query := fmt.Sprintf("SHOW CREATE TABLE %s.%s", EscapeIdentifier(schema.Name), EscapeIdentifier(table.Name))
+	query := fmt.Sprintf("SHOW CREATE TABLE %s", EscapeIdentifier(table.Name))
 	if err := db.Select(&createRows, query); err != nil {
 		return "", err
 	}
@@ -94,17 +111,17 @@ func (instance *Instance) ShowCreateTable(schema *Schema, table *Table) (string,
 // the error will be sql.ErrNoRows
 func (instance *Instance) TableSize(schema *Schema, table *Table) (int64, error) {
 	var result int64
-	db := instance.Connect()
+	db := instance.Connect("information_schema")
 	err := db.Get(&result, `
 		SELECT  data_length + index_length + data_free
-		FROM    information_schema.tables
+		FROM    tables
 		WHERE   table_schema = ? and table_name = ?`,
 		schema.Name, table.Name)
 	return result, err
 }
 
 func (instance *Instance) CreateSchema(name string) (*Schema, error) {
-	db := instance.Connect()
+	db := instance.Connect("")
 	// TODO: support DEFAULT CHARACTER SET and DEFAULT COLLATE
 	query := fmt.Sprintf("CREATE DATABASE %s", EscapeIdentifier(name))
 	_, err := db.Exec(query)

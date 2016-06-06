@@ -34,7 +34,7 @@ func (s *Schema) Tables() []*Table {
 		return s.tables
 	}
 
-	db := s.instance.Connect()
+	db := s.instance.Connect("information_schema")
 
 	// Obtain the tables in the schema
 	var rawTables []struct {
@@ -53,8 +53,8 @@ func (s *Schema) Tables() []*Table {
 		SELECT    t.table_name, t.table_type, t.engine, t.row_format, t.auto_increment,
 		          t.create_options, t.table_collation, t.table_comment,
 		          c.character_set_name, c.is_default
-		FROM      information_schema.tables t
-		LEFT JOIN information_schema.collations c ON t.table_collation = c.collation_name
+		FROM      tables t
+		LEFT JOIN collations c ON t.table_collation = c.collation_name
 		WHERE     t.table_schema = ?
 		AND       t.table_type = 'BASE TABLE'`
 	if err := db.Select(&rawTables, query, s.Name); err != nil {
@@ -88,7 +88,7 @@ func (s *Schema) Tables() []*Table {
 	}
 	query = `
 		SELECT   table_name, column_name, column_type, is_nullable, column_default, extra, column_comment
-		FROM     information_schema.columns
+		FROM     columns
 		WHERE    table_schema = ?
 		ORDER BY table_name, ordinal_position`
 	if err := db.Select(&rawColumns, query, s.Name); err != nil {
@@ -139,7 +139,7 @@ func (s *Schema) Tables() []*Table {
 	}
 	query = `
 		SELECT   index_name, table_name, non_unique, seq_in_index, column_name, sub_part
-		FROM     information_schema.statistics
+		FROM     statistics
 		WHERE    table_schema = ?`
 	if err := db.Select(&rawIndexes, query, s.Name); err != nil {
 		panic(err)
