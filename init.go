@@ -37,7 +37,7 @@ func InitCommand(cfg Config) {
 		os.Exit(1)
 	}
 	if isNewRoot {
-		fmt.Println("Initializing skeema root dir ", rootDir.Path)
+		fmt.Println("Initializing skeema root dir", rootDir.Path)
 	} else {
 		fmt.Println("Using skeema root dir", rootDir.Path)
 	}
@@ -92,7 +92,7 @@ func InitCommand(cfg Config) {
 			fmt.Printf("Unable to create host directory %s: %s\n", hostDir.Path, err)
 			os.Exit(1)
 		}
-		fmt.Println("Initializing host dir ", hostDir.Path)
+		fmt.Println("Initializing host dir", hostDir.Path)
 	} else {
 		hostDir = rootDir
 		fmt.Println("Skipping host-level subdir structure; using skeema root", hostDir.Path, "directly")
@@ -118,7 +118,7 @@ func InitCommand(cfg Config) {
 
 	// Build list of schemas
 	driver := "mysql"
-	instance := &tengo.Instance{Driver: driver, DSN: target.DSN()}
+	instance := tengo.NewInstance(driver, target.DSN())
 	var schemas []*tengo.Schema
 	if target.Schema != "" {
 		if !instance.HasSchema(target.Schema) {
