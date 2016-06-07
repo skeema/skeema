@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jmoiron/sqlx"
+	"github.com/skeema/tengo"
 	"github.com/spf13/pflag"
 )
 
@@ -15,16 +17,23 @@ type Target struct {
 	User     string
 	Password string
 	Schema   string
+	Driver   string
+	instance *tengo.Instance
 }
 
-func (t Target) DSN() string {
+// Returns the DSN without any trailing schema name
+func (t Target) BaseDSN() string {
 	var userAndPass string
 	if t.Password == "" {
 		userAndPass = t.User
 	} else {
 		userAndPass = fmt.Sprintf("%s:%s", t.User, t.Password)
 	}
-	return fmt.Sprintf("%s@tcp(%s:%d)/%s", userAndPass, t.Host, t.Port, t.Schema)
+	return fmt.Sprintf("%s@tcp(%s:%d)/", userAndPass, t.Host, t.Port)
+}
+
+func (t Target) DSN() string {
+	return t.BaseDSN() + t.Schema
 }
 
 func (t Target) HostAndOptionalPort() string {
@@ -72,6 +81,29 @@ func (t *Target) MergeCLIConfig(cliConfig *ParsedGlobalFlags) {
 		if t.Port == 0 {
 			t.Port = 3306
 		}
+	}
+}
+
+func (t *Target) DB() *sqlx.DB {
+	if t.instance == nil {
+		t.instance = tengo.NewInstance(t.Driver, t.BaseDSN())
+	}
+	return t.instance.Connect(t.Schema)
+}
+
+type TargetList []*Target
+
+// SetInstances bulk-hydrates a tengo instance for each Target. The instances
+// will be de-duped, such that targets representing different schemas on the
+// same physical instance will point to the same tengo.Instance.
+func (tl TargetList) SetInstances() {
+	dsnToInstance := make(map[string]*tengo.Instance, len(tl))
+	for _, t := range tl {
+		dsn := t.BaseDSN()
+		if !dsnToInstance[dsn] {
+			dsnToInstance[dsn] = tengo.NewInstance(t.Driver, dsn)
+		}
+		t.instance = dsnToInstance[dsn]
 	}
 }
 

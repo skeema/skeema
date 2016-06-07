@@ -136,7 +136,8 @@ func (sd SkeemaDir) SkeemaFiles() (skeemaFiles []*SkeemaFile, errReturn error) {
 
 func (sd SkeemaDir) Targets(cfg Config, branch string) []Target {
 	// TODO support multiple targets
-	target := Target{}
+	// TODO support drivers being overriden
+	target := Target{Driver: "mysql"}
 
 	// Create a single slice that has the global config files (not specific to
 	// this dir) and then the dir-specific config files
