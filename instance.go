@@ -3,6 +3,7 @@ package tengo
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -30,6 +31,17 @@ func NewInstance(driver, dsn string) *Instance {
 		Driver:         driver,
 		connectionPool: make(map[string]*sqlx.DB),
 	}
+}
+
+// String for an instance returns a "host:port" string
+func (instance Instance) String() string {
+	// Match the host:port from the end of the base DSN, which looks like "(%s:%d)/"
+	reParseDSN = regexp.MustCompile(`\(([^:]+):(\d+)\)/$`)
+	matches := reParseCreate.FindStringSubmatch(strings.ToLower(sf.Contents))
+	if matches == nil {
+		return "!parse-failure:???"
+	}
+	return fmt.Sprintf("%s:%d", matches[1], matches[2])
 }
 
 func (instance *Instance) Connect(defaultSchema string) *sqlx.DB {
@@ -130,4 +142,25 @@ func (instance *Instance) CreateSchema(name string) (*Schema, error) {
 	}
 	instance.Refresh()
 	return instance.Schema(name), nil
+}
+
+// DropSchema first drops all tables in the schema, and then drops the database.
+func (instance *Instance) DropSchema(schema *Schema) error {
+	db := instance.Connect(schema.Name)
+
+	// TODO: need to handle proper ordering for foreign keys
+	for _, t := range schema.Tables() {
+		_, err := db.Exec(t.DropStatement())
+		if err != nil {
+			return err
+		}
+	}
+
+	query := fmt.Sprintf("DROP DATABASE %s", EscapeIdentifier(schema.Name))
+	_, err := db.Exec(query)
+	if err != nil {
+		return err
+	}
+	instance.Refresh()
+	return nil
 }

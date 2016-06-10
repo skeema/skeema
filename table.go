@@ -21,6 +21,10 @@ func (t Table) AlterStatement() string {
 	return fmt.Sprintf("ALTER TABLE %s", EscapeIdentifier(t.Name))
 }
 
+func (t Table) DropStatement() string {
+	return fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(t.Name))
+}
+
 func (t Table) CreateStatement() string {
 	defs := make([]string, len(t.Columns), len(t.Columns)+len(t.SecondaryIndexes)+1)
 	for n, c := range t.Columns {
