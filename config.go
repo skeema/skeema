@@ -84,11 +84,15 @@ func (t *Target) MergeCLIConfig(cliConfig *ParsedGlobalFlags) {
 	}
 }
 
-func (t *Target) DB() *sqlx.DB {
+func (t *Target) Instance() *tengo.Instance {
 	if t.instance == nil {
 		t.instance = tengo.NewInstance(t.Driver, t.BaseDSN())
 	}
-	return t.instance.Connect(t.Schema)
+	return t.instance
+}
+
+func (t *Target) DB() *sqlx.DB {
+	return t.Instance().Connect(t.Schema)
 }
 
 type TargetList []*Target

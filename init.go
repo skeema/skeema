@@ -13,14 +13,14 @@ func init() {
 	initFlags := pflag.NewFlagSet("init", pflag.ExitOnError)
 	initFlags.String("alias", "<host>", "Override the directory name to use for a host, or supply explicit blank string to put schema subdirs at the top level")
 
-	long := `Creates a filesystem representation of the schemas and tables on a db host. For
-each schema on the host (or just the single schema specified by --schema), a
-directory with a .skeema config file will be created. Each directory will be
-populated with .sql files containing CREATE TABLE statements for every table
-in the schema.`
+	long := `Creates a filesystem representation of the schemas and tables on a db instance.
+For each schema on the instance (or just the single schema specified by
+--schema), a subdir with a .skeema config file will be created. Each directory
+will be populated with .sql files containing CREATE TABLE statements for every
+table in the schema.`
 	Commands["init"] = Command{
 		Name:    "init",
-		Short:   "Save a live db's schemas and tables to the filesystem",
+		Short:   "Save a DB instance's schemas and tables to the filesystem",
 		Long:    long,
 		Flags:   initFlags,
 		Handler: InitCommand,
@@ -30,7 +30,7 @@ in the schema.`
 func InitCommand(cfg Config) {
 	// Figure out base path. If it's brand-new, and there's a user param
 	// on the CLI, copy that cli param into a new .skeema file for the dir.
-	rootDir := NewSkeemaDir(cfg.GlobalFlags.Path, false)
+	rootDir := NewSkeemaDir(cfg.GlobalFlags.Path)
 	isNewRoot, err := rootDir.CreateIfMissing()
 	if err != nil {
 		fmt.Println("Unable to use specified directory:", err)
@@ -44,7 +44,8 @@ func InitCommand(cfg Config) {
 
 	// Build a preliminary Target just to conveniently get a properly-merged combination of
 	// any global config files, root dir config file, and command-line params.
-	target := rootDir.Targets(cfg, "master")[0]
+	// TODO ensure cfg contains correct environment name
+	target := rootDir.Targets(cfg)[0]
 
 	// Ordinarily, we use a dir structure of: skeema_root/host_or_alias/schema_name/*.sql
 	// However, if the user has configured a particular host or schema in a global config
@@ -87,7 +88,7 @@ func InitCommand(cfg Config) {
 			}
 		}
 		// Now create the hostDir if needed
-		hostDir = NewSkeemaDir(path.Join(rootDir.Path, alias), false)
+		hostDir = NewSkeemaDir(path.Join(rootDir.Path, alias))
 		if _, err := hostDir.CreateIfMissing(); err != nil {
 			fmt.Printf("Unable to create host directory %s: %s\n", hostDir.Path, err)
 			os.Exit(1)
@@ -132,7 +133,7 @@ func InitCommand(cfg Config) {
 
 	// Iterate over the schemas; create a dir with .skeema and *.sql files for each
 	for _, s := range schemas {
-		schemaDir := NewSkeemaDir(path.Join(hostDir.Path, s.Name), true)
+		schemaDir := NewSkeemaDir(path.Join(hostDir.Path, s.Name))
 		created, err := schemaDir.CreateIfMissing()
 		if err != nil {
 			fmt.Printf("Unable to use directory %s for schema %s: %s\n", schemaDir.Path, s.Name, err)

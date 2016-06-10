@@ -93,7 +93,7 @@ func main() {
 	globalFiles := make([]*SkeemaFile, 0, len(globalFilenames))
 	for _, filename := range globalFilenames {
 		dir, base := path.Dir(filename), path.Base(filename)
-		sd := NewSkeemaDir(dir, false)
+		sd := NewSkeemaDir(dir)
 		skf := &SkeemaFile{
 			Dir:      sd,
 			FileName: base,
