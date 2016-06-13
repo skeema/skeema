@@ -36,8 +36,8 @@ func NewInstance(driver, dsn string) *Instance {
 // String for an instance returns a "host:port" string
 func (instance Instance) String() string {
 	// Match the host:port from the end of the base DSN, which looks like "(%s:%d)/"
-	reParseDSN = regexp.MustCompile(`\(([^:]+):(\d+)\)/$`)
-	matches := reParseCreate.FindStringSubmatch(strings.ToLower(sf.Contents))
+	reParseDSN := regexp.MustCompile(`\(([^:]+):(\d+)\)/$`)
+	matches := reParseDSN.FindStringSubmatch(strings.ToLower(BaseDSN(instance.DSN)))
 	if matches == nil {
 		return "!parse-failure:???"
 	}
@@ -135,8 +135,8 @@ func (instance *Instance) TableSize(schema *Schema, table *Table) (int64, error)
 func (instance *Instance) CreateSchema(name string) (*Schema, error) {
 	db := instance.Connect("")
 	// TODO: support DEFAULT CHARACTER SET and DEFAULT COLLATE
-	query := fmt.Sprintf("CREATE DATABASE %s", EscapeIdentifier(name))
-	_, err := db.Exec(query)
+	schema := Schema{Name: name}
+	_, err := db.Exec(schema.CreateStatement())
 	if err != nil {
 		return nil, err
 	}
@@ -156,8 +156,7 @@ func (instance *Instance) DropSchema(schema *Schema) error {
 		}
 	}
 
-	query := fmt.Sprintf("DROP DATABASE %s", EscapeIdentifier(schema.Name))
-	_, err := db.Exec(query)
+	_, err := db.Exec(schema.DropStatement())
 	if err != nil {
 		return err
 	}

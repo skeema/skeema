@@ -62,10 +62,15 @@ func NewSchemaDiff(from, to *Schema) *SchemaDiff {
 }
 
 func (sd *SchemaDiff) String() string {
-	// TODO: combine similars
-	diffStatements := make([]string, len(sd.TableDiffs))
-	for n, diff := range sd.TableDiffs {
-		diffStatements[n] = fmt.Sprintf("%s;\n", diff.Statement())
+	diffStatements := make([]string, 0, len(sd.TableDiffs)+1)
+	if sd.FromSchema == nil {
+		diffStatements = append(diffStatements, sd.ToSchema.CreateStatement())
+	}
+	for _, diff := range sd.TableDiffs {
+		diffStatements = append(diffStatements, fmt.Sprintf("%s;\n", diff.Statement()))
+	}
+	if sd.ToSchema == nil {
+		diffStatements = append(diffStatements, sd.FromSchema.DropStatement())
 	}
 	result := fmt.Sprintf("diff schema %s vs %s:\n%s", sd.FromSchema.Name, sd.ToSchema.Name, strings.Join(diffStatements, ""))
 	return result

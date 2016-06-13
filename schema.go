@@ -30,6 +30,9 @@ func (s Schema) HasTable(name string) bool {
 }
 
 func (s *Schema) Tables() []*Table {
+	if s == nil {
+		return []*Table{}
+	}
 	if s.tables != nil {
 		return s.tables
 	}
@@ -199,10 +202,22 @@ func (s *Schema) Tables() []*Table {
 }
 
 func (s *Schema) Refresh() {
+	if s == nil {
+		return
+	}
 	s.tables = nil
 	s.Tables()
 }
 
 func (from *Schema) Diff(to *Schema) *SchemaDiff {
 	return NewSchemaDiff(from, to)
+}
+
+func (s Schema) DropStatement() string {
+	return fmt.Sprintf("DROP DATABASE %s", EscapeIdentifier(s.Name))
+}
+
+func (s Schema) CreateStatement() string {
+	// TODO: support DEFAULT CHARACTER SET and DEFAULT COLLATE
+	return fmt.Sprintf("CREATE DATABASE %s", EscapeIdentifier(s.Name))
 }
