@@ -72,8 +72,7 @@ func (sd *SchemaDiff) String() string {
 	if sd.ToSchema == nil {
 		diffStatements = append(diffStatements, sd.FromSchema.DropStatement())
 	}
-	result := fmt.Sprintf("diff schema %s vs %s:\n%s", sd.FromSchema.Name, sd.ToSchema.Name, strings.Join(diffStatements, ""))
-	return result
+	return strings.Join(diffStatements, "")
 }
 
 ///// CreateTable //////////////////////////////////////////////////////////////

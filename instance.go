@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -41,7 +42,8 @@ func (instance Instance) String() string {
 	if matches == nil {
 		return "!parse-failure:???"
 	}
-	return fmt.Sprintf("%s:%d", matches[1], matches[2])
+	port, _ := strconv.Atoi(matches[2])
+	return fmt.Sprintf("%s:%d", matches[1], port)
 }
 
 func (instance *Instance) Connect(defaultSchema string) *sqlx.DB {
@@ -160,6 +162,8 @@ func (instance *Instance) DropSchema(schema *Schema) error {
 	if err != nil {
 		return err
 	}
+	db.Close()
+	delete(instance.connectionPool, schema.Name)
 	instance.Refresh()
 	return nil
 }
