@@ -107,7 +107,7 @@ func (sd SkeemaDir) SkeemaFiles() (skeemaFiles []*SkeemaFile, errReturn error) {
 	// hit either the user's home directory or a directory containing a .git subdir.
 	base := 0
 	for n := len(components) - 1; n >= 0 && base == 0; n-- {
-		curPath := path.Join(components[0 : n+1]...)
+		curPath := "/" + path.Join(components[0:n+1]...)
 		if curPath == home {
 			base = n
 		}
@@ -137,6 +137,20 @@ func (sd SkeemaDir) SkeemaFiles() (skeemaFiles []*SkeemaFile, errReturn error) {
 		skeemaFiles[left], skeemaFiles[right] = skeemaFiles[right], skeemaFiles[left]
 	}
 	return
+}
+
+func (sd SkeemaDir) Subdirs() ([]SkeemaDir, error) {
+	fileInfos, err := ioutil.ReadDir(sd.Path)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]SkeemaDir, 0, len(fileInfos))
+	for _, fi := range fileInfos {
+		if fi.IsDir() {
+			result = append(result, *NewSkeemaDir(path.Join(sd.Path, fi.Name())))
+		}
+	}
+	return result, nil
 }
 
 func (sd SkeemaDir) Targets(cfg Config) []Target {
@@ -183,7 +197,7 @@ func (sd SkeemaDir) Targets(cfg Config) []Target {
 // PopulateTemporarySchema creates all tables from *.sql files, but using the schema name
 // specified by tempSchemaName instead of the one ordinarily used for the directory.
 // Does not recurse into subdirectories.
-func (sd SkeemaDir) PopulateTemporarySchema(cfg Config, tempSchemaName, envName string) error {
+func (sd SkeemaDir) PopulateTemporarySchema(cfg Config, tempSchemaName string) error {
 	targets := sd.Targets(cfg)
 
 	sqlFiles, err := sd.SQLFiles()
@@ -231,12 +245,12 @@ func (sd SkeemaDir) PopulateTemporarySchema(cfg Config, tempSchemaName, envName 
 	return nil
 }
 
-func (sd SkeemaDir) DropTemporarySchema(cfg Config, tempSchemaName, envName string) error {
+func (sd SkeemaDir) DropTemporarySchema(cfg Config, tempSchemaName string) error {
 	targets := sd.Targets(cfg)
 	for _, t := range targets {
 		inst := t.Instance()
 		tempSchema := inst.Schema(tempSchemaName)
-		if !tempSchema {
+		if tempSchema == nil {
 			continue
 		}
 		if err := inst.DropSchema(tempSchema); err != nil {

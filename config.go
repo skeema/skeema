@@ -104,7 +104,7 @@ func (tl TargetList) SetInstances() {
 	dsnToInstance := make(map[string]*tengo.Instance, len(tl))
 	for _, t := range tl {
 		dsn := t.BaseDSN()
-		if !dsnToInstance[dsn] {
+		if dsnToInstance[dsn] == nil {
 			dsnToInstance[dsn] = tengo.NewInstance(t.Driver, dsn)
 		}
 		t.instance = dsnToInstance[dsn]

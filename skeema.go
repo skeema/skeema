@@ -72,6 +72,9 @@ func main() {
 		os.Exit(exitCode)
 	}
 
+	if cmd.Flags == nil {
+		cmd.Flags = pflag.NewFlagSet(commandName, pflag.ExitOnError)
+	}
 	flags := cmd.Flags
 	flags.AddFlagSet(GlobalFlags)
 	flags.Parse(os.Args[1:])
@@ -119,26 +122,3 @@ func (cmd Command) Usage() {
 	fmt.Println("\nOptions:")
 	fmt.Println(cmd.Flags.FlagUsages())
 }
-
-/*
-func main() {
-	dsn := os.Getenv("MYSQL_DSN")
-	if dsn == "" {
-		panic(errors.New("No DSN"))
-	}
-	driver := "mysql"
-
-	instance := &tengo.Instance{Driver: driver, DSN: dsn}
-	sd := tengo.NewSchemaDiff(instance.Schemas()[0], instance.Schemas()[1])
-	fmt.Println(sd)
-	fmt.Println("-----")
-	firstSchema := instance.Schemas()[0]
-	for _, t := range firstSchema.Tables() {
-		stmt, _ := instance.ShowCreateTable(firstSchema, t)
-		fmt.Println(stmt)
-		if stmt != t.CreateStatement() {
-			fmt.Println("VS", t.CreateStatement())
-		}
-	}
-}
-*/
