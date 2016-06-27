@@ -62,6 +62,10 @@ func (sf SQLFile) Write() (int, error) {
 	}
 }
 
+func (sf SQLFile) Delete() error {
+	return os.Remove(sf.Path())
+}
+
 func (sf *SQLFile) FileInfo() (os.FileInfo, error) {
 	if sf.fileInfo != nil {
 		return sf.fileInfo, nil

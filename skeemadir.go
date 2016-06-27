@@ -47,6 +47,10 @@ func (sd SkeemaDir) CreateIfMissing() (created bool, err error) {
 	return true, nil
 }
 
+func (sd SkeemaDir) Delete() error {
+	return os.RemoveAll(sd.Path)
+}
+
 // SQLFilesreturns a slice of SQLFile pointers, representing the valid *.sql
 // files that already exist in a directory. Does not recursively search
 // subdirs.
@@ -137,6 +141,13 @@ func (sd SkeemaDir) SkeemaFiles() (skeemaFiles []*SkeemaFile, errReturn error) {
 		skeemaFiles[left], skeemaFiles[right] = skeemaFiles[right], skeemaFiles[left]
 	}
 	return
+}
+
+func (sd *SkeemaDir) Parent() *SkeemaDir {
+	if sd.Path == "/" {
+		return sd
+	}
+	return NewSkeemaDir(path.Dir(sd.Path))
 }
 
 func (sd SkeemaDir) Subdirs() ([]SkeemaDir, error) {
