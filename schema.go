@@ -14,7 +14,7 @@ type Schema struct {
 	instance         *Instance
 }
 
-func (s Schema) TablesByName() map[string]*Table {
+func (s *Schema) TablesByName() map[string]*Table {
 	tables := s.Tables()
 	result := make(map[string]*Table, len(tables))
 	for _, t := range tables {
