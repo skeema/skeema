@@ -50,6 +50,14 @@ func diffForDir(dir SkeemaDir, cfg Config, seen map[string]bool) {
 			from := instance.Schema(t.Schema)
 			to := instance.Schema("_skeema_tmp")
 			diff := tengo.NewSchemaDiff(from, to)
+			if from == nil {
+				// We have to create a new Schema to emit a create statement for the
+				// correct DB name. We can't use to.CreateStatement() because that would
+				// emit a statement referring to _skeema_tmp!
+				// TODO: support db options
+				newFrom := &tengo.Schema{Name: t.Schema}
+				fmt.Printf("%s;\n", newFrom.CreateStatement())
+			}
 			fmt.Println(diff, "\n")
 		}
 

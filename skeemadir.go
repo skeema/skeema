@@ -51,6 +51,48 @@ func (sd SkeemaDir) Delete() error {
 	return os.RemoveAll(sd.Path)
 }
 
+// IsLeaf returns true if this dir represents a specific schema, or false otherwise.
+func (sd SkeemaDir) IsLeaf() bool {
+	// If the .skeema file contains a schema, this dir is a leaf
+	skf, err := sd.SkeemaFile()
+	if err == nil && skf.Schema != nil {
+		return true
+	}
+
+	// Even if no schema specified, consider this dir a leaf if it contains at
+	// least one *.sql file
+	var hasSubdirs bool
+	fileInfos, err := ioutil.ReadDir(sd.Path)
+	if err == nil {
+		for _, fi := range fileInfos {
+			if fi.IsDir() {
+				hasSubdirs = true
+			} else if strings.HasSuffix(fi.Name(), ".sql") {
+				return true
+			}
+		}
+	}
+
+	// Finally, consider this dir a leaf if it contains no subdirs. Otherwise,
+	// it is not considered a leaf.
+	return hasSubdirs
+}
+
+// HasLeafSubdirs returns true if this dir contains at least one leaf subdir.
+// This means we can map subdirs to database schemas on a single instance.
+func (sd SkeemaDir) HasLeafSubdirs() bool {
+	subdirs, err := sd.Subdirs()
+	if err != nil {
+		return false
+	}
+	for _, subdir := range subdirs {
+		if subdir.IsLeaf() {
+			return true
+		}
+	}
+	return false
+}
+
 // SQLFilesreturns a slice of SQLFile pointers, representing the valid *.sql
 // files that already exist in a directory. Does not recursively search
 // subdirs.

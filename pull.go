@@ -126,6 +126,9 @@ func pullForDir(dir SkeemaDir, cfg Config, seen map[string]bool) {
 			}
 		}
 
+		// TODO: also support a "normalize" option, which causes filesystem to reflect
+		// format of SHOW CREATE TABLE
+
 		if err := dir.DropTemporarySchema(cfg, "_skeema_tmp"); err != nil {
 			fmt.Printf("Unable to clean up temporary schema for %s: %s\n", dir, err)
 			os.Exit(1)
