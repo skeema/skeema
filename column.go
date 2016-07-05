@@ -51,13 +51,15 @@ type Column struct {
 }
 
 func (c Column) Definition() string {
-	var notNull, autoIncrement, defaultValue, extraModifiers string
+	var nullability, autoIncrement, defaultValue, extraModifiers string
 	emitDefault := c.CanHaveDefault()
 	if !c.Nullable {
-		notNull = " NOT NULL"
+		nullability = " NOT NULL"
 		if c.Default.Null {
 			emitDefault = false
 		}
+	} else if emitDefault && c.Default != ColumnDefaultNull {
+		nullability = " NULL"
 	}
 	if c.AutoIncrement {
 		autoIncrement = " AUTO_INCREMENT"
@@ -68,7 +70,7 @@ func (c Column) Definition() string {
 	if c.Extra != "" {
 		extraModifiers = fmt.Sprintf(" %s", c.Extra)
 	}
-	return fmt.Sprintf("%s %s%s%s%s%s", EscapeIdentifier(c.Name), c.TypeInDB, notNull, autoIncrement, defaultValue, extraModifiers)
+	return fmt.Sprintf("%s %s%s%s%s%s", EscapeIdentifier(c.Name), c.TypeInDB, nullability, autoIncrement, defaultValue, extraModifiers)
 }
 
 func (c *Column) Equals(other *Column) bool {
