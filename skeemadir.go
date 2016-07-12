@@ -51,11 +51,15 @@ func (sd SkeemaDir) Delete() error {
 	return os.RemoveAll(sd.Path)
 }
 
+func (sd SkeemaDir) HasFile(name string) bool {
+	_, err := os.Stat(path.Join(sd.Path, name))
+	return (err == nil)
+}
+
 // IsLeaf returns true if this dir represents a specific schema, or false otherwise.
 func (sd SkeemaDir) IsLeaf() bool {
 	// If the .skeema file contains a schema, this dir is a leaf
-	skf, err := sd.SkeemaFile()
-	if err == nil && skf.Schema != nil {
+	if skf, err := sd.SkeemaFile(); err == nil && skf.HasField("schema") {
 		return true
 	}
 
@@ -75,7 +79,7 @@ func (sd SkeemaDir) IsLeaf() bool {
 
 	// Finally, consider this dir a leaf if it contains no subdirs. Otherwise,
 	// it is not considered a leaf.
-	return hasSubdirs
+	return !hasSubdirs
 }
 
 // HasLeafSubdirs returns true if this dir contains at least one leaf subdir.
@@ -122,16 +126,16 @@ func (sd *SkeemaDir) SQLFiles() ([]*SQLFile, error) {
 	return result, nil
 }
 
-// SkeemaFile returns a pointer to a SkeemaFile for this directory. Automatically
-// calls Read() on the SkeemaFile, with any read error will be returned as an
-// error here.
+// SkeemaFile returns a pointer to a SkeemaFile for this directory.
 func (sd *SkeemaDir) SkeemaFile() (*SkeemaFile, error) {
-	sf := &SkeemaFile{
+	skf := &SkeemaFile{
 		Dir:      sd,
 		FileName: ".skeema",
 	}
-	err := sf.Read()
-	return sf, err
+	if err := skf.Read(); err != nil {
+		return nil, err
+	}
+	return skf, nil
 }
 
 // SkeemaFiles returns a slice of SkeemaFile, corresponding to this dir
@@ -139,8 +143,7 @@ func (sd *SkeemaDir) SkeemaFile() (*SkeemaFile, error) {
 // dirs stops once we hit either a directory containing .git, the user's home
 // directory, or the root of the filesystem. The result is returned in an order
 // such that the top-level (closest-to-root) parent dir's SkeemaFile is returned
-// first and this SkeemaDir's SkeemaFile last. Read errors are skipped, but the
-// error return will be non-nil if at least one error was encountered.
+// first and this SkeemaDir's SkeemaFile last.
 func (sd SkeemaDir) SkeemaFiles() (skeemaFiles []*SkeemaFile, errReturn error) {
 	home := filepath.Clean(os.Getenv("HOME"))
 
@@ -158,8 +161,9 @@ func (sd SkeemaDir) SkeemaFiles() (skeemaFiles []*SkeemaFile, errReturn error) {
 			base = n
 		}
 		fileInfos, err := ioutil.ReadDir(curPath)
-		if err != nil { // Probably a permissions issue
-			errReturn = err
+		// We ignore errors here since we expect the dir to not exist in some cases
+		// (for example, init command on a new dir)
+		if err != nil {
 			continue
 		}
 		for _, fi := range fileInfos {
@@ -167,11 +171,11 @@ func (sd SkeemaDir) SkeemaFiles() (skeemaFiles []*SkeemaFile, errReturn error) {
 				base = n
 			} else if fi.Name() == ".skeema" {
 				thisSkeemaDir := NewSkeemaDir(curPath)
-				thisSkeemaFile, err := thisSkeemaDir.SkeemaFile()
-				if err == nil {
-					skeemaFiles = append(skeemaFiles, thisSkeemaFile)
+				skf, readErr := thisSkeemaDir.SkeemaFile()
+				if readErr != nil {
+					errReturn = readErr
 				} else {
-					errReturn = err
+					skeemaFiles = append(skeemaFiles, skf)
 				}
 			}
 		}
@@ -204,111 +208,4 @@ func (sd SkeemaDir) Subdirs() ([]SkeemaDir, error) {
 		}
 	}
 	return result, nil
-}
-
-func (sd SkeemaDir) Targets(cfg Config) []Target {
-	// TODO support multiple targets
-	// TODO support drivers being overriden
-	target := Target{Driver: "mysql"}
-
-	// Create a single slice that has the global config files (not specific to
-	// this dir) and then the dir-specific config files
-	dirFiles, _ := sd.SkeemaFiles()
-	allFiles := make([]*SkeemaFile, len(cfg.GlobalFiles)+len(dirFiles))
-	for n := range cfg.GlobalFiles {
-		allFiles[n] = cfg.GlobalFiles[n]
-	}
-	for n := range dirFiles {
-		allFiles[n+len(cfg.GlobalFiles)] = dirFiles[n]
-	}
-
-	// Iterate over the config files, with most-specific files cascading over top
-	// of less-specific files
-	for _, sf := range allFiles {
-		if sf.Host != nil {
-			target.Host = *sf.Host
-		}
-		if sf.Port != nil {
-			target.Port = *sf.Port
-		}
-		if sf.User != nil {
-			target.User = *sf.User
-		}
-		if sf.Password != nil {
-			target.Password = *sf.Password
-		}
-		if sf.Schema != nil {
-			target.Schema = *sf.Schema
-		}
-	}
-
-	// Finally, merge in the CLI config
-	target.MergeCLIConfig(cfg.GlobalFlags)
-	return []Target{target}
-}
-
-// PopulateTemporarySchema creates all tables from *.sql files, but using the schema name
-// specified by tempSchemaName instead of the one ordinarily used for the directory.
-// Does not recurse into subdirectories.
-func (sd SkeemaDir) PopulateTemporarySchema(cfg Config, tempSchemaName string) error {
-	targets := sd.Targets(cfg)
-
-	sqlFiles, err := sd.SQLFiles()
-	if err != nil {
-		return err
-	}
-	if len(sqlFiles) == 0 {
-		return fmt.Errorf("No *.sql files found in %s", sd)
-	}
-
-	// targets could span multiple instances and/or schemas. We need to create
-	// temp schemas on each instance separately, but not redundantly for several
-	// identical schemas on the same instance, so we track what we've seen.
-	seenBaseDSN := make(map[string]bool, len(targets))
-
-	for _, t := range targets {
-		if seenBaseDSN[t.BaseDSN()] {
-			continue
-		}
-		inst := t.Instance()
-		tempSchema := inst.Schema(tempSchemaName)
-		if tempSchema != nil {
-			if tableCount := len(tempSchema.Tables()); tableCount > 0 {
-				return fmt.Errorf("%s: temp schema name %s already exists and has %d tables, refusing to overwrite", inst, tempSchemaName, tableCount)
-			}
-		} else {
-			tempSchema, err = inst.CreateSchema(tempSchemaName)
-			if err != nil {
-				return err
-			}
-		}
-
-		t.Schema = tempSchemaName
-		db := t.DB()
-		for _, sf := range sqlFiles {
-			_, err := db.Exec(sf.Contents)
-			if err != nil {
-				return err
-			}
-		}
-
-		seenBaseDSN[t.BaseDSN()] = true
-	}
-
-	return nil
-}
-
-func (sd SkeemaDir) DropTemporarySchema(cfg Config, tempSchemaName string) error {
-	targets := sd.Targets(cfg)
-	for _, t := range targets {
-		inst := t.Instance()
-		tempSchema := inst.Schema(tempSchemaName)
-		if tempSchema == nil {
-			continue
-		}
-		if err := inst.DropSchema(tempSchema); err != nil {
-			return err
-		}
-	}
-	return nil
 }

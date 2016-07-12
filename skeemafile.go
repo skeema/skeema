@@ -7,22 +7,15 @@ import (
 	"log"
 	"os"
 	"path"
-	"strconv"
 	"strings"
 	"unicode"
 )
 
-// TODO: all handling for git branches -- write logic that is branch aware / doesn't clobber other branches
-// TODO: support unix domain sockets
-
 type SkeemaFile struct {
-	Dir      *SkeemaDir
-	FileName string
-	Host     *string
-	Port     *int
-	User     *string
-	Password *string
-	Schema   *string
+	Dir          *SkeemaDir
+	FileName     string
+	Values       map[string]string
+	IgnoreErrors bool
 }
 
 func (skf *SkeemaFile) Path() string {
@@ -32,12 +25,19 @@ func (skf *SkeemaFile) Path() string {
 	return path.Join(skf.Dir.Path, skf.FileName)
 }
 
+// TODO: all handling for git branches -- write logic that is branch aware / doesn't clobber other branches
 func (skf *SkeemaFile) Write(overwrite bool) error {
-	data := skf.generateData()
-	if data == "" {
+	lines := make([]string, 0, len(skf.Values))
+	for name, value := range skf.Values {
+		lines = append(lines, fmt.Sprintf("%s=%s", name, value))
+	}
+
+	if len(lines) == 0 {
 		log.Printf("Skipping write to %s due to empty configuration", skf.Path())
 		return nil
 	}
+	data := fmt.Sprintf("%s\n", strings.Join(lines, "\n"))
+
 	flag := os.O_WRONLY | os.O_CREATE
 	if overwrite {
 		flag |= os.O_TRUNC
@@ -58,12 +58,15 @@ func (skf *SkeemaFile) Write(overwrite bool) error {
 	return err
 }
 
+// TODO: all handling for git branches
 func (skf *SkeemaFile) Read() error {
 	file, err := os.Open(skf.Path())
 	if err != nil {
 		return err
 	}
 	defer file.Close()
+
+	skf.Values = make(map[string]string)
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -121,44 +124,24 @@ func (skf *SkeemaFile) Read() error {
 			}
 		}
 
-		switch key {
-		case "host":
-			skf.Host = &value
-		case "port":
-			if valueInt, err := strconv.Atoi(value); err == nil {
-				skf.Port = &valueInt
-			}
-		case "user":
-			skf.User = &value
-		case "password":
-			skf.Password = &value
-		case "database", "schema":
-			skf.Schema = &value
-		}
+		skf.Values[key] = value
 	}
+
 	err = scanner.Err()
 	return err
 }
 
-func (skf *SkeemaFile) generateData() string {
-	lines := make([]string, 0, 5)
-	if skf.Host != nil {
-		lines = append(lines, fmt.Sprintf("host=%s", *skf.Host))
+// TODO branch support
+func (skf *SkeemaFile) HasField(name string) bool {
+	if skf == nil {
+		return false
 	}
-	if skf.Port != nil {
-		lines = append(lines, fmt.Sprintf("port=%d", *skf.Port))
+	if skf.Values == nil {
+		err := skf.Read()
+		if err != nil {
+			return false
+		}
 	}
-	if skf.User != nil {
-		lines = append(lines, fmt.Sprintf("user=%s", *skf.User))
-	}
-	if skf.Password != nil {
-		lines = append(lines, fmt.Sprintf("password=%s", *skf.Password))
-	}
-	if skf.Schema != nil {
-		lines = append(lines, fmt.Sprintf("database=%s", *skf.Schema))
-	}
-	if len(lines) == 0 {
-		return ""
-	}
-	return fmt.Sprintf("%s\n", strings.Join(lines, "\n"))
+	_, found := skf.Values[name]
+	return found
 }

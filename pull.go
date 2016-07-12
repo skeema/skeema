@@ -22,66 +22,44 @@ reflect those changes.`
 	}
 }
 
-func PullCommand(cfg Config) {
-	dir := NewSkeemaDir(cfg.GlobalFlags.Path)
-	pullForDir(*dir, cfg, nil)
+func PullCommand(cfg *Config) {
+	pull(cfg, make(map[string]bool))
 }
 
-func pullForDir(dir SkeemaDir, cfg Config, seen map[string]bool) {
-	fmt.Printf("Updating %s...\n", dir.Path)
+func pull(cfg *Config, seen map[string]bool) {
+	fmt.Printf("Updating %s...\n", cfg.Dir.Path)
 
-	if seen == nil {
-		seen = make(map[string]bool)
-	}
+	if cfg.Dir.IsLeaf() {
+		t := cfg.Targets()[0]
 
-	// Determine what's in the dir, in terms of *.sql files, .skeema config file,
-	// and any subdirs
-	sqlFiles, err := dir.SQLFiles()
-	if err != nil {
-		fmt.Printf("Unable to list *.sql files in %s: %s\n", dir, err)
-		os.Exit(1)
-	}
-	skf, skfErr := dir.SkeemaFile()
-	subdirs, err := dir.Subdirs()
-	if err != nil {
-		fmt.Printf("Unable to list subdirs of %s: %s\n", dir, err)
-		os.Exit(1)
-	}
-
-	if len(sqlFiles) > 0 || (skfErr == nil && skf.Schema != nil) {
-		t := dir.Targets(cfg)[0]
-		instance := t.Instance()
-
-		to := instance.Schema(t.Schema)
+		to := t.Schema(t.SchemaNames[0])
 		if to == nil {
-			if err := dir.Delete(); err != nil {
-				fmt.Printf("Unable to delete directory %s: %s\n", dir, err)
+			if err := cfg.Dir.Delete(); err != nil {
+				fmt.Printf("Unable to delete directory %s: %s\n", cfg.Dir, err)
 				os.Exit(1)
 			}
-			fmt.Printf("    Deleted directory %s -- schema no longer exists\n", dir)
+			fmt.Printf("    Deleted directory %s -- schema no longer exists\n", cfg.Dir)
 			return
 		}
 
-		// TODO: support configurable temp schema name here + several calls below
-		if err := dir.PopulateTemporarySchema(cfg, "_skeema_tmp"); err != nil {
-			fmt.Printf("Unable to populate temporary schema for %s: %s\n", dir, err)
+		if err := cfg.PopulateTemporarySchema(); err != nil {
+			fmt.Printf("Unable to populate temporary schema: %s\n", err)
 			os.Exit(1)
 		}
 
-		instance.Refresh() // necessary since PopulateTemporarySchema doesn't have access to same instance
-		from := instance.Schema("_skeema_tmp")
+		from := t.TemporarySchema()
 		diff := tengo.NewSchemaDiff(from, to)
 
 		for _, td := range diff.TableDiffs {
 			switch td := td.(type) {
 			case tengo.CreateTable:
 				table := td.Table
-				createStmt, err := instance.ShowCreateTable(to, table)
+				createStmt, err := t.ShowCreateTable(to, table)
 				if err != nil {
 					panic(err)
 				}
 				sf := SQLFile{
-					Dir:      &dir,
+					Dir:      cfg.Dir,
 					FileName: fmt.Sprintf("%s.sql", table.Name),
 					Contents: createStmt,
 				}
@@ -94,7 +72,7 @@ func pullForDir(dir SkeemaDir, cfg Config, seen map[string]bool) {
 			case tengo.DropTable:
 				table := td.Table
 				sf := SQLFile{
-					Dir:      &dir,
+					Dir:      cfg.Dir,
 					FileName: fmt.Sprintf("%s.sql", table.Name),
 				}
 				if err := sf.Delete(); err != nil {
@@ -104,12 +82,12 @@ func pullForDir(dir SkeemaDir, cfg Config, seen map[string]bool) {
 				fmt.Printf("    Deleted %s -- table no longer exists\n", sf.Path())
 			case tengo.AlterTable:
 				table := td.Table
-				createStmt, err := instance.ShowCreateTable(to, table)
+				createStmt, err := t.ShowCreateTable(to, table)
 				if err != nil {
 					panic(err)
 				}
 				sf := SQLFile{
-					Dir:      &dir,
+					Dir:      cfg.Dir,
 					FileName: fmt.Sprintf("%s.sql", table.Name),
 					Contents: createStmt,
 				}
@@ -129,36 +107,44 @@ func pullForDir(dir SkeemaDir, cfg Config, seen map[string]bool) {
 		// TODO: also support a "normalize" option, which causes filesystem to reflect
 		// format of SHOW CREATE TABLE
 
-		if err := dir.DropTemporarySchema(cfg, "_skeema_tmp"); err != nil {
-			fmt.Printf("Unable to clean up temporary schema for %s: %s\n", dir, err)
+		if err := cfg.DropTemporarySchema(); err != nil {
+			fmt.Printf("Unable to clean up temporary schema: %s\n", err)
 			os.Exit(1)
 		}
-	}
 
-	seen[dir.Path] = true
-
-	// In addition to recursive descent, also track which schema-specific subdirs
-	// we've seen, so that we can also compute what schemas are new
-	seenSchema := make(map[string]bool, len(subdirs))
-	for _, subdir := range subdirs {
-		skf, err := subdir.SkeemaFile()
-		if err == nil && skf.Schema != nil {
-			seenSchema[*skf.Schema] = true
+	} else {
+		subdirs, err := cfg.Dir.Subdirs()
+		if err != nil {
+			fmt.Printf("Unable to list subdirs of %s: %s\n", cfg.Dir, err)
+			os.Exit(1)
 		}
 
-		if !seen[subdir.Path] {
-			pullForDir(subdir, cfg, seen)
+		// If this dir's subdirs represent individual schemas, iterate over them
+		// and track what schema names we see. Then compare that to the schema list
+		// of the instance represented by the dir, to see if there are any new
+		// schemas on the instance that need to be created on the filesystem.
+		if cfg.Dir.HasLeafSubdirs() {
+			seenSchema := make(map[string]bool, len(subdirs))
+			for _, subdir := range subdirs {
+				skf, err := subdir.SkeemaFile()
+				if err == nil && skf.HasField("schema") {
+					seenSchema[skf.Values["schema"]] = true
+				}
+			}
+			t := cfg.Targets()[0]
+			for _, schema := range t.Schemas() {
+				if !seenSchema[schema.Name] {
+					// use same logic from init command
+					PopulateSchemaDir(schema, t.Instance, cfg.Dir, true)
+				}
+			}
 		}
-	}
 
-	// Handle any new schemas, if this is a base dir with host+port but no schema
-	if len(sqlFiles) == 0 && skfErr == nil && skf.Host != nil && skf.Port != nil && skf.Schema == nil {
-		target := dir.Targets(cfg)[0]
-		instance := target.Instance()
-		for _, schema := range instance.Schemas() {
-			if !seenSchema[schema.Name] {
-				// use same logic from init command
-				PopulateSchemaDir(&dir, schema, instance, true)
+		// Finally, recurse into subdirs, avoiding duplication due to symlinks
+		seen[cfg.Dir.Path] = true
+		for _, subdir := range subdirs {
+			if !seen[subdir.Path] {
+				pull(cfg.ChangeDir(&subdir), seen)
 			}
 		}
 	}

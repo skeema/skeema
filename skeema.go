@@ -18,30 +18,13 @@ type Command struct {
 	Short   string
 	Long    string
 	Flags   *pflag.FlagSet
-	Handler func(Config)
+	Handler func(*Config)
 }
 
-var GlobalFlags *pflag.FlagSet
 var Commands = map[string]Command{}
 
-func init() {
-	GlobalFlags = pflag.NewFlagSet("skeema", pflag.ExitOnError)
-	GlobalFlags.SetInterspersed(false)
-	GlobalFlags.String("dir", ".", "Schema file directory to use for this operation")
-	GlobalFlags.StringP("host", "h", "", "Database hostname or IP address")
-	GlobalFlags.IntP("port", "P", 0, "Port to use for database host")
-	GlobalFlags.StringP("user", "u", "", "Username to connect to database host")
-	GlobalFlags.StringP("password", "p", "", "Password for database user. Not recommended for use on CLI.")
-	GlobalFlags.String("schema", "", "Database schema name")
-	GlobalFlags.Bool("help", false, "Display help for a command")
-}
-
 func main() {
-	// The initial Parse call is just to figure out what the command is, and to ensure no command-specific
-	// options come before the command
-	GlobalFlags.Parse(os.Args[1:])
-
-	commandName := GlobalFlags.Arg(0)
+	commandName := CommandName()
 	cmd, found := Commands[commandName]
 	if !found {
 		var exitCode int
@@ -75,43 +58,20 @@ func main() {
 	if cmd.Flags == nil {
 		cmd.Flags = pflag.NewFlagSet(commandName, pflag.ExitOnError)
 	}
-	flags := cmd.Flags
-	flags.AddFlagSet(GlobalFlags)
-	flags.Parse(os.Args[1:])
-	if wantHelp, _ := flags.GetBool("help"); wantHelp {
+
+	globalFilePaths := []string{"/etc/skeema", "/usr/local/etc/skeema"}
+	home := filepath.Clean(os.Getenv("HOME"))
+	if home != "" {
+		globalFilePaths = append(globalFilePaths, path.Join(home, ".my.cnf"), path.Join(home, ".skeema"))
+	}
+
+	cfg := NewConfig(cmd.Flags, globalFilePaths)
+
+	if wantHelp, _ := cmd.Flags.GetBool("help"); wantHelp {
 		cmd.Usage()
 		os.Exit(0)
 	}
-	parsedGlobalFlags, err := ParseGlobalFlags(flags)
-	if err != nil {
-		fmt.Printf("Invalid option value: %s\n", err)
-		os.Exit(1)
-	}
 
-	globalFilenames := []string{"/etc/skeema", "/usr/local/etc/skeema"}
-	home := filepath.Clean(os.Getenv("HOME"))
-	if home != "" {
-		globalFilenames = append(globalFilenames, path.Join(home, ".my.cnf"), path.Join(home, ".skeema"))
-	}
-	globalFiles := make([]*SkeemaFile, 0, len(globalFilenames))
-	for _, filename := range globalFilenames {
-		dir, base := path.Dir(filename), path.Base(filename)
-		sd := NewSkeemaDir(dir)
-		skf := &SkeemaFile{
-			Dir:      sd,
-			FileName: base,
-		}
-		err := skf.Read()
-		if err == nil {
-			globalFiles = append(globalFiles, skf)
-		}
-	}
-
-	cfg := Config{
-		GlobalFiles:  globalFiles,
-		GlobalFlags:  parsedGlobalFlags,
-		CommandFlags: flags,
-	}
 	cmd.Handler(cfg)
 }
 

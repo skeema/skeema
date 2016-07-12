@@ -27,10 +27,9 @@ table in the schema.`
 	}
 }
 
-func InitCommand(cfg Config) {
-	// Figure out base path. If it's brand-new, and there's a user param
-	// on the CLI, copy that cli param into a new .skeema file for the dir.
-	rootDir := NewSkeemaDir(cfg.GlobalFlags.Path)
+func InitCommand(cfg *Config) {
+	// Figure out base path, and create if missing
+	rootDir := cfg.BaseSkeemaDir()
 	isNewRoot, err := rootDir.CreateIfMissing()
 	if err != nil {
 		fmt.Println("Unable to use specified directory:", err)
@@ -42,18 +41,13 @@ func InitCommand(cfg Config) {
 		fmt.Println("Using skeema root dir", rootDir.Path)
 	}
 
-	// Build a preliminary Target just to conveniently get a properly-merged combination of
-	// any global config files, root dir config file, and command-line params.
-	// TODO ensure cfg contains correct environment name
-	target := rootDir.Targets(cfg)[0]
-
 	// Ordinarily, we use a dir structure of: skeema_root/host_or_alias/schema_name/*.sql
 	// However, if the user has configured a particular host or schema in a global config
 	// file (NOT via cli flags), we assume this means a single-db-host environment or
 	// single-schemaname environment, respectively. This means we skip the corresponding
 	// extra level of subdir.
 	separateHostSubdir, separateSchemaSubdir := true, true
-	if cfg.GlobalFlags.Schema == "" && target.Schema != "" {
+	if cfg.Get("schema") != "" && !cfg.OnCLI("schema") {
 		separateSchemaSubdir = false
 	}
 
@@ -64,24 +58,28 @@ func InitCommand(cfg Config) {
 	//   UNLESS we're doing a single-db-host environment, in which case works like "."
 	// * any other string, meaning use this string as the subdir name instead of basing it
 	//   on the host.
-	alias, _ := cfg.CommandFlags.GetString("alias")
+	alias := cfg.Get("alias")
+	port := cfg.GetIntOrDefault("port")
 	if alias == "." {
 		separateHostSubdir = false
 	} else if alias == "<host>" {
-		if cfg.GlobalFlags.Host == "" && target.Host != "127.0.0.1" {
+		if cfg.Get("host") != "127.0.0.1" && !cfg.OnCLI("host") {
 			separateHostSubdir = false
+		} else if port != 3306 {
+			alias = fmt.Sprintf("%s:%d", cfg.Get("host"), port)
 		} else {
-			alias = target.HostAndOptionalPort()
+			alias = cfg.Get("host")
 		}
 	}
+
 	var hostDir *SkeemaDir
 	if separateHostSubdir {
 		// Since the hostDir and rootDir are different in this case, write out the rootDir's
 		// .skeema file if a user was specified via the command-line
-		if isNewRoot && cfg.GlobalFlags.User != "" {
+		if isNewRoot && cfg.OnCLI("user") {
 			skf := &SkeemaFile{
-				Dir:  rootDir,
-				User: &cfg.GlobalFlags.User,
+				Dir:    rootDir,
+				Values: map[string]string{"user": cfg.Get("user")},
 			}
 			if err = skf.Write(false); err != nil {
 				fmt.Printf("Unable to write to %s: %s\n", skf.Path(), err)
@@ -101,15 +99,17 @@ func InitCommand(cfg Config) {
 
 	// Write out a .skeema file for the hostDir
 	skf := &SkeemaFile{
-		Dir:  hostDir,
-		Host: &target.Host,
-		Port: &target.Port,
+		Dir: hostDir,
+		Values: map[string]string{
+			"host": cfg.Get("host"),
+			"port": cfg.Get("port"),
+		},
 	}
-	if !separateHostSubdir && cfg.GlobalFlags.User != "" {
-		skf.User = &cfg.GlobalFlags.User
+	if !separateHostSubdir && cfg.OnCLI("user") {
+		skf.Values["user"] = cfg.Get("user")
 	}
 	if !separateSchemaSubdir {
-		skf.Schema = &target.Schema
+		skf.Values["schema"] = cfg.Get("schema")
 		fmt.Println("Skipping schema-level subdir structure; using", hostDir.Path)
 	}
 	if err = skf.Write(false); err != nil {
@@ -118,55 +118,59 @@ func InitCommand(cfg Config) {
 	}
 
 	// Build list of schemas
-	driver := "mysql"
-	instance := tengo.NewInstance(driver, target.DSN())
+	target := cfg.Targets()[0]
 	var schemas []*tengo.Schema
-	if target.Schema != "" {
-		if !instance.HasSchema(target.Schema) {
-			fmt.Printf("Schema %s does not exist in this instance\n", target.Schema)
+	if onlySchema := cfg.Get("schema"); onlySchema != "" {
+		if !target.HasSchema(onlySchema) {
+			fmt.Printf("Schema %s does not exist in this instance\n", onlySchema)
 			os.Exit(1)
 		}
-		schemas = []*tengo.Schema{instance.Schema(target.Schema)}
+		schemas = []*tengo.Schema{target.Schema(onlySchema)}
 	} else {
-		schemas = instance.Schemas()
+		schemas = target.Schemas()
 	}
 
 	// Iterate over the schemas; create a dir with .skeema and *.sql files for each
 	for _, s := range schemas {
-		PopulateSchemaDir(hostDir, s, instance, separateSchemaSubdir)
+		PopulateSchemaDir(s, target.Instance, hostDir, separateSchemaSubdir)
 	}
 }
 
-func PopulateSchemaDir(parentDir *SkeemaDir, s *tengo.Schema, instance *tengo.Instance, writeSkeemaFile bool) {
-	schemaDir := NewSkeemaDir(path.Join(parentDir.Path, s.Name))
-	created, err := schemaDir.CreateIfMissing()
-	if err != nil {
-		fmt.Printf("Unable to use directory %s for schema %s: %s\n", schemaDir.Path, s.Name, err)
-		os.Exit(1)
-	}
-	fmt.Printf("Populating %s...\n", schemaDir.Path)
-	if writeSkeemaFile {
+func PopulateSchemaDir(s *tengo.Schema, instance *tengo.Instance, parentDir *SkeemaDir, makeSubdir bool) {
+	var schemaDir *SkeemaDir
+	var created bool
+	if makeSubdir {
+		schemaDir = NewSkeemaDir(path.Join(parentDir.Path, s.Name))
+		var err error
+		created, err = schemaDir.CreateIfMissing()
+		if err != nil {
+			fmt.Printf("Unable to use directory %s for schema %s: %s\n", schemaDir.Path, s.Name, err)
+			os.Exit(1)
+		}
 		if _, err := schemaDir.SkeemaFile(); err != nil {
 			skf := &SkeemaFile{
 				Dir:    schemaDir,
-				Schema: &s.Name,
+				Values: map[string]string{"schema": s.Name},
 			}
 			if err = skf.Write(false); err != nil {
 				fmt.Printf("Unable to write to %s: %s\n", skf.Path(), err)
 				os.Exit(1)
 			}
 		}
+	} else {
+		schemaDir = parentDir
 	}
 	if !created {
 		if sqlfiles, err := schemaDir.SQLFiles(); err != nil {
 			fmt.Printf("Unable to list files in %s: %s\n", schemaDir.Path, err)
 			os.Exit(1)
 		} else if len(sqlfiles) > 0 {
-			fmt.Printf("%s already contains *.sql files; cannot proceed with init\n", schemaDir.Path)
+			fmt.Printf("%s already contains *.sql files; cannot proceed\n", schemaDir.Path)
 			os.Exit(1)
 		}
 	}
 
+	fmt.Printf("Populating %s...\n", schemaDir.Path)
 	for _, t := range s.Tables() {
 		createStmt, err := instance.ShowCreateTable(s, t)
 		if err != nil {
