@@ -27,11 +27,10 @@ func PullCommand(cfg *Config) {
 }
 
 func pull(cfg *Config, seen map[string]bool) {
-	fmt.Printf("Updating %s...\n", cfg.Dir.Path)
-
 	if cfg.Dir.IsLeaf() {
-		t := cfg.Targets()[0]
+		fmt.Printf("Updating %s...\n", cfg.Dir.Path)
 
+		t := cfg.Targets()[0]
 		to := t.Schema(t.SchemaNames[0])
 		if to == nil {
 			if err := cfg.Dir.Delete(); err != nil {
@@ -142,7 +141,8 @@ func pull(cfg *Config, seen map[string]bool) {
 
 		// Finally, recurse into subdirs, avoiding duplication due to symlinks
 		seen[cfg.Dir.Path] = true
-		for _, subdir := range subdirs {
+		for n := range subdirs {
+			subdir := subdirs[n]
 			if !seen[subdir.Path] {
 				pull(cfg.ChangeDir(&subdir), seen)
 			}

@@ -63,7 +63,8 @@ func diff(cfg *Config, seen map[string]bool) {
 			fmt.Printf("Unable to list subdirs of %s: %s\n", cfg.Dir, err)
 			os.Exit(1)
 		}
-		for _, subdir := range subdirs {
+		for n := range subdirs {
+			subdir := subdirs[n]
 			if !seen[subdir.Path] {
 				diff(cfg.ChangeDir(&subdir), seen)
 			}
