@@ -68,7 +68,8 @@ func NewConfig(commandFlags *pflag.FlagSet, globalFilePaths []string) *Config {
 			}
 			cfg.globalFiles = append(cfg.globalFiles, skf)
 			if err := skf.Read(); err != nil {
-				panic(err)
+				fmt.Printf("Error reading %s: %s\n", skf.Path(), err)
+				os.Exit(1)
 			}
 		}
 	}
@@ -112,7 +113,8 @@ func (cfg *Config) apply() {
 	for _, skf := range cfg.globalFiles {
 		for name, value := range skf.Values {
 			if err := cfg.Set(name, value); err != nil && !skf.IgnoreErrors {
-				panic(err)
+				fmt.Printf("Error reading %s: %s\n", skf.Path(), err)
+				os.Exit(1)
 			}
 		}
 	}
@@ -121,7 +123,8 @@ func (cfg *Config) apply() {
 	for _, skf := range cfg.dirFiles {
 		for name, value := range skf.Values {
 			if err := cfg.Set(name, value); err != nil && !skf.IgnoreErrors {
-				panic(err)
+				fmt.Printf("Error reading %s: %s\n", skf.Path(), err)
+				os.Exit(1)
 			}
 		}
 	}
@@ -129,7 +132,8 @@ func (cfg *Config) apply() {
 	// Apply CLI flags (highest pri)
 	for name, value := range cfg.cliValues {
 		if err := cfg.Set(name, value); err != nil {
-			panic(err)
+			fmt.Printf("Error with command-line flag value --%s=%s: %s\n", name, value, err)
+			os.Exit(1)
 		}
 	}
 
