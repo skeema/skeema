@@ -3,17 +3,20 @@ package tengo
 import (
 	"database/sql"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 )
 
 type Instance struct {
 	DSN            string
 	Driver         string
+	User           string
+	Password       string
+	Host           string
+	Port           int
 	schemas        []*Schema
 	connectionPool map[string]*sqlx.DB
 }
@@ -25,25 +28,40 @@ func BaseDSN(dsn string) string {
 }
 
 func NewInstance(driver, dsn string) *Instance {
-	// Strip DB name from end of DSN, since each schema needs a separate connection pool
-	dsn = BaseDSN(dsn)
+	parsedConfig, err := mysql.ParseDSN(dsn)
+	if err != nil {
+		return nil
+	}
+	port := 0
+	parts := strings.SplitN(parsedConfig.Addr, ":", 2)
+	if len(parts) == 2 {
+		parsedConfig.Addr = parts[0]
+		port, _ = strconv.Atoi(parts[1])
+	}
+
 	return &Instance{
-		DSN:            dsn,
+		DSN:            BaseDSN(dsn),
 		Driver:         driver,
+		User:           parsedConfig.User,
+		Password:       parsedConfig.Passwd,
+		Host:           parsedConfig.Addr,
+		Port:           port,
 		connectionPool: make(map[string]*sqlx.DB),
 	}
 }
 
 // String for an instance returns a "host:port" string
 func (instance Instance) String() string {
-	// Match the host:port from the end of the base DSN, which looks like "(%s:%d)/"
-	reParseDSN := regexp.MustCompile(`\(([^:]+):(\d+)\)/$`)
-	matches := reParseDSN.FindStringSubmatch(strings.ToLower(BaseDSN(instance.DSN)))
-	if matches == nil {
-		return "!parse-failure:???"
+	return fmt.Sprintf("%s:%d", instance.Host, instance.Port)
+}
+
+// HostAndOptionalPort is like String(), but omits the port if default
+func (instance Instance) HostAndOptionalPort() string {
+	if instance.Port == 3306 {
+		return instance.Host
+	} else {
+		return instance.String()
 	}
-	port, _ := strconv.Atoi(matches[2])
-	return fmt.Sprintf("%s:%d", matches[1], port)
 }
 
 func (instance *Instance) Connect(defaultSchema string) *sqlx.DB {
