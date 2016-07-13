@@ -58,7 +58,7 @@ func (c Column) Definition() string {
 		if c.Default.Null {
 			emitDefault = false
 		}
-	} else if emitDefault && c.Default != ColumnDefaultNull {
+	} else if emitDefault && c.Default == ColumnDefaultCurrentTimestamp {
 		nullability = " NULL"
 	}
 	if c.AutoIncrement {
