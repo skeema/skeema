@@ -38,6 +38,7 @@ type Config struct {
 	cliValues   map[string]string
 	globalFiles []*SkeemaFile
 	dirFiles    []*SkeemaFile
+	targets     []Target
 }
 
 func NewConfig(commandFlags *pflag.FlagSet, globalFilePaths []string) *Config {
@@ -90,6 +91,7 @@ func (cfg *Config) ChangeDir(dir *SkeemaDir) *Config {
 
 	var err error
 	cfg.Dir = dir
+	cfg.targets = nil
 	if cfg.dirFiles, err = dir.SkeemaFiles(); err != nil {
 		panic(err)
 	}
@@ -182,6 +184,10 @@ func (cfg Config) GetIntOrDefault(flagName string) int {
 }
 
 func (cfg *Config) Targets() []Target {
+	if cfg.targets != nil {
+		return cfg.targets
+	}
+
 	var userAndPass string
 	if cfg.Get("password") == "" {
 		userAndPass = cfg.Get("user")
@@ -205,7 +211,8 @@ func (cfg *Config) Targets() []Target {
 	}
 
 	// TODO support generating multiple targets if host lookup using service discovery
-	return []Target{target}
+	cfg.targets = []Target{target}
+	return cfg.targets
 }
 
 func (cfg Config) BaseSkeemaDir() *SkeemaDir {

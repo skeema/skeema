@@ -47,7 +47,7 @@ func diff(cfg *Config, seen map[string]bool) {
 					newFrom := &tengo.Schema{Name: schemaName}
 					fmt.Printf("%s;\n", newFrom.CreateStatement())
 				}
-				fmt.Println(diff, "\n")
+				fmt.Printf("%s\n\n", diff)
 			}
 		}
 

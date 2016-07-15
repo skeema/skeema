@@ -38,7 +38,7 @@ func main() {
 				wantHelpFor.Usage()
 				os.Exit(0)
 			} else {
-				fmt.Printf("Unknown command \"%s\"\n\n", wantHelpFor)
+				fmt.Printf("Unknown command \"%s\"\n\n", GlobalFlags.Arg(1))
 				exitCode = 1
 			}
 		}
