@@ -11,7 +11,9 @@ import (
 
 func init() {
 	initFlags := pflag.NewFlagSet("init", pflag.ExitOnError)
-	initFlags.String("alias", "<host>", "Override the directory name to use for a host, or supply explicit blank string to put schema subdirs at the top level")
+	initFlags.String("base-dir", ".", "Base directory to use for storing schemas")
+	initFlags.String("host-dir", "<hostname>", "Override the directory name to use for a host. Or negate with --skip-host-dir to use base-dir directly.")
+	initFlags.String("schema", "", "Only import the one specified schema, and skip creation of schema subdir level.")
 
 	long := `Creates a filesystem representation of the schemas and tables on a db instance.
 For each schema on the instance (or just the single schema specified by
@@ -29,72 +31,68 @@ table in the schema.`
 
 func InitCommand(cfg *Config) {
 	// Figure out base path, and create if missing
-	rootDir := cfg.BaseSkeemaDir()
-	isNewRoot, err := rootDir.CreateIfMissing()
+	baseDir := NewSkeemaDir(cfg.Get("base-dir"))
+	var baseOptionsFile *SkeemaFile
+	wasNewBase, err := baseDir.CreateIfMissing()
 	if err != nil {
 		fmt.Println("Unable to use specified directory:", err)
 		os.Exit(1)
 	}
-	if isNewRoot {
-		fmt.Println("Initializing skeema root dir", rootDir.Path)
+	if cfg.Dir.Path != baseDir.Path {
+		cfg.ChangeDir(baseDir)
+	}
+	if wasNewBase {
+		fmt.Println("Creating and using skeema base dir", baseDir.Path)
 	} else {
-		fmt.Println("Using skeema root dir", rootDir.Path)
+		fmt.Println("Using skeema base dir", baseDir.Path)
+		baseOptionsFile, _ = baseDir.SkeemaFile() // intentionally ignore error here, ok if doesn't exist
 	}
 
-	// Ordinarily, we use a dir structure of: skeema_root/host_or_alias/schema_name/*.sql
-	// However, if the user has configured a particular host or schema in a global config
-	// file (NOT via cli flags), we assume this means a single-db-host environment or
-	// single-schemaname environment, respectively. This means we skip the corresponding
-	// extra level of subdir.
-	separateHostSubdir, separateSchemaSubdir := true, true
-	if cfg.Get("schema") != "" && !cfg.OnCLI("schema") {
-		separateSchemaSubdir = false
-	}
-
-	// Create a subdir for the host (or alias)
-	// alias can be:
-	// * special value "." means use the current dir, instead of making per-host subdirs.
-	// * default of "<host>" means use the hostname (with port if non-3306) for subdir name,
-	//   UNLESS we're doing a single-db-host environment, in which case works like "."
-	// * any other string, meaning use this string as the subdir name instead of basing it
-	//   on the host.
-	alias := cfg.Get("alias")
-	port := cfg.GetIntOrDefault("port")
-	if alias == "." {
-		separateHostSubdir = false
-	} else if alias == "<host>" {
-		if cfg.Get("host") != "127.0.0.1" && !cfg.OnCLI("host") {
-			separateHostSubdir = false
-		} else if port != 3306 {
-			alias = fmt.Sprintf("%s:%d", cfg.Get("host"), port)
+	// Ordinarily, we use a dir structure of: skeema_base/host_or_alias/schema_name/*.sql
+	// However, options are provided to skip use of host dirs and/or schema dirs.
+	hostDirName := cfg.Get("host-dir")
+	onlySchema := cfg.Get("schema")
+	separateHostSubdir := (hostDirName != "0")
+	separateSchemaSubdir := (onlySchema == "")
+	if hostDirName == "<hostname>" {
+		port := cfg.GetIntOrDefault("port")
+		if port != 3306 {
+			hostDirName = fmt.Sprintf("%s:%d", cfg.Get("host"), port)
 		} else {
-			alias = cfg.Get("host")
+			hostDirName = cfg.Get("host")
 		}
 	}
 
 	var hostDir *SkeemaDir
 	if separateHostSubdir {
-		// Since the hostDir and rootDir are different in this case, write out the rootDir's
+		// Since the hostDir and baseDir are different in this case, write out the baseDir's
 		// .skeema file if a user was specified via the command-line
-		if isNewRoot && cfg.OnCLI("user") {
-			skf := &SkeemaFile{
-				Dir:    rootDir,
-				Values: map[string]string{"user": cfg.Get("user")},
+		if cfg.OnCLI("user") {
+			if baseOptionsFile == nil {
+				baseOptionsFile = &SkeemaFile{
+					Dir:    baseDir,
+					Values: map[string]string{"user": cfg.Get("user")},
+				}
+			} else {
+				baseOptionsFile.Values["user"] = cfg.Get("user")
 			}
-			if err = skf.Write(false); err != nil {
-				fmt.Printf("Unable to write to %s: %s\n", skf.Path(), err)
+			if err = baseOptionsFile.Write(true); err != nil {
+				fmt.Printf("Unable to write to %s: %s\n", baseOptionsFile.Path(), err)
 			}
 		}
-		// Now create the hostDir if needed
-		hostDir = NewSkeemaDir(path.Join(rootDir.Path, alias))
-		if _, err := hostDir.CreateIfMissing(); err != nil {
+		// Now create the hostDir
+		hostDir = NewSkeemaDir(path.Join(baseDir.Path, hostDirName))
+		if created, err := hostDir.CreateIfMissing(); err != nil {
 			fmt.Printf("Unable to create host directory %s: %s\n", hostDir.Path, err)
+			os.Exit(1)
+		} else if !created {
+			fmt.Printf("Cannot use host directory %s: already exists\n", hostDir.Path)
 			os.Exit(1)
 		}
 		fmt.Println("Initializing host dir", hostDir.Path)
 	} else {
-		hostDir = rootDir
-		fmt.Println("Skipping host-level subdir structure; using skeema root", hostDir.Path, "directly")
+		hostDir = baseDir
+		fmt.Println("Skipping host-level subdir structure; using skeema base", hostDir.Path, "directly")
 	}
 
 	// Write out a .skeema file for the hostDir
@@ -109,7 +107,7 @@ func InitCommand(cfg *Config) {
 		skf.Values["user"] = cfg.Get("user")
 	}
 	if !separateSchemaSubdir {
-		skf.Values["schema"] = cfg.Get("schema")
+		skf.Values["schema"] = onlySchema
 		fmt.Println("Skipping schema-level subdir structure; using", hostDir.Path)
 	}
 	if err = skf.Write(false); err != nil {
@@ -120,9 +118,9 @@ func InitCommand(cfg *Config) {
 	// Build list of schemas
 	target := cfg.Targets()[0]
 	var schemas []*tengo.Schema
-	if onlySchema := cfg.Get("schema"); onlySchema != "" {
+	if onlySchema != "" {
 		if !target.HasSchema(onlySchema) {
-			fmt.Printf("Schema %s does not exist in this instance\n", onlySchema)
+			fmt.Printf("Schema %s does not exist on instance %s\n", onlySchema, target.Instance)
 			os.Exit(1)
 		}
 		schemas = []*tengo.Schema{target.Schema(onlySchema)}

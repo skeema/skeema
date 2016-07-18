@@ -16,13 +16,18 @@ var GlobalFlags *pflag.FlagSet
 func init() {
 	GlobalFlags = pflag.NewFlagSet("skeema", pflag.ExitOnError)
 	GlobalFlags.SetInterspersed(false)
-	GlobalFlags.String("dir", ".", "Schema file directory to use for this operation")
 	GlobalFlags.StringP("host", "h", "127.0.0.1", "Database hostname or IP address")
 	GlobalFlags.IntP("port", "P", 3306, "Port to use for database host")
 	GlobalFlags.StringP("user", "u", "root", "Username to connect to database host")
 	GlobalFlags.StringP("password", "p", "", "Password for database user. Not recommended for use on CLI.")
 	GlobalFlags.String("schema", "", "Database schema name")
 	GlobalFlags.Bool("help", false, "Display help for a command")
+
+	// schema is hidden because it is not ordinarily provided on the command-line,
+	// only in option files for dirs. Commands which specifically offer it on the
+	// CLI (such as import) explicitly define it, which overrides the global
+	// version anyway.
+	_ = GlobalFlags.MarkHidden("schema")
 }
 
 func CommandName() string {
@@ -51,7 +56,7 @@ func NewConfig(commandFlags *pflag.FlagSet, globalFilePaths []string) *Config {
 	}
 
 	cfg.Parse(os.Args[1:])
-	cfg.Dir = NewSkeemaDir(cfg.Get("dir"))
+	cfg.Dir = NewSkeemaDir(".")
 	cfg.Visit(func(f *pflag.Flag) {
 		if f.Changed {
 			cfg.cliValues[f.Name] = f.Value.String()
@@ -213,10 +218,6 @@ func (cfg *Config) Targets() []Target {
 	// TODO support generating multiple targets if host lookup using service discovery
 	cfg.targets = []Target{target}
 	return cfg.targets
-}
-
-func (cfg Config) BaseSkeemaDir() *SkeemaDir {
-	return NewSkeemaDir(cfg.Get("dir"))
 }
 
 // PopulateTemporarySchema creates all tables from *.sql files in the directory
