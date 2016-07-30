@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/skeema/tengo"
 )
@@ -13,24 +12,24 @@ instance. Use this command when changes have been applied to the database
 without using skeema, and the filesystem representation needs to be updated to
 reflect those changes.`
 
-	Commands["push"] = Command{
+	Commands["push"] = &Command{
 		Name:    "push",
 		Short:   "Alter tables on DBs to reflect the filesystem representation",
 		Long:    long,
-		Flags:   nil,
+		Options: nil,
 		Handler: PushCommand,
 	}
 }
 
-func PushCommand(cfg *Config) {
-	push(cfg, make(map[string]bool))
+func PushCommand(cfg *Config) int {
+	return push(cfg, make(map[string]bool))
 }
 
-func push(cfg *Config, seen map[string]bool) {
+func push(cfg *Config, seen map[string]bool) int {
 	if cfg.Dir.IsLeaf() {
 		if err := cfg.PopulateTemporarySchema(); err != nil {
 			fmt.Printf("Unable to populate temporary schema: %s\n", err)
-			os.Exit(1)
+			return 1
 		}
 
 		for _, t := range cfg.Targets() {
@@ -45,7 +44,7 @@ func push(cfg *Config, seen map[string]bool) {
 					from, err = t.CreateSchema(schemaName)
 					if err != nil {
 						fmt.Printf("Error creating schema %s on %s: %s\n", schemaName, t.Instance, err)
-						os.Exit(1)
+						return 1
 					}
 					fmt.Printf("%s;\n", from.CreateStatement())
 				} else if len(diff.TableDiffs) == 0 {
@@ -66,7 +65,7 @@ func push(cfg *Config, seen map[string]bool) {
 
 		if err := cfg.DropTemporarySchema(); err != nil {
 			fmt.Printf("Unable to clean up temporary schema: %s\n", err)
-			os.Exit(1)
+			return 1
 		}
 
 	} else {
@@ -75,15 +74,20 @@ func push(cfg *Config, seen map[string]bool) {
 		subdirs, err := cfg.Dir.Subdirs()
 		if err != nil {
 			fmt.Printf("Unable to list subdirs of %s: %s\n", cfg.Dir, err)
-			os.Exit(1)
+			return 1
 		}
 		for n := range subdirs {
 			subdir := subdirs[n]
 			if !seen[subdir.Path] {
-				push(cfg.ChangeDir(&subdir), seen)
+				ret := push(cfg.ChangeDir(&subdir), seen)
+				if ret != 0 {
+					return ret
+				}
 			}
 		}
 	}
 
 	// TODO: also handle schemas that exist on the db but NOT the fs, here AND in diff!
+
+	return 0
 }

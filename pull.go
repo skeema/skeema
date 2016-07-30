@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/skeema/tengo"
 )
@@ -13,20 +12,20 @@ instance. Use this command when changes have been applied to the database
 without using skeema, and the filesystem representation needs to be updated to
 reflect those changes.`
 
-	Commands["pull"] = Command{
+	Commands["pull"] = &Command{
 		Name:    "pull",
 		Short:   "Update the filesystem representation of schemas and tables",
 		Long:    long,
-		Flags:   nil,
+		Options: nil,
 		Handler: PullCommand,
 	}
 }
 
-func PullCommand(cfg *Config) {
-	pull(cfg, make(map[string]bool))
+func PullCommand(cfg *Config) int {
+	return pull(cfg, make(map[string]bool))
 }
 
-func pull(cfg *Config, seen map[string]bool) {
+func pull(cfg *Config, seen map[string]bool) int {
 	if cfg.Dir.IsLeaf() {
 		fmt.Printf("Updating %s...\n", cfg.Dir.Path)
 
@@ -35,15 +34,15 @@ func pull(cfg *Config, seen map[string]bool) {
 		if to == nil {
 			if err := cfg.Dir.Delete(); err != nil {
 				fmt.Printf("Unable to delete directory %s: %s\n", cfg.Dir, err)
-				os.Exit(1)
+				return 1
 			}
 			fmt.Printf("    Deleted directory %s -- schema no longer exists\n", cfg.Dir)
-			return
+			return 0
 		}
 
 		if err := cfg.PopulateTemporarySchema(); err != nil {
 			fmt.Printf("Unable to populate temporary schema: %s\n", err)
-			os.Exit(1)
+			return 1
 		}
 
 		from := t.TemporarySchema()
@@ -64,7 +63,7 @@ func pull(cfg *Config, seen map[string]bool) {
 				}
 				if length, err := sf.Write(); err != nil {
 					fmt.Printf("Unable to write to %s: %s\n", sf.Path(), err)
-					os.Exit(1)
+					return 1
 				} else {
 					fmt.Printf("    Wrote %s (%d bytes) -- new table\n", sf.Path(), length)
 				}
@@ -76,7 +75,7 @@ func pull(cfg *Config, seen map[string]bool) {
 				}
 				if err := sf.Delete(); err != nil {
 					fmt.Printf("Unable to delete %s: %s\n", sf.Path(), err)
-					os.Exit(1)
+					return 1
 				}
 				fmt.Printf("    Deleted %s -- table no longer exists\n", sf.Path())
 			case tengo.AlterTable:
@@ -92,7 +91,7 @@ func pull(cfg *Config, seen map[string]bool) {
 				}
 				if length, err := sf.Write(); err != nil {
 					fmt.Printf("Unable to write to %s: %s\n", sf.Path(), err)
-					os.Exit(1)
+					return 1
 				} else {
 					fmt.Printf("    Wrote %s (%d bytes) -- updated file to reflect table alterations\n", sf.Path(), length)
 				}
@@ -108,14 +107,14 @@ func pull(cfg *Config, seen map[string]bool) {
 
 		if err := cfg.DropTemporarySchema(); err != nil {
 			fmt.Printf("Unable to clean up temporary schema: %s\n", err)
-			os.Exit(1)
+			return 1
 		}
 
 	} else {
 		subdirs, err := cfg.Dir.Subdirs()
 		if err != nil {
 			fmt.Printf("Unable to list subdirs of %s: %s\n", cfg.Dir, err)
-			os.Exit(1)
+			return 1
 		}
 
 		// If this dir's subdirs represent individual schemas, iterate over them
@@ -125,7 +124,7 @@ func pull(cfg *Config, seen map[string]bool) {
 		if cfg.Dir.HasLeafSubdirs() {
 			seenSchema := make(map[string]bool, len(subdirs))
 			for _, subdir := range subdirs {
-				skf, err := subdir.SkeemaFile()
+				skf, err := subdir.SkeemaFile(cfg)
 				if err == nil && skf.HasField("schema") {
 					seenSchema[skf.Values["schema"]] = true
 				}
@@ -134,7 +133,10 @@ func pull(cfg *Config, seen map[string]bool) {
 			for _, schema := range t.Schemas() {
 				if !seenSchema[schema.Name] {
 					// use same logic from init command
-					PopulateSchemaDir(schema, t.Instance, cfg.Dir, true)
+					ret := PopulateSchemaDir(schema, t.Instance, cfg.Dir, true)
+					if ret != 0 {
+						return ret
+					}
 				}
 			}
 		}
@@ -144,8 +146,13 @@ func pull(cfg *Config, seen map[string]bool) {
 		for n := range subdirs {
 			subdir := subdirs[n]
 			if !seen[subdir.Path] {
-				pull(cfg.ChangeDir(&subdir), seen)
+				ret := pull(cfg.ChangeDir(&subdir), seen)
+				if ret != 0 {
+					return ret
+				}
 			}
 		}
 	}
+
+	return 0
 }

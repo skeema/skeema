@@ -56,10 +56,14 @@ func (sd SkeemaDir) HasFile(name string) bool {
 	return (err == nil)
 }
 
+func (sd SkeemaDir) HasOptionsFile() bool {
+	return sd.HasFile(".skeema")
+}
+
 // IsLeaf returns true if this dir represents a specific schema, or false otherwise.
 func (sd SkeemaDir) IsLeaf() bool {
 	// If the .skeema file contains a schema, this dir is a leaf
-	if skf, err := sd.SkeemaFile(); err == nil && skf.HasField("schema") {
+	if skf, err := sd.SkeemaFile(nil); err == nil && skf.HasField("schema") {
 		return true
 	}
 
@@ -127,12 +131,12 @@ func (sd *SkeemaDir) SQLFiles() ([]*SQLFile, error) {
 }
 
 // SkeemaFile returns a pointer to a SkeemaFile for this directory.
-func (sd *SkeemaDir) SkeemaFile() (*SkeemaFile, error) {
+func (sd *SkeemaDir) SkeemaFile(cfg *Config) (*SkeemaFile, error) {
 	skf := &SkeemaFile{
 		Dir:      sd,
 		FileName: ".skeema",
 	}
-	if err := skf.Read(); err != nil {
+	if err := skf.Read(cfg); err != nil {
 		return nil, err
 	}
 	return skf, nil
@@ -144,7 +148,7 @@ func (sd *SkeemaDir) SkeemaFile() (*SkeemaFile, error) {
 // directory, or the root of the filesystem. The result is returned in an order
 // such that the top-level (closest-to-root) parent dir's SkeemaFile is returned
 // first and this SkeemaDir's SkeemaFile last.
-func (sd SkeemaDir) SkeemaFiles() (skeemaFiles []*SkeemaFile, errReturn error) {
+func (sd SkeemaDir) SkeemaFiles(cfg *Config) (skeemaFiles []*SkeemaFile, errReturn error) {
 	home := filepath.Clean(os.Getenv("HOME"))
 
 	// we know the first character will be a /, so discard the first split result
@@ -171,7 +175,7 @@ func (sd SkeemaDir) SkeemaFiles() (skeemaFiles []*SkeemaFile, errReturn error) {
 				base = n
 			} else if fi.Name() == ".skeema" {
 				thisSkeemaDir := NewSkeemaDir(curPath)
-				skf, readErr := thisSkeemaDir.SkeemaFile()
+				skf, readErr := thisSkeemaDir.SkeemaFile(cfg)
 				if readErr != nil {
 					errReturn = readErr
 				} else {

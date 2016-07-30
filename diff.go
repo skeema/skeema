@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/skeema/tengo"
 )
@@ -13,24 +12,24 @@ filesystem representation of them. The output is a series of DDL commands that,
 if run on the instance, would cause the instances' schemas to now match the
 ones in the filesystem.`
 
-	Commands["diff"] = Command{
+	Commands["diff"] = &Command{
 		Name:    "diff",
 		Short:   "Compare a DB instance's schemas and tables to the filesystem",
 		Long:    long,
-		Flags:   nil,
+		Options: nil,
 		Handler: DiffCommand,
 	}
 }
 
-func DiffCommand(cfg *Config) {
-	diff(cfg, make(map[string]bool))
+func DiffCommand(cfg *Config) int {
+	return diff(cfg, make(map[string]bool))
 }
 
-func diff(cfg *Config, seen map[string]bool) {
+func diff(cfg *Config, seen map[string]bool) int {
 	if cfg.Dir.IsLeaf() {
 		if err := cfg.PopulateTemporarySchema(); err != nil {
 			fmt.Printf("Unable to populate temporary schema: %s\n", err)
-			os.Exit(1)
+			return 1
 		}
 
 		for _, t := range cfg.Targets() {
@@ -53,7 +52,7 @@ func diff(cfg *Config, seen map[string]bool) {
 
 		if err := cfg.DropTemporarySchema(); err != nil {
 			fmt.Printf("Unable to clean up temporary schema: %s\n", err)
-			os.Exit(1)
+			return 1
 		}
 	} else {
 		// Recurse into subdirs, avoiding duplication due to symlinks
@@ -61,13 +60,18 @@ func diff(cfg *Config, seen map[string]bool) {
 		subdirs, err := cfg.Dir.Subdirs()
 		if err != nil {
 			fmt.Printf("Unable to list subdirs of %s: %s\n", cfg.Dir, err)
-			os.Exit(1)
+			return 1
 		}
 		for n := range subdirs {
 			subdir := subdirs[n]
 			if !seen[subdir.Path] {
-				diff(cfg.ChangeDir(&subdir), seen)
+				ret := diff(cfg.ChangeDir(&subdir), seen)
+				if ret != 0 {
+					return ret
+				}
 			}
 		}
 	}
+
+	return 0
 }

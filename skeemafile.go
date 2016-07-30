@@ -58,8 +58,10 @@ func (skf *SkeemaFile) Write(overwrite bool) error {
 	return err
 }
 
+// Read loads the contents of the option file and stores them in a map. If a
+// non-nil cfg is supplied, the options will be validated as well.
 // TODO: all handling for git branches
-func (skf *SkeemaFile) Read() error {
+func (skf *SkeemaFile) Read(cfg *Config) error {
 	file, err := os.Open(skf.Path())
 	if err != nil {
 		return err
@@ -79,56 +81,32 @@ func (skf *SkeemaFile) Read() error {
 			// TODO: handle sections
 			continue
 		}
-		// TODO: re-implement this as a single-pass loop which
-		// also handles quoted values correctly
 		tokens := strings.SplitN(line, "#", 2)
-		tokens = strings.SplitN(line, "=", 2)
-		key := strings.TrimFunc(tokens[0], unicode.IsSpace)
-		var value string
-		if key == "" {
-			continue
-		}
-		key = strings.ToLower(key)
-		key = strings.Replace(key, "-", "_", -1)
-		if strings.HasPrefix(key, "loose_") {
-			key = key[6:]
-		}
+		key, value, loose := NormalizeOptionToken(tokens[0])
 
-		if len(tokens) < 2 {
-			value = "1"
-		} else {
-			value = strings.TrimFunc(tokens[1], unicode.IsSpace)
-			switch strings.ToLower(value) {
-			case "off", "false":
-				value = "0"
-			case "on", "true":
-				value = "1"
+		if cfg != nil {
+			opt := cfg.FindOption(key)
+			if opt == nil {
+				if loose || skf.IgnoreErrors {
+					continue
+				} else {
+					return OptionNotDefinedError{key}
+				}
 			}
-		}
-
-		var negated bool
-		if strings.HasPrefix(key, "skip_") {
-			key = key[5:]
-			negated = true
-		} else if strings.HasPrefix(key, "disable_") {
-			key = key[8:]
-			negated = true
-		} else if strings.HasPrefix(key, "enable_") {
-			key = key[7:]
-		}
-		if negated {
-			if value == "0" {
-				value = "1"
-			} else {
-				value = "0"
+			if value == "" {
+				if opt.RequireValue {
+					return OptionMissingValueError{opt.Name}
+				} else if opt.Type == OptionTypeBool {
+					// Option without value indicates option is being enabled if boolean
+					value = "1"
+				}
 			}
 		}
 
 		skf.Values[key] = value
 	}
 
-	err = scanner.Err()
-	return err
+	return scanner.Err()
 }
 
 // TODO branch support
@@ -137,7 +115,7 @@ func (skf *SkeemaFile) HasField(name string) bool {
 		return false
 	}
 	if skf.Values == nil {
-		err := skf.Read()
+		err := skf.Read(nil)
 		if err != nil {
 			return false
 		}

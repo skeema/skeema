@@ -1,68 +1,229 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"os"
 	"path"
 	"strconv"
 	"strings"
 
 	"github.com/skeema/tengo"
-	"github.com/spf13/pflag"
 )
 
-var GlobalFlags *pflag.FlagSet
-
-func init() {
-	GlobalFlags = pflag.NewFlagSet("skeema", pflag.ExitOnError)
-	GlobalFlags.SetInterspersed(false)
-	GlobalFlags.StringP("host", "h", "127.0.0.1", "Database hostname or IP address")
-	GlobalFlags.IntP("port", "P", 3306, "Port to use for database host")
-	GlobalFlags.StringP("user", "u", "root", "Username to connect to database host")
-	GlobalFlags.StringP("password", "p", "", "Password for database user. Not recommended for use on CLI.")
-	GlobalFlags.String("schema", "", "Database schema name")
-	GlobalFlags.Bool("help", false, "Display help for a command")
-
-	// schema is hidden because it is not ordinarily provided on the command-line,
-	// only in option files for dirs. Commands which specifically offer it on the
-	// CLI (such as import) explicitly define it, which overrides the global
-	// version anyway.
-	_ = GlobalFlags.MarkHidden("schema")
-}
-
-func CommandName() string {
-	if !GlobalFlags.Parsed() {
-		GlobalFlags.Parse(os.Args[1:])
-	}
-	return GlobalFlags.Arg(0)
-}
-
 type Config struct {
-	pflag.FlagSet
-	Dir         *SkeemaDir
-	cliValues   map[string]string
-	globalFiles []*SkeemaFile
-	dirFiles    []*SkeemaFile
-	targets     []Target
+	Dir                    *SkeemaDir
+	Cmd                    *Command
+	Args                   []string
+	globalOptions          map[string]*Option
+	cliOptionValues        map[string]string
+	globalFileOptionValues map[string]string
+	dirFileOptionValues    map[string]string
+	targets                []Target
 }
 
-func NewConfig(commandFlags *pflag.FlagSet, globalFilePaths []string) *Config {
-	commandFlags.AddFlagSet(GlobalFlags)
+func NewConfig(cliArgs []string, globalFilePaths []string) *Config {
+	cfg := new(Config)
+	cfg.globalOptions = GlobalOptions()
+	cfg.Dir = NewSkeemaDir(".")
 
-	cfg := &Config{
-		FlagSet:     *commandFlags,
-		cliValues:   make(map[string]string),
-		globalFiles: make([]*SkeemaFile, 0, len(globalFilePaths)),
+	// Parse CLI to set cfg.Cmd, cfg.Args, cfg.cliOptionValues
+	if err := cfg.parseCLI(cliArgs); err != nil {
+		fmt.Println(err.Error())
+		return nil
 	}
 
-	cfg.Parse(os.Args[1:])
-	cfg.Dir = NewSkeemaDir(".")
-	cfg.Visit(func(f *pflag.Flag) {
-		if f.Changed {
-			cfg.cliValues[f.Name] = f.Value.String()
-		}
-	})
+	// Parse global option files to set cfg.globalFileOptionValues
+	if err := cfg.parseGlobalFiles(globalFilePaths); err != nil {
+		fmt.Println(err.Error())
+		return nil
+	}
 
+	// Parse dir option files to set cfg.dirFileOptionValues
+	if err := cfg.parseDirFiles(); err != nil {
+		fmt.Println(err.Error())
+		return nil
+	}
+
+	// Remaining fields stay at zero/nil, get set lazily when needed
+	return cfg
+}
+
+func (cfg *Config) ChangeDir(dir *SkeemaDir) *Config {
+	if dir.Path == cfg.Dir.Path {
+		return cfg
+	}
+
+	cfg.Dir = dir
+	cfg.targets = nil
+
+	if err := cfg.parseDirFiles(); err != nil {
+		fmt.Println(err.Error())
+		cfg.Dir = nil // TODO: better way to expose errors in this call
+		return nil
+	}
+
+	return cfg
+}
+
+func (cfg *Config) HandleCommand() int {
+	return cfg.Cmd.Handler(cfg)
+}
+
+// parseCLI parses the command-line. Sets cfg.Cmd, cfg.Args, cfg.cliOptionValues.
+func (cfg *Config) parseCLI(args []string) error {
+	cfg.cliOptionValues = make(map[string]string)
+
+	// Index the shorthands of global options
+	shortOptionIndex := make(map[rune]*Option, len(cfg.globalOptions))
+	for name, opt := range cfg.globalOptions {
+		if opt.Shorthand != 0 {
+			shortOptionIndex[opt.Shorthand] = cfg.globalOptions[name]
+		}
+	}
+
+	// Iterate over the cli args and process each in turn
+	for len(args) > 0 {
+		arg := args[0]
+		args = args[1:]
+		switch {
+		// long option
+		case len(arg) > 1 && arg[0:2] == "--":
+			if err := cfg.parseLongArg(arg[2:], &args); err != nil {
+				return err
+			}
+
+		// short option(s) -- multiple bools may be combined into one
+		case arg[0] == '-':
+			if err := cfg.parseShortArgs(arg[1:], &args, shortOptionIndex); err != nil {
+				return err
+			}
+
+		// First arg is command name
+		case cfg.Cmd == nil:
+			cmd, validCommand := Commands[arg]
+			if !validCommand {
+				return fmt.Errorf("Unknown command \"%s\"", arg)
+			}
+			cfg.Cmd = cmd
+			for name, opt := range cmd.Options {
+				if opt.Shorthand != 0 {
+					shortOptionIndex[opt.Shorthand] = cmd.Options[name]
+				}
+			}
+
+		// superfluous command arg
+		case len(cfg.Args) >= cfg.Cmd.MaxArgs:
+			return fmt.Errorf("Extra command-line arg \"%s\" supplied; command %s takes a max of %d args", arg, cfg.Cmd.Name, cfg.Cmd.MaxArgs)
+
+		// command arg
+		default:
+			cfg.Args = append(cfg.Args, arg)
+		}
+	}
+
+	// Panic if no help command defined -- indicative of programmer error
+	if Commands["help"] == nil {
+		panic(errors.New("No help command defined"))
+	}
+
+	// Handle --help supplied as an option instead of as a command
+	// (Note that format "skeema help command" is already parsed properly into help command)
+	if cfg.OnCLI("help") {
+		var forCommandName string
+		if cfg.Cmd != nil { // "skeema somecommand --help"
+			forCommandName = cfg.Cmd.Name
+		} else if value := cfg.Get("help"); value != "" { // "skeema --help command"
+			forCommandName = value
+		}
+		cfg.Cmd = Commands["help"]
+		cfg.Args = []string{forCommandName}
+	}
+
+	// If no command supplied, redirect to help command
+	if cfg.Cmd == nil {
+		cfg.Cmd = Commands["help"]
+		cfg.Args = []string{""}
+	}
+
+	if len(cfg.Args) < cfg.Cmd.MinArgs {
+		return fmt.Errorf("Too few command-line args; command %s requires at least %d args", cfg.Cmd.Name, cfg.Cmd.MinArgs)
+	}
+
+	return nil
+}
+
+func (cfg *Config) parseLongArg(arg string, args *[]string) error {
+	key, value, loose := NormalizeOptionToken(arg)
+	opt := cfg.FindOption(key)
+	if opt == nil {
+		if loose {
+			return nil
+		} else {
+			return OptionNotDefinedError{key}
+		}
+	}
+
+	if value == "" {
+		if opt.RequireValue {
+			// Value required: allow format "--foo bar" in addition to "--foo=bar"
+			if len(*args) == 0 || (*args)[0][0] == '-' {
+				return OptionMissingValueError{opt.Name}
+			}
+			value = (*args)[0]
+			*args = (*args)[1:]
+		} else if opt.Type == OptionTypeBool {
+			// Option without value indicates option is being enabled if boolean
+			value = "1"
+		}
+	}
+
+	cfg.cliOptionValues[opt.Name] = value
+	if opt.AfterParse != nil {
+		opt.AfterParse(cfg, cfg.cliOptionValues)
+	}
+	return nil
+}
+
+func (cfg *Config) parseShortArgs(arg string, args *[]string, shortOptionIndex map[rune]*Option) error {
+	runeList := []rune(arg)
+	var done bool
+	for len(runeList) > 0 && !done {
+		short := runeList[0]
+		runeList = runeList[1:]
+		var value string
+		opt, found := shortOptionIndex[short]
+		if !found {
+			return OptionNotDefinedError{string(short)}
+		}
+
+		// Consume value. Depending on the option, value may be supplied as chars immediately following
+		// this one, or after a space as next arg on CLI.
+		if len(runeList) > 0 && opt.Type != OptionTypeBool { // "-xvalue", only supported for non-bools
+			value = string(runeList)
+			done = true
+		} else if opt.RequireValue { // "-x value", only supported if opt requires a value
+			if len(*args) > 0 && (*args)[0][0] != '-' {
+				value = (*args)[0]
+				*args = (*args)[1:]
+			} else {
+				return OptionMissingValueError{opt.Name}
+			}
+		} else { // "-xyz", parse x as a valueless option and loop again to parse y (and possibly z) as separate shorthand options
+			if opt.Type == OptionTypeBool {
+				value = "1" // booleans handle lack of value as being true, whereas other types keep it as empty string
+			}
+		}
+
+		cfg.cliOptionValues[opt.Name] = value
+		if opt.AfterParse != nil {
+			opt.AfterParse(cfg, cfg.cliOptionValues)
+		}
+	}
+	return nil
+}
+
+func (cfg *Config) parseGlobalFiles(globalFilePaths []string) error {
+	cfg.globalFileOptionValues = make(map[string]string)
 	for _, filepath := range globalFilePaths {
 		dir := NewSkeemaDir(path.Dir(filepath))
 		base := path.Base(filepath)
@@ -72,118 +233,146 @@ func NewConfig(commandFlags *pflag.FlagSet, globalFilePaths []string) *Config {
 				FileName:     base,
 				IgnoreErrors: !strings.Contains(base, "skeema"),
 			}
-			cfg.globalFiles = append(cfg.globalFiles, skf)
-			if err := skf.Read(); err != nil {
-				fmt.Printf("Error reading %s: %s\n", skf.Path(), err)
-				os.Exit(1)
+			if err := skf.Read(cfg); err != nil {
+				return err
+			}
+			for key, value := range skf.Values {
+				cfg.globalFileOptionValues[key] = value
+				opt := cfg.FindOption(key)
+				if opt.AfterParse != nil {
+					opt.AfterParse(cfg, cfg.globalFileOptionValues)
+				}
 			}
 		}
 	}
-
-	var err error
-	if cfg.dirFiles, err = cfg.Dir.SkeemaFiles(); err != nil {
-		panic(err)
-	}
-
-	cfg.apply()
-	return cfg
+	return nil
 }
 
-func (cfg *Config) ChangeDir(dir *SkeemaDir) *Config {
-	if dir.Path == cfg.Dir.Path {
-		return cfg
+func (cfg *Config) parseDirFiles() error {
+	cfg.dirFileOptionValues = make(map[string]string)
+	dirFiles, err := cfg.Dir.SkeemaFiles(cfg)
+	if err != nil {
+		return err
 	}
-
-	var err error
-	cfg.Dir = dir
-	cfg.targets = nil
-	if cfg.dirFiles, err = dir.SkeemaFiles(); err != nil {
-		panic(err)
+	for _, dirFile := range dirFiles {
+		for key, value := range dirFile.Values {
+			cfg.dirFileOptionValues[key] = value
+			opt := cfg.FindOption(key)
+			if opt.AfterParse != nil {
+				opt.AfterParse(cfg, cfg.globalFileOptionValues)
+			}
+		}
 	}
-
-	cfg.apply()
-	return cfg
+	return nil
 }
 
-func (cfg *Config) apply() {
-	// First reset all values to defaults
-	cfg.Visit(func(f *pflag.Flag) {
-		if f.Changed {
-			if err := cfg.Set(f.Name, f.DefValue); err != nil {
-				panic(err)
-			}
-			f.Changed = false
-		}
-	})
-
-	// Apply global config files (lowest pri)
-	for _, skf := range cfg.globalFiles {
-		for name, value := range skf.Values {
-			if err := cfg.Set(name, value); err != nil && !skf.IgnoreErrors {
-				fmt.Printf("Error reading %s: %s\n", skf.Path(), err)
-				os.Exit(1)
-			}
+func (cfg *Config) FindOption(name string) *Option {
+	name = NormalizeOptionName(name)
+	if cfg.Cmd != nil {
+		if opt, found := cfg.Cmd.Options[name]; found {
+			return opt
 		}
 	}
-
-	// Apply dir-specific config files
-	for _, skf := range cfg.dirFiles {
-		for name, value := range skf.Values {
-			if err := cfg.Set(name, value); err != nil && !skf.IgnoreErrors {
-				fmt.Printf("Error reading %s: %s\n", skf.Path(), err)
-				os.Exit(1)
-			}
-		}
+	if opt, found := cfg.globalOptions[name]; found {
+		return opt
 	}
-
-	// Apply CLI flags (highest pri)
-	for name, value := range cfg.cliValues {
-		if err := cfg.Set(name, value); err != nil {
-			fmt.Printf("Error with command-line flag value --%s=%s: %s\n", name, value, err)
-			os.Exit(1)
-		}
-	}
-
-	// Special handling for a few flags
-	// Handle "host:port" format properly
-	if cfg.Changed("host") {
-		parts := strings.SplitN(cfg.Get("host"), ":", 2)
-		if len(parts) > 1 {
-			cfg.Set("host", parts[0])
-			if port, _ := strconv.Atoi(parts[1]); port != 0 && !cfg.Changed("port") {
-				cfg.Set("port", strconv.Itoa(port))
-			}
-		}
-	}
+	return nil
 }
 
-func (cfg Config) OnCLI(flagName string) bool {
-	_, found := cfg.cliValues[flagName]
+// OptionExists returns true if an option has been defined with the given name,
+// false otherwise. Note that this is checking EXISTENCE of defined options,
+// NOT whether the user has set a given option; use Changed() for the latter.
+//
+// If checkOtherCommands==false, only checks global options and the current
+// command's options. This is appropriate for use when parsing the CLI.
+//
+// If checkOtherCommands==true, checks global options and ALL commands'
+// options; this is appropriate for use when reading options files.
+func (cfg *Config) OptionExists(name string, checkOtherCommands bool) bool {
+	name = NormalizeOptionName(name)
+	if _, found := cfg.globalOptions[name]; found {
+		return true
+	}
+	if checkOtherCommands {
+		for _, cmd := range Commands {
+			if _, found := cmd.Options[name]; found {
+				return true
+			}
+		}
+	} else if cfg.Cmd != nil {
+		if _, found := cfg.Cmd.Options[name]; found {
+			return true
+		}
+	}
+	return false
+}
+
+// Changed returns true if the specified option name has been set somewhere (on
+// the CLI, in a dir-specific option file, or in a global option file)
+func (cfg *Config) Changed(name string) bool {
+	if _, found := cfg.cliOptionValues[name]; found {
+		return true
+	}
+	if _, found := cfg.dirFileOptionValues[name]; found {
+		return true
+	}
+	if _, found := cfg.globalFileOptionValues[name]; found {
+		return true
+	}
+	return false
+}
+
+// OnCLI returns true if the specified option name has been set on the CLI
+func (cfg *Config) OnCLI(name string) bool {
+	_, found := cfg.cliOptionValues[name]
 	return found
 }
 
-// Returns a flag's value as a string, regardless of whether it is a string
-// flag. If the flag is not set, its default value will be returned. Panics if
-// the flag does not exist.
-func (cfg Config) Get(flagName string) string {
-	flag := cfg.Lookup(flagName)
-	if flag == nil {
-		panic(fmt.Errorf("No flag \"%s\" defined!", flagName))
+// Get returns an option's value as a string. If the option is not set, its
+// default value will be returned. Panics if the option does not exist, since
+// this is indicative of programmer error, not runtime error.
+func (cfg *Config) Get(name string) string {
+	if value, found := cfg.cliOptionValues[name]; found {
+		return value
 	}
-	return flag.Value.String()
+	if value, found := cfg.dirFileOptionValues[name]; found {
+		return value
+	}
+	if value, found := cfg.globalFileOptionValues[name]; found {
+		return value
+	}
+
+	if option, exists := cfg.Cmd.Options[name]; exists {
+		return option.Default
+	}
+	if option, exists := cfg.globalOptions[name]; exists {
+		return option.Default
+	}
+	panic(fmt.Errorf("No option \"%s\" defined!", name))
 }
 
-// Returns a flag's value as an int, regardless of whether it is an int flag.
-// Returns the flag's default value (converted to int) if the value cannot be
-// converted to int. Panics if the flag does not exist.
-func (cfg Config) GetIntOrDefault(flagName string) int {
-	flag := cfg.Lookup(flagName)
-	if flag == nil {
-		panic(fmt.Errorf("No flag \"%s\" defined!", flagName))
+// GetBool returns an option's value as a bool. If the option is not set, its
+// default value will be returned. Panics if the flag does not exist.
+func (cfg *Config) GetBool(name string) bool {
+	switch strings.ToLower(cfg.Get(name)) {
+	case "false", "off", "0", "":
+		return false
+	default:
+		return true
 	}
-	value, err := strconv.Atoi(flag.Value.String())
+}
+
+// GetInt returns an option's value as an int. If an error occurs in parsing
+// the value as an int, it is returned as the second return value.
+func (cfg *Config) GetInt(name string) (int, error) {
+	return strconv.Atoi(cfg.Get(name))
+}
+
+// MustGetInt is like GetInt, but panics if a parsing error occurs.
+func (cfg *Config) MustGetInt(name string) int {
+	value, err := cfg.GetInt(name)
 	if err != nil {
-		value, _ = strconv.Atoi(flag.DefValue)
+		panic(err)
 	}
 	return value
 }
@@ -194,12 +383,12 @@ func (cfg *Config) Targets() []Target {
 	}
 
 	var userAndPass string
-	if cfg.Get("password") == "" {
+	if cfg.Get("password") == cfg.FindOption("password").Default {
 		userAndPass = cfg.Get("user")
 	} else {
 		userAndPass = fmt.Sprintf("%s:%s", cfg.Get("user"), cfg.Get("password"))
 	}
-	dsn := fmt.Sprintf("%s@tcp(%s:%d)/", userAndPass, cfg.Get("host"), cfg.GetIntOrDefault("port"))
+	dsn := fmt.Sprintf("%s@tcp(%s:%d)/", userAndPass, cfg.Get("host"), cfg.MustGetInt("port"))
 
 	// TODO support generating multiple schemas if schema name using wildcards or service discovery
 	var schemas []string
