@@ -117,11 +117,12 @@ func pull(cfg *Config, seen map[string]bool) int {
 			return 1
 		}
 
-		// If this dir's subdirs represent individual schemas, iterate over them
-		// and track what schema names we see. Then compare that to the schema list
-		// of the instance represented by the dir, to see if there are any new
-		// schemas on the instance that need to be created on the filesystem.
-		if cfg.Dir.HasLeafSubdirs() {
+		// If this dir represents an instance and its subdirs represent individual
+		// schemas, iterate over them and track what schema names we see. Then
+		// compare that to the schema list of the instance represented by the dir,
+		// to see if there are any new schemas on the instance that need to be
+		// created on the filesystem.
+		if cfg.Dir.IsInstanceWithLeafSubdirs() {
 			seenSchema := make(map[string]bool, len(subdirs))
 			for _, subdir := range subdirs {
 				skf, err := subdir.SkeemaFile(cfg)

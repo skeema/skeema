@@ -86,9 +86,13 @@ func (sd SkeemaDir) IsLeaf() bool {
 	return !hasSubdirs
 }
 
-// HasLeafSubdirs returns true if this dir contains at least one leaf subdir.
-// This means we can map subdirs to database schemas on a single instance.
-func (sd SkeemaDir) HasLeafSubdirs() bool {
+// IsInstanceWithSchemaSubdirs returns true if this dir represents an instance
+// (specifices host:port) and at least one of its subdirs is a leaf (represents
+// a schema).
+func (sd SkeemaDir) IsInstanceWithLeafSubdirs() bool {
+	if skf, err := sd.SkeemaFile(nil); err != nil || !skf.HasField("host") {
+		return false
+	}
 	subdirs, err := sd.Subdirs()
 	if err != nil {
 		return false
