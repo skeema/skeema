@@ -71,8 +71,10 @@ func (skf *SkeemaFile) Read(cfg *Config) error {
 	skf.Values = make(map[string]string)
 
 	scanner := bufio.NewScanner(file)
+	var lineNumber int
 	for scanner.Scan() {
 		line := scanner.Text()
+		lineNumber++
 		line = strings.TrimLeftFunc(line, unicode.IsSpace)
 		if line == "" {
 			continue
@@ -85,17 +87,18 @@ func (skf *SkeemaFile) Read(cfg *Config) error {
 		key, value, loose := NormalizeOptionToken(tokens[0])
 
 		if cfg != nil {
+			source := fmt.Sprintf("%s line %d", skf.Path(), lineNumber)
 			opt := cfg.FindOption(key)
 			if opt == nil {
 				if loose || skf.IgnoreErrors {
 					continue
 				} else {
-					return OptionNotDefinedError{key}
+					return OptionNotDefinedError{key, source}
 				}
 			}
 			if value == "" {
 				if opt.RequireValue {
-					return OptionMissingValueError{opt.Name}
+					return OptionMissingValueError{opt.Name, source}
 				} else if opt.Type == OptionTypeBool {
 					// Option without value indicates option is being enabled if boolean
 					value = "1"

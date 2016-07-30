@@ -217,17 +217,27 @@ func splitHostPort(cfg *Config, values map[string]string) {
 }
 
 type OptionNotDefinedError struct {
-	Name string
+	Name   string
+	Source string
 }
 
 func (ond OptionNotDefinedError) Error() string {
-	return fmt.Sprintf("Unknown option \"%s\"", ond.Name)
+	var source string
+	if ond.Source != "" {
+		source = fmt.Sprintf("%s: ", ond.Source)
+	}
+	return fmt.Sprintf("%sUnknown option \"%s\"", source, ond.Name)
 }
 
 type OptionMissingValueError struct {
-	Name string
+	Name   string
+	Source string
 }
 
 func (omv OptionMissingValueError) Error() string {
-	return fmt.Sprintf("Missing required value for option %s", omv.Name)
+	var source string
+	if omv.Source != "" {
+		source = fmt.Sprintf("%s: ", omv.Source)
+	}
+	return fmt.Sprintf("%sMissing required value for option %s", source, omv.Name)
 }

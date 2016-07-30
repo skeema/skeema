@@ -159,7 +159,7 @@ func (cfg *Config) parseLongArg(arg string, args *[]string) error {
 		if loose {
 			return nil
 		} else {
-			return OptionNotDefinedError{key}
+			return OptionNotDefinedError{key, ""}
 		}
 	}
 
@@ -167,7 +167,7 @@ func (cfg *Config) parseLongArg(arg string, args *[]string) error {
 		if opt.RequireValue {
 			// Value required: allow format "--foo bar" in addition to "--foo=bar"
 			if len(*args) == 0 || (*args)[0][0] == '-' {
-				return OptionMissingValueError{opt.Name}
+				return OptionMissingValueError{opt.Name, ""}
 			}
 			value = (*args)[0]
 			*args = (*args)[1:]
@@ -193,7 +193,7 @@ func (cfg *Config) parseShortArgs(arg string, args *[]string, shortOptionIndex m
 		var value string
 		opt, found := shortOptionIndex[short]
 		if !found {
-			return OptionNotDefinedError{string(short)}
+			return OptionNotDefinedError{string(short), ""}
 		}
 
 		// Consume value. Depending on the option, value may be supplied as chars immediately following
@@ -206,7 +206,7 @@ func (cfg *Config) parseShortArgs(arg string, args *[]string, shortOptionIndex m
 				value = (*args)[0]
 				*args = (*args)[1:]
 			} else {
-				return OptionMissingValueError{opt.Name}
+				return OptionMissingValueError{opt.Name, ""}
 			}
 		} else { // "-xyz", parse x as a valueless option and loop again to parse y (and possibly z) as separate shorthand options
 			if opt.Type == OptionTypeBool {
