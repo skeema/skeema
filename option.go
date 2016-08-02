@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"syscall"
 	"unicode"
+
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 type OptionType int
@@ -193,10 +196,10 @@ func NormalizeOptionName(name string) string {
 func GlobalOptions() map[string]*Option {
 	opts := []*Option{
 		StringOption("help", '?', "", "Display help for the specified command").ValueOptional(),
-		StringOption("host", 0, "127.0.0.1", "Database hostname or IP address").Hidden().Callback(splitHostPort),
+		StringOption("host", 0, "127.0.0.1", "Database hostname or IP address").Hidden().Callback(SplitHostPort),
 		StringOption("port", 0, "3306", "Port to use for database host").Hidden(),
 		StringOption("user", 'u', "root", "Username to connect to database host"),
-		StringOption("password", 'p', "<no password>", "Password for database user. Supply with no value to prompt.").ValueOptional(), // TODO needs callback
+		StringOption("password", 'p', "<no password>", "Password for database user. Supply with no value to prompt.").ValueOptional().Callback(PromptPasswordIfNeeded),
 		StringOption("schema", 0, "", "Database schema name").Hidden(),
 	}
 	result := make(map[string]*Option, len(opts))
@@ -206,12 +209,22 @@ func GlobalOptions() map[string]*Option {
 	return result
 }
 
-func splitHostPort(cfg *Config, values map[string]string) {
+func SplitHostPort(cfg *Config, values map[string]string) {
 	parts := strings.SplitN(values["host"], ":", 2)
 	if len(parts) > 1 {
 		values["host"] = parts[0]
 		if port, _ := strconv.Atoi(parts[1]); port != 0 && values["port"] == "" {
 			values["port"] = strconv.Itoa(port)
+		}
+	}
+}
+
+func PromptPasswordIfNeeded(cfg *Config, values map[string]string) {
+	if values["password"] == "" {
+		fmt.Printf("Enter password: ")
+		bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
+		if err == nil {
+			values["password"] = string(bytePassword)
 		}
 	}
 }
