@@ -32,6 +32,10 @@ func push(cfg *Config, seen map[string]bool) int {
 			return 1
 		}
 
+		mods := tengo.StatementModifiers{
+			NextAutoInc: tengo.NextAutoIncIfIncreased,
+		}
+
 		for _, t := range cfg.Targets() {
 			for _, schemaName := range t.SchemaNames {
 				fmt.Printf("\nPushing changes from %s/*.sql to %s %s...\n", cfg.Dir, t.Instance, schemaName)
@@ -53,12 +57,24 @@ func push(cfg *Config, seen map[string]bool) int {
 				}
 
 				db := t.Connect(schemaName)
+				var statementCounter int
 				for _, td := range diff.TableDiffs {
-					_, err := db.Exec(td.Statement())
-					if err != nil {
-						fmt.Printf("Error running statement \"%s\" on %s: %s\n", td.Statement(), t.Instance, err)
+					stmt := td.Statement(mods)
+					if stmt != "" {
+						statementCounter++
+						_, err := db.Exec(stmt)
+						if err != nil {
+							fmt.Printf("Error running statement \"%s\" on %s: %s\n", stmt, t.Instance, err)
+						} else {
+							fmt.Printf("%s;\n", stmt)
+						}
 					}
-					fmt.Printf("%s;\n", td.Statement())
+				}
+
+				// If we had diffs but they were all no-ops due to StatementModifiers,
+				// still display message about no actions taken
+				if statementCounter == 0 {
+					fmt.Println("(nothing to do)")
 				}
 			}
 		}

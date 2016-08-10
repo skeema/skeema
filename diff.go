@@ -16,7 +16,6 @@ ones in the filesystem.`
 		Name:    "diff",
 		Short:   "Compare a DB instance's schemas and tables to the filesystem",
 		Long:    long,
-		Options: nil,
 		Handler: DiffCommand,
 	}
 }
@@ -30,6 +29,10 @@ func diff(cfg *Config, seen map[string]bool) int {
 		if err := cfg.PopulateTemporarySchema(); err != nil {
 			fmt.Printf("Unable to populate temporary schema: %s\n", err)
 			return 1
+		}
+
+		mods := tengo.StatementModifiers{
+			NextAutoInc: tengo.NextAutoIncIfIncreased,
 		}
 
 		for _, t := range cfg.Targets() {
@@ -46,7 +49,13 @@ func diff(cfg *Config, seen map[string]bool) int {
 					newFrom := &tengo.Schema{Name: schemaName}
 					fmt.Printf("%s;\n", newFrom.CreateStatement())
 				}
-				fmt.Printf("%s\n\n", diff)
+				for _, tableDiff := range diff.TableDiffs {
+					stmt := tableDiff.Statement(mods)
+					if stmt != "" {
+						fmt.Printf("%s;\n", stmt)
+					}
+				}
+				fmt.Println()
 			}
 		}
 

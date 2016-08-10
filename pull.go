@@ -12,13 +12,16 @@ instance. Use this command when changes have been applied to the database
 without using skeema, and the filesystem representation needs to be updated to
 reflect those changes.`
 
-	Commands["pull"] = &Command{
+	cmd := &Command{
 		Name:    "pull",
 		Short:   "Update the filesystem representation of schemas and tables",
 		Long:    long,
 		Options: nil,
 		Handler: PullCommand,
 	}
+	cmd.AddOption(BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in new table files, and update in existing files"))
+
+	Commands["pull"] = cmd
 }
 
 func PullCommand(cfg *Config) int {
@@ -48,6 +51,15 @@ func pull(cfg *Config, seen map[string]bool) int {
 		from := t.TemporarySchema()
 		diff := tengo.NewSchemaDiff(from, to)
 
+		// pull command updates next auto-increment value for existing table always
+		// if requested, or only if previously present in file otherwise
+		mods := tengo.StatementModifiers{}
+		if cfg.GetBool("include-auto-inc") {
+			mods.NextAutoInc = tengo.NextAutoIncAlways
+		} else {
+			mods.NextAutoInc = tengo.NextAutoIncIfAlready
+		}
+
 		for _, td := range diff.TableDiffs {
 			switch td := td.(type) {
 			case tengo.CreateTable:
@@ -56,6 +68,10 @@ func pull(cfg *Config, seen map[string]bool) int {
 				if err != nil {
 					panic(err)
 				}
+				if table.HasAutoIncrement() && !cfg.GetBool("include-auto-inc") {
+					createStmt, _ = tengo.ParseCreateAutoInc(createStmt)
+				}
+				// TODO: verify skeema can handle this table, just like we do for init
 				sf := SQLFile{
 					Dir:      cfg.Dir,
 					FileName: fmt.Sprintf("%s.sql", table.Name),
@@ -79,6 +95,10 @@ func pull(cfg *Config, seen map[string]bool) int {
 				}
 				fmt.Printf("    Deleted %s -- table no longer exists\n", sf.Path())
 			case tengo.AlterTable:
+				// skip if mods caused the diff to be a no-op
+				if td.Statement(mods) == "" {
+					continue
+				}
 				table := td.Table
 				createStmt, err := t.ShowCreateTable(to, table)
 				if err != nil {
@@ -134,7 +154,7 @@ func pull(cfg *Config, seen map[string]bool) int {
 			for _, schema := range t.Schemas() {
 				if !seenSchema[schema.Name] {
 					// use same logic from init command
-					ret := PopulateSchemaDir(schema, t.Instance, cfg.Dir, true)
+					ret := PopulateSchemaDir(cfg, schema, t.Instance, cfg.Dir, true)
 					if ret != 0 {
 						return ret
 					}

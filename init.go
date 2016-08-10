@@ -25,6 +25,7 @@ table in the schema.`
 	cmd.AddOption(StringOption("base-dir", 0, ".", "Base directory to use for storing schemas"))
 	cmd.AddOption(StringOption("host-dir", 0, "<hostname>", "Override the directory name to use for a host. Or negate with --skip-host-dir to use base-dir directly."))
 	cmd.AddOption(StringOption("schema", 0, "", "Only import the one specified schema, and skip creation of schema subdir level"))
+	cmd.AddOption(BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in table files"))
 
 	Commands["init"] = cmd
 }
@@ -130,7 +131,7 @@ func InitCommand(cfg *Config) int {
 
 	// Iterate over the schemas; create a dir with .skeema and *.sql files for each
 	for _, s := range schemas {
-		ret := PopulateSchemaDir(s, target.Instance, hostDir, separateSchemaSubdir)
+		ret := PopulateSchemaDir(cfg, s, target.Instance, hostDir, separateSchemaSubdir)
 		if ret != 0 {
 			return ret
 		}
@@ -139,7 +140,7 @@ func InitCommand(cfg *Config) int {
 	return 0
 }
 
-func PopulateSchemaDir(s *tengo.Schema, instance *tengo.Instance, parentDir *SkeemaDir, makeSubdir bool) int {
+func PopulateSchemaDir(cfg *Config, s *tengo.Schema, instance *tengo.Instance, parentDir *SkeemaDir, makeSubdir bool) int {
 	var schemaDir *SkeemaDir
 	var created bool
 	if makeSubdir {
@@ -175,20 +176,37 @@ func PopulateSchemaDir(s *tengo.Schema, instance *tengo.Instance, parentDir *Ske
 
 	fmt.Printf("Populating %s...\n", schemaDir.Path)
 	for _, t := range s.Tables() {
-		createStmt, err := instance.ShowCreateTable(s, t)
+		actualCreateStmt, err := instance.ShowCreateTable(s, t)
 		if err != nil {
 			panic(err)
 		}
-		if createStmt != t.CreateStatement() {
+
+		// Special handling for auto-increment tables: If user specifically wants to
+		// keep next auto inc value in .sql file, store it in the Table object so that
+		// the generated SQL matches SHOW CREATE TABLE; else, strip it
+		if t.HasAutoIncrement() {
+			if cfg.GetBool("include-auto-inc") {
+				_, t.NextAutoIncrement = tengo.ParseCreateAutoInc(actualCreateStmt)
+			} else {
+				actualCreateStmt, _ = tengo.ParseCreateAutoInc(actualCreateStmt)
+				t.NextAutoIncrement = 1
+			}
+		}
+
+		// Compare the actual CREATE TABLE statement obtained from MySQL with what
+		// Tengo expects the CREATE TABLE statement to be. If they differ, Skeema
+		// does not support this table.
+		// TODO: handle unsupported tables gracefully, without choking altogether
+		if actualCreateStmt != t.CreateStatement() {
 			fmt.Printf("!!! unable to handle DDL for table %s.%s; aborting\n", s.Name, t.Name)
-			fmt.Printf("FOUND:\n%s\n\nEXPECTED:\n%s\n", createStmt, t.CreateStatement())
+			fmt.Printf("FOUND:\n%s\n\nEXPECTED:\n%s\n", actualCreateStmt, t.CreateStatement())
 			return 2
 		}
 
 		sf := SQLFile{
 			Dir:      schemaDir,
 			FileName: fmt.Sprintf("%s.sql", t.Name),
-			Contents: createStmt,
+			Contents: actualCreateStmt,
 		}
 		if length, err := sf.Write(); err != nil {
 			fmt.Printf("Unable to write to %s: %s\n", sf.Path(), err)
