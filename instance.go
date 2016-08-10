@@ -135,6 +135,7 @@ func (instance *Instance) ShowCreateTable(schema *Schema, table *Table) (string,
 	if len(createRows) != 1 {
 		return "", sql.ErrNoRows
 	}
+
 	return createRows[0].CreateStatement, nil
 }
 

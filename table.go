@@ -71,6 +71,17 @@ func (t Table) SecondaryIndexesByName() map[string]*Index {
 	return result
 }
 
+// HasAutoIncrement returns true if the table contains an auto-increment column,
+// or false otherwise.
+func (t Table) HasAutoIncrement() bool {
+	for _, c := range t.Columns {
+		if c.AutoIncrement {
+			return true
+		}
+	}
+	return false
+}
+
 type columnsComparison struct {
 	fromColumnsByName map[string]*Column
 	fromStillPresent  []bool
@@ -223,6 +234,16 @@ func (from *Table) Diff(to *Table) []TableAlterClause {
 			add := AddIndex{Table: to, Index: toIdx}
 			clauses = append(clauses, drop, add)
 		}
+	}
+
+	// Compare next auto-inc value
+	if from.NextAutoIncrement != to.NextAutoIncrement && to.HasAutoIncrement() {
+		cai := ChangeAutoIncrement{
+			Table:                to,
+			NewNextAutoIncrement: to.NextAutoIncrement,
+			OldNextAutoIncrement: from.NextAutoIncrement,
+		}
+		clauses = append(clauses, cai)
 	}
 
 	return clauses

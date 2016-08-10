@@ -209,6 +209,14 @@ func (s *Schema) Refresh() {
 	s.Tables()
 }
 
+// ClearNextAutoIncs iterates through all tables in the schema, and sets
+// NextAutoIncrement to 0 for all of them in the Table struct. Does NOT
+// actually alter the table on a database instance in any way; only impacts
+// Tengo's representation.
+func (s *Schema) ClearNextAutoIncs() {
+
+}
+
 func (from *Schema) Diff(to *Schema) *SchemaDiff {
 	return NewSchemaDiff(from, to)
 }

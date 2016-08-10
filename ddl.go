@@ -2,12 +2,48 @@ package tengo
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
+type NextAutoIncMode int
+
+// Constants for how to handle next-auto-inc values in table diffs. Usually
+// these are ignored in diffs entirely, but in some cases they are included.
+const (
+	NextAutoIncIgnore      NextAutoIncMode = iota // omit auto-inc value changes in diff
+	NextAutoIncIfIncreased                        // only include auto-inc value if the "from" side is less than the "to" side
+	NextAutoIncIfAlready                          // only include auto-inc value if the "from" side is already greater than 1
+	NextAutoIncAlways                             // always include auto-inc value in diff
+)
+
+// ParseCreateAutoInc parses a CREATE TABLE statement, formatted in the same
+// manner as SHOW CREATE TABLE, and removes the table-level next-auto-increment
+// clause if present. The modified CREATE TABLE will be returned, along with
+// the next auto-increment value if one was found.
+func ParseCreateAutoInc(createStmt string) (string, uint64) {
+	//) ENGINE=%s AUTO_INCREMENT=%d DEFAULT CHARSET=
+	reParseCreate := regexp.MustCompile(`[)] ENGINE=\w+ (AUTO_INCREMENT=(\d+) )DEFAULT CHARSET=`)
+	matches := reParseCreate.FindStringSubmatch(createStmt)
+	if matches == nil {
+		return createStmt, 0
+	}
+	nextAutoInc, _ := strconv.ParseUint(matches[2], 10, 64)
+	newStmt := strings.Replace(createStmt, matches[1], "", 1)
+	return newStmt, nextAutoInc
+}
+
+// StatementModifiers are options that may be applied to adjust the DDL emitted
+// for a particular table
+type StatementModifiers struct {
+	NextAutoInc NextAutoIncMode
+	Inplace     bool
+}
+
 // Main statement prefix for the schema change (ALTER TABLE, CREATE TABLE, etc)
 type TableDiff interface {
-	Statement() string
+	Statement(StatementModifiers) string
 }
 
 // Specific clause to execute (ADD COLUMN, ADD INDEX, etc)
@@ -64,7 +100,7 @@ func NewSchemaDiff(from, to *Schema) *SchemaDiff {
 func (sd *SchemaDiff) String() string {
 	diffStatements := make([]string, len(sd.TableDiffs))
 	for n, diff := range sd.TableDiffs {
-		diffStatements[n] = fmt.Sprintf("%s;\n", diff.Statement())
+		diffStatements[n] = fmt.Sprintf("%s;\n", diff.Statement(StatementModifiers{}))
 	}
 	return strings.Join(diffStatements, "")
 }
@@ -75,7 +111,7 @@ type CreateTable struct {
 	Table *Table
 }
 
-func (ct CreateTable) Statement() string {
+func (ct CreateTable) Statement(mods StatementModifiers) string {
 	return ct.Table.CreateStatement()
 }
 
@@ -85,7 +121,7 @@ type DropTable struct {
 	Table *Table
 }
 
-func (dt DropTable) Statement() string {
+func (dt DropTable) Statement(mods StatementModifiers) string {
 	panic(fmt.Errorf("Drop Table not yet supported"))
 }
 
@@ -96,10 +132,23 @@ type AlterTable struct {
 	Clauses []TableAlterClause
 }
 
-func (at AlterTable) Statement() string {
-	clauseStrings := make([]string, len(at.Clauses))
-	for n, clause := range at.Clauses {
-		clauseStrings[n] = clause.Clause()
+func (at AlterTable) Statement(mods StatementModifiers) string {
+	clauseStrings := make([]string, 0, len(at.Clauses))
+	for _, clause := range at.Clauses {
+		switch clause := clause.(type) {
+		case ChangeAutoIncrement:
+			if mods.NextAutoInc == NextAutoIncIgnore {
+				continue
+			} else if mods.NextAutoInc == NextAutoIncIfIncreased && clause.OldNextAutoIncrement >= clause.NewNextAutoIncrement {
+				continue
+			} else if mods.NextAutoInc == NextAutoIncIfAlready && clause.OldNextAutoIncrement <= 1 {
+				continue
+			}
+		}
+		clauseStrings = append(clauseStrings, clause.Clause())
+	}
+	if len(clauseStrings) == 0 {
+		return ""
 	}
 	return fmt.Sprintf("%s %s", at.Table.AlterStatement(), strings.Join(clauseStrings, ", "))
 }
@@ -111,7 +160,7 @@ type RenameTable struct {
 	NewName string
 }
 
-func (rt RenameTable) Statement() string {
+func (rt RenameTable) Statement(mods StatementModifiers) string {
 	panic(fmt.Errorf("Rename Table not yet supported"))
 }
 
@@ -209,4 +258,16 @@ func (mc ModifyColumn) Clause() string {
 		positionClause = fmt.Sprintf(" AFTER %s", EscapeIdentifier(mc.PositionAfter.Name))
 	}
 	return fmt.Sprintf("MODIFY COLUMN %s%s", mc.NewColumn.Definition(), positionClause)
+}
+
+///// ChangeAutoIncrement //////////////////////////////////////////////////////
+
+type ChangeAutoIncrement struct {
+	Table                *Table
+	OldNextAutoIncrement uint64
+	NewNextAutoIncrement uint64
+}
+
+func (cai ChangeAutoIncrement) Clause() string {
+	return fmt.Sprintf("AUTO_INCREMENT = %d", cai.NewNextAutoIncrement)
 }
