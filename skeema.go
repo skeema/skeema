@@ -20,13 +20,19 @@ var Commands = map[string]*Command{}
 
 // GlobalOptions returns the list of options that are permitted regardless
 // of what specific command has been run.
+//
 // Note that if a command-specific option has same name as a global option,
-// the command-specific option overrides the global option.
+// the command-specific option overrides the global option. Several global
+// options are marked as "hidden" because most commands expect them in option
+// files rather than via CLI, though we still support CLI overrides. Commands
+// that expect these options on CLI explicitly redefine these options as non-
+// hidden.
 func GlobalOptions() map[string]*Option {
 	opts := []*Option{
 		StringOption("help", '?', "", "Display help for the specified command").ValueOptional(),
-		StringOption("host", 0, "127.0.0.1", "Database hostname or IP address").Hidden().Callback(SplitHostPort),
+		StringOption("host", 0, "localhost", "Database hostname or IP address").Hidden().Callback(SplitHostPort),
 		StringOption("port", 0, "3306", "Port to use for database host").Hidden(),
+		StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix domain socket file for use when hostname==localhost").Hidden(),
 		StringOption("user", 'u', "root", "Username to connect to database host"),
 		StringOption("password", 'p', "<no password>", "Password for database user. Supply with no value to prompt.").ValueOptional().Callback(PromptPasswordIfNeeded),
 		StringOption("schema", 0, "", "Database schema name").Hidden(),

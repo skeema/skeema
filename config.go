@@ -388,7 +388,14 @@ func (cfg *Config) Targets() []Target {
 	} else {
 		userAndPass = fmt.Sprintf("%s:%s", cfg.Get("user"), cfg.Get("password"))
 	}
-	dsn := fmt.Sprintf("%s@tcp(%s:%d)/", userAndPass, cfg.Get("host"), cfg.MustGetInt("port"))
+
+	// Construct DSN using either Unix domain socket or tcp/ip host and port
+	var dsn string
+	if cfg.Get("host") == "localhost" && cfg.Get("port") == cfg.FindOption("port").Default {
+		dsn = fmt.Sprintf("%s@unix(%s)/", userAndPass, cfg.Get("socket"))
+	} else {
+		dsn = fmt.Sprintf("%s@tcp(%s:%d)/", userAndPass, cfg.Get("host"), cfg.MustGetInt("port"))
+	}
 
 	// TODO support generating multiple schemas if schema name using wildcards or service discovery
 	var schemas []string

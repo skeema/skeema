@@ -20,8 +20,9 @@ table in the schema.`
 		Long:    long,
 		Handler: InitCommand,
 	}
-	cmd.AddOption(StringOption("host", 'h', "127.0.0.1", "Database hostname or IP address").Callback(SplitHostPort))
+	cmd.AddOption(StringOption("host", 'h', "localhost", "Database hostname or IP address").Callback(SplitHostPort))
 	cmd.AddOption(StringOption("port", 'P', "3306", "Port to use for database host"))
+	cmd.AddOption(StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix domain socket file for use when hostname==localhost"))
 	cmd.AddOption(StringOption("base-dir", 0, ".", "Base directory to use for storing schemas"))
 	cmd.AddOption(StringOption("host-dir", 0, "<hostname>", "Override the directory name to use for a host. Or negate with --skip-host-dir to use base-dir directly."))
 	cmd.AddOption(StringOption("schema", 0, "", "Only import the one specified schema, and skip creation of schema subdir level"))
@@ -97,12 +98,21 @@ func InitCommand(cfg *Config) int {
 	}
 
 	// Write out a .skeema file for the hostDir
-	skf := &SkeemaFile{
-		Dir: hostDir,
-		Values: map[string]string{
+	var values map[string]string
+	if cfg.Get("host") == "localhost" && cfg.Get("port") == cfg.FindOption("port").Default {
+		values = map[string]string{
+			"host":   "localhost",
+			"socket": cfg.Get("socket"),
+		}
+	} else {
+		values = map[string]string{
 			"host": cfg.Get("host"),
 			"port": cfg.Get("port"),
-		},
+		}
+	}
+	skf := &SkeemaFile{
+		Dir:    hostDir,
+		Values: values,
 	}
 	if !separateHostSubdir && cfg.OnCLI("user") {
 		skf.Values["user"] = cfg.Get("user")
