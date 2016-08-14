@@ -65,7 +65,7 @@ func (cfg *Config) ChangeDir(dir *SkeemaDir) *Config {
 	return cfg
 }
 
-func (cfg *Config) HandleCommand() int {
+func (cfg *Config) HandleCommand() error {
 	return cfg.Cmd.Handler(cfg)
 }
 
@@ -368,11 +368,15 @@ func (cfg *Config) GetInt(name string) (int, error) {
 	return strconv.Atoi(cfg.Get(name))
 }
 
-// MustGetInt is like GetInt, but panics if a parsing error occurs.
-func (cfg *Config) MustGetInt(name string) int {
+// GetIntOrDefault is like GetInt, but returns the option's default value if
+// parsing the supplied value as an int fails.
+func (cfg *Config) GetIntOrDefault(name string) int {
 	value, err := cfg.GetInt(name)
 	if err != nil {
-		panic(err)
+		value, err = strconv.Atoi(cfg.FindOption(name).Default)
+		if err != nil {
+			return 0
+		}
 	}
 	return value
 }
@@ -394,7 +398,7 @@ func (cfg *Config) Targets() []Target {
 	if cfg.Get("host") == "localhost" && cfg.Get("port") == cfg.FindOption("port").Default {
 		dsn = fmt.Sprintf("%s@unix(%s)/", userAndPass, cfg.Get("socket"))
 	} else {
-		dsn = fmt.Sprintf("%s@tcp(%s:%d)/", userAndPass, cfg.Get("host"), cfg.MustGetInt("port"))
+		dsn = fmt.Sprintf("%s@tcp(%s:%d)/", userAndPass, cfg.Get("host"), cfg.GetIntOrDefault("port"))
 	}
 
 	// TODO support generating multiple schemas if schema name using wildcards or service discovery
@@ -425,11 +429,11 @@ func (cfg *Config) PopulateTemporarySchema() error {
 	tempSchemaName := "_skeema_tmp"
 
 	if !cfg.Dir.IsLeaf() {
-		return fmt.Errorf("Dir %s cannot be applied (either no *.sql files, or no .skeema file defining schema name?)", cfg.Dir)
+		return fmt.Errorf("Unable to populate temporary schema: Dir %s cannot be applied (either no *.sql files, or no .skeema file defining schema name?)", cfg.Dir)
 	}
 	sqlFiles, err := cfg.Dir.SQLFiles()
 	if err != nil {
-		return err
+		return fmt.Errorf("Unable to populate temporary schema: %s", err)
 	}
 
 	for _, t := range cfg.Targets() {
@@ -441,7 +445,7 @@ func (cfg *Config) PopulateTemporarySchema() error {
 		} else {
 			tempSchema, err = t.CreateSchema(tempSchemaName)
 			if err != nil {
-				return err
+				return fmt.Errorf("Unable to populate temporary schema: %s", err)
 			}
 		}
 
@@ -449,7 +453,7 @@ func (cfg *Config) PopulateTemporarySchema() error {
 		for _, sf := range sqlFiles {
 			_, err := db.Exec(sf.Contents)
 			if err != nil {
-				return err
+				return fmt.Errorf("Unable to populate temporary schema: %s", err)
 			}
 		}
 	}
@@ -468,7 +472,7 @@ func (cfg *Config) DropTemporarySchema() error {
 			continue
 		}
 		if err := t.DropSchema(tempSchema); err != nil {
-			return err
+			return fmt.Errorf("Unable to drop temporary schema: %s", err)
 		}
 	}
 	return nil

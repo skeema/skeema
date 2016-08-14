@@ -20,15 +20,14 @@ ones in the filesystem.`
 	}
 }
 
-func DiffCommand(cfg *Config) int {
+func DiffCommand(cfg *Config) error {
 	return diff(cfg, make(map[string]bool))
 }
 
-func diff(cfg *Config, seen map[string]bool) int {
+func diff(cfg *Config, seen map[string]bool) error {
 	if cfg.Dir.IsLeaf() {
 		if err := cfg.PopulateTemporarySchema(); err != nil {
-			fmt.Printf("Unable to populate temporary schema: %s\n", err)
-			return 1
+			return err
 		}
 
 		mods := tengo.StatementModifiers{
@@ -60,27 +59,25 @@ func diff(cfg *Config, seen map[string]bool) int {
 		}
 
 		if err := cfg.DropTemporarySchema(); err != nil {
-			fmt.Printf("Unable to clean up temporary schema: %s\n", err)
-			return 1
+			return err
 		}
 	} else {
 		// Recurse into subdirs, avoiding duplication due to symlinks
 		seen[cfg.Dir.Path] = true
 		subdirs, err := cfg.Dir.Subdirs()
 		if err != nil {
-			fmt.Printf("Unable to list subdirs of %s: %s\n", cfg.Dir, err)
-			return 1
+			return err
 		}
 		for n := range subdirs {
 			subdir := subdirs[n]
 			if !seen[subdir.Path] {
-				ret := diff(cfg.ChangeDir(&subdir), seen)
-				if ret != 0 {
-					return ret
+				err := diff(cfg.ChangeDir(&subdir), seen)
+				if err != nil {
+					return err
 				}
 			}
 		}
 	}
 
-	return 0
+	return nil
 }

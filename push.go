@@ -21,15 +21,14 @@ reflect those changes.`
 	}
 }
 
-func PushCommand(cfg *Config) int {
+func PushCommand(cfg *Config) error {
 	return push(cfg, make(map[string]bool))
 }
 
-func push(cfg *Config, seen map[string]bool) int {
+func push(cfg *Config, seen map[string]bool) error {
 	if cfg.Dir.IsLeaf() {
 		if err := cfg.PopulateTemporarySchema(); err != nil {
-			fmt.Printf("Unable to populate temporary schema: %s\n", err)
-			return 1
+			return err
 		}
 
 		mods := tengo.StatementModifiers{
@@ -47,8 +46,7 @@ func push(cfg *Config, seen map[string]bool) int {
 					var err error
 					from, err = t.CreateSchema(schemaName)
 					if err != nil {
-						fmt.Printf("Error creating schema %s on %s: %s\n", schemaName, t.Instance, err)
-						return 1
+						return fmt.Errorf("Error creating schema %s on %s: %s", schemaName, t.Instance, err)
 					}
 					fmt.Printf("%s;\n", from.CreateStatement())
 				} else if len(diff.TableDiffs) == 0 {
@@ -80,8 +78,7 @@ func push(cfg *Config, seen map[string]bool) int {
 		}
 
 		if err := cfg.DropTemporarySchema(); err != nil {
-			fmt.Printf("Unable to clean up temporary schema: %s\n", err)
-			return 1
+			return err
 		}
 
 	} else {
@@ -89,15 +86,14 @@ func push(cfg *Config, seen map[string]bool) int {
 		seen[cfg.Dir.Path] = true
 		subdirs, err := cfg.Dir.Subdirs()
 		if err != nil {
-			fmt.Printf("Unable to list subdirs of %s: %s\n", cfg.Dir, err)
-			return 1
+			return err
 		}
 		for n := range subdirs {
 			subdir := subdirs[n]
 			if !seen[subdir.Path] {
-				ret := push(cfg.ChangeDir(&subdir), seen)
-				if ret != 0 {
-					return ret
+				err := push(cfg.ChangeDir(&subdir), seen)
+				if err != nil {
+					return err
 				}
 			}
 		}
@@ -105,5 +101,5 @@ func push(cfg *Config, seen map[string]bool) int {
 
 	// TODO: also handle schemas that exist on the db but NOT the fs, here AND in diff!
 
-	return 0
+	return nil
 }

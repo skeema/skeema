@@ -10,7 +10,7 @@ type Command struct {
 	Short   string
 	Long    string
 	Options map[string]*Option
-	Handler func(*Config) int
+	Handler func(*Config) error
 	MinArgs int
 	MaxArgs int
 }

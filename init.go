@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"path"
+	"strconv"
 
 	"github.com/skeema/tengo"
 )
@@ -31,14 +32,13 @@ table in the schema.`
 	Commands["init"] = cmd
 }
 
-func InitCommand(cfg *Config) int {
+func InitCommand(cfg *Config) error {
 	// Figure out base path, and create if missing
 	baseDir := NewSkeemaDir(cfg.Get("base-dir"))
 	var baseOptionsFile *SkeemaFile
 	wasNewBase, err := baseDir.CreateIfMissing()
 	if err != nil {
-		fmt.Println("Unable to use specified directory:", err)
-		return 1
+		return fmt.Errorf("Unable to use specified base-dir: %s", err)
 	}
 	if cfg.Dir.Path != baseDir.Path {
 		cfg.ChangeDir(baseDir)
@@ -57,8 +57,9 @@ func InitCommand(cfg *Config) int {
 	separateHostSubdir := (hostDirName != "0")
 	separateSchemaSubdir := (onlySchema == "")
 	if hostDirName == "<hostname>" {
-		port := cfg.MustGetInt("port")
-		if port != 3306 {
+		port := cfg.GetIntOrDefault("port")
+		defaultPort, _ := strconv.Atoi(cfg.FindOption("port").Default)
+		if port > 0 && port != defaultPort {
 			hostDirName = fmt.Sprintf("%s:%d", cfg.Get("host"), port)
 		} else {
 			hostDirName = cfg.Get("host")
@@ -85,11 +86,9 @@ func InitCommand(cfg *Config) int {
 		// Now create the hostDir
 		hostDir = NewSkeemaDir(path.Join(baseDir.Path, hostDirName))
 		if created, err := hostDir.CreateIfMissing(); err != nil {
-			fmt.Printf("Unable to create host directory %s: %s\n", hostDir.Path, err)
-			return 1
+			return fmt.Errorf("Unable to create host directory %s: %s", hostDir.Path, err)
 		} else if !created {
-			fmt.Printf("Cannot use host directory %s: already exists\n", hostDir.Path)
-			return 1
+			return fmt.Errorf("Cannot use host directory %s: already exists", hostDir.Path)
 		}
 		fmt.Println("Initializing host dir", hostDir.Path)
 	} else {
@@ -122,8 +121,7 @@ func InitCommand(cfg *Config) int {
 		fmt.Println("Skipping schema-level subdir structure; using", hostDir.Path)
 	}
 	if err = skf.Write(false); err != nil {
-		fmt.Printf("Unable to write to %s: %s\n", skf.Path(), err)
-		return 1
+		return fmt.Errorf("Unable to write to %s: %s", skf.Path(), err)
 	}
 
 	// Build list of schemas
@@ -131,8 +129,7 @@ func InitCommand(cfg *Config) int {
 	var schemas []*tengo.Schema
 	if onlySchema != "" {
 		if !target.HasSchema(onlySchema) {
-			fmt.Printf("Schema %s does not exist on instance %s\n", onlySchema, target.Instance)
-			return 1
+			return fmt.Errorf("Schema %s does not exist on instance %s", onlySchema, target.Instance)
 		}
 		schemas = []*tengo.Schema{target.Schema(onlySchema)}
 	} else {
@@ -141,16 +138,16 @@ func InitCommand(cfg *Config) int {
 
 	// Iterate over the schemas; create a dir with .skeema and *.sql files for each
 	for _, s := range schemas {
-		ret := PopulateSchemaDir(cfg, s, target.Instance, hostDir, separateSchemaSubdir)
-		if ret != 0 {
-			return ret
+		err := PopulateSchemaDir(cfg, s, target.Instance, hostDir, separateSchemaSubdir)
+		if err != nil {
+			return err
 		}
 	}
 
-	return 0
+	return nil
 }
 
-func PopulateSchemaDir(cfg *Config, s *tengo.Schema, instance *tengo.Instance, parentDir *SkeemaDir, makeSubdir bool) int {
+func PopulateSchemaDir(cfg *Config, s *tengo.Schema, instance *tengo.Instance, parentDir *SkeemaDir, makeSubdir bool) error {
 	var schemaDir *SkeemaDir
 	var created bool
 	if makeSubdir {
@@ -158,8 +155,7 @@ func PopulateSchemaDir(cfg *Config, s *tengo.Schema, instance *tengo.Instance, p
 		var err error
 		created, err = schemaDir.CreateIfMissing()
 		if err != nil {
-			fmt.Printf("Unable to use directory %s for schema %s: %s\n", schemaDir.Path, s.Name, err)
-			return 1
+			return fmt.Errorf("Unable to use directory %s for schema %s: %s", schemaDir.Path, s.Name, err)
 		}
 		if !schemaDir.HasOptionsFile() {
 			skf := &SkeemaFile{
@@ -167,8 +163,7 @@ func PopulateSchemaDir(cfg *Config, s *tengo.Schema, instance *tengo.Instance, p
 				Values: map[string]string{"schema": s.Name},
 			}
 			if err = skf.Write(false); err != nil {
-				fmt.Printf("Unable to write to %s: %s\n", skf.Path(), err)
-				return 1
+				return fmt.Errorf("Unable to write to %s: %s", skf.Path(), err)
 			}
 		}
 	} else {
@@ -176,11 +171,9 @@ func PopulateSchemaDir(cfg *Config, s *tengo.Schema, instance *tengo.Instance, p
 	}
 	if !created {
 		if sqlfiles, err := schemaDir.SQLFiles(); err != nil {
-			fmt.Printf("Unable to list files in %s: %s\n", schemaDir.Path, err)
-			return 1
+			return fmt.Errorf("Unable to list files in %s: %s", schemaDir.Path, err)
 		} else if len(sqlfiles) > 0 {
-			fmt.Printf("%s already contains *.sql files; cannot proceed\n", schemaDir.Path)
-			return 1
+			return fmt.Errorf("%s already contains *.sql files; cannot proceed", schemaDir.Path)
 		}
 	}
 
@@ -188,7 +181,7 @@ func PopulateSchemaDir(cfg *Config, s *tengo.Schema, instance *tengo.Instance, p
 	for _, t := range s.Tables() {
 		actualCreateStmt, err := instance.ShowCreateTable(s, t)
 		if err != nil {
-			panic(err)
+			return err
 		}
 
 		// Special handling for auto-increment tables: If user specifically wants to
@@ -209,8 +202,7 @@ func PopulateSchemaDir(cfg *Config, s *tengo.Schema, instance *tengo.Instance, p
 		// TODO: handle unsupported tables gracefully, without choking altogether
 		if actualCreateStmt != t.CreateStatement() {
 			fmt.Printf("!!! unable to handle DDL for table %s.%s; aborting\n", s.Name, t.Name)
-			fmt.Printf("FOUND:\n%s\n\nEXPECTED:\n%s\n", actualCreateStmt, t.CreateStatement())
-			return 2
+			return fmt.Errorf("FOUND:\n%s\n\nEXPECTED:\n%s", actualCreateStmt, t.CreateStatement())
 		}
 
 		sf := SQLFile{
@@ -219,11 +211,10 @@ func PopulateSchemaDir(cfg *Config, s *tengo.Schema, instance *tengo.Instance, p
 			Contents: actualCreateStmt,
 		}
 		if length, err := sf.Write(); err != nil {
-			fmt.Printf("Unable to write to %s: %s\n", sf.Path(), err)
-			return 1
+			return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
 		} else {
 			fmt.Printf("    Wrote %s (%d bytes)\n", sf.Path(), length)
 		}
 	}
-	return 0
+	return nil
 }

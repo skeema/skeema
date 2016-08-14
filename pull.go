@@ -24,11 +24,11 @@ reflect those changes.`
 	Commands["pull"] = cmd
 }
 
-func PullCommand(cfg *Config) int {
+func PullCommand(cfg *Config) error {
 	return pull(cfg, make(map[string]bool))
 }
 
-func pull(cfg *Config, seen map[string]bool) int {
+func pull(cfg *Config, seen map[string]bool) error {
 	if cfg.Dir.IsLeaf() {
 		fmt.Printf("Updating %s...\n", cfg.Dir.Path)
 
@@ -36,16 +36,14 @@ func pull(cfg *Config, seen map[string]bool) int {
 		to := t.Schema(t.SchemaNames[0])
 		if to == nil {
 			if err := cfg.Dir.Delete(); err != nil {
-				fmt.Printf("Unable to delete directory %s: %s\n", cfg.Dir, err)
-				return 1
+				return fmt.Errorf("Unable to delete directory %s: %s", cfg.Dir, err)
 			}
 			fmt.Printf("    Deleted directory %s -- schema no longer exists\n", cfg.Dir)
-			return 0
+			return nil
 		}
 
 		if err := cfg.PopulateTemporarySchema(); err != nil {
-			fmt.Printf("Unable to populate temporary schema: %s\n", err)
-			return 1
+			return err
 		}
 
 		from := t.TemporarySchema()
@@ -66,7 +64,7 @@ func pull(cfg *Config, seen map[string]bool) int {
 				table := td.Table
 				createStmt, err := t.ShowCreateTable(to, table)
 				if err != nil {
-					panic(err)
+					return err
 				}
 				if table.HasAutoIncrement() && !cfg.GetBool("include-auto-inc") {
 					createStmt, _ = tengo.ParseCreateAutoInc(createStmt)
@@ -78,8 +76,7 @@ func pull(cfg *Config, seen map[string]bool) int {
 					Contents: createStmt,
 				}
 				if length, err := sf.Write(); err != nil {
-					fmt.Printf("Unable to write to %s: %s\n", sf.Path(), err)
-					return 1
+					return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
 				} else {
 					fmt.Printf("    Wrote %s (%d bytes) -- new table\n", sf.Path(), length)
 				}
@@ -90,8 +87,7 @@ func pull(cfg *Config, seen map[string]bool) int {
 					FileName: fmt.Sprintf("%s.sql", table.Name),
 				}
 				if err := sf.Delete(); err != nil {
-					fmt.Printf("Unable to delete %s: %s\n", sf.Path(), err)
-					return 1
+					return fmt.Errorf("Unable to delete %s: %s", sf.Path(), err)
 				}
 				fmt.Printf("    Deleted %s -- table no longer exists\n", sf.Path())
 			case tengo.AlterTable:
@@ -102,7 +98,7 @@ func pull(cfg *Config, seen map[string]bool) int {
 				table := td.Table
 				createStmt, err := t.ShowCreateTable(to, table)
 				if err != nil {
-					panic(err)
+					return err
 				}
 				sf := SQLFile{
 					Dir:      cfg.Dir,
@@ -110,8 +106,7 @@ func pull(cfg *Config, seen map[string]bool) int {
 					Contents: createStmt,
 				}
 				if length, err := sf.Write(); err != nil {
-					fmt.Printf("Unable to write to %s: %s\n", sf.Path(), err)
-					return 1
+					return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
 				} else {
 					fmt.Printf("    Wrote %s (%d bytes) -- updated file to reflect table alterations\n", sf.Path(), length)
 				}
@@ -126,15 +121,13 @@ func pull(cfg *Config, seen map[string]bool) int {
 		// format of SHOW CREATE TABLE
 
 		if err := cfg.DropTemporarySchema(); err != nil {
-			fmt.Printf("Unable to clean up temporary schema: %s\n", err)
-			return 1
+			return err
 		}
 
 	} else {
 		subdirs, err := cfg.Dir.Subdirs()
 		if err != nil {
-			fmt.Printf("Unable to list subdirs of %s: %s\n", cfg.Dir, err)
-			return 1
+			return err
 		}
 
 		// If this dir represents an instance and its subdirs represent individual
@@ -154,9 +147,9 @@ func pull(cfg *Config, seen map[string]bool) int {
 			for _, schema := range t.Schemas() {
 				if !seenSchema[schema.Name] {
 					// use same logic from init command
-					ret := PopulateSchemaDir(cfg, schema, t.Instance, cfg.Dir, true)
-					if ret != 0 {
-						return ret
+					err := PopulateSchemaDir(cfg, schema, t.Instance, cfg.Dir, true)
+					if err != nil {
+						return err
 					}
 				}
 			}
@@ -167,13 +160,13 @@ func pull(cfg *Config, seen map[string]bool) int {
 		for n := range subdirs {
 			subdir := subdirs[n]
 			if !seen[subdir.Path] {
-				ret := pull(cfg.ChangeDir(&subdir), seen)
-				if ret != 0 {
-					return ret
+				err := pull(cfg.ChangeDir(&subdir), seen)
+				if err != nil {
+					return err
 				}
 			}
 		}
 	}
 
-	return 0
+	return nil
 }

@@ -16,7 +16,7 @@ func init() {
 	}
 }
 
-func HelpCommand(cfg *Config) int {
+func HelpCommand(cfg *Config) error {
 	var wantHelpFor string
 	if len(cfg.Args) > 0 {
 		wantHelpFor = cfg.Args[0]
@@ -24,11 +24,10 @@ func HelpCommand(cfg *Config) int {
 	if wantHelpFor != "" {
 		cmd := Commands[wantHelpFor]
 		if cmd == nil {
-			fmt.Printf("Unknown command \"%s\"\n\n", wantHelpFor)
-			return 1
+			return fmt.Errorf("Unknown command \"%s\"", wantHelpFor)
 		}
 		cmd.Usage(cfg.globalOptions)
-		return 0
+		return nil
 	}
 
 	fmt.Println("Skeema is a MySQL schema management tool. It allows you to map database schemas")
@@ -60,5 +59,5 @@ func HelpCommand(cfg *Config) int {
 		fmt.Printf(cfg.globalOptions[name].Usage(maxLen))
 	}
 
-	return 0
+	return nil
 }

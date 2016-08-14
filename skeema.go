@@ -76,5 +76,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	os.Exit(cfg.HandleCommand())
+	err := cfg.HandleCommand()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 }
