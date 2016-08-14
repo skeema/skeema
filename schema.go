@@ -14,30 +14,39 @@ type Schema struct {
 	instance         *Instance
 }
 
-func (s *Schema) TablesByName() map[string]*Table {
-	tables := s.Tables()
+func (s *Schema) TablesByName() (map[string]*Table, error) {
+	tables, err := s.Tables()
+	if err != nil {
+		return nil, err
+	}
 	result := make(map[string]*Table, len(tables))
 	for _, t := range tables {
 		result[t.Name] = t
 	}
-	return result
+	return result, nil
 }
 
 func (s Schema) HasTable(name string) bool {
-	byName := s.TablesByName()
+	byName, err := s.TablesByName()
+	if err != nil {
+		return false
+	}
 	_, exists := byName[name]
 	return exists
 }
 
-func (s *Schema) Tables() []*Table {
+func (s *Schema) Tables() ([]*Table, error) {
 	if s == nil {
-		return []*Table{}
+		return []*Table{}, nil
 	}
 	if s.tables != nil {
-		return s.tables
+		return s.tables, nil
 	}
 
-	db := s.instance.Connect("information_schema")
+	db, err := s.instance.Connect("information_schema")
+	if err != nil {
+		return nil, err
+	}
 
 	// Obtain the tables in the schema
 	var rawTables []struct {
@@ -61,7 +70,7 @@ func (s *Schema) Tables() []*Table {
 		WHERE     t.table_schema = ?
 		AND       t.table_type = 'BASE TABLE'`
 	if err := db.Select(&rawTables, query, s.Name); err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	s.tables = make([]*Table, len(rawTables))
@@ -95,7 +104,7 @@ func (s *Schema) Tables() []*Table {
 		WHERE    table_schema = ?
 		ORDER BY table_name, ordinal_position`
 	if err := db.Select(&rawColumns, query, s.Name); err != nil {
-		panic(err)
+		return nil, err
 	}
 	columnsByTableName := make(map[string][]*Column)
 	columnsByTableAndName := make(map[string]*Column)
@@ -145,7 +154,7 @@ func (s *Schema) Tables() []*Table {
 		FROM     statistics
 		WHERE    table_schema = ?`
 	if err := db.Select(&rawIndexes, query, s.Name); err != nil {
-		panic(err)
+		return nil, err
 	}
 	primaryKeyByTableName := make(map[string]*Index)
 	secondaryIndexesByTableName := make(map[string][]*Index)
@@ -198,7 +207,7 @@ func (s *Schema) Tables() []*Table {
 		s.tables[n].SecondaryIndexes = secondaryIndexesByTableName[t.Name]
 	}
 
-	return s.tables
+	return s.tables, nil
 }
 
 func (s *Schema) Refresh() {
@@ -207,14 +216,6 @@ func (s *Schema) Refresh() {
 	}
 	s.tables = nil
 	s.Tables()
-}
-
-// ClearNextAutoIncs iterates through all tables in the schema, and sets
-// NextAutoIncrement to 0 for all of them in the Table struct. Does NOT
-// actually alter the table on a database instance in any way; only impacts
-// Tengo's representation.
-func (s *Schema) ClearNextAutoIncs() {
-
 }
 
 func (from *Schema) Diff(to *Schema) *SchemaDiff {

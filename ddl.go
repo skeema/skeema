@@ -65,10 +65,16 @@ func NewSchemaDiff(from, to *Schema) *SchemaDiff {
 		TableDiffs: make([]TableDiff, 0),
 	}
 
-	fromTablesByName := from.TablesByName()
-	toTablesByName := to.TablesByName()
+	fromTablesByName, fromErr := from.TablesByName()
+	toTablesByName, toErr := to.TablesByName()
+	if fromErr != nil || toErr != nil {
+		return nil
+	}
 
-	toTables := to.Tables()
+	toTables, err := to.Tables()
+	if err != nil {
+		return nil
+	}
 	for n := range toTables {
 		newTable := toTables[n]
 		if _, existedBefore := fromTablesByName[newTable.Name]; !existedBefore {
@@ -76,7 +82,10 @@ func NewSchemaDiff(from, to *Schema) *SchemaDiff {
 		}
 	}
 
-	fromTables := from.Tables()
+	fromTables, err := from.Tables()
+	if err != nil {
+		return nil
+	}
 	for n := range fromTables {
 		origTable := fromTables[n]
 		newTable, stillExists := toTablesByName[origTable.Name]

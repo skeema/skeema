@@ -64,19 +64,41 @@ func (instance Instance) HostAndOptionalPort() string {
 	}
 }
 
-func (instance *Instance) Connect(defaultSchema string) *sqlx.DB {
+func (instance *Instance) Connect(defaultSchema string) (*sqlx.DB, error) {
 	if instance.connectionPool[defaultSchema] == nil {
-		instance.connectionPool[defaultSchema] = sqlx.MustConnect(instance.Driver, instance.DSN+defaultSchema).Unsafe()
+		db, err := sqlx.Connect(instance.Driver, instance.DSN+defaultSchema)
+		if err != nil {
+			return nil, err
+		}
+		instance.connectionPool[defaultSchema] = db.Unsafe()
+	} else if err := instance.connectionPool[defaultSchema].Ping(); err != nil {
+		return nil, err
 	}
-	return instance.connectionPool[defaultSchema]
+	return instance.connectionPool[defaultSchema], nil
 }
 
-func (instance *Instance) Schemas() []*Schema {
+func (instance *Instance) MustConnect(defaultSchema string) *sqlx.DB {
+	db, err := instance.Connect(defaultSchema)
+	if err != nil {
+		panic(err)
+	}
+	return db
+}
+
+func (instance *Instance) CanConnect() (bool, error) {
+	_, err := instance.Connect("")
+	return err == nil, err
+}
+
+func (instance *Instance) Schemas() ([]*Schema, error) {
 	if instance.schemas != nil {
-		return instance.schemas
+		return instance.schemas, nil
 	}
 
-	db := instance.Connect("information_schema")
+	db, err := instance.Connect("information_schema")
+	if err != nil {
+		return nil, err
+	}
 
 	var rawSchemas []struct {
 		Name             string `db:"schema_name"`
@@ -88,7 +110,7 @@ func (instance *Instance) Schemas() []*Schema {
 		FROM   schemata
 		WHERE  schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'test')`
 	if err := db.Select(&rawSchemas, query); err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	instance.schemas = make([]*Schema, len(rawSchemas))
@@ -100,7 +122,7 @@ func (instance *Instance) Schemas() []*Schema {
 			instance:         instance,
 		}
 	}
-	return instance.schemas
+	return instance.schemas, nil
 }
 
 func (instance *Instance) Refresh() {
@@ -108,21 +130,29 @@ func (instance *Instance) Refresh() {
 	instance.Schemas()
 }
 
-func (instance *Instance) Schema(name string) *Schema {
-	for _, s := range instance.Schemas() {
+func (instance *Instance) Schema(name string) (*Schema, error) {
+	schemas, err := instance.Schemas()
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range schemas {
 		if s.Name == name {
-			return s
+			return s, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func (instance *Instance) HasSchema(name string) bool {
-	return (instance.Schema(name) != nil)
+	s, _ := instance.Schema(name)
+	return s != nil
 }
 
 func (instance *Instance) ShowCreateTable(schema *Schema, table *Table) (string, error) {
-	db := instance.Connect(schema.Name)
+	db, err := instance.Connect(schema.Name)
+	if err != nil {
+		return "", err
+	}
 
 	var createRows []struct {
 		TableName       string `db:"Table"`
@@ -144,8 +174,11 @@ func (instance *Instance) ShowCreateTable(schema *Schema, table *Table) (string,
 // the error will be sql.ErrNoRows
 func (instance *Instance) TableSize(schema *Schema, table *Table) (int64, error) {
 	var result int64
-	db := instance.Connect("information_schema")
-	err := db.Get(&result, `
+	db, err := instance.Connect("information_schema")
+	if err != nil {
+		return 0, err
+	}
+	err = db.Get(&result, `
 		SELECT  data_length + index_length + data_free
 		FROM    tables
 		WHERE   table_schema = ? and table_name = ?`,
@@ -154,30 +187,40 @@ func (instance *Instance) TableSize(schema *Schema, table *Table) (int64, error)
 }
 
 func (instance *Instance) CreateSchema(name string) (*Schema, error) {
-	db := instance.Connect("")
+	db, err := instance.Connect("")
+	if err != nil {
+		return nil, err
+	}
 	// TODO: support DEFAULT CHARACTER SET and DEFAULT COLLATE
 	schema := Schema{Name: name}
-	_, err := db.Exec(schema.CreateStatement())
+	_, err = db.Exec(schema.CreateStatement())
 	if err != nil {
 		return nil, err
 	}
 	instance.Refresh()
-	return instance.Schema(name), nil
+	return instance.Schema(name)
 }
 
 // DropSchema first drops all tables in the schema, and then drops the database.
 func (instance *Instance) DropSchema(schema *Schema) error {
-	db := instance.Connect(schema.Name)
+	db, err := instance.Connect(schema.Name)
+	if err != nil {
+		return err
+	}
 
 	// TODO: need to handle proper ordering for foreign keys
-	for _, t := range schema.Tables() {
+	tables, err := schema.Tables()
+	if err != nil {
+		return err
+	}
+	for _, t := range tables {
 		_, err := db.Exec(t.DropStatement())
 		if err != nil {
 			return err
 		}
 	}
 
-	_, err := db.Exec(schema.DropStatement())
+	_, err = db.Exec(schema.DropStatement())
 	if err != nil {
 		return err
 	}
