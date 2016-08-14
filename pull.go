@@ -33,7 +33,10 @@ func pull(cfg *Config, seen map[string]bool) error {
 		fmt.Printf("Updating %s...\n", cfg.Dir.Path)
 
 		t := cfg.Targets()[0]
-		to := t.Schema(t.SchemaNames[0])
+		to, err := t.Schema(t.SchemaNames[0])
+		if err != nil {
+			return err
+		}
 		if to == nil {
 			if err := cfg.Dir.Delete(); err != nil {
 				return fmt.Errorf("Unable to delete directory %s: %s", cfg.Dir, err)
@@ -46,7 +49,10 @@ func pull(cfg *Config, seen map[string]bool) error {
 			return err
 		}
 
-		from := t.TemporarySchema()
+		from, err := t.TemporarySchema()
+		if err != nil {
+			return err
+		}
 		diff := tengo.NewSchemaDiff(from, to)
 
 		// pull command updates next auto-increment value for existing table always
@@ -144,11 +150,14 @@ func pull(cfg *Config, seen map[string]bool) error {
 				}
 			}
 			t := cfg.Targets()[0]
-			for _, schema := range t.Schemas() {
+			schemas, err := t.Schemas()
+			if err != nil {
+				return err
+			}
+			for _, schema := range schemas {
 				if !seenSchema[schema.Name] {
 					// use same logic from init command
-					err := PopulateSchemaDir(cfg, schema, t.Instance, cfg.Dir, true)
-					if err != nil {
+					if err := PopulateSchemaDir(cfg, schema, t.Instance, cfg.Dir, true); err != nil {
 						return err
 					}
 				}
@@ -160,8 +169,7 @@ func pull(cfg *Config, seen map[string]bool) error {
 		for n := range subdirs {
 			subdir := subdirs[n]
 			if !seen[subdir.Path] {
-				err := pull(cfg.ChangeDir(&subdir), seen)
-				if err != nil {
+				if err := pull(cfg.ChangeDir(&subdir), seen); err != nil {
 					return err
 				}
 			}

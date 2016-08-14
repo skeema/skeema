@@ -38,8 +38,14 @@ func push(cfg *Config, seen map[string]bool) error {
 		for _, t := range cfg.Targets() {
 			for _, schemaName := range t.SchemaNames {
 				fmt.Printf("\nPushing changes from %s/*.sql to %s %s...\n", cfg.Dir, t.Instance, schemaName)
-				from := t.Schema(schemaName)
-				to := t.TemporarySchema()
+				from, err := t.Schema(schemaName)
+				if err != nil {
+					return err
+				}
+				to, err := t.TemporarySchema()
+				if err != nil {
+					return err
+				}
 				diff := tengo.NewSchemaDiff(from, to)
 
 				if from == nil {
@@ -54,7 +60,10 @@ func push(cfg *Config, seen map[string]bool) error {
 					continue
 				}
 
-				db := t.Connect(schemaName)
+				db, err := t.Connect(schemaName)
+				if err != nil {
+					return err
+				}
 				var statementCounter int
 				for _, td := range diff.TableDiffs {
 					stmt := td.Statement(mods)
@@ -62,7 +71,7 @@ func push(cfg *Config, seen map[string]bool) error {
 						statementCounter++
 						_, err := db.Exec(stmt)
 						if err != nil {
-							fmt.Printf("Error running statement \"%s\" on %s: %s\n", stmt, t.Instance, err)
+							return fmt.Errorf("Error running statement \"%s\" on %s: %s", stmt, t.Instance, err)
 						} else {
 							fmt.Printf("%s;\n", stmt)
 						}

@@ -37,8 +37,14 @@ func diff(cfg *Config, seen map[string]bool) error {
 		for _, t := range cfg.Targets() {
 			for _, schemaName := range t.SchemaNames {
 				fmt.Printf("-- Diff of %s %s vs %s/*.sql\n", t.Instance, schemaName, cfg.Dir)
-				from := t.Schema(schemaName)
-				to := t.TemporarySchema()
+				from, err := t.Schema(schemaName)
+				if err != nil {
+					return err
+				}
+				to, err := t.TemporarySchema()
+				if err != nil {
+					return err
+				}
 				diff := tengo.NewSchemaDiff(from, to)
 				if from == nil {
 					// We have to create a new Schema to emit a create statement for the

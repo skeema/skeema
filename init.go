@@ -131,9 +131,17 @@ func InitCommand(cfg *Config) error {
 		if !target.HasSchema(onlySchema) {
 			return fmt.Errorf("Schema %s does not exist on instance %s", onlySchema, target.Instance)
 		}
-		schemas = []*tengo.Schema{target.Schema(onlySchema)}
+		s, err := target.Schema(onlySchema)
+		if err != nil {
+			return err
+		}
+		schemas = []*tengo.Schema{s}
 	} else {
-		schemas = target.Schemas()
+		var err error
+		schemas, err = target.Schemas()
+		if err != nil {
+			return err
+		}
 	}
 
 	// Iterate over the schemas; create a dir with .skeema and *.sql files for each
@@ -178,7 +186,11 @@ func PopulateSchemaDir(cfg *Config, s *tengo.Schema, instance *tengo.Instance, p
 	}
 
 	fmt.Printf("Populating %s...\n", schemaDir.Path)
-	for _, t := range s.Tables() {
+	tables, err := s.Tables()
+	if err != nil {
+		return err
+	}
+	for _, t := range tables {
 		actualCreateStmt, err := instance.ShowCreateTable(s, t)
 		if err != nil {
 			return err

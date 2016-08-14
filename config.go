@@ -437,10 +437,17 @@ func (cfg *Config) PopulateTemporarySchema() error {
 	}
 
 	for _, t := range cfg.Targets() {
-		tempSchema := t.Schema(tempSchemaName)
+		tempSchema, err := t.Schema(tempSchemaName)
+		if err != nil {
+			return err
+		}
 		if tempSchema != nil {
-			if tableCount := len(tempSchema.Tables()); tableCount > 0 {
-				return fmt.Errorf("%s: temp schema name %s already exists and has %d tables, refusing to overwrite", t.Instance, tempSchemaName, tableCount)
+			tables, err := tempSchema.Tables()
+			if err != nil {
+				return err
+			}
+			if len(tables) > 0 {
+				return fmt.Errorf("%s: temp schema name %s already exists and has %d tables, refusing to overwrite", t.Instance, tempSchemaName, len(tables))
 			}
 		} else {
 			tempSchema, err = t.CreateSchema(tempSchemaName)
@@ -449,7 +456,10 @@ func (cfg *Config) PopulateTemporarySchema() error {
 			}
 		}
 
-		db := t.Connect(tempSchemaName)
+		db, err := t.Connect(tempSchemaName)
+		if err != nil {
+			return err
+		}
 		for _, sf := range sqlFiles {
 			_, err := db.Exec(sf.Contents)
 			if err != nil {
@@ -467,7 +477,10 @@ func (cfg *Config) DropTemporarySchema() error {
 	tempSchemaName := "_skeema_tmp"
 
 	for _, t := range cfg.Targets() {
-		tempSchema := t.Schema(tempSchemaName)
+		tempSchema, err := t.Schema(tempSchemaName)
+		if err != nil {
+			return err
+		}
 		if tempSchema == nil {
 			continue
 		}
@@ -487,7 +500,7 @@ type Target struct {
 	SchemaNames []string
 }
 
-func (t Target) TemporarySchema() *tengo.Schema {
+func (t Target) TemporarySchema() (*tengo.Schema, error) {
 	// TODO configurable temp schema name
 	return t.Schema("_skeema_tmp")
 }
