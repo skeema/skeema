@@ -125,11 +125,6 @@ func (instance *Instance) Schemas() ([]*Schema, error) {
 	return instance.schemas, nil
 }
 
-func (instance *Instance) Refresh() {
-	instance.schemas = nil
-	instance.Schemas()
-}
-
 func (instance *Instance) Schema(name string) (*Schema, error) {
 	schemas, err := instance.Schemas()
 	if err != nil {
@@ -197,7 +192,9 @@ func (instance *Instance) CreateSchema(name string) (*Schema, error) {
 	if err != nil {
 		return nil, err
 	}
-	instance.Refresh()
+
+	// Purge schema cache; next call to Schema will repopulate
+	instance.schemas = nil
 	return instance.Schema(name)
 }
 
@@ -226,6 +223,8 @@ func (instance *Instance) DropSchema(schema *Schema) error {
 	}
 	db.Close()
 	delete(instance.connectionPool, schema.Name)
-	instance.Refresh()
+
+	// Purge schema cache before returning
+	instance.schemas = nil
 	return nil
 }

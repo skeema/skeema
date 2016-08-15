@@ -210,12 +210,11 @@ func (s *Schema) Tables() ([]*Table, error) {
 	return s.tables, nil
 }
 
-func (s *Schema) Refresh() {
+func (s *Schema) PurgeTableCache() {
 	if s == nil {
 		return
 	}
 	s.tables = nil
-	s.Tables()
 }
 
 func (from *Schema) Diff(to *Schema) *SchemaDiff {
