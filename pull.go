@@ -169,7 +169,10 @@ func pull(cfg *Config, seen map[string]bool) error {
 		for n := range subdirs {
 			subdir := subdirs[n]
 			if !seen[subdir.Path] {
-				if err := pull(cfg.ChangeDir(&subdir), seen); err != nil {
+				if err := cfg.ChangeDir(&subdir); err != nil {
+					return err
+				}
+				if err := pull(cfg, seen); err != nil {
 					return err
 				}
 			}

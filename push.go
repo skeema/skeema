@@ -36,6 +36,11 @@ func push(cfg *Config, seen map[string]bool) error {
 		}
 
 		for _, t := range cfg.Targets() {
+			if canConnect, err := t.CanConnect(); !canConnect {
+				// TODO: option to ignore/skip erroring hosts instead of failing entirely
+				return fmt.Errorf("Cannot connect to %s: %s", t.Instance, err)
+			}
+
 			for _, schemaName := range t.SchemaNames {
 				fmt.Printf("\nPushing changes from %s/*.sql to %s %s...\n", cfg.Dir, t.Instance, schemaName)
 				from, err := t.Schema(schemaName)
@@ -100,8 +105,10 @@ func push(cfg *Config, seen map[string]bool) error {
 		for n := range subdirs {
 			subdir := subdirs[n]
 			if !seen[subdir.Path] {
-				err := push(cfg.ChangeDir(&subdir), seen)
-				if err != nil {
+				if err := cfg.ChangeDir(&subdir); err != nil {
+					return err
+				}
+				if err := push(cfg, seen); err != nil {
 					return err
 				}
 			}

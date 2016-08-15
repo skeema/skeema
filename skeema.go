@@ -71,12 +71,13 @@ func main() {
 		globalFilePaths = append(globalFilePaths, path.Join(home, ".my.cnf"), path.Join(home, ".skeema"))
 	}
 
-	cfg := NewConfig(os.Args[1:], globalFilePaths)
-	if cfg == nil {
+	cfg, err := NewConfig(os.Args[1:], globalFilePaths)
+	if err != nil {
+		fmt.Println(err)
 		os.Exit(1)
 	}
 
-	err := cfg.HandleCommand()
+	err = cfg.HandleCommand()
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

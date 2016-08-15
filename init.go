@@ -41,7 +41,9 @@ func InitCommand(cfg *Config) error {
 		return fmt.Errorf("Unable to use specified base-dir: %s", err)
 	}
 	if cfg.Dir.Path != baseDir.Path {
-		cfg.ChangeDir(baseDir)
+		if err := cfg.ChangeDir(baseDir); err != nil {
+			return err
+		}
 	}
 	if wasNewBase {
 		fmt.Println("Creating and using skeema base dir", baseDir.Path)
@@ -64,6 +66,15 @@ func InitCommand(cfg *Config) error {
 		} else {
 			hostDirName = cfg.Get("host")
 		}
+	}
+
+	// Validate connection-related options (host, port, socket, user, password) by
+	// testing connection. We have to do this after applying the base dir (since
+	// that may affect connection options) but we want to do it before proceeding
+	// with any host or schema level dir creation.
+	target := cfg.Targets()[0]
+	if canConnect, err := target.CanConnect(); !canConnect {
+		return fmt.Errorf("Cannot connect to %s: %s", target.Instance, err)
 	}
 
 	var hostDir *SkeemaDir
@@ -125,7 +136,6 @@ func InitCommand(cfg *Config) error {
 	}
 
 	// Build list of schemas
-	target := cfg.Targets()[0]
 	var schemas []*tengo.Schema
 	if onlySchema != "" {
 		if !target.HasSchema(onlySchema) {

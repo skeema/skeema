@@ -21,48 +21,44 @@ type Config struct {
 	targets                []Target
 }
 
-func NewConfig(cliArgs []string, globalFilePaths []string) *Config {
+func NewConfig(cliArgs []string, globalFilePaths []string) (*Config, error) {
 	cfg := new(Config)
 	cfg.globalOptions = GlobalOptions()
 	cfg.Dir = NewSkeemaDir(".")
 
 	// Parse CLI to set cfg.Cmd, cfg.Args, cfg.cliOptionValues
 	if err := cfg.parseCLI(cliArgs); err != nil {
-		fmt.Println(err.Error())
-		return nil
+		return nil, err
 	}
 
 	// Parse global option files to set cfg.globalFileOptionValues
 	if err := cfg.parseGlobalFiles(globalFilePaths); err != nil {
-		fmt.Println(err.Error())
-		return nil
+		return nil, err
 	}
 
 	// Parse dir option files to set cfg.dirFileOptionValues
 	if err := cfg.parseDirFiles(); err != nil {
-		fmt.Println(err.Error())
-		return nil
+		return nil, err
 	}
 
 	// Remaining fields stay at zero/nil, get set lazily when needed
-	return cfg
+	return cfg, nil
 }
 
-func (cfg *Config) ChangeDir(dir *SkeemaDir) *Config {
+func (cfg *Config) ChangeDir(dir *SkeemaDir) error {
 	if dir.Path == cfg.Dir.Path {
-		return cfg
+		return nil
 	}
 
 	cfg.Dir = dir
 	cfg.targets = nil
 
 	if err := cfg.parseDirFiles(); err != nil {
-		fmt.Println(err.Error())
-		cfg.Dir = nil // TODO: better way to expose errors in this call
-		return nil
+		cfg.Dir = nil
+		return err
 	}
 
-	return cfg
+	return nil
 }
 
 func (cfg *Config) HandleCommand() error {
@@ -410,9 +406,13 @@ func (cfg *Config) Targets() []Target {
 	}
 
 	// TODO support drivers being overriden
+	driver := "mysql"
 	target := Target{
-		Instance:    tengo.NewInstance("mysql", dsn),
+		Instance:    tengo.NewInstance(driver, dsn),
 		SchemaNames: schemas,
+	}
+	if target.Instance == nil {
+		panic(fmt.Errorf("Invalid DSN format: %s", dsn))
 	}
 
 	// TODO support generating multiple targets if host lookup using service discovery

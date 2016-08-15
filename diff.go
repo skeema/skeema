@@ -35,6 +35,11 @@ func diff(cfg *Config, seen map[string]bool) error {
 		}
 
 		for _, t := range cfg.Targets() {
+			if canConnect, err := t.CanConnect(); !canConnect {
+				// TODO: option to ignore/skip erroring hosts instead of failing entirely
+				return fmt.Errorf("Cannot connect to %s: %s", t.Instance, err)
+			}
+
 			for _, schemaName := range t.SchemaNames {
 				fmt.Printf("-- Diff of %s %s vs %s/*.sql\n", t.Instance, schemaName, cfg.Dir)
 				from, err := t.Schema(schemaName)
@@ -77,8 +82,10 @@ func diff(cfg *Config, seen map[string]bool) error {
 		for n := range subdirs {
 			subdir := subdirs[n]
 			if !seen[subdir.Path] {
-				err := diff(cfg.ChangeDir(&subdir), seen)
-				if err != nil {
+				if err := cfg.ChangeDir(&subdir); err != nil {
+					return err
+				}
+				if err := diff(cfg, seen); err != nil {
 					return err
 				}
 			}
