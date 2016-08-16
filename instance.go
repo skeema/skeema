@@ -66,7 +66,8 @@ func (instance Instance) HostAndOptionalPort() string {
 
 func (instance *Instance) Connect(defaultSchema string) (*sqlx.DB, error) {
 	if instance.connectionPool[defaultSchema] == nil {
-		db, err := sqlx.Connect(instance.Driver, instance.DSN+defaultSchema)
+		fullDSN := fmt.Sprintf("%s%s?interpolateParams=true", instance.DSN, defaultSchema)
+		db, err := sqlx.Connect(instance.Driver, fullDSN)
 		if err != nil {
 			return nil, err
 		}
