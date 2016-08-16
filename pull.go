@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/skeema/tengo"
@@ -32,7 +33,11 @@ func pull(cfg *Config, seen map[string]bool) error {
 	if cfg.Dir.IsLeaf() {
 		fmt.Printf("Updating %s...\n", cfg.Dir.Path)
 
-		t := cfg.Targets()[0]
+		targets := cfg.Targets()
+		if len(targets) == 0 {
+			return errors.New("No valid instances to connect to; aborting")
+		}
+		t := targets[0]
 		to, err := t.Schema(t.SchemaNames[0])
 		if err != nil {
 			return err
@@ -149,7 +154,11 @@ func pull(cfg *Config, seen map[string]bool) error {
 					seenSchema[skf.Values["schema"]] = true
 				}
 			}
-			t := cfg.Targets()[0]
+			targets := cfg.Targets()
+			if len(targets) == 0 {
+				return errors.New("No valid instances to connect to; aborting")
+			}
+			t := targets[0]
 			schemas, err := t.Schemas()
 			if err != nil {
 				return err

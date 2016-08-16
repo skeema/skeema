@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"strconv"
@@ -72,7 +73,11 @@ func InitCommand(cfg *Config) error {
 	// testing connection. We have to do this after applying the base dir (since
 	// that may affect connection options) but we want to do it before proceeding
 	// with any host or schema level dir creation.
-	target := cfg.Targets()[0]
+	targets := cfg.Targets()
+	if len(targets) == 0 {
+		return errors.New("No valid instances to connect to; aborting")
+	}
+	target := targets[0]
 	if canConnect, err := target.CanConnect(); !canConnect {
 		return fmt.Errorf("Cannot connect to %s: %s", target.Instance, err)
 	}

@@ -424,7 +424,8 @@ func (cfg *Config) Targets() []Target {
 		SchemaNames: schemas,
 	}
 	if target.Instance == nil {
-		panic(fmt.Errorf("Invalid DSN format: %s", dsn))
+		fmt.Printf("Ignoring invalid connection information (user=%s, host=%s, schemas=%v)\n", cfg.Get("user"), cfg.Get("host"), schemas)
+		return []Target{}
 	}
 
 	// TODO support generating multiple targets if host lookup using service discovery
