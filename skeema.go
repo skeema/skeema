@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -44,24 +45,38 @@ func GlobalOptions() map[string]*Option {
 	return result
 }
 
-func SplitHostPort(cfg *Config, values map[string]string) {
-	parts := strings.SplitN(values["host"], ":", 2)
-	if len(parts) > 1 {
-		values["host"] = parts[0]
-		if port, _ := strconv.Atoi(parts[1]); port != 0 && values["port"] == "" {
+func SplitHostPort(cfg *Config, values map[string]string) error {
+	parts := strings.Split(values["host"], ":")
+	if len(parts) == 1 || (strings.HasPrefix(parts[0], "[") && strings.HasSuffix(parts[len(parts)-1], "]")) {
+		return nil
+	}
+	if len(parts) == 2 || strings.HasSuffix(parts[len(parts)-2], "]") {
+		values["host"] = strings.Join(parts[0:len(parts)-1], ":")
+		if port, err := strconv.Atoi(parts[len(parts)-1]); err != nil {
+			return err
+		} else if values["port"] != "" && values["port"] != strconv.Itoa(port) {
+			return errors.New("port supplied in both host and port param")
+		} else if port == 0 {
+			return errors.New("invalid port 0 supplied")
+		} else {
 			values["port"] = strconv.Itoa(port)
+			return nil
 		}
+	} else {
+		return errors.New("invalid host param")
 	}
 }
 
-func PromptPasswordIfNeeded(cfg *Config, values map[string]string) {
+func PromptPasswordIfNeeded(cfg *Config, values map[string]string) error {
 	if values["password"] == "" {
 		fmt.Printf("Enter password: ")
 		bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
-		if err == nil {
-			values["password"] = string(bytePassword)
+		if err != nil {
+			return err
 		}
+		values["password"] = string(bytePassword)
 	}
+	return nil
 }
 
 func main() {

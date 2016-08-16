@@ -175,7 +175,10 @@ func (cfg *Config) parseLongArg(arg string, args *[]string) error {
 
 	cfg.cliOptionValues[opt.Name] = value
 	if opt.AfterParse != nil {
-		opt.AfterParse(cfg, cfg.cliOptionValues)
+		err := opt.AfterParse(cfg, cfg.cliOptionValues)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -212,7 +215,10 @@ func (cfg *Config) parseShortArgs(arg string, args *[]string, shortOptionIndex m
 
 		cfg.cliOptionValues[opt.Name] = value
 		if opt.AfterParse != nil {
-			opt.AfterParse(cfg, cfg.cliOptionValues)
+			err := opt.AfterParse(cfg, cfg.cliOptionValues)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -236,7 +242,10 @@ func (cfg *Config) parseGlobalFiles(globalFilePaths []string) error {
 				cfg.globalFileOptionValues[key] = value
 				opt := cfg.FindOption(key)
 				if opt.AfterParse != nil {
-					opt.AfterParse(cfg, cfg.globalFileOptionValues)
+					err := opt.AfterParse(cfg, cfg.globalFileOptionValues)
+					if err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -255,7 +264,10 @@ func (cfg *Config) parseDirFiles() error {
 			cfg.dirFileOptionValues[key] = value
 			opt := cfg.FindOption(key)
 			if opt.AfterParse != nil {
-				opt.AfterParse(cfg, cfg.globalFileOptionValues)
+				err := opt.AfterParse(cfg, cfg.dirFileOptionValues)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
