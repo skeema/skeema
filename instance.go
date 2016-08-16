@@ -73,7 +73,10 @@ func (instance *Instance) Connect(defaultSchema string) (*sqlx.DB, error) {
 		}
 		instance.connectionPool[defaultSchema] = db.Unsafe()
 	} else if err := instance.connectionPool[defaultSchema].Ping(); err != nil {
-		return nil, err
+		// Bad ping on existing conn: nuke the connection pool and try again
+		_ = instance.connectionPool[defaultSchema].Close() // intentionally ignoring any error here
+		instance.connectionPool[defaultSchema] = nil
+		return instance.Connect(defaultSchema)
 	}
 	return instance.connectionPool[defaultSchema], nil
 }
