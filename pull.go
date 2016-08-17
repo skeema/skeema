@@ -72,19 +72,10 @@ func pull(cfg *Config, seen map[string]bool) error {
 		for _, td := range diff.TableDiffs {
 			switch td := td.(type) {
 			case tengo.CreateTable:
-				table := td.Table
-				createStmt, err := t.ShowCreateTable(to, table)
-				if err != nil {
-					return err
-				}
-				if table.HasAutoIncrement() && !cfg.GetBool("include-auto-inc") {
-					createStmt, _ = tengo.ParseCreateAutoInc(createStmt)
-				}
-				// TODO: verify skeema can handle this table, just like we do for init
 				sf := SQLFile{
 					Dir:      cfg.Dir,
-					FileName: fmt.Sprintf("%s.sql", table.Name),
-					Contents: createStmt,
+					FileName: fmt.Sprintf("%s.sql", td.Table.Name),
+					Contents: td.Statement(mods),
 				}
 				if length, err := sf.Write(); err != nil {
 					return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
