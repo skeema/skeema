@@ -15,6 +15,7 @@ type Table struct {
 	PrimaryKey        *Index
 	SecondaryIndexes  []*Index
 	NextAutoIncrement uint64
+	UnsupportedDDL    bool
 }
 
 func (t Table) AlterStatement() string {
@@ -25,6 +26,11 @@ func (t Table) DropStatement() string {
 	return fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(t.Name))
 }
 
+// CreateStatement generates a CREATE TABLE statement based on the Table's Go
+// field values. Ordinarily this will match the output of MySQL's SHOW CREATE
+// TABLE statement. However if t.UnsupportedDDL == true, this means the table
+// uses MySQL features that Tengo does not yet support, and so the output of
+// this method will differ from MySQL.
 func (t Table) CreateStatement() string {
 	defs := make([]string, len(t.Columns), len(t.Columns)+len(t.SecondaryIndexes)+1)
 	for n, c := range t.Columns {
@@ -115,6 +121,11 @@ func (from *Table) Diff(to *Table) []TableAlterClause {
 	}
 	if from.CharacterSet != to.CharacterSet || from.Collation != to.Collation {
 		panic(errors.New("Character set and collation changes not yet supported"))
+	}
+
+	if from.UnsupportedDDL || to.UnsupportedDDL {
+		fmt.Printf("-- Ignoring table %s: unable to diff due to use of unsupported features\n", from.Name)
+		return clauses
 	}
 
 	// Compare columns existence, for use in figuring out adds / drops / modifications

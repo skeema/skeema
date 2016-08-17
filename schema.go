@@ -202,9 +202,21 @@ func (s *Schema) Tables() ([]*Table, error) {
 			index.SubParts = append(index.SubParts, 0)
 		}
 	}
-	for n, t := range s.tables {
-		s.tables[n].PrimaryKey = primaryKeyByTableName[t.Name]
-		s.tables[n].SecondaryIndexes = secondaryIndexesByTableName[t.Name]
+	for _, t := range s.tables {
+		t.PrimaryKey = primaryKeyByTableName[t.Name]
+		t.SecondaryIndexes = secondaryIndexesByTableName[t.Name]
+	}
+
+	// Finally, compare actual SHOW CREATE TABLE output with what we expect the
+	// statement to be. Flag any discrepancies as unsupported tables.
+	for _, t := range s.tables {
+		actualCreateStmt, err := s.instance.ShowCreateTable(s, t)
+		if err != nil {
+			return nil, err
+		}
+		if actualCreateStmt != t.CreateStatement() {
+			t.UnsupportedDDL = true
+		}
 	}
 
 	return s.tables, nil
