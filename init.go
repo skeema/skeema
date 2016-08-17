@@ -206,36 +206,21 @@ func PopulateSchemaDir(cfg *Config, s *tengo.Schema, instance *tengo.Instance, p
 		return err
 	}
 	for _, t := range tables {
-		actualCreateStmt, err := instance.ShowCreateTable(s, t)
+		createStmt, err := instance.ShowCreateTable(s, t)
 		if err != nil {
 			return err
 		}
 
-		// Special handling for auto-increment tables: If user specifically wants to
-		// keep next auto inc value in .sql file, store it in the Table object so that
-		// the generated SQL matches SHOW CREATE TABLE; else, strip it
-		if t.HasAutoIncrement() {
-			if cfg.GetBool("include-auto-inc") {
-				_, t.NextAutoIncrement = tengo.ParseCreateAutoInc(actualCreateStmt)
-			} else {
-				actualCreateStmt, _ = tengo.ParseCreateAutoInc(actualCreateStmt)
-				t.NextAutoIncrement = 1
-			}
-		}
-
-		// Compare the actual CREATE TABLE statement obtained from MySQL with what
-		// Tengo expects the CREATE TABLE statement to be. If they differ, Skeema
-		// does not support this table.
-		// TODO: handle unsupported tables gracefully, without choking altogether
-		if actualCreateStmt != t.CreateStatement() {
-			fmt.Printf("!!! unable to handle DDL for table %s.%s; aborting\n", s.Name, t.Name)
-			return fmt.Errorf("FOUND:\n%s\n\nEXPECTED:\n%s", actualCreateStmt, t.CreateStatement())
+		// Special handling for auto-increment tables: strip next-auto-inc value,
+		// unless user specifically wants to keep it in .sql file
+		if t.HasAutoIncrement() && !cfg.GetBool("include-auto-inc") {
+			createStmt, _ = tengo.ParseCreateAutoInc(createStmt)
 		}
 
 		sf := SQLFile{
 			Dir:      schemaDir,
 			FileName: fmt.Sprintf("%s.sql", t.Name),
-			Contents: actualCreateStmt,
+			Contents: createStmt,
 		}
 		if length, err := sf.Write(); err != nil {
 			return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
