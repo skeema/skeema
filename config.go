@@ -475,7 +475,9 @@ func (cfg *Config) PopulateTemporarySchema() error {
 		}
 		for _, sf := range sqlFiles {
 			_, err := db.Exec(sf.Contents)
-			if err != nil {
+			if tengo.IsSyntaxError(err) {
+				return fmt.Errorf("SQL syntax error in %s: %s", sf.Path(), err)
+			} else if err != nil {
 				return fmt.Errorf("Unable to populate temporary schema: %s", err)
 			}
 		}
