@@ -121,7 +121,11 @@ type CreateTable struct {
 }
 
 func (ct CreateTable) Statement(mods StatementModifiers) string {
-	return ct.Table.CreateStatement()
+	stmt := ct.Table.CreateStatement()
+	if ct.Table.HasAutoIncrement() && (mods.NextAutoInc == NextAutoIncIgnore || mods.NextAutoInc == NextAutoIncIfAlready) {
+		stmt, _ = ParseCreateAutoInc(stmt)
+	}
+	return stmt
 }
 
 ///// DropTable ////////////////////////////////////////////////////////////////

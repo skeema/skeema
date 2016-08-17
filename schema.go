@@ -207,14 +207,15 @@ func (s *Schema) Tables() ([]*Table, error) {
 		t.SecondaryIndexes = secondaryIndexesByTableName[t.Name]
 	}
 
-	// Finally, compare actual SHOW CREATE TABLE output with what we expect the
-	// statement to be. Flag any discrepancies as unsupported tables.
+	// Obtain actual SHOW CREATE TABLE output and store in each table. Compare
+	// with what we expect the create DDL to be, to determine if we support
+	// diffing for the table.
 	for _, t := range s.tables {
-		actualCreateStmt, err := s.instance.ShowCreateTable(s, t)
+		t.createStatement, err = s.instance.ShowCreateTable(s, t)
 		if err != nil {
 			return nil, err
 		}
-		if actualCreateStmt != t.CreateStatement() {
+		if t.createStatement != t.GeneratedCreateStatement() {
 			t.UnsupportedDDL = true
 		}
 	}

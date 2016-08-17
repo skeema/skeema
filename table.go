@@ -16,6 +16,7 @@ type Table struct {
 	SecondaryIndexes  []*Index
 	NextAutoIncrement uint64
 	UnsupportedDDL    bool
+	createStatement   string
 }
 
 func (t Table) AlterStatement() string {
@@ -26,12 +27,20 @@ func (t Table) DropStatement() string {
 	return fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(t.Name))
 }
 
-// CreateStatement generates a CREATE TABLE statement based on the Table's Go
-// field values. Ordinarily this will match the output of MySQL's SHOW CREATE
-// TABLE statement. However if t.UnsupportedDDL == true, this means the table
-// uses MySQL features that Tengo does not yet support, and so the output of
-// this method will differ from MySQL.
 func (t Table) CreateStatement() string {
+	if t.createStatement == "" {
+		return t.GeneratedCreateStatement()
+	} else {
+		return t.createStatement
+	}
+}
+
+// GeneratedCreateStatement generates a CREATE TABLE statement based on the
+// Table's Go field values. If t.UnsupportedDDL is false, this will match
+// the output of MySQL's SHOW CREATE TABLE statement. But if t.UnsupportedDDL
+// is true, this means the table uses MySQL features that Tengo does not yet
+// support, and so the output of this method will differ from MySQL.
+func (t Table) GeneratedCreateStatement() string {
 	defs := make([]string, len(t.Columns), len(t.Columns)+len(t.SecondaryIndexes)+1)
 	for n, c := range t.Columns {
 		defs[n] = c.Definition()
