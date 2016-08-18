@@ -51,7 +51,10 @@ func push(cfg *Config, seen map[string]bool) error {
 				if err != nil {
 					return err
 				}
-				diff := tengo.NewSchemaDiff(from, to)
+				diff, err := tengo.NewSchemaDiff(from, to)
+				if err != nil {
+					return err
+				}
 
 				if from == nil {
 					var err error

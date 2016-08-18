@@ -50,7 +50,10 @@ func diff(cfg *Config, seen map[string]bool) error {
 				if err != nil {
 					return err
 				}
-				diff := tengo.NewSchemaDiff(from, to)
+				diff, err := tengo.NewSchemaDiff(from, to)
+				if err != nil {
+					return err
+				}
 				if from == nil {
 					// We have to create a new Schema to emit a create statement for the
 					// correct DB name. We can't use to.CreateStatement() because that would

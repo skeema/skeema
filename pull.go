@@ -58,7 +58,10 @@ func pull(cfg *Config, seen map[string]bool) error {
 		if err != nil {
 			return err
 		}
-		diff := tengo.NewSchemaDiff(from, to)
+		diff, err := tengo.NewSchemaDiff(from, to)
+		if err != nil {
+			return err
+		}
 
 		// pull command updates next auto-increment value for existing table always
 		// if requested, or only if previously present in file otherwise
