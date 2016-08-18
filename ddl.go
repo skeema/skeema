@@ -23,7 +23,6 @@ const (
 // clause if present. The modified CREATE TABLE will be returned, along with
 // the next auto-increment value if one was found.
 func ParseCreateAutoInc(createStmt string) (string, uint64) {
-	//) ENGINE=%s AUTO_INCREMENT=%d DEFAULT CHARSET=
 	reParseCreate := regexp.MustCompile(`[)] ENGINE=\w+ (AUTO_INCREMENT=(\d+) )DEFAULT CHARSET=`)
 	matches := reParseCreate.FindStringSubmatch(createStmt)
 	if matches == nil {
@@ -58,7 +57,7 @@ type SchemaDiff struct {
 	// TODO: schema-level default charset and collation changes
 }
 
-func NewSchemaDiff(from, to *Schema) *SchemaDiff {
+func NewSchemaDiff(from, to *Schema) (*SchemaDiff, error) {
 	result := &SchemaDiff{
 		FromSchema: from,
 		ToSchema:   to,
@@ -67,13 +66,15 @@ func NewSchemaDiff(from, to *Schema) *SchemaDiff {
 
 	fromTablesByName, fromErr := from.TablesByName()
 	toTablesByName, toErr := to.TablesByName()
-	if fromErr != nil || toErr != nil {
-		return nil
+	if fromErr != nil {
+		return nil, fromErr
+	} else if toErr != nil {
+		return nil, toErr
 	}
 
 	toTables, err := to.Tables()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	for n := range toTables {
 		newTable := toTables[n]
@@ -84,7 +85,7 @@ func NewSchemaDiff(from, to *Schema) *SchemaDiff {
 
 	fromTables, err := from.Tables()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	for n := range fromTables {
 		origTable := fromTables[n]
@@ -103,7 +104,7 @@ func NewSchemaDiff(from, to *Schema) *SchemaDiff {
 		}
 	}
 
-	return result
+	return result, nil
 }
 
 func (sd *SchemaDiff) String() string {

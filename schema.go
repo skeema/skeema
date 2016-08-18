@@ -230,7 +230,7 @@ func (s *Schema) PurgeTableCache() {
 	s.tables = nil
 }
 
-func (from *Schema) Diff(to *Schema) *SchemaDiff {
+func (from *Schema) Diff(to *Schema) (*SchemaDiff, error) {
 	return NewSchemaDiff(from, to)
 }
 
