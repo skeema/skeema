@@ -8,11 +8,7 @@ func TestParseCreateAutoInc(t *testing.T) {
 
 }
 
-func TestSchemaDiffAddTable(t *testing.T) {
-
-}
-
-func TestSchemaDiffDropTable(t *testing.T) {
+func TestSchemaDiffAddOrDropTable(t *testing.T) {
 
 }
 
