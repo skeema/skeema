@@ -97,34 +97,7 @@ func (t Table) HasAutoIncrement() bool {
 	return false
 }
 
-type columnsComparison struct {
-	fromColumnsByName map[string]*Column
-	fromStillPresent  []bool
-	toColumnsByName   map[string]*Column
-	toAlreadyExisted  []bool
-}
-
-func (self *Table) compareColumnExistence(other *Table) columnsComparison {
-	cc := columnsComparison{
-		fromColumnsByName: self.ColumnsByName(),
-		toColumnsByName:   other.ColumnsByName(),
-		fromStillPresent:  make([]bool, len(self.Columns)),
-		toAlreadyExisted:  make([]bool, len(other.Columns)),
-	}
-	for n, col := range self.Columns {
-		_, existsInOther := cc.toColumnsByName[col.Name]
-		cc.fromStillPresent[n] = existsInOther
-	}
-	for n, col := range other.Columns {
-		_, existsInSelf := cc.fromColumnsByName[col.Name]
-		cc.toAlreadyExisted[n] = existsInSelf
-	}
-	return cc
-}
-
 func (from *Table) Diff(to *Table) []TableAlterClause {
-	clauses := make([]TableAlterClause, 0)
-
 	if from.Name != to.Name {
 		panic(errors.New("Table renaming not yet supported"))
 	}
@@ -134,95 +107,15 @@ func (from *Table) Diff(to *Table) []TableAlterClause {
 
 	if from.UnsupportedDDL || to.UnsupportedDDL {
 		fmt.Printf("-- Ignoring table %s: unable to diff due to use of unsupported features\n", from.Name)
-		return clauses
+		return nil
 	}
 
-	// Compare columns existence, for use in figuring out adds / drops / modifications
+	// Process column drops, modifications, adds. Must be done in this specific order
+	// so that column reordering works properly.
 	cc := from.compareColumnExistence(to)
-
-	// Loop through cols in "to" table, just for purposes of handling adds
-	for toPos, alreadyExisted := range cc.toAlreadyExisted {
-		if alreadyExisted {
-			continue
-		}
-		add := AddColumn{Table: to, Column: to.Columns[toPos]}
-
-		// Determine if the new col was positioned in a specific place.
-		// i.e. are there any pre-existing cols that come after it?
-		var existingColsAfter bool
-		for _, afterAlreadyExisted := range cc.toAlreadyExisted[toPos+1:] {
-			if afterAlreadyExisted {
-				existingColsAfter = true
-				break
-			}
-		}
-		if existingColsAfter {
-			if toPos == 0 {
-				add.PositionFirst = true
-			} else {
-				add.PositionAfter = to.Columns[toPos-1]
-			}
-		}
-		clauses = append(clauses, add)
-	}
-
-	// Loop through cols in "from" table, for drops and modifications
-	for fromPos, stillPresent := range cc.fromStillPresent {
-		fromCol := from.Columns[fromPos]
-		if !stillPresent {
-			clauses = append(clauses, DropColumn{Table: from, Column: fromCol})
-			continue
-		}
-		toCol := cc.toColumnsByName[fromCol.Name]
-
-		// See if the position changed. We look at the preceeding non-dropped col in
-		// the orig table, and the preceeding non-added col in the new table.
-		var fromPrevCol, toPrevCol *Column
-		for n := fromPos - 1; n >= 0 && fromPrevCol == nil; n-- {
-			if cc.fromStillPresent[n] {
-				fromPrevCol = from.Columns[n]
-			}
-		}
-		var toPos int
-		for pos, col := range to.Columns {
-			if col.Name == fromCol.Name {
-				toPos = pos
-				for n := pos - 1; n >= 0 && toPrevCol == nil; n-- {
-					if cc.toAlreadyExisted[n] {
-						toPrevCol = to.Columns[n]
-					}
-				}
-				break
-			}
-		}
-		if fromPrevCol != nil && toPrevCol == nil {
-			// Is first now, but wasn't first before
-			modify := ModifyColumn{
-				Table:          to,
-				OriginalColumn: fromCol,
-				NewColumn:      toCol,
-				PositionFirst:  true,
-			}
-			clauses = append(clauses, modify)
-		} else if toPrevCol != nil && (fromPrevCol == nil || fromPrevCol.Name != toPrevCol.Name) {
-			// Isn't first now, and was first before OR was preceeded by a different col before
-			modify := ModifyColumn{
-				Table:          to,
-				OriginalColumn: fromCol,
-				NewColumn:      toCol,
-				PositionAfter:  to.Columns[toPos-1],
-			}
-			clauses = append(clauses, modify)
-		} else if !fromCol.Equals(toCol) {
-			// Wasn't repositioned at all, but did change column definition
-			modify := ModifyColumn{
-				Table:          to,
-				OriginalColumn: fromCol,
-				NewColumn:      toCol,
-			}
-			clauses = append(clauses, modify)
-		}
-	}
+	clauses := cc.columnDrops()
+	clauses = append(clauses, cc.columnModifications()...)
+	clauses = append(clauses, cc.columnAdds()...)
 
 	// Compare PK
 	if !from.PrimaryKey.Equals(to.PrimaryKey) {
@@ -266,5 +159,202 @@ func (from *Table) Diff(to *Table) []TableAlterClause {
 		clauses = append(clauses, cai)
 	}
 
+	return clauses
+}
+
+func (self *Table) compareColumnExistence(other *Table) columnsComparison {
+	cc := columnsComparison{
+		fromTable:           self,
+		toTable:             other,
+		fromColumnsByName:   self.ColumnsByName(),
+		toColumnsByName:     other.ColumnsByName(),
+		fromStillPresent:    make([]bool, len(self.Columns)),
+		toAlreadyExisted:    make([]bool, len(other.Columns)),
+		fromOrderCommonCols: make([]*Column, 0, len(self.Columns)),
+		toOrderCommonCols:   make([]*Column, 0, len(other.Columns)),
+	}
+	for n, col := range self.Columns {
+		_, existsInOther := cc.toColumnsByName[col.Name]
+		cc.fromStillPresent[n] = existsInOther
+		if existsInOther {
+			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, col)
+		}
+	}
+	for n, col := range other.Columns {
+		_, existsInSelf := cc.fromColumnsByName[col.Name]
+		cc.toAlreadyExisted[n] = existsInSelf
+		if existsInSelf {
+			cc.toOrderCommonCols = append(cc.toOrderCommonCols, col)
+		}
+	}
+	return cc
+}
+
+type columnsComparison struct {
+	fromTable           *Table
+	fromColumnsByName   map[string]*Column
+	fromStillPresent    []bool
+	fromOrderCommonCols []*Column
+	toTable             *Table
+	toColumnsByName     map[string]*Column
+	toAlreadyExisted    []bool
+	toOrderCommonCols   []*Column
+}
+
+func (cc *columnsComparison) commonColumnsSameOrder() bool {
+	for n, fromCol := range cc.fromOrderCommonCols {
+		if fromCol.Name != cc.toOrderCommonCols[n].Name {
+			return false
+		}
+	}
+	return true
+}
+
+func (cc *columnsComparison) columnDrops() []TableAlterClause {
+	clauses := make([]TableAlterClause, 0)
+
+	// Loop through cols in "from" table, and process column drops
+	for fromPos, stillPresent := range cc.fromStillPresent {
+		if !stillPresent {
+			clauses = append(clauses, DropColumn{
+				Table:  cc.fromTable,
+				Column: cc.fromTable.Columns[fromPos],
+			})
+		}
+	}
+	return clauses
+}
+
+func (cc *columnsComparison) columnAdds() []TableAlterClause {
+	clauses := make([]TableAlterClause, 0)
+
+	// Loop through cols in "to" table, and process column adds
+	for toPos, alreadyExisted := range cc.toAlreadyExisted {
+		if alreadyExisted {
+			continue
+		}
+		add := AddColumn{
+			Table:  cc.toTable,
+			Column: cc.toTable.Columns[toPos],
+		}
+
+		// Determine if the new col was positioned in a specific place.
+		// i.e. are there any pre-existing cols that come after it?
+		var existingColsAfter bool
+		for _, afterAlreadyExisted := range cc.toAlreadyExisted[toPos+1:] {
+			if afterAlreadyExisted {
+				existingColsAfter = true
+				break
+			}
+		}
+		if existingColsAfter {
+			if toPos == 0 {
+				add.PositionFirst = true
+			} else {
+				add.PositionAfter = cc.toTable.Columns[toPos-1]
+			}
+		}
+		clauses = append(clauses, add)
+	}
+	return clauses
+}
+
+func (cc *columnsComparison) columnModifications() []TableAlterClause {
+	clauses := make([]TableAlterClause, 0)
+
+	// First generate alter clauses for columns that have been modified, but not
+	// re-ordered
+	for n, fromCol := range cc.fromOrderCommonCols {
+		toCol := cc.toOrderCommonCols[n]
+		if fromCol.Name == toCol.Name && !fromCol.Equals(toCol) {
+			clauses = append(clauses, ModifyColumn{
+				Table:          cc.fromTable,
+				OriginalColumn: fromCol,
+				NewColumn:      toCol,
+			})
+		}
+	}
+
+	// Loop until we have the common columns in the proper order. Identify which
+	// col needs to be moved the furthest, and then move it + generate a
+	// corresponding alter clause.
+	//
+	// Moves can be made relative to other common cols, even if new cols are being
+	// added -- we handle adds AFTER moves, and mysql processes the clauses left-
+	// to-right, so the final order will end up correct.
+	//
+	// TODO: this move-largest-jump-first strategy is often optimal, but not
+	// always. A better algorithm could always yield the minimum number of moves:
+	// identify which cols aren't in ascending order (based on "to" position
+	// index), move the one with highest "to" position, repeat until sorted
+	for !cc.commonColumnsSameOrder() {
+		var greatestMoveFromPos, greatestMoveAmount, greatestMoveAmountAbs int
+		for fromPos, fromCol := range cc.fromOrderCommonCols {
+			if fromCol.Name == cc.toOrderCommonCols[fromPos].Name {
+				continue
+			}
+			var toPos int
+			for toPos = range cc.toOrderCommonCols {
+				if cc.toOrderCommonCols[toPos].Name == fromCol.Name {
+					break
+				}
+			}
+			var moveAmount, moveAmountAbs int
+			if toPos > fromPos {
+				moveAmount, moveAmountAbs = toPos-fromPos, toPos-fromPos
+			} else {
+				moveAmount, moveAmountAbs = toPos-fromPos, fromPos-toPos
+			}
+			if moveAmountAbs > greatestMoveAmountAbs {
+				greatestMoveAmount, greatestMoveAmountAbs = moveAmount, moveAmountAbs
+				greatestMoveFromPos = fromPos
+			}
+		}
+		fromCol := cc.fromOrderCommonCols[greatestMoveFromPos]
+		toCol := cc.toOrderCommonCols[greatestMoveFromPos+greatestMoveAmount]
+		modify := ModifyColumn{
+			Table:          cc.toTable,
+			OriginalColumn: fromCol,
+			NewColumn:      toCol,
+		}
+		if greatestMoveFromPos+greatestMoveAmount == 0 {
+			modify.PositionFirst = true
+		} else {
+			// We need to figure out which column we're putting this column after. This
+			// needs to point to a column in toTable, BUT the position will be relative
+			// to that column's old position in fromTable.
+			prevColIndex := greatestMoveFromPos + greatestMoveAmount
+			if greatestMoveAmount < 0 {
+				// If moving backwards, we need to look one more column before.
+				// We don't need to do this if moving forwards, since everything effectively
+				// shifts down by 1 inherently due to the target col moving forwards.
+				prevColIndex--
+			}
+			fromPreviousCol := cc.fromOrderCommonCols[prevColIndex]
+			modify.PositionAfter = cc.toColumnsByName[fromPreviousCol.Name]
+		}
+		clauses = append(clauses, modify)
+
+		newPos := greatestMoveFromPos + greatestMoveAmount
+		if greatestMoveAmount > 0 {
+			before := cc.fromOrderCommonCols[0:greatestMoveFromPos]
+			between := cc.fromOrderCommonCols[greatestMoveFromPos+1 : newPos+1]
+			after := cc.fromOrderCommonCols[newPos+1:]
+			cc.fromOrderCommonCols = make([]*Column, 0, len(cc.fromOrderCommonCols))
+			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, before...)
+			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, between...)
+			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, fromCol)
+			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, after...)
+		} else {
+			before := cc.fromOrderCommonCols[0:newPos]
+			between := cc.fromOrderCommonCols[newPos:greatestMoveFromPos]
+			after := cc.fromOrderCommonCols[greatestMoveFromPos+1:]
+			cc.fromOrderCommonCols = make([]*Column, 0, len(cc.fromOrderCommonCols))
+			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, before...)
+			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, fromCol)
+			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, between...)
+			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, after...)
+		}
+	}
 	return clauses
 }
