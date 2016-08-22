@@ -1,7 +1,6 @@
 package tengo
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -228,8 +227,8 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	to := aTable(1)
 
 	// Reposition a col to first position
-	movedCol := to.Columns[3]
 	movedColPos := 3
+	movedCol := to.Columns[movedColPos]
 	to.Columns = append(to.Columns[:movedColPos], to.Columns[movedColPos+1:]...)
 	to.Columns = append([]*Column{movedCol}, to.Columns...)
 	tableAlters := from.Diff(&to)
@@ -244,23 +243,191 @@ func TestTableAlterModifyColumn(t *testing.T) {
 		t.Error("Pointers in table alter do not point to expected values")
 	}
 	if !ta.PositionFirst || ta.PositionAfter != nil {
-		t.Errorf("Expected first new column to be after nil / first=true, instead found after %v / first=%t", ta.PositionAfter, ta.PositionFirst)
+		t.Errorf("Expected modified column to be after nil / first=true, instead found after %v / first=%t", ta.PositionAfter, ta.PositionFirst)
 	}
 
 	// Reposition same col to last position
+	to = aTable(1)
+	movedCol = to.Columns[movedColPos]
+	shouldBeAfter := to.Columns[len(to.Columns)-1]
+	to.Columns = append(to.Columns[:movedColPos], to.Columns[movedColPos+1:]...)
+	to.Columns = append(to.Columns, movedCol)
+	tableAlters = from.Diff(&to)
+	if len(tableAlters) != 1 {
+		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
+	}
+	ta, ok = tableAlters[0].(ModifyColumn)
+	if !ok {
+		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
+	}
+	if ta.PositionFirst || ta.PositionAfter != shouldBeAfter {
+		t.Errorf("Expected modified column to be after %s / first=false, instead found after %v / first=%t", shouldBeAfter.Name, ta.PositionAfter, ta.PositionFirst)
+	}
+	if !ta.NewColumn.Equals(ta.OriginalColumn) {
+		t.Errorf("Column definition unexpectedly changed: was %s, now %s", ta.OriginalColumn.Definition(), ta.NewColumn.Definition())
+	}
 
 	// Repos to last position AND change column definition
+	movedCol.Nullable = !movedCol.Nullable
+	tableAlters = from.Diff(&to)
+	if len(tableAlters) != 1 {
+		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
+	}
+	ta, ok = tableAlters[0].(ModifyColumn)
+	if !ok {
+		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
+	}
+	if ta.PositionFirst || ta.PositionAfter != shouldBeAfter {
+		t.Errorf("Expected modified column to be after %s / first=false, instead found after %v / first=%t", shouldBeAfter.Name, ta.PositionAfter, ta.PositionFirst)
+	}
+	if ta.NewColumn.Equals(ta.OriginalColumn) {
+		t.Errorf("Column definition unexpectedly NOT changed: still %s", ta.NewColumn.Definition())
+	}
 
-	// Start over; delete and add a col, and move last col to position after the deleted/before the added col
+	// Start over; delete a col, move last col to its former position, and add a new col after that
+	// FROM: actor_id, first_name, last_name, last_updated, ssn, alive
+	// TO:   actor_id, first_name, last_name, alive, age, ssn
+	// current move algo treats this as a move of ssn to be after alive, rather than alive to be after last_name
+	to = aTable(1)
+	newCol := &Column{
+		Name:     "age",
+		TypeInDB: "int unsigned",
+		Nullable: true,
+		Default:  ColumnDefaultNull,
+	}
+	to.Columns = append(to.Columns[0:3], to.Columns[5], newCol, to.Columns[4])
+	tableAlters = from.Diff(&to)
+	if len(tableAlters) != 3 {
+		t.Fatalf("Incorrect number of table alters: expected 3, found %d", len(tableAlters))
+	}
+	// The alters should always be in this order: drops, modifications, adds
+	if drop, ok := tableAlters[0].(DropColumn); ok {
+		if drop.Table != &from || drop.Column != from.Columns[3] {
+			t.Error("Pointers in table alter[0] do not point to expected values")
+		}
+	} else {
+		t.Errorf("Incorrect type of table alter[0] returned: expected %T, found %T", drop, tableAlters[0])
+	}
+	if modify, ok := tableAlters[1].(ModifyColumn); ok {
+		if modify.NewColumn.Name != "ssn" {
+			t.Error("Pointers in table alter[1] do not point to expected values")
+		}
+		if modify.PositionFirst || modify.PositionAfter.Name != "alive" {
+			t.Errorf("Expected moved column to be after alive / first=false, instead found after %v / first=%t", modify.PositionAfter, modify.PositionFirst)
+		}
+	} else {
+		t.Errorf("Incorrect type of table alter[1] returned: expected %T, found %T", modify, tableAlters[1])
+	}
+	if add, ok := tableAlters[2].(AddColumn); ok {
+		if add.PositionFirst || add.PositionAfter.Name != "alive" {
+			t.Errorf("Expected new column to be after alive / first=false, instead found after %v / first=%t", add.PositionAfter, add.PositionFirst)
+		}
+	} else {
+		t.Errorf("Incorrect type of table alter[2] returned: expected %T, found %T", add, tableAlters[2])
+	}
 
-	// Start over; just change column definition
+	// Start over; just change a column definition without moving anything
+	to = aTable(1)
+	to.Columns[4].TypeInDB = "varchar(10)"
+	tableAlters = from.Diff(&to)
+	if len(tableAlters) != 1 {
+		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
+	}
+	ta, ok = tableAlters[0].(ModifyColumn)
+	if !ok {
+		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
+	}
+	if ta.PositionFirst || ta.PositionAfter != nil {
+		t.Errorf("Expected modified column to not be moved, instead found after %v / first=%t", ta.PositionAfter, ta.PositionFirst)
+	}
+	if ta.NewColumn.Equals(from.Columns[4]) {
+		t.Errorf("Column definition unexpectedly NOT changed: still %s", ta.NewColumn.Definition())
+	}
 
+	// TODO: once the column-move algorithm is optimal, add a test that confirms
 }
 
 func TestTableAlterChangeAutoIncrement(t *testing.T) {
+	// Initial test: change next auto inc from 1 to 2
+	from := aTable(1)
+	to := aTable(2)
+	tableAlters := from.Diff(&to)
+	if len(tableAlters) != 1 {
+		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
+	}
+	ta, ok := tableAlters[0].(ChangeAutoIncrement)
+	if !ok {
+		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
+	}
+	if ta.OldNextAutoIncrement != from.NextAutoIncrement || ta.NewNextAutoIncrement != to.NextAutoIncrement {
+		t.Error("Incorrect next-auto-increment values in alter clause")
+	}
 
+	// Reverse test: should emit an alter clause, even though higher-level caller
+	// may decide to ignore it
+	tableAlters = to.Diff(&from)
+	if len(tableAlters) != 1 {
+		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
+	}
+	ta, ok = tableAlters[0].(ChangeAutoIncrement)
+	if !ok {
+		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
+	}
+	if ta.OldNextAutoIncrement != to.NextAutoIncrement || ta.NewNextAutoIncrement != from.NextAutoIncrement {
+		t.Error("Incorrect next-auto-increment values in alter clause")
+	}
+
+	// Removing an auto-inc col and changing auto inc next value: should NOT emit
+	// an auto-inc change since "to" table no longer has one
+	to.Columns = to.Columns[1:]
+	tableAlters = from.Diff(&to)
+	if len(tableAlters) != 1 {
+		t.Errorf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
+	} else {
+		ta, ok := tableAlters[0].(DropColumn)
+		if !ok {
+			t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
+		}
+	}
+
+	// Reverse of above comparison, adding an auto-inc col with a non-default
+	// starting value: one clause for new col, another for auto-inc val (in that order!)
+	to.NextAutoIncrement = 0
+	from.NextAutoIncrement = 3
+	tableAlters = to.Diff(&from)
+	if len(tableAlters) != 2 {
+		t.Errorf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
+	} else {
+		if ta, ok := tableAlters[0].(AddColumn); !ok {
+			t.Fatalf("Incorrect type of table alter[0] returned: expected %T, found %T", ta, tableAlters[0])
+		}
+		if ta, ok := tableAlters[1].(ChangeAutoIncrement); !ok {
+			t.Fatalf("Incorrect type of table alter[1] returned: expected %T, found %T", ta, tableAlters[1])
+		}
+	}
 }
 
 func TestTableAlterUnsupportedTable(t *testing.T) {
+	from, to := unsupportedTable(), unsupportedTable()
+	newCol := &Column{
+		Name:     "age",
+		TypeInDB: "int unsigned",
+		Nullable: true,
+		Default:  ColumnDefaultNull,
+	}
+	to.Columns = append(to.Columns, newCol)
+	if tableAlters := from.Diff(&to); len(tableAlters) != 0 {
+		t.Fatalf("Expected diff of unsupported tables to yield no alters; instead found %d", len(tableAlters))
+	}
 
+	// Confirm same behavior even if only one side is marked as unsupported
+	from, to = anotherTable(), unsupportedTable()
+	from.Name = to.Name
+	if tableAlters := from.Diff(&to); len(tableAlters) != 0 {
+		t.Fatalf("Expected diff of unsupported tables to yield no alters; instead found %d", len(tableAlters))
+	}
+	from, to = to, from
+	if tableAlters := from.Diff(&to); len(tableAlters) != 0 {
+		t.Fatalf("Expected diff of unsupported tables to yield no alters; instead found %d", len(tableAlters))
+	}
 }
