@@ -37,6 +37,7 @@ func TestTableAlterAddOrDropColumn(t *testing.T) {
 	to.Columns = append(to.Columns, newCol)
 	colCount := len(to.Columns)
 	to.Columns[colCount-2], to.Columns[colCount-1] = to.Columns[colCount-1], to.Columns[colCount-2]
+	to.createStatement = to.GeneratedCreateStatement()
 	tableAlters := from.Diff(&to)
 	if len(tableAlters) != 1 {
 		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
@@ -75,6 +76,7 @@ func TestTableAlterAddOrDropColumn(t *testing.T) {
 	}
 	to.Columns = []*Column{anotherCol}
 	to.Columns = append(to.Columns, hadColumns...)
+	to.createStatement = to.GeneratedCreateStatement()
 	tableAlters = from.Diff(&to)
 	if len(tableAlters) != 2 {
 		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
@@ -98,6 +100,7 @@ func TestTableAlterAddOrDropColumn(t *testing.T) {
 		Default:  ColumnDefaultValue("0"),
 	}
 	to.Columns = append(to.Columns, anotherCol)
+	to.createStatement = to.GeneratedCreateStatement()
 	tableAlters = from.Diff(&to)
 	if len(tableAlters) != 3 {
 		t.Fatalf("Incorrect number of table alters: expected 3, found %d", len(tableAlters))
@@ -125,6 +128,7 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 		SubParts: []uint16{0, 10},
 	}
 	to.SecondaryIndexes = append(to.SecondaryIndexes, newSecondary)
+	to.createStatement = to.GeneratedCreateStatement()
 	tableAlters := from.Diff(&to)
 	if len(tableAlters) != 1 {
 		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
@@ -153,6 +157,7 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 	// Start over; change an existing secondary index
 	to = aTable(1)
 	to.SecondaryIndexes[0].Unique = false
+	to.createStatement = to.GeneratedCreateStatement()
 	tableAlters = from.Diff(&to)
 	if len(tableAlters) != 2 {
 		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
@@ -175,6 +180,8 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 	// Start over; change the primary key
 	to = aTable(1)
 	to.PrimaryKey.Columns = append(to.PrimaryKey.Columns, to.Columns[4])
+	to.PrimaryKey.SubParts = append(to.PrimaryKey.SubParts, 0)
+	to.createStatement = to.GeneratedCreateStatement()
 	tableAlters = from.Diff(&to)
 	if len(tableAlters) != 2 {
 		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
@@ -196,6 +203,7 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 
 	// Remove the primary key
 	to.PrimaryKey = nil
+	to.createStatement = to.GeneratedCreateStatement()
 	tableAlters = from.Diff(&to)
 	if len(tableAlters) != 1 {
 		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
@@ -231,6 +239,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	movedCol := to.Columns[movedColPos]
 	to.Columns = append(to.Columns[:movedColPos], to.Columns[movedColPos+1:]...)
 	to.Columns = append([]*Column{movedCol}, to.Columns...)
+	to.createStatement = to.GeneratedCreateStatement()
 	tableAlters := from.Diff(&to)
 	if len(tableAlters) != 1 {
 		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
@@ -252,6 +261,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	shouldBeAfter := to.Columns[len(to.Columns)-1]
 	to.Columns = append(to.Columns[:movedColPos], to.Columns[movedColPos+1:]...)
 	to.Columns = append(to.Columns, movedCol)
+	to.createStatement = to.GeneratedCreateStatement()
 	tableAlters = from.Diff(&to)
 	if len(tableAlters) != 1 {
 		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
@@ -269,6 +279,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 
 	// Repos to last position AND change column definition
 	movedCol.Nullable = !movedCol.Nullable
+	to.createStatement = to.GeneratedCreateStatement()
 	tableAlters = from.Diff(&to)
 	if len(tableAlters) != 1 {
 		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
@@ -296,6 +307,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 		Default:  ColumnDefaultNull,
 	}
 	to.Columns = append(to.Columns[0:3], to.Columns[5], newCol, to.Columns[4])
+	to.createStatement = to.GeneratedCreateStatement()
 	tableAlters = from.Diff(&to)
 	if len(tableAlters) != 3 {
 		t.Fatalf("Incorrect number of table alters: expected 3, found %d", len(tableAlters))
@@ -329,6 +341,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	// Start over; just change a column definition without moving anything
 	to = aTable(1)
 	to.Columns[4].TypeInDB = "varchar(10)"
+	to.createStatement = to.GeneratedCreateStatement()
 	tableAlters = from.Diff(&to)
 	if len(tableAlters) != 1 {
 		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
@@ -380,6 +393,7 @@ func TestTableAlterChangeAutoIncrement(t *testing.T) {
 	// Removing an auto-inc col and changing auto inc next value: should NOT emit
 	// an auto-inc change since "to" table no longer has one
 	to.Columns = to.Columns[1:]
+	to.createStatement = to.GeneratedCreateStatement()
 	tableAlters = from.Diff(&to)
 	if len(tableAlters) != 1 {
 		t.Errorf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
@@ -394,6 +408,8 @@ func TestTableAlterChangeAutoIncrement(t *testing.T) {
 	// starting value: one clause for new col, another for auto-inc val (in that order!)
 	to.NextAutoIncrement = 0
 	from.NextAutoIncrement = 3
+	to.createStatement = to.GeneratedCreateStatement()
+	from.createStatement = from.GeneratedCreateStatement()
 	tableAlters = to.Diff(&from)
 	if len(tableAlters) != 2 {
 		t.Errorf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
@@ -416,6 +432,7 @@ func TestTableAlterUnsupportedTable(t *testing.T) {
 		Default:  ColumnDefaultNull,
 	}
 	to.Columns = append(to.Columns, newCol)
+	to.createStatement = to.GeneratedCreateStatement()
 	if tableAlters := from.Diff(&to); len(tableAlters) != 0 {
 		t.Fatalf("Expected diff of unsupported tables to yield no alters; instead found %d", len(tableAlters))
 	}

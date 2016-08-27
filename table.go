@@ -105,6 +105,13 @@ func (from *Table) Diff(to *Table) []TableAlterClause {
 		panic(errors.New("Character set and collation changes not yet supported"))
 	}
 
+	// If both tables have same output for SHOW CREATE TABLE, we know they're the same.
+	// We do this check prior to the UnsupportedDDL check so that we only emit the
+	// warning if the tables actually changed.
+	if from.createStatement != "" && from.createStatement == to.createStatement {
+		return []TableAlterClause{}
+	}
+
 	if from.UnsupportedDDL || to.UnsupportedDDL {
 		fmt.Printf("-- Ignoring table %s: unable to diff due to use of unsupported features\n", from.Name)
 		return nil
