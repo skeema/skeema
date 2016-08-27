@@ -148,6 +148,9 @@ func unsupportedTable() Table {
 }
 
 func aSchema(name string, tables ...*Table) Schema {
+	if tables == nil {
+		tables = []*Table{}
+	}
 	s := Schema{
 		Name:             name,
 		DefaultCharSet:   "latin1",
