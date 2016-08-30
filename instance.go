@@ -203,24 +203,17 @@ func (instance *Instance) CreateSchema(name string) (*Schema, error) {
 }
 
 // DropSchema first drops all tables in the schema, and then drops the database.
-func (instance *Instance) DropSchema(schema *Schema) error {
+//  If onlyIfEmpty==true, returns an error if any of the tables have any rows.
+func (instance *Instance) DropSchema(schema *Schema, onlyIfEmpty bool) error {
+	err := instance.DropTablesInSchema(schema, onlyIfEmpty)
+	if err != nil {
+		return err
+	}
+
 	db, err := instance.Connect(schema.Name)
 	if err != nil {
 		return err
 	}
-
-	// TODO: need to handle proper ordering for foreign keys
-	tables, err := schema.Tables()
-	if err != nil {
-		return err
-	}
-	for _, t := range tables {
-		_, err := db.Exec(t.DropStatement())
-		if err != nil {
-			return err
-		}
-	}
-
 	_, err = db.Exec(schema.DropStatement())
 	if err != nil {
 		return err
@@ -230,5 +223,66 @@ func (instance *Instance) DropSchema(schema *Schema) error {
 
 	// Purge schema cache before returning
 	instance.schemas = nil
+	return nil
+}
+
+// DropTablesInSchema drops all tables in a schema. If onlyIfEmpty==true,
+// returns an error if any of the tables have any rows.
+func (instance *Instance) DropTablesInSchema(schema *Schema, onlyIfEmpty bool) error {
+	// TODO: disable foreign key checks in this conn
+	db, err := instance.Connect(schema.Name)
+	if err != nil {
+		return err
+	}
+	tables, err := schema.Tables()
+	if err != nil {
+		return err
+	}
+
+	if onlyIfEmpty {
+		var result []int
+		for _, t := range tables {
+			query := fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", EscapeIdentifier(t.Name))
+			if err := db.Select(&result, query); err != nil {
+				return err
+			}
+			if len(result) != 0 {
+				return fmt.Errorf("DropTablesInSchema: table %s.%s has at least one row", EscapeIdentifier(schema.Name), EscapeIdentifier(t.Name))
+			}
+		}
+	}
+
+	for _, t := range tables {
+		_, err := db.Exec(t.DropStatement())
+		if err != nil {
+			return err
+		}
+	}
+
+	schema.PurgeTableCache()
+	return nil
+}
+
+// CloneSchema copies all tables (just definitions, not data) from src to dest.
+// Ideally dest should be an empty schema, or at least be pre-verified for not
+// having existing tables with conflicting names, but this is the caller's
+// responsibility to confirm.
+func (instance *Instance) CloneSchema(src, dest *Schema) error {
+	// TODO: disable foreign key checks in this conn
+	db, err := instance.Connect(dest.Name)
+	if err != nil {
+		return err
+	}
+	tables, err := src.Tables()
+	if err != nil {
+		return err
+	}
+	for _, t := range tables {
+		_, err := db.Exec(t.CreateStatement())
+		if err != nil {
+			return err
+		}
+	}
+	dest.PurgeTableCache()
 	return nil
 }
