@@ -26,7 +26,15 @@ reflect those changes.`
 }
 
 func PullCommand(cfg *Config) error {
-	return pull(cfg, make(map[string]bool))
+	err := pull(cfg, make(map[string]bool))
+	if err != nil {
+		// Attempt to clean up temporary schema. cfg.Dir will still equal the last
+		// evaluated dir, so DropTemporarySchema will operate on the right target.
+		// But we intentionally ignore any error here since there's nothing we can do
+		// about it.
+		_ = cfg.DropTemporarySchema()
+	}
+	return err
 }
 
 func pull(cfg *Config, seen map[string]bool) error {

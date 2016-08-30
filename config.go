@@ -394,6 +394,12 @@ func (cfg *Config) Targets() []Target {
 		return cfg.targets
 	}
 
+	// Only leaf dirs (ones that map to one or more schemas) have targets
+	if !cfg.Dir.IsLeaf() {
+		cfg.targets = []Target{}
+		return cfg.targets
+	}
+
 	var userAndPass string
 	if cfg.Get("password") == cfg.FindOption("password").Default {
 		userAndPass = cfg.Get("user")
