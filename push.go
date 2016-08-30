@@ -12,13 +12,15 @@ instance. Use this command when changes have been applied to the database
 without using skeema, and the filesystem representation needs to be updated to
 reflect those changes.`
 
-	Commands["push"] = &Command{
+	cmd := &Command{
 		Name:    "push",
 		Short:   "Alter tables on DBs to reflect the filesystem representation",
 		Long:    long,
 		Options: nil,
 		Handler: PushCommand,
 	}
+	cmd.AddOption(BoolOption("verify", 0, true, "Test all generated ALTER statements in temporary schema to verify correctness"))
+	Commands["push"] = cmd
 }
 
 func PushCommand(cfg *Config) error {
@@ -66,6 +68,13 @@ func push(cfg *Config, seen map[string]bool) error {
 				} else if len(diff.TableDiffs) == 0 {
 					fmt.Println("(nothing to do)")
 					continue
+				}
+
+				if cfg.GetBool("verify") {
+					// see diff.go for verifyDiff(), same logic usable as-is here
+					if err := verifyDiff(cfg, t.Instance, diff, from, to); err != nil {
+						return err
+					}
 				}
 
 				db, err := t.Connect(schemaName)

@@ -455,12 +455,10 @@ func (cfg *Config) PopulateTemporarySchema() error {
 			return err
 		}
 		if tempSchema != nil {
-			tables, err := tempSchema.Tables()
-			if err != nil {
+			// Attempt to drop any tables already present in tempSchema, but fail if
+			// any of them actually have 1 or more rows
+			if err := t.DropTablesInSchema(tempSchema, true); err != nil {
 				return err
-			}
-			if len(tables) > 0 {
-				return fmt.Errorf("%s: temp schema name %s already exists and has %d tables, refusing to overwrite", t.Instance, tempSchemaName, len(tables))
 			}
 		} else {
 			tempSchema, err = t.CreateSchema(tempSchemaName)
@@ -499,7 +497,7 @@ func (cfg *Config) DropTemporarySchema() error {
 		if tempSchema == nil {
 			continue
 		}
-		if err := t.DropSchema(tempSchema); err != nil {
+		if err := t.DropSchema(tempSchema, true); err != nil {
 			return fmt.Errorf("Unable to drop temporary schema: %s", err)
 		}
 	}
