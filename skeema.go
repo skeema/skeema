@@ -37,6 +37,8 @@ func GlobalOptions() map[string]*Option {
 		StringOption("user", 'u', "root", "Username to connect to database host"),
 		StringOption("password", 'p', "<no password>", "Password for database user. Supply with no value to prompt.").ValueOptional().Callback(PromptPasswordIfNeeded),
 		StringOption("schema", 0, "", "Database schema name").Hidden(),
+		StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema to use for intermediate operations. Will be created and dropped unless --reuse-temp-schema enabled."),
+		BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done. Useful for running without create/drop database privileges."),
 	}
 	result := make(map[string]*Option, len(opts))
 	for _, opt := range opts {

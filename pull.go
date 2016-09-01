@@ -62,7 +62,7 @@ func pull(cfg *Config, seen map[string]bool) error {
 			return err
 		}
 
-		from, err := t.TemporarySchema()
+		from, err := t.TemporarySchema(cfg)
 		if err != nil {
 			return err
 		}

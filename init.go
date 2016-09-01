@@ -171,6 +171,11 @@ func InitCommand(cfg *Config) error {
 }
 
 func PopulateSchemaDir(cfg *Config, s *tengo.Schema, instance *tengo.Instance, parentDir *SkeemaDir, makeSubdir bool) error {
+	// Ignore any attempt to populate a dir for the temp schema
+	if s.Name == cfg.Get("temp-schema") {
+		return nil
+	}
+
 	var schemaDir *SkeemaDir
 	var created bool
 	if makeSubdir {

@@ -394,8 +394,9 @@ func (cfg *Config) Targets() []Target {
 		return cfg.targets
 	}
 
-	// Only leaf dirs (ones that map to one or more schemas) have targets
-	if !cfg.Dir.IsLeaf() {
+	// Only leaf dirs (ones that map to one or more schemas) and their parent dirs
+	// (which may define host/port) have targets
+	if !cfg.Dir.IsLeaf() && !cfg.Dir.IsInstanceWithLeafSubdirs() {
 		cfg.targets = []Target{}
 		return cfg.targets
 	}
@@ -443,9 +444,8 @@ func (cfg *Config) Targets() []Target {
 // associated with the config, using a temporary schema name instead of the one
 // usually associated with the directory.
 func (cfg *Config) PopulateTemporarySchema() error {
-	// TODO: configurable temp schema name
 	// TODO: want to skip binlogging for all temp schema actions, if super priv available
-	tempSchemaName := "_skeema_tmp"
+	tempSchemaName := cfg.Get("temp-schema")
 
 	if !cfg.Dir.IsLeaf() {
 		return fmt.Errorf("Unable to populate temporary schema: Dir %s cannot be applied (either no *.sql files, or no .skeema file defining schema name?)", cfg.Dir)
@@ -491,9 +491,8 @@ func (cfg *Config) PopulateTemporarySchema() error {
 }
 
 func (cfg *Config) DropTemporarySchema() error {
-	// TODO: configurable temp schema name
 	// TODO: want to skip binlogging for all temp schema actions, if super priv available
-	tempSchemaName := "_skeema_tmp"
+	tempSchemaName := cfg.Get("temp-schema")
 
 	for _, t := range cfg.Targets() {
 		tempSchema, err := t.Schema(tempSchemaName)
@@ -503,8 +502,14 @@ func (cfg *Config) DropTemporarySchema() error {
 		if tempSchema == nil {
 			continue
 		}
-		if err := t.DropSchema(tempSchema, true); err != nil {
-			return fmt.Errorf("Unable to drop temporary schema: %s", err)
+		if cfg.GetBool("reuse-temp-schema") {
+			if err := t.DropTablesInSchema(tempSchema, true); err != nil {
+				return err
+			}
+		} else {
+			if err := t.DropSchema(tempSchema, true); err != nil {
+				return fmt.Errorf("Unable to drop temporary schema: %s", err)
+			}
 		}
 	}
 	return nil
@@ -519,7 +524,6 @@ type Target struct {
 	SchemaNames []string
 }
 
-func (t Target) TemporarySchema() (*tengo.Schema, error) {
-	// TODO configurable temp schema name
-	return t.Schema("_skeema_tmp")
+func (t Target) TemporarySchema(cfg *Config) (*tengo.Schema, error) {
+	return t.Schema(cfg.Get("temp-schema"))
 }

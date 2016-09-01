@@ -57,7 +57,7 @@ func push(cfg *Config, seen map[string]bool) error {
 				if err != nil {
 					return err
 				}
-				to, err := t.TemporarySchema()
+				to, err := t.TemporarySchema(cfg)
 				if err != nil {
 					return err
 				}
