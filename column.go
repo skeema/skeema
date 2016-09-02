@@ -82,10 +82,7 @@ func (c *Column) Equals(other *Column) bool {
 	if c == nil || other == nil {
 		return false
 	}
-	return (c.Name == other.Name &&
-		c.TypeInDB == other.TypeInDB &&
-		c.Nullable == other.Nullable &&
-		c.AutoIncrement == other.AutoIncrement)
+	return *c == *other
 }
 
 // Returns true if the column is allowed to have a DEFAULT clause
