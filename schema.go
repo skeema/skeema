@@ -43,7 +43,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 		return s.tables, nil
 	}
 
-	db, err := s.instance.Connect("information_schema")
+	db, err := s.instance.Connect("information_schema", "")
 	if err != nil {
 		return nil, err
 	}
