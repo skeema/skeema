@@ -85,7 +85,7 @@ func push(cfg *Config, seen map[string]bool) error {
 					}
 				}
 
-				db, err := t.Connect(schemaName)
+				db, err := t.Connect(schemaName, "")
 				if err != nil {
 					return err
 				}

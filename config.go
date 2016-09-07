@@ -394,13 +394,6 @@ func (cfg *Config) Targets() []Target {
 		return cfg.targets
 	}
 
-	// Only leaf dirs (ones that map to one or more schemas) and their parent dirs
-	// (which may define host/port) have targets
-	if !cfg.Dir.IsLeaf() && !cfg.Dir.IsInstanceWithLeafSubdirs() {
-		cfg.targets = []Target{}
-		return cfg.targets
-	}
-
 	var userAndPass string
 	if cfg.Get("password") == cfg.FindOption("password").Default {
 		userAndPass = cfg.Get("user")
@@ -409,11 +402,13 @@ func (cfg *Config) Targets() []Target {
 	}
 
 	// Construct DSN using either Unix domain socket or tcp/ip host and port
+	// TODO support cloudsql
+	params := "interpolateParams=true&foreign_key_checks=0"
 	var dsn string
 	if cfg.Get("host") == "localhost" && cfg.Get("port") == cfg.FindOption("port").Default {
-		dsn = fmt.Sprintf("%s@unix(%s)/", userAndPass, cfg.Get("socket"))
+		dsn = fmt.Sprintf("%s@unix(%s)/?%s", userAndPass, cfg.Get("socket"), params)
 	} else {
-		dsn = fmt.Sprintf("%s@tcp(%s:%d)/", userAndPass, cfg.Get("host"), cfg.GetIntOrDefault("port"))
+		dsn = fmt.Sprintf("%s@tcp(%s:%d)/?%s", userAndPass, cfg.Get("host"), cfg.GetIntOrDefault("port"), params)
 	}
 
 	// TODO support generating multiple schemas if schema name using wildcards or service discovery
@@ -426,13 +421,14 @@ func (cfg *Config) Targets() []Target {
 
 	// TODO support drivers being overriden
 	driver := "mysql"
-	target := Target{
-		Instance:    tengo.NewInstance(driver, dsn),
-		SchemaNames: schemas,
-	}
-	if target.Instance == nil {
+	instance, err := tengo.NewInstance(driver, dsn)
+	if err != nil || instance == nil {
 		fmt.Printf("Ignoring invalid connection information (user=%s, host=%s, schemas=%v)\n", cfg.Get("user"), cfg.Get("host"), schemas)
 		return []Target{}
+	}
+	target := Target{
+		Instance:    instance,
+		SchemaNames: schemas,
 	}
 
 	// TODO support generating multiple targets if host lookup using service discovery
@@ -473,7 +469,7 @@ func (cfg *Config) PopulateTemporarySchema() error {
 			}
 		}
 
-		db, err := t.Connect(tempSchemaName)
+		db, err := t.Connect(tempSchemaName, "")
 		if err != nil {
 			return err
 		}

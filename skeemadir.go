@@ -105,7 +105,7 @@ func (sd SkeemaDir) IsInstanceWithLeafSubdirs() bool {
 	return false
 }
 
-// SQLFilesreturns a slice of SQLFile pointers, representing the valid *.sql
+// SQLFiles returns a slice of SQLFile pointers, representing the valid *.sql
 // files that already exist in a directory. Does not recursively search
 // subdirs.
 // An error will only be returned if we are unable to read the directory.
@@ -128,8 +128,6 @@ func (sd *SkeemaDir) SQLFiles() ([]*SQLFile, error) {
 			result = append(result, sf)
 		}
 	}
-
-	// TODO: re-sort the result in an ordering that reflects FOREIGN KEY dependencies
 
 	return result, nil
 }

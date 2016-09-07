@@ -140,7 +140,7 @@ func verifyDiff(cfg *Config, instance *tengo.Instance, diff *tengo.SchemaDiff, o
 	mods := tengo.StatementModifiers{
 		NextAutoInc: tengo.NextAutoIncIgnore,
 	}
-	db, err := instance.Connect(tempSchema.Name)
+	db, err := instance.Connect(tempSchema.Name, "")
 	if err != nil {
 		return err
 	}
