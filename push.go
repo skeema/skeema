@@ -16,7 +16,6 @@ reflect those changes.`
 		Name:    "push",
 		Short:   "Alter tables on DBs to reflect the filesystem representation",
 		Long:    long,
-		Options: nil,
 		Handler: PushCommand,
 	}
 	cmd.AddOption(BoolOption("verify", 0, true, "Test all generated ALTER statements in temporary schema to verify correctness"))
@@ -37,7 +36,7 @@ func PushCommand(cfg *Config) error {
 
 func push(cfg *Config, seen map[string]bool) error {
 	if cfg.Dir.IsLeaf() {
-		if err := cfg.PopulateTemporarySchema(); err != nil {
+		if err := cfg.PopulateTemporarySchema(false); err != nil {
 			return err
 		}
 

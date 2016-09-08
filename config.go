@@ -439,7 +439,9 @@ func (cfg *Config) Targets() []Target {
 // PopulateTemporarySchema creates all tables from *.sql files in the directory
 // associated with the config, using a temporary schema name instead of the one
 // usually associated with the directory.
-func (cfg *Config) PopulateTemporarySchema() error {
+// If normalize is true, each *.sql file will be rewritten if it is formatted
+// in a way that differs from MySQL's SHOW CREATE TABLE format.
+func (cfg *Config) PopulateTemporarySchema(normalize bool) error {
 	// TODO: want to skip binlogging for all temp schema actions, if super priv available
 	tempSchemaName := cfg.Get("temp-schema")
 
@@ -479,6 +481,31 @@ func (cfg *Config) PopulateTemporarySchema() error {
 				return fmt.Errorf("SQL syntax error in %s: %s", sf.Path(), err)
 			} else if err != nil {
 				return fmt.Errorf("Unable to populate temporary schema: %s", err)
+			}
+		}
+		if normalize {
+			tempSchema.PurgeTableCache()
+			tablesByName, err := tempSchema.TablesByName()
+			if err != nil {
+				return err
+			}
+			for _, sf := range sqlFiles {
+				table, ok := tablesByName[sf.TableName()]
+				if !ok {
+					return fmt.Errorf("Unable to find table %s in temporary schema", sf.TableName())
+				}
+				formatted, err := t.ShowCreateTable(tempSchema, table)
+				if err != nil {
+					return err
+				}
+				if formatted != sf.Contents {
+					sf.Contents = formatted
+					if length, err := sf.Write(); err != nil {
+						return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
+					} else {
+						fmt.Printf("    Wrote %s (%d bytes) -- updated file to normalize format\n", sf.Path(), length)
+					}
+				}
 			}
 		}
 	}

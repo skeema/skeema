@@ -42,7 +42,7 @@ func HelpCommand(cfg *Config) error {
 	}
 	sort.Strings(commandNames)
 	for _, name := range commandNames {
-		fmt.Printf("      %-20s%s\n", name, Commands[name].Short)
+		fmt.Printf("      %-12s%s\n", name, Commands[name].Short)
 	}
 
 	fmt.Println("\nGlobal options:")

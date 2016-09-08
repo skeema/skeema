@@ -33,6 +33,13 @@ func (sf *SQLFile) Path() string {
 	return path.Join(sf.Dir.Path, sf.FileName)
 }
 
+func (sf *SQLFile) TableName() string {
+	if !strings.HasSuffix(sf.FileName, ".sql") {
+		return ""
+	}
+	return sf.FileName[0 : len(sf.FileName)-4]
+}
+
 func (sf *SQLFile) Read() (string, error) {
 	byteContents, err := ioutil.ReadFile(sf.Path())
 	if err != nil {

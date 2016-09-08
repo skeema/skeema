@@ -17,10 +17,10 @@ reflect those changes.`
 		Name:    "pull",
 		Short:   "Update the filesystem representation of schemas and tables",
 		Long:    long,
-		Options: nil,
 		Handler: PullCommand,
 	}
 	cmd.AddOption(BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in new table files, and update in existing files"))
+	cmd.AddOption(BoolOption("normalize", 0, true, "Reformat *.sql files to match SHOW CREATE TABLE"))
 
 	Commands["pull"] = cmd
 }
@@ -58,7 +58,7 @@ func pull(cfg *Config, seen map[string]bool) error {
 			return nil
 		}
 
-		if err := cfg.PopulateTemporarySchema(); err != nil {
+		if err := cfg.PopulateTemporarySchema(cfg.GetBool("normalize")); err != nil {
 			return err
 		}
 
@@ -129,9 +129,6 @@ func pull(cfg *Config, seen map[string]bool) error {
 				panic(fmt.Errorf("Unsupported diff type %T\n", td))
 			}
 		}
-
-		// TODO: also support a "normalize" option, which causes filesystem to reflect
-		// format of SHOW CREATE TABLE
 
 		if err := cfg.DropTemporarySchema(); err != nil {
 			return err

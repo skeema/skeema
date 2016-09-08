@@ -36,7 +36,7 @@ func DiffCommand(cfg *Config) error {
 
 func diff(cfg *Config, seen map[string]bool) error {
 	if cfg.Dir.IsLeaf() {
-		if err := cfg.PopulateTemporarySchema(); err != nil {
+		if err := cfg.PopulateTemporarySchema(false); err != nil {
 			return err
 		}
 
@@ -180,6 +180,6 @@ func verifyDiff(cfg *Config, instance *tengo.Instance, diff *tengo.SchemaDiff, o
 
 	// Restore the temp schema to the "after" state, so that subsequent operations
 	// on this target work as expected.
-	err = cfg.PopulateTemporarySchema()
+	err = cfg.PopulateTemporarySchema(false)
 	return err
 }
