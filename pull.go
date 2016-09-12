@@ -11,13 +11,22 @@ func init() {
 	long := `Updates the existing filesystem representation of the schemas and tables on a DB
 instance. Use this command when changes have been applied to the database
 without using skeema, and the filesystem representation needs to be updated to
-reflect those changes.`
+reflect those changes.
+
+You may optionally pass an environment name as a CLI option. This will affect
+which section of .skeema config files is used for processing. For example,
+running ` + "`" + `skeema pull production` + "`" + ` will apply config directives from the
+[production] section of config files, as well as any sectionless directives
+at the top of the file. If no environment name is supplied, only the sectionless
+directives alone will be applied.`
 
 	cmd := &Command{
-		Name:    "pull",
-		Short:   "Update the filesystem representation of schemas and tables",
-		Long:    long,
-		Handler: PullCommand,
+		Name:     "pull",
+		Short:    "Update the filesystem representation of schemas and tables",
+		Long:     long,
+		Handler:  PullCommand,
+		MaxArgs:  1,
+		ArgNames: []string{"environment"},
 	}
 	cmd.AddOption(BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in new table files, and update in existing files"))
 	cmd.AddOption(BoolOption("normalize", 0, true, "Reformat *.sql files to match SHOW CREATE TABLE"))

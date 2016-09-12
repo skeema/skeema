@@ -14,13 +14,21 @@ func init() {
 For each schema on the instance (or just the single schema specified by
 --schema), a subdir with a .skeema config file will be created. Each directory
 will be populated with .sql files containing CREATE TABLE statements for every
-table in the schema.`
+table in the schema.
+
+You may optionally pass an environment name as a CLI option. This will affect
+which section of .skeema config files the host and schema names are written to.
+For example, running ` + "`" + `skeema init production` + "`" + ` will add config directives to
+the [production] section of config files. If no environment name is supplied,
+directives will be written to the top of the file, prior to any section name.`
 
 	cmd := &Command{
-		Name:    "init",
-		Short:   "Save a DB instance's schemas and tables to the filesystem",
-		Long:    long,
-		Handler: InitCommand,
+		Name:     "init",
+		Short:    "Save a DB instance's schemas and tables to the filesystem",
+		Long:     long,
+		Handler:  InitCommand,
+		MaxArgs:  1,
+		ArgNames: []string{"environment"},
 	}
 	cmd.AddOption(StringOption("host", 'h', "localhost", "Database hostname or IP address").Callback(SplitHostPort))
 	cmd.AddOption(StringOption("port", 'P', "3306", "Port to use for database host"))

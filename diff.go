@@ -7,16 +7,25 @@ import (
 )
 
 func init() {
-	long := `Compares the schemas on database instance(s) to the corresponding
-filesystem representation of them. The output is a series of DDL commands that,
-if run on the instance, would cause the instances' schemas to now match the
-ones in the filesystem.`
+	long := `Compares the schemas on database instance(s) to the corresponding filesystem
+representation of them. The output is a series of DDL commands that, if run on
+the instance, would cause the instances' schemas to now match the ones in the
+filesystem.
+
+You may optionally pass an environment name as a CLI option. This will affect
+which section of .skeema config files is used for processing. For example,
+running ` + "`" + `skeema diff production` + "`" + ` will apply config directives from the
+[production] section of config files, as well as any sectionless directives
+at the top of the file. If no environment name is supplied, only the sectionless
+directives alone will be applied.`
 
 	cmd := &Command{
-		Name:    "diff",
-		Short:   "Compare a DB instance's schemas and tables to the filesystem",
-		Long:    long,
-		Handler: DiffCommand,
+		Name:     "diff",
+		Short:    "Compare a DB instance's schemas and tables to the filesystem",
+		Long:     long,
+		Handler:  DiffCommand,
+		MaxArgs:  1,
+		ArgNames: []string{"environment"},
 	}
 	cmd.AddOption(BoolOption("verify", 0, true, "Test all generated ALTER statements in temporary schema to verify correctness"))
 	Commands["diff"] = cmd

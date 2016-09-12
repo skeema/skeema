@@ -7,16 +7,25 @@ import (
 )
 
 func init() {
-	long := `Updates the existing filesystem representation of the schemas and tables on a DB
-instance. Use this command when changes have been applied to the database
-without using skeema, and the filesystem representation needs to be updated to
-reflect those changes.`
+	long := `Modifies the schemas on database instance(s) to match the corresponding
+filesystem representation of them. This essentially performs the same diff logic
+as ` + "`" + `skeema diff` + "`" + `, but then actually runs the generated DDL. You should generally
+run ` + "`" + `skeema diff` + "`" + ` first to see what changes will be applied.
+
+You may optionally pass an environment name as a CLI option. This will affect
+which section of .skeema config files is used for processing. For example,
+running ` + "`" + `skeema push production` + "`" + ` will apply config directives from the
+[production] section of config files, as well as any sectionless directives
+at the top of the file. If no environment name is supplied, only the sectionless
+directives alone will be applied.`
 
 	cmd := &Command{
-		Name:    "push",
-		Short:   "Alter tables on DBs to reflect the filesystem representation",
-		Long:    long,
-		Handler: PushCommand,
+		Name:     "push",
+		Short:    "Alter tables on DBs to reflect the filesystem representation",
+		Long:     long,
+		Handler:  PushCommand,
+		MaxArgs:  1,
+		ArgNames: []string{"environment"},
 	}
 	cmd.AddOption(BoolOption("verify", 0, true, "Test all generated ALTER statements in temporary schema to verify correctness"))
 	Commands["push"] = cmd
@@ -133,8 +142,6 @@ func push(cfg *Config, seen map[string]bool) error {
 			}
 		}
 	}
-
-	// TODO: also handle schemas that exist on the db but NOT the fs, here AND in diff!
 
 	return nil
 }

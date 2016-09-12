@@ -3,16 +3,18 @@ package main
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 type Command struct {
-	Name    string
-	Short   string
-	Long    string
-	Options map[string]*Option
-	Handler func(*Config) error
-	MinArgs int
-	MaxArgs int
+	Name     string
+	Short    string
+	Long     string
+	Options  map[string]*Option
+	Handler  func(*Config) error
+	MinArgs  int
+	MaxArgs  int
+	ArgNames []string
 }
 
 func (cmd *Command) AddOption(opt *Option) {
@@ -25,7 +27,7 @@ func (cmd *Command) AddOption(opt *Option) {
 func (cmd Command) Usage(globalOptions map[string]*Option) {
 	fmt.Println(cmd.Long)
 	fmt.Println("\nUsage:")
-	fmt.Printf("      skeema %s [<options>]\n", cmd.Name)
+	fmt.Printf("      skeema %s [<options>]%s\n", cmd.Name, cmd.ArgUsage())
 	fmt.Println("\nOptions:")
 
 	var maxLen int
@@ -55,4 +57,34 @@ func (cmd Command) Usage(globalOptions map[string]*Option) {
 			fmt.Printf(globalOptions[name].Usage(maxLen))
 		}
 	}
+}
+
+func (cmd Command) ArgUsage() string {
+	var usage string
+	var done bool
+	var optionalArgs int
+	for n := 0; n < cmd.MaxArgs && !done; n++ {
+		var arg string
+		if n < len(cmd.ArgNames) {
+			arg = fmt.Sprintf("<%s>", cmd.ArgNames[n])
+		} else {
+			arg = "<arg>"
+		}
+
+		// Special case: display multiple optional unnamed args as "..."
+		if n+1 >= len(cmd.ArgNames) && n+1 < cmd.MaxArgs && n+1 >= cmd.MinArgs {
+			arg = fmt.Sprintf("%s...", arg)
+			done = true
+		}
+
+		if n < cmd.MinArgs {
+			arg = fmt.Sprintf(" %s", arg)
+		} else {
+			arg = fmt.Sprintf(" [%s", arg)
+			optionalArgs++
+		}
+
+		usage += arg
+	}
+	return usage + strings.Repeat("]", optionalArgs)
 }
