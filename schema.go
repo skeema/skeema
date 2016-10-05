@@ -42,6 +42,9 @@ func (s *Schema) Tables() ([]*Table, error) {
 	if s.tables != nil {
 		return s.tables, nil
 	}
+	if s.instance == nil {
+		return nil, fmt.Errorf("Schema.Tables: schema %s has been detached from its instance", s.Name)
+	}
 
 	db, err := s.instance.Connect("information_schema", "")
 	if err != nil {
@@ -224,7 +227,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 }
 
 func (s *Schema) PurgeTableCache() {
-	if s == nil {
+	if s == nil || s.instance == nil {
 		return
 	}
 	s.tables = nil
@@ -241,4 +244,28 @@ func (s Schema) DropStatement() string {
 func (s Schema) CreateStatement() string {
 	// TODO: support DEFAULT CHARACTER SET and DEFAULT COLLATE
 	return fmt.Sprintf("CREATE DATABASE %s", EscapeIdentifier(s.Name))
+}
+
+// CachedCopy returns a copy of the Schema object without its instance
+// association. This copy may be used in diff operations even if the original
+// schema it was copied from is dropped from its instance.
+func (s *Schema) CachedCopy() (*Schema, error) {
+	if s == nil {
+		return nil, nil
+	}
+
+	// Populate cache if missing
+	if s.tables == nil {
+		if _, err := s.Tables(); err != nil {
+			return nil, err
+		}
+	}
+
+	clone := &Schema{
+		Name:             s.Name,
+		DefaultCharSet:   s.DefaultCharSet,
+		DefaultCollation: s.DefaultCollation,
+		tables:           s.tables,
+	}
+	return clone, nil
 }
