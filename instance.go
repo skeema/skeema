@@ -248,8 +248,14 @@ func (instance *Instance) DropSchema(schema *Schema, onlyIfEmpty bool) error {
 	if err != nil {
 		return err
 	}
-	db.Close()
-	delete(instance.connectionPool, schema.Name)
+
+	prefix := fmt.Sprintf("%s?", schema.Name)
+	for key, connPool := range instance.connectionPool {
+		if strings.HasPrefix(key, prefix) {
+			connPool.Close()
+			delete(instance.connectionPool, key)
+		}
+	}
 
 	// Purge schema cache before returning
 	instance.schemas = nil
