@@ -3,11 +3,13 @@ package main
 import (
 	"fmt"
 
+	"github.com/skeema/mycli"
 	"github.com/skeema/tengo"
 )
 
 func init() {
-	long := `Modifies the schemas on database instance(s) to match the corresponding
+	summary := "Alter tables on DBs to reflect the filesystem representation"
+	desc := `Modifies the schemas on database instance(s) to match the corresponding
 filesystem representation of them. This essentially performs the same diff logic
 as ` + "`" + `skeema diff` + "`" + `, but then actually runs the generated DDL. You should generally
 run ` + "`" + `skeema diff` + "`" + ` first to see what changes will be applied.
@@ -19,128 +21,90 @@ running ` + "`" + `skeema push production` + "`" + ` will apply config directive
 at the top of the file. If no environment name is supplied, only the sectionless
 directives alone will be applied.`
 
-	cmd := &Command{
-		Name:     "push",
-		Short:    "Alter tables on DBs to reflect the filesystem representation",
-		Long:     long,
-		Handler:  PushCommand,
-		MaxArgs:  1,
-		ArgNames: []string{"environment"},
-	}
-	cmd.AddOption(BoolOption("verify", 0, true, "Test all generated ALTER statements in temporary schema to verify correctness"))
-	Commands["push"] = cmd
+	cmd := mycli.NewCommand("push", summary, desc, PushCommand, 0, 1, "environment")
+	cmd.AddOption(mycli.BoolOption("verify", 0, true, "Test all generated ALTER statements on temporary schema to verify correctness"))
+	CommandSuite.AddSubCommand(cmd)
 }
 
-func PushCommand(cfg *Config) error {
-	err := push(cfg, make(map[string]bool))
+func PushCommand(cfg *mycli.Config) error {
+	environment := "production"
+	if len(cfg.CLI.Args) > 0 {
+		environment = cfg.CLI.Args[0]
+	}
+	AddGlobalConfigFiles(cfg, environment)
+
+	dir, err := NewDir(".", cfg, environment)
 	if err != nil {
-		// Attempt to clean up temporary schema. cfg.Dir will still equal the last
-		// evaluated dir, so DropTemporarySchema will operate on the right target.
-		// But we intentionally ignore any error here since there's nothing we can do
-		// about it.
-		_ = cfg.DropTemporarySchema()
+		return err
 	}
-	return err
-}
 
-func push(cfg *Config, seen map[string]bool) error {
-	if cfg.Dir.IsLeaf() {
-		if err := cfg.PopulateTemporarySchema(false); err != nil {
-			return err
+	mods := tengo.StatementModifiers{
+		NextAutoInc: tengo.NextAutoIncIfIncreased,
+	}
+
+	// TODO: once sharding / service discovery lookup is supported, this should
+	// use multiple worker goroutines all pulling instances off the channel
+	for t := range dir.Targets(true, true) {
+		if t.Err != nil {
+			fmt.Printf("Skipping %s: %s\n", t.Dir, t.Err)
+			t.Done()
+			continue
 		}
-
-		mods := tengo.StatementModifiers{
-			NextAutoInc: tengo.NextAutoIncIfIncreased,
-		}
-
-		for _, t := range cfg.Targets() {
-			if canConnect, err := t.CanConnect(); !canConnect {
-				// TODO: option to ignore/skip erroring hosts instead of failing entirely
-				return fmt.Errorf("Cannot connect to %s: %s", t.Instance, err)
-			}
-
-			for _, schemaName := range t.SchemaNames {
-				fmt.Printf("\nPushing changes from %s/*.sql to %s %s...\n", cfg.Dir, t.Instance, schemaName)
-				from, err := t.Schema(schemaName)
-				if err != nil {
-					return err
-				}
-				to, err := t.TemporarySchema(cfg)
-				if err != nil {
-					return err
-				}
-				diff, err := tengo.NewSchemaDiff(from, to)
-				if err != nil {
-					return err
-				}
-
-				if from == nil {
-					var err error
-					from, err = t.CreateSchema(schemaName)
-					if err != nil {
-						return fmt.Errorf("Error creating schema %s on %s: %s", schemaName, t.Instance, err)
-					}
-					fmt.Printf("%s;\n", from.CreateStatement())
-				} else if len(diff.TableDiffs) == 0 {
-					fmt.Println("(nothing to do)")
-					continue
-				}
-
-				if cfg.GetBool("verify") {
-					// see diff.go for verifyDiff(), same logic usable as-is here
-					if err := verifyDiff(cfg, t.Instance, diff, from, to); err != nil {
-						return err
-					}
-				}
-
-				db, err := t.Connect(schemaName, "")
-				if err != nil {
-					return err
-				}
-				var statementCounter int
-				for _, td := range diff.TableDiffs {
-					stmt := td.Statement(mods)
-					if stmt != "" {
-						statementCounter++
-						_, err := db.Exec(stmt)
-						if err != nil {
-							return fmt.Errorf("Error running statement \"%s\" on %s: %s", stmt, t.Instance, err)
-						} else {
-							fmt.Printf("%s;\n", stmt)
-						}
-					}
-				}
-
-				// If we had diffs but they were all no-ops due to StatementModifiers,
-				// still display message about no actions taken
-				if statementCounter == 0 {
-					fmt.Println("(nothing to do)")
-				}
-			}
-		}
-
-		if err := cfg.DropTemporarySchema(); err != nil {
-			return err
-		}
-
-	} else {
-		// Recurse into subdirs, avoiding duplication due to symlinks
-		seen[cfg.Dir.Path] = true
-		subdirs, err := cfg.Dir.Subdirs()
+		fmt.Printf("\nPushing changes from %s/*.sql to %s %s...\n", t.Dir, t.Instance, t.SchemaFromDir.Name)
+		diff, err := tengo.NewSchemaDiff(t.SchemaFromInstance, t.SchemaFromDir)
 		if err != nil {
+			t.Done()
 			return err
 		}
-		for n := range subdirs {
-			subdir := subdirs[n]
-			if !seen[subdir.Path] {
-				if err := cfg.ChangeDir(&subdir); err != nil {
-					return err
-				}
-				if err := push(cfg, seen); err != nil {
-					return err
+		if t.SchemaFromInstance == nil {
+			// TODO: support CREATE DATABASE schema-level options
+			var err error
+			t.SchemaFromInstance, err = t.Instance.CreateSchema(t.SchemaFromDir.Name)
+			if err != nil {
+				t.Done()
+				return fmt.Errorf("Error creating schema %s on %s: %s", t.SchemaFromDir.Name, t.Instance, err)
+			}
+			fmt.Printf("%s;\n", t.SchemaFromDir.CreateStatement())
+		} else if len(diff.TableDiffs) == 0 {
+			fmt.Println("(nothing to do)")
+			t.Done()
+			continue
+		}
+
+		if t.Dir.Config.GetBool("verify") && len(diff.TableDiffs) > 0 {
+			if err := t.verifyDiff(diff); err != nil {
+				t.Done()
+				return err
+			}
+		}
+
+		db, err := t.Instance.Connect(t.SchemaFromDir.Name, "")
+		if err != nil {
+			t.Done()
+			return err
+		}
+		var statementCounter int
+		for _, td := range diff.TableDiffs {
+			stmt := td.Statement(mods)
+			if stmt != "" {
+				statementCounter++
+				_, err := db.Exec(stmt)
+				if err != nil {
+					t.Done()
+					return fmt.Errorf("Error running statement \"%s\" on %s: %s", stmt, t.Instance, err)
+				} else {
+					fmt.Printf("%s;\n", stmt)
 				}
 			}
 		}
+
+		// If we had diffs but they were all no-ops due to StatementModifiers,
+		// still display message about no actions taken
+		if statementCounter == 0 {
+			fmt.Println("(nothing to do)")
+		}
+
+		t.Done()
 	}
 
 	return nil

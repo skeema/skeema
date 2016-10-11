@@ -21,7 +21,7 @@ var reParseCreate = regexp.MustCompile(`(?i)^(.*)\s*create\s+table\s+(?:if\s+not
 var reBodyDisallowed = regexp.MustCompile(`^(as\s+select|select|like|[(]\s+like)`)
 
 type SQLFile struct {
-	Dir      *SkeemaDir
+	Dir      *Dir
 	FileName string
 	Contents string
 	Error    error

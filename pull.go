@@ -1,14 +1,15 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 
+	"github.com/skeema/mycli"
 	"github.com/skeema/tengo"
 )
 
 func init() {
-	long := `Updates the existing filesystem representation of the schemas and tables on a DB
+	summary := "Update the filesystem representation of schemas and tables"
+	desc := `Updates the existing filesystem representation of the schemas and tables on a DB
 instance. Use this command when changes have been applied to the database
 without using skeema, and the filesystem representation needs to be updated to
 reflect those changes.
@@ -20,62 +21,40 @@ running ` + "`" + `skeema pull production` + "`" + ` will apply config directive
 at the top of the file. If no environment name is supplied, only the sectionless
 directives alone will be applied.`
 
-	cmd := &Command{
-		Name:     "pull",
-		Short:    "Update the filesystem representation of schemas and tables",
-		Long:     long,
-		Handler:  PullCommand,
-		MaxArgs:  1,
-		ArgNames: []string{"environment"},
-	}
-	cmd.AddOption(BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in new table files, and update in existing files"))
-	cmd.AddOption(BoolOption("normalize", 0, true, "Reformat *.sql files to match SHOW CREATE TABLE"))
-
-	Commands["pull"] = cmd
+	cmd := mycli.NewCommand("pull", summary, desc, PullCommand, 0, 1, "environment")
+	cmd.AddOption(mycli.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in new table files, and update in existing files"))
+	cmd.AddOption(mycli.BoolOption("normalize", 0, true, "Reformat *.sql files to match SHOW CREATE TABLE"))
+	CommandSuite.AddSubCommand(cmd)
 }
 
-func PullCommand(cfg *Config) error {
-	err := pull(cfg, make(map[string]bool))
+func PullCommand(cfg *mycli.Config) error {
+	environment := "production"
+	if len(cfg.CLI.Args) > 0 {
+		environment = cfg.CLI.Args[0]
+	}
+	AddGlobalConfigFiles(cfg, environment)
+
+	dir, err := NewDir(".", cfg, environment)
 	if err != nil {
-		// Attempt to clean up temporary schema. cfg.Dir will still equal the last
-		// evaluated dir, so DropTemporarySchema will operate on the right target.
-		// But we intentionally ignore any error here since there's nothing we can do
-		// about it.
-		_ = cfg.DropTemporarySchema()
+		return err
 	}
-	return err
-}
 
-func pull(cfg *Config, seen map[string]bool) error {
-	if cfg.Dir.IsLeaf() {
-		fmt.Printf("Updating %s...\n", cfg.Dir.Path)
+	for t := range dir.Targets(false, false) {
+		if t.Err != nil {
+			fmt.Printf("Skipping %s: %s\n", t.Dir, t.Err)
+			continue
+		}
 
-		targets := cfg.Targets()
-		if len(targets) == 0 {
-			return errors.New("No valid instances to connect to; aborting")
-		}
-		t := targets[0]
-		to, err := t.Schema(t.SchemaNames[0])
-		if err != nil {
-			return err
-		}
-		if to == nil {
-			if err := cfg.Dir.Delete(); err != nil {
-				return fmt.Errorf("Unable to delete directory %s: %s", cfg.Dir, err)
+		// If schema doesn't exist on instance, remove the corresponding dir
+		if t.SchemaFromInstance == nil {
+			if err := t.Dir.Delete(); err != nil {
+				return fmt.Errorf("Unable to delete directory %s: %s", t.Dir, err)
 			}
-			fmt.Printf("    Deleted directory %s -- schema no longer exists\n", cfg.Dir)
-			return nil
+			fmt.Printf("    Deleted directory %s -- schema no longer exists\n", t.Dir)
+			continue
 		}
 
-		if err := cfg.PopulateTemporarySchema(cfg.GetBool("normalize")); err != nil {
-			return err
-		}
-
-		from, err := t.TemporarySchema(cfg)
-		if err != nil {
-			return err
-		}
-		diff, err := tengo.NewSchemaDiff(from, to)
+		diff, err := tengo.NewSchemaDiff(t.SchemaFromDir, t.SchemaFromInstance)
 		if err != nil {
 			return err
 		}
@@ -83,7 +62,7 @@ func pull(cfg *Config, seen map[string]bool) error {
 		// pull command updates next auto-increment value for existing table always
 		// if requested, or only if previously present in file otherwise
 		mods := tengo.StatementModifiers{}
-		if cfg.GetBool("include-auto-inc") {
+		if t.Dir.Config.GetBool("include-auto-inc") {
 			mods.NextAutoInc = tengo.NextAutoIncAlways
 		} else {
 			mods.NextAutoInc = tengo.NextAutoIncIfAlready
@@ -93,7 +72,7 @@ func pull(cfg *Config, seen map[string]bool) error {
 			switch td := td.(type) {
 			case tengo.CreateTable:
 				sf := SQLFile{
-					Dir:      cfg.Dir,
+					Dir:      t.Dir,
 					FileName: fmt.Sprintf("%s.sql", td.Table.Name),
 					Contents: td.Statement(mods),
 				}
@@ -105,7 +84,7 @@ func pull(cfg *Config, seen map[string]bool) error {
 			case tengo.DropTable:
 				table := td.Table
 				sf := SQLFile{
-					Dir:      cfg.Dir,
+					Dir:      t.Dir,
 					FileName: fmt.Sprintf("%s.sql", table.Name),
 				}
 				if err := sf.Delete(); err != nil {
@@ -118,12 +97,12 @@ func pull(cfg *Config, seen map[string]bool) error {
 					continue
 				}
 				table := td.Table
-				createStmt, err := t.ShowCreateTable(to, table)
+				createStmt, err := t.Instance.ShowCreateTable(t.SchemaFromInstance, table)
 				if err != nil {
 					return err
 				}
 				sf := SQLFile{
-					Dir:      cfg.Dir,
+					Dir:      t.Dir,
 					FileName: fmt.Sprintf("%s.sql", table.Name),
 					Contents: createStmt,
 				}
@@ -139,60 +118,72 @@ func pull(cfg *Config, seen map[string]bool) error {
 			}
 		}
 
-		if err := cfg.DropTemporarySchema(); err != nil {
-			return err
-		}
-
-	} else {
-		subdirs, err := cfg.Dir.Subdirs()
-		if err != nil {
-			return err
-		}
-
-		// If this dir represents an instance and its subdirs represent individual
-		// schemas, iterate over them and track what schema names we see. Then
-		// compare that to the schema list of the instance represented by the dir,
-		// to see if there are any new schemas on the instance that need to be
-		// created on the filesystem.
-		if cfg.Dir.IsInstanceWithLeafSubdirs() {
-			seenSchema := make(map[string]bool, len(subdirs))
-			for _, subdir := range subdirs {
-				skf, err := subdir.SkeemaFile(cfg)
-				if err == nil && skf.HasField("schema") {
-					seenSchema[skf.Values["schema"]] = true
+		if dir.Config.GetBool("normalize") {
+			for _, table := range diff.SameTables {
+				sf := SQLFile{
+					Dir:      t.Dir,
+					FileName: fmt.Sprintf("%s.sql", table.Name),
+				}
+				if _, err := sf.Read(); err != nil {
+					return err
+				}
+				if table.CreateStatement() != sf.Contents {
+					sf.Contents = table.CreateStatement()
+					if length, err := sf.Write(); err != nil {
+						return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
+					} else {
+						fmt.Printf("    Wrote %s (%d bytes) -- updated file to normalize format\n", sf.Path(), length)
+					}
 				}
 			}
-			targets := cfg.Targets()
-			if len(targets) == 0 {
-				return errors.New("No valid instances to connect to; aborting")
+		}
+	}
+
+	return findNewSchemas(dir)
+}
+
+func findNewSchemas(dir *Dir) error {
+	subdirs, err := dir.Subdirs()
+	if err != nil {
+		return err
+	}
+
+	if dir.HasHost() && !dir.HasSchema() {
+		subdirHasSchema := make(map[string]bool)
+		for _, subdir := range subdirs {
+			if subdir.HasSchema() {
+				// TODO support expansion of multiple schema names per dir
+				subdirHasSchema[subdir.Config.Get("schema")] = true
 			}
-			t := targets[0]
-			schemas, err := t.Schemas()
+		}
+
+		// Compare dirs to schemas, UNLESS subdirs exist but don't actually map to schemas directly
+		if len(subdirHasSchema) > 0 || len(subdirs) == 0 {
+			inst, err := dir.FirstInstance()
+			if err != nil {
+				return err
+			} else if inst == nil {
+				return fmt.Errorf("Unable to obtain instance for %s", dir)
+			}
+			schemas, err := inst.Schemas()
 			if err != nil {
 				return err
 			}
-			for _, schema := range schemas {
-				if !seenSchema[schema.Name] {
+			for _, s := range schemas {
+				if !subdirHasSchema[s.Name] {
 					// use same logic from init command
-					if err := PopulateSchemaDir(cfg, schema, t.Instance, cfg.Dir, true); err != nil {
+					if err := PopulateSchemaDir(s, dir, true); err != nil {
 						return err
 					}
 				}
 			}
 		}
+	}
 
-		// Finally, recurse into subdirs, avoiding duplication due to symlinks
-		seen[cfg.Dir.Path] = true
-		for n := range subdirs {
-			subdir := subdirs[n]
-			if !seen[subdir.Path] {
-				if err := cfg.ChangeDir(&subdir); err != nil {
-					return err
-				}
-				if err := pull(cfg, seen); err != nil {
-					return err
-				}
-			}
+	for _, subdir := range subdirs {
+		err := findNewSchemas(subdir)
+		if err != nil {
+			return err
 		}
 	}
 

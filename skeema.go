@@ -1,52 +1,29 @@
 package main
 
 import (
-	"errors"
+	//	"errors"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
-	"syscall"
+	"strings"
+	//	"strconv"
+	//	"syscall"
 
-	"github.com/skeema/tengo"
-	"golang.org/x/crypto/ssh/terminal"
+	"github.com/skeema/mycli"
+	//	"github.com/skeema/tengo"
+	//	"golang.org/x/crypto/ssh/terminal"
 )
 
 const MaxSQLFileSize = 10 * 1024
 
-// Keep global map of commands. Gets populated by init() functions in each
-// command source file.
-var Commands = map[string]*Command{}
+// Keep global slice of subcommands. Gets populated by init() functions in each
+// command's source file.
+var rootDesc = `Skeema is a MySQL schema management tool. It allows you to export a database
+schema to the filesystem, and apply online schema changes by modifying files.`
+var CommandSuite = mycli.NewCommandSuite("skeema", rootDesc) //Commands = []*mycli.Command{}
 
-// GlobalOptions returns the list of options that are permitted regardless
-// of what specific command has been run.
-//
-// Note that if a command-specific option has same name as a global option,
-// the command-specific option overrides the global option. Several global
-// options are marked as "hidden" because most commands expect them in option
-// files rather than via CLI, though we still support CLI overrides. Commands
-// that expect these options on CLI explicitly redefine these options as non-
-// hidden.
-func GlobalOptions() map[string]*Option {
-	opts := []*Option{
-		StringOption("help", '?', "", "Display help for the specified command").ValueOptional(),
-		StringOption("host", 0, "localhost", "Database hostname or IP address").Hidden().Callback(SplitHostPort),
-		StringOption("port", 0, "3306", "Port to use for database host").Hidden(),
-		StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix domain socket file for use when hostname==localhost").Hidden(),
-		StringOption("user", 'u', "root", "Username to connect to database host"),
-		StringOption("password", 'p', "<no password>", "Password for database user. Supply with no value to prompt.").ValueOptional().Callback(PromptPasswordIfNeeded),
-		StringOption("schema", 0, "", "Database schema name").Hidden(),
-		StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema to use for intermediate operations. Will be created and dropped unless --reuse-temp-schema enabled."),
-		BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done. Useful for running without create/drop database privileges."),
-	}
-	result := make(map[string]*Option, len(opts))
-	for _, opt := range opts {
-		result[opt.Name] = opt
-	}
-	return result
-}
-
+/*
 func SplitHostPort(cfg *Config, values map[string]string) error {
 	host, port, err := tengo.SplitHostOptionalPort(values["host"])
 	if err != nil || port == 0 {
@@ -72,15 +49,61 @@ func PromptPasswordIfNeeded(cfg *Config, values map[string]string) error {
 	}
 	return nil
 }
+*/
 
-func main() {
+func AddGlobalConfigFiles(cfg *mycli.Config, sectionName string) {
 	globalFilePaths := []string{"/etc/skeema", "/usr/local/etc/skeema"}
 	home := filepath.Clean(os.Getenv("HOME"))
 	if home != "" {
 		globalFilePaths = append(globalFilePaths, path.Join(home, ".my.cnf"), path.Join(home, ".skeema"))
 	}
+	for _, path := range globalFilePaths {
+		f := mycli.NewFile(path)
+		if !f.Exists() {
+			continue
+		}
+		if err := f.Read(); err != nil {
+			fmt.Printf("Ignoring global file %s due to read error: %s\n", f.Path(), err)
+			continue
+		}
+		if strings.HasSuffix(path, ".my.cnf") {
+			f.IgnoreUnknownOptions = true
+		}
+		if err := f.Parse(cfg); err != nil {
+			fmt.Printf("Ignoring global file %s due to parse error: %s\n", f.Path(), err)
+		}
+		if strings.HasSuffix(path, ".my.cnf") {
+			f.UseSection("skeema", "client")
+		} else {
+			f.UseSection(sectionName)
+		}
 
-	cfg, err := NewConfig(os.Args[1:], globalFilePaths)
+		cfg.AddSource(f)
+	}
+}
+
+func main() {
+	// Create root command suite, with subcommands defined in each file's init()
+	/*
+		root := mycli.NewCommandSuite("skeema", desc)
+		for _, cmd := range Commands {
+			root.AddSubCommand(cmd)
+		}
+	*/
+
+	// Add global options. Sub-commands may override these when needed.
+	// TODO fix callbacks
+	CommandSuite.AddOption(mycli.StringOption("help", '?', "", "Display help for the specified command").ValueOptional())
+	CommandSuite.AddOption(mycli.StringOption("host", 0, "", "Database hostname or IP address").Hidden()) //.Callback(SplitHostPort))
+	CommandSuite.AddOption(mycli.StringOption("port", 0, "3306", "Port to use for database host").Hidden())
+	CommandSuite.AddOption(mycli.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix domain socket file for use when hostname==localhost").Hidden())
+	CommandSuite.AddOption(mycli.StringOption("user", 'u', "root", "Username to connect to database host"))
+	CommandSuite.AddOption(mycli.StringOption("password", 'p', "<no password>", "Password for database user. Supply with no value to prompt.").ValueOptional()) //.Callback(PromptPasswordIfNeeded))
+	CommandSuite.AddOption(mycli.StringOption("schema", 0, "", "Database schema name").Hidden())
+	CommandSuite.AddOption(mycli.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema to use for intermediate operations. Will be created and dropped unless --reuse-temp-schema enabled."))
+	CommandSuite.AddOption(mycli.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done. Useful for running without create/drop database privileges."))
+
+	cfg, err := mycli.ParseCLI(CommandSuite, os.Args)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
