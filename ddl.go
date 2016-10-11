@@ -53,7 +53,8 @@ type TableAlterClause interface {
 type SchemaDiff struct {
 	FromSchema *Schema
 	ToSchema   *Schema
-	TableDiffs []TableDiff
+	TableDiffs []TableDiff // a set of statements that, if run, would turn FromSchema into ToSchema
+	SameTables []*Table    // slice of tables that were identical between schemas
 	// TODO: schema-level default charset and collation changes
 }
 
@@ -62,6 +63,7 @@ func NewSchemaDiff(from, to *Schema) (*SchemaDiff, error) {
 		FromSchema: from,
 		ToSchema:   to,
 		TableDiffs: make([]TableDiff, 0),
+		SameTables: make([]*Table, 0),
 	}
 
 	fromTablesByName, fromErr := from.TablesByName()
@@ -98,6 +100,8 @@ func NewSchemaDiff(from, to *Schema) (*SchemaDiff, error) {
 					Clauses: clauses,
 				}
 				result.TableDiffs = append(result.TableDiffs, alter)
+			} else {
+				result.SameTables = append(result.SameTables, newTable)
 			}
 		} else {
 			result.TableDiffs = append(result.TableDiffs, DropTable{Table: origTable})
