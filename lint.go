@@ -34,6 +34,8 @@ func LintCommand(cfg *mycli.Config) error {
 			continue
 		}
 
+		fmt.Printf("Linting %s...\n", t.Dir)
+
 		// Can ignore errors on t.SchemaFromDir.Tables() since it is guaranteed to already be pre-cached
 		tables, _ := t.SchemaFromDir.Tables()
 		for _, table := range tables {

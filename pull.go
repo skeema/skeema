@@ -45,6 +45,8 @@ func PullCommand(cfg *mycli.Config) error {
 			continue
 		}
 
+		fmt.Printf("Updating %s...\n", t.Dir)
+
 		// If schema doesn't exist on instance, remove the corresponding dir
 		if t.SchemaFromInstance == nil {
 			if err := t.Dir.Delete(); err != nil {
