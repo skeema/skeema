@@ -15,6 +15,7 @@ type Target struct {
 	SchemaFromDir      *tengo.Schema
 	Dir                *Dir
 	Err                error
+	SQLFileErrors      map[string]error
 }
 
 func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expandSchemas bool) {
@@ -133,29 +134,30 @@ func (t *Target) obtainSchemaFromDir() {
 	}
 	for _, sf := range sqlFiles {
 		_, err := db.Exec(sf.Contents)
-		if tengo.IsSyntaxError(err) {
-			t.Err = fmt.Errorf("SQL syntax error in %s: %s", sf.Path(), err)
-			return
-		} else if err != nil {
-			t.Err = fmt.Errorf("obtainSchemaFromDir: cannot create tables for %s on %s: %s", t.Dir, t.Instance, err)
-			return
+		if err != nil {
+			if tengo.IsSyntaxError(err) {
+				t.Err = fmt.Errorf("SQL syntax error in %s: %s", sf.Path(), err)
+			} else {
+				t.Err = fmt.Errorf("Error in %s: %s", sf.Path(), err)
+			}
+			if t.SQLFileErrors == nil {
+				t.SQLFileErrors = make(map[string]error)
+			}
+			t.SQLFileErrors[sf.Path()] = t.Err
 		}
 	}
 
 	if t.SchemaFromDir, err = tempSchema.CachedCopy(); err != nil {
 		t.Err = fmt.Errorf("obtainSchemaFromDir: unable to clone temporary schema for %s on %s: %s", t.Dir, t.Instance, err)
-		return
 	}
 
 	if t.Dir.Config.GetBool("reuse-temp-schema") {
 		if err := t.Instance.DropTablesInSchema(tempSchema, true); err != nil {
 			t.Err = fmt.Errorf("obtainSchemaFromDir: cannot drop tables in temporary schema for %s on %s: %s", t.Dir, t.Instance, err)
-			return
 		}
 	} else {
 		if err := t.Instance.DropSchema(tempSchema, true); err != nil {
 			t.Err = fmt.Errorf("obtainSchemaFromDir: cannot drop temporary schema for %s on %s: %s", t.Dir, t.Instance, err)
-			return
 		}
 	}
 }

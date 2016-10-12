@@ -35,15 +35,21 @@ func LintHandler(cfg *mycli.Config) error {
 	}
 
 	for t := range dir.Targets(false, false) {
-		if t.Err != nil {
-			fmt.Printf("Skipping %s: %s\n", t.Dir, t.Err)
-			continue
-		}
-
 		fmt.Printf("Linting %s...\n", t.Dir)
 
-		// Can ignore errors on t.SchemaFromDir.Tables() since it is guaranteed to already be pre-cached
-		tables, _ := t.SchemaFromDir.Tables()
+		for _, err := range t.SQLFileErrors {
+			fmt.Printf("    %s\n", err)
+		}
+
+		if t.SchemaFromDir == nil {
+			fmt.Println("    Skipping directory due to fatal error: ", t.Err)
+		}
+
+		tables, err := t.SchemaFromDir.Tables()
+		if err != nil {
+			fmt.Println("    Skipping directory due to fatal error: ", err, t.Err)
+		}
+
 		for _, table := range tables {
 			sf := SQLFile{
 				Dir:      t.Dir,
