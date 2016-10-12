@@ -136,7 +136,15 @@ func (dir *Dir) FirstInstance() (*tengo.Instance, error) {
 		dsn = fmt.Sprintf("%s@unix(%s)/?%s", userAndPass, dir.Config.Get("socket"), params)
 	} else {
 		// TODO support host configs mapping to multiple lookups via service discovery
-		dsn = fmt.Sprintf("%s@tcp(%s:%d)/?%s", userAndPass, dir.Config.Get("host"), dir.Config.GetIntOrDefault("port"), params)
+		host := dir.Config.Get("host")
+		port := dir.Config.GetIntOrDefault("port")
+		if !dir.Config.Changed("port") {
+			if splitHost, splitPort, err := tengo.SplitHostOptionalPort(host); err == nil && port > 0 {
+				host = splitHost
+				port = splitPort
+			}
+		}
+		dsn = fmt.Sprintf("%s@tcp(%s:%d)/?%s", userAndPass, host, port, params)
 	}
 	// TODO also support cloudsql
 

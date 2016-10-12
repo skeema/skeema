@@ -1,18 +1,15 @@
 package main
 
 import (
-	//	"errors"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
-	//	"strconv"
-	//	"syscall"
+	"syscall"
 
 	"github.com/skeema/mycli"
-	//	"github.com/skeema/tengo"
-	//	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 const MaxSQLFileSize = 10 * 1024
@@ -22,34 +19,6 @@ const MaxSQLFileSize = 10 * 1024
 var rootDesc = `Skeema is a MySQL schema management tool. It allows you to export a database
 schema to the filesystem, and apply online schema changes by modifying files.`
 var CommandSuite = mycli.NewCommandSuite("skeema", rootDesc)
-
-/*
-func SplitHostPort(cfg *Config, values map[string]string) error {
-	host, port, err := tengo.SplitHostOptionalPort(values["host"])
-	if err != nil || port == 0 {
-		return err
-	}
-	if values["port"] != "" && values["port"] != strconv.Itoa(port) {
-		return errors.New("port supplied in both host and port params, with different values")
-	}
-
-	values["host"] = host
-	values["port"] = strconv.Itoa(port)
-	return nil
-}
-
-func PromptPasswordIfNeeded(cfg *Config, values map[string]string) error {
-	if values["password"] == "" {
-		fmt.Printf("Enter password: ")
-		bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
-		if err != nil {
-			return err
-		}
-		values["password"] = string(bytePassword)
-	}
-	return nil
-}
-*/
 
 func AddGlobalConfigFiles(cfg *mycli.Config) {
 	globalFilePaths := []string{"/etc/skeema", "/usr/local/etc/skeema"}
@@ -80,17 +49,46 @@ func AddGlobalConfigFiles(cfg *mycli.Config) {
 
 		cfg.AddSource(f)
 	}
+
+	// Don't allow CLI or global configs to set certain options, unless the
+	// subcommand specificially provides these (like init). For most commands
+	// these options may only legally be set in per-directory config files.
+	dirOnly := []string{"host", "port", "schema"}
+	for _, name := range dirOnly {
+		if cfg.Changed(name) && cfg.FindOption(name) == CommandSuite.Options()[name] {
+			fmt.Printf("Fatal: option %s can only be specified in a non-global .skeema options file\n", name)
+			os.Exit(1)
+		}
+	}
+
+	// Special handling for password option: supplying it with no value prompts user
+	if cfg.Get("password") == "" {
+		var err error
+		cfg.CLI.OptionValues["password"], err = PromptPassword()
+		if err != nil {
+			fmt.Println("Aborting:", err)
+			os.Exit(1)
+		}
+	}
+}
+
+func PromptPassword() (string, error) {
+	fmt.Printf("Enter password: ")
+	bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
+	if err != nil {
+		return "", err
+	}
+	return string(bytePassword), nil
 }
 
 func main() {
 	// Add global options. Sub-commands may override these when needed.
-	// TODO fix callbacks
 	CommandSuite.AddOption(mycli.StringOption("help", '?', "", "Display help for the specified command").ValueOptional())
-	CommandSuite.AddOption(mycli.StringOption("host", 0, "", "Database hostname or IP address").Hidden()) //.Callback(SplitHostPort))
+	CommandSuite.AddOption(mycli.StringOption("host", 0, "", "Database hostname or IP address").Hidden())
 	CommandSuite.AddOption(mycli.StringOption("port", 0, "3306", "Port to use for database host").Hidden())
 	CommandSuite.AddOption(mycli.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix domain socket file for use when hostname==localhost").Hidden())
 	CommandSuite.AddOption(mycli.StringOption("user", 'u', "root", "Username to connect to database host"))
-	CommandSuite.AddOption(mycli.StringOption("password", 'p', "<no password>", "Password for database user. Supply with no value to prompt.").ValueOptional()) //.Callback(PromptPasswordIfNeeded))
+	CommandSuite.AddOption(mycli.StringOption("password", 'p', "<no password>", "Password for database user. Supply with no value to prompt.").ValueOptional())
 	CommandSuite.AddOption(mycli.StringOption("schema", 0, "", "Database schema name").Hidden())
 	CommandSuite.AddOption(mycli.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema to use for intermediate operations. Will be created and dropped unless --reuse-temp-schema enabled."))
 	CommandSuite.AddOption(mycli.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done. Useful for running without create/drop database privileges."))
