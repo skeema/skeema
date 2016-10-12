@@ -17,11 +17,11 @@ import (
 
 const MaxSQLFileSize = 10 * 1024
 
-// Keep global slice of subcommands. Gets populated by init() functions in each
-// command's source file.
+// Root command suite is global. Subcommands get populated by init() functions
+// in each command's source file.
 var rootDesc = `Skeema is a MySQL schema management tool. It allows you to export a database
 schema to the filesystem, and apply online schema changes by modifying files.`
-var CommandSuite = mycli.NewCommandSuite("skeema", rootDesc) //Commands = []*mycli.Command{}
+var CommandSuite = mycli.NewCommandSuite("skeema", rootDesc)
 
 /*
 func SplitHostPort(cfg *Config, values map[string]string) error {
@@ -51,7 +51,7 @@ func PromptPasswordIfNeeded(cfg *Config, values map[string]string) error {
 }
 */
 
-func AddGlobalConfigFiles(cfg *mycli.Config, sectionName string) {
+func AddGlobalConfigFiles(cfg *mycli.Config) {
 	globalFilePaths := []string{"/etc/skeema", "/usr/local/etc/skeema"}
 	home := filepath.Clean(os.Getenv("HOME"))
 	if home != "" {
@@ -73,9 +73,9 @@ func AddGlobalConfigFiles(cfg *mycli.Config, sectionName string) {
 			fmt.Printf("Ignoring global file %s due to parse error: %s\n", f.Path(), err)
 		}
 		if strings.HasSuffix(path, ".my.cnf") {
-			f.UseSection("skeema", "client")
+			_ = f.UseSection("skeema", "client") // safe to ignore error (doesn't matter if section doesn't exist)
 		} else {
-			f.UseSection(sectionName)
+			_ = f.UseSection(cfg.Get("environment")) // safe to ignore error (doesn't matter if section doesn't exist)
 		}
 
 		cfg.AddSource(f)
@@ -83,14 +83,6 @@ func AddGlobalConfigFiles(cfg *mycli.Config, sectionName string) {
 }
 
 func main() {
-	// Create root command suite, with subcommands defined in each file's init()
-	/*
-		root := mycli.NewCommandSuite("skeema", desc)
-		for _, cmd := range Commands {
-			root.AddSubCommand(cmd)
-		}
-	*/
-
 	// Add global options. Sub-commands may override these when needed.
 	// TODO fix callbacks
 	CommandSuite.AddOption(mycli.StringOption("help", '?', "", "Display help for the specified command").ValueOptional())

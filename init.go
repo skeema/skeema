@@ -18,11 +18,12 @@ table in the schema.
 
 You may optionally pass an environment name as a CLI option. This will affect
 which section of .skeema config files the host and schema names are written to.
-For example, running ` + "`" + `skeema init production` + "`" + ` will add config directives to
-the [production] section of config files. If no environment name is supplied,
-directives will be written to the top of the file, prior to any section name.`
+For example, running ` + "`" + `skeema init staging` + "`" + ` will add config directives to the
+[staging] section of config files. If no environment name is supplied, the
+default is "production", so directives will be written to the [production]
+section of the file.`
 
-	cmd := mycli.NewCommand("init", summary, desc, InitCommand, 0, 1, "environment")
+	cmd := mycli.NewCommand("init", summary, desc, InitHandler)
 	cmd.AddOption(mycli.StringOption("host", 'h', "", "Database hostname or IP address"))
 	cmd.AddOption(mycli.StringOption("port", 'P', "3306", "Port to use for database host"))
 	cmd.AddOption(mycli.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix domain socket file for use when hostname==localhost"))
@@ -30,17 +31,14 @@ directives will be written to the top of the file, prior to any section name.`
 	cmd.AddOption(mycli.StringOption("host-dir", 0, "<hostname>", "Override the directory name to use for a host. Or negate with --skip-host-dir to use base-dir directly."))
 	cmd.AddOption(mycli.StringOption("schema", 0, "", "Only import the one specified schema, and skip creation of schema subdir level"))
 	cmd.AddOption(mycli.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in table files"))
+	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
 
-func InitCommand(cfg *mycli.Config) error {
-	var environment string
-	if len(cfg.CLI.Args) > 0 {
-		environment = cfg.CLI.Args[0]
-	}
-	AddGlobalConfigFiles(cfg, environment)
+func InitHandler(cfg *mycli.Config) error {
+	AddGlobalConfigFiles(cfg)
 
-	baseDir, err := NewDir(cfg.Get("base-dir"), cfg, environment)
+	baseDir, err := NewDir(cfg.Get("base-dir"), cfg)
 	if err != nil {
 		return err
 	}
@@ -87,6 +85,7 @@ func InitCommand(cfg *mycli.Config) error {
 	}
 
 	var hostDir *Dir
+	environment := cfg.Get("environment")
 
 	// If the hostDir and baseDir are different, write out the baseDir's .skeema
 	// file if a user was specified via the command-line

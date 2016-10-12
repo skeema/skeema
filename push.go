@@ -16,24 +16,20 @@ run ` + "`" + `skeema diff` + "`" + ` first to see what changes will be applied.
 
 You may optionally pass an environment name as a CLI option. This will affect
 which section of .skeema config files is used for processing. For example,
-running ` + "`" + `skeema push production` + "`" + ` will apply config directives from the
-[production] section of config files, as well as any sectionless directives
-at the top of the file. If no environment name is supplied, only the sectionless
-directives alone will be applied.`
+running ` + "`" + `skeema push staging` + "`" + ` will apply config directives from the
+[staging] section of config files, as well as any sectionless directives at the
+top of the file. If no environment name is supplied, the default is
+"production".`
 
-	cmd := mycli.NewCommand("push", summary, desc, PushCommand, 0, 1, "environment")
+	cmd := mycli.NewCommand("push", summary, desc, PushHandler)
 	cmd.AddOption(mycli.BoolOption("verify", 0, true, "Test all generated ALTER statements on temporary schema to verify correctness"))
+	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
 
-func PushCommand(cfg *mycli.Config) error {
-	environment := "production"
-	if len(cfg.CLI.Args) > 0 {
-		environment = cfg.CLI.Args[0]
-	}
-	AddGlobalConfigFiles(cfg, environment)
-
-	dir, err := NewDir(".", cfg, environment)
+func PushHandler(cfg *mycli.Config) error {
+	AddGlobalConfigFiles(cfg)
+	dir, err := NewDir(".", cfg)
 	if err != nil {
 		return err
 	}

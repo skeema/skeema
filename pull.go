@@ -16,25 +16,21 @@ reflect those changes.
 
 You may optionally pass an environment name as a CLI option. This will affect
 which section of .skeema config files is used for processing. For example,
-running ` + "`" + `skeema pull production` + "`" + ` will apply config directives from the
-[production] section of config files, as well as any sectionless directives
-at the top of the file. If no environment name is supplied, only the sectionless
-directives alone will be applied.`
+running ` + "`" + `skeema pull staging` + "`" + ` will apply config directives from the
+[staging] section of config files, as well as any sectionless directives at the
+top of the file. If no environment name is supplied, the default is
+"production".`
 
-	cmd := mycli.NewCommand("pull", summary, desc, PullCommand, 0, 1, "environment")
+	cmd := mycli.NewCommand("pull", summary, desc, PullHandler)
 	cmd.AddOption(mycli.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in new table files, and update in existing files"))
 	cmd.AddOption(mycli.BoolOption("normalize", 0, true, "Reformat *.sql files to match SHOW CREATE TABLE"))
+	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
 
-func PullCommand(cfg *mycli.Config) error {
-	environment := "production"
-	if len(cfg.CLI.Args) > 0 {
-		environment = cfg.CLI.Args[0]
-	}
-	AddGlobalConfigFiles(cfg, environment)
-
-	dir, err := NewDir(".", cfg, environment)
+func PullHandler(cfg *mycli.Config) error {
+	AddGlobalConfigFiles(cfg)
+	dir, err := NewDir(".", cfg)
 	if err != nil {
 		return err
 	}

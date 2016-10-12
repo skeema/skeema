@@ -25,7 +25,7 @@ type Dir struct {
 // baseConfig should only include "global" configurations; any config files in
 // parent dirs will automatically be read in and cascade appropriately into this
 // directory's config.
-func NewDir(path string, baseConfig *mycli.Config, section string) (*Dir, error) {
+func NewDir(path string, baseConfig *mycli.Config) (*Dir, error) {
 	cleanPath, err := filepath.Abs(filepath.Clean(path))
 	if err == nil {
 		path = cleanPath
@@ -34,7 +34,7 @@ func NewDir(path string, baseConfig *mycli.Config, section string) (*Dir, error)
 	dir := &Dir{
 		Path:    path,
 		Config:  baseConfig.Clone(),
-		section: section,
+		section: baseConfig.Get("environment"),
 	}
 
 	// Get slice of option files from root on down to this dir, in that order.
@@ -48,7 +48,7 @@ func NewDir(path string, baseConfig *mycli.Config, section string) (*Dir, error)
 		if err != nil {
 			return nil, err
 		}
-		_ = optionFile.UseSection(section) // we don't care if the section doesn't exist
+		_ = optionFile.UseSection(dir.section) // we don't care if the section doesn't exist
 		dir.Config.AddSource(optionFile)
 	}
 
