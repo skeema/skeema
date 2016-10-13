@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/skeema/mycli"
@@ -35,9 +36,12 @@ func PullHandler(cfg *mycli.Config) error {
 		return err
 	}
 
+	var errCount int
+
 	for t := range dir.Targets(false, false) {
-		if t.Err != nil {
+		if t.Err != nil { // we only skip on fatal errors (t.Err), not SQL file errors (t.SQLFileErrors or t.HasError())
 			fmt.Printf("Skipping %s: %s\n", t.Dir, t.Err)
+			errCount++
 			continue
 		}
 
@@ -76,6 +80,11 @@ func PullHandler(cfg *mycli.Config) error {
 				}
 				if length, err := sf.Write(); err != nil {
 					return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
+				} else if _, hadErr := t.SQLFileErrors[sf.Path()]; hadErr {
+					// SQL files with syntax errors will result in tengo.CreateTable since
+					// the temp schema will be missing the table, however we can detect this
+					// scenario by looking in the Target's SQLFileErrors
+					fmt.Printf("    Wrote %s (%d bytes) -- updated file to replace invalid SQL\n", sf.Path(), length)
 				} else {
 					fmt.Printf("    Wrote %s (%d bytes) -- new table\n", sf.Path(), length)
 				}
@@ -137,7 +146,18 @@ func PullHandler(cfg *mycli.Config) error {
 		}
 	}
 
-	return findNewSchemas(dir)
+	if err := findNewSchemas(dir); err != nil {
+		return err
+	}
+
+	switch errCount {
+	case 0:
+		return nil
+	case 1:
+		return errors.New("Skipped 1 operation due to error")
+	default:
+		return fmt.Errorf("Skipped %d operations due to errors", errCount)
+	}
 }
 
 func findNewSchemas(dir *Dir) error {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/skeema/mycli"
@@ -34,6 +35,7 @@ func PushHandler(cfg *mycli.Config) error {
 		return err
 	}
 
+	var errCount int
 	mods := tengo.StatementModifiers{
 		NextAutoInc: tengo.NextAutoIncIfIncreased,
 	}
@@ -41,11 +43,13 @@ func PushHandler(cfg *mycli.Config) error {
 	// TODO: once sharding / service discovery lookup is supported, this should
 	// use multiple worker goroutines all pulling instances off the channel
 	for t := range dir.Targets(true, true) {
-		if t.Err != nil {
-			fmt.Printf("Skipping %s: %s\n", t.Dir, t.Err)
+		if hasErrors, firstErr := t.HasErrors(); hasErrors {
+			fmt.Printf("Skipping %s: %s\n", t.Dir, firstErr)
 			t.Done()
+			errCount++
 			continue
 		}
+
 		fmt.Printf("\nPushing changes from %s/*.sql to %s %s...\n", t.Dir, t.Instance, t.SchemaFromDir.Name)
 		diff, err := tengo.NewSchemaDiff(t.SchemaFromInstance, t.SchemaFromDir)
 		if err != nil {
@@ -103,5 +107,12 @@ func PushHandler(cfg *mycli.Config) error {
 		t.Done()
 	}
 
-	return nil
+	switch errCount {
+	case 0:
+		return nil
+	case 1:
+		return errors.New("Skipped 1 operation due to error")
+	default:
+		return fmt.Errorf("Skipped %d operations due to errors", errCount)
+	}
 }

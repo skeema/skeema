@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/skeema/mycli"
@@ -34,13 +35,15 @@ func DiffHandler(cfg *mycli.Config) error {
 		return err
 	}
 
+	var errCount int
 	mods := tengo.StatementModifiers{
 		NextAutoInc: tengo.NextAutoIncIfIncreased,
 	}
 
 	for t := range dir.Targets(false, false) {
-		if t.Err != nil {
-			fmt.Printf("Skipping %s: %s\n", t.Dir, t.Err)
+		if hasErrors, firstErr := t.HasErrors(); hasErrors {
+			fmt.Printf("Skipping %s: %s\n", t.Dir, firstErr)
+			errCount++
 			continue
 		}
 		fmt.Printf("-- Diff of %s %s vs %s/*.sql\n", t.Instance, t.SchemaFromDir.Name, t.Dir)
@@ -66,5 +69,12 @@ func DiffHandler(cfg *mycli.Config) error {
 		fmt.Println()
 	}
 
-	return nil
+	switch errCount {
+	case 0:
+		return nil
+	case 1:
+		return errors.New("Skipped 1 operation due to error")
+	default:
+		return fmt.Errorf("Skipped %d operations due to errors", errCount)
+	}
 }

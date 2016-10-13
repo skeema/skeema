@@ -85,6 +85,21 @@ func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expan
 func (t Target) Done() {
 }
 
+// HasErrors returns true if the Target encountered a fatal error OR any errors
+// in individual *.SQL files while performing temp schema operations. It also
+// returns the first error.
+func (t Target) HasErrors() (bool, error) {
+	if t.Err != nil {
+		return true, t.Err
+	}
+	if len(t.SQLFileErrors) > 0 {
+		for _, err := range t.SQLFileErrors {
+			return true, err
+		}
+	}
+	return false, nil
+}
+
 func (t *Target) obtainSchemaFromDir() {
 	tempSchemaName := t.Dir.Config.Get("temp-schema")
 	sqlFiles, err := t.Dir.SQLFiles()
@@ -135,15 +150,14 @@ func (t *Target) obtainSchemaFromDir() {
 	for _, sf := range sqlFiles {
 		_, err := db.Exec(sf.Contents)
 		if err != nil {
-			if tengo.IsSyntaxError(err) {
-				t.Err = fmt.Errorf("SQL syntax error in %s: %s", sf.Path(), err)
-			} else {
-				t.Err = fmt.Errorf("Error in %s: %s", sf.Path(), err)
-			}
 			if t.SQLFileErrors == nil {
 				t.SQLFileErrors = make(map[string]error)
 			}
-			t.SQLFileErrors[sf.Path()] = t.Err
+			if tengo.IsSyntaxError(err) {
+				t.SQLFileErrors[sf.Path()] = fmt.Errorf("SQL syntax error in %s: %s", sf.Path(), err)
+			} else {
+				t.SQLFileErrors[sf.Path()] = fmt.Errorf("Error in %s: %s", sf.Path(), err)
+			}
 		}
 	}
 
