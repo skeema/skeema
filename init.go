@@ -172,8 +172,11 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 	var schemaDir *Dir
 	var err error
 	if makeSubdir {
+		// Put a .skeema file with the schema name in it. This is placed outside of
+		// any named section/environment since the default assumption is that schema
+		// names match between environments.
 		optionFile := mycli.NewFile(".skeema")
-		optionFile.SetOptionValue(parentDir.section, "schema", s.Name)
+		optionFile.SetOptionValue("", "schema", s.Name)
 		if schemaDir, err = parentDir.CreateSubdir(s.Name, optionFile); err != nil {
 			return fmt.Errorf("Unable to use directory %s for schema %s: %s", schemaDir.Path, s.Name, err)
 		}
