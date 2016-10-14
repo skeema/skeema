@@ -13,12 +13,13 @@ import (
 )
 
 const MaxSQLFileSize = 10 * 1024
+const version = "0.1 (pre-release)"
+const rootDesc = `Skeema is a MySQL schema management tool. It allows you to export a database
+schema to the filesystem, and apply online schema changes by modifying files.`
 
 // Root command suite is global. Subcommands get populated by init() functions
 // in each command's source file.
-var rootDesc = `Skeema is a MySQL schema management tool. It allows you to export a database
-schema to the filesystem, and apply online schema changes by modifying files.`
-var CommandSuite = mycli.NewCommandSuite("skeema", rootDesc)
+var CommandSuite = mycli.NewCommandSuite("skeema", version, rootDesc)
 
 func AddGlobalConfigFiles(cfg *mycli.Config) {
 	globalFilePaths := []string{"/etc/skeema", "/usr/local/etc/skeema"}
