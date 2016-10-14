@@ -8,14 +8,22 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+// Give tests a way to avoid stomping on each others' cached instances, since
+// currently we don't permit creation of instances that only differ by user,
+// pass, or defaultParams
+func nukeInstanceCache() {
+	allInstances.byDSN = make(map[string]*Instance)
+}
+
 func TestNewInstance(t *testing.T) {
+	nukeInstanceCache()
 	assertError := func(driver, dsn string) {
 		instance, err := NewInstance(driver, dsn)
 		if instance != nil || err == nil {
 			t.Errorf("Expected NewInstance(\"%s\", \"%s\") to return nil,err; instead found %v, %v", driver, dsn, instance, err)
 		}
 	}
-	assertError("yoursql", "username:password@tcp(some.host)/dbname?param=value")
+	assertError("btrieve", "username:password@tcp(some.host)/dbname?param=value")
 	assertError("", "username:password@tcp(some.host:1234)/dbname?param=value")
 	assertError("mysql", "username:password@tcp(some.host:1234) i like zebras")
 
@@ -25,6 +33,7 @@ func TestNewInstance(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Unexpectedly received error %s from NewInstance(\"mysql\", \"%s\")", err, dsn)
 		}
+		expectedInstance.RWMutex = instance.RWMutex // cheat to satisfy DeepEqual
 		if !reflect.DeepEqual(expectedInstance, *instance) {
 			t.Errorf("NewInstance(\"mysql\", \"%s\"): Returned instance %#v does not match expected instance %#v", dsn, *instance, expectedInstance)
 		}
@@ -38,7 +47,7 @@ func TestNewInstance(t *testing.T) {
 		Password:      "password",
 		Host:          "some.host",
 		Port:          1234,
-		DefaultParams: map[string]string{},
+		defaultParams: map[string]string{},
 	}
 	assertInstance(dsn, expected)
 
@@ -50,7 +59,7 @@ func TestNewInstance(t *testing.T) {
 		Password: "password",
 		Host:     "1.2.3.4",
 		Port:     3306,
-		DefaultParams: map[string]string{
+		defaultParams: map[string]string{
 			"param1":            "value1",
 			"readTimeout":       "5s",
 			"interpolateParams": "0",
@@ -65,11 +74,46 @@ func TestNewInstance(t *testing.T) {
 		User:       "root",
 		Host:       "localhost",
 		SocketPath: "/var/lib/mysql/mysql.sock",
-		DefaultParams: map[string]string{
+		defaultParams: map[string]string{
 			"param1": "value1",
 		},
 	}
 	assertInstance(dsn, expected)
+}
+
+func TestNewInstanceDedupes(t *testing.T) {
+	nukeInstanceCache()
+	dsn1 := "username:password@tcp(some.host:1234)/dbname"
+	dsn2 := "username:password@tcp(some.host:1234)/otherdb"
+	dsn3 := "username:password@tcp(some.host:1234)/"
+	dsn4 := "username:password@tcp(some.host:123)/dbname"
+	dsn5 := "username:password@tcp(some.host:1234)/otherdb?foo=bar"
+
+	newInstance := func(dsn string) *Instance {
+		inst, err := NewInstance("mysql", dsn)
+		if err != nil {
+			t.Fatalf("Unexpectedly received error %s from NewInstance(\"mysql\", \"%s\")", err, dsn)
+		}
+		return inst
+	}
+
+	inst1 := newInstance(dsn1)
+	if newInstance(dsn1) != inst1 {
+		t.Errorf("Expected NewInstance to return same pointer for duplicate DSN, but it did not")
+	}
+	if newInstance(dsn2) != inst1 {
+		t.Errorf("Expected NewInstance to return same pointer for DSN that only differed by schema, but it did not")
+	}
+	if newInstance(dsn3) != inst1 {
+		t.Errorf("Expected NewInstance to return same pointer for DSN that only differed by lack of schema, but it did not")
+	}
+	if newInstance(dsn4) == inst1 {
+		t.Errorf("Expected NewInstance to return different pointer for DSN that has different port, but it did not")
+	}
+	if inst5, err := NewInstance("mysql", dsn5); inst5 != nil || err == nil {
+		t.Errorf("Expected NewInstance to return an error upon using DSN that only differs by schema or params, but it did not")
+	}
+
 }
 
 func TestInstanceBuildParamString(t *testing.T) {
@@ -78,6 +122,7 @@ func TestInstanceBuildParamString(t *testing.T) {
 		if defaultOptions != "" {
 			dsn += "?" + defaultOptions
 		}
+		nukeInstanceCache()
 		instance, err := NewInstance("mysql", dsn)
 		if err != nil {
 			t.Fatalf("NewInstance(\"mysql\", \"%s\") returned error: %s", dsn, err)
@@ -96,6 +141,9 @@ func TestInstanceBuildParamString(t *testing.T) {
 		if !reflect.DeepEqual(parsedResult, parsedExpected) {
 			t.Errorf("Expected param map %v, instead found %v", parsedExpected, parsedResult)
 		}
+
+		// nuke the Instance cache
+		nukeInstanceCache()
 	}
 
 	assertParamString("", "", "")
