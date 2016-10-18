@@ -5,12 +5,12 @@ import (
 	"github.com/go-sql-driver/mysql"
 )
 
+// IsSyntaxError returns true if err is a SQL syntax error, or false otherwise.
 func IsSyntaxError(err error) bool {
 	if merr, ok := err.(*mysql.MySQLError); ok {
 		return merr.Number == mysqlerr.ER_PARSE_ERROR || merr.Number == mysqlerr.ER_SYNTAX_ERROR
-	} else {
-		return false
 	}
+	return false
 }
 
 // IsAccessError returns true if err indicates an authentication or authorization
@@ -30,8 +30,6 @@ func IsAccessError(err error) bool {
 			mysqlerr.ER_SPECIFIC_ACCESS_DENIED_ERROR: true,
 		}
 		return authErrors[merr.Number]
-	} else {
-		return false
 	}
-
+	return false
 }

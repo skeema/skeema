@@ -5,15 +5,22 @@ import (
 	"strings"
 )
 
+// ColumnDefault represents the default value for a column.
 type ColumnDefault struct {
 	Null   bool
 	Quoted bool
 	Value  string
 }
 
+// ColumnDefaultNull indicates a column has a default value of NULL.
 var ColumnDefaultNull = ColumnDefault{Null: true}
+
+// ColumnDefaultCurrentTimestamp indicates a datetime or timestamp column has a
+// default value of the current timestamp.
 var ColumnDefaultCurrentTimestamp = ColumnDefault{Value: "CURRENT_TIMESTAMP"}
 
+// ColumnDefaultValue is a constructor for creating non-NULL,
+// non-CURRENT_TIMESTAMP default values.
 func ColumnDefaultValue(value string) ColumnDefault {
 	return ColumnDefault{
 		Quoted: true,
@@ -21,7 +28,8 @@ func ColumnDefaultValue(value string) ColumnDefault {
 	}
 }
 
-// EscapedValue returns Value escaped in the same manner as SHOW CREATE TABLE
+// EscapedValue returns the default value escaped in the same manner as SHOW
+// CREATE TABLE.
 func (cd ColumnDefault) EscapedValue() string {
 	value := strings.Replace(cd.Value, "\\", "\\\\", -1)
 	value = strings.Replace(value, "\000", "\\0", -1)
@@ -29,7 +37,7 @@ func (cd ColumnDefault) EscapedValue() string {
 	return value
 }
 
-// Clause returns the DEFAULT clause for use in DDL
+// Clause returns the DEFAULT clause for use in a DDL statement.
 func (cd ColumnDefault) Clause() string {
 	if cd.Null {
 		return "DEFAULT NULL"
@@ -40,6 +48,7 @@ func (cd ColumnDefault) Clause() string {
 	}
 }
 
+// Column represents a single column of a table.
 type Column struct {
 	Name          string
 	TypeInDB      string
@@ -50,6 +59,8 @@ type Column struct {
 	//Comment       string
 }
 
+// Definition returns this column's definition clause, for use as part of a DDL
+// statement.
 func (c Column) Definition() string {
 	var nullability, autoIncrement, defaultValue, extraModifiers string
 	emitDefault := c.CanHaveDefault()
@@ -73,6 +84,7 @@ func (c Column) Definition() string {
 	return fmt.Sprintf("%s %s%s%s%s%s", EscapeIdentifier(c.Name), c.TypeInDB, nullability, autoIncrement, defaultValue, extraModifiers)
 }
 
+// Equals returns true if two columns are identical, false otherwise.
 func (c *Column) Equals(other *Column) bool {
 	// shortcut if both nil pointers, or both pointing to same underlying struct
 	if c == other {
@@ -85,7 +97,7 @@ func (c *Column) Equals(other *Column) bool {
 	return *c == *other
 }
 
-// Returns true if the column is allowed to have a DEFAULT clause
+// CanHaveDefault returns true if the column is allowed to have a DEFAULT clause.
 func (c Column) CanHaveDefault() bool {
 	if c.AutoIncrement {
 		return false

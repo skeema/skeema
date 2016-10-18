@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+// Table represents a single database table.
 type Table struct {
 	Name              string
 	Engine            string
@@ -19,20 +20,25 @@ type Table struct {
 	createStatement   string
 }
 
+// AlterStatement returns the prefix to a SQL "ALTER TABLE" statement.
 func (t Table) AlterStatement() string {
 	return fmt.Sprintf("ALTER TABLE %s", EscapeIdentifier(t.Name))
 }
 
+// DropStatement returns a SQL statement that, if run, would drop this table.
 func (t Table) DropStatement() string {
 	return fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(t.Name))
 }
 
+// CreateStatement returns a SQL statement that, if run, would create this
+// table. Ordinarily this will be pre-cached from a prior call to SHOW CREATE
+// TABLE, but if not, tengo will auto-generate what it thinks the CREATE TABLE
+// statement should be.
 func (t Table) CreateStatement() string {
 	if t.createStatement == "" {
 		return t.GeneratedCreateStatement()
-	} else {
-		return t.createStatement
 	}
+	return t.createStatement
 }
 
 // GeneratedCreateStatement generates a CREATE TABLE statement based on the
@@ -70,6 +76,8 @@ func (t Table) GeneratedCreateStatement() string {
 	return result
 }
 
+// ColumnsByName returns a mapping of column names to Column value pointers,
+// for all columns in the table.
 func (t Table) ColumnsByName() map[string]*Column {
 	result := make(map[string]*Column, len(t.Columns))
 	for _, c := range t.Columns {
@@ -78,6 +86,8 @@ func (t Table) ColumnsByName() map[string]*Column {
 	return result
 }
 
+// SecondaryIndexesByName returns a mapping of index names to Index value
+// pointers, for all secondary indexes in the table.
 func (t Table) SecondaryIndexesByName() map[string]*Index {
 	result := make(map[string]*Index, len(t.SecondaryIndexes))
 	for _, idx := range t.SecondaryIndexes {
@@ -97,7 +107,9 @@ func (t Table) HasAutoIncrement() bool {
 	return false
 }
 
-func (from *Table) Diff(to *Table) []TableAlterClause {
+// Diff returns a set of differences between this table and another table.
+func (t *Table) Diff(to *Table) []TableAlterClause {
+	from := t // keeping name as t in method definition to satisfy linter
 	if from.Name != to.Name {
 		panic(errors.New("Table renaming not yet supported"))
 	}
@@ -169,7 +181,8 @@ func (from *Table) Diff(to *Table) []TableAlterClause {
 	return clauses
 }
 
-func (self *Table) compareColumnExistence(other *Table) columnsComparison {
+func (t *Table) compareColumnExistence(other *Table) columnsComparison {
+	self := t // keeping name as t in method definition to satisfy linter
 	cc := columnsComparison{
 		fromTable:           self,
 		toTable:             other,

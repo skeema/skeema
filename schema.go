@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+// Schema represents a database schema.
 type Schema struct {
 	Name             string
 	DefaultCharSet   string
@@ -14,6 +15,8 @@ type Schema struct {
 	instance         *Instance
 }
 
+// TablesByName returns a mapping of table names to Table struct values, for
+// all tables in the schema.
 func (s *Schema) TablesByName() (map[string]*Table, error) {
 	tables, err := s.Tables()
 	if err != nil {
@@ -26,6 +29,7 @@ func (s *Schema) TablesByName() (map[string]*Table, error) {
 	return result, nil
 }
 
+// HasTable returns true if a table with the given name exists in the schema.
 func (s Schema) HasTable(name string) bool {
 	byName, err := s.TablesByName()
 	if err != nil {
@@ -35,6 +39,7 @@ func (s Schema) HasTable(name string) bool {
 	return exists
 }
 
+// Tables returns a slice of all tables in the schema.
 func (s *Schema) Tables() ([]*Table, error) {
 	if s == nil {
 		return []*Table{}, nil
@@ -226,6 +231,8 @@ func (s *Schema) Tables() ([]*Table, error) {
 	return s.tables, nil
 }
 
+// PurgeTableCache purges any previously-cached table information. This should
+// be used after creating, altering, renaming, or dropping tables.
 func (s *Schema) PurgeTableCache() {
 	if s == nil || s.instance == nil {
 		return
@@ -233,14 +240,18 @@ func (s *Schema) PurgeTableCache() {
 	s.tables = nil
 }
 
-func (from *Schema) Diff(to *Schema) (*SchemaDiff, error) {
-	return NewSchemaDiff(from, to)
+// Diff returns the set of differences between this schema and another schema.
+func (s *Schema) Diff(other *Schema) (*SchemaDiff, error) {
+	return NewSchemaDiff(s, other)
 }
 
+// DropStatement returns a SQL statement that, if run, would drop this schema.
 func (s Schema) DropStatement() string {
 	return fmt.Sprintf("DROP DATABASE %s", EscapeIdentifier(s.Name))
 }
 
+// CreateStatement returns a SQL statement that, if run, would create this
+// schema.
 func (s Schema) CreateStatement() string {
 	// TODO: support DEFAULT CHARACTER SET and DEFAULT COLLATE
 	return fmt.Sprintf("CREATE DATABASE %s", EscapeIdentifier(s.Name))

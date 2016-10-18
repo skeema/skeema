@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+// NextAutoIncMode enumerates various ways of handling AUTO_INCREMENT
+// discrepancies between two tables.
 type NextAutoIncMode int
 
 // Constants for how to handle next-auto-inc values in table diffs. Usually
@@ -34,22 +36,27 @@ func ParseCreateAutoInc(createStmt string) (string, uint64) {
 }
 
 // StatementModifiers are options that may be applied to adjust the DDL emitted
-// for a particular table
+// for a particular table.
 type StatementModifiers struct {
 	NextAutoInc NextAutoIncMode
 	Inplace     bool
 }
 
-// Main statement prefix for the schema change (ALTER TABLE, CREATE TABLE, etc)
+// TableDiff interface represents a difference between two tables. Structs
+// satisfying this interface can generate a DDL Statement prefix, such as ALTER
+// TABLE, CREATE TABLE, DROP TABLE, etc.
 type TableDiff interface {
 	Statement(StatementModifiers) string
 }
 
-// Specific clause to execute (ADD COLUMN, ADD INDEX, etc)
+// TableAlterClause interface represents a specific single-element difference
+// between two tables. Structs satisfying this interface can generate an ALTER
+// TABLE clause, such as ADD COLUMN, MODIFY COLUMN, ADD INDEX, etc.
 type TableAlterClause interface {
 	Clause() string
 }
 
+// SchemaDiff stores a set of differences between two database schemas.
 type SchemaDiff struct {
 	FromSchema *Schema
 	ToSchema   *Schema
@@ -58,6 +65,7 @@ type SchemaDiff struct {
 	// TODO: schema-level default charset and collation changes
 }
 
+// NewSchemaDiff computes the set of differences between two database schemas.
 func NewSchemaDiff(from, to *Schema) (*SchemaDiff, error) {
 	result := &SchemaDiff{
 		FromSchema: from,
@@ -111,6 +119,7 @@ func NewSchemaDiff(from, to *Schema) (*SchemaDiff, error) {
 	return result, nil
 }
 
+// String returns the set of differences between two schemas as a single string.
 func (sd *SchemaDiff) String() string {
 	diffStatements := make([]string, len(sd.TableDiffs))
 	for n, diff := range sd.TableDiffs {
@@ -121,10 +130,13 @@ func (sd *SchemaDiff) String() string {
 
 ///// CreateTable //////////////////////////////////////////////////////////////
 
+// CreateTable represents a new table that only exists in the right-side ("to")
+// schema. It satisfies the TableDiff interface.
 type CreateTable struct {
 	Table *Table
 }
 
+// Statement returns a DDL statement containing CREATE TABLE.
 func (ct CreateTable) Statement(mods StatementModifiers) string {
 	stmt := ct.Table.CreateStatement()
 	if ct.Table.HasAutoIncrement() && (mods.NextAutoInc == NextAutoIncIgnore || mods.NextAutoInc == NextAutoIncIfAlready) {
@@ -135,21 +147,27 @@ func (ct CreateTable) Statement(mods StatementModifiers) string {
 
 ///// DropTable ////////////////////////////////////////////////////////////////
 
+// DropTable represents a table that only exists in the left-side ("from")
+// schema. It satisfies the TableDiff interface.
 type DropTable struct {
 	Table *Table
 }
 
+// Statement returns a DDL statement containing DROP TABLE.
 func (dt DropTable) Statement(mods StatementModifiers) string {
 	panic(fmt.Errorf("Drop Table not yet supported"))
 }
 
 ///// AlterTable ///////////////////////////////////////////////////////////////
 
+// AlterTable represents a table that exists on both schemas, but with one or
+// more differences in table definition. It satisfies the TableDiff interface.
 type AlterTable struct {
 	Table   *Table
 	Clauses []TableAlterClause
 }
 
+// Statement returns a DDL statement containing ALTER TABLE.
 func (at AlterTable) Statement(mods StatementModifiers) string {
 	clauseStrings := make([]string, 0, len(at.Clauses))
 	for _, clause := range at.Clauses {
@@ -173,17 +191,23 @@ func (at AlterTable) Statement(mods StatementModifiers) string {
 
 ///// RenameTable //////////////////////////////////////////////////////////////
 
+// RenameTable represents a table that exists on both schemas, but with a
+// different name. It satisfies the TableDiff interface.
 type RenameTable struct {
 	Table   *Table
 	NewName string
 }
 
+// Statement returns a DDL statement containing RENAME TABLE.
 func (rt RenameTable) Statement(mods StatementModifiers) string {
 	panic(fmt.Errorf("Rename Table not yet supported"))
 }
 
 ///// AddColumn ////////////////////////////////////////////////////////////////
 
+// AddColumn represents a new column that is present on the right-side ("to")
+// schema version of the table, but not the left-side ("from") version. It
+// satisfies the TableAlterClause interface.
 type AddColumn struct {
 	Table         *Table
 	Column        *Column
@@ -191,6 +215,7 @@ type AddColumn struct {
 	PositionAfter *Column
 }
 
+// Clause returns an ADD COLUMN clause of an ALTER TABLE statement.
 func (ac AddColumn) Clause() string {
 	var positionClause string
 	if ac.PositionFirst {
@@ -207,33 +232,45 @@ func (ac AddColumn) Clause() string {
 
 ///// DropColumn ///////////////////////////////////////////////////////////////
 
+// DropColumn represents a column that was present on the left-side ("from")
+// schema version of the table, but not the right-side ("to") version. It
+// satisfies the TableAlterClause interface.
 type DropColumn struct {
 	Table  *Table
 	Column *Column
 }
 
+// Clause returns a DROP COLUMN clause of an ALTER TABLE statement.
 func (dc DropColumn) Clause() string {
 	return fmt.Sprintf("DROP COLUMN %s", EscapeIdentifier(dc.Column.Name))
 }
 
 ///// AddIndex /////////////////////////////////////////////////////////////////
 
+// AddIndex represents a new index that is present on the right-side ("to")
+// schema version of the table, but not the left-side ("from") version. It
+// satisfies the TableAlterClause interface.
 type AddIndex struct {
 	Table *Table
 	Index *Index
 }
 
+// Clause returns an ADD INDEX clause of an ALTER TABLE statement.
 func (ai AddIndex) Clause() string {
 	return fmt.Sprintf("ADD %s", ai.Index.Definition())
 }
 
 ///// DropIndex ////////////////////////////////////////////////////////////////
 
+// DropIndex represents an index that was present on the left-side ("from")
+// schema version of the table, but not the right-side ("to") version. It
+// satisfies the TableAlterClause interface.
 type DropIndex struct {
 	Table *Table
 	Index *Index
 }
 
+// Clause returns a DROP INDEX clause of an ALTER TABLE statement.
 func (di DropIndex) Clause() string {
 	if di.Index.PrimaryKey {
 		return "DROP PRIMARY KEY"
@@ -243,12 +280,15 @@ func (di DropIndex) Clause() string {
 
 ///// RenameColumn /////////////////////////////////////////////////////////////
 
+// RenameColumn represents a column that exists in both versions of the table,
+// but with a different name. It satisfies the TableAlterClause interface.
 type RenameColumn struct {
 	Table          *Table
 	OriginalColumn *Column
 	NewName        string
 }
 
+// Clause returns a CHANGE COLUMN clause of an ALTER TABLE statement.
 func (rc RenameColumn) Clause() string {
 	panic(fmt.Errorf("Rename Column not yet supported"))
 }
@@ -256,6 +296,8 @@ func (rc RenameColumn) Clause() string {
 ///// ModifyColumn /////////////////////////////////////////////////////////////
 // for changing type, nullable, auto-incr, default, and/or position
 
+// ModifyColumn represents a column that exists in both versions of the table,
+// but with a different definition. It satisfies the TableAlterClause interface.
 type ModifyColumn struct {
 	Table          *Table
 	OriginalColumn *Column
@@ -264,6 +306,7 @@ type ModifyColumn struct {
 	PositionAfter  *Column
 }
 
+// Clause returns a MODIFY COLUMN clause of an ALTER TABLE statement.
 func (mc ModifyColumn) Clause() string {
 	var positionClause string
 	if mc.PositionFirst {
@@ -280,12 +323,15 @@ func (mc ModifyColumn) Clause() string {
 
 ///// ChangeAutoIncrement //////////////////////////////////////////////////////
 
+// ChangeAutoIncrement represents a a difference in next-auto-increment value
+// between two versions of a table. It satisfies the TableAlterClause interface.
 type ChangeAutoIncrement struct {
 	Table                *Table
 	OldNextAutoIncrement uint64
 	NewNextAutoIncrement uint64
 }
 
+// Clause returns an AUTO_INCREMENT clause of an ALTER TABLE statement.
 func (cai ChangeAutoIncrement) Clause() string {
 	return fmt.Sprintf("AUTO_INCREMENT = %d", cai.NewNextAutoIncrement)
 }

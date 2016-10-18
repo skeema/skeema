@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+// Index represents a single index (primary key, unique secondary index, or non-
+// unique secondard index) in a table.
 type Index struct {
 	Name       string
 	Columns    []*Column
@@ -14,6 +16,8 @@ type Index struct {
 	Unique     bool
 }
 
+// Definition returns this index's definition clause, for use as part of a DDL
+// statement.
 func (idx *Index) Definition() string {
 	if idx == nil {
 		return ""
@@ -41,6 +45,7 @@ func (idx *Index) Definition() string {
 	return fmt.Sprintf("%s (%s)", typeAndName, strings.Join(colParts, ","))
 }
 
+// Equals returns true if two indexes are identical, false otherwise.
 func (idx *Index) Equals(other *Index) bool {
 	// shortcut if both nil pointers, or both pointing to same underlying struct
 	if idx == other {

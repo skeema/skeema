@@ -12,6 +12,7 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+// Instance represents a single database server running on a specific host or address.
 type Instance struct {
 	BaseDSN        string // DSN ending in trailing slash; i.e. no schema name or params
 	Driver         string
@@ -120,9 +121,8 @@ func (instance Instance) String() string {
 func (instance Instance) HostAndOptionalPort() string {
 	if instance.Port == 3306 || instance.SocketPath != "" {
 		return instance.Host
-	} else {
-		return instance.String()
 	}
+	return instance.String()
 }
 
 func (instance *Instance) buildParamString(params string) string {
@@ -178,6 +178,7 @@ func (instance *Instance) CanConnect() (bool, error) {
 	return err == nil, err
 }
 
+// Schemas returns a slice of all schemas on the instance visible to the user.
 func (instance *Instance) Schemas() ([]*Schema, error) {
 	instance.RLock()
 	ret := instance.schemas
@@ -219,6 +220,7 @@ func (instance *Instance) Schemas() ([]*Schema, error) {
 	return instance.schemas, nil
 }
 
+// Schema returns a single schema by name.
 func (instance *Instance) Schema(name string) (*Schema, error) {
 	schemas, err := instance.Schemas()
 	if err != nil {
@@ -232,11 +234,15 @@ func (instance *Instance) Schema(name string) (*Schema, error) {
 	return nil, nil
 }
 
+// HasSchema returns true if this instance has a schema with the supplied name
+// visible to the user, or false otherwise.
 func (instance *Instance) HasSchema(name string) bool {
 	s, _ := instance.Schema(name)
 	return s != nil
 }
 
+// ShowCreateTable returns a string with a CREATE TABLE statement, representing
+// how the instance views the specified table as having been created.
 func (instance *Instance) ShowCreateTable(schema *Schema, table *Table) (string, error) {
 	db, err := instance.Connect(schema.Name, "")
 	if err != nil {
@@ -260,7 +266,9 @@ func (instance *Instance) ShowCreateTable(schema *Schema, table *Table) (string,
 
 // TableSize returns an estimate of the table's size on-disk, based on data in
 // information_schema. If the table or schema does not exist on this instance,
-// the error will be sql.ErrNoRows
+// the error will be sql.ErrNoRows.
+// Please note that use of innodb_stats_persistent may negatively impact the
+// accuracy. For example, see https://bugs.mysql.com/bug.php?id=75428.
 func (instance *Instance) TableSize(schema *Schema, table *Table) (int64, error) {
 	var result int64
 	db, err := instance.Connect("information_schema", "")
@@ -281,6 +289,7 @@ func (instance *Instance) purgeSchemaCache() {
 	instance.Unlock()
 }
 
+// CreateSchema creates a new database schema with the supplied name.
 func (instance *Instance) CreateSchema(name string) (*Schema, error) {
 	db, err := instance.Connect("", "")
 	if err != nil {
@@ -298,8 +307,9 @@ func (instance *Instance) CreateSchema(name string) (*Schema, error) {
 	return instance.Schema(name)
 }
 
-// DropSchema first drops all tables in the schema, and then drops the database.
-//  If onlyIfEmpty==true, returns an error if any of the tables have any rows.
+// DropSchema first drops all tables in the schema, and then drops the database
+// schema itself. If onlyIfEmpty==true, returns an error if any of the tables
+// have any rows.
 func (instance *Instance) DropSchema(schema *Schema, onlyIfEmpty bool) error {
 	err := instance.DropTablesInSchema(schema, onlyIfEmpty)
 	if err != nil {
