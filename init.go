@@ -26,10 +26,9 @@ section of the file.`
 	cmd := mycli.NewCommand("init", summary, desc, InitHandler)
 	cmd.AddOption(mycli.StringOption("host", 'h', "", "Database hostname or IP address"))
 	cmd.AddOption(mycli.StringOption("port", 'P', "3306", "Port to use for database host"))
-	cmd.AddOption(mycli.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix domain socket file for use when hostname==localhost"))
-	cmd.AddOption(mycli.StringOption("base-dir", 0, ".", "Base directory to use for storing schemas"))
-	cmd.AddOption(mycli.StringOption("host-dir", 0, "<hostname>", "Override the directory name to use for a host. Or negate with --skip-host-dir to use base-dir directly."))
-	cmd.AddOption(mycli.StringOption("schema", 0, "", "Only import the one specified schema, and skip creation of schema subdir level"))
+	cmd.AddOption(mycli.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix domain socket file for use when host is localhost"))
+	cmd.AddOption(mycli.StringOption("dir", 'd', "<hostname>", "Base dir for this host's schemas; defaults to creating subdir with name of host"))
+	cmd.AddOption(mycli.StringOption("schema", 0, "", "Only import the one specified schema; skip creation of subdirs for each schema"))
 	cmd.AddOption(mycli.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in table files"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
@@ -38,101 +37,76 @@ section of the file.`
 func InitHandler(cfg *mycli.Config) error {
 	AddGlobalConfigFiles(cfg)
 
-	baseDir, err := NewDir(cfg.Get("base-dir"), cfg)
+	// Ordinarily, we use a dir structure of: host_dir/schema_name/*.sql
+	// However, if --schema option used, we're only importing one schema and the
+	// schema_name level is skipped.
+	hostDirName := cfg.Get("dir")
+	onlySchema := cfg.Get("schema")
+	separateSchemaSubdir := (onlySchema == "")
+
+	if !cfg.Changed("dir") { // default for dir is to base it on the hostname
+		port := cfg.GetIntOrDefault("port")
+		if port > 0 && cfg.Changed("port") {
+			hostDirName = fmt.Sprintf("%s:%d", cfg.Get("host"), port)
+		} else {
+			hostDirName = cfg.Get("host")
+		}
+	}
+	hostDir, err := NewDir(hostDirName, cfg)
 	if err != nil {
 		return err
 	}
-
-	var baseOptionFile *mycli.File
-	wasNewBase, err := baseDir.CreateIfMissing()
+	wasNewDir, err := hostDir.CreateIfMissing()
 	if err != nil {
-		return fmt.Errorf("Unable to use specified base-dir: %s", err)
-	} else if wasNewBase {
-		fmt.Println("Creating and using skeema base dir", baseDir.Path)
-	} else {
-		fmt.Println("Using skeema base dir", baseDir.Path)
-		baseOptionFile, _ = baseDir.OptionFile() // intentionally ignore error here, ok if doesn't exist
+		return fmt.Errorf("Unable to use specified dir: %s", err)
 	}
-
-	// Ordinarily, we use a dir structure of: skeema_base/host_or_alias/schema_name/*.sql
-	// However, options are provided to skip use of host dirs and/or schema dirs.
-	hostDirName := baseDir.Config.Get("host-dir")
-	onlySchema := baseDir.Config.Get("schema")
-	separateHostSubdir := (hostDirName != "0")
-	separateSchemaSubdir := (onlySchema == "")
-	if hostDirName == "<hostname>" {
-		port := baseDir.Config.GetIntOrDefault("port")
-		if port > 0 && baseDir.Config.Changed("port") {
-			hostDirName = fmt.Sprintf("%s:%d", baseDir.Config.Get("host"), port)
-		} else {
-			hostDirName = baseDir.Config.Get("host")
-		}
-	}
-
-	// If the hostDir and baseDir are the same, option file shouldn't already exist
-	if !separateHostSubdir && baseOptionFile != nil {
-		return errors.New("Cannot use --skip-host-dir: base-dir already has .skeema file")
+	if hostDir.HasOptionFile() {
+		return fmt.Errorf("Cannot use dir %s: already has .skeema file", hostDir.Path)
 	}
 
 	// Validate connection-related options (host, port, socket, user, password) by
-	// testing connection. This is done before proceeding with any host or schema
-	// level dir creation.
-	inst, err := baseDir.FirstInstance()
+	// testing connection. This is done before writing an option file, so that the
+	// dir may still be re-used after correcting any problems in CLI options
+	inst, err := hostDir.FirstInstance()
 	if err != nil {
 		return err
 	} else if inst == nil {
 		return errors.New("Command line did not specify which instance to connect to; please supply --host (and optionally --port or --socket)")
 	}
 
-	var hostDir *Dir
-	environment := cfg.Get("environment")
-
-	// If the hostDir and baseDir are different, write out the baseDir's .skeema
-	// file if a user was specified via the command-line
-	if separateHostSubdir && cfg.OnCLI("user") {
-		if baseOptionFile == nil {
-			baseOptionFile = mycli.NewFile(baseDir.Path, ".skeema")
-		}
-		baseOptionFile.SetOptionValue(environment, "user", cfg.Get("user"))
-		if err = baseOptionFile.Write(true); err != nil {
-			fmt.Printf("Unable to write to %s: %s\n", baseOptionFile.Path(), err)
-		}
-	}
-
 	// Figure out what needs to go in the hostDir's .skeema file.
-	hostOptionFile := mycli.NewFile(".skeema")
-	if baseDir.Config.Get("host") == "localhost" && !baseDir.Config.Changed("port") {
+	environment := cfg.Get("environment")
+	hostOptionFile := mycli.NewFile(hostDir.Path, ".skeema")
+	if hostDir.Config.Get("host") == "localhost" && !hostDir.Config.Changed("port") {
 		hostOptionFile.SetOptionValue(environment, "host", "localhost")
-		hostOptionFile.SetOptionValue(environment, "socket", baseDir.Config.Get("socket"))
+		hostOptionFile.SetOptionValue(environment, "socket", hostDir.Config.Get("socket"))
 	} else {
-		hostOptionFile.SetOptionValue(environment, "host", baseDir.Config.Get("host"))
-		hostOptionFile.SetOptionValue(environment, "port", baseDir.Config.Get("port"))
+		hostOptionFile.SetOptionValue(environment, "host", hostDir.Config.Get("host"))
+		hostOptionFile.SetOptionValue(environment, "port", hostDir.Config.Get("port"))
 	}
-	if !separateHostSubdir && baseDir.Config.OnCLI("user") {
-		hostOptionFile.SetOptionValue(environment, "user", baseDir.Config.Get("user"))
+	if hostDir.Config.OnCLI("user") {
+		hostOptionFile.SetOptionValue(environment, "user", hostDir.Config.Get("user"))
 	}
 	if !separateSchemaSubdir {
-		hostOptionFile.SetOptionValue(environment, "schema", onlySchema)
+		// schema name is placed outside of any named section/environment since the
+		// default assumption is that schema names match between environments
+		hostOptionFile.SetOptionValue("", "schema", onlySchema)
 	}
 
-	// Create the hostDir and write its option file
-	if separateHostSubdir {
-		hostDir, err = baseDir.CreateSubdir(hostDirName, hostOptionFile)
-		if err != nil {
-			return fmt.Errorf("Unable to create host directory %s: %s", hostDirName, err)
-		}
-		fmt.Println("Initializing host dir", hostDir.Path)
-	} else {
-		hostDir = baseDir
-		if err := hostDir.CreateOptionFile(hostOptionFile); err != nil {
-			return err
-		}
-		fmt.Println("Skipping host-level subdir structure; using skeema base", hostDir.Path, "directly")
+	// Write the option file
+	if err := hostDir.CreateOptionFile(hostOptionFile); err != nil {
+		return err
 	}
 
+	verb := "Using"
+	var suffix string
+	if wasNewDir {
+		verb = "Creating and using"
+	}
 	if !separateSchemaSubdir {
-		fmt.Println("Skipping schema-level subdir structure; using", hostDir.Path)
+		suffix = "; skipping schema-level subdirs"
 	}
+	fmt.Printf("%s host dir %s for %s%s\n", verb, hostDir.Path, inst, suffix)
 
 	// Build list of schemas
 	var schemas []*tengo.Schema
