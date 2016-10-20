@@ -42,7 +42,7 @@ func DiffHandler(cfg *mycli.Config) error {
 
 	for t := range dir.Targets(false, false) {
 		if hasErrors, firstErr := t.HasErrors(); hasErrors {
-			fmt.Printf("Skipping %s: %s\n", t.Dir, firstErr)
+			fmt.Printf("-- Skipping %s:\n--    %s\n\n", t.Dir, firstErr)
 			errCount++
 			continue
 		}

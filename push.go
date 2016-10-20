@@ -44,7 +44,7 @@ func PushHandler(cfg *mycli.Config) error {
 	// use multiple worker goroutines all pulling instances off the channel
 	for t := range dir.Targets(true, true) {
 		if hasErrors, firstErr := t.HasErrors(); hasErrors {
-			fmt.Printf("Skipping %s: %s\n", t.Dir, firstErr)
+			fmt.Printf("\nSkipping %s:\n    %s\n", t.Dir, firstErr)
 			t.Done()
 			errCount++
 			continue
