@@ -95,6 +95,14 @@ func TestSchemaDiffAddOrDropTable(t *testing.T) {
 		t.Error("Pointer in table diff does not point to expected value")
 	}
 
+	// Test impact of statement modifiers (allowing/forbidding drop) on previous drop
+	if stmt, err := td2.Statement(StatementModifiers{AllowDropTable: false}); err == nil {
+		t.Errorf("Modifier AllowDropTable=false not working; no error returned for %s", stmt)
+	}
+	if stmt, err := td2.Statement(StatementModifiers{AllowDropTable: true}); err != nil {
+		t.Errorf("Modifier AllowDropTable=true not working; error (%s) returned for %s", err, stmt)
+	}
+
 	// Test impact of statement modifiers on creation of auto-inc table with non-default starting value
 	s2t2.NextAutoIncrement = 5
 	s2t2.createStatement = s2t2.GeneratedCreateStatement()
@@ -113,7 +121,10 @@ func TestSchemaDiffAddOrDropTable(t *testing.T) {
 	}
 	for nextAutoInc, expected := range autoIncPresent {
 		mods := StatementModifiers{NextAutoInc: nextAutoInc}
-		stmt := sd.TableDiffs[0].Statement(mods)
+		stmt, err := sd.TableDiffs[0].Statement(mods)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if strings.Contains(stmt, "AUTO_INCREMENT=") != expected {
 			t.Errorf("Auto-inc filtering for new table not working as expected for modifiers=%+v (expect auto_inc to be present = %t)\nStatement: %s", mods, expected, stmt)
 		}
@@ -172,8 +183,9 @@ func TestSchemaDiffAlterTable(t *testing.T) {
 			t.Fatalf("Incorrect type of table diff returned: expected %T, found %T", td, sd.TableDiffs[0])
 		}
 		mods := StatementModifiers{NextAutoInc: nextAutoInc}
-		stmt := sd.TableDiffs[0].Statement(mods)
-		if stmt == "" {
+		if stmt, err := sd.TableDiffs[0].Statement(mods); err != nil {
+			t.Fatal(err)
+		} else if stmt == "" {
 			if expectAlter {
 				t.Errorf("For next_auto_inc %d -> %d, received blank ALTER with mods=%+v, expected non-blank", from, to, mods)
 			}
@@ -199,4 +211,52 @@ func TestSchemaDiffAlterTable(t *testing.T) {
 	assertAutoIncAlter(1, 4, NextAutoIncAlways, true)
 	assertAutoIncAlter(2, 4, NextAutoIncAlways, true)
 	assertAutoIncAlter(4, 2, NextAutoIncAlways, true)
+
+	// Helper for testing column adds or drops
+	getAlter := func(left, right *Schema) (TableDiff, TableAlterClause) {
+		sd, err := NewSchemaDiff(left, right)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(sd.TableDiffs) != 1 {
+			t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
+		}
+		alter, ok := sd.TableDiffs[0].(AlterTable)
+		if !ok {
+			t.Fatalf("Incorrect type of table diff returned: expected %T, found %T", alter, sd.TableDiffs[0])
+		}
+		if len(alter.Clauses) != 1 {
+			t.Fatalf("Wrong number of alter clauses: expected 1, found %d", len(alter.Clauses))
+		}
+		return alter, alter.Clauses[0]
+	}
+
+	// Test column adds/drops, and effect of statement modifier on drop col
+	t1 := anotherTable()
+	t2 := anotherTable()
+	s1 := aSchema("s1", &t1)
+	s2 := aSchema("s2", &t2)
+	t2.Columns = append(t2.Columns, &Column{
+		Name:     "something",
+		TypeInDB: "smallint(5) unsigned",
+		Default:  ColumnDefaultNull,
+	})
+	t2.createStatement = t2.GeneratedCreateStatement()
+	alter, clause := getAlter(&s1, &s2)
+	if addCol, ok := clause.(AddColumn); !ok {
+		t.Errorf("Incorrect type of alter clause returned: expected %T, found %T", addCol, clause)
+	}
+	if _, err := alter.Statement(StatementModifiers{}); err != nil {
+		t.Error(err)
+	}
+	alter, clause = getAlter(&s2, &s1)
+	if dropCol, ok := clause.(DropColumn); !ok {
+		t.Errorf("Incorrect type of alter clause returned: expected %T, found %T", dropCol, clause)
+	}
+	if stmt, err := alter.Statement(StatementModifiers{AllowDropColumn: false}); err == nil {
+		t.Errorf("Modifier AllowDropColumn=false not working; no error returned for %s", stmt)
+	}
+	if stmt, err := alter.Statement(StatementModifiers{AllowDropColumn: true}); err != nil {
+		t.Errorf("Modifier AllowDropColumn=true not working; error (%s) returned for %s", err, stmt)
+	}
 }

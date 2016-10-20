@@ -1,6 +1,7 @@
 package tengo
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -36,17 +37,19 @@ func ParseCreateAutoInc(createStmt string) (string, uint64) {
 }
 
 // StatementModifiers are options that may be applied to adjust the DDL emitted
-// for a particular table.
+// for a particular table, and/or generate errors if certain clauses are
+// present.
 type StatementModifiers struct {
-	NextAutoInc NextAutoIncMode
-	Inplace     bool
+	NextAutoInc     NextAutoIncMode
+	AllowDropTable  bool
+	AllowDropColumn bool
 }
 
 // TableDiff interface represents a difference between two tables. Structs
 // satisfying this interface can generate a DDL Statement prefix, such as ALTER
 // TABLE, CREATE TABLE, DROP TABLE, etc.
 type TableDiff interface {
-	Statement(StatementModifiers) string
+	Statement(StatementModifiers) (string, error)
 }
 
 // TableAlterClause interface represents a specific single-element difference
@@ -123,7 +126,8 @@ func NewSchemaDiff(from, to *Schema) (*SchemaDiff, error) {
 func (sd *SchemaDiff) String() string {
 	diffStatements := make([]string, len(sd.TableDiffs))
 	for n, diff := range sd.TableDiffs {
-		diffStatements[n] = fmt.Sprintf("%s;\n", diff.Statement(StatementModifiers{}))
+		stmt, _ := diff.Statement(StatementModifiers{})
+		diffStatements[n] = fmt.Sprintf("%s;\n", stmt)
 	}
 	return strings.Join(diffStatements, "")
 }
@@ -137,12 +141,12 @@ type CreateTable struct {
 }
 
 // Statement returns a DDL statement containing CREATE TABLE.
-func (ct CreateTable) Statement(mods StatementModifiers) string {
+func (ct CreateTable) Statement(mods StatementModifiers) (string, error) {
 	stmt := ct.Table.CreateStatement()
 	if ct.Table.HasAutoIncrement() && (mods.NextAutoInc == NextAutoIncIgnore || mods.NextAutoInc == NextAutoIncIfAlready) {
 		stmt, _ = ParseCreateAutoInc(stmt)
 	}
-	return stmt
+	return stmt, nil
 }
 
 ///// DropTable ////////////////////////////////////////////////////////////////
@@ -154,8 +158,12 @@ type DropTable struct {
 }
 
 // Statement returns a DDL statement containing DROP TABLE.
-func (dt DropTable) Statement(mods StatementModifiers) string {
-	panic(fmt.Errorf("Drop Table not yet supported"))
+func (dt DropTable) Statement(mods StatementModifiers) (string, error) {
+	var err error
+	if !mods.AllowDropTable {
+		err = errors.New("DROP TABLE not permitted")
+	}
+	return dt.Table.DropStatement(), err
 }
 
 ///// AlterTable ///////////////////////////////////////////////////////////////
@@ -168,8 +176,9 @@ type AlterTable struct {
 }
 
 // Statement returns a DDL statement containing ALTER TABLE.
-func (at AlterTable) Statement(mods StatementModifiers) string {
+func (at AlterTable) Statement(mods StatementModifiers) (string, error) {
 	clauseStrings := make([]string, 0, len(at.Clauses))
+	var err error
 	for _, clause := range at.Clauses {
 		switch clause := clause.(type) {
 		case ChangeAutoIncrement:
@@ -180,13 +189,18 @@ func (at AlterTable) Statement(mods StatementModifiers) string {
 			} else if mods.NextAutoInc == NextAutoIncIfAlready && clause.OldNextAutoIncrement <= 1 {
 				continue
 			}
+		case DropColumn:
+			if !mods.AllowDropColumn {
+				err = errors.New("DROP COLUMN not permitted")
+			}
 		}
 		clauseStrings = append(clauseStrings, clause.Clause())
 	}
+
 	if len(clauseStrings) == 0 {
-		return ""
+		return "", err
 	}
-	return fmt.Sprintf("%s %s", at.Table.AlterStatement(), strings.Join(clauseStrings, ", "))
+	return fmt.Sprintf("%s %s", at.Table.AlterStatement(), strings.Join(clauseStrings, ", ")), err
 }
 
 ///// RenameTable //////////////////////////////////////////////////////////////
@@ -199,8 +213,8 @@ type RenameTable struct {
 }
 
 // Statement returns a DDL statement containing RENAME TABLE.
-func (rt RenameTable) Statement(mods StatementModifiers) string {
-	panic(fmt.Errorf("Rename Table not yet supported"))
+func (rt RenameTable) Statement(mods StatementModifiers) (string, error) {
+	return "", errors.New("Rename Table not yet supported")
 }
 
 ///// AddColumn ////////////////////////////////////////////////////////////////
