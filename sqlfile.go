@@ -19,7 +19,7 @@ import (
 var reParseCreate = regexp.MustCompile(`(?i)^(.*)\s*create\s+table\s+(?:if\s+not\s+exists\s+)?` + "`?([^\\s`]+)`?" + `\s+([^;]+);?\s*(.*)$`)
 
 // We disallow CREATE TABLE SELECT and CREATE TABLE LIKE expressions
-var reBodyDisallowed = regexp.MustCompile(`^(as\s+select|select|like|[(]\s+like)`)
+var reBodyDisallowed = regexp.MustCompile(`(?i)^(as\s+select|select|like|[(]\s+like)`)
 
 // Forbid reading SQL files that are larger than 16KB; we assume legit CREATE TABLE statements should be smaller than this
 const MaxSQLFileSize = 16 * 1024
