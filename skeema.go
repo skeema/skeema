@@ -12,7 +12,6 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
-const MaxSQLFileSize = 10 * 1024
 const version = "0.1 (pre-release)"
 const rootDesc = `Skeema is a MySQL schema management tool. It allows you to export a database
 schema to the filesystem, and apply online schema changes by modifying files.`

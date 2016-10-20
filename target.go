@@ -15,7 +15,7 @@ type Target struct {
 	SchemaFromDir      *tengo.Schema
 	Dir                *Dir
 	Err                error
-	SQLFileErrors      map[string]error
+	SQLFileErrors      map[string]*SQLFile
 }
 
 func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expandSchemas bool) {
@@ -93,8 +93,8 @@ func (t Target) HasErrors() (bool, error) {
 		return true, t.Err
 	}
 	if len(t.SQLFileErrors) > 0 {
-		for _, err := range t.SQLFileErrors {
-			return true, err
+		for _, sf := range t.SQLFileErrors {
+			return true, sf.Error
 		}
 	}
 	return false, nil
@@ -147,17 +147,22 @@ func (t *Target) obtainSchemaFromDir() {
 		t.Err = fmt.Errorf("obtainSchemaFromDir: cannot connect to %s: %s", t.Instance, err)
 		return
 	}
+	if t.SQLFileErrors == nil {
+		t.SQLFileErrors = make(map[string]*SQLFile)
+	}
 	for _, sf := range sqlFiles {
+		if sf.Error != nil {
+			t.SQLFileErrors[sf.Path()] = sf
+			continue
+		}
 		_, err := db.Exec(sf.Contents)
 		if err != nil {
-			if t.SQLFileErrors == nil {
-				t.SQLFileErrors = make(map[string]error)
-			}
 			if tengo.IsSyntaxError(err) {
-				t.SQLFileErrors[sf.Path()] = fmt.Errorf("SQL syntax error in %s: %s", sf.Path(), err)
+				sf.Error = fmt.Errorf("%s: SQL syntax error: %s", sf.Path(), err)
 			} else {
-				t.SQLFileErrors[sf.Path()] = fmt.Errorf("Error in %s: %s", sf.Path(), err)
+				sf.Error = fmt.Errorf("%s: Error executing DDL: %s", sf.Path(), err)
 			}
+			t.SQLFileErrors[sf.Path()] = sf
 		}
 	}
 

@@ -1,13 +1,14 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
 	"regexp"
 	"strings"
+
+	"github.com/skeema/tengo"
 )
 
 // Regexp for parsing CREATE TABLE statements. Submatches:
@@ -20,13 +21,28 @@ var reParseCreate = regexp.MustCompile(`(?i)^(.*)\s*create\s+table\s+(?:if\s+not
 // We disallow CREATE TABLE SELECT and CREATE TABLE LIKE expressions
 var reBodyDisallowed = regexp.MustCompile(`^(as\s+select|select|like|[(]\s+like)`)
 
+// Forbid reading SQL files that are larger than 16KB; we assume legit CREATE TABLE statements should be smaller than this
+const MaxSQLFileSize = 16 * 1024
+
+// IsSQLFile returns true if the supplied os.FileInfo has a .sql extension and
+// is a regular file. It is the caller's responsibility to resolve symlinks
+// prior to passing them to this function.
+func IsSQLFile(fi os.FileInfo) bool {
+	if !strings.HasSuffix(fi.Name(), ".sql") {
+		return false
+	}
+	if !fi.Mode().IsRegular() {
+		return false
+	}
+	return true
+}
+
 type SQLFile struct {
 	Dir      *Dir
 	FileName string
 	Contents string
 	Error    error
 	Warnings []error
-	fileInfo os.FileInfo
 }
 
 func (sf *SQLFile) Path() string {
@@ -43,101 +59,62 @@ func (sf *SQLFile) TableName() string {
 func (sf *SQLFile) Read() (string, error) {
 	byteContents, err := ioutil.ReadFile(sf.Path())
 	if err != nil {
-		sf.Error = err
-		return "", err
+		sf.Error = fmt.Errorf("%s: Error reading file: %s", sf.Path(), err)
+		return "", sf.Error
 	}
 	sf.Contents = string(byteContents)
-	if sf.ValidateContents() != nil {
+	if sf.validateContents() != nil {
 		return "", sf.Error
 	}
 	return sf.Contents, nil
 }
 
-func (sf SQLFile) Write() (int, error) {
-	if sf.ValidatePath(false) != nil {
-		return 0, sf.Error
+func (sf *SQLFile) Write() (int, error) {
+	if !strings.HasSuffix(sf.FileName, ".sql") {
+		return 0, fmt.Errorf("Filename %s does not end in .sql extension", sf.FileName)
 	}
 	if sf.Contents == "" {
-		return 0, errors.New("SQLFile.Write: refusing to write blank / unpopulated file contents")
+		return 0, fmt.Errorf("SQLFile.Write: refusing to write blank / unpopulated file contents to %s", sf.Path())
 	}
 	value := fmt.Sprintf("%s;\n", sf.Contents)
 	err := ioutil.WriteFile(sf.Path(), []byte(value), 0666)
-	if err == nil {
-		return len(value), nil
-	} else {
+	if err != nil {
 		return 0, err
 	}
+	return len(value), nil
 }
 
-func (sf SQLFile) Delete() error {
+func (sf *SQLFile) Delete() error {
 	return os.Remove(sf.Path())
-}
-
-func (sf *SQLFile) FileInfo() (os.FileInfo, error) {
-	if sf.fileInfo != nil {
-		return sf.fileInfo, nil
-	}
-	var err error
-	sf.fileInfo, err = os.Stat(sf.Path())
-	if err != nil {
-		sf.Error = err
-	}
-	return sf.fileInfo, sf.Error
-}
-
-// ValidatePath sanity-checks the value of sf.Path, both in terms of its value and
-// what existing file (if any) is at that path.
-func (sf *SQLFile) ValidatePath(mustExist bool) error {
-	// First, validations that are run regardless of whether the file exists
-	if !strings.HasSuffix(sf.FileName, ".sql") {
-		sf.Error = errors.New("SQLFile.ValidatePath: Filename does not end in .sql")
-		return sf.Error
-	}
-
-	// Any validations from here down are only run if the file exists
-	fi, err := sf.FileInfo()
-	if os.IsNotExist(err) && !mustExist {
-		return nil
-	} else if err != nil {
-		sf.Error = err
-		return sf.Error
-	}
-
-	// TODO: add support for symlinks?
-	if !fi.Mode().IsRegular() {
-		sf.Error = errors.New("SQLFile.ValidatePath: Existing file is not a regular file")
-		return sf.Error
-	}
-	if fi.Size() > MaxSQLFileSize {
-		sf.Error = errors.New("SQLFile.ValidatePath: Existing file is too large")
-		return sf.Error
-	}
-
-	return nil
 }
 
 // ValidateContents sanity-checks, and normalizes, the value of sf.Contents.
 // It is the caller's responsibility to populate sf.Contents prior to calling
 // this method.
-func (sf *SQLFile) ValidateContents() error {
-	matches := reParseCreate.FindStringSubmatch(sf.Contents)
-	if matches == nil {
-		sf.Error = errors.New("SQLFile.ValidateContents: Cannot parse a valid CREATE TABLE statement")
-		return sf.Error
-	}
-	if len(matches[1]) > 0 || len(matches[4]) > 0 {
-		warning := fmt.Errorf("SQLFile.ValidateContents: Ignoring %d chars before CREATE TABLE and %d chars after CREATE TABLE", len(matches[1]), len(matches[4]))
-		sf.Warnings = append(sf.Warnings, warning)
-	}
-	if sf.FileName != fmt.Sprintf("%s.sql", matches[2]) {
-		warning := fmt.Errorf("SQLFile.ValidateContents: filename does not match table name of %s", matches[2])
-		sf.Warnings = append(sf.Warnings, warning)
-	}
-	if reBodyDisallowed.MatchString(matches[3]) {
-		sf.Error = errors.New("SQLFile.ValidateContents: This form of CREATE TABLE statement is disallowed for security reasons")
+func (sf *SQLFile) validateContents() error {
+	if len(sf.Contents) > MaxSQLFileSize {
+		sf.Error = fmt.Errorf("%s: file is too large; size of %d bytes exceeds max of %d bytes", sf.Path(), len(sf.Contents), MaxSQLFileSize)
 		return sf.Error
 	}
 
-	sf.Contents = fmt.Sprintf("CREATE TABLE `%s` %s", matches[2], matches[3])
+	matches := reParseCreate.FindStringSubmatch(sf.Contents)
+	if matches == nil {
+		sf.Error = fmt.Errorf("%s: cannot parse a valid CREATE TABLE statement", sf.Path())
+		return sf.Error
+	}
+	if len(matches[1]) > 0 || len(matches[4]) > 0 {
+		warning := fmt.Errorf("%s: stripping and ignoring %d chars before CREATE TABLE and %d chars after CREATE TABLE", sf.Path(), len(matches[1]), len(matches[4]))
+		sf.Warnings = append(sf.Warnings, warning)
+	}
+	if sf.FileName != fmt.Sprintf("%s.sql", matches[2]) {
+		warning := fmt.Errorf("%s: filename does not match table name of %s", sf.Path(), matches[2])
+		sf.Warnings = append(sf.Warnings, warning)
+	}
+	if reBodyDisallowed.MatchString(matches[3]) {
+		sf.Error = fmt.Errorf("%s: this form of CREATE TABLE statement is disallowed for security reasons", sf.Path())
+		return sf.Error
+	}
+
+	sf.Contents = fmt.Sprintf("CREATE TABLE %s %s", tengo.EscapeIdentifier(matches[2]), matches[3])
 	return nil
 }

@@ -46,8 +46,8 @@ func LintHandler(cfg *mycli.Config) error {
 
 		fmt.Printf("Linting %s...\n", t.Dir)
 
-		for _, err := range t.SQLFileErrors {
-			fmt.Printf("    %s\n", err)
+		for _, sf := range t.SQLFileErrors {
+			fmt.Printf("    %s\n", sf.Error)
 			sqlErrCount++
 		}
 

@@ -178,15 +178,23 @@ func (dir *Dir) SQLFiles() ([]*SQLFile, error) {
 	}
 	result := make([]*SQLFile, 0, len(fileInfos))
 	for _, fi := range fileInfos {
+		name := fi.Name()
+		if fi.Mode()&os.ModeSymlink == os.ModeSymlink {
+			fi, err = os.Stat(path.Join(dir.Path, name))
+			if err != nil {
+				// ignore symlink pointing to a missing path
+				continue
+			}
+		}
+		if !IsSQLFile(fi) {
+			continue
+		}
 		sf := &SQLFile{
 			Dir:      dir,
-			FileName: fi.Name(),
-			fileInfo: fi,
+			FileName: name,
 		}
-		if sf.ValidatePath(true) == nil {
-			sf.Read()
-			result = append(result, sf)
-		}
+		sf.Read()
+		result = append(result, sf)
 	}
 
 	return result, nil
