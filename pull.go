@@ -61,9 +61,14 @@ func PullHandler(cfg *mycli.Config) error {
 			return err
 		}
 
+		// We're permissive of drops here since we don't ever actually execute the
+		// generated statement! We just examine its type.
+		mods := tengo.StatementModifiers{
+			AllowDropTable:  true,
+			AllowDropColumn: true,
+		}
 		// pull command updates next auto-increment value for existing table always
 		// if requested, or only if previously present in file otherwise
-		mods := tengo.StatementModifiers{}
 		if t.Dir.Config.GetBool("include-auto-inc") {
 			mods.NextAutoInc = tengo.NextAutoIncAlways
 		} else {
@@ -71,12 +76,16 @@ func PullHandler(cfg *mycli.Config) error {
 		}
 
 		for _, td := range diff.TableDiffs {
+			stmt, err := td.Statement(mods)
+			if err != nil {
+				return err
+			}
 			switch td := td.(type) {
 			case tengo.CreateTable:
 				sf := SQLFile{
 					Dir:      t.Dir,
 					FileName: fmt.Sprintf("%s.sql", td.Table.Name),
-					Contents: td.Statement(mods),
+					Contents: stmt,
 				}
 				if length, err := sf.Write(); err != nil {
 					return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
@@ -100,7 +109,7 @@ func PullHandler(cfg *mycli.Config) error {
 				fmt.Printf("    Deleted %s -- table no longer exists\n", sf.Path())
 			case tengo.AlterTable:
 				// skip if mods caused the diff to be a no-op
-				if td.Statement(mods) == "" {
+				if stmt == "" {
 					continue
 				}
 				table := td.Table

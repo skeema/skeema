@@ -240,7 +240,7 @@ func (t Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 		if !ok {
 			continue
 		}
-		stmt := tableDiff.Statement(mods)
+		stmt, _ := tableDiff.Statement(mods) // fine to ignore errors for verifying DDL against temporary schema
 		if stmt == "" {
 			continue
 		}

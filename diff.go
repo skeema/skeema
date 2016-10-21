@@ -24,6 +24,8 @@ top of the file. If no environment name is supplied, the default is
 
 	cmd := mycli.NewCommand("diff", summary, desc, DiffHandler)
 	cmd.AddOption(mycli.BoolOption("verify", 0, true, "Test all generated ALTER statements on temporary schema to verify correctness"))
+	cmd.AddOption(mycli.BoolOption("allow-drop-table", 0, false, "In output, include a DROP TABLE for any table without a corresponding *.sql file"))
+	cmd.AddOption(mycli.BoolOption("allow-drop-column", 0, false, "In output, include DROP COLUMN clauses where appropriate"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
@@ -46,6 +48,7 @@ func DiffHandler(cfg *mycli.Config) error {
 			errCount++
 			continue
 		}
+
 		fmt.Printf("-- Diff of %s %s vs %s/*.sql\n", t.Instance, t.SchemaFromDir.Name, t.Dir)
 		diff, err := tengo.NewSchemaDiff(t.SchemaFromInstance, t.SchemaFromDir)
 		if err != nil {
@@ -60,9 +63,13 @@ func DiffHandler(cfg *mycli.Config) error {
 				return err
 			}
 		}
+
+		mods.AllowDropTable = t.Dir.Config.GetBool("allow-drop-table")
+		mods.AllowDropColumn = t.Dir.Config.GetBool("allow-drop-column")
 		for _, tableDiff := range diff.TableDiffs {
-			stmt := tableDiff.Statement(mods)
-			if stmt != "" {
+			if stmt, err := tableDiff.Statement(mods); err != nil {
+				fmt.Printf("-- %s. See --help for how to override.\n-- %s;\n", err, stmt)
+			} else if stmt != "" {
 				fmt.Printf("%s;\n", stmt)
 			}
 		}

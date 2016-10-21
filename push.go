@@ -24,6 +24,8 @@ top of the file. If no environment name is supplied, the default is
 
 	cmd := mycli.NewCommand("push", summary, desc, PushHandler)
 	cmd.AddOption(mycli.BoolOption("verify", 0, true, "Test all generated ALTER statements on temporary schema to verify correctness"))
+	cmd.AddOption(mycli.BoolOption("allow-drop-table", 0, false, "Permit dropping any table that has no corresponding *.sql file"))
+	cmd.AddOption(mycli.BoolOption("allow-drop-column", 0, false, "Permit dropping columns that are no longer present in *.sql file"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
@@ -83,10 +85,15 @@ func PushHandler(cfg *mycli.Config) error {
 			t.Done()
 			return err
 		}
+
+		mods.AllowDropTable = t.Dir.Config.GetBool("allow-drop-table")
+		mods.AllowDropColumn = t.Dir.Config.GetBool("allow-drop-column")
 		var statementCounter int
 		for _, td := range diff.TableDiffs {
-			stmt := td.Statement(mods)
-			if stmt != "" {
+			if stmt, err := td.Statement(mods); err != nil {
+				statementCounter++
+				fmt.Printf("-- %s. The following DDL statement will be skipped. See --help for how to override.\n-- %s;\n", err, stmt)
+			} else if stmt != "" {
 				statementCounter++
 				_, err := db.Exec(stmt)
 				if err != nil {
