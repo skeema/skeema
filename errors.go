@@ -5,6 +5,13 @@ import (
 	"github.com/go-sql-driver/mysql"
 )
 
+// IsDatabaseError returns true if err came from a database server, typically
+// as a response to a query or connection attempt.
+func IsDatabaseError(err error) bool {
+	_, result := err.(*mysql.MySQLError)
+	return result
+}
+
 // IsSyntaxError returns true if err is a SQL syntax error, or false otherwise.
 func IsSyntaxError(err error) bool {
 	if merr, ok := err.(*mysql.MySQLError); ok {
