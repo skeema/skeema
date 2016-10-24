@@ -26,6 +26,7 @@ top of the file. If no environment name is supplied, the default is
 	cmd.AddOption(mycli.BoolOption("verify", 0, true, "Test all generated ALTER statements on temporary schema to verify correctness"))
 	cmd.AddOption(mycli.BoolOption("allow-drop-table", 0, false, "In output, include a DROP TABLE for any table without a corresponding *.sql file"))
 	cmd.AddOption(mycli.BoolOption("allow-drop-column", 0, false, "In output, include DROP COLUMN clauses where appropriate"))
+	cmd.AddOption(mycli.StringOption("alter-wrapper", 'x', "", "Output ALTER TABLEs as shell commands rather than just raw DDL; see manual for template vars"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
@@ -66,12 +67,16 @@ func DiffHandler(cfg *mycli.Config) error {
 
 		mods.AllowDropTable = t.Dir.Config.GetBool("allow-drop-table")
 		mods.AllowDropColumn = t.Dir.Config.GetBool("allow-drop-column")
+		var statementCounter int
 		for _, tableDiff := range diff.TableDiffs {
-			if stmt, err := tableDiff.Statement(mods); err != nil {
-				fmt.Printf("-- %s. See --help for how to override.\n-- %s;\n", err, stmt)
-			} else if stmt != "" {
-				fmt.Printf("%s;\n", stmt)
+			ddl := NewDDLStatement(tableDiff, mods, t)
+			if ddl == nil {
+				continue
 			}
+			if statementCounter++; statementCounter == 1 {
+				fmt.Printf("USE %s;\n", tengo.EscapeIdentifier(t.SchemaFromDir.Name))
+			}
+			fmt.Printf(ddl.String())
 		}
 		fmt.Println()
 	}

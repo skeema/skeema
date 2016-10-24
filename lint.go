@@ -37,7 +37,6 @@ func LintHandler(cfg *mycli.Config) error {
 
 	var errCount, sqlErrCount int
 	for t := range dir.Targets(false, false) {
-
 		if t.Err != nil { // we only skip on fatal errors (t.Err), not SQL file errors (t.SQLFileErrors or t.HasError())
 			fmt.Printf("Skipping %s:\n    %s\n", t.Dir, t.Err)
 			errCount++
@@ -52,7 +51,6 @@ func LintHandler(cfg *mycli.Config) error {
 		}
 
 		tables, _ := t.SchemaFromDir.Tables() // can ignore error since table list already guaranteed to be cached
-
 		for _, table := range tables {
 			sf := SQLFile{
 				Dir:      t.Dir,

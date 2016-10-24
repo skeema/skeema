@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/skeema/mycli"
 	"github.com/skeema/tengo"
@@ -26,6 +27,7 @@ top of the file. If no environment name is supplied, the default is
 	cmd.AddOption(mycli.BoolOption("verify", 0, true, "Test all generated ALTER statements on temporary schema to verify correctness"))
 	cmd.AddOption(mycli.BoolOption("allow-drop-table", 0, false, "Permit dropping any table that has no corresponding *.sql file"))
 	cmd.AddOption(mycli.BoolOption("allow-drop-column", 0, false, "Permit dropping columns that are no longer present in *.sql file"))
+	cmd.AddOption(mycli.StringOption("alter-wrapper", 'x', "", "External bin to shell out to for ALTER TABLE; see manual for template vars"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
@@ -80,27 +82,25 @@ func PushHandler(cfg *mycli.Config) error {
 			}
 		}
 
-		db, err := t.Instance.Connect(t.SchemaFromDir.Name, "")
-		if err != nil {
-			t.Done()
-			return err
-		}
-
 		mods.AllowDropTable = t.Dir.Config.GetBool("allow-drop-table")
 		mods.AllowDropColumn = t.Dir.Config.GetBool("allow-drop-column")
 		var statementCounter int
-		for _, td := range diff.TableDiffs {
-			if stmt, err := td.Statement(mods); err != nil {
-				statementCounter++
-				fmt.Printf("-- %s. The following DDL statement will be skipped. See --help for how to override.\n-- %s;\n", err, stmt)
-			} else if stmt != "" {
-				statementCounter++
-				_, err := db.Exec(stmt)
-				if err != nil {
-					t.Done()
-					return fmt.Errorf("Error running statement \"%s\" on %s: %s", stmt, t.Instance, err)
-				} else {
-					fmt.Printf("%s;\n", stmt)
+		for n, tableDiff := range diff.TableDiffs {
+			ddl := NewDDLStatement(tableDiff, mods, t)
+			if ddl == nil {
+				continue
+			}
+			statementCounter++
+			fmt.Printf(ddl.String())
+			if ddl.Err == nil {
+				if err := ddl.Execute(); err != nil {
+					log.Printf("Error running above statement on %s: %s", t.Instance, err)
+					skipCount := len(diff.TableDiffs) - n
+					if skipCount > 1 {
+						log.Printf("Skipping %d additional statements on %s %s", skipCount-1, t.Instance, t.SchemaFromDir.Name)
+					}
+					errCount += skipCount
+					break
 				}
 			}
 		}
