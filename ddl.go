@@ -132,6 +132,22 @@ func (sd *SchemaDiff) String() string {
 	return strings.Join(diffStatements, "")
 }
 
+type ForbiddenDiffError struct {
+	Reason    string
+	Statement string
+}
+
+func (e *ForbiddenDiffError) Error() string {
+	return e.Reason
+}
+
+func NewForbiddenDiffError(reason, statement string) error {
+	return &ForbiddenDiffError{
+		Reason:    reason,
+		Statement: statement,
+	}
+}
+
 ///// CreateTable //////////////////////////////////////////////////////////////
 
 // CreateTable represents a new table that only exists in the right-side ("to")
@@ -157,13 +173,16 @@ type DropTable struct {
 	Table *Table
 }
 
-// Statement returns a DDL statement containing DROP TABLE.
+// Statement returns a DDL statement containing DROP TABLE. Note that if mods
+// forbid running the statement, *it will still be returned as-is* but err will
+// be non-nil. It is the caller's responsibility to handle appropriately.
 func (dt DropTable) Statement(mods StatementModifiers) (string, error) {
 	var err error
+	stmt := dt.Table.DropStatement()
 	if !mods.AllowDropTable {
-		err = errors.New("DROP TABLE not permitted")
+		err = NewForbiddenDiffError("DROP TABLE not permitted", stmt)
 	}
-	return dt.Table.DropStatement(), err
+	return stmt, err
 }
 
 ///// AlterTable ///////////////////////////////////////////////////////////////
@@ -175,7 +194,9 @@ type AlterTable struct {
 	Clauses []TableAlterClause
 }
 
-// Statement returns a DDL statement containing ALTER TABLE.
+// Statement returns a DDL statement containing ALTER TABLE. Note that if mods
+// forbid running the statement, *it will still be returned as-is* but err will
+// be non-nil. It is the caller's responsibility to handle appropriately.
 func (at AlterTable) Statement(mods StatementModifiers) (string, error) {
 	clauseStrings := make([]string, 0, len(at.Clauses))
 	var err error
@@ -191,7 +212,7 @@ func (at AlterTable) Statement(mods StatementModifiers) (string, error) {
 			}
 		case DropColumn:
 			if !mods.AllowDropColumn {
-				err = errors.New("DROP COLUMN not permitted")
+				err = NewForbiddenDiffError("DROP COLUMN not permitted", "")
 			}
 		}
 		clauseStrings = append(clauseStrings, clause.Clause())
@@ -200,7 +221,11 @@ func (at AlterTable) Statement(mods StatementModifiers) (string, error) {
 	if len(clauseStrings) == 0 {
 		return "", err
 	}
-	return fmt.Sprintf("%s %s", at.Table.AlterStatement(), strings.Join(clauseStrings, ", ")), err
+	stmt := fmt.Sprintf("%s %s", at.Table.AlterStatement(), strings.Join(clauseStrings, ", "))
+	if fde, isForbiddenDiff := err.(*ForbiddenDiffError); isForbiddenDiff {
+		fde.Statement = stmt
+	}
+	return stmt, err
 }
 
 ///// RenameTable //////////////////////////////////////////////////////////////
