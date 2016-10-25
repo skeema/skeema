@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"path"
 	"regexp"
 	"strconv"
@@ -98,8 +100,11 @@ func (ddl *DDLStatement) Execute() error {
 		return ddl.Err
 	}
 	if ddl.isExec {
-		// TODO
-		return fmt.Errorf("NOT SUPPORTED YET")
+		cmd := exec.Command("/bin/sh", "-c", ddl.stmt)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
 	}
 	if db, err := ddl.instance.Connect(ddl.schemaName, ""); err != nil {
 		ddl.Err = err
@@ -166,7 +171,7 @@ func InterpolateExec(command string, dir *Dir, extra map[string]string) (string,
 	replacer := func(input string) string {
 		input = strings.ToUpper(input[1 : len(input)-1])
 		if value, ok := values[input]; ok {
-			return value
+			return escapeExecValue(value)
 		}
 		err = fmt.Errorf("Unknown variable {%s}", input)
 		return fmt.Sprintf("{%s}", input)
@@ -174,4 +179,13 @@ func InterpolateExec(command string, dir *Dir, extra map[string]string) (string,
 
 	result := re.ReplaceAllStringFunc(command, replacer)
 	return result, err
+}
+
+var noQuotesNeeded = regexp.MustCompile(`^[\w/@%=:.,+-]*$`)
+
+func escapeExecValue(value string) string {
+	if noQuotesNeeded.MatchString(value) {
+		return value
+	}
+	return fmt.Sprintf("'%s'", strings.Replace(value, "'", `'"'"'`, -1))
 }
