@@ -77,6 +77,13 @@ func (dir *Dir) CreateIfMissing() (created bool, err error) {
 	return true, nil
 }
 
+// Exists returns true if the dir already exists in the filesystem and is
+// visible to the user
+func (dir *Dir) Exists() bool {
+	_, err := os.Stat(dir.Path)
+	return (err == nil)
+}
+
 func (dir *Dir) Delete() error {
 	return os.RemoveAll(dir.Path)
 }
@@ -139,7 +146,7 @@ func (dir *Dir) FirstInstance() (*tengo.Instance, error) {
 		host := dir.Config.Get("host")
 		port := dir.Config.GetIntOrDefault("port")
 		if !dir.Config.Changed("port") {
-			if splitHost, splitPort, err := tengo.SplitHostOptionalPort(host); err == nil && port > 0 {
+			if splitHost, splitPort, err := tengo.SplitHostOptionalPort(host); err == nil && splitPort > 0 {
 				host = splitHost
 				port = splitPort
 			}
@@ -222,10 +229,6 @@ func (dir *Dir) Subdirs() ([]*Dir, error) {
 				if err != nil {
 					return nil, err
 				}
-				err = f.Parse(subdir.Config)
-				if err != nil {
-					return nil, err
-				}
 				_ = f.UseSection(subdir.section) // we don't care if the section doesn't exist
 				subdir.Config.AddSource(f)
 			}
@@ -277,10 +280,14 @@ func (dir *Dir) Targets(expandInstances, expandSchemas bool) <-chan Target {
 }
 
 // OptionFile returns a pointer to a mycli.File for this directory, representing
-// the dir's .skeema file, if one exists. The file will be read but not parsed.
+// the dir's .skeema file, if one exists. The file will be read and parsed; any
+// errors in either process will be returned.
 func (dir *Dir) OptionFile() (*mycli.File, error) {
 	f := mycli.NewFile(dir.Path, ".skeema")
 	if err := f.Read(); err != nil {
+		return nil, err
+	}
+	if err := f.Parse(dir.Config); err != nil {
 		return nil, err
 	}
 	return f, nil
@@ -302,11 +309,12 @@ func (dir *Dir) cascadingOptionFiles() (files []*mycli.File, errReturn error) {
 
 	// Examine parent dirs, going up one level at a time, stopping early if we
 	// hit either the user's home directory or a directory containing a .git subdir.
-	base := 0
-	for n := len(components) - 1; n >= 0 && base == 0; n-- {
+Outer:
+	for n := len(components) - 1; n >= 0; n-- {
 		curPath := "/" + path.Join(components[0:n+1]...)
 		if curPath == home {
-			base = n
+			// We already read ~/.skeema as a global file
+			break
 		}
 		fileInfos, err := ioutil.ReadDir(curPath)
 		// We ignore errors here since we expect the dir to not exist in some cases
@@ -316,7 +324,7 @@ func (dir *Dir) cascadingOptionFiles() (files []*mycli.File, errReturn error) {
 		}
 		for _, fi := range fileInfos {
 			if fi.Name() == ".git" {
-				base = n
+				break Outer
 			} else if fi.Name() == ".skeema" {
 				f := mycli.NewFile(curPath, ".skeema")
 				if readErr := f.Read(); readErr != nil {
