@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/skeema/mycli"
 	"github.com/skeema/tengo"
@@ -63,6 +65,11 @@ func InitHandler(cfg *mycli.Config) error {
 	if hostDir.HasOptionFile() {
 		return fmt.Errorf("Cannot use dir %s: already has .skeema file", hostDir.Path)
 	}
+	for _, name := range []string{"host", "schema"} {
+		if hostDir.Config.Changed(name) {
+			return fmt.Errorf("Cannot use dir %s: a parent dir already defines a %s", hostDir.Path, name)
+		}
+	}
 
 	// Validate connection-related options (host, port, socket, user, password) by
 	// testing connection. This is done before writing an option file, so that the
@@ -71,21 +78,24 @@ func InitHandler(cfg *mycli.Config) error {
 	if err != nil {
 		return err
 	} else if inst == nil {
-		return errors.New("Command line did not specify which instance to connect to; please supply --host (and optionally --port or --socket)")
+		return errors.New("Command line did not specify which instance to connect to")
+	}
+
+	environment := cfg.Get("environment")
+	if environment == "" || strings.ContainsAny(environment, "[]\n\r") {
+		return fmt.Errorf("Environment name \"%s\" is invalid", environment)
 	}
 
 	// Figure out what needs to go in the hostDir's .skeema file.
-	environment := cfg.Get("environment")
 	hostOptionFile := mycli.NewFile(hostDir.Path, ".skeema")
-	if hostDir.Config.Get("host") == "localhost" && !hostDir.Config.Changed("port") {
-		hostOptionFile.SetOptionValue(environment, "host", "localhost")
-		hostOptionFile.SetOptionValue(environment, "socket", hostDir.Config.Get("socket"))
+	hostOptionFile.SetOptionValue(environment, "host", inst.Host)
+	if inst.Host == "localhost" && inst.SocketPath != "" {
+		hostOptionFile.SetOptionValue(environment, "socket", inst.SocketPath)
 	} else {
-		hostOptionFile.SetOptionValue(environment, "host", hostDir.Config.Get("host"))
-		hostOptionFile.SetOptionValue(environment, "port", hostDir.Config.Get("port"))
+		hostOptionFile.SetOptionValue(environment, "port", strconv.Itoa(inst.Port))
 	}
-	if hostDir.Config.OnCLI("user") {
-		hostOptionFile.SetOptionValue(environment, "user", hostDir.Config.Get("user"))
+	if cfg.OnCLI("user") {
+		hostOptionFile.SetOptionValue(environment, "user", cfg.Get("user"))
 	}
 	if !separateSchemaSubdir {
 		// schema name is placed outside of any named section/environment since the
