@@ -69,6 +69,7 @@ func AddGlobalConfigFiles(cfg *mycli.Config) {
 			fmt.Println("Aborting:", err)
 			os.Exit(1)
 		}
+		fmt.Println()
 	}
 }
 

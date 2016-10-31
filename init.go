@@ -46,6 +46,10 @@ func InitHandler(cfg *mycli.Config) error {
 	onlySchema := cfg.Get("schema")
 	separateSchemaSubdir := (onlySchema == "")
 
+	if !cfg.OnCLI("host") {
+		return errors.New("Option --host must be supplied on the command-line")
+	}
+
 	if !cfg.Changed("dir") { // default for dir is to base it on the hostname
 		port := cfg.GetIntOrDefault("port")
 		if port > 0 && cfg.Changed("port") {
@@ -65,10 +69,8 @@ func InitHandler(cfg *mycli.Config) error {
 	if hostDir.HasOptionFile() {
 		return fmt.Errorf("Cannot use dir %s: already has .skeema file", hostDir.Path)
 	}
-	for _, name := range []string{"host", "schema"} {
-		if hostDir.Config.Changed(name) {
-			return fmt.Errorf("Cannot use dir %s: a parent dir already defines a %s", hostDir.Path, name)
-		}
+	if hostDir.Config.Changed("schema") && !hostDir.Config.OnCLI("schema") {
+		return fmt.Errorf("Cannot use dir %s: a parent dir already defines a schema", hostDir.Path)
 	}
 
 	// Validate connection-related options (host, port, socket, user, password) by
