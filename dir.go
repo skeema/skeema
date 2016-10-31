@@ -59,6 +59,10 @@ func (dir *Dir) String() string {
 	return dir.Path
 }
 
+func (dir *Dir) BaseName() string {
+	return path.Base(dir.Path)
+}
+
 func (dir *Dir) CreateIfMissing() (created bool, err error) {
 	fi, err := os.Stat(dir.Path)
 	if err == nil {
@@ -309,7 +313,6 @@ func (dir *Dir) cascadingOptionFiles() (files []*mycli.File, errReturn error) {
 
 	// Examine parent dirs, going up one level at a time, stopping early if we
 	// hit either the user's home directory or a directory containing a .git subdir.
-Outer:
 	for n := len(components) - 1; n >= 0; n-- {
 		curPath := "/" + path.Join(components[0:n+1]...)
 		if curPath == home {
@@ -324,7 +327,7 @@ Outer:
 		}
 		for _, fi := range fileInfos {
 			if fi.Name() == ".git" {
-				break Outer
+				n = -1 // stop outer loop early, after done with this dir
 			} else if fi.Name() == ".skeema" {
 				f := mycli.NewFile(curPath, ".skeema")
 				if readErr := f.Read(); readErr != nil {

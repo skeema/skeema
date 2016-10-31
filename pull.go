@@ -208,9 +208,11 @@ func findNewSchemas(dir *Dir) error {
 	}
 
 	for _, subdir := range subdirs {
-		err := findNewSchemas(subdir)
-		if err != nil {
-			return err
+		if subdir.BaseName()[0] != '.' {
+			err := findNewSchemas(subdir)
+			if err != nil {
+				return err
+			}
 		}
 	}
 

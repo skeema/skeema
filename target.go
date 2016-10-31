@@ -71,7 +71,12 @@ func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expan
 		}
 	} else {
 		for _, subdir := range subdirs {
-			generateTargetsForDir(subdir, targets, expandInstances, expandSchemas)
+			// Don't iterate into hidden dirs, since version control software may store
+			// files in there with names matching real things we care about (*.sql,
+			// .skeema, etc)
+			if subdir.BaseName()[0] != '.' {
+				generateTargetsForDir(subdir, targets, expandInstances, expandSchemas)
+			}
 		}
 	}
 }
