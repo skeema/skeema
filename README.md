@@ -10,7 +10,107 @@ Skeema is a tool for managing MySQL tables and schema changes. It provides a CLI
 
 The overall goal is to support a pull-request-based workflow for schema change submission, review, and execution. This permits your team to manage schema changes in exactly the same way as you manage code changes.
 
+## Compiling
+
+Requires the [Go programming language toolchain](https://golang.org/dl/).
+
+To download, build, and install skeema, run:
+
+`go get github.com/skeema/skeema`
+
+This will be cleaned up in the near future, to provide a build script and freeze dependencies in a vendor dir.
+
 ## Usage examples
+
+### Create a git repo of CREATE TABLE statements
+
+Use the `skeema init` command to generate CREATE TABLE files.
+
+```
+skeema init -h my.prod.db.hostname -u root -p -d schemas
+cd schemas
+git init
+git add .
+git commit -m 'Initial import of schemas from prod DB to git'
+```
+
+[![asciicast](https://asciinema.org/a/db9c2pj6cgoeirw7bhg41iros.png)](https://asciinema.org/a/db9c2pj6cgoeirw7bhg41iros)
+
+Connectivity options for `skeema init` are similar to those for the MySQL client (-h host -u user -ppassword -S socket -P port). Skeema can even parse your existing ~/.my.cnf to obtain user and password.
+
+The -d (--dir) option specifies what directory to create; if omitted, it will default to the hostname.
+
+The supplied host should be a master. Skeema saves the host information in a configuration file called .skeema in the host's directory. From there, each schema have its own subdirectory, with its own .skeema file defining the schema name. (Configuration options in .skeema files "cascade" down to subdirectories, allowing you to define options that only affect particular hosts or schemas.)
+
+### Generate and run ALTER TABLE from changing a file
+
+After changing a table file, you can run `skeema diff` to generate DDL which would transform the live database to match the file. Running `skeema push` generates the DDL and then actually applies it.
+
+```
+vi product/users.sql
+skeema diff
+skeema push
+```
+
+[![asciicast](https://asciinema.org/a/4yz2yngkrbiww2l70u26ejwuh.png)](https://asciinema.org/a/4yz2yngkrbiww2l70u26ejwuh)
+
+Note that Skeema won't use online DDL unless [configured to do so](#How-do-I-configure-Skeema-to-use-online-schema-change-tools).
+
+Ordinarily, in between `skeema diff` and `skeema push`, you would want to make a commit to a new branch, open a pull request for review, and merge to master. These steps have been elided here for brevity.
+
+### Generate DDL for from adding or removing files
+
+Similarly, if you add new .sql files with CREATE TABLE statements, these will be included in the output of `skeema diff` or execution of `skeema push`. Removing files translates to DROP TABLE, but only if --allow-drop-table is used.
+
+```
+vi product/comments.sql
+skeema diff
+rm product/tags.sql
+skeema diff
+skeema diff --allow-drop-table
+skeema push --allow-drop-table
+```
+
+[![asciicast](https://asciinema.org/a/0opnqhiwj2hxfpeuzlrmhn4di.png)](https://asciinema.org/a/0opnqhiwj2hxfpeuzlrmhn4di)
+
+### Normalize format of CREATE TABLE files, and check for syntax errors
+
+This will rewrite all of the *.sql files to match the format shown by MySQL's SHOW CREATE TABLE. If any of the *.sql files contained an invalid CREATE TABLE statement, errors will be reported.
+
+```
+skeema lint
+```
+
+[![asciicast](https://asciinema.org/a/9zcpe06gljam86mq5hkn2e84s.png)](https://asciinema.org/a/9zcpe06gljam86mq5hkn2e84s)
+
+### Update CREATE TABLE files with changes made manually / outside of Skeema
+
+If you make changes outside of Skeema -- either due to use of a language-specific migration tool, or to do something unsupported by Skeema like a table rename -- you can use `skeema pull` to update the filesystem to match the database (essentially the opposite of `skeema pull`). 
+
+```
+skeema pull
+```
+
+By default, this also normalizes file format like `skeema lint`, but you can skip that behavior with the --skip-normalize option (or equivalently set as --normalize=0, --normalize=false, etc).
+
+[![asciicast](https://asciinema.org/a/525kggzrguam32rj01kk8jroa.png)](https://asciinema.org/a/525kggzrguam32rj01kk8jroa)
+
+### Keep dev and prod in-sync
+
+This example is assuming each dev server has a dev MySQL on localhost, but other locations work fine too; connection options are similar to MySQL client.
+
+```
+# one-time setup
+skeema add-environment dev -h localhost -S /var/lib/mysql/mysql.sock -u root
+
+# make changes on dev, push to prod
+rake db:migrate # or whatever migration method you use in dev
+skeema pull development
+git commit -a -m 'Updating schema files from Rails migration'
+skeema diff production
+skeema push production
+```
+
 
 ## Recommended workflow
 
@@ -38,7 +138,7 @@ If each engineer has their own local dev database, they can use Skeema to pull i
 
 ### Schema change process
 
-Steps 1-3 are performed by a developer. Steps 4-6 can be performed by a developer or by a DBA / devops team, depending on your company's preferred policy.
+Steps 1-3 are performed by a developer. Steps 4-6 can be performed by a developer or by a DBA / devops engineer, depending on your company's preferred policy.
 
 1. Check out a new branch in your schema repo.
 
@@ -113,6 +213,7 @@ Skeema's author has been using MySQL for over 13 years, and is a former member o
 * Skeema does not perform online ALTERs unless configured to do so. Be aware that most regular ALTERs lock the table and may cause replication lag.
 * Skeema does not automatically verify that there is sufficient free disk space to perform an ALTER operation.
 * External online schema change tools can, in theory, be buggy and cause data loss. Skeema does not endorse or guarantee any particular third-party tool.
+* There is no tracking of *in-flight* operations yet. This means in a large production environment where schema changes take a long time to run, it is the user's responsibility to ensure that Skeema is only run from one location in a manner that prevents concurrent execution. This will almost certainly be improved in future releases.
 * Skeema does **not** currently prevent changing the **type** of an existing column, even though this is a destructive action in some cases, such as reducing the size of a column. Future versions may be more protective about this scenario and require supplying an option to confirm.
 * Accidentally running schema changes against a replica directly, instead of the master, may break replication. It is the user's responsibility to ensure that the host and port options in each `.skeema` configuration file point only to masters.
 * As with the vast majority of open source software, Skeema is distributed without warranties of any kind. See LICENSE.
