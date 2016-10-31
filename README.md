@@ -54,7 +54,7 @@ skeema push
 
 [![asciicast](https://asciinema.org/a/4yz2yngkrbiww2l70u26ejwuh.png)](https://asciinema.org/a/4yz2yngkrbiww2l70u26ejwuh)
 
-Note that Skeema won't use online DDL unless [configured to do so](#How-do-I-configure-Skeema-to-use-online-schema-change-tools).
+Note that Skeema won't use online DDL unless [configured to do so](#how-do-i-configure-skeema-to-use-online-schema-change-tools).
 
 Ordinarily, in between `skeema diff` and `skeema push`, you would want to make a commit to a new branch, open a pull request for review, and merge to master. These steps have been elided here for brevity.
 
