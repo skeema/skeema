@@ -34,7 +34,7 @@ git add .
 git commit -m 'Initial import of schemas from prod DB to git'
 ```
 
-[![asciicast](https://asciinema.org/a/db9c2pj6cgoeirw7bhg41iros.png)](https://asciinema.org/a/db9c2pj6cgoeirw7bhg41iros)
+[![asciicast](http://www.asciinema.org/a/db9c2pj6cgoeirw7bhg41iros.png)](https://asciinema.org/a/db9c2pj6cgoeirw7bhg41iros)
 
 Connectivity options for `skeema init` are similar to those for the MySQL client (-h host -u user -ppassword -S socket -P port). Skeema can even parse your existing ~/.my.cnf to obtain user and password.
 
