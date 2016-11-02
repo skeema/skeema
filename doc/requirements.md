@@ -50,7 +50,7 @@ The `SHOW DATABASES` global privilege is recommended. Technically it should be r
 
 ### Responsibilities for the user
 
-* Skeema does not perform online ALTERs unless configured to do so. Be aware that most regular ALTERs lock the table and may cause replication lag.
+* Skeema does not perform online ALTERs unless [configured to do so](faq.md#how-do-i-configure-skeema-to-use-online-schema-change-tools). Be aware that most regular ALTERs lock the table and may cause replication lag.
 * Skeema does not automatically verify that there is sufficient free disk space to perform an ALTER operation.
 * External online schema change tools can, in theory, be buggy and cause data loss. Skeema does not endorse or guarantee any particular third-party tool.
 * There is no tracking of *in-flight* operations yet. This means in a large production environment where schema changes take a long time to run, it is the user's responsibility to ensure that Skeema is only run from one location in a manner that prevents concurrent execution. This will be improved in future releases.
