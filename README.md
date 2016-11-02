@@ -25,7 +25,7 @@ This will be cleaned up in the near future, to provide a build script and freeze
 * [Usage examples and screencasts](doc/examples.md)
 * [Recommended workflow](doc/workflow.md)
 * [Options reference](doc/options.md)
-* [Requirements](doc/requiremeds.md)
+* [Requirements](doc/requirements.md)
 * [Frequently asked questions](doc/faq.md)
 
 ## Status
