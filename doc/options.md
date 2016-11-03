@@ -4,7 +4,13 @@
 
 Options may be provided to Skeema via the command-line and/or via option files. Future versions may also support environment variables.
 
-Option-handling is intentionally designed to be very similar to how the MySQL client and server programs accept options. If you are already familiar with this, skip the first 3 subsections and resume reading at the [execution model](#execution-model-and-per-directory-option-files) section.
+Option-handling is intentionally designed to be very similar to the MySQL client and server programs.
+
+Passing unknown/invalid options to Skeema, either in an option file or on the command-line, causes the program to abort except in two cases:
+
+* In addition to its own option files, Skeema also parses the MySQL per-user file `~/.my.cnf` to look for connection-related options ([user](#user), [password](#password), etc). Other options in this file are specific to MySQL and unknown to Skeema, but these will simply be ignored instead of throwing an error.
+
+* Option names may be prefixed with "loose-", in which case they are ignored if they do not exist in the current version of Skeema. (MySQL also provides the same mechanism, although it is not well-known.)
 
 #### Specifying options on the command-line
 
@@ -41,11 +47,13 @@ some-bool-option
 this=that
 ```
 
-Options must be provided using their full names, i.e. same as their command-line "long" POSIX name but without the double-dash prefix. Values may be omitted for options that do not require them.
+Options must be provided using their full names ("long" POSIX name, but without the double-dash prefix). Values may be omitted for options that do not require them.
 
-Sections in option files are interpreted as environment names -- typically one of "production", "staging", or "development" but any arbitrary name is allowed. Every Skeema command takes an optional positional arg specifying an environment name, which will cause options in the corresponding section to be applied. Options that appear at the top of the file, prior to any environment name, are always applied (but may be overridden by options subsequently appearing in a selected environment). If no environment name is supplied to a Skeema command, the default environment name is "production".
+Sections in option files are interpreted as environment names -- typically one of "production", "staging", or "development", but any arbitrary name is allowed. Every Skeema command takes an optional positional arg specifying an environment name, which will cause options in the corresponding section to be applied. Options that appear at the top of the file, prior to any environment name, are always applied; these may be overridden by options subsequently appearing in a selected environment. If no environment name is supplied to a Skeema command, the default environment name is "production".
 
-Skeema always looks at several "global" paths for option files, regardless of the current working directory:
+Environment sections allow you to define different hosts, or even different schema names, for specific environments. You can also define configuration options that only affect one environment -- for example, loosening protections in development, or only using online schema change tools in production.
+
+Skeema always looks for several "global" option file paths, regardless of the current working directory:
 
 * /etc/skeema
 * /usr/local/etc/skeema
@@ -60,20 +68,59 @@ Parsing of MySQL config file ~/.my.cnf is a special-case: instead of the normal 
 
 Options generally take values, which can be *string*, *int*, or *boolean* types depending on the option.
 
-Most string and int options require a value. For example, you cannot provide --host on the command-line without also specifying a value, nor can you have a line that only contains "host\n" in an options file
+Most string and int options require a value. For example, you cannot provide --host on the command-line without also specifying a value, nor can you have a line that only contains "host\n" in an options file.
 
-Most string options require a value
+Boolean option names may be prefixed with "skip-" or "disable-" to set a false value. In other words, on the command-line `--skip-foo` is equivalent to `--foo=false` or `--foo=0`; this may also be used in option files without the `--` prefix. If combining with the "loose-" prefix, "loose-" must appear first (e.g. "loose-skip-foo", *not* "skip-loose-foo").
 
 #### Execution model and per-directory option files
 
+After parsing and applying global option files, Skeema next looks for option files in the current directory path. Starting with the current working directory, parent directories are climbed until one of the following is hit:
+
+* ~ (user's home directory)
+* a directory containing .git (the root of a git repository)
+* / (the root of the filesystem)
+
+Then, each evaluated directory (starting with the rootmost) is checked for a file called `.skeema`, which will be parsed and applied if found.
+
+Most Skeema commands -- including `skeema diff`, `skeema push`, `skeema pull`, and `skeema lint` -- then operate in a recursive fashion. Starting from the current directory, they proceed as follows:
+
+1. Read and apply any `.skeema` file present
+2. If both a host and schema have been defined (by this directory's `.skeema` file and/or a parent directory's), execute command logic as appropriate on the *.sql table files in this directory.
+3. Recurse into subdirectories, repeating steps 1-3 on each subdirectory.
+
+For example, if you have multiple MySQL pools/clusters, each with multiple schemas, your schema repo layout will be of the format reporoot/hostname/schemaname/*.sql. Each hostname subdir will have a .skeema file defining a different host, and each schemaname subdir will have a .skeema file defining a different schema. If you run `skeema diff` from reporoot, diff'ing will be executed on all hosts and all schemas. But if you run `skeema diff` in some leaf-level schemaname subdir, only that schema (and the host defined by its parent dir) will be diffed.
+
 #### Priority of options set in multiple places
 
-#### Connection options and command-line usage
+The same option may be set in multiple places. Conflicts are resolved as follows, from lowest priority to highest:
+
+* Option default value
+* /etc/skeema
+* /usr/local/etc/skeema
+* ~/.my.cnf
+* ~/.skeema
+* Per-directory .skeema files, in order from ancestors to current dir
+  * The root-most .skeema file has the lowest priority
+  * The current directory's .skeema file has the highest priority
+* Options provided on the command-line
+
+This ordering allows you to add configuration options that only affect specific hosts or schemas, by putting it only in a specific subdir's `.skeema` file.
+
+#### Limitations on `host` and `schema` options
+
+The [host](#host) and [schema](#schema) options should only appear on the command-line in `skeema init` and `skeema add-environment`. They should also never appear in *global* option files (`host` is specially ignored in `~/.my.cnf`).
+
+Most other commands (`skeema diff`, `skeema push`, `skeema pull`, `skeema lint`) are designed to recursively crawl the directory structure and obtain host and schema information from the `.skeema` files in each subdirectory. This is why it does not make sense to supply `host` or `schema` "globally" to these commands -- the correct value to use will always be directory-dependent. 
 
 #### Options with variable interpolation
 
-#### Options allowing strings or command-lines
+Some string-type options are interpreted as external commands to execute. These options support interpolation of variable placeholders, which appear in all-caps and are wrapped in braces like `{VARNAME}`. For example, this line may appear in a .skeema file to configure use of pt-online-schema-change:
 
+```ini
+alter-wrapper=/usr/local/bin/pt-online-schema-change --alter {CLAUSES} D={SCHEMA},t={TABLE},h={HOST},P={PORT},u={USER},p={PASSWORD}
+```
+
+The placeholders are automatically replaced with the correct values for the current operation. Each option lists what variables it supports.
 
 ### Option reference
 
@@ -143,7 +190,7 @@ Commands | *all*
 --- | :---
 **Default** | *N/A*
 **Type** | string
-**Restrictions** | Command-line use only intended for init and add-environment; value required
+**Restrictions** | value required; see [limitations on placement](#limitations-on-host-and-schema-options)
 
 Specifies hostname, or IPv4, or IPv6 address to connect to. If an IPv6 address, it must be wrapped in brackets.
 
@@ -161,7 +208,7 @@ Determines whether or not table definitions should contain next-auto-increment v
 
 In `skeema init`, a false value omits AUTO_INCREMENT=X clauses in all table definitions, whereas a true value includes them based on whatever value is currently present on the table (typically its highest already-generated ID, plus one).
 
-In `skeema pull`, a false value omits AUTO_INCREMENT=X clauses in any *newly-written* table files (tables were created outside of Skeema, which are now getting a *.sql file written for the first time). Modified tables *that already had AUTO_INCREMENT=X clauses*, where X > 1, will have their AUTO_INCREMENT values updated; otherwise the clause will continue to be omitted in any file that previously omitted it. Meanwhile a true value causes all table files to now have AUTO_INCREMENT=X clauses.
+In `skeema pull`, a false value omits AUTO_INCREMENT=X clauses in any *newly-written* table files (tables were created outside of Skeema, which are now getting a \*.sql file written for the first time). Modified tables *that already had AUTO_INCREMENT=X clauses*, where X > 1, will have their AUTO_INCREMENT values updated; otherwise the clause will continue to be omitted in any file that previously omitted it. Meanwhile a true value causes all table files to now have AUTO_INCREMENT=X clauses.
 
 Only set this to true if you intentionally need to track auto_increment values in all tables. If only a few tables require nonstandard auto_increment, simply include the value manually in the CREATE TABLE statement in the *.sql file. Subsequent calls to `skeema pull` won't strip it, even if `include-auto-inc` is false.
 
@@ -181,7 +228,7 @@ Commands | *all*
 --- | :---
 **Default** | *no password*
 **Type** | string
-**Restrictions** | If supplied without a value, STDIN should be a TTY
+**Restrictions** | if supplied without a value, STDIN should be a TTY
 
 Specifies what password should be used when connecting to MySQL. Just like the MySQL client, if you supply `password` without a value, the user will be prompted to supply one via STDIN. Omit `password` entirely if the connection should not use a password at all.
 
@@ -195,7 +242,7 @@ Commands | *all*
 --- | :---
 **Default** | 3306
 **Type** | int
-**Restrictions** | Command-line use only intended for init and add-environment; value required
+**Restrictions** | value required
 
 Specifies a nonstandard port to use when connecting to MySQL via TCP/IP.
 
@@ -217,7 +264,7 @@ Commands | *all*
 --- | :---
 **Default** | *N/A*
 **Type** | string
-**Restrictions** | Command-line use only intended for init and add-environment; value required
+**Restrictions** | value required; see [limitations on placement](#limitations-on-host-and-schema-options)
 
 Specifies which schema to operate on. This should typically only appear in a .skeema file, inside a directory containing *.sql files and no subdirectories.
 
@@ -227,7 +274,7 @@ Commands | *all*
 --- | :---
 **Default** | /tmp/mysql.sock
 **Type** | string
-**Restrictions** | Command-line use only intended for init and add-environment; value required
+**Restrictions** | value required
 
 When the [host option](#host) is "localhost", this option specifies the path to a UNIX domain socket to connect to the local MySQL server. It is ignored if host isn't "localhost" and/or if the [port option](#port) is specified.
 
@@ -239,7 +286,7 @@ Commands | *all*
 **Type** | string
 **Restrictions** | value required
 
-Specifies the name of the temporary schema used for Skeema operations. See [the FAQ](faq.md#temporary-schema-operations) for more information on how this schema is used.
+Specifies the name of the temporary schema used for Skeema operations. See [the FAQ](faq.md#temporary-schema-usage) for more information on how this schema is used.
 
 If using a non-default value for this option, it should not ever point at a schema containing real application data. Skeema will automatically detect this and abort in this situation, but may first drop any *empty* tables that it found in the schema.
 

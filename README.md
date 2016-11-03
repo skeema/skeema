@@ -1,4 +1,4 @@
-![Skeema](http://static.tumblr.com/e19ad579dbfc7ec2f4253b8b6f654cff/ztrnmrz/wEUo5xa6g/tumblr_static_e8shep5snfkgw0kso4kgso44g_2048_v2.png)
+![Skeema](http://static.tumblr.com/e19ad579dbfc7ec2f4253b8b6f654cff/ztrnmrz/wEUo5xa6g/tumblr_static_e8shep5snfkgw0kso4kgso44g_640_v2.png)
 
 Skeema is a tool for managing MySQL tables and schema changes. It provides a CLI tool allowing you to:
 

@@ -36,7 +36,7 @@ Note that Skeema won't use online DDL unless [configured to do so](faq.md#how-do
 
 Ordinarily, in between `skeema diff` and `skeema push`, you would want to make a commit to a new branch, open a pull request for review, and merge to master. These steps have been elided here for brevity.
 
-### Generate DDL for from adding or removing files
+### Generate DDL from adding or removing files
 
 Similarly, if you add new .sql files with CREATE TABLE statements, these will be included in the output of `skeema diff` or execution of `skeema push`. Removing files translates to DROP TABLE, but only if --allow-drop-table is used.
 
@@ -63,7 +63,7 @@ skeema lint
 
 ### Update CREATE TABLE files with changes made manually / outside of Skeema
 
-If you make changes outside of Skeema -- either due to use of a language-specific migration tool, or to do something unsupported by Skeema like a table rename -- you can use `skeema pull` to update the filesystem to match the database (essentially the opposite of `skeema pull`). 
+If you make changes outside of Skeema -- either due to use of a language-specific migration tool, or to do something unsupported by Skeema like a table rename -- you can use `skeema pull` to update the filesystem to match the database (essentially the opposite of `skeema push`). 
 
 ```
 skeema pull

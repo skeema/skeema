@@ -29,8 +29,11 @@ Steps 1-3 are performed by a developer. Steps 4-6 can be performed by a develope
 1. Check out a new branch in your schema repo.
 
 2. Test the schema change in dev, and update the corresponding files in the repo. There are a few equivalent ways of doing this:
+
   a) If using a migration tool from an MVC framework (Rails, Django, etc): Run the migration tool on dev as usual. Then use `skeema pull development` to update the table files in the repo.
+  
   b) If you prefer running DDL manually: Run the statement(s) in dev. Then use `skeema pull development` to update the table files.
+  
   c) If you prefer to just change the CREATE TABLE files: Modify the files as desired. Use `skeema diff development` to confirm the auto-generated DDL looks sane, and then use `skeema push development` to update the dev database.
 
 3. Commit the change to the repo, push to origin, and open a pull request. Follow whatever review process your team uses for code changes.
