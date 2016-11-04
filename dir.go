@@ -109,21 +109,6 @@ func (dir *Dir) HasSchema() bool {
 	return dir.Config.Changed("schema")
 }
 
-// InstanceKey returns a string usable for grouping directories by what database
-// instances they will target.
-func (dir *Dir) InstanceKey() string {
-	if !dir.Config.Changed("host") {
-		return ""
-	}
-	host := dir.Config.Get("host")
-
-	// TODO: support cloudsql
-	if host == "localhost" && (dir.Config.Changed("socket") || !dir.Config.Changed("port")) {
-		return fmt.Sprintf("%s:%s", host, dir.Config.Get("socket"))
-	}
-	return fmt.Sprintf("%s:%d", host, dir.Config.GetIntOrDefault("port"))
-}
-
 // FirstInstance returns at most one tengo.Instance based on the directory's
 // configuration. If the config maps to multiple instances (NOT YET SUPPORTED)
 // only the first will be returned. If the config maps to no instances, nil
@@ -149,7 +134,7 @@ func (dir *Dir) FirstInstance() (*tengo.Instance, error) {
 		// TODO support host configs mapping to multiple lookups via service discovery
 		host := dir.Config.Get("host")
 		port := dir.Config.GetIntOrDefault("port")
-		if !dir.Config.Changed("port") {
+		if !dir.Config.Supplied("port") {
 			if splitHost, splitPort, err := tengo.SplitHostOptionalPort(host); err == nil && splitPort > 0 {
 				host = splitHost
 				port = splitPort

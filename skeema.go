@@ -50,18 +50,19 @@ func AddGlobalConfigFiles(cfg *mycli.Config) {
 		cfg.AddSource(f)
 	}
 
-	// Don't allow CLI or global configs to set certain options, unless the
-	// subcommand specificially provides these (like init). For most commands
-	// these options may only legally be set in per-directory config files.
-	dirOnly := []string{"host", "port", "schema"}
-	for _, name := range dirOnly {
+	// The host and schema options are special -- most commands only expect
+	// to find them when recursively crawling directory configs. So if these
+	// options have been set globally (via CLI or a global config file), and
+	// the current subcommand hasn't explicitly overridden these options (as
+	// init and add-environment do), silently ignore the value.
+	for _, name := range []string{"host", "schema"} {
 		if cfg.Changed(name) && cfg.FindOption(name) == CommandSuite.Options()[name] {
-			fmt.Printf("Fatal: option %s can only be specified in a non-global .skeema options file\n", name)
-			os.Exit(1)
+			cfg.CLI.OptionValues[name] = ""
+			cfg.MarkDirty()
 		}
 	}
 
-	// Special handling for password option: supplying it with no value prompts user
+	// Special handling for password option: supplying it with no value prompts on STDIN
 	if cfg.Get("password") == "" {
 		var err error
 		cfg.CLI.OptionValues["password"], err = PromptPassword()
@@ -69,6 +70,7 @@ func AddGlobalConfigFiles(cfg *mycli.Config) {
 			fmt.Println("Aborting:", err)
 			os.Exit(1)
 		}
+		cfg.MarkDirty()
 		fmt.Println()
 	}
 }
