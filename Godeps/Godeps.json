@@ -1,0 +1,38 @@
+{
+	"ImportPath": "github.com/skeema/skeema",
+	"GoVersion": "go1.7",
+	"GodepVersion": "v75",
+	"Deps": [
+		{
+			"ImportPath": "github.com/VividCortex/mysqlerr",
+			"Rev": "93e3dc264d50c8ea98844075ef84224cacdc0c91"
+		},
+		{
+			"ImportPath": "github.com/go-sql-driver/mysql",
+			"Comment": "v1.2-196-g3654d25",
+			"Rev": "3654d25ec346ee8ce71a68431025458d52a38ac0"
+		},
+		{
+			"ImportPath": "github.com/jmoiron/sqlx",
+			"Comment": "sqlx-v1.1-53-g54aec3f",
+			"Rev": "54aec3fd91a2b2129ffaca0d652b8a9223ee2d9e"
+		},
+		{
+			"ImportPath": "github.com/jmoiron/sqlx/reflectx",
+			"Comment": "sqlx-v1.1-53-g54aec3f",
+			"Rev": "54aec3fd91a2b2129ffaca0d652b8a9223ee2d9e"
+		},
+		{
+			"ImportPath": "github.com/skeema/mycli",
+			"Rev": "b6f48da9b7162dc80132b62963c22bc0ffea275c"
+		},
+		{
+			"ImportPath": "github.com/skeema/tengo",
+			"Rev": "348fda9aa062d976470eb82373c82d9d93d78cad"
+		},
+		{
+			"ImportPath": "golang.org/x/crypto/ssh/terminal",
+			"Rev": "bc89c496413265e715159bdc8478ee9a92fdc265"
+		}
+	]
+}

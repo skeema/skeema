@@ -18,8 +18,6 @@ To download, build, and install skeema, run:
 
 `go get github.com/skeema/skeema`
 
-This will be cleaned up in the near future, to provide a build script and freeze dependencies in a vendor dir.
-
 ## Documentation
 
 * [Usage examples and screencasts](doc/examples.md)
