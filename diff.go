@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/skeema/mycli"
@@ -20,7 +19,10 @@ which section of .skeema config files is used for processing. For example,
 running ` + "`" + `skeema diff staging` + "`" + ` will apply config directives from the
 [staging] section of config files, as well as any sectionless directives at the
 top of the file. If no environment name is supplied, the default is
-"production".`
+"production".
+
+An exit code of 0 will be returned if no differences were found, 1 if some
+differences were found, or 2+ if an error occurred.`
 
 	cmd := mycli.NewCommand("diff", summary, desc, DiffHandler)
 	cmd.AddOption(mycli.BoolOption("verify", 0, true, "Test all generated ALTER statements on temporary schema to verify correctness"))
@@ -38,7 +40,7 @@ func DiffHandler(cfg *mycli.Config) error {
 		return err
 	}
 
-	var errCount int
+	var errCount, diffCount int
 	mods := tengo.StatementModifiers{
 		NextAutoInc: tengo.NextAutoIncIfIncreased,
 	}
@@ -73,6 +75,10 @@ func DiffHandler(cfg *mycli.Config) error {
 			if ddl == nil {
 				continue
 			}
+			diffCount++
+			if ddl.Err != nil {
+				errCount++
+			}
 			if statementCounter++; statementCounter == 1 {
 				fmt.Printf("USE %s;\n", tengo.EscapeIdentifier(t.SchemaFromDir.Name))
 			}
@@ -81,12 +87,15 @@ func DiffHandler(cfg *mycli.Config) error {
 		fmt.Println()
 	}
 
-	switch errCount {
-	case 0:
-		return nil
-	case 1:
-		return errors.New("Skipped 1 operation due to error")
-	default:
-		return fmt.Errorf("Skipped %d operations due to errors", errCount)
+	if errCount > 0 {
+		var plural string
+		if errCount > 1 {
+			plural = "s"
+		}
+		return NewExitValue(CodeFatalError, "Skipped %d operation%s due to error%s", errCount, plural, plural)
 	}
+	if diffCount > 0 {
+		return NewExitValue(CodeDifferencesFound, "")
+	}
+	return nil
 }

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -47,7 +46,7 @@ func InitHandler(cfg *mycli.Config) error {
 	separateSchemaSubdir := (onlySchema == "")
 
 	if !cfg.OnCLI("host") {
-		return errors.New("Option --host must be supplied on the command-line")
+		return NewExitValue(CodeBadConfig, "Option --host must be supplied on the command-line")
 	}
 
 	if !cfg.Changed("dir") { // default for dir is to base it on the hostname
@@ -64,13 +63,13 @@ func InitHandler(cfg *mycli.Config) error {
 	}
 	wasNewDir, err := hostDir.CreateIfMissing()
 	if err != nil {
-		return fmt.Errorf("Unable to use specified dir: %s", err)
+		return NewExitValue(CodeCantCreate, "Unable to use specified dir: %s", err)
 	}
 	if hostDir.HasOptionFile() {
-		return fmt.Errorf("Cannot use dir %s: already has .skeema file", hostDir.Path)
+		return NewExitValue(CodeBadConfig, "Cannot use dir %s: already has .skeema file", hostDir.Path)
 	}
 	if hostDir.Config.Changed("schema") && !hostDir.Config.OnCLI("schema") {
-		return fmt.Errorf("Cannot use dir %s: a parent dir already defines a schema", hostDir.Path)
+		return NewExitValue(CodeBadConfig, "Cannot use dir %s: a parent dir already defines a schema", hostDir.Path)
 	}
 
 	// Validate connection-related options (host, port, socket, user, password) by
@@ -80,12 +79,12 @@ func InitHandler(cfg *mycli.Config) error {
 	if err != nil {
 		return err
 	} else if inst == nil {
-		return errors.New("Command line did not specify which instance to connect to")
+		return NewExitValue(CodeBadConfig, "Command line did not specify which instance to connect to")
 	}
 
 	environment := cfg.Get("environment")
 	if environment == "" || strings.ContainsAny(environment, "[]\n\r") {
-		return fmt.Errorf("Environment name \"%s\" is invalid", environment)
+		return NewExitValue(CodeBadConfig, "Environment name \"%s\" is invalid", environment)
 	}
 
 	// Figure out what needs to go in the hostDir's .skeema file.
@@ -107,7 +106,7 @@ func InitHandler(cfg *mycli.Config) error {
 
 	// Write the option file
 	if err := hostDir.CreateOptionFile(hostOptionFile); err != nil {
-		return err
+		return NewExitValue(CodeCantCreate, err.Error())
 	}
 
 	verb := "Using"
@@ -124,7 +123,7 @@ func InitHandler(cfg *mycli.Config) error {
 	var schemas []*tengo.Schema
 	if onlySchema != "" {
 		if !inst.HasSchema(onlySchema) {
-			return fmt.Errorf("Schema %s does not exist on instance %s", onlySchema, inst)
+			return NewExitValue(CodeBadConfig, "Schema %s does not exist on instance %s", onlySchema, inst)
 		}
 		s, err := inst.Schema(onlySchema)
 		if err != nil {
@@ -164,7 +163,7 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 		optionFile := mycli.NewFile(".skeema")
 		optionFile.SetOptionValue("", "schema", s.Name)
 		if schemaDir, err = parentDir.CreateSubdir(s.Name, optionFile); err != nil {
-			return fmt.Errorf("Unable to use directory %s for schema %s: %s", schemaDir.Path, s.Name, err)
+			return NewExitValue(CodeCantCreate, "Unable to use directory %s for schema %s: %s", schemaDir.Path, s.Name, err)
 		}
 	} else {
 		schemaDir = parentDir
@@ -195,7 +194,7 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 			Contents: createStmt,
 		}
 		if length, err := sf.Write(); err != nil {
-			return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
+			return NewExitValue(CodeCantCreate, "Unable to write to %s: %s", sf.Path(), err)
 		} else {
 			fmt.Printf("    Wrote %s (%d bytes)\n", sf.Path(), length)
 		}

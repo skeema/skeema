@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/skeema/mycli"
@@ -159,14 +158,14 @@ func PullHandler(cfg *mycli.Config) error {
 		return err
 	}
 
-	switch errCount {
-	case 0:
+	if errCount == 0 {
 		return nil
-	case 1:
-		return errors.New("Skipped 1 operation due to error")
-	default:
-		return fmt.Errorf("Skipped %d operations due to errors", errCount)
 	}
+	var plural string
+	if errCount > 1 {
+		plural = "s"
+	}
+	return NewExitValue(CodePartialError, "Skipped %d operation%s due to error%s", errCount, plural, plural)
 }
 
 func findNewSchemas(dir *Dir) error {

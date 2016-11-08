@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/skeema/mycli"
@@ -21,7 +20,11 @@ which section of .skeema config files is used for obtaining a database instance
 to test the SQL DDL against. For example, running ` + "`" + `skeema lint staging` + "`" + ` will
 apply config directives from the [staging] section of config files, as well as
 any sectionless directives at the top of the file. If no environment name is 
-supplied, the default is "production".`
+supplied, the default is "production".
+
+An exit code of 0 will be returned if all files were already formatted properly,
+1 if some files were reformatted but all SQL was valid, or 2+ if at least one
+file had SQL syntax errors or some other error occurred.`
 
 	cmd := mycli.NewCommand("lint", summary, desc, LintHandler)
 	cmd.AddArg("environment", "production", false)
@@ -35,7 +38,7 @@ func LintHandler(cfg *mycli.Config) error {
 		return err
 	}
 
-	var errCount, sqlErrCount int
+	var errCount, sqlErrCount, reformatCount int
 	for t := range dir.Targets(false, false) {
 		if t.Err != nil { // we only skip on fatal errors (t.Err), not SQL file errors (t.SQLFileErrors or t.HasError())
 			fmt.Printf("Skipping %s:\n    %s\n", t.Dir, t.Err)
@@ -65,21 +68,24 @@ func LintHandler(cfg *mycli.Config) error {
 					return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
 				} else {
 					fmt.Printf("    Wrote %s (%d bytes) -- updated file to normalize format\n", sf.Path(), length)
+					reformatCount++
 				}
 			}
 		}
 	}
 
+	var plural string
+	if errCount > 1 || (errCount == 0 && sqlErrCount > 1) {
+		plural = "s"
+	}
 	switch {
-	case errCount == 0 && sqlErrCount == 0:
-		return nil
-	case errCount == 1:
-		return errors.New("Skipped 1 operation due to error")
-	case errCount > 1:
-		return fmt.Errorf("Skipped %d operations due to errors", errCount)
-	case sqlErrCount == 1:
-		return errors.New("Found syntax errors in 1 SQL file")
+	case errCount > 0:
+		return NewExitValue(CodeFatalError, "Skipped %d operation%s due to error%s", errCount, plural, plural)
+	case sqlErrCount > 0:
+		return NewExitValue(CodeFatalError, "Found syntax error%s in %d SQL file%s", plural, sqlErrCount, plural)
+	case reformatCount > 0:
+		return NewExitValue(CodeDifferencesFound, "")
 	default:
-		return fmt.Errorf("Found syntax errors in %d SQL files", sqlErrCount)
+		return nil
 	}
 }

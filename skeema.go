@@ -67,8 +67,7 @@ func AddGlobalConfigFiles(cfg *mycli.Config) {
 		var err error
 		cfg.CLI.OptionValues["password"], err = PromptPassword()
 		if err != nil {
-			fmt.Println("Aborting:", err)
-			os.Exit(1)
+			Exit(NewExitValue(CodeNoInput, err.Error()))
 		}
 		cfg.MarkDirty()
 		fmt.Println()
@@ -98,13 +97,8 @@ func main() {
 
 	cfg, err := mycli.ParseCLI(CommandSuite, os.Args)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		Exit(NewExitValue(CodeBadConfig, err.Error()))
 	}
 
-	err = cfg.HandleCommand()
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
+	Exit(cfg.HandleCommand())
 }

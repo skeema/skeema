@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -35,36 +34,36 @@ func AddEnvHandler(cfg *mycli.Config) error {
 		return err
 	}
 	if !dir.Exists() {
-		return errors.New("In add-environment, --dir must refer to a directory that already exists")
+		return NewExitValue(CodeBadConfig, "In add-environment, --dir must refer to a directory that already exists")
 	}
 	if !dir.HasOptionFile() {
-		return fmt.Errorf("Dir %s does not have an existing .skeema file! Can only use `skeema add-environment` on a dir previously created by `skeema init`", dir)
+		return NewExitValue(CodeBadConfig, "Dir %s does not have an existing .skeema file! Can only use `skeema add-environment` on a dir previously created by `skeema init`", dir)
 	}
 
 	hostOptionFile, err := dir.OptionFile()
 	if err != nil || hostOptionFile == nil {
-		return fmt.Errorf("Unable to read .skeema file for %s: %s", dir, err)
+		return NewExitValue(CodeBadInput, "Unable to read .skeema file for %s: %s", dir, err)
 	}
 
 	environment := cfg.Get("environment")
 	if environment == "" || strings.ContainsAny(environment, "[]\n\r") {
-		return fmt.Errorf("Environment name \"%s\" is invalid", environment)
+		return NewExitValue(CodeBadConfig, "Environment name \"%s\" is invalid", environment)
 	}
 	if hostOptionFile.HasSection(environment) {
-		return fmt.Errorf("Environment name \"%s\" already defined in %s", environment, hostOptionFile.Path())
+		return NewExitValue(CodeBadConfig, "Environment name \"%s\" already defined in %s", environment, hostOptionFile.Path())
 	}
 	if !hostOptionFile.SomeSectionHasOption("host") {
-		return errors.New("This command should be run against a --dir whose .skeema file already defines a host for another environment")
+		return NewExitValue(CodeBadConfig, "This command should be run against a --dir whose .skeema file already defines a host for another environment")
 	}
 
 	if !cfg.OnCLI("host") {
-		return errors.New("`skeema add-environment` requires --host to be supplied on CLI")
+		return NewExitValue(CodeBadConfig, "`skeema add-environment` requires --host to be supplied on CLI")
 	}
 	inst, err := dir.FirstInstance()
 	if err != nil {
 		return err
 	} else if inst == nil {
-		return errors.New("Command line did not specify which instance to connect to")
+		return NewExitValue(CodeBadConfig, "Command line did not specify which instance to connect to")
 	}
 
 	hostOptionFile.SetOptionValue(environment, "host", inst.Host)
