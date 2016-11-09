@@ -21,7 +21,8 @@ var reParseCreate = regexp.MustCompile(`(?i)^(.*)\s*create\s+table\s+(?:if\s+not
 // We disallow CREATE TABLE SELECT and CREATE TABLE LIKE expressions
 var reBodyDisallowed = regexp.MustCompile(`(?i)^(as\s+select|select|like|[(]\s+like)`)
 
-// Forbid reading SQL files that are larger than 16KB; we assume legit CREATE TABLE statements should be smaller than this
+// MaxSQLFileSize specifies the largest SQL file that is considered valid;
+// we assume legit CREATE TABLE statements should always be under 16KB.
 const MaxSQLFileSize = 16 * 1024
 
 // IsSQLFile returns true if the supplied os.FileInfo has a .sql extension and
@@ -37,6 +38,7 @@ func IsSQLFile(fi os.FileInfo) bool {
 	return true
 }
 
+// SQLFile represents a file containing a CREATE TABLE statement.
 type SQLFile struct {
 	Dir      *Dir
 	FileName string
@@ -45,17 +47,14 @@ type SQLFile struct {
 	Warnings []error
 }
 
+// Path returns the full absolute path to a SQLFile.
 func (sf *SQLFile) Path() string {
 	return path.Join(sf.Dir.Path, sf.FileName)
 }
 
-func (sf *SQLFile) TableName() string {
-	if !strings.HasSuffix(sf.FileName, ".sql") {
-		return ""
-	}
-	return sf.FileName[0 : len(sf.FileName)-4]
-}
-
+// Read reads the file. Its contents will be validated, and stored in
+// sf.Contents. If the contents were valid, they will be returned; if not,
+// a blank string and an error will be returned.
 func (sf *SQLFile) Read() (string, error) {
 	byteContents, err := ioutil.ReadFile(sf.Path())
 	if err != nil {
@@ -69,6 +68,8 @@ func (sf *SQLFile) Read() (string, error) {
 	return sf.Contents, nil
 }
 
+// Write writes the current value of sf.Contents to the file, returning the
+// number of bytes written and any error.
 func (sf *SQLFile) Write() (int, error) {
 	if !strings.HasSuffix(sf.FileName, ".sql") {
 		return 0, fmt.Errorf("Filename %s does not end in .sql extension", sf.FileName)
@@ -84,6 +85,7 @@ func (sf *SQLFile) Write() (int, error) {
 	return len(value), nil
 }
 
+// Delete unlinks the file.
 func (sf *SQLFile) Delete() error {
 	return os.Remove(sf.Path())
 }

@@ -26,6 +26,7 @@ socket path.`
 	CommandSuite.AddSubCommand(cmd)
 }
 
+// AddEnvHandler is the handler method for `skeema add-environment`
 func AddEnvHandler(cfg *mycli.Config) error {
 	AddGlobalConfigFiles(cfg)
 

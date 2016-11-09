@@ -9,6 +9,10 @@ import (
 	"github.com/skeema/tengo"
 )
 
+// Target represents a unit of operation. For commands that operate recursively
+// on a directory tree, one or more Targets are generated for each leaf
+// directory -- the cartesian product of (instances this dir maps to) x (schemas
+// that this dir maps to on each instance).
 type Target struct {
 	Instance           *tengo.Instance
 	SchemaFromInstance *tengo.Schema
@@ -122,14 +126,13 @@ func (t *Target) obtainSchemaFromDir() {
 	if tx, err = t.lockTempSchema(30 * time.Second); err != nil {
 		t.Err = fmt.Errorf("obtainSchemaFromDir: %s", err)
 		return
-	} else {
-		defer func() {
-			unlockErr := t.unlockTempSchema(tx)
-			if unlockErr != nil && t.Err == nil {
-				t.Err = fmt.Errorf("obtainSchemaFromDir: %s", unlockErr)
-			}
-		}()
 	}
+	defer func() {
+		unlockErr := t.unlockTempSchema(tx)
+		if unlockErr != nil && t.Err == nil {
+			t.Err = fmt.Errorf("obtainSchemaFromDir: %s", unlockErr)
+		}
+	}()
 
 	tempSchema, err := t.Instance.Schema(tempSchemaName)
 	if err != nil {
@@ -203,14 +206,13 @@ func (t Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 	var tx *sql.Tx
 	if tx, err = t.lockTempSchema(30 * time.Second); err != nil {
 		return fmt.Errorf("verifyDiff: %s", err)
-	} else {
-		defer func() {
-			unlockErr := t.unlockTempSchema(tx)
-			if unlockErr != nil && err == nil {
-				err = fmt.Errorf("verifyDiff: %s", unlockErr)
-			}
-		}()
 	}
+	defer func() {
+		unlockErr := t.unlockTempSchema(tx)
+		if unlockErr != nil && err == nil {
+			err = fmt.Errorf("verifyDiff: %s", unlockErr)
+		}
+	}()
 
 	tempSchema, err := t.Instance.Schema(tempSchemaName)
 	if err != nil {

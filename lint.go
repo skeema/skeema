@@ -31,6 +31,7 @@ file had SQL syntax errors or some other error occurred.`
 	CommandSuite.AddSubCommand(cmd)
 }
 
+// LintHandler is the handler method for `skeema lint`
 func LintHandler(cfg *mycli.Config) error {
 	AddGlobalConfigFiles(cfg)
 	dir, err := NewDir(".", cfg)
@@ -64,12 +65,12 @@ func LintHandler(cfg *mycli.Config) error {
 			}
 			if table.CreateStatement() != sf.Contents {
 				sf.Contents = table.CreateStatement()
-				if length, err := sf.Write(); err != nil {
+				var length int
+				if length, err = sf.Write(); err != nil {
 					return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
-				} else {
-					fmt.Printf("    Wrote %s (%d bytes) -- updated file to normalize format\n", sf.Path(), length)
-					reformatCount++
 				}
+				fmt.Printf("    Wrote %s (%d bytes) -- updated file to normalize format\n", sf.Path(), length)
+				reformatCount++
 			}
 		}
 	}

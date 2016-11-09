@@ -14,7 +14,7 @@ Skeema supports a pull-request-based workflow for schema change submission, revi
 
 Requires the [Go programming language toolchain](https://golang.org/dl/).
 
-To download, build, and install skeema, run:
+To download, build, and install Skeema, run:
 
 `go get github.com/skeema/skeema`
 
@@ -30,7 +30,9 @@ To download, build, and install skeema, run:
 
 Skeema is currently in public alpha. Many edge cases are not yet supported, but are coming soon. Testing has primarily been performed against MySQL 5.6 and Percona Server 5.6 so far.
 
-Likewise, several rare MySQL column types and InnoDB features (compression, partitioning, etc) are not yet supported. Skeema is able to *create* or *drop* tables using these features, but not *alter* them. The output of `skeema diff` and `skeema push` clearly displays when this is the case. You may still make such alters directly/manually (outside of Skeema), and then update the corresponding CREATE TABLE files via `skeema pull`.
+Skeema is primarily being tested on Linux and macOS. For now, it cannot be compiled on Windows.
+
+Several InnoDB features (compression, partitioning, etc) and rare/new MySQL column types are not yet supported. Skeema is able to *create* or *drop* tables using these features, but not *alter* them. The output of `skeema diff` and `skeema push` clearly displays when this is the case. You may still make such alters directly/manually (outside of Skeema), and then update the corresponding CREATE TABLE files via `skeema pull`.
 
 ## Authors
 

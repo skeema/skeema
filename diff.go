@@ -33,6 +33,7 @@ differences were found, or 2+ if an error occurred.`
 	CommandSuite.AddSubCommand(cmd)
 }
 
+// DiffHandler is the handler method for `skeema diff`
 func DiffHandler(cfg *mycli.Config) error {
 	AddGlobalConfigFiles(cfg)
 	dir, err := NewDir(".", cfg)

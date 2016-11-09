@@ -31,6 +31,7 @@ top of the file. If no environment name is supplied, the default is
 	CommandSuite.AddSubCommand(cmd)
 }
 
+// PushHandler is the handler method for `skeema push`
 func PushHandler(cfg *mycli.Config) error {
 	AddGlobalConfigFiles(cfg)
 	dir, err := NewDir(".", cfg)

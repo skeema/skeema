@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -16,10 +17,14 @@ const version = "0.1 (pre-release)"
 const rootDesc = `Skeema is a MySQL schema management tool. It allows you to export a database
 schema to the filesystem, and apply online schema changes by modifying files.`
 
-// Root command suite is global. Subcommands get populated by init() functions
-// in each command's source file.
+// CommandSuite is the root command. It is global so that subcommands can be
+// added to it via init() functions in each subcommand's source file.
 var CommandSuite = mycli.NewCommandSuite("skeema", version, rootDesc)
 
+// AddGlobalConfigFiles takes the mycli.Config generated from the CLI and adds
+// global option files as sources. It also handles special processing for a few
+// options. Generally, subcommand handlers should call AddGlobalConfigFiles at
+// the top of the method.
 func AddGlobalConfigFiles(cfg *mycli.Config) {
 	globalFilePaths := []string{"/etc/skeema", "/usr/local/etc/skeema"}
 	home := filepath.Clean(os.Getenv("HOME"))
@@ -74,9 +79,15 @@ func AddGlobalConfigFiles(cfg *mycli.Config) {
 	}
 }
 
+// PromptPassword reads a password from STDIN without echoing the typed
+// characters. Requires that STDIN is a TTY.
 func PromptPassword() (string, error) {
+	stdin := int(syscall.Stdin)
+	if !terminal.IsTerminal(stdin) {
+		return "", errors.New("STDIN must be a TTY to read password")
+	}
 	fmt.Printf("Enter password: ")
-	bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
+	bytePassword, err := terminal.ReadPassword(stdin)
 	if err != nil {
 		return "", err
 	}

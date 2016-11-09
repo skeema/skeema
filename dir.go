@@ -12,6 +12,7 @@ import (
 	"github.com/skeema/tengo"
 )
 
+// Dir represents a directory that Skeema is interacting with.
 type Dir struct {
 	Path    string
 	Config  *mycli.Config // Unified config including this dir's options file (and its parents' open files)
@@ -59,10 +60,12 @@ func (dir *Dir) String() string {
 	return dir.Path
 }
 
+// BaseName returns the name of the directory without the rest of its path.
 func (dir *Dir) BaseName() string {
 	return path.Base(dir.Path)
 }
 
+// CreateIfMissing creates the directory if it does not yet exist.
 func (dir *Dir) CreateIfMissing() (created bool, err error) {
 	fi, err := os.Stat(dir.Path)
 	if err == nil {
@@ -88,23 +91,34 @@ func (dir *Dir) Exists() bool {
 	return (err == nil)
 }
 
+// Delete unlinks the directory and all files within.
 func (dir *Dir) Delete() error {
 	return os.RemoveAll(dir.Path)
 }
 
+// HasFile returns true if the specifed filename exists in dir.
 func (dir *Dir) HasFile(name string) bool {
 	_, err := os.Stat(path.Join(dir.Path, name))
 	return (err == nil)
 }
 
+// HasOptionFile returns true if the directory contains a .skeema option file.
 func (dir *Dir) HasOptionFile() bool {
 	return dir.HasFile(".skeema")
 }
 
+// HasHost returns true if the "host" configuration option has been defined for
+// this directory's configuration (typically either in this directory's .skeema
+// file, or in an ancestor directory .skeema file) for the current environment
+// name.
 func (dir *Dir) HasHost() bool {
 	return dir.Config.Changed("host")
 }
 
+// HasSchema returns true if the "schema" configuration option has been defined
+// for this directory's configuration (typically just in this directory's
+// .skeema file, since directories containing "schema" should not have subdirs
+// of their own) for the current environment name.
 func (dir *Dir) HasSchema() bool {
 	return dir.Config.Changed("schema")
 }
@@ -227,7 +241,7 @@ func (dir *Dir) Subdirs() ([]*Dir, error) {
 	return result, nil
 }
 
-// Subdir creates and returns a new subdir of the current dir.
+// CreateSubdir creates and returns a new subdir of the current dir.
 func (dir *Dir) CreateSubdir(name string, optionFile *mycli.File) (*Dir, error) {
 	subdir := &Dir{
 		Path:    path.Join(dir.Path, name),
@@ -249,6 +263,8 @@ func (dir *Dir) CreateSubdir(name string, optionFile *mycli.File) (*Dir, error) 
 	return subdir, nil
 }
 
+// CreateOptionFile writes the supplied unwritten option file to this dir, and
+// then adds it as a source for this dir's configuration.
 func (dir *Dir) CreateOptionFile(optionFile *mycli.File) error {
 	optionFile.Dir = dir.Path
 	if err := optionFile.Write(false); err != nil {
@@ -259,6 +275,10 @@ func (dir *Dir) CreateOptionFile(optionFile *mycli.File) error {
 	return nil
 }
 
+// Targets returns a channel for obtaining Target objects for this dir.
+// The expand args do not yet have an effect, but will eventually control
+// whether multi-host and multi-schema option values are expanded to all
+// combinations vs just generating the first host and schema.
 func (dir *Dir) Targets(expandInstances, expandSchemas bool) <-chan Target {
 	targets := make(chan Target)
 	go func() {

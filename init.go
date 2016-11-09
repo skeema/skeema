@@ -35,6 +35,7 @@ section of the file.`
 	CommandSuite.AddSubCommand(cmd)
 }
 
+// InitHandler is the handler method for `skeema init`
 func InitHandler(cfg *mycli.Config) error {
 	AddGlobalConfigFiles(cfg)
 
@@ -148,6 +149,12 @@ func InitHandler(cfg *mycli.Config) error {
 	return nil
 }
 
+// PopulateSchemaDir writes out *.sql files for all tables in the specified
+// schema. If makeSubdir==true, a subdir with name matching the schema name
+// will be created, and a .skeem option file will be created. Otherwise, the
+// *.sql files will be put in parentDir, and it will be the caller's
+// responsibility to ensure its .skeema option file exists and maps to the
+// correct schema name.
 func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 	// Ignore any attempt to populate a dir for the temp schema
 	if s.Name == parentDir.Config.Get("temp-schema") {
@@ -193,11 +200,11 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 			FileName: fmt.Sprintf("%s.sql", t.Name),
 			Contents: createStmt,
 		}
-		if length, err := sf.Write(); err != nil {
+		var length int
+		if length, err = sf.Write(); err != nil {
 			return NewExitValue(CodeCantCreate, "Unable to write to %s: %s", sf.Path(), err)
-		} else {
-			fmt.Printf("    Wrote %s (%d bytes)\n", sf.Path(), length)
 		}
+		fmt.Printf("    Wrote %s (%d bytes)\n", sf.Path(), length)
 	}
 	return nil
 }

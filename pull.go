@@ -28,6 +28,7 @@ top of the file. If no environment name is supplied, the default is
 	CommandSuite.AddSubCommand(cmd)
 }
 
+// PullHandler is the handler method for `skeema pull`
 func PullHandler(cfg *mycli.Config) error {
 	AddGlobalConfigFiles(cfg)
 	dir, err := NewDir(".", cfg)
@@ -121,11 +122,11 @@ func PullHandler(cfg *mycli.Config) error {
 					FileName: fmt.Sprintf("%s.sql", table.Name),
 					Contents: createStmt,
 				}
-				if length, err := sf.Write(); err != nil {
+				var length int
+				if length, err = sf.Write(); err != nil {
 					return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
-				} else {
-					fmt.Printf("    Wrote %s (%d bytes) -- updated file to reflect table alterations\n", sf.Path(), length)
 				}
+				fmt.Printf("    Wrote %s (%d bytes) -- updated file to reflect table alterations\n", sf.Path(), length)
 			case tengo.RenameTable:
 				panic(fmt.Errorf("Table renames not yet supported!"))
 			default:
@@ -144,11 +145,11 @@ func PullHandler(cfg *mycli.Config) error {
 				}
 				if table.CreateStatement() != sf.Contents {
 					sf.Contents = table.CreateStatement()
-					if length, err := sf.Write(); err != nil {
+					var length int
+					if length, err = sf.Write(); err != nil {
 						return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
-					} else {
-						fmt.Printf("    Wrote %s (%d bytes) -- updated file to normalize format\n", sf.Path(), length)
 					}
+					fmt.Printf("    Wrote %s (%d bytes) -- updated file to normalize format\n", sf.Path(), length)
 				}
 			}
 		}
