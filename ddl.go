@@ -132,15 +132,20 @@ func (sd *SchemaDiff) String() string {
 	return strings.Join(diffStatements, "")
 }
 
+// ForbiddenDiffError can be returned by TableDiff.Statement when the supplied
+// statement modifiers do not permit the generated TableDiff to be used in this
+// situation.
 type ForbiddenDiffError struct {
 	Reason    string
 	Statement string
 }
 
+// Error satisfies the builtin error interface.
 func (e *ForbiddenDiffError) Error() string {
 	return e.Reason
 }
 
+// NewForbiddenDiffError is a constructor for ForbiddenDiffError.
 func NewForbiddenDiffError(reason, statement string) error {
 	return &ForbiddenDiffError{
 		Reason:    reason,
