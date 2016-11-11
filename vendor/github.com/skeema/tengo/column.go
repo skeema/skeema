@@ -69,7 +69,8 @@ func (c Column) Definition() string {
 		if c.Default.Null {
 			emitDefault = false
 		}
-	} else if emitDefault && c.Default == ColumnDefaultCurrentTimestamp {
+	} else if c.TypeInDB == "timestamp" {
+		// Oddly the timestamp type always displays nullability
 		nullability = " NULL"
 	}
 	if c.AutoIncrement {
