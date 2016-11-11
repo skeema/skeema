@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"log"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/skeema/mycli"
 	"github.com/skeema/tengo"
 )
@@ -94,10 +94,10 @@ func PushHandler(cfg *mycli.Config) error {
 			fmt.Printf(ddl.String())
 			if ddl.Err == nil {
 				if err := ddl.Execute(); err != nil {
-					log.Printf("Error running above statement on %s: %s", t.Instance, err)
+					log.Errorf("Error running above statement on %s: %s", t.Instance, err)
 					skipCount := len(diff.TableDiffs) - n
 					if skipCount > 1 {
-						log.Printf("Skipping %d additional statements on %s %s", skipCount-1, t.Instance, t.SchemaFromDir.Name)
+						log.Errorf("Skipping %d additional statements on %s %s", skipCount-1, t.Instance, t.SchemaFromDir.Name)
 					}
 					errCount += skipCount
 					break

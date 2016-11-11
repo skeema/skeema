@@ -4,6 +4,11 @@
 	"GodepVersion": "v75",
 	"Deps": [
 		{
+			"ImportPath": "github.com/Sirupsen/logrus",
+			"Comment": "v0.11.0-2-g1445b7a",
+			"Rev": "1445b7a38228c041834afc69231b7966b9943397"
+		},
+		{
 			"ImportPath": "github.com/VividCortex/mysqlerr",
 			"Rev": "93e3dc264d50c8ea98844075ef84224cacdc0c91"
 		},
@@ -33,6 +38,10 @@
 		{
 			"ImportPath": "golang.org/x/crypto/ssh/terminal",
 			"Rev": "bc89c496413265e715159bdc8478ee9a92fdc265"
+		},
+		{
+			"ImportPath": "golang.org/x/sys/unix",
+			"Rev": "b699b7032584f0953262cb2788a0ca19bb494703"
 		}
 	]
 }

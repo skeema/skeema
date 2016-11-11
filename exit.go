@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 // ExitValue represents an exit code for an operation. It satisfies the Error
@@ -55,13 +56,17 @@ func Exit(err error) {
 	if err == nil {
 		os.Exit(0)
 	}
+	exitCode := CodeFatalError
+	if ev, ok := err.(*ExitValue); ok {
+		exitCode = ev.Code
+	}
 	message := err.Error()
 	if message != "" {
-		log.Println(message)
+		if exitCode >= CodeFatalError {
+			log.Error(message)
+		} else {
+			log.Info(message)
+		}
 	}
-	if ev, ok := err.(*ExitValue); ok {
-		os.Exit(ev.Code)
-	} else {
-		os.Exit(CodeFatalError)
-	}
+	os.Exit(exitCode)
 }
