@@ -1,3 +1,6 @@
+// Package tengo (Go La Tengo) is a database automation library. In its current
+// form, its functionality is focused on MySQL schema introspection and
+// diff'ing. Future releases will add more general-purpose automation features.
 package tengo
 
 import (
@@ -61,20 +64,22 @@ type TableAlterClause interface {
 
 // SchemaDiff stores a set of differences between two database schemas.
 type SchemaDiff struct {
-	FromSchema *Schema
-	ToSchema   *Schema
-	TableDiffs []TableDiff // a set of statements that, if run, would turn FromSchema into ToSchema
-	SameTables []*Table    // slice of tables that were identical between schemas
+	FromSchema        *Schema
+	ToSchema          *Schema
+	TableDiffs        []TableDiff // a set of statements that, if run, would turn FromSchema into ToSchema
+	SameTables        []*Table    // slice of tables that were identical between schemas
+	UnsupportedTables []*Table    // slice of tables that changed, but in ways not parsable by this version of tengo. Table is version from ToSchema.
 	// TODO: schema-level default charset and collation changes
 }
 
 // NewSchemaDiff computes the set of differences between two database schemas.
 func NewSchemaDiff(from, to *Schema) (*SchemaDiff, error) {
 	result := &SchemaDiff{
-		FromSchema: from,
-		ToSchema:   to,
-		TableDiffs: make([]TableDiff, 0),
-		SameTables: make([]*Table, 0),
+		FromSchema:        from,
+		ToSchema:          to,
+		TableDiffs:        make([]TableDiff, 0),
+		SameTables:        make([]*Table, 0),
+		UnsupportedTables: make([]*Table, 0),
 	}
 
 	fromTablesByName, fromErr := from.TablesByName()
@@ -104,8 +109,10 @@ func NewSchemaDiff(from, to *Schema) (*SchemaDiff, error) {
 		origTable := fromTables[n]
 		newTable, stillExists := toTablesByName[origTable.Name]
 		if stillExists {
-			clauses := origTable.Diff(newTable)
-			if len(clauses) > 0 {
+			clauses, supported := origTable.Diff(newTable)
+			if !supported {
+				result.UnsupportedTables = append(result.UnsupportedTables, newTable)
+			} else if len(clauses) > 0 {
 				alter := AlterTable{
 					Table:   origTable,
 					Clauses: clauses,

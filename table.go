@@ -108,7 +108,7 @@ func (t Table) HasAutoIncrement() bool {
 }
 
 // Diff returns a set of differences between this table and another table.
-func (t *Table) Diff(to *Table) []TableAlterClause {
+func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	from := t // keeping name as t in method definition to satisfy linter
 	if from.Name != to.Name {
 		panic(errors.New("Table renaming not yet supported"))
@@ -121,18 +121,17 @@ func (t *Table) Diff(to *Table) []TableAlterClause {
 	// We do this check prior to the UnsupportedDDL check so that we only emit the
 	// warning if the tables actually changed.
 	if from.createStatement != "" && from.createStatement == to.createStatement {
-		return []TableAlterClause{}
+		return []TableAlterClause{}, true
 	}
 
 	if from.UnsupportedDDL || to.UnsupportedDDL {
-		fmt.Printf("-- Ignoring table %s: unable to diff due to use of unsupported features\n", from.Name)
-		return nil
+		return nil, false
 	}
 
 	// Process column drops, modifications, adds. Must be done in this specific order
 	// so that column reordering works properly.
 	cc := from.compareColumnExistence(to)
-	clauses := cc.columnDrops()
+	clauses = cc.columnDrops()
 	clauses = append(clauses, cc.columnModifications()...)
 	clauses = append(clauses, cc.columnAdds()...)
 
@@ -178,7 +177,7 @@ func (t *Table) Diff(to *Table) []TableAlterClause {
 		clauses = append(clauses, cai)
 	}
 
-	return clauses
+	return clauses, true
 }
 
 func (t *Table) compareColumnExistence(other *Table) columnsComparison {
