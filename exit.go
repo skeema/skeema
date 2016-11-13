@@ -54,6 +54,7 @@ func (ev *ExitValue) Error() string {
 // if err is nil, exit code 0 will be used; if non-nil then exit code 2.
 func Exit(err error) {
 	if err == nil {
+		log.Debug("Exit code 0 (SUCCESS)")
 		os.Exit(0)
 	}
 	exitCode := CodeFatalError
@@ -65,8 +66,9 @@ func Exit(err error) {
 		if exitCode >= CodeFatalError {
 			log.Error(message)
 		} else {
-			log.Info(message)
+			log.Warn(message)
 		}
 	}
+	log.Debugf("Exit code %d", exitCode)
 	os.Exit(exitCode)
 }

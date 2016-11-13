@@ -72,8 +72,10 @@ func NewDDLStatement(diff tengo.TableDiff, mods tengo.StatementModifiers, target
 	return ddl
 }
 
-// String returns a string representation of ddl. This will be annotated if
-// ddl.Err is non-nil and/or if ddl represents an external command.
+// String returns a string representation of ddl. If an external command is in
+// use, the returned string will be prefixed with "\!", the MySQL CLI command
+// shortcut for "system" shellout. If ddl.Err is non-nil, the returned string
+// will be commented-out by wrapping in /* ... */ long-style comment.
 func (ddl *DDLStatement) String() string {
 	if ddl == nil {
 		return ""
@@ -85,9 +87,9 @@ func (ddl *DDLStatement) String() string {
 		stmt = fmt.Sprintf("%s;", ddl.stmt)
 	}
 	if ddl.Err != nil {
-		return fmt.Sprintf("-- %s. The following DDL statement will be skipped. See --help for more information.\n/* %s*/\n", ddl.Err, stmt)
+		stmt = fmt.Sprintf("/* %s */", stmt)
 	}
-	return fmt.Sprintf("%s\n", stmt)
+	return stmt
 }
 
 // Execute runs the DDL statement, either by running a SQL query against a DB,

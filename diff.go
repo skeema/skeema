@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/skeema/mycli"
 	"github.com/skeema/tengo"
 )
@@ -41,25 +42,28 @@ func DiffHandler(cfg *mycli.Config) error {
 		return err
 	}
 
-	var errCount, diffCount int
+	var errCount, diffCount, unsupportedCount int // total counts, across all targets
 	mods := tengo.StatementModifiers{
 		NextAutoInc: tengo.NextAutoIncIfIncreased,
 	}
 
 	for t := range dir.Targets(false, false) {
 		if hasErrors, firstErr := t.HasErrors(); hasErrors {
-			fmt.Printf("-- Skipping %s:\n--    %s\n\n", t.Dir, firstErr)
+			log.Errorf("Skipping %s:", t.Dir)
+			log.Errorf("    %s", firstErr)
+			fmt.Println()
 			errCount++
 			continue
 		}
 
-		fmt.Printf("-- Diff of %s %s vs %s/*.sql\n", t.Instance, t.SchemaFromDir.Name, t.Dir)
+		log.Infof("Generating diff of %s %s vs %s/*.sql", t.Instance, t.SchemaFromDir.Name, t.Dir)
 		diff, err := tengo.NewSchemaDiff(t.SchemaFromInstance, t.SchemaFromDir)
 		if err != nil {
 			return err
 		}
 		if t.SchemaFromInstance == nil {
 			// TODO: support CREATE DATABASE schema-level options
+			fmt.Printf("-- instance: %s\n", t.Instance)
 			fmt.Printf("%s;\n", t.SchemaFromDir.CreateStatement())
 		}
 		if cfg.GetBool("verify") && len(diff.TableDiffs) > 0 {
@@ -70,33 +74,53 @@ func DiffHandler(cfg *mycli.Config) error {
 
 		mods.AllowDropTable = t.Dir.Config.GetBool("allow-drop-table")
 		mods.AllowDropColumn = t.Dir.Config.GetBool("allow-drop-column")
-		var statementCounter int
+		var targetStmtCount int
 		for _, tableDiff := range diff.TableDiffs {
 			ddl := NewDDLStatement(tableDiff, mods, t)
 			if ddl == nil {
+				// skip blank DDL (which may happen due to NextAutoInc modifier)
 				continue
+			}
+			if targetStmtCount++; targetStmtCount == 1 {
+				fmt.Printf("-- instance: %s\n", t.Instance)
+				fmt.Printf("USE %s;\n", tengo.EscapeIdentifier(t.SchemaFromDir.Name))
 			}
 			diffCount++
 			if ddl.Err != nil {
+				log.Errorf("%s. The following DDL statement will be skipped. See --help for more information.", ddl.Err)
 				errCount++
 			}
-			if statementCounter++; statementCounter == 1 {
-				fmt.Printf("USE %s;\n", tengo.EscapeIdentifier(t.SchemaFromDir.Name))
-			}
-			fmt.Printf(ddl.String())
+			fmt.Println(ddl.String())
+		}
+		for _, table := range diff.UnsupportedTables {
+			log.Warnf("Skipping table %s: unable to generate ALTER TABLE due to use of unsupported features", table.Name)
+			unsupportedCount++
+			targetStmtCount++
+		}
+		if targetStmtCount == 0 {
+			log.Info("No differences found")
 		}
 		fmt.Println()
 	}
 
-	if errCount > 0 {
-		var plural string
-		if errCount > 1 {
-			plural = "s"
+	if errCount+unsupportedCount == 0 {
+		if diffCount > 0 {
+			return NewExitValue(CodeDifferencesFound, "")
 		}
-		return NewExitValue(CodeFatalError, "Skipped %d operation%s due to error%s", errCount, plural, plural)
+		return nil
 	}
-	if diffCount > 0 {
-		return NewExitValue(CodeDifferencesFound, "")
+	var plural, reason string
+	code := CodeFatalError
+	if errCount+unsupportedCount > 1 {
+		plural = "s"
 	}
-	return nil
+	if errCount == 0 {
+		code = CodePartialError
+		reason = "unsupported feature"
+	} else if unsupportedCount == 0 {
+		reason = "error"
+	} else {
+		reason = "unsupported features or error"
+	}
+	return NewExitValue(code, "Skipped %d operation%s due to %s%s", errCount+unsupportedCount, plural, reason, plural)
 }

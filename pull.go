@@ -134,6 +134,22 @@ func PullHandler(cfg *mycli.Config) error {
 			}
 		}
 
+		// Tables that use features not supported by tengo diff still need files
+		// updated. Handle same as AlterTable case, since created/dropped tables don't
+		// ever end up in UnsupportedTables since they don't do a diff operation.
+		for _, table := range diff.UnsupportedTables {
+			sf := SQLFile{
+				Dir:      t.Dir,
+				FileName: fmt.Sprintf("%s.sql", table.Name),
+				Contents: table.CreateStatement(),
+			}
+			var length int
+			if length, err = sf.Write(); err != nil {
+				return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
+			}
+			fmt.Printf("    Wrote %s (%d bytes) -- updated file to reflect table alterations\n", sf.Path(), length)
+		}
+
 		if dir.Config.GetBool("normalize") {
 			for _, table := range diff.SameTables {
 				sf := SQLFile{

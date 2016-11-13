@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/skeema/mycli"
 	"golang.org/x/crypto/ssh/terminal"
 )
@@ -77,6 +78,10 @@ func AddGlobalConfigFiles(cfg *mycli.Config) {
 		cfg.MarkDirty()
 		fmt.Println()
 	}
+
+	if cfg.GetBool("debug") {
+		log.SetLevel(log.DebugLevel)
+	}
 }
 
 // PromptPassword reads a password from STDIN without echoing the typed
@@ -105,6 +110,7 @@ func main() {
 	CommandSuite.AddOption(mycli.StringOption("schema", 0, "", "Database schema name").Hidden())
 	CommandSuite.AddOption(mycli.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema to use for intermediate operations. Will be created and dropped unless --reuse-temp-schema enabled."))
 	CommandSuite.AddOption(mycli.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done. Useful for running without create/drop database privileges."))
+	CommandSuite.AddOption(mycli.BoolOption("debug", 0, false, "Enable debug logging"))
 
 	cfg, err := mycli.ParseCLI(CommandSuite, os.Args)
 	if err != nil {

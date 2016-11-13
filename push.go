@@ -39,7 +39,7 @@ func PushHandler(cfg *mycli.Config) error {
 		return err
 	}
 
-	var errCount int
+	var errCount, unsupportedCount int // total counts, across all targets
 	mods := tengo.StatementModifiers{
 		NextAutoInc: tengo.NextAutoIncIfIncreased,
 	}
@@ -48,13 +48,15 @@ func PushHandler(cfg *mycli.Config) error {
 	// use multiple worker goroutines all pulling instances off the channel
 	for t := range dir.Targets(true, true) {
 		if hasErrors, firstErr := t.HasErrors(); hasErrors {
-			fmt.Printf("\nSkipping %s:\n    %s\n", t.Dir, firstErr)
+			log.Errorf("Skipping %s:", t.Dir)
+			log.Errorf("    %s", firstErr)
+			fmt.Println()
 			t.Done()
 			errCount++
 			continue
 		}
 
-		fmt.Printf("\nPushing changes from %s/*.sql to %s %s...\n", t.Dir, t.Instance, t.SchemaFromDir.Name)
+		log.Infof("Pushing changes from %s/*.sql to %s %s", t.Dir, t.Instance, t.SchemaFromDir.Name)
 		diff, err := tengo.NewSchemaDiff(t.SchemaFromInstance, t.SchemaFromDir)
 		if err != nil {
 			t.Done()
@@ -68,11 +70,8 @@ func PushHandler(cfg *mycli.Config) error {
 				t.Done()
 				return fmt.Errorf("Error creating schema %s on %s: %s", t.SchemaFromDir.Name, t.Instance, err)
 			}
+			fmt.Printf("-- instance: %s\n", t.Instance)
 			fmt.Printf("%s;\n", t.SchemaFromDir.CreateStatement())
-		} else if len(diff.TableDiffs) == 0 {
-			fmt.Println("(nothing to do)")
-			t.Done()
-			continue
 		}
 
 		if t.Dir.Config.GetBool("verify") && len(diff.TableDiffs) > 0 {
@@ -84,42 +83,60 @@ func PushHandler(cfg *mycli.Config) error {
 
 		mods.AllowDropTable = t.Dir.Config.GetBool("allow-drop-table")
 		mods.AllowDropColumn = t.Dir.Config.GetBool("allow-drop-column")
-		var statementCounter int
+		var targetStmtCount int
 		for n, tableDiff := range diff.TableDiffs {
 			ddl := NewDDLStatement(tableDiff, mods, t)
 			if ddl == nil {
+				// skip blank DDL (which may happen due to NextAutoInc modifier)
 				continue
 			}
-			statementCounter++
-			fmt.Printf(ddl.String())
-			if ddl.Err == nil {
-				if err := ddl.Execute(); err != nil {
-					log.Errorf("Error running above statement on %s: %s", t.Instance, err)
-					skipCount := len(diff.TableDiffs) - n
-					if skipCount > 1 {
-						log.Errorf("Skipping %d additional statements on %s %s", skipCount-1, t.Instance, t.SchemaFromDir.Name)
-					}
-					errCount += skipCount
-					break
+			if targetStmtCount++; targetStmtCount == 1 {
+				fmt.Printf("-- instance: %s\n", t.Instance)
+				fmt.Printf("USE %s;\n", tengo.EscapeIdentifier(t.SchemaFromDir.Name))
+			}
+			if ddl.Err != nil {
+				log.Errorf("%s. The following DDL statement will be skipped. See --help for more information.", ddl.Err)
+				errCount++
+			}
+			fmt.Println(ddl.String())
+			if ddl.Err == nil && ddl.Execute() != nil {
+				log.Errorf("Error running above statement on %s: %s", t.Instance, ddl.Err)
+				skipCount := len(diff.TableDiffs) - n
+				if skipCount > 1 {
+					log.Warnf("Skipping %d additional statements on %s %s", skipCount-1, t.Instance, t.SchemaFromDir.Name)
 				}
+				errCount += skipCount
+				break
 			}
 		}
-
-		// If we had diffs but they were all no-ops due to StatementModifiers,
-		// still display message about no actions taken
-		if statementCounter == 0 {
-			fmt.Println("(nothing to do)")
+		for _, table := range diff.UnsupportedTables {
+			targetStmtCount++
+			unsupportedCount++
+			log.Warnf("Skipping table %s: unable to generate ALTER TABLE due to use of unsupported features", table.Name)
 		}
 
+		if targetStmtCount == 0 {
+			log.Info("(nothing to do)")
+		}
+		fmt.Println()
 		t.Done()
 	}
 
-	if errCount == 0 {
+	if errCount+unsupportedCount == 0 {
 		return nil
 	}
-	var plural string
-	if errCount > 1 {
+	var plural, reason string
+	code := CodeFatalError
+	if errCount+unsupportedCount > 1 {
 		plural = "s"
 	}
-	return NewExitValue(CodePartialError, "Skipped %d operation%s due to error%s", errCount, plural, plural)
+	if errCount == 0 {
+		code = CodePartialError
+		reason = "unsupported feature"
+	} else if unsupportedCount == 0 {
+		reason = "error"
+	} else {
+		reason = "unsupported features or error"
+	}
+	return NewExitValue(code, "Skipped %d operation%s due to %s%s", errCount+unsupportedCount, plural, reason, plural)
 }

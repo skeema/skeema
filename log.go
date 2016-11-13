@@ -26,7 +26,7 @@ func (f *customFormatter) Format(entry *log.Entry) ([]byte, error) {
 		b = &bytes.Buffer{}
 	}
 
-	var startColor, endColor string
+	var startColor, endColor, spacing string
 	if f.isTerminal {
 		endColor = "\x1b[0m"
 		switch entry.Level {
@@ -42,8 +42,15 @@ func (f *customFormatter) Format(entry *log.Entry) ([]byte, error) {
 			endColor = "" // no color
 		}
 	}
-	levelText := fmt.Sprintf("[%s%s%s]", startColor, strings.ToUpper(entry.Level.String()), endColor)
+	levelName := strings.ToUpper(entry.Level.String())
+	if levelName == "WARNING" {
+		levelName = "WARN"
+	}
+	if len(levelName) == 4 { // align level for INFO or WARN; other levels are all 5 chars
+		spacing = " "
+	}
+	levelText := fmt.Sprintf("[%s%s%s]%s", startColor, levelName, endColor, spacing)
 
-	fmt.Fprintf(b, "%s %-7s %s\n", entry.Time.Format("2006-01-02 15:04:05"), levelText, entry.Message)
+	fmt.Fprintf(b, "%s %s %s\n", entry.Time.Format("2006-01-02 15:04:05"), levelText, entry.Message)
 	return b.Bytes(), nil
 }
