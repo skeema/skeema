@@ -49,7 +49,7 @@ func BoolOption(long string, short rune, defaultValue bool, description string) 
 	if defaultValue {
 		defaultAsStr = "1"
 	} else {
-		defaultAsStr = "0"
+		defaultAsStr = ""
 	}
 	return &Option{
 		Name:         strings.Replace(long, "_", "-", -1),
@@ -71,6 +71,9 @@ func (opt *Option) Hidden() *Option {
 // ValueRequired marks an Option as needing a value, so it will be an error if
 // the option is supplied alone without any corresponding value.
 func (opt *Option) ValueRequired() *Option {
+	if opt.Type == OptionTypeBool {
+		panic(fmt.Errorf("Option %s: boolean options cannot have required value", opt.Name))
+	}
 	opt.RequireValue = true
 	return opt
 }
@@ -87,7 +90,7 @@ func (opt *Option) Usage(maxNameLength int) string {
 	if opt.HiddenOnCLI {
 		return ""
 	}
-	var shorthand, long, optType, value, def string
+	var shorthand, long, optType, def string
 
 	if opt.Shorthand > 0 {
 		shorthand = fmt.Sprintf("-%c,", opt.Shorthand)
@@ -102,15 +105,24 @@ func (opt *Option) Usage(maxNameLength int) string {
 		optType = "string"
 	}
 
-	if opt.RequireValue {
-		value = fmt.Sprintf(" %s", optType)
-	} else if opt.Type != OptionTypeBool || opt.HasNonzeroDefault() {
-		value = fmt.Sprintf("[=%s]", optType)
+	if opt.Type == OptionTypeBool {
+		if opt.HasNonzeroDefault() {
+			long = fmt.Sprintf("[skip-]%s", opt.Name)
+		} else {
+			long = opt.Name
+		}
+	} else if opt.RequireValue {
+		long = fmt.Sprintf("%s %s", opt.Name, optType)
+	} else {
+		long = fmt.Sprintf("%s[=%s]", opt.Name, optType)
 	}
-	long = fmt.Sprintf("%s%s", opt.Name, value)
 
 	if opt.HasNonzeroDefault() {
-		def = fmt.Sprintf(" (default %s)", opt.PrintableDefault())
+		if opt.Type == OptionTypeBool {
+			def = fmt.Sprintf(" (enabled by default; disable with --skip-%s)", opt.Name)
+		} else {
+			def = fmt.Sprintf(" (default %s)", opt.PrintableDefault())
+		}
 	}
 
 	maxNameLength += 9 // additional space for worst-case "[=string]" suffix
@@ -152,10 +164,11 @@ func (opt *Option) PrintableDefault() string {
 }
 
 // NormalizeOptionToken takes a string of form "foo=bar" or just "foo", and
-// parses it into separate key and value. It also returns whether the option
-// name had a "loose-" prefix, meaning that the calling parser shouldn't
-// return an error if the key does not correspond to any existing option.
-func NormalizeOptionToken(arg string) (key, value string, loose bool) {
+// parses it into separate key and value. It also returns whether the arg
+// included a value (to tell "" vs no-value) and whether it had a "loose-"
+// prefix, meaning that the calling parser shouldn't return an error if the key
+// does not correspond to any existing option.
+func NormalizeOptionToken(arg string) (key, value string, hasValue, loose bool) {
 	tokens := strings.SplitN(arg, "=", 2)
 	key = strings.TrimFunc(tokens[0], unicode.IsSpace)
 	if key == "" {
@@ -181,20 +194,24 @@ func NormalizeOptionToken(arg string) (key, value string, loose bool) {
 	}
 
 	if len(tokens) > 1 {
+		hasValue = true
 		value = strings.TrimFunc(tokens[1], unicode.IsSpace)
-		// negated and value supplied: set to falsey value of "0" UNLESS the value is
+		// negated and value supplied: set to falsey value of "" UNLESS the value is
 		// also falsey, in which case we have a double-negative, meaning enable
 		if negated {
 			switch strings.ToLower(value) {
 			case "off", "false", "0":
 				value = "1"
 			default:
-				value = "0"
+				value = ""
 			}
 		}
 	} else if negated {
-		// No value supplied and negated: set to falsey value of "0"
-		value = "0"
+		// No value supplied and negated: set to falsey value of ""
+		value = ""
+
+		// But negation still satisfies "having a value" for RequireValue options
+		hasValue = true
 	}
 	return
 }
@@ -202,7 +219,7 @@ func NormalizeOptionToken(arg string) (key, value string, loose bool) {
 // NormalizeOptionName is a convenience function that only returns the "key"
 // portion of NormalizeOptionToken.
 func NormalizeOptionName(name string) string {
-	ret, _, _ := NormalizeOptionToken(name)
+	ret, _, _, _ := NormalizeOptionToken(name)
 	return ret
 }
 

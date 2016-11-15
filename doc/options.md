@@ -28,7 +28,8 @@ For string or int options where the value is *optional*, such as the [password o
 Boolean options never require a value. They may be supplied in any of these formats:
 
 * --option-name (implies =true)
-* --option-name=value (value of "false" or "0" is treated as false, any other is treated as true)
+* --skip-option-name (same meaning as --option-name=false)
+* --option-name=value (value of "false", "off", or "0" is treated as false, any other is treated as true)
 * -o (implies =true)
 
 The short form of boolean options may be "stacked". For example, if -o and -x are both boolean options, you may supply -xo to set both at once.

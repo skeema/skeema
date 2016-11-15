@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // CommandLine stores state relating to executing an application.
@@ -23,7 +24,7 @@ func (cli *CommandLine) OptionValue(optionName string) (string, bool) {
 }
 
 func (cli *CommandLine) parseLongArg(arg string, args *[]string, longOptionIndex map[string]*Option) error {
-	key, value, loose := NormalizeOptionToken(arg)
+	key, value, hasValue, loose := NormalizeOptionToken(arg)
 	opt, found := longOptionIndex[key]
 	if !found {
 		if loose {
@@ -32,16 +33,19 @@ func (cli *CommandLine) parseLongArg(arg string, args *[]string, longOptionIndex
 		return OptionNotDefinedError{key, "CLI"}
 	}
 
-	if value == "" {
+	// Use returned hasValue boolean instead of comparing value to "", since "" may
+	// be set explicitly (--some-opt='') or implicitly (--skip-some-bool-opt) and
+	// both of those cases treat hasValue=true
+	if !hasValue {
 		if opt.RequireValue {
-			// Value required: allow format "--foo bar" in addition to "--foo=bar"
-			if len(*args) == 0 || (*args)[0][0] == '-' {
+			// Value required: slurp next arg to allow format "--foo bar" in addition to "--foo=bar"
+			if len(*args) == 0 || strings.HasPrefix((*args)[0], "-") {
 				return OptionMissingValueError{opt.Name, "CLI"}
 			}
 			value = (*args)[0]
 			*args = (*args)[1:]
 		} else if opt.Type == OptionTypeBool {
-			// Option without value indicates option is being enabled if boolean
+			// Boolean without value is treated as true
 			value = "1"
 		}
 	}
@@ -68,7 +72,7 @@ func (cli *CommandLine) parseShortArgs(arg string, args *[]string, shortOptionIn
 			value = string(runeList)
 			done = true
 		} else if opt.RequireValue { // "-x value", only supported if opt requires a value
-			if len(*args) > 0 && (*args)[0][0] != '-' {
+			if len(*args) > 0 && !strings.HasPrefix((*args)[0], "-") {
 				value = (*args)[0]
 				*args = (*args)[1:]
 			} else {

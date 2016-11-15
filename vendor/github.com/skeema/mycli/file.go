@@ -165,7 +165,7 @@ func (f *File) Parse(cfg *Config) error {
 		}
 
 		tokens := strings.SplitN(line, "#", 2)
-		key, value, loose := NormalizeOptionToken(tokens[0])
+		key, value, hasValue, loose := NormalizeOptionToken(tokens[0])
 		source := fmt.Sprintf("%s line %d", f.Path(), lineNumber)
 		opt := cfg.FindOption(key)
 		if opt == nil {
@@ -175,7 +175,7 @@ func (f *File) Parse(cfg *Config) error {
 				return OptionNotDefinedError{key, source}
 			}
 		}
-		if value == "" {
+		if !hasValue {
 			if opt.RequireValue {
 				return OptionMissingValueError{opt.Name, source}
 			} else if opt.Type == OptionTypeBool {
