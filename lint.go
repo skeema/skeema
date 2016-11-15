@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"os"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/skeema/mycli"
 )
 
@@ -42,15 +44,16 @@ func LintHandler(cfg *mycli.Config) error {
 	var errCount, sqlErrCount, reformatCount int
 	for t := range dir.Targets(false, false) {
 		if t.Err != nil { // we only skip on fatal errors (t.Err), not SQL file errors (t.SQLFileErrors or t.HasError())
-			fmt.Printf("Skipping %s:\n    %s\n", t.Dir, t.Err)
+			log.Errorf("Skipping %s:", t.Dir)
+			log.Errorf("    %s\n", t.Err)
 			errCount++
 			continue
 		}
 
-		fmt.Printf("Linting %s...\n", t.Dir)
+		log.Infof("Linting %s", t.Dir)
 
 		for _, sf := range t.SQLFileErrors {
-			fmt.Printf("    %s\n", sf.Error)
+			log.Error(sf.Error)
 			sqlErrCount++
 		}
 
@@ -69,10 +72,11 @@ func LintHandler(cfg *mycli.Config) error {
 				if length, err = sf.Write(); err != nil {
 					return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
 				}
-				fmt.Printf("    Wrote %s (%d bytes) -- updated file to normalize format\n", sf.Path(), length)
+				log.Infof("Wrote %s (%d bytes) -- updated file to normalize format", sf.Path(), length)
 				reformatCount++
 			}
 		}
+		os.Stderr.WriteString("\n")
 	}
 
 	var plural string

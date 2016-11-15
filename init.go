@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/skeema/mycli"
 	"github.com/skeema/tengo"
 )
@@ -118,7 +120,7 @@ func InitHandler(cfg *mycli.Config) error {
 	if !separateSchemaSubdir {
 		suffix = "; skipping schema-level subdirs"
 	}
-	fmt.Printf("%s host dir %s for %s%s\n", verb, hostDir.Path, inst, suffix)
+	log.Infof("%s host dir %s for %s%s\n", verb, hostDir.Path, inst, suffix)
 
 	// Build list of schemas
 	var schemas []*tengo.Schema
@@ -181,7 +183,7 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 		}
 	}
 
-	fmt.Printf("Populating %s...\n", schemaDir.Path)
+	log.Infof("Populating %s", schemaDir.Path)
 	tables, err := s.Tables()
 	if err != nil {
 		return err
@@ -204,7 +206,8 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 		if length, err = sf.Write(); err != nil {
 			return NewExitValue(CodeCantCreate, "Unable to write to %s: %s", sf.Path(), err)
 		}
-		fmt.Printf("    Wrote %s (%d bytes)\n", sf.Path(), length)
+		log.Infof("Wrote %s (%d bytes)", sf.Path(), length)
 	}
+	os.Stderr.WriteString("\n")
 	return nil
 }

@@ -50,8 +50,7 @@ func DiffHandler(cfg *mycli.Config) error {
 	for t := range dir.Targets(false, false) {
 		if hasErrors, firstErr := t.HasErrors(); hasErrors {
 			log.Errorf("Skipping %s:", t.Dir)
-			log.Errorf("    %s", firstErr)
-			fmt.Println()
+			log.Errorf("    %s\n", firstErr)
 			errCount++
 			continue
 		}
@@ -98,9 +97,10 @@ func DiffHandler(cfg *mycli.Config) error {
 			targetStmtCount++
 		}
 		if targetStmtCount == 0 {
-			log.Info("No differences found")
+			log.Info("No differences found\n")
+		} else {
+			fmt.Println()
 		}
-		fmt.Println()
 	}
 
 	if errCount+unsupportedCount == 0 {

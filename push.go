@@ -49,8 +49,7 @@ func PushHandler(cfg *mycli.Config) error {
 	for t := range dir.Targets(true, true) {
 		if hasErrors, firstErr := t.HasErrors(); hasErrors {
 			log.Errorf("Skipping %s:", t.Dir)
-			log.Errorf("    %s", firstErr)
-			fmt.Println()
+			log.Errorf("    %s\n", firstErr)
 			t.Done()
 			errCount++
 			continue
@@ -116,9 +115,10 @@ func PushHandler(cfg *mycli.Config) error {
 		}
 
 		if targetStmtCount == 0 {
-			log.Info("(nothing to do)")
+			log.Info("(nothing to do)\n")
+		} else {
+			fmt.Println()
 		}
-		fmt.Println()
 		t.Done()
 	}
 

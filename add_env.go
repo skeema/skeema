@@ -1,10 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/skeema/mycli"
 )
 
@@ -83,6 +83,6 @@ func AddEnvHandler(cfg *mycli.Config) error {
 	}
 	dir.Config.MarkDirty()
 
-	fmt.Printf("Added environment [%s] to %s\n", environment, hostOptionFile.Path())
+	log.Infof("Added environment [%s] to %s", environment, hostOptionFile.Path())
 	return nil
 }

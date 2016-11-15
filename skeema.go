@@ -38,14 +38,15 @@ func AddGlobalConfigFiles(cfg *mycli.Config) {
 			continue
 		}
 		if err := f.Read(); err != nil {
-			fmt.Printf("Ignoring global file %s due to read error: %s\n", f.Path(), err)
+			log.Warnf("Ignoring global option file %s due to read error: %s", f.Path(), err)
 			continue
 		}
 		if strings.HasSuffix(path, ".my.cnf") {
 			f.IgnoreUnknownOptions = true
 		}
 		if err := f.Parse(cfg); err != nil {
-			fmt.Printf("Ignoring global file %s due to parse error: %s\n", f.Path(), err)
+			log.Warnf("Ignoring global option file %s due to parse error: %s", f.Path(), err)
+			continue
 		}
 		if strings.HasSuffix(path, ".my.cnf") {
 			_ = f.UseSection("skeema", "client") // safe to ignore error (doesn't matter if section doesn't exist)

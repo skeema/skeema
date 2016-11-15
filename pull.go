@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"os"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/skeema/mycli"
 	"github.com/skeema/tengo"
 )
@@ -40,19 +42,20 @@ func PullHandler(cfg *mycli.Config) error {
 
 	for t := range dir.Targets(false, false) {
 		if t.Err != nil { // we only skip on fatal errors (t.Err), not SQL file errors (t.SQLFileErrors or t.HasError())
-			fmt.Printf("Skipping %s:\n    %s\n", t.Dir, t.Err)
+			log.Errorf("Skipping %s:", t.Dir)
+			log.Errorf("    %s\n", t.Err)
 			errCount++
 			continue
 		}
 
-		fmt.Printf("Updating %s...\n", t.Dir)
+		log.Infof("Updating %s", t.Dir)
 
 		// If schema doesn't exist on instance, remove the corresponding dir
 		if t.SchemaFromInstance == nil {
 			if err := t.Dir.Delete(); err != nil {
 				return fmt.Errorf("Unable to delete directory %s: %s", t.Dir, err)
 			}
-			fmt.Printf("    Deleted directory %s -- schema no longer exists\n", t.Dir)
+			log.Infof("Deleted directory %s -- schema no longer exists\n", t.Dir)
 			continue
 		}
 
@@ -93,9 +96,9 @@ func PullHandler(cfg *mycli.Config) error {
 					// SQL files with syntax errors will result in tengo.CreateTable since
 					// the temp schema will be missing the table, however we can detect this
 					// scenario by looking in the Target's SQLFileErrors
-					fmt.Printf("    Wrote %s (%d bytes) -- updated file to replace invalid SQL\n", sf.Path(), length)
+					log.Infof("Wrote %s (%d bytes) -- updated file to replace invalid SQL", sf.Path(), length)
 				} else {
-					fmt.Printf("    Wrote %s (%d bytes) -- new table\n", sf.Path(), length)
+					log.Infof("Wrote %s (%d bytes) -- new table", sf.Path(), length)
 				}
 			case tengo.DropTable:
 				table := td.Table
@@ -106,7 +109,7 @@ func PullHandler(cfg *mycli.Config) error {
 				if err := sf.Delete(); err != nil {
 					return fmt.Errorf("Unable to delete %s: %s", sf.Path(), err)
 				}
-				fmt.Printf("    Deleted %s -- table no longer exists\n", sf.Path())
+				log.Infof("Deleted %s -- table no longer exists", sf.Path())
 			case tengo.AlterTable:
 				// skip if mods caused the diff to be a no-op
 				if stmt == "" {
@@ -126,11 +129,11 @@ func PullHandler(cfg *mycli.Config) error {
 				if length, err = sf.Write(); err != nil {
 					return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
 				}
-				fmt.Printf("    Wrote %s (%d bytes) -- updated file to reflect table alterations\n", sf.Path(), length)
+				log.Infof("Wrote %s (%d bytes) -- updated file to reflect table alterations", sf.Path(), length)
 			case tengo.RenameTable:
-				panic(fmt.Errorf("Table renames not yet supported!"))
+				return fmt.Errorf("Table renames not yet supported")
 			default:
-				panic(fmt.Errorf("Unsupported diff type %T\n", td))
+				return fmt.Errorf("Unsupported diff type %T", td)
 			}
 		}
 
@@ -147,7 +150,7 @@ func PullHandler(cfg *mycli.Config) error {
 			if length, err = sf.Write(); err != nil {
 				return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
 			}
-			fmt.Printf("    Wrote %s (%d bytes) -- updated file to reflect table alterations\n", sf.Path(), length)
+			log.Infof("Wrote %s (%d bytes) -- updated file to reflect table alterations", sf.Path(), length)
 		}
 
 		if dir.Config.GetBool("normalize") {
@@ -165,10 +168,12 @@ func PullHandler(cfg *mycli.Config) error {
 					if length, err = sf.Write(); err != nil {
 						return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
 					}
-					fmt.Printf("    Wrote %s (%d bytes) -- updated file to normalize format\n", sf.Path(), length)
+					log.Infof("Wrote %s (%d bytes) -- updated file to normalize format", sf.Path(), length)
 				}
 			}
 		}
+
+		os.Stderr.WriteString("\n")
 	}
 
 	if err := findNewSchemas(dir); err != nil {

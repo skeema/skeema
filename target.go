@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/skeema/tengo"
 )
 
@@ -66,9 +67,9 @@ func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expan
 			}
 		}
 	} else if dir.HasSchema() && !dir.HasHost() {
-		fmt.Printf("Skipping %s -- no host defined for environment \"%s\"\n", dir, dir.section)
+		log.Warnf("Skipping %s: no host defined for environment \"%s\"\n", dir, dir.section)
 	} else if f, err := dir.OptionFile(); err == nil && f.SomeSectionHasOption("schema") {
-		fmt.Printf("Skipping %s -- no schema defined for environment \"%s\"\n", dir, dir.section)
+		log.Warnf("Skipping %s: no schema defined for environment \"%s\"\n", dir, dir.section)
 	}
 
 	subdirs, err := dir.Subdirs()
