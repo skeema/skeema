@@ -107,7 +107,7 @@ func NewInstance(driver, dsn string) (*Instance, error) {
 
 // String for an instance returns a "host:port" string (or "localhost:/path/to/socket"
 // if using UNIX domain socket)
-func (instance Instance) String() string {
+func (instance *Instance) String() string {
 	if instance.SocketPath != "" {
 		return fmt.Sprintf("%s:%s", instance.Host, instance.SocketPath)
 	} else if instance.Port == 0 {
@@ -118,7 +118,7 @@ func (instance Instance) String() string {
 }
 
 // HostAndOptionalPort is like String(), but omits the port if default
-func (instance Instance) HostAndOptionalPort() string {
+func (instance *Instance) HostAndOptionalPort() string {
 	if instance.Port == 3306 || instance.SocketPath != "" {
 		return instance.Host
 	}
