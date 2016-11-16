@@ -4,9 +4,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/pmezard/go-difflib/difflib"
 	"github.com/skeema/tengo"
 )
 
@@ -20,7 +22,8 @@ type Target struct {
 	SchemaFromDir      *tengo.Schema
 	Dir                *Dir
 	Err                error
-	SQLFileErrors      map[string]*SQLFile
+	SQLFileErrors      map[string]*SQLFile // map of string path to *SQLFile that contains an error
+	SQLFileWarnings    []error             // slice of all warnings for Target.Dir (no need to organize by file or path)
 }
 
 func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expandSchemas bool) {
@@ -96,13 +99,13 @@ func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expan
 // number of goroutines working on an instance at a time. Callers doing so will
 // need to call Done() on a target once they are finished with it, so that the
 // concurrent user count for the instance can be decremented properly.
-func (t Target) Done() {
+func (t *Target) Done() {
 }
 
 // HasErrors returns true if the Target encountered a fatal error OR any errors
 // in individual *.SQL files while performing temp schema operations. It also
 // returns the first error.
-func (t Target) HasErrors() (bool, error) {
+func (t *Target) HasErrors() (bool, error) {
 	if t.Err != nil {
 		return true, t.Err
 	}
@@ -163,10 +166,16 @@ func (t *Target) obtainSchemaFromDir() {
 	if t.SQLFileErrors == nil {
 		t.SQLFileErrors = make(map[string]*SQLFile)
 	}
+	if t.SQLFileWarnings == nil {
+		t.SQLFileWarnings = make([]error, 0)
+	}
 	for _, sf := range sqlFiles {
 		if sf.Error != nil {
 			t.SQLFileErrors[sf.Path()] = sf
 			continue
+		}
+		for _, warning := range sf.Warnings {
+			t.SQLFileWarnings = append(t.SQLFileWarnings, warning)
 		}
 		_, err := db.Exec(sf.Contents)
 		if err != nil {
@@ -198,7 +207,7 @@ func (t *Target) obtainSchemaFromDir() {
 // diff.TableDiffs, confirming that applying the corresponding ALTER would
 // bring a table from the version in SchemaFromInstance to the version in
 // SchemaFromDir.
-func (t Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
+func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 	// Populate the temp schema with a copy of the tables from SchemaFromInstance,
 	// the "before" state of the tables
 	tempSchemaName := t.Dir.Config.Get("temp-schema")
@@ -291,7 +300,42 @@ func (t Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 	return nil
 }
 
-func (t Target) lockTempSchema(maxWait time.Duration) (*sql.Tx, error) {
+// logUnsupportedTableDiff provides debug logging to identify why a table is
+// considered unsupported. It is "best effort" and simply returns early if it
+// encounters any errors.
+func (t *Target) logUnsupportedTableDiff(name string) {
+	table, err := t.SchemaFromDir.Table(name)
+	if err != nil {
+		return
+	}
+
+	// If the table from the dir is supported (or doesn't exist), obtain the
+	// table from the instance instead.
+	if table == nil || !table.UnsupportedDDL {
+		table, err = t.SchemaFromInstance.Table(name)
+		if table == nil || err != nil || !table.UnsupportedDDL {
+			return
+		}
+	}
+
+	diff := difflib.UnifiedDiff{
+		A:        difflib.SplitLines(table.GeneratedCreateStatement()),
+		B:        difflib.SplitLines(table.CreateStatement()),
+		FromFile: "Skeema-expected",
+		ToFile:   "MySQL-actual",
+		Context:  0,
+	}
+	diffText, err := difflib.GetUnifiedDiffString(diff)
+	if err == nil {
+		for _, line := range strings.Split(diffText, "\n") {
+			if len(line) > 0 {
+				log.Debug(line)
+			}
+		}
+	}
+}
+
+func (t *Target) lockTempSchema(maxWait time.Duration) (*sql.Tx, error) {
 	db, err := t.Instance.Connect("", "")
 	if err != nil {
 		return nil, err
@@ -316,7 +360,7 @@ func (t Target) lockTempSchema(maxWait time.Duration) (*sql.Tx, error) {
 	return nil, errors.New("Unable to acquire lock")
 }
 
-func (t Target) unlockTempSchema(tx *sql.Tx) error {
+func (t *Target) unlockTempSchema(tx *sql.Tx) error {
 	lockName := fmt.Sprintf("skeema.%s", t.Dir.Config.Get("temp-schema"))
 	var releaseLockResult int
 	err := tx.QueryRow("SELECT RELEASE_LOCK(?)", lockName).Scan(&releaseLockResult)

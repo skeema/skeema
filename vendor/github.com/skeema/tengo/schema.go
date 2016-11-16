@@ -30,13 +30,21 @@ func (s *Schema) TablesByName() (map[string]*Table, error) {
 }
 
 // HasTable returns true if a table with the given name exists in the schema.
-func (s Schema) HasTable(name string) bool {
+func (s *Schema) HasTable(name string) bool {
+	t, err := s.Table(name)
+	return (err == nil && t != nil)
+}
+
+// Table returns a table by name.
+func (s *Schema) Table(name string) (*Table, error) {
+	if s == nil {
+		return nil, nil
+	}
 	byName, err := s.TablesByName()
 	if err != nil {
-		return false
+		return nil, err
 	}
-	_, exists := byName[name]
-	return exists
+	return byName[name], nil
 }
 
 // Tables returns a slice of all tables in the schema.
@@ -246,13 +254,13 @@ func (s *Schema) Diff(other *Schema) (*SchemaDiff, error) {
 }
 
 // DropStatement returns a SQL statement that, if run, would drop this schema.
-func (s Schema) DropStatement() string {
+func (s *Schema) DropStatement() string {
 	return fmt.Sprintf("DROP DATABASE %s", EscapeIdentifier(s.Name))
 }
 
 // CreateStatement returns a SQL statement that, if run, would create this
 // schema.
-func (s Schema) CreateStatement() string {
+func (s *Schema) CreateStatement() string {
 	// TODO: support DEFAULT CHARACTER SET and DEFAULT COLLATE
 	return fmt.Sprintf("CREATE DATABASE %s", EscapeIdentifier(s.Name))
 }

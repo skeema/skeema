@@ -105,7 +105,7 @@ func (sf *SQLFile) validateContents() error {
 		return sf.Error
 	}
 	if len(matches[1]) > 0 || len(matches[4]) > 0 {
-		warning := fmt.Errorf("%s: stripping and ignoring %d chars before CREATE TABLE and %d chars after CREATE TABLE", sf.Path(), len(matches[1]), len(matches[4]))
+		warning := fmt.Errorf("%s: ignoring %d chars before CREATE TABLE and %d chars after CREATE TABLE", sf.Path(), len(matches[1]), len(matches[4]))
 		sf.Warnings = append(sf.Warnings, warning)
 	}
 	if sf.FileName != fmt.Sprintf("%s.sql", matches[2]) {

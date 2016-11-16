@@ -61,7 +61,7 @@ type Column struct {
 
 // Definition returns this column's definition clause, for use as part of a DDL
 // statement.
-func (c Column) Definition() string {
+func (c *Column) Definition() string {
 	var nullability, autoIncrement, defaultValue, extraModifiers string
 	emitDefault := c.CanHaveDefault()
 	if !c.Nullable {
@@ -99,7 +99,7 @@ func (c *Column) Equals(other *Column) bool {
 }
 
 // CanHaveDefault returns true if the column is allowed to have a DEFAULT clause.
-func (c Column) CanHaveDefault() bool {
+func (c *Column) CanHaveDefault() bool {
 	if c.AutoIncrement {
 		return false
 	}

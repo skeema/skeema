@@ -28,12 +28,17 @@
 			"Rev": "54aec3fd91a2b2129ffaca0d652b8a9223ee2d9e"
 		},
 		{
+			"ImportPath": "github.com/pmezard/go-difflib/difflib",
+			"Comment": "v1.0.0",
+			"Rev": "792786c7400a136282c1664665ae0a8db921c6c2"
+		},
+		{
 			"ImportPath": "github.com/skeema/mycli",
 			"Rev": "46cb36ce716970f46abc17e663fd437b16f9fc1b"
 		},
 		{
 			"ImportPath": "github.com/skeema/tengo",
-			"Rev": "8458b8081b9f7757720fd289235a81d06a88f21e"
+			"Rev": "0e44cfd982aba8b4b6c7c1abdb6121f55e58b063"
 		},
 		{
 			"ImportPath": "golang.org/x/crypto/ssh/terminal",

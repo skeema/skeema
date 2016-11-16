@@ -21,12 +21,12 @@ type Table struct {
 }
 
 // AlterStatement returns the prefix to a SQL "ALTER TABLE" statement.
-func (t Table) AlterStatement() string {
+func (t *Table) AlterStatement() string {
 	return fmt.Sprintf("ALTER TABLE %s", EscapeIdentifier(t.Name))
 }
 
 // DropStatement returns a SQL statement that, if run, would drop this table.
-func (t Table) DropStatement() string {
+func (t *Table) DropStatement() string {
 	return fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(t.Name))
 }
 
@@ -34,7 +34,7 @@ func (t Table) DropStatement() string {
 // table. Ordinarily this will be pre-cached from a prior call to SHOW CREATE
 // TABLE, but if not, tengo will auto-generate what it thinks the CREATE TABLE
 // statement should be.
-func (t Table) CreateStatement() string {
+func (t *Table) CreateStatement() string {
 	if t.createStatement == "" {
 		return t.GeneratedCreateStatement()
 	}
@@ -46,7 +46,7 @@ func (t Table) CreateStatement() string {
 // the output of MySQL's SHOW CREATE TABLE statement. But if t.UnsupportedDDL
 // is true, this means the table uses MySQL features that Tengo does not yet
 // support, and so the output of this method will differ from MySQL.
-func (t Table) GeneratedCreateStatement() string {
+func (t *Table) GeneratedCreateStatement() string {
 	defs := make([]string, len(t.Columns), len(t.Columns)+len(t.SecondaryIndexes)+1)
 	for n, c := range t.Columns {
 		defs[n] = c.Definition()
@@ -78,7 +78,7 @@ func (t Table) GeneratedCreateStatement() string {
 
 // ColumnsByName returns a mapping of column names to Column value pointers,
 // for all columns in the table.
-func (t Table) ColumnsByName() map[string]*Column {
+func (t *Table) ColumnsByName() map[string]*Column {
 	result := make(map[string]*Column, len(t.Columns))
 	for _, c := range t.Columns {
 		result[c.Name] = c
@@ -88,7 +88,7 @@ func (t Table) ColumnsByName() map[string]*Column {
 
 // SecondaryIndexesByName returns a mapping of index names to Index value
 // pointers, for all secondary indexes in the table.
-func (t Table) SecondaryIndexesByName() map[string]*Index {
+func (t *Table) SecondaryIndexesByName() map[string]*Index {
 	result := make(map[string]*Index, len(t.SecondaryIndexes))
 	for _, idx := range t.SecondaryIndexes {
 		result[idx.Name] = idx
@@ -98,7 +98,7 @@ func (t Table) SecondaryIndexesByName() map[string]*Index {
 
 // HasAutoIncrement returns true if the table contains an auto-increment column,
 // or false otherwise.
-func (t Table) HasAutoIncrement() bool {
+func (t *Table) HasAutoIncrement() bool {
 	for _, c := range t.Columns {
 		if c.AutoIncrement {
 			return true

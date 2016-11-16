@@ -66,6 +66,9 @@ func LintHandler(cfg *mycli.Config) error {
 			if _, err := sf.Read(); err != nil {
 				return err
 			}
+			for _, warning := range sf.Warnings {
+				log.Debug(warning)
+			}
 			if table.CreateStatement() != sf.Contents {
 				sf.Contents = table.CreateStatement()
 				var length int

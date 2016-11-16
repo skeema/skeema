@@ -56,6 +56,10 @@ func PushHandler(cfg *mycli.Config) error {
 		}
 
 		log.Infof("Pushing changes from %s/*.sql to %s %s", t.Dir, t.Instance, t.SchemaFromDir.Name)
+		for _, warning := range t.SQLFileWarnings {
+			log.Debug(warning)
+		}
+
 		diff, err := tengo.NewSchemaDiff(t.SchemaFromInstance, t.SchemaFromDir)
 		if err != nil {
 			t.Done()
@@ -109,9 +113,14 @@ func PushHandler(cfg *mycli.Config) error {
 			}
 		}
 		for _, table := range diff.UnsupportedTables {
-			targetStmtCount++
 			unsupportedCount++
-			log.Warnf("Skipping table %s: unable to generate ALTER TABLE due to use of unsupported features", table.Name)
+			targetStmtCount++
+			if t.Dir.Config.GetBool("debug") {
+				log.Warnf("Skipping table %s: unable to generate ALTER TABLE due to use of unsupported features", table.Name)
+				t.logUnsupportedTableDiff(table.Name)
+			} else {
+				log.Warnf("Skipping table %s: unable to generate ALTER TABLE due to use of unsupported features. Use --debug for more information.", table.Name)
+			}
 		}
 
 		if targetStmtCount == 0 {
