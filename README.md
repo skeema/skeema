@@ -34,13 +34,8 @@ Go La Tengo **cannot** yet diff tables containing any of the following MySQL fea
 * non-InnoDB storage engines
 * schema-level DEFAULT CHARACTER SET and DEFAULT COLLATE
 * table comments or column comments
-* binary modifier on string types
-* ENUM columns
-* SET columns
 * fulltext indexes
 * spatial types
-* zerofill modifier
-* NATIONAL CHAR type
 * MySQL 5.7+ generated columns and other new features
 
 This list is not necessarily exhaustive.
