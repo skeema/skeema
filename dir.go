@@ -107,20 +107,26 @@ func (dir *Dir) HasOptionFile() bool {
 	return dir.HasFile(".skeema")
 }
 
-// HasHost returns true if the "host" configuration option has been defined for
-// this directory's configuration (typically either in this directory's .skeema
-// file, or in an ancestor directory .skeema file) for the current environment
-// name.
+// HasHost returns true if the "host" option has been defined in this dir's
+// .skeema option file in the currently-selected environment section.
 func (dir *Dir) HasHost() bool {
-	return dir.Config.Changed("host")
+	optionFile, err := dir.OptionFile()
+	if err != nil || optionFile == nil {
+		return false
+	}
+	_, ok := optionFile.OptionValue("host")
+	return ok
 }
 
-// HasSchema returns true if the "schema" configuration option has been defined
-// for this directory's configuration (typically just in this directory's
-// .skeema file, since directories containing "schema" should not have subdirs
-// of their own) for the current environment name.
+// HasSchema returns true if the "schema" option has been defined in this dir's
+// .skeema option file in the currently-selected environment section.
 func (dir *Dir) HasSchema() bool {
-	return dir.Config.Changed("schema")
+	optionFile, err := dir.OptionFile()
+	if err != nil || optionFile == nil {
+		return false
+	}
+	_, ok := optionFile.OptionValue("schema")
+	return ok
 }
 
 // FirstInstance returns at most one tengo.Instance based on the directory's
@@ -128,7 +134,7 @@ func (dir *Dir) HasSchema() bool {
 // only the first will be returned. If the config maps to no instances, nil
 // will be returned.
 func (dir *Dir) FirstInstance() (*tengo.Instance, error) {
-	if !dir.HasHost() {
+	if !dir.Config.Changed("host") {
 		return nil, nil
 	}
 
@@ -232,7 +238,6 @@ func (dir *Dir) Subdirs() ([]*Dir, error) {
 				if err != nil {
 					return nil, err
 				}
-				_ = f.UseSection(subdir.section) // we don't care if the section doesn't exist
 				subdir.Config.AddSource(f)
 			}
 			result = append(result, subdir)
@@ -290,7 +295,8 @@ func (dir *Dir) Targets(expandInstances, expandSchemas bool) <-chan Target {
 
 // OptionFile returns a pointer to a mycli.File for this directory, representing
 // the dir's .skeema file, if one exists. The file will be read and parsed; any
-// errors in either process will be returned.
+// errors in either process will be returned. The section specified by
+// dir.section will automatically be selected for use in the file if it exists.
 func (dir *Dir) OptionFile() (*mycli.File, error) {
 	f := mycli.NewFile(dir.Path, ".skeema")
 	if err := f.Read(); err != nil {
@@ -299,6 +305,7 @@ func (dir *Dir) OptionFile() (*mycli.File, error) {
 	if err := f.Parse(dir.Config); err != nil {
 		return nil, err
 	}
+	_ = f.UseSection(dir.section) // we don't care if the section doesn't exist
 	return f, nil
 }
 

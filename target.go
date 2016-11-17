@@ -27,7 +27,10 @@ type Target struct {
 }
 
 func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expandSchemas bool) {
-	if dir.HasHost() && dir.HasSchema() {
+	// Generate targets if this dir's .skeema file defines a schema (for current
+	// environment section), and the dir's config hierarchy defines a host
+	// somewhere (here, or a parent dir)
+	if dir.Config.Changed("host") && dir.HasSchema() {
 		var dirSchema *tengo.Schema
 
 		// TODO: support multiple instances / service discovery lookup per dir if
@@ -69,9 +72,12 @@ func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expan
 				targets <- t
 			}
 		}
-	} else if dir.HasSchema() && !dir.HasHost() {
+	} else if !dir.Config.Changed("host") && dir.HasSchema() {
+		// If we have a schema defined but no host, display a warning
 		log.Warnf("Skipping %s: no host defined for environment \"%s\"\n", dir, dir.section)
 	} else if f, err := dir.OptionFile(); err == nil && f.SomeSectionHasOption("schema") {
+		// If we don't have a schema defined, but we would if some other environment
+		// had been selected, display a warning
 		log.Warnf("Skipping %s: no schema defined for environment \"%s\"\n", dir, dir.section)
 	}
 
