@@ -64,16 +64,16 @@ Many of these will be added in future releases.
 
 #### Completely unsupported
 
-Skeema does not yet support connecting to MySQL using SSL. 
+Skeema does not yet support connecting to MySQL using SSL.
 
-#### Unlikely to work properly
+#### Ignored by Skeema
 
-Schemas containing these features might interfere with Skeema's operations:
+The following features are completely ignored by Skeema. Their presence in a schema won't immediately break anything, but Skeema will not interact with them. This means that `skeema init` and `skeema pull` won't create file representations of them; `skeema diff` and `skeema push` will not detect or alter them.
 
 * views
 * triggers
 * stored procedures
-* databases with DEFAULT CHARACTER SET and/or DEFAULT COLLATE that differ from global settings. (note: table-level settings are fine; only database-level ones are unsupported.)
+* databases with DEFAULT CHARACTER SET and/or DEFAULT COLLATE that differ from global settings. (note: per-table setting is fully supported, just not database-level settings)
 
 #### Unsupported for ALTERs
 
@@ -82,16 +82,11 @@ Skeema can CREATE or DROP tables using these features, but cannot ALTER them. Th
 * foreign keys
 * compressed tables
 * partitioned tables
-* per-column CHARACTER SET and COLLATE (fine at the table-level though)
+* per-column CHARACTER SET and COLLATE, including any shorthand aliases (BINARY modifier, NATIONAL CHAR type, etc)
 * non-InnoDB storage engines
 * table comments or column comments
-* binary modifier on string types
-* ENUM columns
-* SET columns
 * fulltext indexes
 * spatial types
-* zerofill modifier
-* NATIONAL CHAR type
 * MySQL 5.7+ generated columns and other new features
 
 You can still ALTER these tables externally from Skeema (e.g., direct invocation of `ALTER TABLE` or `pt-online-schema-change`). Afterwards, you can update your schema repo using `skeema pull`, which will work properly even on these tables.
