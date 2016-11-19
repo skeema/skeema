@@ -260,3 +260,50 @@ func TestSchemaDiffAlterTable(t *testing.T) {
 		t.Errorf("Modifier AllowDropColumn=true not working; error (%s) returned for %s", err, stmt)
 	}
 }
+
+func TestAlterTableStatementOnlineMods(t *testing.T) {
+	table := anotherTable()
+	col := &Column{
+		Name:     "something",
+		TypeInDB: "smallint(5) unsigned",
+		Default:  ColumnDefaultNull,
+	}
+	addCol := AddColumn{
+		Table:  &table,
+		Column: col,
+	}
+	alter := AlterTable{
+		Table:   &table,
+		Clauses: []TableAlterClause{addCol},
+	}
+
+	assertStatement := func(mods StatementModifiers, middle string) {
+		stmt, err := alter.Statement(mods)
+		if err != nil {
+			t.Errorf("Received unexpected error %s from statement with mods=%v", err, mods)
+			return
+		}
+		expect := fmt.Sprintf("ALTER TABLE `%s` %s%s", table.Name, middle, addCol.Clause())
+		if stmt != expect {
+			t.Errorf("Generated ALTER doesn't match expectation with mods=%v\n    Expected: %s\n    Found:    %s", mods, expect, stmt)
+		}
+	}
+
+	mods := StatementModifiers{}
+	assertStatement(mods, "")
+
+	mods.LockClause = "none"
+	assertStatement(mods, "LOCK=NONE, ")
+	mods.AlgorithmClause = "online"
+	assertStatement(mods, "ALGORITHM=ONLINE, LOCK=NONE, ")
+	mods.LockClause = ""
+	assertStatement(mods, "ALGORITHM=ONLINE, ")
+
+	// Confirm that mods are ignored if no actual alter clauses present
+	alter.Clauses = []TableAlterClause{}
+	if stmt, err := alter.Statement(mods); stmt != "" {
+		t.Errorf("Expected blank-string statement if no clauses present, regardless of mods; instead found: %s", stmt)
+	} else if err != nil {
+		t.Errorf("Expected no error from statement with no clauses present; instead found: %s", err)
+	}
+}

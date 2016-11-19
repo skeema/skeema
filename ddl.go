@@ -46,6 +46,8 @@ type StatementModifiers struct {
 	NextAutoInc     NextAutoIncMode
 	AllowDropTable  bool
 	AllowDropColumn bool
+	LockClause      string
+	AlgorithmClause string
 }
 
 // TableDiff interface represents a difference between two tables. Structs
@@ -233,6 +235,16 @@ func (at AlterTable) Statement(mods StatementModifiers) (string, error) {
 	if len(clauseStrings) == 0 {
 		return "", err
 	}
+
+	if mods.LockClause != "" {
+		lockClause := fmt.Sprintf("LOCK=%s", strings.ToUpper(mods.LockClause))
+		clauseStrings = append([]string{lockClause}, clauseStrings...)
+	}
+	if mods.AlgorithmClause != "" {
+		algorithmClause := fmt.Sprintf("ALGORITHM=%s", strings.ToUpper(mods.AlgorithmClause))
+		clauseStrings = append([]string{algorithmClause}, clauseStrings...)
+	}
+
 	stmt := fmt.Sprintf("%s %s", at.Table.AlterStatement(), strings.Join(clauseStrings, ", "))
 	if fde, isForbiddenDiff := err.(*ForbiddenDiffError); isForbiddenDiff {
 		fde.Statement = stmt
