@@ -173,6 +173,22 @@ This command supports use of special variables. Skeema will dynamically replace 
 
 This option can be used for integration with an online schema change tool, logging system, CI workflow, or any other tool (or combination of tools via a custom script) that you wish. An example `alter-wrapper` for executing `pt-online-schema-change` is included [in the FAQ](faq.md#how-do-i-configure-skeema-to-use-online-schema-change-tools).
 
+#### debug
+
+Commands | *all*
+--- | :---
+**Default** | false
+**Type** | boolean
+**Restrictions** | Should only appear on command-line or in a *global* option file
+
+This option enables debug logging in all commands. The extra output is sent to STDERR and includes the following:
+
+* When `skeema diff` or `skeema push` encounters tables that cannot be ALTERed due to use of features not yet supported by Skeema, the debug log will indicate which specific line(s) of the CREATE TABLE statement are using such features.
+* When any command encounters non-fatal problems in a *.sql file, they will be logged. This can include extra ignored statements before/after the CREATE TABLE statement, or a table whose name does not match its filename.
+* If a panic occurs in Skeema's main thread, a full stack trace will be logged.
+* Upon exiting, the numeric exit code will be logged.
+
+
 #### dir
 
 Commands | init, add-environment
