@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"syscall"
 
@@ -102,7 +103,6 @@ func PromptPassword() (string, error) {
 
 func main() {
 	// Add global options. Sub-commands may override these when needed.
-	CommandSuite.AddOption(mycli.StringOption("help", '?', "", "Display help for the specified command").ValueOptional())
 	CommandSuite.AddOption(mycli.StringOption("host", 0, "", "Database hostname or IP address").Hidden())
 	CommandSuite.AddOption(mycli.StringOption("port", 0, "3306", "Port to use for database host").Hidden())
 	CommandSuite.AddOption(mycli.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix domain socket file for use when hostname==localhost").Hidden())
@@ -112,6 +112,20 @@ func main() {
 	CommandSuite.AddOption(mycli.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema to use for intermediate operations. Will be created and dropped unless --reuse-temp-schema enabled."))
 	CommandSuite.AddOption(mycli.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done. Useful for running without create/drop database privileges."))
 	CommandSuite.AddOption(mycli.BoolOption("debug", 0, false, "Enable debug logging"))
+
+	var cfg *mycli.Config
+
+	defer func() {
+		if err := recover(); err != nil {
+			if cfg == nil || !cfg.GetBool("debug") {
+				Exit(NewExitValue(CodeFatalError, fmt.Sprint(err)))
+			} else {
+				log.Error(err)
+				log.Debug(string(debug.Stack()))
+				Exit(NewExitValue(CodeFatalError, ""))
+			}
+		}
+	}()
 
 	cfg, err := mycli.ParseCLI(CommandSuite, os.Args)
 	if err != nil {
