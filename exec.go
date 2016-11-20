@@ -106,12 +106,13 @@ func (ddl *DDLStatement) Execute() error {
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		return cmd.Run()
-	}
-	if db, err := ddl.instance.Connect(ddl.schemaName, ""); err != nil {
-		ddl.Err = err
+		ddl.Err = cmd.Run()
 	} else {
-		_, ddl.Err = db.Exec(ddl.stmt)
+		if db, err := ddl.instance.Connect(ddl.schemaName, ""); err != nil {
+			ddl.Err = err
+		} else {
+			_, ddl.Err = db.Exec(ddl.stmt)
+		}
 	}
 	return ddl.Err
 }

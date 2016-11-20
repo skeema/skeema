@@ -26,9 +26,11 @@ top of the file. If no environment name is supplied, the default is
 	cmd.AddOption(mycli.BoolOption("verify", 0, true, "Test all generated ALTER statements on temporary schema to verify correctness"))
 	cmd.AddOption(mycli.BoolOption("allow-drop-table", 0, false, "Permit dropping any table that has no corresponding *.sql file"))
 	cmd.AddOption(mycli.BoolOption("allow-drop-column", 0, false, "Permit dropping columns that are no longer present in *.sql file"))
+	cmd.AddOption(mycli.BoolOption("dry-run", 0, false, "Output DDL but don't run it; equivalent to `skeema diff`"))
 	cmd.AddOption(mycli.StringOption("alter-wrapper", 'x', "", "External bin to shell out to for ALTER TABLE; see manual for template vars"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
+	clonePushOptionsToDiff()
 }
 
 // PushHandler is the handler method for `skeema push`
@@ -39,13 +41,15 @@ func PushHandler(cfg *mycli.Config) error {
 		return err
 	}
 
-	var errCount, unsupportedCount int // total counts, across all targets
+	var errCount, diffCount, unsupportedCount int // total counts, across all targets
 	mods := tengo.StatementModifiers{
 		NextAutoInc: tengo.NextAutoIncIfIncreased,
 	}
+	dryRun := cfg.GetBool("dry-run")
 
 	// TODO: once sharding / service discovery lookup is supported, this should
-	// use multiple worker goroutines all pulling instances off the channel
+	// use multiple worker goroutines all pulling instances off the channel,
+	// unless dry-run option is true
 	for t := range dir.Targets(true, true) {
 		if hasErrors, firstErr := t.HasErrors(); hasErrors {
 			log.Errorf("Skipping %s:", t.Dir)
@@ -55,7 +59,11 @@ func PushHandler(cfg *mycli.Config) error {
 			continue
 		}
 
-		log.Infof("Pushing changes from %s/*.sql to %s %s", t.Dir, t.Instance, t.SchemaFromDir.Name)
+		if dryRun {
+			log.Infof("Generating diff of %s %s vs %s/*.sql", t.Instance, t.SchemaFromDir.Name, t.Dir)
+		} else {
+			log.Infof("Pushing changes from %s/*.sql to %s %s", t.Dir, t.Instance, t.SchemaFromDir.Name)
+		}
 		for _, warning := range t.SQLFileWarnings {
 			log.Debug(warning)
 		}
@@ -67,14 +75,16 @@ func PushHandler(cfg *mycli.Config) error {
 		}
 		if t.SchemaFromInstance == nil {
 			// TODO: support CREATE DATABASE schema-level options
-			var err error
-			t.SchemaFromInstance, err = t.Instance.CreateSchema(t.SchemaFromDir.Name)
-			if err != nil {
-				t.Done()
-				return fmt.Errorf("Error creating schema %s on %s: %s", t.SchemaFromDir.Name, t.Instance, err)
-			}
 			fmt.Printf("-- instance: %s\n", t.Instance)
 			fmt.Printf("%s;\n", t.SchemaFromDir.CreateStatement())
+			if !dryRun {
+				var err error
+				t.SchemaFromInstance, err = t.Instance.CreateSchema(t.SchemaFromDir.Name)
+				if err != nil {
+					t.Done()
+					return fmt.Errorf("Error creating schema %s on %s: %s", t.SchemaFromDir.Name, t.Instance, err)
+				}
+			}
 		}
 
 		if t.Dir.Config.GetBool("verify") && len(diff.TableDiffs) > 0 {
@@ -97,12 +107,13 @@ func PushHandler(cfg *mycli.Config) error {
 				fmt.Printf("-- instance: %s\n", t.Instance)
 				fmt.Printf("USE %s;\n", tengo.EscapeIdentifier(t.SchemaFromDir.Name))
 			}
+			diffCount++
 			if ddl.Err != nil {
 				log.Errorf("%s. The following DDL statement will be skipped. See --help for more information.", ddl.Err)
 				errCount++
 			}
 			fmt.Println(ddl.String())
-			if ddl.Err == nil && ddl.Execute() != nil {
+			if !dryRun && ddl.Err == nil && ddl.Execute() != nil {
 				log.Errorf("Error running above statement on %s: %s", t.Instance, ddl.Err)
 				skipCount := len(diff.TableDiffs) - n
 				if skipCount > 1 {
@@ -124,7 +135,11 @@ func PushHandler(cfg *mycli.Config) error {
 		}
 
 		if targetStmtCount == 0 {
-			log.Info("(nothing to do)\n")
+			if dryRun {
+				log.Info("No differences found\n")
+			} else {
+				log.Info("(nothing to do)\n")
+			}
 		} else {
 			fmt.Println()
 		}
@@ -132,6 +147,9 @@ func PushHandler(cfg *mycli.Config) error {
 	}
 
 	if errCount+unsupportedCount == 0 {
+		if dryRun && diffCount > 0 {
+			return NewExitValue(CodeDifferencesFound, "")
+		}
 		return nil
 	}
 	var plural, reason string
