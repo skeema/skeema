@@ -188,7 +188,6 @@ This option enables debug logging in all commands. The extra output is sent to S
 * If a panic occurs in Skeema's main thread, a full stack trace will be logged.
 * Upon exiting, the numeric exit code will be logged.
 
-
 #### dir
 
 Commands | init, add-environment
@@ -200,6 +199,16 @@ Commands | init, add-environment
 For `skeema init`, specifies what directory to populate with table files (or, if multiple schemas present, schema subdirectories that then contain the table files). If unspecified, the default dir for `skeema init` is based on the hostname (and port, if non-3306). Either a relative or absolute path may be supplied. The directory will be created if it does not already exist. If it does already exist, it must not already contain a .skeema option file.
 
 For `skeema add-environment`, specifies which directory's .skeema file to add the environment to. The directory must already exist (having been created by a prior call to `skeema init`), and must already contain a .skeema file, but the new environment name must not already be defined in that file. If unspecified, the default dir for `skeema add-environment` is the current directory, ".".
+
+#### dry-run
+
+Commands | push
+--- | :---
+**Default** | false
+**Type** | boolean
+**Restrictions** | Should only appear on command-line
+
+Running `skeema push --dry-run` is exactly equivalent to running `skeema diff`: the DDL will be generated and printed, but not executed. The same code path is used in both cases. The *only* difference is that `skeema diff` has its own help/usage text, but otherwise the command logic is the same as `skeema push --dry-run`.
 
 #### host
 
