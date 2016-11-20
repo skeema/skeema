@@ -36,7 +36,7 @@ func NewCommand(name, summary, description string, handler CommandHandler) *Comm
 		Handler:     handler,
 	}
 
-	cmd.AddOption(StringOption("help", '?', "", "Display usage information").ValueOptional())
+	cmd.AddOption(StringOption("help", '?', "", "Display usage information for the specified command").ValueOptional())
 	cmd.AddOption(BoolOption("version", 0, false, "Display program version"))
 
 	return cmd
@@ -63,7 +63,7 @@ func NewCommandSuite(name, summary, description string) *Command {
 	}
 	helpCmd.AddArg("command", "", false)
 	cmd.AddSubCommand(helpCmd)
-	cmd.AddOption(StringOption("help", '?', "", "Display usage information").ValueOptional())
+	cmd.AddOption(StringOption("help", '?', "", "Display usage information for the specified command").ValueOptional())
 
 	// Add version subcommand, and equivalently as an option
 	versionCmd := &Command{

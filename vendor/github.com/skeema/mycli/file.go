@@ -155,11 +155,27 @@ func (f *File) Parse(cfg *Config) error {
 		line := scanner.Text()
 		lineNumber++
 		line = strings.TrimLeftFunc(line, unicode.IsSpace)
-		if line == "" {
+		if line == "" || line[0] == ';' {
 			continue
 		}
 		if line[0] == '[' {
-			name := line[1 : len(line)-1]
+			endIndex := strings.Index(line, "]")
+			hashIndex := strings.Index(line, "#")
+			if endIndex == -1 || (hashIndex > -1 && hashIndex < endIndex) {
+				return fmt.Errorf("Parse error in %s line %d: unterminated section name", f.Path(), lineNumber)
+			}
+			if endIndex < len(line)-1 {
+				var after string
+				if hashIndex > -1 {
+					after = line[endIndex+1 : hashIndex]
+				} else {
+					after = line[endIndex+1 : len(line)]
+				}
+				if len(strings.TrimSpace(after)) > 0 {
+					return fmt.Errorf("Parse error in %s line %d: extra characters after section name", f.Path(), lineNumber)
+				}
+			}
+			name := line[1:endIndex]
 			section = f.getOrCreateSection(name)
 			continue
 		}

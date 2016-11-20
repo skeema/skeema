@@ -145,6 +145,34 @@ Commands | diff, push
 
 If set to false, `skeema diff` outputs DROP TABLE statements as commented-out, and `skeema push` skips their execution.
 
+#### alter-algorithm
+
+Commands | diff, push
+--- | :---
+**Default** | *empty string*
+**Type** | enum
+**Restrictions** | Requires one of these values: "INPLACE", "COPY", "DEFAULT", ""
+
+Adds an ALGORITHM clause to any generated ALTER TABLE statement, in order to force enabling/disabling MySQL 5.6+ support for online DDL. When used in `skeema push`, executing the statement will fail if any generated ALTER clause does not support the specified algorithm. See the MySQL manual for more information on the effect of this clause.
+
+The explicit value "DEFAULT" is supported, and will add a "ALGORITHM=DEFAULT" clause to all ALTER TABLEs, but this has no real effect vs simply omitting [alter-algorithm](#alter-algorithm) entirely.
+
+If [alter-wrapper](#alter-wrapper) is set to use an external online schema change tool such as pt-online-schema-change, [alter-algorithm](#alter-algorithm) should not also be used.
+
+#### alter-lock
+
+Commands | diff, push
+--- | :---
+**Default** | *empty string*
+**Type** | enum
+**Restrictions** | Requires one of these values: "NONE", "SHARED", "EXCLUSIVE", "DEFAULT", ""
+
+Adds a LOCK clause to any generated ALTER TABLE statement, in order to force enabling/disabling MySQL 5.6+ support for online DDL. When used in `skeema push`, executing the statement will fail if any generated ALTER clause does not support the specified lock method. See the MySQL manual for more information on the effect of this clause.
+
+The explicit value "DEFAULT" is supported, and will add a "LOCK=DEFAULT" clause to all ALTER TABLEs, but this has no real effect vs simply omitting [alter-lock](#alter-lock) entirely.
+
+If [alter-wrapper](#alter-wrapper) is set to use an external online schema change tool such as pt-online-schema-change, [alter-lock](#alter-lock) should not also be used.
+
 #### alter-wrapper
 
 Commands | diff, push

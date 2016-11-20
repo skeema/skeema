@@ -242,13 +242,15 @@ func (cfg *Config) GetBool(name string) bool {
 }
 
 // GetInt returns an option's value as an int. If an error occurs in parsing
-// the value as an int, it is returned as the second return value.
+// the value as an int, it is returned as the second return value. Panics if
+// the option does not exist.
 func (cfg *Config) GetInt(name string) (int, error) {
 	return strconv.Atoi(cfg.Get(name))
 }
 
 // GetIntOrDefault is like GetInt, but returns the option's default value if
-// parsing the supplied value as an int fails.
+// parsing the supplied value as an int fails. Panics if the option does not
+// exist.
 func (cfg *Config) GetIntOrDefault(name string) int {
 	value, err := cfg.GetInt(name)
 	if err != nil {
@@ -259,4 +261,54 @@ func (cfg *Config) GetIntOrDefault(name string) int {
 		}
 	}
 	return value
+}
+
+// GetEnum returns an option's value as a string if it matches one of the
+// supplied allowed values, or its default value (which need not be supplied).
+// Otherwise an error is returned. Matching is case-insensitive, but the
+// returned value will always be of the same case as it was supplied in
+// allowedValues. Panics if the option does not exist.
+func (cfg *Config) GetEnum(name string, allowedValues ...string) (string, error) {
+	value := strings.ToLower(cfg.Get(name))
+	defaultValue, _ := cfg.CLI.Command.OptionValue(name)
+	allowedValues = append(allowedValues, defaultValue)
+	for _, allowedVal := range allowedValues {
+		if value == strings.ToLower(allowedVal) {
+			return allowedVal, nil
+		}
+	}
+	for n := range allowedValues {
+		allowedValues[n] = fmt.Sprintf(`"%s"`, allowedValues[n])
+	}
+	allAllowed := strings.Join(allowedValues, ", ")
+	return "", fmt.Errorf("Option %s can only be set to one of these values: %s", name, allAllowed)
+}
+
+// GetBytes returns an option's value as a uint64 representing a number of bytes.
+// If the value was supplied with a suffix of K, M, or G (upper or lower case)
+// the returned value will automatically be multiplied by 1024, 1024^2, or
+// 1024^3 respectively. Suffixes may also be expressed with a trailing 'B',
+// e.g. 'KB' and 'K' are equivalent.
+// An error will be returned if the value cannot be parsed as a byte size.
+// Panics if the option does not exist.
+func (cfg *Config) GetBytes(name string) (uint64, error) {
+	var multiplier uint64 = 1
+	value := strings.ToLower(cfg.Get(name))
+	if value[len(value)-1] == 'b' {
+		value = value[0 : len(value)-1]
+	}
+
+	if strings.LastIndexAny(value, "kmg") == len(value)-1 {
+		multipliers := map[byte]uint64{
+			'k': 1024,
+			'm': 1024 * 1024,
+			'g': 1024 * 1024 * 1024,
+		}
+		suffix := value[len(value)-1]
+		value = value[0 : len(value)-1]
+		multiplier = multipliers[suffix]
+	}
+
+	numVal, err := strconv.ParseUint(value, 10, 64)
+	return numVal * multiplier, err
 }

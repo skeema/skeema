@@ -28,6 +28,8 @@ top of the file. If no environment name is supplied, the default is
 	cmd.AddOption(mycli.BoolOption("allow-drop-column", 0, false, "Permit dropping columns that are no longer present in *.sql file"))
 	cmd.AddOption(mycli.BoolOption("dry-run", 0, false, "Output DDL but don't run it; equivalent to `skeema diff`"))
 	cmd.AddOption(mycli.StringOption("alter-wrapper", 'x', "", "External bin to shell out to for ALTER TABLE; see manual for template vars"))
+	cmd.AddOption(mycli.StringOption("alter-lock", 0, "", `Apply a LOCK clause to all ALTER TABLEs (valid values: "NONE", "SHARED", "EXCLUSIVE")`))
+	cmd.AddOption(mycli.StringOption("alter-algorithm", 0, "", `Apply an ALGORITHM clause to all ALTER TABLEs (valid values: "INPLACE", "COPY")`))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 	clonePushOptionsToDiff()
@@ -94,8 +96,19 @@ func PushHandler(cfg *mycli.Config) error {
 			}
 		}
 
+		// Set configuration-dependent statement modifiers here inside the Target
+		// loop, since the config for these may var per dir!
 		mods.AllowDropTable = t.Dir.Config.GetBool("allow-drop-table")
 		mods.AllowDropColumn = t.Dir.Config.GetBool("allow-drop-column")
+		mods.AlgorithmClause, err = t.Dir.Config.GetEnum("alter-algorithm", "INPLACE", "COPY", "DEFAULT")
+		if err != nil {
+			return err
+		}
+		mods.LockClause, err = t.Dir.Config.GetEnum("alter-lock", "NONE", "SHARED", "EXCLUSIVE", "DEFAULT")
+		if err != nil {
+			return err
+		}
+
 		var targetStmtCount int
 		for n, tableDiff := range diff.TableDiffs {
 			ddl := NewDDLStatement(tableDiff, mods, t)
