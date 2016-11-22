@@ -30,6 +30,7 @@ top of the file. If no environment name is supplied, the default is
 	cmd.AddOption(mycli.StringOption("alter-wrapper", 'x', "", "External bin to shell out to for ALTER TABLE; see manual for template vars"))
 	cmd.AddOption(mycli.StringOption("alter-lock", 0, "", `Apply a LOCK clause to all ALTER TABLEs (valid values: "NONE", "SHARED", "EXCLUSIVE")`))
 	cmd.AddOption(mycli.StringOption("alter-algorithm", 0, "", `Apply an ALGORITHM clause to all ALTER TABLEs (valid values: "INPLACE", "COPY")`))
+	cmd.AddOption(mycli.StringOption("ddl-wrapper", 'X', "", "Like --alter-wrapper, but applies to all DDL types (CREATE, DROP, ALTER)"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 	clonePushOptionsToDiff()

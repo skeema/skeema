@@ -46,22 +46,42 @@ func NewDDLStatement(diff tengo.TableDiff, mods tengo.StatementModifiers, target
 		// This is represented by a nil DDLStatement.
 		return nil
 	}
-	if alter, isAlter := diff.(tengo.AlterTable); isAlter && target.Dir.Config.Changed("alter-wrapper") {
-		wrapper := target.Dir.Config.Get("alter-wrapper")
-		prefix := fmt.Sprintf("%s ", alter.Table.AlterStatement())
-		stmtWithoutPrefix := strings.Replace(ddl.stmt, prefix, "", 1)
+
+	wrapper := target.Dir.Config.Get("ddl-wrapper")
+	if _, isAlter := diff.(tengo.AlterTable); isAlter && target.Dir.Config.Changed("alter-wrapper") {
+		wrapper = target.Dir.Config.Get("alter-wrapper")
+	}
+	if wrapper != "" {
 		extras := map[string]string{
-			"HOST":    ddl.instance.Host,
-			"PORT":    strconv.Itoa(ddl.instance.Port),
-			"SCHEMA":  ddl.schemaName,
-			"DDL":     ddl.stmt,
-			"TABLE":   alter.Table.Name,
-			"CLAUSES": stmtWithoutPrefix,
+			"HOST":   ddl.instance.Host,
+			"PORT":   strconv.Itoa(ddl.instance.Port),
+			"SCHEMA": ddl.schemaName,
+			"DDL":    ddl.stmt,
 		}
 		if ddl.instance.SocketPath != "" {
 			delete(extras, "PORT")
 			extras["SOCKET"] = ddl.instance.SocketPath
 		}
+
+		switch diff := diff.(type) {
+		case tengo.AlterTable:
+			prefix := fmt.Sprintf("%s ", diff.Table.AlterStatement())
+			extras["CLAUSES"] = strings.Replace(ddl.stmt, prefix, "", 1)
+			extras["TABLE"] = diff.Table.Name
+			extras["TYPE"] = "ALTER"
+		case tengo.CreateTable:
+			prefix := fmt.Sprintf("CREATE TABLE %s ", tengo.EscapeIdentifier(diff.Table.Name))
+			extras["CLAUSES"] = strings.Replace(ddl.stmt, prefix, "", 1)
+			extras["TABLE"] = diff.Table.Name
+			extras["TYPE"] = "CREATE"
+		case tengo.DropTable:
+			extras["CLAUSES"] = ""
+			extras["TABLE"] = diff.Table.Name
+			extras["TYPE"] = "DROP"
+		default: // currently includes case tengo.RenameTable
+			ddl.Err = fmt.Errorf("TableDiff type %T not yet supported", diff)
+		}
+
 		var wrapErr error
 		ddl.stmt, wrapErr = InterpolateExec(wrapper, target.Dir, extras)
 		ddl.isExec = true
@@ -69,6 +89,7 @@ func NewDDLStatement(diff tengo.TableDiff, mods tengo.StatementModifiers, target
 			ddl.Err = wrapErr
 		}
 	}
+
 	return ddl
 }
 

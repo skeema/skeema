@@ -193,6 +193,7 @@ This command supports use of special variables. Skeema will dynamically replace 
 * `{DDL}` -- Full `ALTER TABLE` statement, including all clauses
 * `{TABLE}` -- table name that this ALTER is for
 * `{CLAUSES}` -- Body of the ALTER statement, i.e. everything *after* `ALTER TABLE <name> `. This is what pt-online-schema-change's --alter option expects.
+* `{TYPE}` -- the word "ALTER" in all caps.
 * `{HOSTDIR}` -- Base name of whichever directory's .skeema file defined the [host option](#host) for the current directory. Sometimes useful as a key in a service discovery lookup or log message.
 * `{SCHEMADIR}` -- Base name of whichever directory's .skeema file defined the [schema option](#schema) for the directory being processed. Typically this will be the same as the basename of the directory being processed.
 * `{DIRNAME}` -- The base name of the directory being processed.
@@ -200,6 +201,24 @@ This command supports use of special variables. Skeema will dynamically replace 
 * `{DIRPATH}` -- The full (absolute) path of the directory being processed.
 
 This option can be used for integration with an online schema change tool, logging system, CI workflow, or any other tool (or combination of tools via a custom script) that you wish. An example `alter-wrapper` for executing `pt-online-schema-change` is included [in the FAQ](faq.md#how-do-i-configure-skeema-to-use-online-schema-change-tools).
+
+#### ddl-wrapper
+
+Commands | diff, push
+--- | :---
+**Default** | *empty string*
+**Type** | string
+**Restrictions** | none
+
+This option works exactly like [alter-wrapper](#alter-wrapper), except that it applies to all DDL statements regardless of type -- not just ALTER TABLE statements. This is intended for use in situations where all DDL statements, regardless of type, are sent through a common script or system for execution.
+
+If *both* of [alter-wrapper](#alter-wrapper) and [ddl-wrapper](#ddl-wrapper) are set, then [alter-wrapper](#alter-wrapper) will be applied to ALTER TABLE statements, and [ddl-wrapper](#ddl-wrapper) will be applied only to CREATE TABLE and DROP TABLE statements.
+
+If only [ddl-wrapper](#ddl-wrapper) is set, then it will be applied to ALTER TABLE, CREATE TABLE, and DROP TABLE statements.
+
+For even more fine-grained control, such as different behavior for CREATE vs DROP, set [ddl-wrapper](#ddl-wrapper) to a custom script which performs a different action based on `{TYPE}`. This variable will be replaced with "CREATE", "DROP", or "ALTER" accordingly.
+
+The template variables supported by [ddl-wrapper](#ddl-wrapper) are identical to those supported by [alter-wrapper](#alter-wrapper). Note that the `{CLAUSES}` variable will be blank for DROP TABLE statements, and will be set to the body of the table (everything after `CREATE TABLE <name>`) for CREATE TABLE statements. In general, for [ddl-wrapper](#ddl-wrapper) it may be more convenient to avoid `{CLAUSES}` and instead use the `{DDL}` variable, which will be set to the complete DDL statement with all clauses.
 
 #### debug
 
