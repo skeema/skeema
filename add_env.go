@@ -20,7 +20,7 @@ socket path.`
 	cmd := mycli.NewCommand("add-environment", summary, desc, AddEnvHandler)
 	cmd.AddOption(mycli.StringOption("host", 'h', "", "Database hostname or IP address"))
 	cmd.AddOption(mycli.StringOption("port", 'P', "3306", "Port to use for database host"))
-	cmd.AddOption(mycli.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix domain socket file for use when host is localhost"))
+	cmd.AddOption(mycli.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix socket file used if host is localhost"))
 	cmd.AddOption(mycli.StringOption("dir", 'd', ".", "Base dir for this host's schemas"))
 	cmd.AddArg("environment", "", true)
 	CommandSuite.AddSubCommand(cmd)

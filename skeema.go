@@ -105,12 +105,12 @@ func main() {
 	// Add global options. Sub-commands may override these when needed.
 	CommandSuite.AddOption(mycli.StringOption("host", 0, "", "Database hostname or IP address").Hidden())
 	CommandSuite.AddOption(mycli.StringOption("port", 0, "3306", "Port to use for database host").Hidden())
-	CommandSuite.AddOption(mycli.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix domain socket file for use when hostname==localhost").Hidden())
+	CommandSuite.AddOption(mycli.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix socket file used if host is localhost").Hidden())
 	CommandSuite.AddOption(mycli.StringOption("user", 'u', "root", "Username to connect to database host"))
-	CommandSuite.AddOption(mycli.StringOption("password", 'p', "<no password>", "Password for database user. Supply with no value to prompt.").ValueOptional())
+	CommandSuite.AddOption(mycli.StringOption("password", 'p', "<no password>", "Password for database user; supply with no value to prompt").ValueOptional())
 	CommandSuite.AddOption(mycli.StringOption("schema", 0, "", "Database schema name").Hidden())
-	CommandSuite.AddOption(mycli.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema to use for intermediate operations. Will be created and dropped unless --reuse-temp-schema enabled."))
-	CommandSuite.AddOption(mycli.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done. Useful for running without create/drop database privileges."))
+	CommandSuite.AddOption(mycli.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema for intermediate operations, created and dropped each run unless --reuse-temp-schema"))
+	CommandSuite.AddOption(mycli.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done"))
 	CommandSuite.AddOption(mycli.BoolOption("debug", 0, false, "Enable debug logging"))
 
 	var cfg *mycli.Config

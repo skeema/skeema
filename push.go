@@ -23,7 +23,7 @@ top of the file. If no environment name is supplied, the default is
 "production".`
 
 	cmd := mycli.NewCommand("push", summary, desc, PushHandler)
-	cmd.AddOption(mycli.BoolOption("verify", 0, true, "Test all generated ALTER statements on temporary schema to verify correctness"))
+	cmd.AddOption(mycli.BoolOption("verify", 0, true, "Test all generated ALTER statements on temp schema to verify correctness"))
 	cmd.AddOption(mycli.BoolOption("allow-drop-table", 0, false, "Permit dropping any table that has no corresponding *.sql file"))
 	cmd.AddOption(mycli.BoolOption("allow-drop-column", 0, false, "Permit dropping columns that are no longer present in *.sql file"))
 	cmd.AddOption(mycli.BoolOption("dry-run", 0, false, "Output DDL but don't run it; equivalent to `skeema diff`"))

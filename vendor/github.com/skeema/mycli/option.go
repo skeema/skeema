@@ -90,19 +90,12 @@ func (opt *Option) Usage(maxNameLength int) string {
 	if opt.HiddenOnCLI {
 		return ""
 	}
-	var shorthand, long, optType, def string
+	var shorthand, long, def string
 
 	if opt.Shorthand > 0 {
 		shorthand = fmt.Sprintf("-%c,", opt.Shorthand)
 	} else {
 		shorthand = "   "
-	}
-
-	switch opt.Type {
-	case OptionTypeBool:
-		optType = "bool"
-	default:
-		optType = "string"
 	}
 
 	if opt.Type == OptionTypeBool {
@@ -112,9 +105,9 @@ func (opt *Option) Usage(maxNameLength int) string {
 			long = opt.Name
 		}
 	} else if opt.RequireValue {
-		long = fmt.Sprintf("%s %s", opt.Name, optType)
+		long = fmt.Sprintf("%s value", opt.Name)
 	} else {
-		long = fmt.Sprintf("%s[=%s]", opt.Name, optType)
+		long = fmt.Sprintf("%s[=value]", opt.Name)
 	}
 
 	if opt.HasNonzeroDefault() {
@@ -125,8 +118,8 @@ func (opt *Option) Usage(maxNameLength int) string {
 		}
 	}
 
-	maxNameLength += 9 // additional space for worst-case "[=string]" suffix
-	return fmt.Sprintf("  %s --%*s  %s%s\n", shorthand, -1*maxNameLength, long, opt.Description, def)
+	maxNameLength += 8 // additional space for worst-case "[=value]" suffix
+	return fmt.Sprintf("  %s --%*s %s%s\n", shorthand, -1*maxNameLength, long, opt.Description, def)
 }
 
 // HasNonzeroDefault returns true if the Option's default value differs from
