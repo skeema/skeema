@@ -16,14 +16,14 @@ Passing unknown/invalid options to Skeema, either in an option file or on the co
 
 All options have a "long" POSIX name, supplied on the command-line in format `--option-name`. Many also have a "short" flag name format, such as `-o`.
 
-If the option requires a value (most string and int options -- see below), you may use any of these formats on the command-line:
+Non-boolean options require a corresponding value, and may be specified on the command-line with one of the following formats:
 
 * --option-name value
 * --option-name=value
 * -o value
 * -ovalue
 
-For string or int options where the value is *optional*, such as the [password option](#password), only the 2nd and 4th forms listed above may be used on the command-line.
+Note that the [password](#password) option is a special-case since it is a string option that does not require a value. If a value is supplied, either the 2nd or 4th forms listed above must be used on the command-line. This is consistent with how a password is supplied to the MySQL command-line client.
 
 Boolean options never require a value. They may be supplied in any of these formats:
 
@@ -67,11 +67,15 @@ Parsing of MySQL config file ~/.my.cnf is a special-case: instead of the normal 
 
 #### Option values
 
-Options generally take values, which can be *string*, *int*, or *boolean* types depending on the option.
+Options generally take values, which can be *string*, *enum*, *int*, *size*, or *boolean* types depending on the option.
 
-Most string and int options require a value. For example, you cannot provide --host on the command-line without also specifying a value, nor can you have a line that only contains "host\n" in an options file.
+Non-boolean options require a value. For example, you cannot provide --host on the command-line without also specifying a value, nor can you have a line that only contains "host\n" in an options file. The only special-case is the [password](#password) option, which behaves like it does in the MySQL client: you may omit a value to prompt for password on STDIN.
 
 Boolean option names may be prefixed with "skip-" or "disable-" to set a false value. In other words, on the command-line `--skip-foo` is equivalent to `--foo=false` or `--foo=0`; this may also be used in option files without the `--` prefix. If combining with the "loose-" prefix, "loose-" must appear first (e.g. "loose-skip-foo", *not* "skip-loose-foo").
+
+Enum options behave like string options, except the set of allowed values is restricted. The option reference lists what values are permitted in each case.
+
+Size options are a special-case of int options. They are used in options that deal with file or table sizes, in bytes. Size values may optionally have a suffix of "K", "M", or "G" to multiply the preceding number by 1024, 1024^2, or 1024^3 respectively. Options that deal with table sizes query information_schema to compute the size of a table; be aware that the value obtained may be slightly inaccurate. As a special-case, Skeema treats any table without any rows as size 0 bytes, even though they actually take up a few KB on disk. This way, you may configure a size option to a value of 1 to mean any table with at least one row.
 
 #### Execution model and per-directory option files
 
@@ -125,6 +129,22 @@ The placeholders are automatically replaced with the correct values for the curr
 
 ### Option reference
 
+#### allow-below-size
+
+Commands | diff, push
+--- | :---
+**Default** | 0
+**Type** | size
+**Restrictions** | none
+
+For any table below the specified size (in bytes), Skeema will allow execution of DROP TABLE statements, even if [allow-drop-table](#allow-drop-table) has not be enabled; and it will also allow ALTER TABLE ... DROP COLUMN statements, even if [allow-drop-column](#allow-drop-column) has not be enabled.
+
+The size comparison is a strict less-than. This means that with the default value of 0, no drops will be allowed automatically, as no table can be less than 0 bytes.
+
+To only allow drops on *empty* tables (ones without any rows), set [allow-below-size](#allow-below-size) to 1. Skeema always treats empty tables as size 0 bytes as a special-case.
+
+This option is intended to permit rapid development when altering a new table before it's in use, or dropping a table that was never in use. The intended pattern is to set [allow-below-size](#allow-below-size) in a global option file, likely to a higher value in the development environment and a lower value in the production environment. Then, whenever drops of a larger size are needed, the user should supply [--allow-drop-table](#allow-drop-table) or [--allow-drop-column](#allow-drop-column) *manually on the command-line* when appropriate.
+
 #### allow-drop-column
 
 Commands | diff, push
@@ -135,6 +155,10 @@ Commands | diff, push
 
 If set to false, `skeema diff` outputs ALTER TABLE statements containing at least one DROP COLUMN clause as commented-out, and `skeema push` skips their execution. Note that the entire ALTER TABLE statement is skipped in this case, even if it contained additional clauses besides the DROP COLUMN clause. (This is to prevent problems with column renames, which Skeema does not yet support.)
 
+If set to true, ALTER TABLE ... DROP COLUMN statements are always permitted, regardless of table size and regardless of use of the [allow-below-size](#allow-below-size) option.
+
+It is not recommended to enable this setting in an option file, especially in the production environment. It is safer to require users to supply it manually on the command-line on an as-needed basis.
+
 #### allow-drop-table
 
 Commands | diff, push
@@ -144,6 +168,10 @@ Commands | diff, push
 **Restrictions** | none
 
 If set to false, `skeema diff` outputs DROP TABLE statements as commented-out, and `skeema push` skips their execution.
+
+If set to true, DROP TABLE statements are always permitted, regardless of table size and regardless of use of the [allow-below-size](#allow-below-size) option.
+
+It is not recommended to enable this setting in an option file, especially in the production environment. It is safer to require users to supply it manually on the command-line on an as-needed basis.
 
 #### alter-algorithm
 
@@ -157,7 +185,7 @@ Adds an ALGORITHM clause to any generated ALTER TABLE statement, in order to for
 
 The explicit value "DEFAULT" is supported, and will add a "ALGORITHM=DEFAULT" clause to all ALTER TABLEs, but this has no real effect vs simply omitting [alter-algorithm](#alter-algorithm) entirely.
 
-If [alter-wrapper](#alter-wrapper) is set to use an external online schema change tool such as pt-online-schema-change, [alter-algorithm](#alter-algorithm) should not also be used.
+If [alter-wrapper](#alter-wrapper) is set to use an external online schema change (OSC) tool such as pt-online-schema-change, [alter-algorithm](#alter-algorithm) should not also be used unless [alter-wrapper-min-size](#alter-wrapper-min-size) is also in-use. This is to prevent sending ALTER statements containing ALGORITHM clauses to the external OSC tool.
 
 #### alter-lock
 
@@ -171,7 +199,7 @@ Adds a LOCK clause to any generated ALTER TABLE statement, in order to force ena
 
 The explicit value "DEFAULT" is supported, and will add a "LOCK=DEFAULT" clause to all ALTER TABLEs, but this has no real effect vs simply omitting [alter-lock](#alter-lock) entirely.
 
-If [alter-wrapper](#alter-wrapper) is set to use an external online schema change tool such as pt-online-schema-change, [alter-lock](#alter-lock) should not also be used.
+If [alter-wrapper](#alter-wrapper) is set to use an external online schema change tool such as pt-online-schema-change, [alter-lock](#alter-lock) should not be used unless [alter-wrapper-min-size](#alter-wrapper-min-size) is also in-use. This is to prevent sending ALTER statements containing LOCK clauses to the external OSC tool.
 
 #### alter-wrapper
 
@@ -192,6 +220,7 @@ This command supports use of special variables. Skeema will dynamically replace 
 * `{PASSWORD}` -- MySQL password defined by the [password option](#password) either via command-line or option file
 * `{DDL}` -- Full `ALTER TABLE` statement, including all clauses
 * `{TABLE}` -- table name that this ALTER is for
+* `{SIZE}` -- size of table that this ALTER is for, in bytes. This will always be 0 for tables without any rows.
 * `{CLAUSES}` -- Body of the ALTER statement, i.e. everything *after* `ALTER TABLE <name> `. This is what pt-online-schema-change's --alter option expects.
 * `{TYPE}` -- the word "ALTER" in all caps.
 * `{HOSTDIR}` -- Base name of whichever directory's .skeema file defined the [host option](#host) for the current directory. Sometimes useful as a key in a service discovery lookup or log message.
@@ -201,6 +230,24 @@ This command supports use of special variables. Skeema will dynamically replace 
 * `{DIRPATH}` -- The full (absolute) path of the directory being processed.
 
 This option can be used for integration with an online schema change tool, logging system, CI workflow, or any other tool (or combination of tools via a custom script) that you wish. An example `alter-wrapper` for executing `pt-online-schema-change` is included [in the FAQ](faq.md#how-do-i-configure-skeema-to-use-online-schema-change-tools).
+
+#### alter-wrapper-min-size
+
+Commands | diff, push
+--- | :---
+**Default** | 0
+**Type** | size
+**Restrictions** | Has no effect unless [alter-wrapper](#alter-wrapper) also set
+
+Any table smaller than this size (in bytes) will ignore the [alter-wrapper](#alter-wrapper) option. This permits skipping the overhead of external OSC tools when altering small tables.
+
+The size comparison is a strict less-than. This means that with the default value of 0, [alter-wrapper](#alter-wrapper) is always applied if set, as no table can be less than 0 bytes.
+
+To only skip [alter-wrapper](#alter-wrapper) on *empty* tables (ones without any rows), set [alter-wrapper-min-size](#alter-wrapper-min-size) to 1. Skeema always treats empty tables as size 0 bytes as a special-case.
+
+If [alter-wrapper-min-size](#alter-wrapper-min-size) is set to a value greater than 0, whenever the [alter-wrapper](#alter-wrapper) is applied to a table (any table >= the supplied size value), the [alter-algorithm](#alter-algorithm) and [alter-lock](#alter-lock) options are both ignored automatically. This prevents sending an ALTER statement containing ALGORITHM or LOCK clauses to an external OSC tool. This permits a configuration that uses built-in online DDL for small tables, and an external OSC tool for larger tables.
+
+If this option is supplied along with *both* [alter-wrapper](#alter-wrapper) and [ddl-wrapper](#ddl-wrapper), ALTERs on tables below the specified size will still have [ddl-wrapper](#ddl-wrapper) applied. This configuration is not recommended due to its complexity.
 
 #### ddl-wrapper
 
@@ -216,9 +263,25 @@ If *both* of [alter-wrapper](#alter-wrapper) and [ddl-wrapper](#ddl-wrapper) are
 
 If only [ddl-wrapper](#ddl-wrapper) is set, then it will be applied to ALTER TABLE, CREATE TABLE, and DROP TABLE statements.
 
-For even more fine-grained control, such as different behavior for CREATE vs DROP, set [ddl-wrapper](#ddl-wrapper) to a custom script which performs a different action based on `{TYPE}`. This variable will be replaced with "CREATE", "DROP", or "ALTER" accordingly.
+For even more fine-grained control, such as different behavior for CREATE vs DROP, set [ddl-wrapper](#ddl-wrapper) to a custom script which performs a different action based on `{TYPE}`.
 
-The template variables supported by [ddl-wrapper](#ddl-wrapper) are identical to those supported by [alter-wrapper](#alter-wrapper). Note that the `{CLAUSES}` variable will be blank for DROP TABLE statements, and will be set to the body of the table (everything after `CREATE TABLE <name>`) for CREATE TABLE statements. In general, for [ddl-wrapper](#ddl-wrapper) it may be more convenient to avoid `{CLAUSES}` and instead use the `{DDL}` variable, which will be set to the complete DDL statement with all clauses.
+This command supports use of special variables. Skeema will dynamically replace these with an appropriate value when building the final command-line. See [options with variable interpolation](#options-with-variable-interpolation) for more information. The following variables are supported by `ddl-wrapper`:
+
+* `{HOST}` -- hostname (or IP) defined by the [host option](#host) for the directory being processed
+* `{PORT}` -- port number defined by the [port option](#port) for the directory being processed
+* `{SCHEMA}` -- schema name defined by the [schema option](#schema) for the directory being processed
+* `{USER}` -- MySQL username defined by the [user option](#user) either via command-line or option file
+* `{PASSWORD}` -- MySQL password defined by the [password option](#password) either via command-line or option file
+* `{DDL}` -- Full DDL statement, including all clauses
+* `{TABLE}` -- table name that this DDL is for
+* `{SIZE}` -- size of table that this DDL is for, in bytes. This will always be 0 for tables without any rows, or for `CREATE TABLE` statements.
+* `{CLAUSES}` -- Body of the DDL statement, i.e. everything *after* `ALTER TABLE <name> ` or `CREATE TABLE <name> `. This is blank for `DROP TABLE` statements.
+* `{TYPE}` -- the word "CREATE", "DROP", or "ALTER" in all caps.
+* `{HOSTDIR}` -- Base name of whichever directory's .skeema file defined the [host option](#host) for the current directory. Sometimes useful as a key in a service discovery lookup or log message.
+* `{SCHEMADIR}` -- Base name of whichever directory's .skeema file defined the [schema option](#schema) for the directory being processed. Typically this will be the same as the basename of the directory being processed.
+* `{DIRNAME}` -- The base name of the directory being processed.
+* `{DIRPARENT}` -- The base name of the parent of the directory being processed.
+* `{DIRPATH}` -- The full (absolute) path of the directory being processed.
 
 #### debug
 
@@ -233,6 +296,7 @@ This option enables debug logging in all commands. The extra output is sent to S
 * When `skeema diff` or `skeema push` encounters tables that cannot be ALTERed due to use of features not yet supported by Skeema, the debug log will indicate which specific line(s) of the CREATE TABLE statement are using such features.
 * When any command encounters non-fatal problems in a *.sql file, they will be logged. This can include extra ignored statements before/after the CREATE TABLE statement, or a table whose name does not match its filename.
 * If a panic occurs in Skeema's main thread, a full stack trace will be logged.
+* Options that control conditional logic based on table sizes, such as [allow-below-size](#allow-below-size) and [alter-wrapper-min-size](#alter-wrapper-min-size), provide debug output with size information whenever their condition is triggered.
 * Upon exiting, the numeric exit code will be logged.
 
 #### dir

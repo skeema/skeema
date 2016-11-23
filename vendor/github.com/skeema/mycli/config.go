@@ -289,11 +289,15 @@ func (cfg *Config) GetEnum(name string, allowedValues ...string) (string, error)
 // the returned value will automatically be multiplied by 1024, 1024^2, or
 // 1024^3 respectively. Suffixes may also be expressed with a trailing 'B',
 // e.g. 'KB' and 'K' are equivalent.
-// An error will be returned if the value cannot be parsed as a byte size.
+// A blank string will be returned as 0, with no error. Aside from that case,
+// an error will be returned if the value cannot be parsed as a byte size.
 // Panics if the option does not exist.
 func (cfg *Config) GetBytes(name string) (uint64, error) {
 	var multiplier uint64 = 1
 	value := strings.ToLower(cfg.Get(name))
+	if value == "" {
+		return 0, nil
+	}
 	if value[len(value)-1] == 'b' {
 		value = value[0 : len(value)-1]
 	}

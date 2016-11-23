@@ -283,6 +283,22 @@ func (instance *Instance) TableSize(schema *Schema, table *Table) (int64, error)
 	return result, err
 }
 
+// TableHasRows returns true if the table has at least one row. If an error
+// occurs in querying, also returns true (along with the error) since a false
+// positive is generally less dangerous in this case than a false negative.
+func (instance *Instance) TableHasRows(schema *Schema, table *Table) (bool, error) {
+	db, err := instance.Connect(schema.Name, "")
+	if err != nil {
+		return true, err
+	}
+	var result []int
+	query := fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", EscapeIdentifier(table.Name))
+	if err := db.Select(&result, query); err != nil {
+		return true, err
+	}
+	return len(result) != 0, nil
+}
+
 func (instance *Instance) purgeSchemaCache() {
 	instance.Lock()
 	instance.schemas = nil
@@ -353,13 +369,12 @@ func (instance *Instance) DropTablesInSchema(schema *Schema, onlyIfEmpty bool) e
 	}
 
 	if onlyIfEmpty {
-		var result []int
 		for _, t := range tables {
-			query := fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", EscapeIdentifier(t.Name))
-			if err := db.Select(&result, query); err != nil {
+			hasRows, err := instance.TableHasRows(schema, t)
+			if err != nil {
 				return err
 			}
-			if len(result) != 0 {
+			if hasRows {
 				return fmt.Errorf("DropTablesInSchema: table %s.%s has at least one row", EscapeIdentifier(schema.Name), EscapeIdentifier(t.Name))
 			}
 		}
