@@ -2,6 +2,7 @@ package mycli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -154,53 +155,34 @@ func (f *File) Parse(cfg *Config) error {
 	for scanner.Scan() {
 		line := scanner.Text()
 		lineNumber++
-		line = strings.TrimLeftFunc(line, unicode.IsSpace)
-		if line == "" || line[0] == ';' {
-			continue
+
+		parsedLine, err := parseLine(line)
+		if err != nil {
+			return fmt.Errorf("Parse error in %s line %d: %s", f.Path(), lineNumber, err)
 		}
-		if line[0] == '[' {
-			endIndex := strings.Index(line, "]")
-			hashIndex := strings.Index(line, "#")
-			if endIndex == -1 || (hashIndex > -1 && hashIndex < endIndex) {
-				return fmt.Errorf("Parse error in %s line %d: unterminated section name", f.Path(), lineNumber)
-			}
-			if endIndex < len(line)-1 {
-				var after string
-				if hashIndex > -1 {
-					after = line[endIndex+1 : hashIndex]
+
+		switch parsedLine.kind {
+		case lineTypeSectionHeader:
+			section = f.getOrCreateSection(parsedLine.sectionName)
+		case lineTypeKeyOnly, lineTypeKeyValue:
+			opt := cfg.FindOption(parsedLine.key)
+			if opt == nil {
+				if parsedLine.isLoose || f.IgnoreUnknownOptions {
+					continue
 				} else {
-					after = line[endIndex+1 : len(line)]
-				}
-				if len(strings.TrimSpace(after)) > 0 {
-					return fmt.Errorf("Parse error in %s line %d: extra characters after section name", f.Path(), lineNumber)
+					return OptionNotDefinedError{parsedLine.key, fmt.Sprintf("%s line %d", f.Path(), lineNumber)}
 				}
 			}
-			name := line[1:endIndex]
-			section = f.getOrCreateSection(name)
-			continue
-		}
-
-		tokens := strings.SplitN(line, "#", 2)
-		key, value, hasValue, loose := NormalizeOptionToken(tokens[0])
-		source := fmt.Sprintf("%s line %d", f.Path(), lineNumber)
-		opt := cfg.FindOption(key)
-		if opt == nil {
-			if loose || f.IgnoreUnknownOptions {
-				continue
-			} else {
-				return OptionNotDefinedError{key, source}
+			if parsedLine.kind == lineTypeKeyOnly {
+				if opt.RequireValue {
+					return OptionMissingValueError{opt.Name, fmt.Sprintf("%s line %d", f.Path(), lineNumber)}
+				} else if opt.Type == OptionTypeBool {
+					// For booleans, option without value indicates option is being enabled
+					parsedLine.value = "1"
+				}
 			}
+			section.Values[parsedLine.key] = parsedLine.value
 		}
-		if !hasValue {
-			if opt.RequireValue {
-				return OptionMissingValueError{opt.Name, source}
-			} else if opt.Type == OptionTypeBool {
-				// Option without value indicates option is being enabled if boolean
-				value = "1"
-			}
-		}
-
-		section.Values[key] = value
 	}
 
 	f.parsed = true
@@ -310,4 +292,117 @@ func (f *File) getOrCreateSection(name string) *Section {
 	f.sections = append(f.sections, s)
 	f.sectionIndex[name] = s
 	return s
+}
+
+type lineType int
+
+const (
+	lineTypeBlank lineType = iota
+	lineTypeComment
+	lineTypeSectionHeader
+	lineTypeKeyOnly
+	lineTypeKeyValue
+)
+
+type parsedLine struct {
+	sectionName string
+	key         string
+	value       string
+	comment     string
+	kind        lineType
+	isLoose     bool
+}
+
+// parseLine parses a file line into its components
+func parseLine(line string) (*parsedLine, error) {
+	line = strings.TrimLeftFunc(line, unicode.IsSpace)
+	result := new(parsedLine)
+
+	if line == "" {
+		result.kind = lineTypeBlank
+		return result, nil
+	}
+	if line[0] == ';' || line[0] == '#' {
+		result.kind = lineTypeComment
+		result.comment = line[1:len(line)]
+		return result, nil
+	}
+
+	if line[0] == '[' {
+		endIndex := strings.Index(line, "]")
+		hashIndex := strings.Index(line, "#")
+		if endIndex == -1 || (hashIndex > -1 && hashIndex < endIndex) {
+			return nil, errors.New("unterminated section name")
+		}
+		if endIndex < len(line)-1 {
+			var after string
+			if hashIndex > -1 {
+				after = line[endIndex+1 : hashIndex]
+			} else {
+				after = line[endIndex+1 : len(line)]
+			}
+			if len(strings.TrimSpace(after)) > 0 {
+				return nil, errors.New("extra characters after section name")
+			}
+		}
+		result.kind = lineTypeSectionHeader
+		result.sectionName = line[1:endIndex]
+		if hashIndex > -1 {
+			result.comment = line[hashIndex+1 : len(line)]
+		}
+		return result, nil
+	}
+
+	// If we get here, it's one of the key/value types
+	var inValue, escapeNext bool
+	var inQuote rune
+
+	// Parse out any inline comment, being careful to still allow escaped hashes or
+	// hashes inside of quoted values
+	for n, c := range line {
+		if escapeNext {
+			escapeNext = false
+			continue
+		}
+		if c == '#' && inQuote == 0 {
+			result.comment = line[n+1 : len(line)]
+			line = line[0:n]
+			break
+		}
+		if !inValue {
+			switch c {
+			case '=':
+				inValue = true
+			case '\'', '"', '`', '\\':
+				return nil, fmt.Errorf("Illegal character %c in option name", c)
+			}
+			continue
+		}
+		switch c {
+		case '\'', '"', '`':
+			if c == inQuote {
+				inQuote = 0
+			} else if inQuote == 0 {
+				inQuote = c
+			}
+		case '\\':
+			escapeNext = true
+		}
+	}
+
+	if inQuote != 0 {
+		return nil, errors.New("Quoted value has no terminating quote")
+	}
+	if escapeNext {
+		return nil, errors.New("Value ends in a single backslash")
+	}
+
+	var hasValue bool
+	result.key, result.value, hasValue, result.isLoose = NormalizeOptionToken(line)
+	if hasValue {
+		result.kind = lineTypeKeyValue
+	} else {
+		result.kind = lineTypeKeyOnly
+	}
+	return result, nil
 }

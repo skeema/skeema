@@ -40,15 +40,18 @@ Skeema option files are a variant of INI format, designed like MySQL cnf files, 
 
 ```ini
 option-name=value
-some-bool-option
+some-bool-option   # inline comment
 
-# comment
+# full-line comment
+; full-line comment (alternative syntax -- only works at beginning of line)
 
 [environment-name]
 this=that
 ```
 
-Options must be provided using their full names ("long" POSIX name, but without the double-dash prefix). Values may be omitted for options that do not require them.
+Options must be provided using their full names ("long" POSIX name, but without the double-dash prefix). Values may be omitted for options that do not require them, such as boolean flags.
+
+Values may optionally be wrapped in quotes, but this is not required, even for values containing spaces. The # character will not start an inline comment if it appears inside of a quoted value. Outside of a quoted value, it may also be backslash-escaped as \# to insert a literal.
 
 Sections in option files are interpreted as environment names -- typically one of "production", "staging", or "development", but any arbitrary name is allowed. Every Skeema command takes an optional positional arg specifying an environment name, which will cause options in the corresponding section to be applied. Options that appear at the top of the file, prior to any environment name, are always applied; these may be overridden by options subsequently appearing in a selected environment. If no environment name is supplied to a Skeema command, the default environment name is "production".
 

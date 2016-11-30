@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // OptionValuer should be implemented by anything that can parse and return
@@ -218,16 +219,47 @@ func (cfg *Config) FindOption(name string) *Option {
 	return helper(rootCommand)
 }
 
-// Get returns an option's value as a string. If the option is not set, its
-// default value will be returned. Panics if the option does not exist, since
-// this is indicative of programmer error, not runtime error.
-func (cfg *Config) Get(name string) string {
+// GetRaw returns an option's value as-is as a string. If the option is not set,
+// its default value will be returned. Panics if the option does not exist,
+// since this is indicative of programmer error, not runtime error.
+func (cfg *Config) GetRaw(name string) string {
 	cfg.rebuildIfDirty()
 	value, ok := cfg.unifiedValues[name]
 	if !ok {
 		panic(fmt.Errorf("Assertion failed: called Get on unknown option %s", name))
 	}
 	return value
+}
+
+// Get returns an option's value as a string. If the value is wrapped in quotes
+// (single, double, or backticks) they will be stripped automatically. If the
+// option is not set, its default value will be returned. Panics if the option
+// does not exist, since this is indicative of programmer error, not runtime
+// error.
+func (cfg *Config) Get(name string) string {
+	value := cfg.GetRaw(name)
+	if len(value) < 2 || value[0] != value[len(value)-1] || (value[0] != '`' && value[0] != '"' && value[0] != '\'') {
+		// We can return early if the string doesn't appear to be fully wrapped in any possible quote runes
+		return value
+	}
+
+	// Before stripping quotes, confirm that there's no terminating quote midway
+	// through the string
+	var escapeNext bool
+	quote, _ := utf8.DecodeRuneInString(value)
+	for _, c := range value[1 : len(value)-1] {
+		if escapeNext {
+			escapeNext = false
+			continue
+		}
+		switch c {
+		case '\\':
+			escapeNext = true
+		case quote:
+			return value
+		}
+	}
+	return value[1 : len(value)-1]
 }
 
 // GetBool returns an option's value as a bool. If the option is not set, its
