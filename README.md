@@ -20,7 +20,7 @@ To download, build, and install Skeema, run:
 
 ## Documentation
 
-* [Usage examples and screencasts](doc/examples.md)
+* [Getting started](doc/examples.md): usage examples and screencasts
 * [Recommended workflow](doc/workflow.md)
 * [Configuration how-to](doc/config.md)
 * [Options reference](doc/options.md)

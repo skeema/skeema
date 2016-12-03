@@ -1,18 +1,14 @@
-## Usage examples
+## Getting started
 
 ### Create a git repo of CREATE TABLE statements
 
-Use the `skeema init` command to generate CREATE TABLE files.
+Use the `skeema init` command to generate a directory of CREATE TABLE files.
 
 ```
 skeema init -h my.prod.db.hostname -u root -p -d schemas
-cd schemas
-git init
-git add .
-git commit -m 'Initial import of schemas from prod DB to git'
 ```
 
-[![asciicast](http://www.asciinema.org/a/db9c2pj6cgoeirw7bhg41iros.png)](https://asciinema.org/a/db9c2pj6cgoeirw7bhg41iros)
+[![asciicast](https://asciinema.org/a/a8iw14c50odch1xaum68dwm21.png)](https://asciinema.org/a/a8iw14c50odch1xaum68dwm21)
 
 Connectivity options for `skeema init` are similar to those for the MySQL client (-h host -u user -ppassword -S socket -P port). Skeema can even parse your existing ~/.my.cnf to obtain user and password.
 
@@ -20,9 +16,13 @@ The -d (--dir) option specifies what directory to create; if omitted, it will de
 
 The supplied host should be a master. Skeema saves the host information in a configuration file called .skeema in the host's directory. From there, each schema have its own subdirectory, with its own .skeema file defining the schema name. (Configuration options in .skeema files "cascade" down to subdirectories, allowing you to define options that only affect particular hosts or schemas.)
 
+The above example assumes the host information corresponds to the *production* environment. To use a different environment name ("staging", "development", or any other arbitrary name), supply the name at the end of the command-line above. To add host configuration for additional environments, [you may use `skeema add-environment`](#keep-dev-and-prod-in-sync), or you may add it to the .skeema file by hand.
+
+The above example also assumes you have only a single database instance or pool. If you have several, you'd want to run `skeema init` once per master, supplying a different --dir each time reflecting the pool name. In this case you may want to use the parent directory as the root of the git repo.
+
 ### Generate and run ALTER TABLE from changing a file
 
-After changing a table file, you can run `skeema diff` to generate DDL which would transform the live database to match the file. Running `skeema push` generates the DDL and then actually applies it.
+After changing a table file, you can run `skeema diff` to generate DDL which would transform the live database to match the file. `skeema diff` simply displays the generated DDL, but does not run it. To execute the change, use `skeema push` instead.
 
 ```
 vi product/users.sql
@@ -30,7 +30,7 @@ skeema diff
 skeema push
 ```
 
-[![asciicast](https://asciinema.org/a/4yz2yngkrbiww2l70u26ejwuh.png)](https://asciinema.org/a/4yz2yngkrbiww2l70u26ejwuh)
+[![asciicast](https://asciinema.org/a/67thc3llcx57rxzuoqqdpmlq1.png)](https://asciinema.org/a/67thc3llcx57rxzuoqqdpmlq1)
 
 Note that Skeema won't use online DDL unless [configured to do so](faq.md#how-do-i-configure-skeema-to-use-online-schema-change-tools).
 
@@ -49,7 +49,9 @@ skeema diff --allow-drop-table
 skeema push --allow-drop-table
 ```
 
-[![asciicast](https://asciinema.org/a/0opnqhiwj2hxfpeuzlrmhn4di.png)](https://asciinema.org/a/0opnqhiwj2hxfpeuzlrmhn4di)
+[![asciicast](https://asciinema.org/a/7nic9hyphd1m0xlprpzitbp56.png)](https://asciinema.org/a/7nic9hyphd1m0xlprpzitbp56)
+
+To make things more convenient and loosen the --allow-drop-table safety for smaller tables, try the [allow-below-size](options.md#allow-below-size) option. For example, putting `allow-below-size=10m` in ~/schemas/.skeema will remove the requirement of specifying --allow-drop-table when dropping any table under 10 megabytes in size. Or use `allow-below-size=1` to only loosen safeties for tables that have no rows. (Skeema always treats zero-row tables as size 0 bytes, as a special-case.)
 
 ### Normalize format of CREATE TABLE files, and check for syntax errors
 
@@ -59,7 +61,7 @@ This will rewrite all of the *.sql files to match the format shown by MySQL's SH
 skeema lint
 ```
 
-[![asciicast](https://asciinema.org/a/9zcpe06gljam86mq5hkn2e84s.png)](https://asciinema.org/a/9zcpe06gljam86mq5hkn2e84s)
+[![asciicast](https://asciinema.org/a/2up4ho8hnninxph72y01lyms9.png)](https://asciinema.org/a/2up4ho8hnninxph72y01lyms9)
 
 ### Update CREATE TABLE files with changes made manually / outside of Skeema
 
@@ -71,20 +73,85 @@ skeema pull
 
 By default, this also normalizes file format like `skeema lint`, but you can skip that behavior with the --skip-normalize option (or equivalently set as --normalize=0, --normalize=false, etc).
 
-[![asciicast](https://asciinema.org/a/525kggzrguam32rj01kk8jroa.png)](https://asciinema.org/a/525kggzrguam32rj01kk8jroa)
+[![asciicast](https://asciinema.org/a/bz7mdynz1u2kiqrfbxzvzhkse.png)](https://asciinema.org/a/bz7mdynz1u2kiqrfbxzvzhkse)
 
 ### Keep dev and prod in-sync
 
-This example is assuming each dev server has a dev MySQL on localhost, but other locations work fine too; connection options are similar to MySQL client.
+Let's assume each engineer has a dev MySQL instance on their local dev server. This example shows how to add an environment named "dev", using the --socket (-S) option to reach a MySQL instance on localhost.
+
+As a one-time setup to configure this new environment, use `skeema add-environment` from the host directory previously created by init:
 
 ```
-# one-time setup
 skeema add-environment dev -h localhost -S /var/lib/mysql/mysql.sock -u root
+```
 
-# make changes on dev, push to prod
-rake db:migrate # or whatever migration method you use in dev
+This automatically added a new section to the .skeema file, configuring the dev environment's connection information. You could also do this by hand instead of using `skeema add-environment`.
+
+Note that you can also add any other config directives to .skeema. If you put them at the top of the file, they'll affect all environments; or put them in an environment section to only affect that environment.
+
+Once your additional environment(s) are configured, you may now use a more advanced workflow for schema changes:
+
+```
+# make the schema change in dev using any preferred method
+rake db:migrate
+
+# pull the changes from dev into the repo
 skeema pull development
 git commit -a -m 'Updating schema files from Rails migration'
+
+# diff the changes against production, to sanity-check
 skeema diff production
+
+# make a pull request (or whatever your normal code workflow is)
+
+# after PR is merged, push the changes to production
 skeema push production
 ```
+
+### Advanced configuration
+
+This example shows how to configure Skeema to use the following set of rules:
+
+* Development
+  * MySQL instances are located on each engineer's local dev box
+  * Be fully permissive about dropping tables or columns in dev, regardless of table size
+  * Just use standard ALTERs, no online DDL or external OSC tool
+* Any environment EXCEPT development
+  * Only automatically allow dropping tables or columns for tables that have no rows. For any table with at least one row, force the user to supply --allow-drop-table or --allow-drop-column on the command-line to confirm when needed.
+  * For ALTERs, for any table 1GB or later, use pt-online-schema-change
+  * For ALTERs, for any table below 1GB, use MySQL 5.6 online DDL. (Some specific ALTERs will fail due to requiring offline DDL; in this case the user can supply --skip-alter-algorithm and/or --skip-alter-lock as needed.)
+* Staging
+  * Has its own mysql instance, reached via TCP/IP, on a nonstandard port
+* Production
+  * Has its own mysql instance, reached via TCP/IP, on the standard 3306 port
+
+```ini
+alter-wrapper="/usr/local/bin/pt-online-schema-change --alter {CLAUSES} D={SCHEMA},t={TABLE},h={HOST},P={PORT},u={USER},p={PASSWORD}"
+alter-wrapper-min-size=1g
+alter-algorithm=inplace
+alter-lock=none
+allow-below-size=1
+
+[development]
+host=localhost
+socket=/var/lib/mysql/mysql.sock
+allow-drop-table
+allow-drop-column
+skip-alter-wrapper
+skip-alter-algorithm
+skip-alter-lock
+
+[staging]
+host=staging-db.mycompany.com
+port=3333
+
+[production]
+host=prod-db.mycompany.com
+```
+
+Note that the lines at the top of the file (prior to any named section) will apply to *all environments*. But then the [development] environment overrides a few settings, and these overrides take precedence when using the environment.
+
+The above example is assuming a .skeema file located in a host-level directory. Alternatively, you could apply this configuration at an individual schema level by putting it in a schema directory's .skeema file, minus all the `host`, `port`, and `socket` lines. This permits you to have a different configuration *for specific schemas that need special-case logic*.
+
+Or if you have many MySQL pools, and you want them to all follow this logic, you could put this configuration at a global level (/etc/skeema, /usr/local/etc/skeema, or ~/.skeema), again minus all the `host`, `port`, and `socket` lines. You can still override specific settings on a per-host and/or per-schema basis in the .skeema file corresponding to their directories.
+
