@@ -259,6 +259,7 @@ func InterpolateExec(command string, dir *Dir, extra map[string]string) (string,
 	values["DIRNAME"] = path.Base(dir.Path)
 	values["DIRPARENT"] = path.Base(path.Dir(dir.Path))
 	values["DIRPATH"] = dir.Path
+	values["CONNOPTS"] = realConnOptions(dir.Config.Get("connect-options"))
 
 	// Add in extras *after*, to allow them to override if desired
 	for name, val := range extra {
@@ -285,4 +286,43 @@ func escapeExecValue(value string) string {
 		return value
 	}
 	return fmt.Sprintf("'%s'", strings.Replace(value, "'", `'"'"'`, -1))
+}
+
+// realConnOptions takes a comma-separated string of connection options, strips
+// any Go driver-specific ones, and then returns the new string which is now
+// suitable for passing to an external tool.
+func realConnOptions(origValue string) string {
+	// list of lowercased versions of all go-sql-driver/mysql special params
+	ignored := map[string]bool{
+		"allowallfiles":           true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"allowcleartextpasswords": true,
+		"allownativepasswords":    true,
+		"allowoldpasswords":       true,
+		"charset":                 true,
+		"collation":               true,
+		"clientfoundrows":         true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"columnswithalias":        true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"interpolateparams":       true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"loc":                     true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"maxallowedpacket":        true,
+		"multistatements":         true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"parsetime":               true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"readtimeout":             true,
+		"strict":                  true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"timeout":                 true,
+		"tls":                     true,
+		"writetimeout":            true,
+	}
+
+	var keep []string
+	for _, keyAndValue := range strings.Split(origValue, ",") {
+		if keyAndValue == "" {
+			continue
+		}
+		tokens := strings.SplitN(keyAndValue, "=", 2)
+		if !ignored[strings.ToLower(tokens[0])] {
+			keep = append(keep, keyAndValue)
+		}
+	}
+	return strings.Join(keep, ",")
 }

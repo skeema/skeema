@@ -9,6 +9,7 @@
 * [alter-lock](#alter-lock)
 * [alter-wrapper](#alter-wrapper)
 * [alter-wrapper-min-size](#alter-wrapper-min-size)
+* [connect-options](#connect-options)
 * [ddl-wrapper](#ddl-wrapper)
 * [debug](#debug)
 * [dir](#dir)
@@ -111,21 +112,23 @@ This option causes Skeema to shell out to an external process for running ALTER 
 
 This command supports use of special variables. Skeema will dynamically replace these with an appropriate value when building the final command-line. See [options with variable interpolation](config.md#options-with-variable-interpolation) for more information. The following variables are supported by `alter-wrapper`:
 
-* `{HOST}` -- hostname (or IP) defined by the [host option](#host) for the directory being processed
-* `{PORT}` -- port number defined by the [port option](#port) for the directory being processed
-* `{SCHEMA}` -- schema name defined by the [schema option](#schema) for the directory being processed
-* `{USER}` -- MySQL username defined by the [user option](#user) either via command-line or option file
-* `{PASSWORD}` -- MySQL password defined by the [password option](#password) either via command-line or option file
+* `{HOST}` -- hostname (or IP) defined by the [host](#host) option for the directory being processed
+* `{PORT}` -- port number defined by the [port](#port) option for the directory being processed
+* `{SCHEMA}` -- schema name defined by the [schema](#schema) option for the directory being processed
+* `{USER}` -- MySQL username defined by the [user](#user) option either via command-line or option file
+* `{PASSWORD}` -- MySQL password defined by the [password](#password) option either via command-line or option file
 * `{DDL}` -- Full `ALTER TABLE` statement, including all clauses
 * `{TABLE}` -- table name that this ALTER is for
 * `{SIZE}` -- size of table that this ALTER is for, in bytes. This will always be 0 for tables without any rows.
 * `{CLAUSES}` -- Body of the ALTER statement, i.e. everything *after* `ALTER TABLE <name> `. This is what pt-online-schema-change's --alter option expects.
 * `{TYPE}` -- the word "ALTER" in all caps.
-* `{HOSTDIR}` -- Base name of whichever directory's .skeema file defined the [host option](#host) for the current directory. Sometimes useful as a key in a service discovery lookup or log message.
-* `{SCHEMADIR}` -- Base name of whichever directory's .skeema file defined the [schema option](#schema) for the directory being processed. Typically this will be the same as the basename of the directory being processed.
+* `{HOSTDIR}` -- Base name of whichever directory's .skeema file defined the [host](#host) option for the current directory. Sometimes useful as a key in a service discovery lookup or log message.
+* `{SCHEMADIR}` -- Base name of whichever directory's .skeema file defined the [schema](#schema) option for the directory being processed. Typically this will be the same as the basename of the directory being processed.
 * `{DIRNAME}` -- The base name of the directory being processed.
 * `{DIRPARENT}` -- The base name of the parent of the directory being processed.
 * `{DIRPATH}` -- The full (absolute) path of the directory being processed.
+* `{CONNOPTS}` -- Session variables passed through from the [connect-options](#connect-options) option
+
 
 This option can be used for integration with an online schema change tool, logging system, CI workflow, or any other tool (or combination of tools via a custom script) that you wish. An example `alter-wrapper` for executing `pt-online-schema-change` is included [in the FAQ](faq.md#how-do-i-configure-skeema-to-use-online-schema-change-tools).
 
@@ -147,6 +150,38 @@ If [alter-wrapper-min-size](#alter-wrapper-min-size) is set to a value greater t
 
 If this option is supplied along with *both* [alter-wrapper](#alter-wrapper) and [ddl-wrapper](#ddl-wrapper), ALTERs on tables below the specified size will still have [ddl-wrapper](#ddl-wrapper) applied. This configuration is not recommended due to its complexity.
 
+### connect-options
+
+Commands | *all*
+--- | :---
+**Default** | *empty string*
+**Type** | string
+**Restrictions** | none
+
+This option stores a comma-separated list of session variables to set upon connecting to the database. For example, a value of `wait_timeout=86400,innodb_lock_wait_timeout=1,lock_wait_timeout=60` would set these three MySQL variables, at the session level, for connections made by Skeema.
+
+Any string-valued variables must have their values wrapped in single quotes. (Take care to escape those quotes properly in your shell if supplying connect-options on the command-line.) At this time, string values in connect-options may not contain commas, even inside quotes; this may preclude setting MySQL's `sql_mode` variable, setting fallback character sets, etc. Please open a GitHub issue if this impacts you.
+
+Additionally the following MySQL variables *cannot* be set by this option, since it would interfere with Skeema's internal operations:
+
+* `autocommit`
+* `foreign_key_checks`
+
+Aside from these, and the restriction on values containing commas, any legal MySQL session variable may be set.
+
+This option only affects connections made *directly* by Skeema. If you are using an external tool via [alter-wrapper](#alter-wrapper) or [ddl-wrapper](#ddl-wrapper), you will also need to configure that tool to set options appropriately. Skeema's `{CONNOPTS}` variable can help avoid redundancy here; for example, if configuring pt-online-schema-change, you could include `--set-vars {CONNOPTS}` on the command-line to pass the same configured options dynamically.
+
+In addition to setting MySQL session variables, you may also set any of these special variables which affect client-side behavior at the internal driver/protocol level:
+
+* `charset='string'` -- Character set used for client-server interaction
+* `collation='string'` -- Collation used for client-server interaction
+* `maxAllowedPacket=int` -- Max allowed packet size, in bytes
+* `readTimeout=duration` -- Read timeout; the value must be a float with a unit suffix ("ms" or "s")
+* `timeout=duration` -- Connection timeout; the value must be a float with a unit suffix ("ms" or "s")
+* `writeTimeout=duration` -- Write timeout; the value must be a float with a unit suffix ("ms" or "s")
+
+Note that all special variables are case-sensitive. These special non-MySQL-variables are automatically stripped from `{CONNOPTS}`, so they won't be passed through to tools that don't understand them.
+
 ### ddl-wrapper
 
 Commands | diff, push
@@ -165,21 +200,22 @@ For even more fine-grained control, such as different behavior for CREATE vs DRO
 
 This command supports use of special variables. Skeema will dynamically replace these with an appropriate value when building the final command-line. See [options with variable interpolation](config.md#options-with-variable-interpolation) for more information. The following variables are supported by `ddl-wrapper`:
 
-* `{HOST}` -- hostname (or IP) defined by the [host option](#host) for the directory being processed
-* `{PORT}` -- port number defined by the [port option](#port) for the directory being processed
-* `{SCHEMA}` -- schema name defined by the [schema option](#schema) for the directory being processed
-* `{USER}` -- MySQL username defined by the [user option](#user) either via command-line or option file
-* `{PASSWORD}` -- MySQL password defined by the [password option](#password) either via command-line or option file
+* `{HOST}` -- hostname (or IP) defined by the [host](#host) option for the directory being processed
+* `{PORT}` -- port number defined by the [port](#port) option for the directory being processed
+* `{SCHEMA}` -- schema name defined by the [schema](#schema) option for the directory being processed
+* `{USER}` -- MySQL username defined by the [user](#user) option either via command-line or option file
+* `{PASSWORD}` -- MySQL password defined by the [password](#password) option either via command-line or option file
 * `{DDL}` -- Full DDL statement, including all clauses
 * `{TABLE}` -- table name that this DDL is for
 * `{SIZE}` -- size of table that this DDL is for, in bytes. This will always be 0 for tables without any rows, or for `CREATE TABLE` statements.
 * `{CLAUSES}` -- Body of the DDL statement, i.e. everything *after* `ALTER TABLE <name> ` or `CREATE TABLE <name> `. This is blank for `DROP TABLE` statements.
 * `{TYPE}` -- the word "CREATE", "DROP", or "ALTER" in all caps.
-* `{HOSTDIR}` -- Base name of whichever directory's .skeema file defined the [host option](#host) for the current directory. Sometimes useful as a key in a service discovery lookup or log message.
-* `{SCHEMADIR}` -- Base name of whichever directory's .skeema file defined the [schema option](#schema) for the directory being processed. Typically this will be the same as the basename of the directory being processed.
+* `{HOSTDIR}` -- Base name of whichever directory's .skeema file defined the [host](#host) option for the current directory. Sometimes useful as a key in a service discovery lookup or log message.
+* `{SCHEMADIR}` -- Base name of whichever directory's .skeema file defined the [schema](#schema) option for the directory being processed. Typically this will be the same as the basename of the directory being processed.
 * `{DIRNAME}` -- The base name of the directory being processed.
 * `{DIRPARENT}` -- The base name of the parent of the directory being processed.
 * `{DIRPATH}` -- The full (absolute) path of the directory being processed.
+* `{CONNOPTS}` -- Session variables passed through from the [connect-options](#connect-options) option
 
 ### debug
 

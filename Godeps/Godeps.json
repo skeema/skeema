@@ -14,8 +14,8 @@
 		},
 		{
 			"ImportPath": "github.com/go-sql-driver/mysql",
-			"Comment": "v1.2-196-g3654d25",
-			"Rev": "3654d25ec346ee8ce71a68431025458d52a38ac0"
+			"Comment": "v1.3",
+			"Rev": "a0583e0143b1624142adab07e0e97fe106d99561"
 		},
 		{
 			"ImportPath": "github.com/jmoiron/sqlx",

@@ -110,6 +110,7 @@ func main() {
 	CommandSuite.AddOption(mycli.StringOption("password", 'p', "<no password>", "Password for database user; supply with no value to prompt").ValueOptional())
 	CommandSuite.AddOption(mycli.StringOption("schema", 0, "", "Database schema name").Hidden())
 	CommandSuite.AddOption(mycli.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema for intermediate operations, created and dropped each run unless --reuse-temp-schema"))
+	CommandSuite.AddOption(mycli.StringOption("connect-options", 'o', "", "Comma-separated session options to set upon connecting to each database instance"))
 	CommandSuite.AddOption(mycli.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done"))
 	CommandSuite.AddOption(mycli.BoolOption("debug", 0, false, "Enable debug logging"))
 

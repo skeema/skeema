@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -146,8 +147,11 @@ func (dir *Dir) FirstInstance() (*tengo.Instance, error) {
 	}
 
 	// Construct DSN using either Unix domain socket or tcp/ip host and port
-	params := "interpolateParams=true&foreign_key_checks=0"
 	var dsn string
+	params, err := dir.InstanceDefaultParams()
+	if err != nil {
+		return nil, fmt.Errorf("Invalid connection options: %s", err)
+	}
 	if dir.Config.Get("host") == "localhost" && (dir.Config.Changed("socket") || !dir.Config.Changed("port")) {
 		dsn = fmt.Sprintf("%s@unix(%s)/?%s", userAndPass, dir.Config.Get("socket"), params)
 	} else {
@@ -179,6 +183,50 @@ func (dir *Dir) FirstInstance() (*tengo.Instance, error) {
 		return nil, fmt.Errorf("Unable to connect to %s for %s: %s", instance, dir, err)
 	}
 	return instance, nil
+}
+
+// InstanceDefaultParams returns a param string for use in constructing a
+// DSN. Any overrides specified in the config for this dir will be taken into
+// account. The returned string will already be in the correct format (HTTP
+// query string). An error will be returned if the configuration tried
+// manipulating params that should not be user-specified.
+func (dir *Dir) InstanceDefaultParams() (string, error) {
+	banned := map[string]bool{
+		// go-sql-driver/mysql special params that should not be overridden
+		"allowallfiles":     true,
+		"clientfoundrows":   true,
+		"columnswithalias":  true,
+		"interpolateparams": true, // always enabled explicitly later in this method
+		"loc":               true,
+		"multistatements":   true,
+		"parsetime":         true,
+		"strict":            true,
+
+		// mysql session options that should not be overridden
+		"autocommit":         true,
+		"foreign_key_checks": true, // always disabled explicitly later in this method
+	}
+
+	v := url.Values{}
+	overrides := dir.Config.Get("connect-options")
+	for _, override := range strings.Split(overrides, ",") {
+		tokens := strings.SplitN(override, "=", 2)
+		if tokens[0] == "" {
+			continue
+		}
+		if banned[strings.ToLower(tokens[0])] {
+			return "", fmt.Errorf("connect-options is not allowed to contain %s", tokens[0])
+		}
+		if len(tokens) == 1 {
+			tokens = append(tokens, "1")
+		} else if tokens[1] == "" {
+			tokens[1] = "1"
+		}
+		v.Set(tokens[0], tokens[1])
+	}
+	v.Set("interpolateParams", "true")
+	v.Set("foreign_key_checks", "0")
+	return v.Encode(), nil
 }
 
 // SQLFiles returns a slice of SQLFile pointers, representing the valid *.sql
