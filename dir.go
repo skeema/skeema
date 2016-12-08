@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/skeema/mycli"
 	"github.com/skeema/tengo"
 )
@@ -335,7 +336,14 @@ func (dir *Dir) CreateOptionFile(optionFile *mycli.File) error {
 func (dir *Dir) Targets(expandInstances, expandSchemas bool) <-chan Target {
 	targets := make(chan Target)
 	go func() {
-		generateTargetsForDir(dir, targets, expandInstances, expandSchemas)
+		goodDirCount, badDirCount := generateTargetsForDir(dir, targets, expandInstances, expandSchemas)
+		if badDirCount >= MaxNonSkeemaDirs {
+			log.Errorf("Aborted directory descent early: traversed %d subdirs that did not define a host and schema", badDirCount)
+			log.Warn("Perhaps skeema is being invoked from the wrong directory tree?")
+		} else if goodDirCount == 0 {
+			log.Warn("Did not find encounter any directories defining a host and schema")
+			log.Warn("Perhaps skeema is being invoked from the wrong directory tree?")
+		}
 		close(targets)
 	}()
 	return targets

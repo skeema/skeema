@@ -12,6 +12,11 @@ import (
 	"github.com/skeema/tengo"
 )
 
+// MaxNonSkeemaDirs indicates an upper-bound for how many seemingly non-Skeema-
+// related directories in one dir tree we can encounter before halting
+// recursive dir descent early
+const MaxNonSkeemaDirs = 1000
+
 // Target represents a unit of operation. For commands that operate recursively
 // on a directory tree, one or more Targets are generated for each leaf
 // directory -- the cartesian product of (instances this dir maps to) x (schemas
@@ -26,7 +31,17 @@ type Target struct {
 	SQLFileWarnings    []error             // slice of all warnings for Target.Dir (no need to organize by file or path)
 }
 
-func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expandSchemas bool) {
+// generateTargetsForDir examines dir's configuration, figures out what Target
+// or Targets the dir maps to, writes them to the supplied channel, and then
+// recursively descends through dir's subdirectories to do the same. If
+// expandInstances is true, and the dir maps to multiple DB Instances, multiple
+// Targets will be generated for the dir; otherwise only the first Instance
+// will be used. Ditto for expandSchemas and mapping to multiple DB Schemas.
+//
+// The return values indicate the count of dirs (this dir + all subdirs) that
+// did or did not (respectively) define a host+schema for at least one
+// environment.
+func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expandSchemas bool) (skeemaDirs, otherDirs int) {
 	// Generate targets if this dir's .skeema file defines a schema (for current
 	// environment section), and the dir's config hierarchy defines a host
 	// somewhere (here, or a parent dir)
@@ -72,13 +87,18 @@ func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expan
 				targets <- t
 			}
 		}
+		skeemaDirs++
 	} else if !dir.Config.Changed("host") && dir.HasSchema() {
 		// If we have a schema defined but no host, display a warning
 		log.Warnf("Skipping %s: no host defined for environment \"%s\"\n", dir, dir.section)
+		skeemaDirs++ // still counts as a skeema-relevant dir though
 	} else if f, err := dir.OptionFile(); err == nil && f.SomeSectionHasOption("schema") {
 		// If we don't have a schema defined, but we would if some other environment
 		// had been selected, display a warning
 		log.Warnf("Skipping %s: no schema defined for environment \"%s\"\n", dir, dir.section)
+		skeemaDirs++ // still counts as a skeema-relevant dir though
+	} else {
+		otherDirs++ // no combination of host+schema defined here, for any environment
 	}
 
 	subdirs, err := dir.Subdirs()
@@ -92,11 +112,22 @@ func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expan
 			// Don't iterate into hidden dirs, since version control software may store
 			// files in there with names matching real things we care about (*.sql,
 			// .skeema, etc)
-			if subdir.BaseName()[0] != '.' {
-				generateTargetsForDir(subdir, targets, expandInstances, expandSchemas)
+			if subdir.BaseName()[0] == '.' {
+				continue
+			}
+
+			// Recurse into the subdir, halting early if we've encountered too many
+			// irrelevant subdirs, possibly indicating that skeema was invoked in the
+			// wrong directory tree
+			skeemaSubdirs, otherSubdirs := generateTargetsForDir(subdir, targets, expandInstances, expandSchemas)
+			skeemaDirs += skeemaSubdirs
+			otherDirs += otherSubdirs
+			if otherDirs >= MaxNonSkeemaDirs && skeemaDirs == 0 {
+				return
 			}
 		}
 	}
+	return
 }
 
 // Done is currently a no-op. Once Skeema supports expandInstances (looking up
