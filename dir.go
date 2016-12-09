@@ -209,22 +209,64 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	}
 
 	v := url.Values{}
-	overrides := dir.Config.Get("connect-options")
-	for _, override := range strings.Split(overrides, ",") {
-		tokens := strings.SplitN(override, "=", 2)
-		if tokens[0] == "" {
-			continue
+
+	// Parse connect-options rune-by-rune. Split on commas, but NOT commas inside
+	// of a single-quoted string.
+	connectOpts := dir.Config.Get("connect-options")
+	var startToken int
+	var name string
+	var inQuote, escapeNext bool
+	if len(connectOpts) > 0 {
+		if connectOpts[len(connectOpts)-1] == '\\' {
+			return "", fmt.Errorf("Trailing backslash in connect-options \"%s\"", connectOpts)
 		}
-		if banned[strings.ToLower(tokens[0])] {
-			return "", fmt.Errorf("connect-options is not allowed to contain %s", tokens[0])
+		for n, c := range connectOpts + "," {
+			if escapeNext {
+				escapeNext = false
+				continue
+			}
+			if inQuote && c != '\'' && c != '\\' {
+				continue
+			}
+			switch c {
+			case '\'':
+				if name == "" {
+					return "", fmt.Errorf("Invalid quote character in option name at byte offset %d in connect-options \"%s\"", n, connectOpts)
+				}
+				inQuote = !inQuote
+			case '\\':
+				escapeNext = true
+			case '=':
+				if name == "" {
+					name = connectOpts[startToken:n]
+					startToken = n + 1
+				} else {
+					return "", fmt.Errorf("Invalid equals-sign character in option value at byte offset %d in connect-options \"%s\"", n, connectOpts)
+				}
+			case ',':
+				var value string
+				if startToken == n { // comma directly after equals sign, comma, or start of string
+					return "", fmt.Errorf("Invalid comma placement in option value at byte offset %d in connect-options \"%s\"", n, connectOpts)
+				}
+				if name == "" {
+					name = connectOpts[startToken:n]
+					value = "1"
+				} else {
+					value = connectOpts[startToken:n]
+				}
+				if banned[strings.ToLower(name)] {
+					return "", fmt.Errorf("connect-options is not allowed to contain %s", name)
+				}
+				v.Set(name, value)
+				name = ""
+				startToken = n + 1
+			}
 		}
-		if len(tokens) == 1 {
-			tokens = append(tokens, "1")
-		} else if tokens[1] == "" {
-			tokens[1] = "1"
-		}
-		v.Set(tokens[0], tokens[1])
 	}
+	if inQuote {
+		return "", fmt.Errorf("Unterminated quote in connect-options \"%s\"", connectOpts)
+	}
+
 	v.Set("interpolateParams", "true")
 	v.Set("foreign_key_checks", "0")
 	return v.Encode(), nil

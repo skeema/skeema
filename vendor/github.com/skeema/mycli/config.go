@@ -231,35 +231,49 @@ func (cfg *Config) GetRaw(name string) string {
 	return value
 }
 
-// Get returns an option's value as a string. If the value is wrapped in quotes
-// (single, double, or backticks) they will be stripped automatically. If the
+// Get returns an option's value as a string. If the entire value is wrapped
+// in quotes (single, double, or backticks) they will be stripped, and
+// escaped quotes or backslashes within the string will be unescaped. If the
 // option is not set, its default value will be returned. Panics if the option
 // does not exist, since this is indicative of programmer error, not runtime
 // error.
 func (cfg *Config) Get(name string) string {
 	value := cfg.GetRaw(name)
-	if len(value) < 2 || value[0] != value[len(value)-1] || (value[0] != '`' && value[0] != '"' && value[0] != '\'') {
-		// We can return early if the string doesn't appear to be fully wrapped in any possible quote runes
+	if utf8.RuneCountInString(value) < 2 { // too short to possibly be quoted
+		return value
+	}
+	quote, _ := utf8.DecodeRuneInString(value)
+	last, _ := utf8.DecodeLastRuneInString(value)
+	if quote != last || (quote != '`' && quote != '"' && quote != '\'') {
 		return value
 	}
 
-	// Before stripping quotes, confirm that there's no terminating quote midway
-	// through the string
+	// Do a pass through the string. Store each rune in a buffer, unescaping
+	// escaped values in the process. If we hit a terminating quote midway thru
+	// the string, return the original value. (We don't unquote or unescape
+	// anything unless the *entire* value is quoted.)
 	var escapeNext bool
-	quote, _ := utf8.DecodeRuneInString(value)
-	for _, c := range value[1 : len(value)-1] {
-		if escapeNext {
-			escapeNext = false
-			continue
-		}
-		switch c {
-		case '\\':
-			escapeNext = true
-		case quote:
+	var runeTmp [utf8.UTFMax]byte
+	buf := make([]byte, 0, len(value)-2)
+	for _, r := range value[1 : len(value)-1] {
+		if r == quote && !escapeNext {
+			// we hit an unescaped terminating quote midway in the string, meaning the
+			// entire value is not quote-wrapped
 			return value
 		}
+		if r == '\\' && !escapeNext {
+			escapeNext = true
+			continue
+		}
+		escapeNext = false
+		if r >= utf8.RuneSelf { // multibyte character
+			byteCount := utf8.EncodeRune(runeTmp[:], r)
+			buf = append(buf, runeTmp[0:byteCount]...)
+		} else { // single-byte character
+			buf = append(buf, byte(r))
+		}
 	}
-	return value[1 : len(value)-1]
+	return string(buf)
 }
 
 // GetBool returns an option's value as a bool. If the option is not set, its

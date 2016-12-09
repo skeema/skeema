@@ -160,27 +160,27 @@ Commands | *all*
 
 This option stores a comma-separated list of session variables to set upon connecting to the database. For example, a value of `wait_timeout=86400,innodb_lock_wait_timeout=1,lock_wait_timeout=60` would set these three MySQL variables, at the session level, for connections made by Skeema.
 
-Any string-valued variables must have their values wrapped in single quotes. (Take care to escape those quotes properly in your shell if supplying connect-options on the command-line.) At this time, string values in connect-options may not contain commas, even inside quotes; this may preclude setting MySQL's `sql_mode` variable, setting fallback character sets, etc. Please open a GitHub issue if this impacts you.
+Any string-valued variables must have their values wrapped in single-quotes. Take extra care to nest or escape quotes properly in your shell if supplying connect-options on the command-line. For example, `--connect-options="lock_wait_timeout=60,sql_mode='STRICT_ALL_TABLES,ALLOW_INVALID_DATES'"`
 
 Additionally the following MySQL variables *cannot* be set by this option, since it would interfere with Skeema's internal operations:
 
 * `autocommit`
 * `foreign_key_checks`
 
-Aside from these, and the restriction on values containing commas, any legal MySQL session variable may be set.
+Aside from these, any legal MySQL session variable may be set.
 
 This option only affects connections made *directly* by Skeema. If you are using an external tool via [alter-wrapper](#alter-wrapper) or [ddl-wrapper](#ddl-wrapper), you will also need to configure that tool to set options appropriately. Skeema's `{CONNOPTS}` variable can help avoid redundancy here; for example, if configuring pt-online-schema-change, you could include `--set-vars {CONNOPTS}` on the command-line to pass the same configured options dynamically.
 
 In addition to setting MySQL session variables, you may also set any of these special variables which affect client-side behavior at the internal driver/protocol level:
 
-* `charset='string'` -- Character set used for client-server interaction
-* `collation='string'` -- Collation used for client-server interaction
+* `charset=string` -- Character set used for client-server interaction
+* `collation=string` -- Collation used for client-server interaction
 * `maxAllowedPacket=int` -- Max allowed packet size, in bytes
 * `readTimeout=duration` -- Read timeout; the value must be a float with a unit suffix ("ms" or "s")
 * `timeout=duration` -- Connection timeout; the value must be a float with a unit suffix ("ms" or "s")
 * `writeTimeout=duration` -- Write timeout; the value must be a float with a unit suffix ("ms" or "s")
 
-Note that all special variables are case-sensitive. These special non-MySQL-variables are automatically stripped from `{CONNOPTS}`, so they won't be passed through to tools that don't understand them.
+All special variables are case-sensitive. Unlike session variables, their values should never be wrapped in quotes. These special non-MySQL-variables are automatically stripped from `{CONNOPTS}`, so they won't be passed through to tools that don't understand them.
 
 ### ddl-wrapper
 
