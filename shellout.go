@@ -42,6 +42,49 @@ func (s *ShellOut) Run() error {
 	return cmd.Run()
 }
 
+// RunCapture shells out to the external command and blocks until it completes.
+// It returns the command's STDOUT output as a single string. STDIN and STDERR
+// are redirected to those of the parent process.
+func (s *ShellOut) RunCapture() (string, error) {
+	if s.Command == "" {
+		return "", errors.New("Attempted to shell out to an empty command string")
+	}
+	cmd := exec.Command("/bin/sh", "-c", s.Command)
+	cmd.Stdin = os.Stdin
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
+	return string(out), err
+}
+
+// RunCaptureSplit behaves like RunCapture, except the STDOUT will be tokenized.
+// If newlines are present in the output, it will be split on newlines; else if
+// commas are present, it will be split on commas; else ditto for tabs; else
+// ditto for spaces. Blank tokens will be ignored (i.e. 2 delimiters in a row
+// get treated as a single delimiter; leading or trailing delimiter is ignored).
+// Does NOT provide any special treatment for quoted fields in the output.
+func (s *ShellOut) RunCaptureSplit() ([]string, error) {
+	raw, err := s.RunCapture()
+	var delimiter rune
+	for _, candidate := range []rune{'\n', ',', '\t', ' '} {
+		if strings.ContainsRune(raw, candidate) {
+			delimiter = candidate
+			break
+		}
+	}
+	if delimiter == 0 {
+		// No delimiter found: just return the full output as a slice with 1 element
+		return []string{raw}, err
+	}
+	tokens := strings.Split(raw, string(delimiter))
+	result := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		if token != "" {
+			result = append(result, token)
+		}
+	}
+	return result, err
+}
+
 // NewShellOut takes a shell command-line string and returns a ShellOut, without
 // performing any variable interpolation.
 func NewShellOut(command string) *ShellOut {

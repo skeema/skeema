@@ -1,9 +1,31 @@
 package main
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestRunCaptureSplit(t *testing.T) {
+	assertResult := func(command string, expectedTokens ...string) {
+		s := NewShellOut(command)
+		result, err := s.RunCaptureSplit()
+		if err != nil {
+			t.Logf("Unexpected error return from %#v: %s", s, err)
+			t.Skip("Skipping test since failure may be from lack of /usr/bin/printf")
+		} else if !reflect.DeepEqual(result, expectedTokens) {
+			t.Errorf("Unexpected result from RunCaptureSplit on %#v: expected %v, found %v", s, expectedTokens, result)
+		}
+	}
+
+	assertResult(`/usr/bin/printf 'hello there\n\nworld\n'`, "hello there", "world")
+	assertResult(`/usr/bin/printf 'hello, this splits on trailing newline\n'`, "hello, this splits on trailing newline")
+	assertResult(`/usr/bin/printf 'tab\tseparated\tvalues'`, "tab", "separated", "values")
+	assertResult("/usr/bin/printf 'colons:do:not:split'", "colons:do:not:split")
+	assertResult(`/usr/bin/printf ',,,commas,have the,,next priority,if no newlines'`, "commas", "have the", "next priority", "if no newlines")
+	assertResult("/usr/bin/printf 'spaces    work  if no other   delimiters'", "spaces", "work", "if", "no", "other", "delimiters")
+	assertResult(`/usr/bin/printf 'intentionally "no support" for quotes'`, "intentionally", `"no`, `support"`, "for", "quotes")
+}
 
 func TestNewInterpolatedShellOut(t *testing.T) {
 	getDir := func(path string, pairs ...string) *Dir {
