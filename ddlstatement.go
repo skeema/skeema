@@ -1,16 +1,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"os"
-	"os/exec"
-	"path"
-	"regexp"
 	"strconv"
 	"strings"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/skeema/mycli"
 	"github.com/skeema/tengo"
 )
 
@@ -25,8 +21,9 @@ type DDLStatement struct {
 	// command)
 	Err error
 
-	stmt       string
-	isExec     bool
+	stmt     string
+	shellOut *ShellOut
+
 	instance   *tengo.Instance
 	schemaName string
 }
@@ -137,12 +134,18 @@ func NewDDLStatement(diff tengo.TableDiff, mods tengo.StatementModifiers, target
 			ddl.setErr(fmt.Errorf("TableDiff type %T not yet supported", diff))
 		}
 
-		ddl.isExec = true
-		ddl.stmt, err = InterpolateExec(wrapper, target.Dir, extras)
+		ddl.shellOut, err = NewInterpolatedShellOut(wrapper, target.Dir, extras)
 		ddl.setErr(err)
 	}
 
 	return ddl
+}
+
+// IsShellOut returns true if the DDL is to be executed via shelling out to an
+// external binary, or false if the DDL represents SQL to be executed directly
+// via a standard database connection.
+func (ddl *DDLStatement) IsShellOut() bool {
+	return (ddl.shellOut != nil)
 }
 
 // String returns a string representation of ddl. If an external command is in
@@ -154,8 +157,8 @@ func (ddl *DDLStatement) String() string {
 		return ""
 	}
 	var stmt string
-	if ddl.isExec {
-		stmt = fmt.Sprintf("\\! %s", ddl.stmt)
+	if ddl.IsShellOut() {
+		stmt = fmt.Sprintf("\\! %s", ddl.shellOut)
 	} else {
 		stmt = fmt.Sprintf("%s;", ddl.stmt)
 	}
@@ -174,13 +177,12 @@ func (ddl *DDLStatement) Execute() error {
 	} else if ddl.Err != nil {
 		return ddl.Err
 	}
-	if ddl.isExec {
-		cmd := exec.Command("/bin/sh", "-c", ddl.stmt)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		ddl.Err = cmd.Run()
+	if ddl.IsShellOut() {
+		ddl.Err = ddl.shellOut.Run()
 	} else {
+		if ddl.stmt == "" {
+			return errors.New("Attempted to execute empty DDL statement")
+		}
 		if db, err := ddl.instance.Connect(ddl.schemaName, ""); err != nil {
 			ddl.Err = err
 		} else {
@@ -209,120 +211,4 @@ func (ddl *DDLStatement) getTableSize(target Target, table *tengo.Table) (int64,
 		return 0, err
 	}
 	return target.Instance.TableSize(target.SchemaFromInstance, table)
-}
-
-// InterpolateExec takes a shell command-line containing variables of format
-// {VARNAME}, and performs substitution on them based on the supplied directory
-// and its configuration, as well as any additional values provided in the
-// extra map.
-//
-// The following variables are supplied as-is from the dir's configuration,
-// UNLESS the variable value itself contains backticks, in which case it is
-// not available in this context:
-//   {USER}, {PASSWORD}, {SCHEMA}, {HOST}, {PORT}
-//
-// The following variables supply the *base name* (relative name) of whichever
-// directory had a .skeema file defining the variable:
-//   {HOSTDIR}, {SCHEMADIR}
-// For example, if dir is /opt/schemas/myhost/someschema, usually the host will
-// be defined in /opt/schemas/myhost/.skeema (so HOSTDIR="myhost") and the
-// schema defined in /opt/schemas/myhost/someschema/.skeema (so
-// SCHEMADIR="someschema"). These variables are typically useful for passing to
-// service discovery.
-//
-// Vars are case-insensitive, but all-caps is recommended for visual reasons.
-// If any unknown variable is contained in the command string, a non-nil error
-// will be returned and the unknown variable will not be interpolated.
-func InterpolateExec(command string, dir *Dir, extra map[string]string) (string, error) {
-	var err error
-	re := regexp.MustCompile(`{([^}]*)}`)
-	values := make(map[string]string, 7+len(extra))
-
-	asis := []string{"user", "password", "schema", "host", "port"}
-	for _, name := range asis {
-		value := dir.Config.Get(strings.ToLower(name))
-		// any value containing shell exec will itself need be run thru
-		// InterpolateExec at some point, so not available for interpolation
-		if !strings.ContainsRune(value, '`') {
-			values[strings.ToUpper(name)] = value
-		}
-	}
-
-	hostSource := dir.Config.Source("host")
-	if file, ok := hostSource.(*mycli.File); ok {
-		values["HOSTDIR"] = path.Base(file.Dir)
-	}
-	schemaSource := dir.Config.Source("schema")
-	if file, ok := schemaSource.(*mycli.File); ok {
-		values["SCHEMADIR"] = path.Base(file.Dir)
-	}
-	values["DIRNAME"] = path.Base(dir.Path)
-	values["DIRPARENT"] = path.Base(path.Dir(dir.Path))
-	values["DIRPATH"] = dir.Path
-	values["CONNOPTS"] = realConnOptions(dir.Config.Get("connect-options"))
-
-	// Add in extras *after*, to allow them to override if desired
-	for name, val := range extra {
-		values[strings.ToUpper(name)] = val
-	}
-
-	replacer := func(input string) string {
-		input = strings.ToUpper(input[1 : len(input)-1])
-		if value, ok := values[input]; ok {
-			return escapeExecValue(value)
-		}
-		err = fmt.Errorf("Unknown variable {%s}", input)
-		return fmt.Sprintf("{%s}", input)
-	}
-
-	result := re.ReplaceAllStringFunc(command, replacer)
-	return result, err
-}
-
-var noQuotesNeeded = regexp.MustCompile(`^[\w/@%=:.,+-]*$`)
-
-func escapeExecValue(value string) string {
-	if noQuotesNeeded.MatchString(value) {
-		return value
-	}
-	return fmt.Sprintf("'%s'", strings.Replace(value, "'", `'"'"'`, -1))
-}
-
-// realConnOptions takes a comma-separated string of connection options, strips
-// any Go driver-specific ones, and then returns the new string which is now
-// suitable for passing to an external tool.
-func realConnOptions(origValue string) string {
-	// list of lowercased versions of all go-sql-driver/mysql special params
-	ignored := map[string]bool{
-		"allowallfiles":           true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"allowcleartextpasswords": true,
-		"allownativepasswords":    true,
-		"allowoldpasswords":       true,
-		"charset":                 true,
-		"collation":               true,
-		"clientfoundrows":         true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"columnswithalias":        true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"interpolateparams":       true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"loc":                     true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"maxallowedpacket":        true,
-		"multistatements":         true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"parsetime":               true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"readtimeout":             true,
-		"strict":                  true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"timeout":                 true,
-		"tls":                     true,
-		"writetimeout":            true,
-	}
-
-	var keep []string
-	for _, keyAndValue := range strings.Split(origValue, ",") {
-		if keyAndValue == "" {
-			continue
-		}
-		tokens := strings.SplitN(keyAndValue, "=", 2)
-		if !ignored[strings.ToLower(tokens[0])] {
-			keep = append(keep, keyAndValue)
-		}
-	}
-	return strings.Join(keep, ",")
 }

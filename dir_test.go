@@ -56,35 +56,20 @@ func TestInstanceDefaultParams(t *testing.T) {
 		"bool=true,quotes='yes,no'":                 "interpolateParams=true&foreign_key_checks=0&bool=true&quotes=%27yes,no%27",
 		`escaped=we\'re ok`:                         "interpolateParams=true&foreign_key_checks=0&escaped=we%5C%27re ok",
 		`escquotes='we\'re still quoted',this=that`: "interpolateParams=true&foreign_key_checks=0&escquotes=%27we%5C%27re still quoted%27&this=that",
-		"bareword":           "interpolateParams=true&foreign_key_checks=0&bareword=1",
-		"start=1,bareword":   "interpolateParams=true&foreign_key_checks=0&start=1&bareword=1",
-		"bareword,end='yes'": "interpolateParams=true&foreign_key_checks=0&bareword=1&end=%27yes%27",
 	}
 	for connOpts, expected := range expectParams {
 		assertDefaultParams(connOpts, expected)
 	}
 
-	assertDefaultParamsErr := func(connectOptions string) {
-		dir := getDir(connectOptions)
-		_, err := dir.InstanceDefaultParams()
-		if err == nil {
-			t.Errorf("Did not get expected error from connect-options=\"%s\"", connectOptions)
-		}
-	}
 	expectError := []string{
-		"foo=bar,'bip'=bap",
-		"flip=flap=flarb",
-		"foo=,yes=no",
-		"too_many_commas=1,,between_these='yeah'",
-		"one=true,two=false,",
-		",bad=true",
-		",",
 		"totally_benign=1,allowAllFiles=true",
-		"FOREIGN_key_CHECKS",
-		"unterminated='yep",
-		"trailingBackSlash=false\\",
+		"FOREIGN_key_CHECKS='on'",
+		"bad_parse",
 	}
 	for _, connOpts := range expectError {
-		assertDefaultParamsErr(connOpts)
+		dir := getDir(connOpts)
+		if _, err := dir.InstanceDefaultParams(); err == nil {
+			t.Errorf("Did not get expected error from connect-options=\"%s\"", connOpts)
+		}
 	}
 }
