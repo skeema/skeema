@@ -20,6 +20,7 @@ func TestSplitHostOptionalPort(t *testing.T) {
 		}
 	}
 
+	assertSplit("", "", 0, true)
 	assertSplit("foo", "foo", 0, false)
 	assertSplit("1.2.3.4", "1.2.3.4", 0, false)
 	assertSplit("some.host:1234", "some.host", 1234, false)

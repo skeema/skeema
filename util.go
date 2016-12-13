@@ -1,6 +1,7 @@
 package tengo
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -23,6 +24,10 @@ func EscapeIdentifier(input string) string {
 // wrapped in brackets on input, and the brackets will still be present on
 // output.
 func SplitHostOptionalPort(hostaddr string) (string, int, error) {
+	if len(hostaddr) == 0 {
+		return "", 0, errors.New("Cannot parse blank host address")
+	}
+
 	// ipv6 without port, or ipv4 or hostname without port
 	if (hostaddr[0] == '[' && hostaddr[len(hostaddr)-1] == ']') || len(strings.Split(hostaddr, ":")) == 1 {
 		return hostaddr, 0, nil
