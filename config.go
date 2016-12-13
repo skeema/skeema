@@ -18,6 +18,21 @@ import (
 // This file contains misc functions relating to configuration or option
 // handling.
 
+// AddGlobalOptions adds Skeema global options to the supplied mycli.Command.
+// Typically cmd should be the top-level Command / Command Suite.
+func AddGlobalOptions(cmd *mycli.Command) {
+	cmd.AddOption(mycli.StringOption("host", 0, "", "Database hostname or IP address").Hidden())
+	cmd.AddOption(mycli.StringOption("port", 0, "3306", "Port to use for database host").Hidden())
+	cmd.AddOption(mycli.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix socket file used if host is localhost").Hidden())
+	cmd.AddOption(mycli.StringOption("user", 'u', "root", "Username to connect to database host"))
+	cmd.AddOption(mycli.StringOption("password", 'p', "<no password>", "Password for database user; supply with no value to prompt").ValueOptional())
+	cmd.AddOption(mycli.StringOption("schema", 0, "", "Database schema name").Hidden())
+	cmd.AddOption(mycli.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema for intermediate operations, created and dropped each run unless --reuse-temp-schema"))
+	cmd.AddOption(mycli.StringOption("connect-options", 'o', "", "Comma-separated session options to set upon connecting to each database instance"))
+	cmd.AddOption(mycli.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done"))
+	cmd.AddOption(mycli.BoolOption("debug", 0, false, "Enable debug logging"))
+}
+
 // AddGlobalConfigFiles takes the mycli.Config generated from the CLI and adds
 // global option files as sources. It also handles special processing for a few
 // options. Generally, subcommand handlers should call AddGlobalConfigFiles at

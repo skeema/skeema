@@ -2,9 +2,11 @@ package main
 
 import (
 	"net/url"
+	"reflect"
 	"testing"
 
 	"github.com/skeema/mycli"
+	"github.com/skeema/tengo"
 )
 
 type dummySource map[string]string
@@ -25,6 +27,65 @@ func getConfig(values map[string]string) *mycli.Config {
 		Command: cmd,
 	}
 	return mycli.NewConfig(cli, dummySource(values))
+}
+
+func TestInstances(t *testing.T) {
+	assertInstances := func(optionValues map[string]string, expectError bool, expectedInstances ...string) []*tengo.Instance {
+		cmd := mycli.NewCommand("test", "1.0", "this is for testing", nil)
+		AddGlobalOptions(cmd)
+		cli := &mycli.CommandLine{
+			Command: cmd,
+		}
+		cfg := mycli.NewConfig(cli, dummySource(optionValues))
+		dir := &Dir{
+			Path:    "/tmp/dummydir",
+			Config:  cfg,
+			section: "production",
+		}
+		instances, err := dir.Instances()
+		if expectError && err == nil {
+			t.Errorf("With option values %v, expected error to be returned, but it was nil", optionValues)
+		} else if !expectError && err != nil {
+			t.Errorf("With option values %v, expected nil error, but found %s", optionValues, err)
+		} else {
+			var foundInstances []string
+			for _, inst := range instances {
+				foundInstances = append(foundInstances, inst.String())
+			}
+			if !reflect.DeepEqual(expectedInstances, foundInstances) {
+				t.Errorf("With option values %v, expected instances %v, but found instances %v", optionValues, expectedInstances, foundInstances)
+			}
+		}
+		return instances
+	}
+
+	// no host defined
+	assertInstances(nil, false)
+
+	// static host with various combinations of other options
+	assertInstances(map[string]string{"host": "some.db.host"}, false, "some.db.host:3306")
+	assertInstances(map[string]string{"host": "some.db.host:3307"}, false, "some.db.host:3307")
+	assertInstances(map[string]string{"host": "some.db.host", "port": "3307"}, false, "some.db.host:3307")
+	assertInstances(map[string]string{"host": "some.db.host:3307", "port": "3307"}, false, "some.db.host:3307")
+	assertInstances(map[string]string{"host": "some.db.host:3307", "port": "3306"}, false, "some.db.host:3307") // port option ignored if default, even if explicitly specified
+	assertInstances(map[string]string{"host": "localhost"}, false, "localhost:/tmp/mysql.sock")
+	assertInstances(map[string]string{"host": "localhost", "port": "1234"}, false, "localhost:1234")
+	assertInstances(map[string]string{"host": "localhost", "socket": "/var/run/mysql.sock"}, false, "localhost:/var/run/mysql.sock")
+	assertInstances(map[string]string{"host": "localhost", "port": "1234", "socket": "/var/lib/mysql/mysql.sock"}, false, "localhost:/var/lib/mysql/mysql.sock")
+
+	// invalid option values or combinations
+	assertInstances(map[string]string{"host": "some.db.host", "connect-options": ","}, true)
+	assertInstances(map[string]string{"host": "some.db.host:3306", "port": "3307"}, true)
+	assertInstances(map[string]string{"host": "@@@@@"}, true)
+	assertInstances(map[string]string{"host": "`echo {INVALID_VAR}`"}, true)
+
+	// dynamic hosts via command execution
+	assertInstances(map[string]string{"host": "`/usr/bin/printf 'some.db.host'`"}, false, "some.db.host:3306")
+	assertInstances(map[string]string{"host": "`/usr/bin/printf 'some.db.host\n'`"}, false, "some.db.host:3306")
+	assertInstances(map[string]string{"host": "`/usr/bin/printf 'some.db.host\nother.db.host'`", "port": "3333"}, false, "some.db.host:3333", "other.db.host:3333")
+	assertInstances(map[string]string{"host": "`/usr/bin/printf 'some.db.host\tother.db.host:3316'`", "port": "3316"}, false, "some.db.host:3316", "other.db.host:3316")
+	assertInstances(map[string]string{"host": "`/usr/bin/printf 'localhost,remote.host,other.host:3307'`", "socket": "/var/lib/mysql/mysql.sock"}, false, "localhost:/var/lib/mysql/mysql.sock", "remote.host:3306", "other.host:3307")
+	assertInstances(map[string]string{"host": "`/bin/echo -n`"}, false)
 }
 
 func TestInstanceDefaultParams(t *testing.T) {

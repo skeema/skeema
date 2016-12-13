@@ -72,7 +72,11 @@ func (s *ShellOut) RunCaptureSplit() ([]string, error) {
 		}
 	}
 	if delimiter == 0 {
-		// No delimiter found: just return the full output as a slice with 1 element
+		// No delimiter found: just return the full output as a slice with 1 element,
+		// or 0 elements if it was a blank string
+		if raw == "" {
+			return []string{}, err
+		}
 		return []string{raw}, err
 	}
 	tokens := strings.Split(raw, string(delimiter))

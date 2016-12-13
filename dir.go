@@ -131,59 +131,111 @@ func (dir *Dir) HasSchema() bool {
 	return ok
 }
 
-// FirstInstance returns at most one tengo.Instance based on the directory's
-// configuration. If the config maps to multiple instances (NOT YET SUPPORTED)
-// only the first will be returned. If the config maps to no instances, nil
-// will be returned.
-func (dir *Dir) FirstInstance() (*tengo.Instance, error) {
+// Instances returns 0 or more tengo.Instance pointers, based on the
+// directory's configuration. The Instances will NOT be checked for
+// connectivity. However, if the configuration is invalid (for example, illegal
+// hostname or invalid connect-options), an error will be returned instead of
+// any instances.
+func (dir *Dir) Instances() ([]*tengo.Instance, error) {
+	// If no host defined in this dir (meaning this dir's .skeema, as well as
+	// parent dirs' .skeema, global option files, or command-line) then nothing
+	// to do
 	if !dir.Config.Changed("host") {
 		return nil, nil
 	}
 
+	// Before looping over hostnames, do a single lookup of user, password,
+	// connect-options, port, socket.
 	var userAndPass string
 	if !dir.Config.Changed("password") {
 		userAndPass = dir.Config.Get("user")
 	} else {
 		userAndPass = fmt.Sprintf("%s:%s", dir.Config.Get("user"), dir.Config.Get("password"))
 	}
-
-	// Construct DSN using either Unix domain socket or tcp/ip host and port
-	var dsn string
 	params, err := dir.InstanceDefaultParams()
 	if err != nil {
 		return nil, fmt.Errorf("Invalid connection options: %s", err)
 	}
-	if dir.Config.Get("host") == "localhost" && (dir.Config.Changed("socket") || !dir.Config.Changed("port")) {
-		dsn = fmt.Sprintf("%s@unix(%s)/?%s", userAndPass, dir.Config.Get("socket"), params)
+	portValue := dir.Config.GetIntOrDefault("port")
+	portWasSupplied := dir.Config.Supplied("port")
+	portIsntDefault := dir.Config.Changed("port")
+	socketValue := dir.Config.Get("socket")
+	socketWasSupplied := dir.Config.Supplied("socket")
+
+	// Interpret the host value: it may be a single literal hostname, or it may be
+	// a backtick-wrapped shellout.
+	hostValue := dir.Config.Get("host")       // Get strips quotes (including backticks) from fully quoted-wrapped values
+	rawHostValue := dir.Config.GetRaw("host") // GetRaw does not strip quotes
+	var hosts []string
+	if rawHostValue != hostValue && rawHostValue[0] == '`' { // no need to check len, the Changed check above already tells us host != ""
+		s, err := NewInterpolatedShellOut(hostValue, dir, nil)
+		if err != nil {
+			return nil, err
+		}
+		if hosts, err = s.RunCaptureSplit(); err != nil {
+			return nil, err
+		}
 	} else {
-		// TODO support host configs mapping to multiple lookups via service discovery
-		host := dir.Config.Get("host")
-		port := dir.Config.GetIntOrDefault("port")
-		if !dir.Config.Supplied("port") {
-			if splitHost, splitPort, err := tengo.SplitHostOptionalPort(host); err == nil && splitPort > 0 {
-				host = splitHost
-				port = splitPort
+		hosts = []string{hostValue}
+	}
+
+	// For each hostname, construct a DSN and use it to create an Instance
+	var instances []*tengo.Instance
+	for _, host := range hosts {
+		var dsn string
+		// TODO also support cloudsql DSNs
+		if host == "localhost" && (socketWasSupplied || !portWasSupplied) {
+			dsn = fmt.Sprintf("%s@unix(%s)/?%s", userAndPass, socketValue, params)
+		} else {
+			splitHost, splitPort, err := tengo.SplitHostOptionalPort(host)
+			if err != nil {
+				return nil, err
 			}
+			if splitPort > 0 {
+				if portIsntDefault && portValue != splitPort {
+					return nil, fmt.Errorf("Port was supplied as %d inside hostname %s but as %d in option file", splitPort, host, portValue)
+				}
+				host = splitHost
+				portValue = splitPort
+			}
+			dsn = fmt.Sprintf("%s@tcp(%s:%d)/?%s", userAndPass, host, portValue, params)
 		}
-		dsn = fmt.Sprintf("%s@tcp(%s:%d)/?%s", userAndPass, host, port, params)
-	}
-	// TODO also support cloudsql
-
-	// TODO support drivers being overriden
-	driver := "mysql"
-
-	instance, err := tengo.NewInstance(driver, dsn)
-	if err != nil || instance == nil {
-		if dir.Config.Changed("password") {
-			safeUserPass := fmt.Sprintf("%s:*****", dir.Config.Get("user"))
-			dsn = strings.Replace(dsn, userAndPass, safeUserPass, 1)
+		instance, err := tengo.NewInstance("mysql", dsn)
+		if err != nil || instance == nil {
+			if dir.Config.Changed("password") {
+				safeUserPass := fmt.Sprintf("%s:*****", dir.Config.Get("user"))
+				dsn = strings.Replace(dsn, userAndPass, safeUserPass, 1)
+			}
+			return nil, fmt.Errorf("Invalid connection information for %s (DSN=%s): %s", dir, dsn, err)
 		}
-		return nil, fmt.Errorf("Invalid connection information for %s (DSN=%s): %s", dir, dsn, err)
+		instances = append(instances, instance)
 	}
-	if ok, err := instance.CanConnect(); !ok {
-		return nil, fmt.Errorf("Unable to connect to %s for %s: %s", instance, dir, err)
+	return instances, nil
+}
+
+// FirstInstance returns at most one tengo.Instance based on the directory's
+// configuration. If the config maps to multiple instances, only the first will
+// be returned. If the config maps to no instances, nil will be returned. The
+// instance WILL be checked for connectivity. If multiple instances are returned
+// and some have connectivity issues, the first reachable instance will be
+// returned.
+func (dir *Dir) FirstInstance() (*tengo.Instance, error) {
+	instances, err := dir.Instances()
+	if len(instances) == 0 || err != nil {
+		return nil, err
 	}
-	return instance, nil
+
+	var lastErr error
+	for _, instance := range instances {
+		var ok bool
+		if ok, lastErr = instance.CanConnect(); ok {
+			return instance, nil
+		}
+	}
+	if len(instances) == 1 {
+		return nil, fmt.Errorf("Unable to connect to %s for %s: %s", instances[0], dir, lastErr)
+	}
+	return nil, fmt.Errorf("Unable to connect to any of %d instances for %s; last error %s", len(instances), dir, lastErr)
 }
 
 // InstanceDefaultParams returns a param string for use in constructing a
