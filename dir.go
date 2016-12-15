@@ -377,14 +377,18 @@ func (dir *Dir) CreateOptionFile(optionFile *mycli.File) error {
 	return nil
 }
 
-// Targets returns a channel for obtaining Target objects for this dir.
-// The expand args do not yet have an effect, but will eventually control
-// whether multi-host and multi-schema option values are expanded to all
-// combinations vs just generating the first host and schema.
-func (dir *Dir) Targets(expandInstances, expandSchemas bool) <-chan Target {
-	targets := make(chan Target)
+// TargetGroups returns a channel for obtaining TargetGroups for this dir and
+// its subdirs. If expandInstances is false, dirs that normally map to multiple
+// instances will only have their first connectable instance considered.
+// expandSchemas will soon work similarly, but currently has no effect.
+func (dir *Dir) TargetGroups(expandInstances, expandSchemas bool) <-chan TargetGroup {
+	groups := make(chan TargetGroup)
 	go func() {
-		goodDirCount, badDirCount := generateTargetsForDir(dir, targets, expandInstances, expandSchemas)
+		targetsByInstance := make(map[string]TargetGroup)
+		goodDirCount, badDirCount := generateTargetsForDir(dir, targetsByInstance, expandInstances, expandSchemas)
+		for _, tg := range targetsByInstance {
+			groups <- tg
+		}
 		if badDirCount >= MaxNonSkeemaDirs {
 			log.Errorf("Aborted directory descent early: traversed %d subdirs that did not define a host and schema", badDirCount)
 			log.Warn("Perhaps skeema is being invoked from the wrong directory tree?")
@@ -392,8 +396,31 @@ func (dir *Dir) Targets(expandInstances, expandSchemas bool) <-chan Target {
 			log.Warn("Did not find encounter any directories defining a host and schema")
 			log.Warn("Perhaps skeema is being invoked from the wrong directory tree?")
 		}
-		close(targets)
+		close(groups)
 	}()
+	return groups
+}
+
+// Targets returns a flat slice of *Target for this dir and its subdirs. It does
+// not group the Targets by instance. For any dir that maps to multiple
+// instances and/or schemas, only the first of each will be included in the
+// result. This method is suitable for use only for single-threaded operations.
+func (dir *Dir) Targets() []*Target {
+	targets := make([]*Target, 0)
+	targetsByInstance := make(map[string]TargetGroup)
+	goodDirCount, badDirCount := generateTargetsForDir(dir, targetsByInstance, false, false)
+	for _, tg := range targetsByInstance {
+		for _, t := range tg {
+			targets = append(targets, t)
+		}
+	}
+	if badDirCount >= MaxNonSkeemaDirs {
+		log.Errorf("Aborted directory descent early: traversed %d subdirs that did not define a host and schema", badDirCount)
+		log.Warn("Perhaps skeema is being invoked from the wrong directory tree?")
+	} else if goodDirCount == 0 {
+		log.Warn("Did not find encounter any directories defining a host and schema")
+		log.Warn("Perhaps skeema is being invoked from the wrong directory tree?")
+	}
 	return targets
 }
 

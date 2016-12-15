@@ -55,11 +55,10 @@ func PushHandler(cfg *mycli.Config) error {
 	// TODO: once sharding / service discovery lookup is supported, this should
 	// use multiple worker goroutines all pulling instances off the channel,
 	// unless dry-run option is true
-	for t := range dir.Targets(true, true) {
+	for _, t := range dir.Targets() {
 		if hasErrors, firstErr := t.HasErrors(); hasErrors {
 			log.Errorf("Skipping %s:", t.Dir)
 			log.Errorf("    %s\n", firstErr)
-			t.Done()
 			errCount++
 			continue
 		}
@@ -75,7 +74,6 @@ func PushHandler(cfg *mycli.Config) error {
 
 		diff, err := tengo.NewSchemaDiff(t.SchemaFromInstance, t.SchemaFromDir)
 		if err != nil {
-			t.Done()
 			return err
 		}
 		if t.SchemaFromInstance == nil {
@@ -86,7 +84,6 @@ func PushHandler(cfg *mycli.Config) error {
 				var err error
 				t.SchemaFromInstance, err = t.Instance.CreateSchema(t.SchemaFromDir.Name)
 				if err != nil {
-					t.Done()
 					return fmt.Errorf("Error creating schema %s on %s: %s", t.SchemaFromDir.Name, t.Instance, err)
 				}
 			}
@@ -94,7 +91,6 @@ func PushHandler(cfg *mycli.Config) error {
 
 		if t.Dir.Config.GetBool("verify") && len(diff.TableDiffs) > 0 {
 			if err := t.verifyDiff(diff); err != nil {
-				t.Done()
 				return err
 			}
 		}
@@ -159,7 +155,6 @@ func PushHandler(cfg *mycli.Config) error {
 		} else {
 			fmt.Println()
 		}
-		t.Done()
 	}
 
 	if errCount+unsupportedCount == 0 {

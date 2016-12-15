@@ -31,9 +31,12 @@ type Target struct {
 	SQLFileWarnings    []error             // slice of all warnings for Target.Dir (no need to organize by file or path)
 }
 
+// TargetGroup represents a group of Targets that all have the same Instance.
+type TargetGroup []*Target
+
 // generateTargetsForDir examines dir's configuration, figures out what Target
-// or Targets the dir maps to, writes them to the supplied channel, and then
-// recursively descends through dir's subdirectories to do the same. If
+// or Targets the dir maps to, indexes them by instance in the supplied map, and
+// then recursively descends through dir's subdirectories to do the same. If
 // expandInstances is true, and the dir maps to multiple DB Instances, multiple
 // Targets will be generated for the dir; otherwise only the first Instance
 // will be used. Ditto for expandSchemas and mapping to multiple DB Schemas.
@@ -41,34 +44,38 @@ type Target struct {
 // The return values indicate the count of dirs (this dir + all subdirs) that
 // did or did not (respectively) define a host+schema for at least one
 // environment.
-func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expandSchemas bool) (skeemaDirs, otherDirs int) {
+func generateTargetsForDir(dir *Dir, targetsByInstance map[string]TargetGroup, expandInstances, expandSchemas bool) (skeemaDirs, otherDirs int) {
 	// Generate targets if this dir's .skeema file defines a schema (for current
 	// environment section), and the dir's config hierarchy defines a host
 	// somewhere (here, or a parent dir)
 	if dir.Config.Changed("host") && dir.HasSchema() {
 		var dirSchema *tengo.Schema
-
-		// TODO: support multiple instances / service discovery lookup per dir if
-		// expandInstances is true
-		instances := make([]*tengo.Instance, 0, 1)
-		onlyInstance, err := dir.FirstInstance()
-		if onlyInstance == nil && err == nil {
-			err = fmt.Errorf("No instance defined for %s", dir)
-		}
-		if err == nil {
-			instances = append(instances, onlyInstance)
+		var instances []*tengo.Instance
+		var err error
+		if expandInstances {
+			instances, err = dir.Instances()
 		} else {
-			targets <- Target{
+			var onlyInstance *tengo.Instance
+			onlyInstance, err = dir.FirstInstance()
+			if onlyInstance == nil && err == nil {
+				err = fmt.Errorf("No instance defined for %s", dir)
+			}
+			if err == nil {
+				instances = []*tengo.Instance{onlyInstance}
+			}
+		}
+		if err != nil {
+			targetsByInstance["errors"] = append(targetsByInstance["errors"], &Target{
 				Dir: dir,
 				Err: err,
-			}
+			})
 		}
 
 		for _, inst := range instances {
 			// TODO: support multiple schemas / service discovery lookup per instance if
 			// expandSchemas is true
 			for _, schemaName := range []string{dir.Config.Get("schema")} {
-				t := Target{
+				t := &Target{
 					Instance: inst,
 					Dir:      dir,
 				}
@@ -78,13 +85,14 @@ func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expan
 				} else {
 					// Can re-use the same value even if expanding instances and/or schemas,
 					// since the same dir (and therefore same dir schema) is used for all
-					t.SchemaFromDir = dirSchema
+					t.SchemaFromDir, t.Err = dirSchema.CachedCopy()
 				}
 				if t.Err == nil {
 					t.SchemaFromDir.Name = schemaName // "fix" temp schema name to match correct corresponding schema
 					t.SchemaFromInstance, t.Err = inst.Schema(schemaName)
 				}
-				targets <- t
+				key := inst.String()
+				targetsByInstance[key] = append(targetsByInstance[key], t)
 			}
 		}
 		skeemaDirs++
@@ -103,10 +111,10 @@ func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expan
 
 	subdirs, err := dir.Subdirs()
 	if err != nil {
-		targets <- Target{
+		targetsByInstance["errors"] = append(targetsByInstance["errors"], &Target{
 			Dir: dir,
 			Err: err,
-		}
+		})
 	} else {
 		for _, subdir := range subdirs {
 			// Don't iterate into hidden dirs, since version control software may store
@@ -119,7 +127,7 @@ func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expan
 			// Recurse into the subdir, halting early if we've encountered too many
 			// irrelevant subdirs, possibly indicating that skeema was invoked in the
 			// wrong directory tree
-			skeemaSubdirs, otherSubdirs := generateTargetsForDir(subdir, targets, expandInstances, expandSchemas)
+			skeemaSubdirs, otherSubdirs := generateTargetsForDir(subdir, targetsByInstance, expandInstances, expandSchemas)
 			skeemaDirs += skeemaSubdirs
 			otherDirs += otherSubdirs
 			if otherDirs >= MaxNonSkeemaDirs && skeemaDirs == 0 {
@@ -128,15 +136,6 @@ func generateTargetsForDir(dir *Dir, targets chan Target, expandInstances, expan
 		}
 	}
 	return
-}
-
-// Done is currently a no-op. Once Skeema supports expandInstances (looking up
-// multiple instances for one dir, via service discovery or shelling to an
-// external bin), Target generation will be threadsafe and support limiting the
-// number of goroutines working on an instance at a time. Callers doing so will
-// need to call Done() on a target once they are finished with it, so that the
-// concurrent user count for the instance can be decremented properly.
-func (t *Target) Done() {
 }
 
 // HasErrors returns true if the Target encountered a fatal error OR any errors

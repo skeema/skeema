@@ -34,7 +34,7 @@ type DDLStatement struct {
 // variable interpolation in --alter-wrapper, etc), a non-nil DDLStatement will
 // still be returned, but its Err field will be non-nil, preventing any
 // execution of the DDLStatement.
-func NewDDLStatement(diff tengo.TableDiff, mods tengo.StatementModifiers, target Target) *DDLStatement {
+func NewDDLStatement(diff tengo.TableDiff, mods tengo.StatementModifiers, target *Target) *DDLStatement {
 	ddl := &DDLStatement{
 		instance:   target.Instance,
 		schemaName: target.SchemaFromDir.Name,
@@ -205,7 +205,7 @@ func (ddl *DDLStatement) setErr(err error) {
 // getTableSize returns the size of the table on the instance corresponding to
 // the target. If the table has no rows, this method always returns a size of 0,
 // even though information_schema normally indicates at least 16kb in this case.
-func (ddl *DDLStatement) getTableSize(target Target, table *tengo.Table) (int64, error) {
+func (ddl *DDLStatement) getTableSize(target *Target, table *tengo.Table) (int64, error) {
 	hasRows, err := target.Instance.TableHasRows(target.SchemaFromInstance, table)
 	if !hasRows || err != nil {
 		return 0, err

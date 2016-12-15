@@ -40,7 +40,7 @@ func PullHandler(cfg *mycli.Config) error {
 
 	var errCount int
 
-	for t := range dir.Targets(false, false) {
+	for _, t := range dir.Targets() {
 		if t.Err != nil { // we only skip on fatal errors (t.Err), not SQL file errors (t.SQLFileErrors or t.HasError())
 			log.Errorf("Skipping %s:", t.Dir)
 			log.Errorf("    %s\n", t.Err)
