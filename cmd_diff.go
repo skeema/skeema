@@ -18,6 +18,8 @@ running ` + "`" + `skeema diff staging` + "`" + ` will apply config directives f
 top of the file. If no environment name is supplied, the default is
 "production".
 
+The ` + "`" + `skeema diff` + "`" + ` command is equivalent to ` + "`" + `skeema push --dry-run --first-only` + "`" + `.
+
 An exit code of 0 will be returned if no differences were found, 1 if some
 differences were found, or 2+ if an error occurred.`
 
@@ -29,8 +31,10 @@ differences were found, or 2+ if an error occurred.`
 
 // DiffHandler is the handler method for `skeema diff`
 func DiffHandler(cfg *mycli.Config) error {
-	// We just delegate to PushHandler, forcing dry-run to be enabled
+	// We just delegate to PushHandler, forcing dry-run to be enabled and always
+	// using concurrency of 1
 	cfg.CLI.OptionValues["dry-run"] = "1"
+	cfg.CLI.OptionValues["concurrent-instances"] = "1"
 	return PushHandler(cfg)
 }
 
@@ -48,6 +52,12 @@ func clonePushOptionsToDiff() {
 		"allow-drop-table":  "In output, include a DROP TABLE for any table without a corresponding *.sql file",
 		"allow-drop-column": "In output, include DROP COLUMN clauses where appropriate",
 		"alter-wrapper":     "Output ALTER TABLEs as shell commands rather than just raw DDL; see manual for template vars",
+		"all":               "For dirs mapping to multiple instances or schemas, diff against all, not just the first",
+	}
+	hiddenRewrites := map[string]bool{
+		"all":                  false,
+		"dry-run":              true,
+		"concurrent-instances": true,
 	}
 
 	diffOptions := diff.Options()
@@ -61,8 +71,8 @@ func clonePushOptionsToDiff() {
 		if newDesc, ok := descRewrites[name]; ok {
 			diffOpt.Description = newDesc
 		}
-		if name == "dry-run" {
-			diffOpt.Hidden()
+		if newHiddenStatus, ok := hiddenRewrites[name]; ok {
+			diffOpt.HiddenOnCLI = newHiddenStatus
 		}
 		diff.AddOption(&diffOpt)
 	}
