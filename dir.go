@@ -266,6 +266,13 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	}
 
 	v := url.Values{}
+
+	// Set overridable options
+	v.Set("timeout", "5s")
+	v.Set("readTimeout", "5s")
+	v.Set("writeTimeout", "5s")
+
+	// Set values from connect-options
 	for name, value := range options {
 		if banned[strings.ToLower(name)] {
 			return "", fmt.Errorf("connect-options is not allowed to contain %s", name)
@@ -273,8 +280,10 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 		v.Set(name, value)
 	}
 
+	// Set non-overridable options
 	v.Set("interpolateParams", "true")
 	v.Set("foreign_key_checks", "0")
+
 	return v.Encode(), nil
 }
 

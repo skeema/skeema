@@ -72,6 +72,23 @@ func generateTargetsForDir(dir *Dir, targetsByInstance map[string]TargetGroup, e
 		}
 
 		for _, inst := range instances {
+			key := inst.String()
+
+			// If expandInstances was true, the instances aren't pre-checked for
+			// connectivity problems, so we must do that now. (If !expandInstances, we
+			// obtained the instance through FirstInstance(), which only ever returns a
+			// connectable instance.)
+			if expandInstances {
+				if ok, err := inst.CanConnect(); !ok {
+					targetsByInstance[key] = append(targetsByInstance[key], &Target{
+						Instance: inst,
+						Dir:      dir,
+						Err:      err,
+					})
+					continue
+				}
+			}
+
 			// TODO: support multiple schemas / service discovery lookup per instance if
 			// expandSchemas is true
 			for _, schemaName := range []string{dir.Config.Get("schema")} {
@@ -91,7 +108,6 @@ func generateTargetsForDir(dir *Dir, targetsByInstance map[string]TargetGroup, e
 					t.SchemaFromDir.Name = schemaName // "fix" temp schema name to match correct corresponding schema
 					t.SchemaFromInstance, t.Err = inst.Schema(schemaName)
 				}
-				key := inst.String()
 				targetsByInstance[key] = append(targetsByInstance[key], t)
 			}
 		}

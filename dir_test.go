@@ -111,12 +111,14 @@ func TestInstanceDefaultParams(t *testing.T) {
 			t.Errorf("Expected connect-options=\"%s\" to yield default params \"%s\", instead found \"%s\"", connectOptions, expected, actual)
 		}
 	}
+	baseDefaults := "interpolateParams=true&foreign_key_checks=0&timeout=5s&writeTimeout=5s&readTimeout=5s"
 	expectParams := map[string]string{
-		"":                                          "interpolateParams=true&foreign_key_checks=0",
-		"foo='bar'":                                 "interpolateParams=true&foreign_key_checks=0&foo=%27bar%27",
-		"bool=true,quotes='yes,no'":                 "interpolateParams=true&foreign_key_checks=0&bool=true&quotes=%27yes,no%27",
-		`escaped=we\'re ok`:                         "interpolateParams=true&foreign_key_checks=0&escaped=we%5C%27re ok",
-		`escquotes='we\'re still quoted',this=that`: "interpolateParams=true&foreign_key_checks=0&escquotes=%27we%5C%27re still quoted%27&this=that",
+		"":                                          baseDefaults,
+		"foo='bar'":                                 baseDefaults + "&foo=%27bar%27",
+		"bool=true,quotes='yes,no'":                 baseDefaults + "&bool=true&quotes=%27yes,no%27",
+		`escaped=we\'re ok`:                         baseDefaults + "&escaped=we%5C%27re ok",
+		`escquotes='we\'re still quoted',this=that`: baseDefaults + "&escquotes=%27we%5C%27re still quoted%27&this=that",
+		"ok=1,writeTimeout=12ms":                    "interpolateParams=true&foreign_key_checks=0&timeout=5s&writeTimeout=12ms&readTimeout=5s&ok=1",
 	}
 	for connOpts, expected := range expectParams {
 		assertDefaultParams(connOpts, expected)
