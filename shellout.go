@@ -82,6 +82,7 @@ func (s *ShellOut) RunCaptureSplit() ([]string, error) {
 	tokens := strings.Split(raw, string(delimiter))
 	result := make([]string, 0, len(tokens))
 	for _, token := range tokens {
+		token = strings.TrimSpace(token)
 		if token != "" {
 			result = append(result, token)
 		}
