@@ -175,6 +175,8 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 		if hosts, err = s.RunCaptureSplit(); err != nil {
 			return nil, err
 		}
+	} else if strings.ContainsAny(hostValue, ",") {
+		hosts = dir.Config.GetSlice("host", ',', true)
 	} else {
 		hosts = []string{hostValue}
 	}
@@ -183,6 +185,7 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 	var instances []*tengo.Instance
 	for _, host := range hosts {
 		var dsn string
+		thisPortValue := portValue
 		// TODO also support cloudsql DSNs
 		if host == "localhost" && (socketWasSupplied || !portWasSupplied) {
 			dsn = fmt.Sprintf("%s@unix(%s)/?%s", userAndPass, socketValue, params)
@@ -196,9 +199,9 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 					return nil, fmt.Errorf("Port was supplied as %d inside hostname %s but as %d in option file", splitPort, host, portValue)
 				}
 				host = splitHost
-				portValue = splitPort
+				thisPortValue = splitPort
 			}
-			dsn = fmt.Sprintf("%s@tcp(%s:%d)/?%s", userAndPass, host, portValue, params)
+			dsn = fmt.Sprintf("%s@tcp(%s:%d)/?%s", userAndPass, host, thisPortValue, params)
 		}
 		instance, err := tengo.NewInstance("mysql", dsn)
 		if err != nil || instance == nil {

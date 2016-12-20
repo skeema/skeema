@@ -239,41 +239,56 @@ func (cfg *Config) GetRaw(name string) string {
 // error.
 func (cfg *Config) Get(name string) string {
 	value := cfg.GetRaw(name)
-	if utf8.RuneCountInString(value) < 2 { // too short to possibly be quoted
-		return value
-	}
-	quote, _ := utf8.DecodeRuneInString(value)
-	last, _ := utf8.DecodeLastRuneInString(value)
-	if quote != last || (quote != '`' && quote != '"' && quote != '\'') {
-		return value
+	return unquote(value)
+}
+
+// GetSlice returns an option's value as a slice of strings, splitting on
+// the provided delimiter. Delimiters contained inside quoted values have no
+// effect, nor do backslash-escaped delimiters. Quote-wrapped tokens will have
+// their surrounding quotes stripped in the returned value. Leading and trailing
+// whitespace in any token will be stripped. Empty values will be removed.
+//
+// unwrapFullValue determines how an entirely-quoted-wrapped option value is
+// treated: if true, a fully quote-wrapped option value will be unquoted before
+// being parsed for delimiters. If false, a fully-quote-wrapped option value
+// will be treated as a single token, resulting in a one-element slice.
+func (cfg *Config) GetSlice(name string, delimiter rune, unwrapFullValue bool) []string {
+	var value string
+	if unwrapFullValue {
+		value = cfg.Get(name)
+	} else {
+		value = cfg.GetRaw(name)
 	}
 
-	// Do a pass through the string. Store each rune in a buffer, unescaping
-	// escaped values in the process. If we hit a terminating quote midway thru
-	// the string, return the original value. (We don't unquote or unescape
-	// anything unless the *entire* value is quoted.)
+	tokens := make([]string, 0)
+	var startToken int
+	var inQuote rune
 	var escapeNext bool
-	var runeTmp [utf8.UTFMax]byte
-	buf := make([]byte, 0, len(value)-2)
-	for _, r := range value[1 : len(value)-1] {
-		if r == quote && !escapeNext {
-			// we hit an unescaped terminating quote midway in the string, meaning the
-			// entire value is not quote-wrapped
-			return value
-		}
-		if r == '\\' && !escapeNext {
-			escapeNext = true
+	for n, c := range value + string(delimiter) {
+		if escapeNext && n < len(value) {
+			escapeNext = false
 			continue
 		}
-		escapeNext = false
-		if r >= utf8.RuneSelf { // multibyte character
-			byteCount := utf8.EncodeRune(runeTmp[:], r)
-			buf = append(buf, runeTmp[0:byteCount]...)
-		} else { // single-byte character
-			buf = append(buf, byte(r))
+		switch c {
+		case '\\':
+			escapeNext = true
+		case delimiter:
+			if inQuote == 0 || n == len(value) {
+				token := strings.TrimSpace(unquote(value[startToken:n]))
+				if token != "" {
+					tokens = append(tokens, token)
+				}
+				startToken = n + 1
+			}
+		case '\'', '"', '`':
+			if inQuote > 0 {
+				inQuote = 0
+			} else {
+				inQuote = c
+			}
 		}
 	}
-	return string(buf)
+	return tokens
 }
 
 // GetBool returns an option's value as a bool. If the option is not set, its
@@ -361,4 +376,48 @@ func (cfg *Config) GetBytes(name string) (uint64, error) {
 
 	numVal, err := strconv.ParseUint(value, 10, 64)
 	return numVal * multiplier, err
+}
+
+// Unquote takes a string, trims whitespace on both ends, and then examines
+// whether the entire string is wrapped in quotes. If it isn't, the string
+// is returned as-is after the whitespace is trimmed. Otherwise, the string
+// will have its wrapped quotes removed, and escaped values within the string
+// will be un-escaped.
+func unquote(input string) string {
+	input = strings.TrimSpace(input)
+	if utf8.RuneCountInString(input) < 2 { // too short to possibly be quoted
+		return input
+	}
+	quote, _ := utf8.DecodeRuneInString(input)
+	last, _ := utf8.DecodeLastRuneInString(input)
+	if quote != last || (quote != '`' && quote != '"' && quote != '\'') {
+		return input
+	}
+
+	// Do a pass through the string. Store each rune in a buffer, unescaping
+	// escaped values in the process. If we hit a terminating quote midway thru
+	// the string, return the original value. (We don't unquote or unescape
+	// anything unless the *entire* value is quoted.)
+	var escapeNext bool
+	var runeTmp [utf8.UTFMax]byte
+	buf := make([]byte, 0, len(input)-2)
+	for _, r := range input[1 : len(input)-1] {
+		if r == quote && !escapeNext {
+			// we hit an unescaped terminating quote midway in the string, meaning the
+			// entire input is not quote-wrapped
+			return input
+		}
+		if r == '\\' && !escapeNext {
+			escapeNext = true
+			continue
+		}
+		escapeNext = false
+		if r >= utf8.RuneSelf { // multibyte character
+			byteCount := utf8.EncodeRune(runeTmp[:], r)
+			buf = append(buf, runeTmp[0:byteCount]...)
+		} else { // single-byte character
+			buf = append(buf, byte(r))
+		}
+	}
+	return string(buf)
 }

@@ -53,7 +53,7 @@ func TestInstances(t *testing.T) {
 				foundInstances = append(foundInstances, inst.String())
 			}
 			if !reflect.DeepEqual(expectedInstances, foundInstances) {
-				t.Errorf("With option values %v, expected instances %v, but found instances %v", optionValues, expectedInstances, foundInstances)
+				t.Errorf("With option values %v, expected instances %#v, but found instances %#v", optionValues, expectedInstances, foundInstances)
 			}
 		}
 		return instances
@@ -73,6 +73,11 @@ func TestInstances(t *testing.T) {
 	assertInstances(map[string]string{"host": "localhost", "socket": "/var/run/mysql.sock"}, false, "localhost:/var/run/mysql.sock")
 	assertInstances(map[string]string{"host": "localhost", "port": "1234", "socket": "/var/lib/mysql/mysql.sock"}, false, "localhost:/var/lib/mysql/mysql.sock")
 
+	// list of static hosts
+	assertInstances(map[string]string{"host": "some.db.host,other.db.host"}, false, "some.db.host:3306", "other.db.host:3306")
+	assertInstances(map[string]string{"host": `"some.db.host, other.db.host"`, "port": "3307"}, false, "some.db.host:3307", "other.db.host:3307")
+	assertInstances(map[string]string{"host": "'some.db.host:3308', 'other.db.host'"}, false, "some.db.host:3308", "other.db.host:3306")
+
 	// invalid option values or combinations
 	assertInstances(map[string]string{"host": "some.db.host", "connect-options": ","}, true)
 	assertInstances(map[string]string{"host": "some.db.host:3306", "port": "3307"}, true)
@@ -84,7 +89,7 @@ func TestInstances(t *testing.T) {
 	assertInstances(map[string]string{"host": "`/usr/bin/printf 'some.db.host\n'`"}, false, "some.db.host:3306")
 	assertInstances(map[string]string{"host": "`/usr/bin/printf 'some.db.host\nother.db.host'`", "port": "3333"}, false, "some.db.host:3333", "other.db.host:3333")
 	assertInstances(map[string]string{"host": "`/usr/bin/printf 'some.db.host\tother.db.host:3316'`", "port": "3316"}, false, "some.db.host:3316", "other.db.host:3316")
-	assertInstances(map[string]string{"host": "`/usr/bin/printf 'localhost,remote.host,other.host:3307'`", "socket": "/var/lib/mysql/mysql.sock"}, false, "localhost:/var/lib/mysql/mysql.sock", "remote.host:3306", "other.host:3307")
+	assertInstances(map[string]string{"host": "`/usr/bin/printf 'localhost,remote.host:3307,other.host'`", "socket": "/var/lib/mysql/mysql.sock"}, false, "localhost:/var/lib/mysql/mysql.sock", "remote.host:3307", "other.host:3306")
 	assertInstances(map[string]string{"host": "`/bin/echo -n`"}, false)
 }
 
