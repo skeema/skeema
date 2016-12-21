@@ -203,7 +203,7 @@ func (instance *Instance) Schemas() ([]*Schema, error) {
 	query := `
 		SELECT schema_name, default_character_set_name, default_collation_name
 		FROM   schemata
-		WHERE  schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'test')`
+		WHERE  schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'test', 'sys')`
 	if err := db.Select(&rawSchemas, query); err != nil {
 		return nil, err
 	}
@@ -220,18 +220,27 @@ func (instance *Instance) Schemas() ([]*Schema, error) {
 	return instance.schemas, nil
 }
 
-// Schema returns a single schema by name.
-func (instance *Instance) Schema(name string) (*Schema, error) {
+// SchemasByName returns a map of schema name string to *Schema, for all schemas
+// that exist on the instance.
+func (instance *Instance) SchemasByName() (map[string]*Schema, error) {
 	schemas, err := instance.Schemas()
 	if err != nil {
 		return nil, err
 	}
+	result := make(map[string]*Schema, len(schemas))
 	for _, s := range schemas {
-		if s.Name == name {
-			return s, nil
-		}
+		result[s.Name] = s
 	}
-	return nil, nil
+	return result, nil
+}
+
+// Schema returns a single schema by name.
+func (instance *Instance) Schema(name string) (*Schema, error) {
+	byName, err := instance.SchemasByName()
+	if err != nil {
+		return nil, err
+	}
+	return byName[name], nil
 }
 
 // HasSchema returns true if this instance has a schema with the supplied name

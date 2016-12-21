@@ -38,7 +38,7 @@
 		},
 		{
 			"ImportPath": "github.com/skeema/tengo",
-			"Rev": "5f6e317ec873a58f6978108ec441b8e01ceeed2c"
+			"Rev": "0b1c208d26f4b75acbb7ff67d5e5716eb89e7c2d"
 		},
 		{
 			"ImportPath": "golang.org/x/crypto/ssh/terminal",

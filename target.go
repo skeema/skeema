@@ -58,6 +58,17 @@ func (tgm TargetGroupMap) AddDirError(dir *Dir, err error) {
 	tgm["errors"] = append(tgm["errors"], t)
 }
 
+// AddInstanceError is a convenience method for encoding a Target value which
+// hit a fatal problem on one specific instance and dir.
+func (tgm TargetGroupMap) AddInstanceError(instance *tengo.Instance, dir *Dir, err error) {
+	t := &Target{
+		Dir:      dir,
+		Err:      err,
+		Instance: instance,
+	}
+	tgm.Add(t)
+}
+
 // generateTargetsForDir examines dir's configuration, figures out what Target
 // or Targets the dir maps to, indexes them in targetsByInstance, and then
 // recursively descends through dir's subdirectories to do the same.
@@ -94,11 +105,7 @@ func generateTargetsForDir(dir *Dir, targetsByInstance TargetGroupMap, firstOnly
 			// dir.Instances doesn't pre-check for connectivity problems, so do that now
 			for _, inst := range rawInstances {
 				if ok, err := inst.CanConnect(); !ok {
-					targetsByInstance.Add(&Target{
-						Instance: inst,
-						Dir:      dir,
-						Err:      err,
-					})
+					targetsByInstance.AddInstanceError(inst, dir, err)
 				} else {
 					instances = append(instances, inst)
 				}
@@ -134,8 +141,20 @@ func generateTargetsForDir(dir *Dir, targetsByInstance TargetGroupMap, firstOnly
 		}
 
 		for _, inst := range instances {
-			// TODO: support multiple schemas / service discovery lookup per instance if !firstOnly
-			for _, schemaName := range []string{dir.Config.Get("schema")} {
+			schemaNames, err := dir.SchemaNames(inst)
+			if err != nil {
+				targetsByInstance.AddInstanceError(inst, dir, err)
+				continue
+			}
+			schemasByName, err := inst.SchemasByName()
+			if err != nil {
+				targetsByInstance.AddInstanceError(inst, dir, err)
+				continue
+			}
+			if len(schemaNames) > 1 && firstOnly {
+				schemaNames = schemaNames[0:1]
+			}
+			for _, schemaName := range schemaNames {
 				// Copy the template into a new Target. Using inst, set its Instance and
 				// SchemaFromInstance accordingly. Set its SchemaFromDir to a copy of the
 				// template's, so that we can "correct" its name without affecting other
@@ -144,7 +163,7 @@ func generateTargetsForDir(dir *Dir, targetsByInstance TargetGroupMap, firstOnly
 				t.Instance = inst
 				t.SchemaFromDir, _ = t.SchemaFromDir.CachedCopy() // error not possible so safe to ignore
 				t.SchemaFromDir.Name = schemaName
-				t.SchemaFromInstance, t.Err = inst.Schema(schemaName)
+				t.SchemaFromInstance = schemasByName[schemaName] // this may be nil if schema doesn't exist yet; callers handle that
 				targetsByInstance.Add(&t)
 			}
 		}

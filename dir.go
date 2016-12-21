@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -241,6 +242,50 @@ func (dir *Dir) FirstInstance() (*tengo.Instance, error) {
 		return nil, fmt.Errorf("Unable to connect to %s for %s: %s", instances[0], dir, lastErr)
 	}
 	return nil, fmt.Errorf("Unable to connect to any of %d instances for %s; last error %s", len(instances), dir, lastErr)
+}
+
+// SchemaNames returns one or more schema names to target for the supplied
+// instance, based on dir's configuration.
+func (dir *Dir) SchemaNames(instance *tengo.Instance) ([]string, error) {
+	// If no schema defined in this dir (meaning this dir's .skeema, as well as
+	// parent dirs' .skeema, global option files, or command-line) for the current
+	// environment, then nothing to do
+	if !dir.Config.Changed("schema") {
+		return nil, nil
+	}
+
+	schemaValue := dir.Config.Get("schema")                        // Get strips quotes (including backticks) from fully quoted-wrapped values
+	rawSchemaValue := dir.Config.GetRaw("schema")                  // GetRaw does not strip quotes
+	if rawSchemaValue != schemaValue && rawSchemaValue[0] == '`' { // no need to check len, the Changed check above already tells us schema != ""
+		extras := map[string]string{
+			"HOST": instance.Host,
+			"PORT": strconv.Itoa(instance.Port),
+		}
+		s, err := NewInterpolatedShellOut(schemaValue, dir, extras)
+		if err != nil {
+			return nil, err
+		}
+		return s.RunCaptureSplit()
+	}
+
+	if strings.ContainsAny(schemaValue, ",") {
+		return dir.Config.GetSlice("schema", ',', true), nil
+	}
+
+	if schemaValue == "*" {
+		// This automatically already filters out information_schema, performance_schema, sys, test, mysql
+		schemasByName, err := instance.SchemasByName()
+		if err != nil {
+			return nil, err
+		}
+		schemaNames := make([]string, 0, len(schemasByName))
+		for name := range schemasByName {
+			schemaNames = append(schemaNames, name)
+		}
+		return schemaNames, nil
+	}
+
+	return []string{schemaValue}, nil
 }
 
 // InstanceDefaultParams returns a param string for use in constructing a
