@@ -16,7 +16,7 @@ import (
 // [2] is the table name -- note we do not allow whitespace even if backtick-escaped
 // [3] is the table body -- later we scan this for disallowed things
 // [4] is any text after the table body -- we ignore this
-var reParseCreate = regexp.MustCompile(`(?i)^(.*)\s*create\s+table\s+(?:if\s+not\s+exists\s+)?` + "`?([^\\s`]+)`?" + `\s+([^;]+);?\s*(.*)$`)
+var reParseCreate = regexp.MustCompile(`(?is)^(.*)\s*create\s+table\s+(?:if\s+not\s+exists\s+)?` + "`?([^\\s`]+)`?" + `\s+([^;]+);?\s*(.*)$`)
 
 // We disallow CREATE TABLE SELECT and CREATE TABLE LIKE expressions
 var reBodyDisallowed = regexp.MustCompile(`(?i)^(as\s+select|select|like|[(]\s+like)`)
