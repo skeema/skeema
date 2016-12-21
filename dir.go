@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"io/ioutil"
 	"net/url"
@@ -8,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/skeema/mycli"
@@ -396,7 +398,7 @@ func (dir *Dir) CreateOptionFile(optionFile *mycli.File) error {
 func (dir *Dir) TargetGroups(expandInstances, expandSchemas bool) <-chan TargetGroup {
 	groups := make(chan TargetGroup)
 	go func() {
-		targetsByInstance := make(map[string]TargetGroup)
+		targetsByInstance := NewTargetGroupMap()
 		goodDirCount, badDirCount := generateTargetsForDir(dir, targetsByInstance, expandInstances, expandSchemas)
 		for _, tg := range targetsByInstance {
 			groups <- tg
@@ -419,7 +421,7 @@ func (dir *Dir) TargetGroups(expandInstances, expandSchemas bool) <-chan TargetG
 // result. This method is suitable for use only for single-threaded operations.
 func (dir *Dir) Targets() []*Target {
 	targets := make([]*Target, 0)
-	targetsByInstance := make(map[string]TargetGroup)
+	targetsByInstance := NewTargetGroupMap()
 	goodDirCount, badDirCount := generateTargetsForDir(dir, targetsByInstance, false, false)
 	for _, tg := range targetsByInstance {
 		for _, t := range tg {
@@ -434,6 +436,106 @@ func (dir *Dir) Targets() []*Target {
 		log.Warn("Perhaps skeema is being invoked from the wrong directory tree?")
 	}
 	return targets
+}
+
+// TargetTemplate returns a Target with Dir-specific fields hydrated:
+// SchemaFromDir, Dir, SQLFileErrors, SQLFileWarnings, and potentially Err.
+// Other methods that generate Targets can use this returned value as a
+// "template" for building other Target values by changing various fields
+// (at minimum, t.Instance, t.SchemaFromInstance, t.SchemaFromDir.Name)
+//
+// This method creates a temporary schema on instance, runs all *.sql files
+// in dir, obtains a tengo.Schema representation of the temp schema, and then
+// cleans up the temp schema. Errors that occur along the way are handled and
+// tracked accordingly.
+//
+// The supplied instance will be used for temporary schema operations, and
+// will be stored in the returned Target, but may safely be changed to point
+// to a different instance as needed.
+func (dir *Dir) TargetTemplate(instance *tengo.Instance) Target {
+	t := Target{
+		Dir:             dir,
+		Instance:        instance,
+		SQLFileErrors:   make(map[string]*SQLFile),
+		SQLFileWarnings: make([]error, 0),
+	}
+	tempSchemaName := dir.Config.Get("temp-schema")
+	sqlFiles, err := dir.SQLFiles()
+	if err != nil {
+		t.Err = fmt.Errorf("Unable to list SQL files in %s: %s", dir, err)
+		return t
+	}
+
+	// TODO: want to skip binlogging for all temp schema actions, if super priv available
+	var tx *sql.Tx
+	if tx, err = t.lockTempSchema(30 * time.Second); err != nil {
+		t.Err = fmt.Errorf("Unable to lock temporary schema on %s: %s", instance, err)
+		return t
+	}
+	defer func() {
+		unlockErr := t.unlockTempSchema(tx)
+		if unlockErr != nil && t.Err == nil {
+			t.Err = fmt.Errorf("Unable to unlock temporary schema on %s: %s", instance, unlockErr)
+		}
+	}()
+
+	tempSchema, err := instance.Schema(tempSchemaName)
+	if err != nil {
+		t.Err = fmt.Errorf("Unable to check for existence of temp schema on %s: %s", instance, err)
+		return t
+	}
+	if tempSchema != nil {
+		// Attempt to drop any tables already present in tempSchema, but fail if
+		// any of them actually have 1 or more rows
+		if err := instance.DropTablesInSchema(tempSchema, true); err != nil {
+			t.Err = fmt.Errorf("Cannot drop existing temp schema tables on %s: %s", instance, err)
+			return t
+		}
+	} else {
+		tempSchema, err = instance.CreateSchema(tempSchemaName)
+		if err != nil {
+			t.Err = fmt.Errorf("Cannot create temporary schema on %s: %s", instance, err)
+			return t
+		}
+	}
+
+	db, err := instance.Connect(tempSchemaName, "")
+	if err != nil {
+		t.Err = fmt.Errorf("Cannot connect to %s: %s", instance, err)
+		return t
+	}
+	for _, sf := range sqlFiles {
+		if sf.Error != nil {
+			t.SQLFileErrors[sf.Path()] = sf
+			continue
+		}
+		for _, warning := range sf.Warnings {
+			t.SQLFileWarnings = append(t.SQLFileWarnings, warning)
+		}
+		_, err := db.Exec(sf.Contents)
+		if err != nil {
+			if tengo.IsSyntaxError(err) {
+				sf.Error = fmt.Errorf("%s: SQL syntax error: %s", sf.Path(), err)
+			} else {
+				sf.Error = fmt.Errorf("%s: Error executing DDL: %s", sf.Path(), err)
+			}
+			t.SQLFileErrors[sf.Path()] = sf
+		}
+	}
+	if t.SchemaFromDir, err = tempSchema.CachedCopy(); err != nil {
+		t.Err = fmt.Errorf("Unable to clone temporary schema on %s: %s", instance, err)
+	}
+
+	if dir.Config.GetBool("reuse-temp-schema") {
+		if err := instance.DropTablesInSchema(tempSchema, true); err != nil {
+			t.Err = fmt.Errorf("Cannot drop tables in temporary schema on %s: %s", instance, err)
+		}
+	} else {
+		if err := instance.DropSchema(tempSchema, true); err != nil {
+			t.Err = fmt.Errorf("Cannot drop temporary schema on %s: %s", instance, err)
+		}
+	}
+	return t
 }
 
 // OptionFile returns a pointer to a mycli.File for this directory, representing

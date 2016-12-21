@@ -34,6 +34,25 @@ type Target struct {
 // TargetGroup represents a group of Targets that all have the same Instance.
 type TargetGroup []*Target
 
+// TargetGroupMap stores multiple TargetGroups, properly arranged by Instance.
+type TargetGroupMap map[string]TargetGroup
+
+// NewTargetGroupMap returns a new TargetGroupMap
+func NewTargetGroupMap() TargetGroupMap {
+	return make(TargetGroupMap)
+}
+
+// Add stores a Target in the appropriate TargetGroup.
+func (tgm TargetGroupMap) Add(t *Target) {
+	var key string
+	if t.Instance != nil {
+		key = t.Instance.String()
+	} else {
+		key = "errors"
+	}
+	tgm[key] = append(tgm[key], t)
+}
+
 // generateTargetsForDir examines dir's configuration, figures out what Target
 // or Targets the dir maps to, indexes them by instance in the supplied map, and
 // then recursively descends through dir's subdirectories to do the same. If
@@ -44,71 +63,89 @@ type TargetGroup []*Target
 // The return values indicate the count of dirs (this dir + all subdirs) that
 // did or did not (respectively) define a host+schema for at least one
 // environment.
-func generateTargetsForDir(dir *Dir, targetsByInstance map[string]TargetGroup, expandInstances, expandSchemas bool) (skeemaDirs, otherDirs int) {
+func generateTargetsForDir(dir *Dir, targetsByInstance TargetGroupMap, expandInstances, expandSchemas bool) (skeemaDirs, otherDirs int) {
 	// Generate targets if this dir's .skeema file defines a schema (for current
 	// environment section), and the dir's config hierarchy defines a host
 	// somewhere (here, or a parent dir)
 	if dir.Config.Changed("host") && dir.HasSchema() {
-		var dirSchema *tengo.Schema
 		var instances []*tengo.Instance
-		var err error
+		var instancesErr error
+
 		if expandInstances {
-			instances, err = dir.Instances()
-		} else {
-			var onlyInstance *tengo.Instance
-			onlyInstance, err = dir.FirstInstance()
-			if onlyInstance == nil && err == nil {
-				err = fmt.Errorf("No instance defined for %s", dir)
-			}
-			if err == nil {
-				instances = []*tengo.Instance{onlyInstance}
-			}
-		}
-		if err != nil {
-			targetsByInstance["errors"] = append(targetsByInstance["errors"], &Target{
-				Dir: dir,
-				Err: err,
-			})
-		}
-
-		for _, inst := range instances {
-			key := inst.String()
-
-			// If expandInstances was true, the instances aren't pre-checked for
-			// connectivity problems, so we must do that now. (If !expandInstances, we
-			// obtained the instance through FirstInstance(), which only ever returns a
-			// connectable instance.)
-			if expandInstances {
+			var rawInstances []*tengo.Instance
+			rawInstances, instancesErr = dir.Instances()
+			// dir.Instances doesn't pre-check for connectivity problems, so do that now
+			for _, inst := range rawInstances {
 				if ok, err := inst.CanConnect(); !ok {
-					targetsByInstance[key] = append(targetsByInstance[key], &Target{
+					targetsByInstance.Add(&Target{
 						Instance: inst,
 						Dir:      dir,
 						Err:      err,
 					})
-					continue
+				} else {
+					instances = append(instances, inst)
+				}
+			}
+		} else {
+			var onlyInstance *tengo.Instance
+			onlyInstance, instancesErr = dir.FirstInstance()
+			if onlyInstance == nil && instancesErr == nil {
+				instancesErr = fmt.Errorf("No instance defined for %s", dir)
+			}
+			if instancesErr == nil {
+				// dir.FirstInstance already checks for connectivity, so no need to redo that here
+				instances = []*tengo.Instance{onlyInstance}
+			}
+		}
+
+		// This class of error means the config was invalid (i.e. some option had a gibberish value)
+		if instancesErr != nil {
+			targetsByInstance.Add(&Target{
+				Dir: dir,
+				Err: instancesErr,
+			})
+		}
+
+		// Obtain a "template" Target based on the dir's configuration and *.sql
+		// contents. This is used for creating instance- and schema-specific Targets.
+		var template Target
+		if len(instances) > 0 {
+			template = dir.TargetTemplate(instances[0])
+
+			// If expandInstances but some SQLFile had a syntax error, treat this as
+			// fatal, to avoid potentially adding a bunch of Targets that all have the
+			// same error
+			if expandInstances && len(template.SQLFileErrors) > 0 {
+				for _, sf := range template.SQLFileErrors {
+					template.Err = sf.Error
+					break
 				}
 			}
 
+			// If something went wrong obtaining the temp schema, record the error
+			// (without the instance, so it's clear that the entire dir is being skipped)
+			// and don't generate any instance-specific Targets for this dir.
+			if template.Err != nil {
+				template.Instance = nil
+				targetsByInstance.Add(&template)
+				instances = instances[:0]
+			}
+		}
+
+		for _, inst := range instances {
 			// TODO: support multiple schemas / service discovery lookup per instance if
 			// expandSchemas is true
 			for _, schemaName := range []string{dir.Config.Get("schema")} {
-				t := &Target{
-					Instance: inst,
-					Dir:      dir,
-				}
-				if dirSchema == nil {
-					t.obtainSchemaFromDir()
-					dirSchema = t.SchemaFromDir
-				} else {
-					// Can re-use the same value even if expanding instances and/or schemas,
-					// since the same dir (and therefore same dir schema) is used for all
-					t.SchemaFromDir, t.Err = dirSchema.CachedCopy()
-				}
-				if t.Err == nil {
-					t.SchemaFromDir.Name = schemaName // "fix" temp schema name to match correct corresponding schema
-					t.SchemaFromInstance, t.Err = inst.Schema(schemaName)
-				}
-				targetsByInstance[key] = append(targetsByInstance[key], t)
+				// Copy the template into a new Target. Using inst, set its Instance and
+				// SchemaFromInstance accordingly. Set its SchemaFromDir to a copy of the
+				// template's, so that we can "correct" its name without affecting other
+				// targets.
+				t := template
+				t.Instance = inst
+				t.SchemaFromDir, _ = t.SchemaFromDir.CachedCopy() // error not possible so safe to ignore
+				t.SchemaFromDir.Name = schemaName
+				t.SchemaFromInstance, t.Err = inst.Schema(schemaName)
+				targetsByInstance.Add(&t)
 			}
 		}
 		skeemaDirs++
@@ -127,7 +164,7 @@ func generateTargetsForDir(dir *Dir, targetsByInstance map[string]TargetGroup, e
 
 	subdirs, err := dir.Subdirs()
 	if err != nil {
-		targetsByInstance["errors"] = append(targetsByInstance["errors"], &Target{
+		targetsByInstance.Add(&Target{
 			Dir: dir,
 			Err: err,
 		})
@@ -152,107 +189,6 @@ func generateTargetsForDir(dir *Dir, targetsByInstance map[string]TargetGroup, e
 		}
 	}
 	return
-}
-
-// HasErrors returns true if the Target encountered a fatal error OR any errors
-// in individual *.SQL files while performing temp schema operations. It also
-// returns the first error.
-func (t *Target) HasErrors() (bool, error) {
-	if t.Err != nil {
-		return true, t.Err
-	}
-	if len(t.SQLFileErrors) > 0 {
-		for _, sf := range t.SQLFileErrors {
-			return true, sf.Error
-		}
-	}
-	return false, nil
-}
-
-func (t *Target) obtainSchemaFromDir() {
-	tempSchemaName := t.Dir.Config.Get("temp-schema")
-	sqlFiles, err := t.Dir.SQLFiles()
-	if err != nil {
-		t.Err = fmt.Errorf("obtainSchemaFromDir: unable to list SQL files in %s: %s", t.Dir, err)
-		return
-	}
-
-	// TODO: want to skip binlogging for all temp schema actions, if super priv available
-	var tx *sql.Tx
-	if tx, err = t.lockTempSchema(30 * time.Second); err != nil {
-		t.Err = fmt.Errorf("obtainSchemaFromDir: %s", err)
-		return
-	}
-	defer func() {
-		unlockErr := t.unlockTempSchema(tx)
-		if unlockErr != nil && t.Err == nil {
-			t.Err = fmt.Errorf("obtainSchemaFromDir: %s", unlockErr)
-		}
-	}()
-
-	tempSchema, err := t.Instance.Schema(tempSchemaName)
-	if err != nil {
-		t.Err = fmt.Errorf("obtainSchemaFromDir: unable to obtain temp schema for %s on %s: %s", t.Dir, t.Instance, err)
-		return
-	}
-	if tempSchema != nil {
-		// Attempt to drop any tables already present in tempSchema, but fail if
-		// any of them actually have 1 or more rows
-		if err := t.Instance.DropTablesInSchema(tempSchema, true); err != nil {
-			t.Err = fmt.Errorf("obtainSchemaFromDir: cannot drop existing tables for %s on %s: %s", t.Dir, t.Instance, err)
-			return
-		}
-	} else {
-		tempSchema, err = t.Instance.CreateSchema(tempSchemaName)
-		if err != nil {
-			t.Err = fmt.Errorf("obtainSchemaFromDir: cannot create temporary schema for %s on %s: %s", t.Dir, t.Instance, err)
-			return
-		}
-	}
-
-	db, err := t.Instance.Connect(tempSchemaName, "")
-	if err != nil {
-		t.Err = fmt.Errorf("obtainSchemaFromDir: cannot connect to %s: %s", t.Instance, err)
-		return
-	}
-	if t.SQLFileErrors == nil {
-		t.SQLFileErrors = make(map[string]*SQLFile)
-	}
-	if t.SQLFileWarnings == nil {
-		t.SQLFileWarnings = make([]error, 0)
-	}
-	for _, sf := range sqlFiles {
-		if sf.Error != nil {
-			t.SQLFileErrors[sf.Path()] = sf
-			continue
-		}
-		for _, warning := range sf.Warnings {
-			t.SQLFileWarnings = append(t.SQLFileWarnings, warning)
-		}
-		_, err := db.Exec(sf.Contents)
-		if err != nil {
-			if tengo.IsSyntaxError(err) {
-				sf.Error = fmt.Errorf("%s: SQL syntax error: %s", sf.Path(), err)
-			} else {
-				sf.Error = fmt.Errorf("%s: Error executing DDL: %s", sf.Path(), err)
-			}
-			t.SQLFileErrors[sf.Path()] = sf
-		}
-	}
-
-	if t.SchemaFromDir, err = tempSchema.CachedCopy(); err != nil {
-		t.Err = fmt.Errorf("obtainSchemaFromDir: unable to clone temporary schema for %s on %s: %s", t.Dir, t.Instance, err)
-	}
-
-	if t.Dir.Config.GetBool("reuse-temp-schema") {
-		if err := t.Instance.DropTablesInSchema(tempSchema, true); err != nil {
-			t.Err = fmt.Errorf("obtainSchemaFromDir: cannot drop tables in temporary schema for %s on %s: %s", t.Dir, t.Instance, err)
-		}
-	} else {
-		if err := t.Instance.DropSchema(tempSchema, true); err != nil {
-			t.Err = fmt.Errorf("obtainSchemaFromDir: cannot drop temporary schema for %s on %s: %s", t.Dir, t.Instance, err)
-		}
-	}
 }
 
 // verifyDiff verifies the result of all AlterTable values found in

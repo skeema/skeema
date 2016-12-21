@@ -135,13 +135,13 @@ func pushWorker(sps *sharedPushState) {
 			if sps.fatalError != nil {
 				return
 			}
-			if hasErrors, firstErr := t.HasErrors(); hasErrors {
+			if t.Err != nil {
 				if t.Instance == nil {
-					log.Errorf("Skipping %s: %s\n", t.Dir, firstErr)
+					log.Errorf("Skipping %s: %s\n", t.Dir, t.Err)
 				} else if t.SchemaFromDir == nil {
-					log.Errorf("Skipping %s for %s: %s\n", t.Instance, t.Dir, firstErr)
+					log.Errorf("Skipping %s for %s: %s\n", t.Instance, t.Dir, t.Err)
 				} else {
-					log.Errorf("Skipping %s %s for %s: %s\n", t.Instance, t.SchemaFromDir.Name, t.Dir, firstErr)
+					log.Errorf("Skipping %s %s for %s: %s\n", t.Instance, t.SchemaFromDir.Name, t.Dir, t.Err)
 				}
 				sps.incrementErrCount(1)
 				continue
