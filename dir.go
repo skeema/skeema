@@ -392,14 +392,15 @@ func (dir *Dir) CreateOptionFile(optionFile *mycli.File) error {
 }
 
 // TargetGroups returns a channel for obtaining TargetGroups for this dir and
-// its subdirs. If expandInstances is false, dirs that normally map to multiple
-// instances will only have their first connectable instance considered.
-// expandSchemas will soon work similarly, but currently has no effect.
-func (dir *Dir) TargetGroups(expandInstances, expandSchemas bool) <-chan TargetGroup {
+// its subdirs. If firstOnly is true, any directory that normally maps to
+// multiple instances and/or schemas will only use of the first of each. If
+// fatalSQLFileErrors is true, any file with an invalid CREATE TABLE will cause
+// a single instanceless error Target to be used for the directory.
+func (dir *Dir) TargetGroups(firstOnly, fatalSQLFileErrors bool) <-chan TargetGroup {
 	groups := make(chan TargetGroup)
 	go func() {
 		targetsByInstance := NewTargetGroupMap()
-		goodDirCount, badDirCount := generateTargetsForDir(dir, targetsByInstance, expandInstances, expandSchemas)
+		goodDirCount, badDirCount := generateTargetsForDir(dir, targetsByInstance, firstOnly, fatalSQLFileErrors)
 		for _, tg := range targetsByInstance {
 			groups <- tg
 		}
@@ -422,7 +423,7 @@ func (dir *Dir) TargetGroups(expandInstances, expandSchemas bool) <-chan TargetG
 func (dir *Dir) Targets() []*Target {
 	targets := make([]*Target, 0)
 	targetsByInstance := NewTargetGroupMap()
-	goodDirCount, badDirCount := generateTargetsForDir(dir, targetsByInstance, false, false)
+	goodDirCount, badDirCount := generateTargetsForDir(dir, targetsByInstance, true, false)
 	for _, tg := range targetsByInstance {
 		for _, t := range tg {
 			targets = append(targets, t)

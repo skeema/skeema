@@ -73,26 +73,31 @@ func PushHandler(cfg *mycli.Config) error {
 	}
 
 	// `skeema push` and `skeema diff` have different defaults / option names for
-	// controlling whether or not instances and schemas are expanded (for dirs
+	// controlling whether or not to only take the first instance and first schema
+	// for dirs that normally multiple to multiple of one or both.
 	// that map to multiple instances and/or schemas, e.g. in a sharded setup):
-	// `skeema push` defaults to expanding, but can be overridden via --first-only.
-	// `skeema diff` defaults to NOT expanding, but can be overridden via --all.
-	var expandMulti bool
+	// `skeema push` defaults to taking all, but can be overridden via --first-only.
+	// `skeema diff` defaults to taking the first only, but can be overridden via --all.
+	var firstOnly bool
 	if cfg.CLI.Command.Name == "diff" {
-		expandMulti = cfg.GetBool("all")
+		firstOnly = !cfg.GetBool("all")
 	} else {
-		expandMulti = !cfg.GetBool("first-only")
+		firstOnly = cfg.GetBool("first-only")
 	}
 
+	// The 2nd param of dir.TargetGroups indicates that SQLFile errors are to be
+	// treated as fatal. This is required for push and diff. Otherwise, a file with
+	// invalid CREATE TABLE SQL would lead to a table being missing in the temp
+	// schema, which would confuse the logic that diffs schemas.
 	sps := &sharedPushState{
-		targetGroups: dir.TargetGroups(expandMulti, expandMulti),
+		targetGroups: dir.TargetGroups(firstOnly, true),
 		dryRun:       cfg.GetBool("dry-run"),
 		Mutex:        new(sync.Mutex),
 		WaitGroup:    new(sync.WaitGroup),
 	}
 
 	for n := 0; n < workerCount; n++ {
-		sps.Add(1)
+		sps.Add(1) // increment the waitgroup
 		go pushWorker(sps)
 	}
 

@@ -44,26 +44,33 @@ func NewTargetGroupMap() TargetGroupMap {
 
 // Add stores a Target in the appropriate TargetGroup.
 func (tgm TargetGroupMap) Add(t *Target) {
-	var key string
-	if t.Instance != nil {
-		key = t.Instance.String()
-	} else {
-		key = "errors"
-	}
+	key := t.Instance.String()
 	tgm[key] = append(tgm[key], t)
 }
 
+// AddDirError records a special Target value which indicates there was a
+// fatal problem with a directory, not specific to one instance.
+func (tgm TargetGroupMap) AddDirError(dir *Dir, err error) {
+	t := &Target{
+		Dir: dir,
+		Err: err,
+	}
+	tgm["errors"] = append(tgm["errors"], t)
+}
+
 // generateTargetsForDir examines dir's configuration, figures out what Target
-// or Targets the dir maps to, indexes them by instance in the supplied map, and
-// then recursively descends through dir's subdirectories to do the same. If
-// expandInstances is true, and the dir maps to multiple DB Instances, multiple
-// Targets will be generated for the dir; otherwise only the first Instance
-// will be used. Ditto for expandSchemas and mapping to multiple DB Schemas.
+// or Targets the dir maps to, indexes them in targetsByInstance, and then
+// recursively descends through dir's subdirectories to do the same.
+//
+// If firstOnly is true, any directory that normally maps to multiple instances
+// and/or schemas will only use of the first of each. If fatalSQLFileErrors is
+// true, any file with an invalid CREATE TABLE will cause a single instanceless
+// error Target to be used for the directory.
 //
 // The return values indicate the count of dirs (this dir + all subdirs) that
 // did or did not (respectively) define a host+schema for at least one
 // environment.
-func generateTargetsForDir(dir *Dir, targetsByInstance TargetGroupMap, expandInstances, expandSchemas bool) (skeemaDirs, otherDirs int) {
+func generateTargetsForDir(dir *Dir, targetsByInstance TargetGroupMap, firstOnly, fatalSQLFileErrors bool) (skeemaDirs, otherDirs int) {
 	// Generate targets if this dir's .skeema file defines a schema (for current
 	// environment section), and the dir's config hierarchy defines a host
 	// somewhere (here, or a parent dir)
@@ -71,7 +78,17 @@ func generateTargetsForDir(dir *Dir, targetsByInstance TargetGroupMap, expandIns
 		var instances []*tengo.Instance
 		var instancesErr error
 
-		if expandInstances {
+		if firstOnly {
+			var onlyInstance *tengo.Instance
+			onlyInstance, instancesErr = dir.FirstInstance()
+			if onlyInstance == nil && instancesErr == nil {
+				instancesErr = fmt.Errorf("No instance defined for %s", dir)
+			}
+			if instancesErr == nil {
+				// dir.FirstInstance already checks for connectivity, so no need to redo that here
+				instances = []*tengo.Instance{onlyInstance}
+			}
+		} else {
 			var rawInstances []*tengo.Instance
 			rawInstances, instancesErr = dir.Instances()
 			// dir.Instances doesn't pre-check for connectivity problems, so do that now
@@ -86,39 +103,24 @@ func generateTargetsForDir(dir *Dir, targetsByInstance TargetGroupMap, expandIns
 					instances = append(instances, inst)
 				}
 			}
-		} else {
-			var onlyInstance *tengo.Instance
-			onlyInstance, instancesErr = dir.FirstInstance()
-			if onlyInstance == nil && instancesErr == nil {
-				instancesErr = fmt.Errorf("No instance defined for %s", dir)
-			}
-			if instancesErr == nil {
-				// dir.FirstInstance already checks for connectivity, so no need to redo that here
-				instances = []*tengo.Instance{onlyInstance}
-			}
 		}
 
 		// This class of error means the config was invalid (i.e. some option had a gibberish value)
 		if instancesErr != nil {
-			targetsByInstance.Add(&Target{
-				Dir: dir,
-				Err: instancesErr,
-			})
+			targetsByInstance.AddDirError(dir, instancesErr)
 		}
 
 		// Obtain a "template" Target based on the dir's configuration and *.sql
-		// contents. This is used for creating instance- and schema-specific Targets.
+		// contents. This is used later for creating instance- and schema-specific
+		// Targets.
 		var template Target
 		if len(instances) > 0 {
 			template = dir.TargetTemplate(instances[0])
 
-			// If expandInstances but some SQLFile had a syntax error, treat this as
-			// fatal, to avoid potentially adding a bunch of Targets that all have the
-			// same error
-			if expandInstances && len(template.SQLFileErrors) > 0 {
+			if template.Err == nil && fatalSQLFileErrors && len(template.SQLFileErrors) > 0 {
 				for _, sf := range template.SQLFileErrors {
 					template.Err = sf.Error
-					break
+					break // only need one element of the map, doesn't matter which one
 				}
 			}
 
@@ -126,15 +128,13 @@ func generateTargetsForDir(dir *Dir, targetsByInstance TargetGroupMap, expandIns
 			// (without the instance, so it's clear that the entire dir is being skipped)
 			// and don't generate any instance-specific Targets for this dir.
 			if template.Err != nil {
-				template.Instance = nil
-				targetsByInstance.Add(&template)
+				targetsByInstance.AddDirError(dir, template.Err)
 				instances = instances[:0]
 			}
 		}
 
 		for _, inst := range instances {
-			// TODO: support multiple schemas / service discovery lookup per instance if
-			// expandSchemas is true
+			// TODO: support multiple schemas / service discovery lookup per instance if !firstOnly
 			for _, schemaName := range []string{dir.Config.Get("schema")} {
 				// Copy the template into a new Target. Using inst, set its Instance and
 				// SchemaFromInstance accordingly. Set its SchemaFromDir to a copy of the
@@ -164,10 +164,7 @@ func generateTargetsForDir(dir *Dir, targetsByInstance TargetGroupMap, expandIns
 
 	subdirs, err := dir.Subdirs()
 	if err != nil {
-		targetsByInstance.Add(&Target{
-			Dir: dir,
-			Err: err,
-		})
+		targetsByInstance.AddDirError(dir, err)
 	} else {
 		for _, subdir := range subdirs {
 			// Don't iterate into hidden dirs, since version control software may store
@@ -180,7 +177,7 @@ func generateTargetsForDir(dir *Dir, targetsByInstance TargetGroupMap, expandIns
 			// Recurse into the subdir, halting early if we've encountered too many
 			// irrelevant subdirs, possibly indicating that skeema was invoked in the
 			// wrong directory tree
-			skeemaSubdirs, otherSubdirs := generateTargetsForDir(subdir, targetsByInstance, expandInstances, expandSchemas)
+			skeemaSubdirs, otherSubdirs := generateTargetsForDir(subdir, targetsByInstance, firstOnly, fatalSQLFileErrors)
 			skeemaDirs += skeemaSubdirs
 			otherDirs += otherSubdirs
 			if otherDirs >= MaxNonSkeemaDirs && skeemaDirs == 0 {
