@@ -203,7 +203,7 @@ func (instance *Instance) Schemas() ([]*Schema, error) {
 	query := `
 		SELECT schema_name, default_character_set_name, default_collation_name
 		FROM   schemata
-		WHERE  schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'test')`
+		WHERE  schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'test', 'sys')`
 	if err := db.Select(&rawSchemas, query); err != nil {
 		return nil, err
 	}
