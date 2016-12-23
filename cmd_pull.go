@@ -48,7 +48,7 @@ func PullHandler(cfg *mycli.Config) error {
 			continue
 		}
 
-		log.Infof("Updating %s", t.Dir)
+		log.Infof("Updating %s to reflect %s %s", t.Dir, t.Instance, t.SchemaFromDir.Name)
 
 		// If schema doesn't exist on instance, remove the corresponding dir
 		if t.SchemaFromInstance == nil {
@@ -200,11 +200,30 @@ func findNewSchemas(dir *Dir) error {
 	}
 
 	if dir.HasHost() && !dir.HasSchema() {
+		instance, err := dir.FirstInstance()
+		if err != nil {
+			return err
+		}
 		subdirHasSchema := make(map[string]bool)
 		for _, subdir := range subdirs {
-			if subdir.HasSchema() {
-				// TODO support expansion of multiple schema names per dir
-				subdirHasSchema[subdir.Config.Get("schema")] = true
+			// We only want to evaluate subdirs that explicitly define the schema option
+			// in that subdir's .skeema file, vs inheriting it from a parent dir.
+			if !subdir.HasSchema() {
+				continue
+			}
+
+			// If a subdir's schema is set to "*", it maps to all schemas on the
+			// instance, so no sense in trying to detect "new" schemas
+			if subdir.Config.Get("schema") == "*" {
+				return nil
+			}
+
+			schemaNames, err := subdir.SchemaNames(instance)
+			if err != nil {
+				return err
+			}
+			for _, name := range schemaNames {
+				subdirHasSchema[name] = true
 			}
 		}
 
@@ -228,6 +247,10 @@ func findNewSchemas(dir *Dir) error {
 					}
 				}
 			}
+
+			// If we did a schema-to-subdir comparison, no need to continue recursion
+			// even if there are additional levels of subdirs
+			return nil
 		}
 	}
 

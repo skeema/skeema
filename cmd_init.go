@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 
@@ -172,7 +173,7 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 		optionFile := mycli.NewFile(".skeema")
 		optionFile.SetOptionValue("", "schema", s.Name)
 		if schemaDir, err = parentDir.CreateSubdir(s.Name, optionFile); err != nil {
-			return NewExitValue(CodeCantCreate, "Unable to use directory %s for schema %s: %s", schemaDir.Path, s.Name, err)
+			return NewExitValue(CodeCantCreate, "Unable to use directory %s for schema %s: %s", path.Join(parentDir.Path, s.Name), s.Name, err)
 		}
 	} else {
 		schemaDir = parentDir
