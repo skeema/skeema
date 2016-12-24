@@ -2,6 +2,7 @@
 
 ### Index
 
+* [all](#all)
 * [allow-below-size](#allow-below-size)
 * [allow-drop-column](#allow-drop-column)
 * [allow-drop-table](#allow-drop-table)
@@ -9,11 +10,13 @@
 * [alter-lock](#alter-lock)
 * [alter-wrapper](#alter-wrapper)
 * [alter-wrapper-min-size](#alter-wrapper-min-size)
+* [concurrent-instances](#concurrent-instances)
 * [connect-options](#connect-options)
 * [ddl-wrapper](#ddl-wrapper)
 * [debug](#debug)
 * [dir](#dir)
 * [dry-run](#dry-run)
+* [first-only](#first-only)
 * [host](#host)
 * [include-auto-inc](#include-auto-inc)
 * [normalize](#normalize)
@@ -27,6 +30,18 @@
 * [verify](#verify)
 
 ---
+
+### all
+
+Commands | diff
+--- | :---
+**Default** | false
+**Type** | boolean
+**Restrictions** | none
+
+Ordinarily, for individual directories that map to multiple instances and/or multiple schemas, `skeema diff` only performs a diff against the first instance and schema per directory. With [all](#all), `skeema diff` instead will diff against all instances mapped to the directory, and all mapped schemas for each instance. In a sharded environment, this can be useful to see if any shards are still using an out-of-date schema.
+
+This is one of the only cases where the options for `skeema diff` differ from `skeema push`. The behavior in this respect is the opposite for `skeema push`: that command defaults to operating on all instances and schemas, unless the [first-only](#first-only) option is used, in which case it only operates on the first instance and schema per directory.
 
 ### allow-below-size
 
@@ -150,6 +165,18 @@ If [alter-wrapper-min-size](#alter-wrapper-min-size) is set to a value greater t
 
 If this option is supplied along with *both* [alter-wrapper](#alter-wrapper) and [ddl-wrapper](#ddl-wrapper), ALTERs on tables below the specified size will still have [ddl-wrapper](#ddl-wrapper) applied. This configuration is not recommended due to its complexity.
 
+### concurrent-instances
+
+Commands | push
+--- | :---
+**Default** | 1
+**Type** | int
+**Restrictions** | Must be a positive integer
+
+By default, `skeema push` only operates on one instance at a time. To operate on multiple instances simultaneously, set [concurrent-instances](#concurrent-instances) to the number of database instances to run on concurrently. This is useful in an environment with multiple shards or pools.
+
+On each individual database instance, only one DDL operation will be run at a time, regardless of [concurrent-instances](#concurrent-instances). Concurrency within an instance may be configurable in a future version of Skeema.
+
 ### connect-options
 
 Commands | *all*
@@ -254,6 +281,20 @@ Commands | push
 **Restrictions** | Should only appear on command-line
 
 Running `skeema push --dry-run` is exactly equivalent to running `skeema diff`: the DDL will be generated and printed, but not executed. The same code path is used in both cases. The *only* difference is that `skeema diff` has its own help/usage text, but otherwise the command logic is the same as `skeema push --dry-run`.
+
+### first-only
+
+Commands | push
+--- | :---
+**Default** | false
+**Type** | boolean
+**Restrictions** | none
+
+Ordinarily, for individual directories that map to multiple instances and/or multiple schemas, `skeema push` will operate on all mapped instances, and all mapped schemas on those instances. If the [first-only](#first-only) option is used, `skeema push` instead only operates on the first instance and schema per directory. 
+
+In a sharded environment, this option can be useful to test a change just on one shard before pushing it out on all shards. Alternatively, for more complex control, a similar effect can be achieved by using environment names. For example, you could create an environment called "production-canary" with [host](#host) configured to map to a subset of the instances in the "production" environment.
+
+The [first-only](#first-only) option is one of the only cases where the options for `skeema push` differ from `skeema diff`. The behavior in this respect is the opposite for `skeema diff`: that command defaults to operating on only the first instance and schema, unless its [all](#all) option is used, in which case it operates on all instances and schemas per directory like `skeema push`.
 
 ### host
 
