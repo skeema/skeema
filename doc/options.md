@@ -304,9 +304,30 @@ Commands | *all*
 **Type** | string
 **Restrictions** | see [limitations on placement](config.md#limitations-on-host-and-schema-options)
 
-Specifies hostname, or IPv4, or IPv6 address to connect to. If an IPv6 address, it must be wrapped in brackets.
+Specifies one or more hostnames, IPv4 addresses, or IPv6 addresses to connect to. Port numbers may optionally be included using `hostname:port` syntax in [host](#host) instead of using the separate [port](#port) option. IPv6 addresses must be wrapped in brackets; if also including a port, use format `[ipv6:address:here]:port`.
 
 If host is "localhost", and no [port option](#port) is supplied, the connection will use a UNIX domain socket instead of TCP/IP. See the [socket option](#socket) to specify the socket file path. This behavior is consistent with how the MySQL client operates. If you wish to connect to localhost using TCP/IP, supply host by IP ("127.0.0.1").
+
+In option files, the value of the [host](#host) option may take any of these forms: 
+
+* A single hostname/address
+* Multiple hostnames/addresses, separated by commas
+* A backtick-wrapped command line to execute; the command's STDOUT will be split on a consistent delimiter (newline, tab, comma, or space) and each token will be treated as a hostname/address, optionally with port
+
+The ability to specify multiple hostnames is useful in sharded environments, where several databases all have the same set of tables, and therefore each schema change needs to be applied in multiple places.
+
+Environments using external service discovery systems should set [host](#host) to a backtick-wrapped external command shellout. This permits the directory to be mapped to one or more master host(s) (optionally with port) dynamically. The command line may contain special variables, which Skeema will dynamically replace with appropriate values. See [options with variable interpolation](config.md#options-with-variable-interpolation) for more information. The following variables are supported for this option:
+
+* `{SCHEMA}` -- schema name defined by the [schema](#schema) option for the directory being processed
+* `{USER}` -- MySQL username defined by the [user](#user) option either via command-line or option file
+* `{PASSWORD}` -- MySQL password defined by the [password](#password) option either via command-line or option file
+* `{DIRNAME}` -- The base name of the directory being processed.
+* `{DIRPARENT}` -- The base name of the parent of the directory being processed.
+* `{DIRPATH}` -- The full (absolute) path of the directory being processed.
+
+Above, "the directory being processed" refers to a leaf directory defining the [schema option](#schema) and containing \*.sql files. To configure generic discovery lookups using directory names, you could use a directory structure of repo_root/pool_name/schema_name/\*.sql and then specify ``host=`service_discovery_lookup.sh {DIRPARENT}` `` in repo_root/.skeema. In this case `{DIRPARENT}` will end up being the pool name to pass to service discovery.
+
+The external command should only return addresses of master instances, never replicas.
 
 ### include-auto-inc
 
