@@ -132,6 +132,7 @@ This command supports use of special variables. Skeema will dynamically replace 
 * `{SCHEMA}` -- schema name defined by the [schema](#schema) option for the directory being processed
 * `{USER}` -- MySQL username defined by the [user](#user) option either via command-line or option file
 * `{PASSWORD}` -- MySQL password defined by the [password](#password) option either via command-line or option file
+* `{ENVIRONMENT}` -- environment name from the first positional arg on the command-line, or "production" if none specified
 * `{DDL}` -- Full `ALTER TABLE` statement, including all clauses
 * `{TABLE}` -- table name that this ALTER is for
 * `{SIZE}` -- size of table that this ALTER is for, in bytes. This will always be 0 for tables without any rows.
@@ -232,6 +233,7 @@ This command supports use of special variables. Skeema will dynamically replace 
 * `{SCHEMA}` -- schema name defined by the [schema](#schema) option for the directory being processed
 * `{USER}` -- MySQL username defined by the [user](#user) option either via command-line or option file
 * `{PASSWORD}` -- MySQL password defined by the [password](#password) option either via command-line or option file
+* `{ENVIRONMENT}` -- environment name from the first positional arg on the command-line, or "production" if none specified
 * `{DDL}` -- Full DDL statement, including all clauses
 * `{TABLE}` -- table name that this DDL is for
 * `{SIZE}` -- size of table that this DDL is for, in bytes. This will always be 0 for tables without any rows, or for `CREATE TABLE` statements.
@@ -321,11 +323,12 @@ Environments using external service discovery systems should set [host](#host) t
 * `{SCHEMA}` -- literal value of the [schema](#schema) option for the directory being processed
 * `{USER}` -- MySQL username defined by the [user](#user) option either via command-line or option file
 * `{PASSWORD}` -- MySQL password defined by the [password](#password) option either via command-line or option file
+* `{ENVIRONMENT}` -- environment name from the first positional arg on the command-line, or "production" if none specified
 * `{DIRNAME}` -- The base name of the directory being processed
 * `{DIRPARENT}` -- The base name of the parent of the directory being processed
 * `{DIRPATH}` -- The full (absolute) path of the directory being processed
 
-Above, "the directory being processed" refers to a leaf directory defining the [schema option](#schema) and containing \*.sql files. To configure generic discovery lookups using directory names, you could use a directory structure of repo_root/pool_name/schema_name/\*.sql and then specify ``host=`/path/to/service_discovery_lookup.sh {DIRPARENT}` `` in repo_root/.skeema. In this case `{DIRPARENT}` will end up being the pool name to pass to service discovery.
+Above, "the directory being processed" refers to a leaf directory defining the [schema option](#schema) and containing \*.sql files. To configure generic discovery lookups using a combination of environment name and directory names, you could use a directory structure of repo_root/pool_name/schema_name/\*.sql and then specify ``host=`/path/to/service_discovery_lookup.sh {ENVIRONMENT} {DIRPARENT}` `` in repo_root/.skeema. In this case `{DIRPARENT}` will end up being the pool name to pass to service discovery.
 
 The external command should only return addresses of master instances, never replicas.
 
@@ -422,6 +425,7 @@ Some sharded environments need more flexibility -- for example, where some schem
 * `{PORT}` -- port number for the database instance being processed
 * `{USER}` -- MySQL username defined by the [user](#user) option either via command-line or option file
 * `{PASSWORD}` -- MySQL password defined by the [password](#password) option either via command-line or option file
+* `{ENVIRONMENT}` -- environment name from the first positional arg on the command-line, or "production" if none specified
 * `{DIRNAME}` -- The base name of the directory being processed.
 * `{DIRPARENT}` -- The base name of the parent of the directory being processed.
 * `{DIRPATH}` -- The full (absolute) path of the directory being processed.

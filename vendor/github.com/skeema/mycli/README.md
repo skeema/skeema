@@ -31,18 +31,19 @@ MySQL is a trademark of Oracle Corp.
 
 ## Status
 
-mycli should be considered alpha software. The API is relatively stable, but documentation, examples, and unit tests all still need to be written.
+mycli should be considered beta software. The API is stable, but documentation and generic examples still need to be written. For now, see the [Skeema codebase](http://github.com/skeema/skeema) for a canonical example using all features of mycli.
 
 ### Future development
 
 The following features are **not** yet implemented, but are planned for future releases:
 
 * Env vars as an option source
-* Additional option types: floating-point, file size (with suffixes of K, M, G), IP address, comma-separated string slice, bool count
+* Additional ways to get config option values: floating-point, IP address, bool count of repeated option
 * API for runtime option overrides, which take precedence even over command-line flags
 * API for re-reading all option files that have changed
 * Command aliases
 
+Unit test coverage of mycli is still incomplete; code coverage is currently around 40%. This will be improved in future releases.
 
 ## Authors
 

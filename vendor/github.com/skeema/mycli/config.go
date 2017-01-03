@@ -144,6 +144,8 @@ func (cfg *Config) Changed(name string) bool {
 		return false
 	}
 	opt := cfg.FindOption(name)
+	// Note that opt cannot be nil here, so no need to check. If the name didn't
+	// correspond to an existing option, the previous call to Supplied panics.
 	return (cfg.unifiedValues[name] != opt.Default)
 }
 

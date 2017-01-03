@@ -136,6 +136,11 @@ func NewInterpolatedShellOut(command string, dir *Dir, extra map[string]string) 
 		}
 	}
 
+	// If the command has an "environment" positional arg, add its value as-is too
+	if _, hasEnvironment := dir.Config.CLI.Command.OptionValue("environment"); hasEnvironment {
+		values["ENVIRONMENT"] = dir.Config.Get("environment")
+	}
+
 	hostSource := dir.Config.Source("host")
 	if file, ok := hostSource.(*mycli.File); ok {
 		values["HOSTDIR"] = path.Base(file.Dir)
