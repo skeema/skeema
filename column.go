@@ -56,14 +56,22 @@ type Column struct {
 	AutoIncrement bool
 	Default       ColumnDefault
 	Extra         string
+	CharacterSet  string // Only populated if col's *collation* differs from table's
+	Collation     string // Only populated if differs from CharacterSet's default collation
 	//Comment       string
 }
 
 // Definition returns this column's definition clause, for use as part of a DDL
 // statement.
 func (c *Column) Definition() string {
-	var nullability, autoIncrement, defaultValue, extraModifiers string
+	var charSet, collation, nullability, autoIncrement, defaultValue, extraModifiers string
 	emitDefault := c.CanHaveDefault()
+	if c.CharacterSet != "" {
+		charSet = fmt.Sprintf(" CHARACTER SET %s", c.CharacterSet)
+	}
+	if c.Collation != "" {
+		collation = fmt.Sprintf(" COLLATE %s", c.Collation)
+	}
 	if !c.Nullable {
 		nullability = " NOT NULL"
 		if c.Default.Null {
@@ -82,7 +90,7 @@ func (c *Column) Definition() string {
 	if c.Extra != "" {
 		extraModifiers = fmt.Sprintf(" %s", c.Extra)
 	}
-	return fmt.Sprintf("%s %s%s%s%s%s", EscapeIdentifier(c.Name), c.TypeInDB, nullability, autoIncrement, defaultValue, extraModifiers)
+	return fmt.Sprintf("%s %s%s%s%s%s%s%s", EscapeIdentifier(c.Name), c.TypeInDB, charSet, collation, nullability, autoIncrement, defaultValue, extraModifiers)
 }
 
 // Equals returns true if two columns are identical, false otherwise.

@@ -78,13 +78,13 @@ func (s *Schema) Tables() ([]*Table, error) {
 		CollationIsDefault string        `db:"is_default"`
 	}
 	query := `
-		SELECT    t.table_name, t.table_type, t.engine, t.row_format, t.auto_increment,
-		          t.create_options, t.table_collation, t.table_comment,
-		          c.character_set_name, c.is_default
-		FROM      tables t
-		LEFT JOIN collations c ON t.table_collation = c.collation_name
-		WHERE     t.table_schema = ?
-		AND       t.table_type = 'BASE TABLE'`
+		SELECT t.table_name, t.table_type, t.engine, t.row_format, t.auto_increment,
+		       t.create_options, t.table_collation, t.table_comment,
+		       c.character_set_name, c.is_default
+		FROM   tables t
+		JOIN   collations c ON t.table_collation = c.collation_name
+		WHERE  t.table_schema = ?
+		AND    t.table_type = 'BASE TABLE'`
 	if err := db.Select(&rawTables, query, s.Name); err != nil {
 		return nil, err
 	}
@@ -106,19 +106,27 @@ func (s *Schema) Tables() ([]*Table, error) {
 
 	// Obtain the columns in all tables in the schema
 	var rawColumns []struct {
-		Name       string         `db:"column_name"`
-		TableName  string         `db:"table_name"`
-		Type       string         `db:"column_type"`
-		IsNullable string         `db:"is_nullable"`
-		Default    sql.NullString `db:"column_default"`
-		Extra      string         `db:"extra"`
-		Comment    string         `db:"column_comment"`
+		Name               string         `db:"column_name"`
+		TableName          string         `db:"table_name"`
+		Type               string         `db:"column_type"`
+		IsNullable         string         `db:"is_nullable"`
+		Default            sql.NullString `db:"column_default"`
+		Extra              string         `db:"extra"`
+		Comment            string         `db:"column_comment"`
+		CharacterSet       sql.NullString `db:"character_set_name"`
+		Collation          sql.NullString `db:"collation_name"`
+		TableCollation     string         `db:"table_collation"`
+		CollationIsDefault sql.NullString `db:"is_default"`
 	}
 	query = `
-		SELECT   table_name, column_name, column_type, is_nullable, column_default, extra, column_comment
-		FROM     columns
-		WHERE    table_schema = ?
-		ORDER BY table_name, ordinal_position`
+		SELECT    c.table_name, c.column_name, c.column_type, c.is_nullable, c.column_default,
+		          c.extra, c.column_comment, c.character_set_name, c.collation_name,
+		          t.table_collation, co.is_default
+		FROM      columns c
+		JOIN      tables t ON t.table_name = c.table_name AND t.table_schema = c.table_schema
+		LEFT JOIN collations co ON co.collation_name = c.collation_name
+		WHERE     c.table_schema = ?
+		ORDER BY  c.table_name, c.ordinal_position`
 	if err := db.Select(&rawColumns, query, s.Name); err != nil {
 		return nil, err
 	}
@@ -140,6 +148,16 @@ func (s *Schema) Tables() ([]*Table, error) {
 		}
 		if strings.Contains(strings.ToLower(rawColumn.Extra), "on update") {
 			col.Extra = strings.ToUpper(rawColumn.Extra)
+		}
+		if rawColumn.Collation.Valid { // only text-based column types have a notion of charset and collation
+			// SHOW CREATE TABLE includes col's character set if col's collation differs from table's
+			if strings.ToLower(rawColumn.Collation.String) != strings.ToLower(rawColumn.TableCollation) {
+				col.CharacterSet = rawColumn.CharacterSet.String
+			}
+			// SHOW CREATE TABLE includes col's collation if it differs from col's charset's default collation
+			if rawColumn.CollationIsDefault.String == "" {
+				col.Collation = rawColumn.Collation.String
+			}
 		}
 		if columnsByTableName[rawColumn.TableName] == nil {
 			columnsByTableName[rawColumn.TableName] = make([]*Column, 0)

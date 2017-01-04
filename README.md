@@ -30,7 +30,6 @@ Go La Tengo **cannot** yet diff tables containing any of the following MySQL fea
 * compressed tables
 * partitioned tables
 * triggers
-* per-column CHARACTER SET and COLLATE
 * non-InnoDB storage engines
 * schema-level DEFAULT CHARACTER SET and DEFAULT COLLATE
 * table comments or column comments

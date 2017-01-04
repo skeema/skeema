@@ -10,8 +10,8 @@ import (
 type Table struct {
 	Name              string
 	Engine            string
-	CharacterSet      string
-	Collation         string
+	CharacterSet      string // Always populated, even if same as database's default
+	Collation         string // Only populated if differs from default collation for character set
 	Columns           []*Column
 	PrimaryKey        *Index
 	SecondaryIndexes  []*Index
