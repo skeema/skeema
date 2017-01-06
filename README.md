@@ -41,7 +41,7 @@ Several InnoDB features (compression, partitioning, etc) and rare/new MySQL colu
 
 ## License
 
-**Copyright 2016 Skeema LLC**
+**Copyright 2017 Skeema LLC**
 
 ```text
 Licensed under the Apache License, Version 2.0 (the "License");

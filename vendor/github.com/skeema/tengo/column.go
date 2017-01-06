@@ -56,14 +56,26 @@ type Column struct {
 	AutoIncrement bool
 	Default       ColumnDefault
 	Extra         string
+	CharacterSet  string // Only populated if textual type
+	Collation     string // Only populated if textual type and differs from CharacterSet's default collation
 	//Comment       string
 }
 
 // Definition returns this column's definition clause, for use as part of a DDL
-// statement.
-func (c *Column) Definition() string {
-	var nullability, autoIncrement, defaultValue, extraModifiers string
+// statement. A table may optionally be supplied, which simply causes CHARACTER
+// SET clause to be omitted if the table and column have the same *collation*
+// (mirroring the specific display logic used by SHOW CREATE TABLE)
+func (c *Column) Definition(table *Table) string {
+	var charSet, collation, nullability, autoIncrement, defaultValue, extraModifiers string
 	emitDefault := c.CanHaveDefault()
+	if c.CharacterSet != "" && (table == nil || c.Collation != table.Collation || c.CharacterSet != table.CharacterSet) {
+		// Note that we need to compare both Collation AND CharacterSet above, since
+		// Collation of "" is used to mean default collation *for the character set*.
+		charSet = fmt.Sprintf(" CHARACTER SET %s", c.CharacterSet)
+	}
+	if c.Collation != "" {
+		collation = fmt.Sprintf(" COLLATE %s", c.Collation)
+	}
 	if !c.Nullable {
 		nullability = " NOT NULL"
 		if c.Default.Null {
@@ -82,7 +94,7 @@ func (c *Column) Definition() string {
 	if c.Extra != "" {
 		extraModifiers = fmt.Sprintf(" %s", c.Extra)
 	}
-	return fmt.Sprintf("%s %s%s%s%s%s", EscapeIdentifier(c.Name), c.TypeInDB, nullability, autoIncrement, defaultValue, extraModifiers)
+	return fmt.Sprintf("%s %s%s%s%s%s%s%s", EscapeIdentifier(c.Name), c.TypeInDB, charSet, collation, nullability, autoIncrement, defaultValue, extraModifiers)
 }
 
 // Equals returns true if two columns are identical, false otherwise.

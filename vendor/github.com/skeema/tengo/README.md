@@ -30,7 +30,6 @@ Go La Tengo **cannot** yet diff tables containing any of the following MySQL fea
 * compressed tables
 * partitioned tables
 * triggers
-* per-column CHARACTER SET and COLLATE
 * non-InnoDB storage engines
 * schema-level DEFAULT CHARACTER SET and DEFAULT COLLATE
 * table comments or column comments
@@ -58,7 +57,7 @@ Go La Tengo currently only aims to support MySQL and Percona Server. A future ma
 
 ## License
 
-**Copyright 2016 Skeema LLC**
+**Copyright 2017 Skeema LLC**
 
 ```text
 Licensed under the Apache License, Version 2.0 (the "License");
