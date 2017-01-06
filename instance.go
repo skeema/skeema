@@ -196,9 +196,9 @@ func (instance *Instance) Schemas() ([]*Schema, error) {
 	defer instance.Unlock()
 
 	var rawSchemas []struct {
-		Name             string `db:"schema_name"`
-		DefaultCharSet   string `db:"default_character_set_name"`
-		DefaultCollation string `db:"default_collation_name"`
+		Name      string `db:"schema_name"`
+		CharSet   string `db:"default_character_set_name"`
+		Collation string `db:"default_collation_name"`
 	}
 	query := `
 		SELECT schema_name, default_character_set_name, default_collation_name
@@ -211,10 +211,10 @@ func (instance *Instance) Schemas() ([]*Schema, error) {
 	instance.schemas = make([]*Schema, len(rawSchemas))
 	for n, rawSchema := range rawSchemas {
 		instance.schemas[n] = &Schema{
-			Name:             rawSchema.Name,
-			DefaultCharSet:   rawSchema.DefaultCharSet,
-			DefaultCollation: rawSchema.DefaultCollation,
-			instance:         instance,
+			Name:      rawSchema.Name,
+			CharSet:   rawSchema.CharSet,
+			Collation: rawSchema.Collation,
+			instance:  instance,
 		}
 	}
 	return instance.schemas, nil

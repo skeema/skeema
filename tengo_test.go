@@ -89,7 +89,7 @@ func aTable(nextAutoInc uint64) Table {
 	return Table{
 		Name:              "actor",
 		Engine:            "InnoDB",
-		CharacterSet:      "utf8",
+		CharSet:           "utf8",
 		Columns:           columns,
 		PrimaryKey:        primaryKey(columns[0]),
 		SecondaryIndexes:  secondaryIndexes,
@@ -125,7 +125,7 @@ func anotherTable() Table {
 	return Table{
 		Name:             "actor_in_film",
 		Engine:           "InnoDB",
-		CharacterSet:     "latin1",
+		CharSet:          "latin1",
 		Columns:          columns,
 		PrimaryKey:       primaryKey(columns[0], columns[1]),
 		SecondaryIndexes: []*Index{secondaryIndex},
@@ -152,10 +152,10 @@ func aSchema(name string, tables ...*Table) Schema {
 		tables = []*Table{}
 	}
 	s := Schema{
-		Name:             name,
-		DefaultCharSet:   "latin1",
-		DefaultCollation: "latin1_swedish_ci",
-		tables:           tables,
+		Name:      name,
+		CharSet:   "latin1",
+		Collation: "latin1_swedish_ci",
+		tables:    tables,
 	}
 	return s
 }

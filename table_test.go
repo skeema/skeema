@@ -423,10 +423,10 @@ func TestTableAlterChangeAutoIncrement(t *testing.T) {
 	}
 }
 
-func TestTableAlterChangeCharacterSet(t *testing.T) {
+func TestTableAlterChangeCharSet(t *testing.T) {
 	getTableWithCharSet := func(charSet, collation string) Table {
 		t := aTable(1)
-		t.CharacterSet = charSet
+		t.CharSet = charSet
 		t.Collation = collation
 		t.createStatement = t.GeneratedCreateStatement()
 		return t

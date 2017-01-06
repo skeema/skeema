@@ -56,8 +56,8 @@ type Column struct {
 	AutoIncrement bool
 	Default       ColumnDefault
 	Extra         string
-	CharacterSet  string // Only populated if textual type
-	Collation     string // Only populated if textual type and differs from CharacterSet's default collation
+	CharSet       string // Only populated if textual type
+	Collation     string // Only populated if textual type and differs from CharSet's default collation
 	//Comment       string
 }
 
@@ -68,10 +68,10 @@ type Column struct {
 func (c *Column) Definition(table *Table) string {
 	var charSet, collation, nullability, autoIncrement, defaultValue, extraModifiers string
 	emitDefault := c.CanHaveDefault()
-	if c.CharacterSet != "" && (table == nil || c.Collation != table.Collation || c.CharacterSet != table.CharacterSet) {
-		// Note that we need to compare both Collation AND CharacterSet above, since
+	if c.CharSet != "" && (table == nil || c.Collation != table.Collation || c.CharSet != table.CharSet) {
+		// Note that we need to compare both Collation AND CharSet above, since
 		// Collation of "" is used to mean default collation *for the character set*.
-		charSet = fmt.Sprintf(" CHARACTER SET %s", c.CharacterSet)
+		charSet = fmt.Sprintf(" CHARACTER SET %s", c.CharSet)
 	}
 	if c.Collation != "" {
 		collation = fmt.Sprintf(" COLLATE %s", c.Collation)

@@ -8,11 +8,11 @@ import (
 
 // Schema represents a database schema.
 type Schema struct {
-	Name             string
-	DefaultCharSet   string
-	DefaultCollation string
-	tables           []*Table
-	instance         *Instance
+	Name      string
+	CharSet   string
+	Collation string
+	tables    []*Table
+	instance  *Instance
 }
 
 // TablesByName returns a mapping of table names to Table struct values, for
@@ -74,7 +74,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 		CreateOptions      string        `db:"create_options"`
 		TableCollation     string        `db:"table_collation"`
 		TableComment       string        `db:"table_comment"`
-		CharacterSet       string        `db:"character_set_name"`
+		CharSet            string        `db:"character_set_name"`
 		CollationIsDefault string        `db:"is_default"`
 	}
 	query := `
@@ -92,9 +92,9 @@ func (s *Schema) Tables() ([]*Table, error) {
 	s.tables = make([]*Table, len(rawTables))
 	for n, rawTable := range rawTables {
 		s.tables[n] = &Table{
-			Name:         rawTable.Name,
-			Engine:       rawTable.Engine,
-			CharacterSet: rawTable.CharacterSet,
+			Name:    rawTable.Name,
+			Engine:  rawTable.Engine,
+			CharSet: rawTable.CharSet,
 		}
 		if rawTable.CollationIsDefault == "" {
 			s.tables[n].Collation = rawTable.TableCollation
@@ -113,7 +113,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 		Default            sql.NullString `db:"column_default"`
 		Extra              string         `db:"extra"`
 		Comment            string         `db:"column_comment"`
-		CharacterSet       sql.NullString `db:"character_set_name"`
+		CharSet            sql.NullString `db:"character_set_name"`
 		Collation          sql.NullString `db:"collation_name"`
 		TableCollation     string         `db:"table_collation"`
 		CollationIsDefault sql.NullString `db:"is_default"`
@@ -150,7 +150,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 			col.Extra = strings.ToUpper(rawColumn.Extra)
 		}
 		if rawColumn.Collation.Valid { // only text-based column types have a notion of charset and collation
-			col.CharacterSet = rawColumn.CharacterSet.String
+			col.CharSet = rawColumn.CharSet.String
 			if rawColumn.CollationIsDefault.String == "" {
 				// SHOW CREATE TABLE only includes col's collation if it differs from col's charset's default collation
 				col.Collation = rawColumn.Collation.String
@@ -296,10 +296,10 @@ func (s *Schema) CachedCopy() (*Schema, error) {
 	}
 
 	clone := &Schema{
-		Name:             s.Name,
-		DefaultCharSet:   s.DefaultCharSet,
-		DefaultCollation: s.DefaultCollation,
-		tables:           s.tables,
+		Name:      s.Name,
+		CharSet:   s.CharSet,
+		Collation: s.Collation,
+		tables:    s.tables,
 	}
 	return clone, nil
 }
