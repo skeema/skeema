@@ -49,7 +49,7 @@ func (t *Table) CreateStatement() string {
 func (t *Table) GeneratedCreateStatement() string {
 	defs := make([]string, len(t.Columns), len(t.Columns)+len(t.SecondaryIndexes)+1)
 	for n, c := range t.Columns {
-		defs[n] = c.Definition()
+		defs[n] = c.Definition(t)
 	}
 	if t.PrimaryKey != nil {
 		defs = append(defs, t.PrimaryKey.Definition())
@@ -113,9 +113,6 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	if from.Name != to.Name {
 		panic(errors.New("Table renaming not yet supported"))
 	}
-	if from.CharacterSet != to.CharacterSet || from.Collation != to.Collation {
-		panic(errors.New("Character set and collation changes not yet supported"))
-	}
 
 	// If both tables have same output for SHOW CREATE TABLE, we know they're the same.
 	// We do this check prior to the UnsupportedDDL check so that we only emit the
@@ -128,10 +125,23 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 		return nil, false
 	}
 
+	clauses = make([]TableAlterClause, 0)
+
+	// Check for default charset or collation changes first, prior to looking at
+	// column adds, to ensure the change affects any new columns that don't
+	// explicitly state to use a different charset/collation
+	if from.CharacterSet != to.CharacterSet || from.Collation != to.Collation {
+		clauses = append(clauses, ChangeCharSet{
+			Table:     to,
+			CharSet:   to.CharacterSet,
+			Collation: to.Collation,
+		})
+	}
+
 	// Process column drops, modifications, adds. Must be done in this specific order
 	// so that column reordering works properly.
 	cc := from.compareColumnExistence(to)
-	clauses = cc.columnDrops()
+	clauses = append(clauses, cc.columnDrops()...)
 	clauses = append(clauses, cc.columnModifications()...)
 	clauses = append(clauses, cc.columnAdds()...)
 

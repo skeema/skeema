@@ -92,7 +92,7 @@ func TestTableAlterAddOrDropColumn(t *testing.T) {
 		t.Errorf("Expected first new column to be after nil / first=true, instead found after %v / first=%t", ta.PositionAfter, ta.PositionFirst)
 	}
 
-	// Add an addition column to the last position
+	// Add an additional column to the last position
 	anotherCol = &Column{
 		Name:     "awards_won",
 		TypeInDB: "int unsigned",
@@ -274,7 +274,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 		t.Errorf("Expected modified column to be after %s / first=false, instead found after %v / first=%t", shouldBeAfter.Name, ta.PositionAfter, ta.PositionFirst)
 	}
 	if !ta.NewColumn.Equals(ta.OriginalColumn) {
-		t.Errorf("Column definition unexpectedly changed: was %s, now %s", ta.OriginalColumn.Definition(), ta.NewColumn.Definition())
+		t.Errorf("Column definition unexpectedly changed: was %s, now %s", ta.OriginalColumn.Definition(nil), ta.NewColumn.Definition(nil))
 	}
 
 	// Repos to last position AND change column definition
@@ -292,7 +292,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 		t.Errorf("Expected modified column to be after %s / first=false, instead found after %v / first=%t", shouldBeAfter.Name, ta.PositionAfter, ta.PositionFirst)
 	}
 	if ta.NewColumn.Equals(ta.OriginalColumn) {
-		t.Errorf("Column definition unexpectedly NOT changed: still %s", ta.NewColumn.Definition())
+		t.Errorf("Column definition unexpectedly NOT changed: still %s", ta.NewColumn.Definition(nil))
 	}
 
 	// Start over; delete a col, move last col to its former position, and add a new col after that
@@ -354,7 +354,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 		t.Errorf("Expected modified column to not be moved, instead found after %v / first=%t", ta.PositionAfter, ta.PositionFirst)
 	}
 	if ta.NewColumn.Equals(from.Columns[4]) {
-		t.Errorf("Column definition unexpectedly NOT changed: still %s", ta.NewColumn.Definition())
+		t.Errorf("Column definition unexpectedly NOT changed: still %s", ta.NewColumn.Definition(nil))
 	}
 
 	// TODO: once the column-move algorithm is optimal, add a test that confirms
@@ -421,6 +421,51 @@ func TestTableAlterChangeAutoIncrement(t *testing.T) {
 			t.Fatalf("Incorrect type of table alter[1] returned: expected %T, found %T", ta, tableAlters[1])
 		}
 	}
+}
+
+func TestTableAlterChangeCharacterSet(t *testing.T) {
+	getTableWithCharSet := func(charSet, collation string) Table {
+		t := aTable(1)
+		t.CharacterSet = charSet
+		t.Collation = collation
+		t.createStatement = t.GeneratedCreateStatement()
+		return t
+	}
+	assertChangeCharSet := func(a, b *Table, expected string) {
+		tableAlters, supported := a.Diff(b)
+		if expected == "" {
+			if len(tableAlters) != 0 || !supported {
+				t.Fatalf("Incorrect result from Table.Diff(): expected len=0, true; found len=%d, %t", len(tableAlters), supported)
+			}
+			return
+		}
+		if len(tableAlters) != 1 || !supported {
+			t.Fatalf("Incorrect result from Table.Diff(): expected len=1, supported=true; found len=%d, supported=%t", len(tableAlters), supported)
+		}
+		ta, ok := tableAlters[0].(ChangeCharSet)
+		if !ok {
+			t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
+		}
+		if ta.Clause() != expected {
+			t.Errorf("Incorrect ALTER TABLE clause returned; expected: %s; found: %s", expected, ta.Clause())
+		}
+	}
+
+	from := getTableWithCharSet("utf8mb4", "")
+	to := getTableWithCharSet("utf8mb4", "")
+	assertChangeCharSet(&from, &to, "")
+
+	to = getTableWithCharSet("utf8mb4", "utf8mb4_swedish_ci")
+	assertChangeCharSet(&from, &to, "DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_swedish_ci")
+	assertChangeCharSet(&to, &from, "DEFAULT CHARACTER SET = utf8mb4")
+
+	to = getTableWithCharSet("latin1", "")
+	assertChangeCharSet(&from, &to, "DEFAULT CHARACTER SET = latin1")
+	assertChangeCharSet(&to, &from, "DEFAULT CHARACTER SET = utf8mb4")
+
+	to = getTableWithCharSet("latin1", "latin1_general_ci")
+	assertChangeCharSet(&from, &to, "DEFAULT CHARACTER SET = latin1 COLLATE = latin1_general_ci")
+	assertChangeCharSet(&to, &from, "DEFAULT CHARACTER SET = utf8mb4")
 }
 
 func TestTableAlterUnsupportedTable(t *testing.T) {

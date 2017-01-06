@@ -150,12 +150,9 @@ func (s *Schema) Tables() ([]*Table, error) {
 			col.Extra = strings.ToUpper(rawColumn.Extra)
 		}
 		if rawColumn.Collation.Valid { // only text-based column types have a notion of charset and collation
-			// SHOW CREATE TABLE includes col's character set if col's collation differs from table's
-			if strings.ToLower(rawColumn.Collation.String) != strings.ToLower(rawColumn.TableCollation) {
-				col.CharacterSet = rawColumn.CharacterSet.String
-			}
-			// SHOW CREATE TABLE includes col's collation if it differs from col's charset's default collation
+			col.CharacterSet = rawColumn.CharacterSet.String
 			if rawColumn.CollationIsDefault.String == "" {
+				// SHOW CREATE TABLE only includes col's collation if it differs from col's charset's default collation
 				col.Collation = rawColumn.Collation.String
 			}
 		}

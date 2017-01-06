@@ -57,7 +57,7 @@ Go La Tengo currently only aims to support MySQL and Percona Server. A future ma
 
 ## License
 
-**Copyright 2016 Skeema LLC**
+**Copyright 2017 Skeema LLC**
 
 ```text
 Licensed under the Apache License, Version 2.0 (the "License");

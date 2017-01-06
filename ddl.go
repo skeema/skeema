@@ -290,7 +290,7 @@ func (ac AddColumn) Clause() string {
 	} else if ac.PositionAfter != nil {
 		positionClause = fmt.Sprintf(" AFTER %s", EscapeIdentifier(ac.PositionAfter.Name))
 	}
-	return fmt.Sprintf("ADD COLUMN %s%s", ac.Column.Definition(), positionClause)
+	return fmt.Sprintf("ADD COLUMN %s%s", ac.Column.Definition(ac.Table), positionClause)
 }
 
 ///// DropColumn ///////////////////////////////////////////////////////////////
@@ -381,12 +381,12 @@ func (mc ModifyColumn) Clause() string {
 	} else if mc.PositionAfter != nil {
 		positionClause = fmt.Sprintf(" AFTER %s", EscapeIdentifier(mc.PositionAfter.Name))
 	}
-	return fmt.Sprintf("MODIFY COLUMN %s%s", mc.NewColumn.Definition(), positionClause)
+	return fmt.Sprintf("MODIFY COLUMN %s%s", mc.NewColumn.Definition(mc.Table), positionClause)
 }
 
 ///// ChangeAutoIncrement //////////////////////////////////////////////////////
 
-// ChangeAutoIncrement represents a a difference in next-auto-increment value
+// ChangeAutoIncrement represents a difference in next-auto-increment value
 // between two versions of a table. It satisfies the TableAlterClause interface.
 type ChangeAutoIncrement struct {
 	Table                *Table
@@ -397,4 +397,24 @@ type ChangeAutoIncrement struct {
 // Clause returns an AUTO_INCREMENT clause of an ALTER TABLE statement.
 func (cai ChangeAutoIncrement) Clause() string {
 	return fmt.Sprintf("AUTO_INCREMENT = %d", cai.NewNextAutoIncrement)
+}
+
+///// ChangeCharSet ////////////////////////////////////////////////////////////
+
+// ChangeCharSet represents a difference in default character set and/or
+// collation between two versions of a table. It satisfies the TableAlterClause
+// interface.
+type ChangeCharSet struct {
+	Table     *Table
+	CharSet   string
+	Collation string // blank string means "default collation for CharSet"
+}
+
+// Clause returns a DEFAULT CHARACTER SET clause of an ALTER TABLE statement.
+func (ccs ChangeCharSet) Clause() string {
+	var collationClause string
+	if ccs.Collation != "" {
+		collationClause = fmt.Sprintf(" COLLATE = %s", ccs.Collation)
+	}
+	return fmt.Sprintf("DEFAULT CHARACTER SET = %s%s", ccs.CharSet, collationClause)
 }

@@ -56,17 +56,21 @@ type Column struct {
 	AutoIncrement bool
 	Default       ColumnDefault
 	Extra         string
-	CharacterSet  string // Only populated if col's *collation* differs from table's
-	Collation     string // Only populated if differs from CharacterSet's default collation
+	CharacterSet  string // Only populated if textual type
+	Collation     string // Only populated if textual type and differs from CharacterSet's default collation
 	//Comment       string
 }
 
 // Definition returns this column's definition clause, for use as part of a DDL
-// statement.
-func (c *Column) Definition() string {
+// statement. A table may optionally be supplied, which simply causes CHARACTER
+// SET clause to be omitted if the table and column have the same *collation*
+// (mirroring the specific display logic used by SHOW CREATE TABLE)
+func (c *Column) Definition(table *Table) string {
 	var charSet, collation, nullability, autoIncrement, defaultValue, extraModifiers string
 	emitDefault := c.CanHaveDefault()
-	if c.CharacterSet != "" {
+	if c.CharacterSet != "" && (table == nil || c.Collation != table.Collation || c.CharacterSet != table.CharacterSet) {
+		// Note that we need to compare both Collation AND CharacterSet above, since
+		// Collation of "" is used to mean default collation *for the character set*.
 		charSet = fmt.Sprintf(" CHARACTER SET %s", c.CharacterSet)
 	}
 	if c.Collation != "" {
