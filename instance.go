@@ -314,14 +314,19 @@ func (instance *Instance) purgeSchemaCache() {
 	instance.Unlock()
 }
 
-// CreateSchema creates a new database schema with the supplied name.
-func (instance *Instance) CreateSchema(name string) (*Schema, error) {
+// CreateSchema creates a new database schema with the supplied name, and
+// optionally the supplied default charSet and collation. (Leave charSet and
+// collation blank to use server defaults.)
+func (instance *Instance) CreateSchema(name, charSet, collation string) (*Schema, error) {
 	db, err := instance.Connect("", "")
 	if err != nil {
 		return nil, err
 	}
-	// TODO: support DEFAULT CHARACTER SET and DEFAULT COLLATE
-	schema := Schema{Name: name}
+	schema := Schema{
+		Name:      name,
+		CharSet:   charSet,
+		Collation: collation,
+	}
 	_, err = db.Exec(schema.CreateStatement())
 	if err != nil {
 		return nil, err

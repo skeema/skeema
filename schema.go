@@ -276,8 +276,14 @@ func (s *Schema) DropStatement() string {
 // CreateStatement returns a SQL statement that, if run, would create this
 // schema.
 func (s *Schema) CreateStatement() string {
-	// TODO: support DEFAULT CHARACTER SET and DEFAULT COLLATE
-	return fmt.Sprintf("CREATE DATABASE %s", EscapeIdentifier(s.Name))
+	var charSet, collate string
+	if s.CharSet != "" {
+		charSet = fmt.Sprintf(" CHARACTER SET %s", s.CharSet)
+	}
+	if s.Collation != "" {
+		collate = fmt.Sprintf(" COLLATE %s", s.Collation)
+	}
+	return fmt.Sprintf("CREATE DATABASE %s%s%s", EscapeIdentifier(s.Name), charSet, collate)
 }
 
 // CachedCopy returns a copy of the Schema object without its instance

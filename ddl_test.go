@@ -34,26 +34,69 @@ func TestParseCreateAutoInc(t *testing.T) {
 }
 
 func TestSchemaDiffEmpty(t *testing.T) {
+	assertEmptyDiff := func(a, b *Schema) {
+		sd, err := NewSchemaDiff(a, b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(sd.TableDiffs) != 0 {
+			t.Errorf("Expected no table diffs, instead found %d", len(sd.TableDiffs))
+		}
+		if sd.SchemaDDL != "" {
+			t.Errorf("Expected no SchemaDDL, instead found %s", sd.SchemaDDL)
+		}
+	}
+
 	s1t1 := anotherTable()
 	s2t1 := anotherTable()
 	s1t2 := aTable(10)
 	s2t2 := aTable(10)
 	s1 := aSchema("s1", &s1t1, &s1t2)
 	s2 := aSchema("s2", &s2t1, &s2t2)
-	sd, err := NewSchemaDiff(&s1, &s2)
-	if err != nil {
-		t.Fatal(err)
+
+	assertEmptyDiff(&s1, &s2)
+	assertEmptyDiff(&s2, &s1)
+	assertEmptyDiff(nil, nil)
+}
+
+func TestSchemaDiffSchemaDDL(t *testing.T) {
+	assertDiffSchemaDDL := func(a, b *Schema, expectedSchemaDDL string) {
+		sd, err := NewSchemaDiff(a, b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sd.SchemaDDL != expectedSchemaDDL {
+			t.Errorf("For a=%s/%s and b=%s/%s, expected SchemaDDL=\"%s\", instead found \"%s\"", a.CharSet, a.Collation, b.CharSet, b.Collation, expectedSchemaDDL, sd.SchemaDDL)
+		}
 	}
-	if len(sd.TableDiffs) != 0 {
-		t.Errorf("Expected no table diffs, instead found %d", len(sd.TableDiffs))
-	}
-	sd, err = NewSchemaDiff(&s2, &s1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(sd.TableDiffs) != 0 {
-		t.Errorf("Expected no table diffs, instead found %d", len(sd.TableDiffs))
-	}
+
+	t1 := aTable(1)
+	t2 := anotherTable()
+	s1 := aSchema("s1", &t1, &t2)
+	s2 := s1
+	s2.Name = "s2"
+
+	assertDiffSchemaDDL(&s1, &s1, "")
+	assertDiffSchemaDDL(&s1, nil, "DROP DATABASE `s1`")
+	assertDiffSchemaDDL(nil, &s1, "CREATE DATABASE `s1` CHARACTER SET latin1 COLLATE latin1_swedish_ci")
+
+	s1.Collation = ""
+	assertDiffSchemaDDL(nil, &s1, "CREATE DATABASE `s1` CHARACTER SET latin1")
+	assertDiffSchemaDDL(&s1, &s2, "ALTER DATABASE `s1` COLLATE latin1_swedish_ci")
+	assertDiffSchemaDDL(&s2, &s1, "")
+
+	s1.CharSet = ""
+	assertDiffSchemaDDL(nil, &s1, "CREATE DATABASE `s1`")
+	assertDiffSchemaDDL(&s1, &s2, "ALTER DATABASE `s1` CHARACTER SET latin1 COLLATE latin1_swedish_ci")
+	assertDiffSchemaDDL(&s2, &s1, "")
+
+	s1.Collation = "utf8mb4_bin"
+	assertDiffSchemaDDL(nil, &s1, "CREATE DATABASE `s1` COLLATE utf8mb4_bin")
+	assertDiffSchemaDDL(&s2, &s1, "ALTER DATABASE `s2` COLLATE utf8mb4_bin")
+
+	s1.CharSet = "utf8mb4"
+	assertDiffSchemaDDL(&s1, &s2, "ALTER DATABASE `s1` CHARACTER SET latin1 COLLATE latin1_swedish_ci")
+	assertDiffSchemaDDL(&s2, &s1, "ALTER DATABASE `s2` CHARACTER SET utf8mb4 COLLATE utf8mb4_bin")
 }
 
 func TestSchemaDiffAddOrDropTable(t *testing.T) {
