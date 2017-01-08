@@ -91,16 +91,7 @@ func NewSchemaDiff(from, to *Schema) (*SchemaDiff, error) {
 	} else if to == nil {
 		result.SchemaDDL = from.DropStatement()
 	} else {
-		var charSet, collate string
-		if from.CharSet != to.CharSet && to.CharSet != "" {
-			charSet = fmt.Sprintf(" CHARACTER SET %s", to.CharSet)
-		}
-		if from.Collation != to.Collation && to.Collation != "" {
-			collate = fmt.Sprintf(" COLLATE %s", to.Collation)
-		}
-		if charSet != "" || collate != "" {
-			result.SchemaDDL = fmt.Sprintf("ALTER DATABASE %s%s%s", EscapeIdentifier(from.Name), charSet, collate)
-		}
+		result.SchemaDDL = from.AlterStatement(to.CharSet, to.Collation)
 	}
 
 	fromTablesByName, fromErr := from.TablesByName()

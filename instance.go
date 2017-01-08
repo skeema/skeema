@@ -370,6 +370,32 @@ func (instance *Instance) DropSchema(schema *Schema, onlyIfEmpty bool) error {
 	return nil
 }
 
+// AlterSchema changes the character set and/or collation of the supplied schema
+// on instance.
+func (instance *Instance) AlterSchema(schema *Schema, newCharSet, newCollation string) error {
+	db, err := instance.Connect(schema.Name, "")
+	if err != nil {
+		return err
+	}
+	statement := schema.AlterStatement(newCharSet, newCollation)
+	if statement == "" {
+		return nil
+	}
+	if _, err = db.Exec(statement); err != nil {
+		return err
+	}
+
+	// Purge schema cache, so that the call to Schema will repopulate with new
+	// charset and collation. (We can't just set them directly without querying
+	// since default-collation-for-charset info is handled by the database.)
+	instance.purgeSchemaCache()
+	alteredSchema, err := instance.Schema(schema.Name)
+	if err == nil {
+		*schema = *alteredSchema
+	}
+	return err
+}
+
 // DropTablesInSchema drops all tables in a schema. If onlyIfEmpty==true,
 // returns an error if any of the tables have any rows.
 func (instance *Instance) DropTablesInSchema(schema *Schema, onlyIfEmpty bool) error {

@@ -2,6 +2,7 @@ package tengo
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -284,6 +285,61 @@ func (s *Schema) CreateStatement() string {
 		collate = fmt.Sprintf(" COLLATE %s", s.Collation)
 	}
 	return fmt.Sprintf("CREATE DATABASE %s%s%s", EscapeIdentifier(s.Name), charSet, collate)
+}
+
+// AlterStatement returns a SQL statement that, if run, would alter this
+// schema's default charset and/or collation to the supplied values.
+// If charSet is "" and collation isn't, only the collation will be changed.
+// If collation is "" and charSet isn't, the default collation for charSet is
+// used automatically.
+// If both params are "", or if values equal to the schema's current charSet
+// and collation are supplied, an empty string is returned.
+func (s *Schema) AlterStatement(charSet, collation string) string {
+	var charSetClause, collateClause string
+	if s.CharSet != charSet && charSet != "" {
+		charSetClause = fmt.Sprintf(" CHARACTER SET %s", charSet)
+	}
+	if s.Collation != collation && collation != "" {
+		collateClause = fmt.Sprintf(" COLLATE %s", collation)
+	}
+	if charSetClause == "" && collateClause == "" {
+		return ""
+	}
+	return fmt.Sprintf("ALTER DATABASE %s%s%s", EscapeIdentifier(s.Name), charSetClause, collateClause)
+}
+
+// OverridesServerCharSet checks if the schema's default character set and
+// collation differ from its instance's server-level default character set
+// and collation. The first return value will be true if the schema's charset
+// differs from its instance's; the second return value will be true if the
+// schema's collation differs from its instance's.
+func (s *Schema) OverridesServerCharSet() (overridesCharSet bool, overridesCollation bool, err error) {
+	if s == nil {
+		return false, false, errors.New("Attempted to check character set and collation on a nil schema")
+	}
+	if s.instance == nil {
+		return false, false, fmt.Errorf("Attempted to check character set and collation on schema %s which has been detached from its instance", s.Name)
+	}
+	if s.Collation == "" && s.CharSet == "" {
+		return false, false, nil
+	}
+
+	db, err := s.instance.Connect("information_schema", "")
+	if err != nil {
+		return false, false, err
+	}
+	var serverCharSet, serverCollation string
+	err = db.QueryRow("SELECT @@global.character_set_server, @@global.collation_server").Scan(&serverCharSet, &serverCollation)
+	if err != nil {
+		return false, false, err
+	}
+	if s.CharSet != "" && serverCharSet != s.CharSet {
+		// Different charset also inherently means different collation
+		return true, true, nil
+	} else if s.Collation != "" && serverCollation != s.Collation {
+		return false, true, nil
+	}
+	return false, false, nil
 }
 
 // CachedCopy returns a copy of the Schema object without its instance
