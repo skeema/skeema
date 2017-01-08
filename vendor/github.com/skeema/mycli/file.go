@@ -281,6 +281,17 @@ func (f *File) SetOptionValue(sectionName, optionName, value string) {
 	section.Values[optionName] = value
 }
 
+// UnsetOptionValue removes an option value in the named section. This is not
+// persisted to the file until Write is called on the File.
+// If the caller plans to subsequently read configuration values from this
+// same File object, it is the caller's responsibility to normalize the
+// optionName and value prior to calling this method, and call MarkDirty() on
+// any relevant Configs. These shortcomings will be fixed in a future release.
+func (f *File) UnsetOptionValue(sectionName, optionName string) {
+	section := f.getOrCreateSection(sectionName)
+	delete(section.Values, optionName)
+}
+
 func (f *File) getOrCreateSection(name string) *Section {
 	if s, exists := f.sectionIndex[name]; exists {
 		return s

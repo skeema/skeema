@@ -29,6 +29,8 @@ func AddGlobalOptions(cmd *mycli.Command) {
 	cmd.AddOption(mycli.StringOption("schema", 0, "", "Database schema name").Hidden())
 	cmd.AddOption(mycli.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema for intermediate operations, created and dropped each run unless --reuse-temp-schema"))
 	cmd.AddOption(mycli.StringOption("connect-options", 'o', "", "Comma-separated session options to set upon connecting to each database instance"))
+	cmd.AddOption(mycli.StringOption("default-character-set", 0, "", "Schema-level default character set").Hidden())
+	cmd.AddOption(mycli.StringOption("default-collation", 0, "", "Schema-level default collation").Hidden())
 	cmd.AddOption(mycli.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done"))
 	cmd.AddOption(mycli.BoolOption("debug", 0, false, "Enable debug logging"))
 }

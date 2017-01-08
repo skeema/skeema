@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	log "github.com/Sirupsen/logrus"
@@ -170,14 +171,26 @@ func pushWorker(sps *sharedPushState) {
 				sps.setFatalError(err)
 				return
 			}
-			if t.SchemaFromInstance == nil {
-				// TODO: support CREATE DATABASE schema-level options
-				sps.syncPrintf(t.Instance, "", "%s;\n", t.SchemaFromDir.CreateStatement())
+			var targetStmtCount int
+
+			if diff.SchemaDDL != "" {
+				sps.syncPrintf(t.Instance, "", "%s;\n", diff.SchemaDDL)
+				targetStmtCount++
 				if !sps.dryRun {
-					var err error
-					t.SchemaFromInstance, err = t.Instance.CreateSchema(schemaName)
-					if err != nil {
-						sps.setFatalError(fmt.Errorf("Error creating schema %s on %s: %s", schemaName, t.Instance, err))
+					if strings.HasPrefix(diff.SchemaDDL, "CREATE DATABASE") && t.SchemaFromInstance == nil {
+						t.SchemaFromInstance, err = t.Instance.CreateSchema(schemaName, t.SchemaFromDir.CharSet, t.SchemaFromDir.Collation)
+						if err != nil {
+							sps.setFatalError(fmt.Errorf("Error creating schema %s on %s: %s", schemaName, t.Instance, err))
+							return
+						}
+					} else if strings.HasPrefix(diff.SchemaDDL, "ALTER DATABASE") {
+						err = t.Instance.AlterSchema(t.SchemaFromInstance, t.SchemaFromDir.CharSet, t.SchemaFromDir.Collation)
+						if err != nil {
+							sps.setFatalError(fmt.Errorf("Unable to alter defaults for schema %s on %s: %s", t.SchemaFromInstance.Name, t.Instance, err))
+							return
+						}
+					} else {
+						sps.setFatalError(fmt.Errorf("Refusing to run unexpectedly-generated schema-level DDL: %s", diff.SchemaDDL))
 						return
 					}
 				}
@@ -205,7 +218,6 @@ func pushWorker(sps *sharedPushState) {
 				return
 			}
 
-			var targetStmtCount int
 			for n, tableDiff := range diff.TableDiffs {
 				ddl := NewDDLStatement(tableDiff, mods, t)
 				if ddl == nil {

@@ -14,6 +14,8 @@
 * [connect-options](#connect-options)
 * [ddl-wrapper](#ddl-wrapper)
 * [debug](#debug)
+* [default-character-set](#default-character-set)
+* [default-collation](#default-collation)
 * [dir](#dir)
 * [dry-run](#dry-run)
 * [first-only](#first-only)
@@ -261,6 +263,38 @@ This option enables debug logging in all commands. The extra output is sent to S
 * If a panic occurs in Skeema's main thread, a full stack trace will be logged.
 * Options that control conditional logic based on table sizes, such as [allow-below-size](#allow-below-size) and [alter-wrapper-min-size](#alter-wrapper-min-size), provide debug output with size information whenever their condition is triggered.
 * Upon exiting, the numeric exit code will be logged.
+
+### default-character-set
+
+Commands | *all*
+--- | :---
+**Default** | *empty string*
+**Type** | string
+**Restrictions** | Should only appear in a .skeema option file that also contains [schema](#schema)
+
+This option specifies the default character set to use for a particular schema. Its name and purpose matches the corresponding option in MySQL `db.opt` files. In Skeema, this option is only needed in cases where some schemas have a different default character set than the server-level default.
+
+When `skeema init` or `skeema pull` imports a schema subdirectory for the first time, or when `skeema pull` updates an existing schema subdirectory, the schema's default character set will be compared to the instance's server-level default character set. If they differ, [default-character-set](#default-character-set) will be populated in the subdir's .skeema file automatically. Otherwise, it will be omitted. 
+
+If a new schema is being created for the first time via `skeema push`, and [default-character-set](#default-character-set) has been set, it will be included as part of the `CREATE DATABASE` statement. If it has not been set, the instance's default server-level character set is used instead.
+
+If a schema already exists when `skeema diff` or `skeema push` is run, and [default-character-set](#default-character-set) has been set, and its value differs from what the schema currently uses on the instance, an appropriate `ALTER DATABASE` statement will be generated.
+
+### default-collation
+
+Commands | *all*
+--- | :---
+**Default** | *empty string*
+**Type** | string
+**Restrictions** | Should only appear in a .skeema option file that also contains [schema](#schema)
+
+This option specifies the default collation to use for a particular schema. Its name and purpose matches the corresponding option in MySQL `db.opt` files. In Skeema, this option is only needed in cases where some schemas have a different default collation than the server-level default.
+
+When `skeema init` or `skeema pull` imports a schema subdirectory for the first time, or when `skeema pull` updates an existing schema subdirectory, the schema's default collation will be compared to the instance's server-level default collation. If they differ, [default-collation](#default-collation) will be populated in the subdir's .skeema file automatically. Otherwise, it will be omitted. 
+
+If a new schema is being created for the first time via `skeema push`, and [default-collation](#default-collation) has been set, it will be included as part of the `CREATE DATABASE` statement. If it has not been set, the instance's default server-level collation is used instead.
+
+If a schema already exists when `skeema diff` or `skeema push` is run, and [default-collation](#default-collation) has been set, and its value differs from what the schema currently uses on the instance, an appropriate `ALTER DATABASE` statement will be generated.
 
 ### dir
 

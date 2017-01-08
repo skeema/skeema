@@ -91,38 +91,6 @@ func InitHandler(cfg *mycli.Config) error {
 		return NewExitValue(CodeBadConfig, "Environment name \"%s\" is invalid", environment)
 	}
 
-	// Figure out what needs to go in the hostDir's .skeema file.
-	hostOptionFile := mycli.NewFile(hostDir.Path, ".skeema")
-	hostOptionFile.SetOptionValue(environment, "host", inst.Host)
-	if inst.Host == "localhost" && inst.SocketPath != "" {
-		hostOptionFile.SetOptionValue(environment, "socket", inst.SocketPath)
-	} else {
-		hostOptionFile.SetOptionValue(environment, "port", strconv.Itoa(inst.Port))
-	}
-	if cfg.OnCLI("user") {
-		hostOptionFile.SetOptionValue(environment, "user", cfg.Get("user"))
-	}
-	if !separateSchemaSubdir {
-		// schema name is placed outside of any named section/environment since the
-		// default assumption is that schema names match between environments
-		hostOptionFile.SetOptionValue("", "schema", onlySchema)
-	}
-
-	// Write the option file
-	if err := hostDir.CreateOptionFile(hostOptionFile); err != nil {
-		return NewExitValue(CodeCantCreate, err.Error())
-	}
-
-	verb := "Using"
-	var suffix string
-	if wasNewDir {
-		verb = "Creating and using"
-	}
-	if !separateSchemaSubdir {
-		suffix = "; skipping schema-level subdirs"
-	}
-	log.Infof("%s host dir %s for %s%s\n", verb, hostDir.Path, inst, suffix)
-
 	// Build list of schemas
 	var schemas []*tengo.Schema
 	if onlySchema != "" {
@@ -142,7 +110,47 @@ func InitHandler(cfg *mycli.Config) error {
 		}
 	}
 
-	// Iterate over the schemas. For each one,  create a dir with .skeema and *.sql files
+	// Figure out what needs to go in the hostDir's .skeema file.
+	hostOptionFile := mycli.NewFile(hostDir.Path, ".skeema")
+	hostOptionFile.SetOptionValue(environment, "host", inst.Host)
+	if inst.Host == "localhost" && inst.SocketPath != "" {
+		hostOptionFile.SetOptionValue(environment, "socket", inst.SocketPath)
+	} else {
+		hostOptionFile.SetOptionValue(environment, "port", strconv.Itoa(inst.Port))
+	}
+	if cfg.OnCLI("user") {
+		hostOptionFile.SetOptionValue(environment, "user", cfg.Get("user"))
+	}
+	if !separateSchemaSubdir {
+		// schema name is placed outside of any named section/environment since the
+		// default assumption is that schema names match between environments
+		hostOptionFile.SetOptionValue("", "schema", onlySchema)
+		if overridesCharSet, overridesCollation, err := schemas[0].OverridesServerCharSet(); err == nil {
+			if overridesCharSet {
+				hostOptionFile.SetOptionValue("", "default-character-set", schemas[0].CharSet)
+			}
+			if overridesCollation {
+				hostOptionFile.SetOptionValue("", "default-collation", schemas[0].Collation)
+			}
+		}
+	}
+
+	// Write the option file
+	if err := hostDir.CreateOptionFile(hostOptionFile); err != nil {
+		return NewExitValue(CodeCantCreate, err.Error())
+	}
+
+	verb := "Using"
+	var suffix string
+	if wasNewDir {
+		verb = "Creating and using"
+	}
+	if !separateSchemaSubdir {
+		suffix = "; skipping schema-level subdirs"
+	}
+	log.Infof("%s host dir %s for %s%s\n", verb, hostDir.Path, inst, suffix)
+
+	// Iterate over the schemas. For each one, create a dir with .skeema and *.sql files
 	for _, s := range schemas {
 		if err := PopulateSchemaDir(s, hostDir, separateSchemaSubdir); err != nil {
 			return err
@@ -172,6 +180,14 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 		// names match between environments.
 		optionFile := mycli.NewFile(".skeema")
 		optionFile.SetOptionValue("", "schema", s.Name)
+		if overridesCharSet, overridesCollation, err := s.OverridesServerCharSet(); err == nil {
+			if overridesCharSet {
+				optionFile.SetOptionValue("", "default-character-set", s.CharSet)
+			}
+			if overridesCollation {
+				optionFile.SetOptionValue("", "default-collation", s.Collation)
+			}
+		}
 		if schemaDir, err = parentDir.CreateSubdir(s.Name, optionFile); err != nil {
 			return NewExitValue(CodeCantCreate, "Unable to use directory %s for schema %s: %s", path.Join(parentDir.Path, s.Name), s.Name, err)
 		}

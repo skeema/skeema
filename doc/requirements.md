@@ -73,7 +73,6 @@ The following features are completely ignored by Skeema. Their presence in a sch
 * views
 * triggers
 * stored procedures
-* databases with DEFAULT CHARACTER SET and/or DEFAULT COLLATE that differ from global settings. (note: per-table setting is fully supported, just not database-level settings)
 
 #### Unsupported for ALTERs
 
@@ -82,7 +81,6 @@ Skeema can CREATE or DROP tables using these features, but cannot ALTER them. Th
 * foreign keys
 * compressed tables
 * partitioned tables
-* per-column CHARACTER SET and COLLATE, including any shorthand aliases (BINARY modifier, NATIONAL CHAR type, etc)
 * non-InnoDB storage engines
 * table comments or column comments
 * fulltext indexes

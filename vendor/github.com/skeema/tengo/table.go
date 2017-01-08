@@ -10,7 +10,7 @@ import (
 type Table struct {
 	Name              string
 	Engine            string
-	CharacterSet      string // Always populated, even if same as database's default
+	CharSet           string // Always populated, even if same as database's default
 	Collation         string // Only populated if differs from default collation for character set
 	Columns           []*Column
 	PrimaryKey        *Index
@@ -70,7 +70,7 @@ func (t *Table) GeneratedCreateStatement() string {
 		strings.Join(defs, ",\n  "),
 		t.Engine,
 		autoIncClause,
-		t.CharacterSet,
+		t.CharSet,
 		collate,
 	)
 	return result
@@ -130,10 +130,10 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// Check for default charset or collation changes first, prior to looking at
 	// column adds, to ensure the change affects any new columns that don't
 	// explicitly state to use a different charset/collation
-	if from.CharacterSet != to.CharacterSet || from.Collation != to.Collation {
+	if from.CharSet != to.CharSet || from.Collation != to.Collation {
 		clauses = append(clauses, ChangeCharSet{
 			Table:     to,
-			CharSet:   to.CharacterSet,
+			CharSet:   to.CharSet,
 			Collation: to.Collation,
 		})
 	}

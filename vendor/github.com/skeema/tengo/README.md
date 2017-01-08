@@ -31,7 +31,6 @@ Go La Tengo **cannot** yet diff tables containing any of the following MySQL fea
 * partitioned tables
 * triggers
 * non-InnoDB storage engines
-* schema-level DEFAULT CHARACTER SET and DEFAULT COLLATE
 * table comments or column comments
 * fulltext indexes
 * spatial types

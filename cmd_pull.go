@@ -64,6 +64,38 @@ func PullHandler(cfg *mycli.Config) error {
 			return err
 		}
 
+		// Handle changes in schema's default character set and/or collation by
+		// persisting changes to the dir's option file. Errors here are just surfaced
+		// as warnings.
+		if diff.SchemaDDL != "" {
+			optionFile, err := t.Dir.OptionFile()
+			if err != nil {
+				log.Warnf("Unable to update character set and/or collation for %s/.skeema: %s", t.Dir, err)
+			} else if optionFile == nil {
+				log.Warnf("Unable to update character set and/or collation for %s/.skeema: cannot read file", t.Dir)
+			} else {
+				if overridesCharSet, overridesCollation, err := t.SchemaFromInstance.OverridesServerCharSet(); err == nil {
+					if overridesCharSet {
+						optionFile.SetOptionValue("", "default-character-set", t.SchemaFromInstance.CharSet)
+					} else {
+						optionFile.UnsetOptionValue("", "default-character-set")
+					}
+					if overridesCollation {
+						optionFile.SetOptionValue("", "default-collation", t.SchemaFromInstance.Collation)
+					} else {
+						optionFile.UnsetOptionValue("", "default-collation")
+					}
+					if err = optionFile.Write(true); err != nil {
+						log.Warnf("Unable to update character set and/or collation for %s: %s", optionFile.Path(), err)
+					} else {
+						log.Infof("Wrote %s -- updated schema-level default-character-set and default-collation", optionFile.Path())
+					}
+				} else {
+					log.Warnf("Unable to update character set and/or collation for %s: %s", optionFile.Path(), err)
+				}
+			}
+		}
+
 		// We're permissive of drops here since we don't ever actually execute the
 		// generated statement! We just examine its type.
 		mods := tengo.StatementModifiers{

@@ -538,7 +538,7 @@ func (dir *Dir) TargetTemplate(instance *tengo.Instance) Target {
 			return t
 		}
 	} else {
-		tempSchema, err = instance.CreateSchema(tempSchemaName)
+		tempSchema, err = instance.CreateSchema(tempSchemaName, dir.Config.Get("default-character-set"), dir.Config.Get("default-collation"))
 		if err != nil {
 			t.Err = fmt.Errorf("Cannot create temporary schema on %s: %s", instance, err)
 			return t

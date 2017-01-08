@@ -196,9 +196,9 @@ func (instance *Instance) Schemas() ([]*Schema, error) {
 	defer instance.Unlock()
 
 	var rawSchemas []struct {
-		Name             string `db:"schema_name"`
-		DefaultCharSet   string `db:"default_character_set_name"`
-		DefaultCollation string `db:"default_collation_name"`
+		Name      string `db:"schema_name"`
+		CharSet   string `db:"default_character_set_name"`
+		Collation string `db:"default_collation_name"`
 	}
 	query := `
 		SELECT schema_name, default_character_set_name, default_collation_name
@@ -211,10 +211,10 @@ func (instance *Instance) Schemas() ([]*Schema, error) {
 	instance.schemas = make([]*Schema, len(rawSchemas))
 	for n, rawSchema := range rawSchemas {
 		instance.schemas[n] = &Schema{
-			Name:             rawSchema.Name,
-			DefaultCharSet:   rawSchema.DefaultCharSet,
-			DefaultCollation: rawSchema.DefaultCollation,
-			instance:         instance,
+			Name:      rawSchema.Name,
+			CharSet:   rawSchema.CharSet,
+			Collation: rawSchema.Collation,
+			instance:  instance,
 		}
 	}
 	return instance.schemas, nil
@@ -314,14 +314,19 @@ func (instance *Instance) purgeSchemaCache() {
 	instance.Unlock()
 }
 
-// CreateSchema creates a new database schema with the supplied name.
-func (instance *Instance) CreateSchema(name string) (*Schema, error) {
+// CreateSchema creates a new database schema with the supplied name, and
+// optionally the supplied default charSet and collation. (Leave charSet and
+// collation blank to use server defaults.)
+func (instance *Instance) CreateSchema(name, charSet, collation string) (*Schema, error) {
 	db, err := instance.Connect("", "")
 	if err != nil {
 		return nil, err
 	}
-	// TODO: support DEFAULT CHARACTER SET and DEFAULT COLLATE
-	schema := Schema{Name: name}
+	schema := Schema{
+		Name:      name,
+		CharSet:   charSet,
+		Collation: collation,
+	}
 	_, err = db.Exec(schema.CreateStatement())
 	if err != nil {
 		return nil, err
@@ -363,6 +368,32 @@ func (instance *Instance) DropSchema(schema *Schema, onlyIfEmpty bool) error {
 	// Purge schema cache; next call to Schema will repopulate
 	instance.purgeSchemaCache()
 	return nil
+}
+
+// AlterSchema changes the character set and/or collation of the supplied schema
+// on instance.
+func (instance *Instance) AlterSchema(schema *Schema, newCharSet, newCollation string) error {
+	db, err := instance.Connect(schema.Name, "")
+	if err != nil {
+		return err
+	}
+	statement := schema.AlterStatement(newCharSet, newCollation)
+	if statement == "" {
+		return nil
+	}
+	if _, err = db.Exec(statement); err != nil {
+		return err
+	}
+
+	// Purge schema cache, so that the call to Schema will repopulate with new
+	// charset and collation. (We can't just set them directly without querying
+	// since default-collation-for-charset info is handled by the database.)
+	instance.purgeSchemaCache()
+	alteredSchema, err := instance.Schema(schema.Name)
+	if err == nil {
+		*schema = *alteredSchema
+	}
+	return err
 }
 
 // DropTablesInSchema drops all tables in a schema. If onlyIfEmpty==true,

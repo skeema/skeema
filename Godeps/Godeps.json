@@ -34,11 +34,11 @@
 		},
 		{
 			"ImportPath": "github.com/skeema/mycli",
-			"Rev": "18294ccd641f01ce8aa5e0e442ebd3d3c038cd2d"
+			"Rev": "e41508f49c0f15744033773557daf2f9fd148b3f"
 		},
 		{
 			"ImportPath": "github.com/skeema/tengo",
-			"Rev": "07c1868c2f88ae0d96c8298d49809ee578e94e80"
+			"Rev": "671f1bb1c4b25c22fcd39989b99b670f86da865a"
 		},
 		{
 			"ImportPath": "golang.org/x/crypto/ssh/terminal",

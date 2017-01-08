@@ -239,7 +239,7 @@ func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 			return fmt.Errorf("verifyDiff: cannot drop existing tables for %s on %s: %s", t.Dir, t.Instance, err)
 		}
 	} else {
-		tempSchema, err = t.Instance.CreateSchema(tempSchemaName)
+		tempSchema, err = t.Instance.CreateSchema(tempSchemaName, t.Dir.Config.Get("default-character-set"), t.Dir.Config.Get("default-collation"))
 		if err != nil {
 			return fmt.Errorf("verifyDiff: cannot create temporary schema for %s on %s: %s", t.Dir, t.Instance, err)
 		}

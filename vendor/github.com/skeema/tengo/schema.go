@@ -2,17 +2,18 @@ package tengo
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 )
 
 // Schema represents a database schema.
 type Schema struct {
-	Name             string
-	DefaultCharSet   string
-	DefaultCollation string
-	tables           []*Table
-	instance         *Instance
+	Name      string
+	CharSet   string
+	Collation string
+	tables    []*Table
+	instance  *Instance
 }
 
 // TablesByName returns a mapping of table names to Table struct values, for
@@ -74,7 +75,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 		CreateOptions      string        `db:"create_options"`
 		TableCollation     string        `db:"table_collation"`
 		TableComment       string        `db:"table_comment"`
-		CharacterSet       string        `db:"character_set_name"`
+		CharSet            string        `db:"character_set_name"`
 		CollationIsDefault string        `db:"is_default"`
 	}
 	query := `
@@ -92,9 +93,9 @@ func (s *Schema) Tables() ([]*Table, error) {
 	s.tables = make([]*Table, len(rawTables))
 	for n, rawTable := range rawTables {
 		s.tables[n] = &Table{
-			Name:         rawTable.Name,
-			Engine:       rawTable.Engine,
-			CharacterSet: rawTable.CharacterSet,
+			Name:    rawTable.Name,
+			Engine:  rawTable.Engine,
+			CharSet: rawTable.CharSet,
 		}
 		if rawTable.CollationIsDefault == "" {
 			s.tables[n].Collation = rawTable.TableCollation
@@ -113,7 +114,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 		Default            sql.NullString `db:"column_default"`
 		Extra              string         `db:"extra"`
 		Comment            string         `db:"column_comment"`
-		CharacterSet       sql.NullString `db:"character_set_name"`
+		CharSet            sql.NullString `db:"character_set_name"`
 		Collation          sql.NullString `db:"collation_name"`
 		TableCollation     string         `db:"table_collation"`
 		CollationIsDefault sql.NullString `db:"is_default"`
@@ -150,7 +151,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 			col.Extra = strings.ToUpper(rawColumn.Extra)
 		}
 		if rawColumn.Collation.Valid { // only text-based column types have a notion of charset and collation
-			col.CharacterSet = rawColumn.CharacterSet.String
+			col.CharSet = rawColumn.CharSet.String
 			if rawColumn.CollationIsDefault.String == "" {
 				// SHOW CREATE TABLE only includes col's collation if it differs from col's charset's default collation
 				col.Collation = rawColumn.Collation.String
@@ -276,8 +277,69 @@ func (s *Schema) DropStatement() string {
 // CreateStatement returns a SQL statement that, if run, would create this
 // schema.
 func (s *Schema) CreateStatement() string {
-	// TODO: support DEFAULT CHARACTER SET and DEFAULT COLLATE
-	return fmt.Sprintf("CREATE DATABASE %s", EscapeIdentifier(s.Name))
+	var charSet, collate string
+	if s.CharSet != "" {
+		charSet = fmt.Sprintf(" CHARACTER SET %s", s.CharSet)
+	}
+	if s.Collation != "" {
+		collate = fmt.Sprintf(" COLLATE %s", s.Collation)
+	}
+	return fmt.Sprintf("CREATE DATABASE %s%s%s", EscapeIdentifier(s.Name), charSet, collate)
+}
+
+// AlterStatement returns a SQL statement that, if run, would alter this
+// schema's default charset and/or collation to the supplied values.
+// If charSet is "" and collation isn't, only the collation will be changed.
+// If collation is "" and charSet isn't, the default collation for charSet is
+// used automatically.
+// If both params are "", or if values equal to the schema's current charSet
+// and collation are supplied, an empty string is returned.
+func (s *Schema) AlterStatement(charSet, collation string) string {
+	var charSetClause, collateClause string
+	if s.CharSet != charSet && charSet != "" {
+		charSetClause = fmt.Sprintf(" CHARACTER SET %s", charSet)
+	}
+	if s.Collation != collation && collation != "" {
+		collateClause = fmt.Sprintf(" COLLATE %s", collation)
+	}
+	if charSetClause == "" && collateClause == "" {
+		return ""
+	}
+	return fmt.Sprintf("ALTER DATABASE %s%s%s", EscapeIdentifier(s.Name), charSetClause, collateClause)
+}
+
+// OverridesServerCharSet checks if the schema's default character set and
+// collation differ from its instance's server-level default character set
+// and collation. The first return value will be true if the schema's charset
+// differs from its instance's; the second return value will be true if the
+// schema's collation differs from its instance's.
+func (s *Schema) OverridesServerCharSet() (overridesCharSet bool, overridesCollation bool, err error) {
+	if s == nil {
+		return false, false, errors.New("Attempted to check character set and collation on a nil schema")
+	}
+	if s.instance == nil {
+		return false, false, fmt.Errorf("Attempted to check character set and collation on schema %s which has been detached from its instance", s.Name)
+	}
+	if s.Collation == "" && s.CharSet == "" {
+		return false, false, nil
+	}
+
+	db, err := s.instance.Connect("information_schema", "")
+	if err != nil {
+		return false, false, err
+	}
+	var serverCharSet, serverCollation string
+	err = db.QueryRow("SELECT @@global.character_set_server, @@global.collation_server").Scan(&serverCharSet, &serverCollation)
+	if err != nil {
+		return false, false, err
+	}
+	if s.CharSet != "" && serverCharSet != s.CharSet {
+		// Different charset also inherently means different collation
+		return true, true, nil
+	} else if s.Collation != "" && serverCollation != s.Collation {
+		return false, true, nil
+	}
+	return false, false, nil
 }
 
 // CachedCopy returns a copy of the Schema object without its instance
@@ -296,10 +358,10 @@ func (s *Schema) CachedCopy() (*Schema, error) {
 	}
 
 	clone := &Schema{
-		Name:             s.Name,
-		DefaultCharSet:   s.DefaultCharSet,
-		DefaultCollation: s.DefaultCollation,
-		tables:           s.tables,
+		Name:      s.Name,
+		CharSet:   s.CharSet,
+		Collation: s.Collation,
+		tables:    s.tables,
 	}
 	return clone, nil
 }

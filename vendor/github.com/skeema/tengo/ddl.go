@@ -68,10 +68,10 @@ type TableAlterClause interface {
 type SchemaDiff struct {
 	FromSchema        *Schema
 	ToSchema          *Schema
+	SchemaDDL         string      // a single statement affecting the schema itself (CREATE DATABASE, ALTER DATABASE, or DROP DATABASE), or blank string if n/a
 	TableDiffs        []TableDiff // a set of statements that, if run, would turn FromSchema into ToSchema
 	SameTables        []*Table    // slice of tables that were identical between schemas
 	UnsupportedTables []*Table    // slice of tables that changed, but in ways not parsable by this version of tengo. Table is version from ToSchema.
-	// TODO: schema-level default charset and collation changes
 }
 
 // NewSchemaDiff computes the set of differences between two database schemas.
@@ -82,6 +82,16 @@ func NewSchemaDiff(from, to *Schema) (*SchemaDiff, error) {
 		TableDiffs:        make([]TableDiff, 0),
 		SameTables:        make([]*Table, 0),
 		UnsupportedTables: make([]*Table, 0),
+	}
+
+	if from == nil && to == nil {
+		return result, nil
+	} else if from == nil {
+		result.SchemaDDL = to.CreateStatement()
+	} else if to == nil {
+		result.SchemaDDL = from.DropStatement()
+	} else {
+		result.SchemaDDL = from.AlterStatement(to.CharSet, to.Collation)
 	}
 
 	fromTablesByName, fromErr := from.TablesByName()

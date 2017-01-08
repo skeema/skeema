@@ -51,7 +51,7 @@ Unit test coverage of mycli is still incomplete; code coverage is currently arou
 
 ## License
 
-**Copyright 2016 Skeema LLC**
+**Copyright 2017 Skeema LLC**
 
 ```text
 Licensed under the Apache License, Version 2.0 (the "License");
