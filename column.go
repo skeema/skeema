@@ -15,10 +15,6 @@ type ColumnDefault struct {
 // ColumnDefaultNull indicates a column has a default value of NULL.
 var ColumnDefaultNull = ColumnDefault{Null: true}
 
-// ColumnDefaultCurrentTimestamp indicates a datetime or timestamp column has a
-// default value of the current timestamp.
-var ColumnDefaultCurrentTimestamp = ColumnDefault{Value: "CURRENT_TIMESTAMP"}
-
 // ColumnDefaultValue is a constructor for creating non-NULL,
 // non-CURRENT_TIMESTAMP default values.
 func ColumnDefaultValue(value string) ColumnDefault {
@@ -26,6 +22,14 @@ func ColumnDefaultValue(value string) ColumnDefault {
 		Quoted: true,
 		Value:  value,
 	}
+}
+
+// ColumnDefaultExpression is a constructor for creating a default value that
+// represents a SQL expression, which won't be wrapped in quotes. Traditionally
+// in MySQL this must be either "CURRENT_TIMESTAMP" or, if using fractional
+// second precision, "CURRENT_TIMESTAMP(N)" where N is a digit.
+func ColumnDefaultExpression(expression string) ColumnDefault {
+	return ColumnDefault{Value: expression}
 }
 
 // EscapedValue returns the default value escaped in the same manner as SHOW

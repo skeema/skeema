@@ -41,9 +41,9 @@ func aTable(nextAutoInc uint64) Table {
 		},
 		&Column{
 			Name:     "last_update",
-			TypeInDB: "timestamp",
-			Default:  ColumnDefaultCurrentTimestamp,
-			Extra:    "ON UPDATE CURRENT_TIMESTAMP",
+			TypeInDB: "timestamp(2)",
+			Default:  ColumnDefaultExpression("CURRENT_TIMESTAMP(2)"),
+			Extra:    "ON UPDATE CURRENT_TIMESTAMP(2)",
 		},
 		&Column{
 			Name:     "ssn",
@@ -78,7 +78,7 @@ func aTable(nextAutoInc uint64) Table {
   `+"`"+`actor_id`+"`"+` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
   `+"`"+`first_name`+"`"+` varchar(45) NOT NULL,
   `+"`"+`last_name`+"`"+` varchar(45) DEFAULT NULL,
-  `+"`"+`last_update`+"`"+` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `+"`"+`last_update`+"`"+` timestamp(2) NOT NULL DEFAULT CURRENT_TIMESTAMP(2) ON UPDATE CURRENT_TIMESTAMP(2),
   `+"`"+`ssn`+"`"+` char(10) NOT NULL,
   `+"`"+`alive`+"`"+` tinyint(1) NOT NULL DEFAULT '1',
   PRIMARY KEY (`+"`"+`actor_id`+"`"+`),

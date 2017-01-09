@@ -142,8 +142,8 @@ func (s *Schema) Tables() ([]*Table, error) {
 		}
 		if !rawColumn.Default.Valid {
 			col.Default = ColumnDefaultNull
-		} else if rawColumn.Default.String == "CURRENT_TIMESTAMP" && (rawColumn.Type == "timestamp" || rawColumn.Type == "datetime") {
-			col.Default = ColumnDefaultCurrentTimestamp
+		} else if strings.HasPrefix(rawColumn.Default.String, "CURRENT_TIMESTAMP") && (rawColumn.Type == "timestamp" || rawColumn.Type == "datetime") {
+			col.Default = ColumnDefaultExpression(rawColumn.Default.String)
 		} else {
 			col.Default = ColumnDefaultValue(rawColumn.Default.String)
 		}
