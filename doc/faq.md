@@ -74,9 +74,9 @@ The brace-wrapped variables will automatically be replaced with appropriate valu
 
 Currently this feature only works easily for `pt-online-schema-change`. Integration with `gh-ost` is more challenging, because its recommended execution mode requires passing it a *replica*, not the master; but meanwhile `.skeema` files should only refer to the master, since this is where `CREATE TABLE` and `DROP TABLE` statements need to be run. Similar problems exist with using `fb-osc`, which must be run on the master *and* all replicas individually. Better integration for these tools may be added in the future.
 
-### How do I force Skeema to use MySQL 5.6+ online DDL (algorithm=inplace, lock=none)?
+### How do I force Skeema to use the online DDL from MySQL 5.6+ / MariaDB 10.0+?  (algorithm=inplace, lock=none)?
 
-The [alter-algorithm](options.md#alter-algorithm) and [alter-lock](options.md#alter-lock) options permit configuring use of MySQL 5.6 online DDL.
+The [alter-algorithm](options.md#alter-algorithm) and [alter-lock](options.md#alter-lock) options permit configuring use of the database's built-in support for online DDL.
 
 Note that these ALTERs generally aren't replication-friendly due to lag they create, but are safe in some common scenarios (small tables; or no traditional replicas e.g. RDS without read-replicas). You can optionally combine these options with [alter-wrapper](options.md#alter-wrapper) and [alter-wrapper-min-size](options.md#alter-wrapper-min-size) to implement conditional logic: use online DDL for smaller tables, and an external online schema change (OSC) tool for larger tables.
 

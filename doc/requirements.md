@@ -2,7 +2,9 @@
 
 ### MySQL version and flavor
 
-While in Alpha testing, Skeema is currently only being tested extensively against MySQL 5.6 and Percona Server 5.6, with InnoDB tables only in both cases. It is likely to also work fine on other versions of MySQL and Percona Server, as well as MariaDB, but please open a GitHub issue if you encounter any problems.
+Skeema is currently being tested extensively against MySQL 5.6, Percona Server 5.6, and MariaDB 10.1, all running on Linux. Only InnoDB tables are being used in all cases.
+
+Skeema is also expected to work on slightly older (5.5) or newer (5.7 / 10.2) versions as well, but won't be able to diff tables that use new features such as generated/virtual columns. Skeema automatically detects this situation, so there is no risk of generating an incorrect diff. If Skeema does not yet support a table/column feature that you need, please open a GitHub issue so that the work can be prioritized appropriately.
 
 Skeema is not currently intended for use on multi-master systems, including Galera, InnoDB Cluster, and traditional active-active master-master configurations. It also has not yet been evaluated on Amazon Aurora.
 
