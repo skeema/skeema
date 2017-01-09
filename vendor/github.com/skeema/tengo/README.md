@@ -34,7 +34,10 @@ Go La Tengo **cannot** yet diff tables containing any of the following MySQL fea
 * table comments or column comments
 * fulltext indexes
 * spatial types
-* MySQL 5.7+ generated columns and other new features
+* generated/virtual columns (MySQL 5.7+ / Percona Server 5.7+ / MariaDB 5.2+)
+* column-level compression, with or without predefined dictionary (Percona Server 5.6.33+)
+* DEFAULT expressions (MariaDB 10.2+)
+* CHECK constraints (MariaDB 10.2+)
 
 This list is not necessarily exhaustive.
 
@@ -42,7 +45,7 @@ Many of these will be implemented in subsequent releases.
 
 ### Other databases besides MySQL
 
-Go La Tengo currently only aims to support MySQL and Percona Server. A future major refactor will move more methods to interfaces, permitting support for MariaDB and eventually PostgreSQL.
+Go La Tengo currently only aims to support MySQL, MariaDB, and Percona Server. Support for other databases, such as PostgreSQL and SQL Server, may be added in the future if there's sufficient demand. However, this will require a major refactor introducing backwards-incompatible changes.
 
 ## External Dependencies
 

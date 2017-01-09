@@ -142,13 +142,20 @@ func (s *Schema) Tables() ([]*Table, error) {
 		}
 		if !rawColumn.Default.Valid {
 			col.Default = ColumnDefaultNull
-		} else if rawColumn.Default.String == "CURRENT_TIMESTAMP" && (rawColumn.Type == "timestamp" || rawColumn.Type == "datetime") {
-			col.Default = ColumnDefaultCurrentTimestamp
+		} else if strings.HasPrefix(rawColumn.Default.String, "CURRENT_TIMESTAMP") && (strings.HasPrefix(rawColumn.Type, "timestamp") || strings.HasPrefix(rawColumn.Type, "datetime")) {
+			col.Default = ColumnDefaultExpression(rawColumn.Default.String)
 		} else {
 			col.Default = ColumnDefaultValue(rawColumn.Default.String)
 		}
-		if strings.Contains(strings.ToLower(rawColumn.Extra), "on update") {
-			col.Extra = strings.ToUpper(rawColumn.Extra)
+		if strings.Contains(strings.ToLower(rawColumn.Extra), "on update current_timestamp") {
+			// MariaDB strips fractional second precision here but includes it in SHOW
+			// CREATE TABLE. MySQL includes it in both places. Here we adjust the MariaDB
+			// one to look like MySQL, so that our generated DDL matches SHOW CREATE TABLE.
+			if openParen := strings.IndexByte(rawColumn.Type, '('); openParen > -1 && !strings.Contains(strings.ToLower(rawColumn.Extra), "current_timestamp(") {
+				col.Extra = fmt.Sprintf("%s%s", strings.ToUpper(rawColumn.Extra), rawColumn.Type[openParen:])
+			} else {
+				col.Extra = strings.ToUpper(rawColumn.Extra)
+			}
 		}
 		if rawColumn.Collation.Valid { // only text-based column types have a notion of charset and collation
 			col.CharSet = rawColumn.CharSet.String
