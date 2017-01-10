@@ -77,12 +77,12 @@ By default, this also normalizes file format like `skeema lint`, but you can ski
 
 ### Keep dev and prod in-sync
 
-Let's assume each engineer has a dev MySQL instance on their local dev server. This example shows how to add an environment named "dev", using the --socket (-S) option to reach a MySQL instance on localhost.
+Let's assume each engineer has a dev MySQL instance on their local dev server. This example shows how to add an environment named "development", using the --socket (-S) option to reach a MySQL instance on localhost.
 
 As a one-time setup to configure this new environment, use `skeema add-environment` from the host directory previously created by init:
 
 ```
-skeema add-environment dev -h localhost -S /var/lib/mysql/mysql.sock -u root
+skeema add-environment development -h localhost -S /var/lib/mysql/mysql.sock -u root
 ```
 
 This automatically added a new section to the .skeema file, configuring the dev environment's connection information. You could also do this by hand instead of using `skeema add-environment`.
