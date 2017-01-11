@@ -428,3 +428,71 @@ func (ccs ChangeCharSet) Clause() string {
 	}
 	return fmt.Sprintf("DEFAULT CHARACTER SET = %s%s", ccs.CharSet, collationClause)
 }
+
+///// ChangeCreateOptions //////////////////////////////////////////////////////
+
+// ChangeCreateOptions represents a difference in the create options
+// (row_format, stats_persistent, stats_auto_recalc, etc) between two versions
+// of a table. It satisfies the TableAlterClause interface.
+type ChangeCreateOptions struct {
+	Table            *Table
+	OldCreateOptions string
+	NewCreateOptions string
+}
+
+// Clause returns a clause of an ALTER TABLE statement that sets one or more
+// create options.
+func (cco ChangeCreateOptions) Clause() string {
+	// Map of known defaults that make options no longer show up in create_options
+	// or SHOW CREATE TABLE.
+	knownDefaults := map[string]string{
+		"MIN_ROWS":           "0",
+		"MAX_ROWS":           "0",
+		"AVG_ROW_LENGTH":     "0",
+		"PACK_KEYS":          "DEFAULT",
+		"STATS_PERSISTENT":   "DEFAULT",
+		"STATS_AUTO_RECALC":  "DEFAULT",
+		"STATS_SAMPLE_PAGES": "DEFAULT",
+		"CHECKSUM":           "0",
+		"DELAY_KEY_WRITE":    "0",
+		"ROW_FORMAT":         "DEFAULT",
+		"KEY_BLOCK_SIZE":     "0",
+	}
+
+	splitOpts := func(full string) map[string]string {
+		result := make(map[string]string)
+		for _, kv := range strings.Split(full, " ") {
+			tokens := strings.Split(kv, "=")
+			if len(tokens) == 2 {
+				result[tokens[0]] = tokens[1]
+			}
+		}
+		return result
+	}
+
+	oldOpts := splitOpts(cco.OldCreateOptions)
+	newOpts := splitOpts(cco.NewCreateOptions)
+	subclauses := make([]string, 0, len(knownDefaults))
+
+	// Determine which oldOpts changed in newOpts or are no longer present
+	for k, v := range oldOpts {
+		if newValue, ok := newOpts[k]; ok && newValue != v {
+			subclauses = append(subclauses, fmt.Sprintf("%s=%s", k, newValue))
+		} else if !ok {
+			def, known := knownDefaults[k]
+			if !known {
+				def = "DEFAULT"
+			}
+			subclauses = append(subclauses, fmt.Sprintf("%s=%s", k, def))
+		}
+	}
+
+	// Determine which newOpts were not in oldOpts
+	for k, v := range newOpts {
+		if _, ok := oldOpts[k]; !ok {
+			subclauses = append(subclauses, fmt.Sprintf("%s=%s", k, v))
+		}
+	}
+
+	return strings.Join(subclauses, " ")
+}

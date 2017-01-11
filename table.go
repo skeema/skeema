@@ -12,6 +12,7 @@ type Table struct {
 	Engine            string
 	CharSet           string // Always populated, even if same as database's default
 	Collation         string // Only populated if differs from default collation for character set
+	CreateOptions     string // row_format, stats_persistent, stats_auto_recalc, etc
 	Columns           []*Column
 	PrimaryKey        *Index
 	SecondaryIndexes  []*Index
@@ -65,13 +66,18 @@ func (t *Table) GeneratedCreateStatement() string {
 	if t.Collation != "" {
 		collate = fmt.Sprintf(" COLLATE=%s", t.Collation)
 	}
-	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n) ENGINE=%s%s DEFAULT CHARSET=%s%s",
+	var createOptions string
+	if t.CreateOptions != "" {
+		createOptions = fmt.Sprintf(" %s", t.CreateOptions)
+	}
+	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n) ENGINE=%s%s DEFAULT CHARSET=%s%s%s",
 		EscapeIdentifier(t.Name),
 		strings.Join(defs, ",\n  "),
 		t.Engine,
 		autoIncClause,
 		t.CharSet,
 		collate,
+		createOptions,
 	)
 	return result
 }
@@ -185,6 +191,16 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 			OldNextAutoIncrement: from.NextAutoIncrement,
 		}
 		clauses = append(clauses, cai)
+	}
+
+	// Compare create options
+	if from.CreateOptions != to.CreateOptions {
+		cco := ChangeCreateOptions{
+			Table:            to,
+			OldCreateOptions: from.CreateOptions,
+			NewCreateOptions: to.CreateOptions,
+		}
+		clauses = append(clauses, cco)
 	}
 
 	return clauses, true

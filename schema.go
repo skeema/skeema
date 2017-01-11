@@ -70,17 +70,16 @@ func (s *Schema) Tables() ([]*Table, error) {
 		Name               string        `db:"table_name"`
 		Type               string        `db:"table_type"`
 		Engine             string        `db:"engine"`
-		RowFormat          string        `db:"row_format"`
 		AutoIncrement      sql.NullInt64 `db:"auto_increment"`
-		CreateOptions      string        `db:"create_options"`
 		TableCollation     string        `db:"table_collation"`
+		CreateOptions      string        `db:"create_options"`
 		TableComment       string        `db:"table_comment"`
 		CharSet            string        `db:"character_set_name"`
 		CollationIsDefault string        `db:"is_default"`
 	}
 	query := `
-		SELECT t.table_name, t.table_type, t.engine, t.row_format, t.auto_increment,
-		       t.create_options, t.table_collation, t.table_comment,
+		SELECT t.table_name, t.table_type, t.engine, t.auto_increment, t.table_collation,
+		       UPPER(t.create_options) AS create_options, t.table_comment,
 		       c.character_set_name, c.is_default
 		FROM   tables t
 		JOIN   collations c ON t.table_collation = c.collation_name
@@ -102,6 +101,18 @@ func (s *Schema) Tables() ([]*Table, error) {
 		}
 		if rawTable.AutoIncrement.Valid {
 			s.tables[n].NextAutoIncrement = uint64(rawTable.AutoIncrement.Int64)
+		}
+		if rawTable.CreateOptions != "" && rawTable.CreateOptions != "PARTITIONED" {
+			// information_schema.tables.create_options annoyingly contains "partitioned"
+			// if the table is partitioned, despite this not being present as-is in the
+			// table table definition. All other create_options are present verbatim.
+			// Currently in mysql-server/sql/sql_show.cc, it's always at the *end* of
+			// create_options... but just to code defensively we handle any location.
+			if strings.HasPrefix(rawTable.CreateOptions, "PARTITIONED ") {
+				s.tables[n].CreateOptions = strings.Replace(rawTable.CreateOptions, "PARTITIONED ", "", 1)
+			} else {
+				s.tables[n].CreateOptions = strings.Replace(rawTable.CreateOptions, " PARTITIONED", "", 1)
+			}
 		}
 	}
 

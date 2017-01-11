@@ -1,6 +1,7 @@
 package tengo
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -466,6 +467,69 @@ func TestTableAlterChangeCharSet(t *testing.T) {
 	to = getTableWithCharSet("latin1", "latin1_general_ci")
 	assertChangeCharSet(&from, &to, "DEFAULT CHARACTER SET = latin1 COLLATE = latin1_general_ci")
 	assertChangeCharSet(&to, &from, "DEFAULT CHARACTER SET = utf8mb4")
+}
+
+func TestTableAlterChangeCreateOptions(t *testing.T) {
+	getTableWithCreateOptions := func(createOptions string) Table {
+		t := aTable(1)
+		t.CreateOptions = createOptions
+		t.createStatement = t.GeneratedCreateStatement()
+		return t
+	}
+	assertChangeCreateOptions := func(a, b *Table, expected string) {
+		tableAlters, supported := a.Diff(b)
+		if expected == "" {
+			if len(tableAlters) != 0 || !supported {
+				t.Fatalf("Incorrect result from Table.Diff(): expected len=0, true; found len=%d, %t", len(tableAlters), supported)
+			}
+			return
+		}
+		if len(tableAlters) != 1 || !supported {
+			t.Fatalf("Incorrect result from Table.Diff(): expected len=1, supported=true; found len=%d, supported=%t", len(tableAlters), supported)
+		}
+		ta, ok := tableAlters[0].(ChangeCreateOptions)
+		if !ok {
+			t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
+		}
+
+		// Order of result isn't predictable, so convert to maps and compare
+		indexedClause := make(map[string]bool)
+		indexedExpected := make(map[string]bool)
+		for _, token := range strings.Split(ta.Clause(), " ") {
+			indexedClause[token] = true
+		}
+		for _, token := range strings.Split(expected, " ") {
+			indexedExpected[token] = true
+		}
+
+		if len(indexedClause) != len(indexedExpected) {
+			t.Errorf("Incorrect ALTER TABLE clause returned; expected: %s; found: %s", expected, ta.Clause())
+			return
+		}
+		for k, v := range indexedExpected {
+			if foundv, ok := indexedClause[k]; v != foundv || !ok {
+				t.Errorf("Incorrect ALTER TABLE clause returned; expected: %s; found: %s", expected, ta.Clause())
+				return
+			}
+		}
+	}
+
+	from := getTableWithCreateOptions("")
+	to := getTableWithCreateOptions("")
+	assertChangeCreateOptions(&from, &to, "")
+
+	to = getTableWithCreateOptions("ROW_FORMAT=DYNAMIC")
+	assertChangeCreateOptions(&from, &to, "ROW_FORMAT=DYNAMIC")
+	assertChangeCreateOptions(&to, &from, "ROW_FORMAT=DEFAULT")
+
+	to = getTableWithCreateOptions("STATS_PERSISTENT=1 ROW_FORMAT=DYNAMIC")
+	assertChangeCreateOptions(&from, &to, "STATS_PERSISTENT=1 ROW_FORMAT=DYNAMIC")
+	assertChangeCreateOptions(&to, &from, "STATS_PERSISTENT=DEFAULT ROW_FORMAT=DEFAULT")
+
+	from = getTableWithCreateOptions("ROW_FORMAT=REDUNDANT AVG_ROW_LENGTH=200 STATS_PERSISTENT=1 MAX_ROWS=1000")
+	to = getTableWithCreateOptions("STATS_AUTO_RECALC=1 ROW_FORMAT=DYNAMIC AVG_ROW_LENGTH=200")
+	assertChangeCreateOptions(&from, &to, "STATS_AUTO_RECALC=1 ROW_FORMAT=DYNAMIC STATS_PERSISTENT=DEFAULT MAX_ROWS=0")
+	assertChangeCreateOptions(&to, &from, "STATS_AUTO_RECALC=DEFAULT ROW_FORMAT=REDUNDANT STATS_PERSISTENT=1 MAX_ROWS=1000")
 }
 
 func TestTableAlterUnsupportedTable(t *testing.T) {
