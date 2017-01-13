@@ -304,27 +304,30 @@ func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 	return nil
 }
 
-// logUnsupportedTableDiff provides debug logging to identify why a table is
-// considered unsupported. It is "best effort" and simply returns early if it
-// encounters any errors.
+// logUnsupportedTableDiff provides debug logging to identify why a table (or
+// the diff operation between two versions of a table) is considered
+// unsupported. It is "best effort" and simply returns early if it encounters
+// any errors.
 func (t *Target) logUnsupportedTableDiff(name string) {
-	table, err := t.SchemaFromDir.Table(name)
-	if err != nil {
+	var expectedCreate, actualCreate string
+
+	// Figure out which part is unsupported; this will determine what we're diffing
+	if dirTable, err := t.SchemaFromDir.Table(name); err == nil && dirTable != nil && dirTable.UnsupportedDDL {
+		expectedCreate = dirTable.GeneratedCreateStatement()
+		actualCreate = dirTable.CreateStatement()
+	} else if instTable, err := t.SchemaFromInstance.Table(name); err == nil && instTable != nil && instTable.UnsupportedDDL {
+		expectedCreate = instTable.GeneratedCreateStatement()
+		actualCreate = instTable.CreateStatement()
+	} else if dirTable != nil && instTable != nil && dirTable.CreateStatement() != instTable.CreateStatement() {
+		expectedCreate = dirTable.CreateStatement()
+		actualCreate = instTable.CreateStatement()
+	} else {
 		return
 	}
 
-	// If the table from the dir is supported (or doesn't exist), obtain the
-	// table from the instance instead.
-	if table == nil || !table.UnsupportedDDL {
-		table, err = t.SchemaFromInstance.Table(name)
-		if table == nil || err != nil || !table.UnsupportedDDL {
-			return
-		}
-	}
-
 	diff := difflib.UnifiedDiff{
-		A:        difflib.SplitLines(table.GeneratedCreateStatement()),
-		B:        difflib.SplitLines(table.CreateStatement()),
+		A:        difflib.SplitLines(expectedCreate),
+		B:        difflib.SplitLines(actualCreate),
 		FromFile: "Skeema-expected",
 		ToFile:   "MySQL-actual",
 		Context:  0,
