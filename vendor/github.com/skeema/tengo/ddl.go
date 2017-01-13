@@ -506,8 +506,26 @@ type ChangeComment struct {
 	NewComment string
 }
 
-// Clause returns a clause of an ALTER TABLE statement that sets one or more
-// create options.
+// Clause returns a clause of an ALTER TABLE statement that changes a table's
+// comment.
 func (cc ChangeComment) Clause() string {
 	return fmt.Sprintf("COMMENT '%s'", EscapeValueForCreateTable(cc.NewComment))
+}
+
+///// ChangeStorageEngine //////////////////////////////////////////////////////
+
+// ChangeStorageEngine represents a difference in the table's storage engine.
+// It satisfies the TableAlterClause interface.
+// Please note that Go La Tengo's support for non-InnoDB storage engines is
+// currently very limited, however it still provides the ability to generate
+// ALTERs that change engine.
+type ChangeStorageEngine struct {
+	Table            *Table
+	NewStorageEngine string
+}
+
+// Clause returns a clause of an ALTER TABLE statement that changes a table's
+// storage engine.
+func (cse ChangeStorageEngine) Clause() string {
+	return fmt.Sprintf("ENGINE=%s", cse.NewStorageEngine)
 }

@@ -18,7 +18,7 @@ type Table struct {
 	SecondaryIndexes  []*Index
 	Comment           string
 	NextAutoIncrement uint64
-	UnsupportedDDL    bool
+	UnsupportedDDL    bool // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
 	createStatement   string
 }
 
@@ -187,6 +187,15 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 			add := AddIndex{Table: to, Index: toIdx}
 			clauses = append(clauses, drop, add)
 		}
+	}
+
+	// Compare storage engine
+	if from.Engine != to.Engine {
+		cse := ChangeStorageEngine{
+			Table:            to,
+			NewStorageEngine: to.Engine,
+		}
+		clauses = append(clauses, cse)
 	}
 
 	// Compare next auto-inc value
