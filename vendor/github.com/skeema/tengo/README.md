@@ -31,7 +31,6 @@ Go La Tengo **cannot** yet diff tables containing any of the following MySQL fea
 * partitioned tables
 * triggers
 * non-InnoDB storage engines
-* table comments or column comments
 * fulltext indexes
 * spatial types
 * generated/virtual columns (MySQL 5.7+ / Percona Server 5.7+ / MariaDB 5.2+)

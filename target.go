@@ -255,7 +255,7 @@ func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 	mods := tengo.StatementModifiers{
 		NextAutoInc: tengo.NextAutoIncIgnore,
 	}
-	alteredTableNames := make([]string, 0)
+	tableNameToDDL := make(map[string]string)
 
 	// Iterate over the TableDiffs in the SchemaDiff. For any that are an ALTER,
 	// run it against the table in the temp schema, and see if the table now matches
@@ -272,7 +272,7 @@ func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 		if _, err = db.Exec(stmt); err != nil {
 			return err
 		}
-		alteredTableNames = append(alteredTableNames, alter.Table.Name)
+		tableNameToDDL[alter.Table.Name] = stmt
 	}
 	postAlterTables, err := tempSchema.TablesByName()
 	if err != nil {
@@ -280,13 +280,13 @@ func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 	}
 	expectTables, _ := t.SchemaFromDir.TablesByName() // can ignore error since we know table list already cached
 
-	for _, name := range alteredTableNames {
+	for name, stmt := range tableNameToDDL {
 		// We have to compare CREATE TABLE statements without their next auto-inc
 		// values, since divergence there may be expected depending on settings
 		expected, _ := tengo.ParseCreateAutoInc(expectTables[name].CreateStatement())
 		actual, _ := tengo.ParseCreateAutoInc(postAlterTables[name].CreateStatement())
 		if expected != actual {
-			return fmt.Errorf("verifyDiff: Failure on table %s\nEXPECTED POST-ALTER:\n%s\n\nACTUAL POST-ALTER:\n%s\n\nRun command again with --skip-verify if this discrepancy is safe to ignore", name, expected, actual)
+			return fmt.Errorf("verifyDiff: Failure on table %s\nDDL:\n%s\n\nEXPECTED POST-ALTER:\n%s\n\nACTUAL POST-ALTER:\n%s\n\nRun command again with --skip-verify if this discrepancy is safe to ignore", name, stmt, expected, actual)
 		}
 	}
 

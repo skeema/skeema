@@ -16,6 +16,7 @@ type Table struct {
 	Columns           []*Column
 	PrimaryKey        *Index
 	SecondaryIndexes  []*Index
+	Comment           string
 	NextAutoIncrement uint64
 	UnsupportedDDL    bool
 	createStatement   string
@@ -70,7 +71,11 @@ func (t *Table) GeneratedCreateStatement() string {
 	if t.CreateOptions != "" {
 		createOptions = fmt.Sprintf(" %s", t.CreateOptions)
 	}
-	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n) ENGINE=%s%s DEFAULT CHARSET=%s%s%s",
+	var comment string
+	if t.Comment != "" {
+		comment = fmt.Sprintf(" COMMENT='%s'", EscapeValueForCreateTable(t.Comment))
+	}
+	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n) ENGINE=%s%s DEFAULT CHARSET=%s%s%s%s",
 		EscapeIdentifier(t.Name),
 		strings.Join(defs, ",\n  "),
 		t.Engine,
@@ -78,6 +83,7 @@ func (t *Table) GeneratedCreateStatement() string {
 		t.CharSet,
 		collate,
 		createOptions,
+		comment,
 	)
 	return result
 }
@@ -201,6 +207,15 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 			NewCreateOptions: to.CreateOptions,
 		}
 		clauses = append(clauses, cco)
+	}
+
+	// Compare comment
+	if from.Comment != to.Comment {
+		cc := ChangeComment{
+			Table:      to,
+			NewComment: to.Comment,
+		}
+		clauses = append(clauses, cc)
 	}
 
 	return clauses, true

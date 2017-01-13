@@ -84,9 +84,11 @@ Skeema can CREATE or DROP tables using these features, but cannot ALTER them. Th
 * compressed tables
 * partitioned tables
 * non-InnoDB storage engines
-* table comments or column comments
 * fulltext indexes
 * spatial types
-* MySQL 5.7+ generated columns and other new features
+* generated/virtual columns (MySQL 5.7+ / Percona Server 5.7+ / MariaDB 5.2+)
+* column-level compression, with or without predefined dictionary (Percona Server 5.6.33+)
+* DEFAULT expressions (MariaDB 10.2+)
+* CHECK constraints (MariaDB 10.2+)
 
 You can still ALTER these tables externally from Skeema (e.g., direct invocation of `ALTER TABLE` or `pt-online-schema-change`). Afterwards, you can update your schema repo using `skeema pull`, which will work properly even on these tables.

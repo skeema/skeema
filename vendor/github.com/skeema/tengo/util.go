@@ -16,6 +16,17 @@ func EscapeIdentifier(input string) string {
 	return fmt.Sprintf("`%s`", escaped)
 }
 
+// EscapeValueForCreateTable returns the supplied value (typically obtained from
+// querying an information_schema table) escaped in the same manner as SHOW
+// CREATE TABLE would display it. Examples include default values, table
+// comments, column comments, index comments.
+func EscapeValueForCreateTable(input string) string {
+	escaped := strings.Replace(input, "\\", "\\\\", -1)
+	escaped = strings.Replace(escaped, "\000", "\\0", -1)
+	escaped = strings.Replace(escaped, "'", "''", -1)
+	return escaped
+}
+
 // SplitHostOptionalPort takes an address string containing a hostname, ipv4
 // addr, or ipv6 addr; *optionally* followed by a colon and port number. It
 // splits the hostname portion from the port portion and returns them
