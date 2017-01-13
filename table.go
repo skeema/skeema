@@ -227,6 +227,15 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 		clauses = append(clauses, cc)
 	}
 
+	// If the SHOW CREATE TABLE output differed between the two tables, but we
+	// did not generate any clauses, this indicates some aspect of the change is
+	// unsupported (even though the two tables are individually supported). This
+	// normally shouldn't happen, but could be possible given differences between
+	// MySQL versions, flavors, storage engines, etc.
+	if len(clauses) == 0 {
+		return clauses, false
+	}
+
 	return clauses, true
 }
 
