@@ -32,21 +32,12 @@ func ColumnDefaultExpression(expression string) ColumnDefault {
 	return ColumnDefault{Value: expression}
 }
 
-// EscapedValue returns the default value escaped in the same manner as SHOW
-// CREATE TABLE.
-func (cd ColumnDefault) EscapedValue() string {
-	value := strings.Replace(cd.Value, "\\", "\\\\", -1)
-	value = strings.Replace(value, "\000", "\\0", -1)
-	value = strings.Replace(value, "'", "''", -1)
-	return value
-}
-
 // Clause returns the DEFAULT clause for use in a DDL statement.
 func (cd ColumnDefault) Clause() string {
 	if cd.Null {
 		return "DEFAULT NULL"
 	} else if cd.Quoted {
-		return fmt.Sprintf("DEFAULT '%s'", cd.EscapedValue())
+		return fmt.Sprintf("DEFAULT '%s'", EscapeValueForCreateTable(cd.Value))
 	} else {
 		return fmt.Sprintf("DEFAULT %s", cd.Value)
 	}
@@ -62,7 +53,7 @@ type Column struct {
 	Extra         string
 	CharSet       string // Only populated if textual type
 	Collation     string // Only populated if textual type and differs from CharSet's default collation
-	//Comment       string
+	Comment       string
 }
 
 // Definition returns this column's definition clause, for use as part of a DDL
@@ -70,7 +61,7 @@ type Column struct {
 // SET clause to be omitted if the table and column have the same *collation*
 // (mirroring the specific display logic used by SHOW CREATE TABLE)
 func (c *Column) Definition(table *Table) string {
-	var charSet, collation, nullability, autoIncrement, defaultValue, extraModifiers string
+	var charSet, collation, nullability, autoIncrement, defaultValue, extraModifiers, comment string
 	emitDefault := c.CanHaveDefault()
 	if c.CharSet != "" && (table == nil || c.Collation != table.Collation || c.CharSet != table.CharSet) {
 		// Note that we need to compare both Collation AND CharSet above, since
@@ -98,7 +89,10 @@ func (c *Column) Definition(table *Table) string {
 	if c.Extra != "" {
 		extraModifiers = fmt.Sprintf(" %s", c.Extra)
 	}
-	return fmt.Sprintf("%s %s%s%s%s%s%s%s", EscapeIdentifier(c.Name), c.TypeInDB, charSet, collation, nullability, autoIncrement, defaultValue, extraModifiers)
+	if c.Comment != "" {
+		comment = fmt.Sprintf(" COMMENT '%s'", EscapeValueForCreateTable(c.Comment))
+	}
+	return fmt.Sprintf("%s %s%s%s%s%s%s%s%s", EscapeIdentifier(c.Name), c.TypeInDB, charSet, collation, nullability, autoIncrement, defaultValue, extraModifiers, comment)
 }
 
 // Equals returns true if two columns are identical, false otherwise.

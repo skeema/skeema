@@ -496,3 +496,18 @@ func (cco ChangeCreateOptions) Clause() string {
 
 	return strings.Join(subclauses, " ")
 }
+
+///// ChangeComment ////////////////////////////////////////////////////////////
+
+// ChangeComment represents a difference in the table-level comment between two
+// versions of a table. It satisfies the TableAlterClause interface.
+type ChangeComment struct {
+	Table      *Table
+	NewComment string
+}
+
+// Clause returns a clause of an ALTER TABLE statement that sets one or more
+// create options.
+func (cc ChangeComment) Clause() string {
+	return fmt.Sprintf("COMMENT '%s'", EscapeValueForCreateTable(cc.NewComment))
+}

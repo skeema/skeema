@@ -532,6 +532,41 @@ func TestTableAlterChangeCreateOptions(t *testing.T) {
 	assertChangeCreateOptions(&to, &from, "STATS_AUTO_RECALC=DEFAULT ROW_FORMAT=REDUNDANT STATS_PERSISTENT=1 MAX_ROWS=1000")
 }
 
+func TestTableAlterChangeComment(t *testing.T) {
+	getTableWithComment := func(comment string) Table {
+		t := aTable(1)
+		t.Comment = comment
+		t.createStatement = t.GeneratedCreateStatement()
+		return t
+	}
+	assertChangeComment := func(a, b *Table, expected string) {
+		tableAlters, supported := a.Diff(b)
+		if expected == "" {
+			if len(tableAlters) != 0 || !supported {
+				t.Fatalf("Incorrect result from Table.Diff(): expected len=0, true; found len=%d, %t", len(tableAlters), supported)
+			}
+			return
+		}
+		if len(tableAlters) != 1 || !supported {
+			t.Fatalf("Incorrect result from Table.Diff(): expected len=1, supported=true; found len=%d, supported=%t", len(tableAlters), supported)
+		}
+		ta, ok := tableAlters[0].(ChangeComment)
+		if !ok {
+			t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
+		}
+		if ta.Clause() != expected {
+			t.Errorf("Incorrect ALTER TABLE clause returned; expected: %s; found: %s", expected, ta.Clause())
+		}
+	}
+
+	from := getTableWithComment("")
+	to := getTableWithComment("")
+	assertChangeComment(&from, &to, "")
+	to = getTableWithComment("I'm a table-level comment!")
+	assertChangeComment(&from, &to, "COMMENT 'I''m a table-level comment!'")
+	assertChangeComment(&to, &from, "COMMENT ''")
+}
+
 func TestTableAlterUnsupportedTable(t *testing.T) {
 	from, to := unsupportedTable(), unsupportedTable()
 	newCol := &Column{

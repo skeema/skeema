@@ -73,7 +73,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 		AutoIncrement      sql.NullInt64 `db:"auto_increment"`
 		TableCollation     string        `db:"table_collation"`
 		CreateOptions      string        `db:"create_options"`
-		TableComment       string        `db:"table_comment"`
+		Comment            string        `db:"table_comment"`
 		CharSet            string        `db:"character_set_name"`
 		CollationIsDefault string        `db:"is_default"`
 	}
@@ -95,6 +95,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 			Name:    rawTable.Name,
 			Engine:  rawTable.Engine,
 			CharSet: rawTable.CharSet,
+			Comment: rawTable.Comment,
 		}
 		if rawTable.CollationIsDefault == "" {
 			s.tables[n].Collation = rawTable.TableCollation
@@ -150,6 +151,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 			TypeInDB:      rawColumn.Type,
 			Nullable:      strings.ToUpper(rawColumn.IsNullable) == "YES",
 			AutoIncrement: strings.Contains(rawColumn.Extra, "auto_increment"),
+			Comment:       rawColumn.Comment,
 		}
 		if !rawColumn.Default.Valid {
 			col.Default = ColumnDefaultNull
@@ -198,9 +200,11 @@ func (s *Schema) Tables() ([]*Table, error) {
 		SeqInIndex uint8         `db:"seq_in_index"`
 		ColumnName string        `db:"column_name"`
 		SubPart    sql.NullInt64 `db:"sub_part"`
+		Comment    string        `db:"index_comment"`
 	}
 	query = `
-		SELECT   index_name, table_name, non_unique, seq_in_index, column_name, sub_part
+		SELECT   index_name, table_name, non_unique, seq_in_index, column_name,
+		         sub_part, index_comment
 		FROM     statistics
 		WHERE    table_schema = ?`
 	if err := db.Select(&rawIndexes, query, s.Name); err != nil {
@@ -218,6 +222,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 			Unique:   rawIndex.NonUnique == 0,
 			Columns:  make([]*Column, 0),
 			SubParts: make([]uint16, 0),
+			Comment:  rawIndex.Comment,
 		}
 		if strings.ToUpper(index.Name) == "PRIMARY" {
 			primaryKeyByTableName[rawIndex.TableName] = index

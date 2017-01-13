@@ -14,6 +14,7 @@ type Index struct {
 	SubParts   []uint16
 	PrimaryKey bool
 	Unique     bool
+	Comment    string
 }
 
 // Definition returns this index's definition clause, for use as part of a DDL
@@ -30,7 +31,7 @@ func (idx *Index) Definition() string {
 			colParts[n] = fmt.Sprintf("%s", EscapeIdentifier(idx.Columns[n].Name))
 		}
 	}
-	var typeAndName string
+	var typeAndName, comment string
 	if idx.PrimaryKey {
 		if !idx.Unique {
 			panic(errors.New("Index is primary key, but isn't marked as unique"))
@@ -41,8 +42,11 @@ func (idx *Index) Definition() string {
 	} else {
 		typeAndName = fmt.Sprintf("KEY %s", EscapeIdentifier(idx.Name))
 	}
+	if idx.Comment != "" {
+		comment = fmt.Sprintf(" COMMENT '%s'", EscapeValueForCreateTable(idx.Comment))
+	}
 
-	return fmt.Sprintf("%s (%s)", typeAndName, strings.Join(colParts, ","))
+	return fmt.Sprintf("%s (%s)%s", typeAndName, strings.Join(colParts, ","), comment)
 }
 
 // Equals returns true if two indexes are identical, false otherwise.
@@ -55,7 +59,7 @@ func (idx *Index) Equals(other *Index) bool {
 	if idx == nil || other == nil {
 		return false
 	}
-	if idx.Name != other.Name {
+	if idx.Name != other.Name || idx.Comment != other.Comment {
 		return false
 	}
 	if idx.PrimaryKey != other.PrimaryKey || idx.Unique != other.Unique {
