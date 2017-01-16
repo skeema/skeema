@@ -249,7 +249,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	if !ok {
 		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
 	}
-	if ta.Table != &to || ta.OriginalColumn != from.Columns[movedColPos] || ta.NewColumn != movedCol {
+	if ta.Table != &to || ta.OldColumn != from.Columns[movedColPos] || ta.NewColumn != movedCol {
 		t.Error("Pointers in table alter do not point to expected values")
 	}
 	if !ta.PositionFirst || ta.PositionAfter != nil {
@@ -274,8 +274,8 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	if ta.PositionFirst || ta.PositionAfter != shouldBeAfter {
 		t.Errorf("Expected modified column to be after %s / first=false, instead found after %v / first=%t", shouldBeAfter.Name, ta.PositionAfter, ta.PositionFirst)
 	}
-	if !ta.NewColumn.Equals(ta.OriginalColumn) {
-		t.Errorf("Column definition unexpectedly changed: was %s, now %s", ta.OriginalColumn.Definition(nil), ta.NewColumn.Definition(nil))
+	if !ta.NewColumn.Equals(ta.OldColumn) {
+		t.Errorf("Column definition unexpectedly changed: was %s, now %s", ta.OldColumn.Definition(nil), ta.NewColumn.Definition(nil))
 	}
 
 	// Repos to last position AND change column definition
@@ -292,7 +292,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	if ta.PositionFirst || ta.PositionAfter != shouldBeAfter {
 		t.Errorf("Expected modified column to be after %s / first=false, instead found after %v / first=%t", shouldBeAfter.Name, ta.PositionAfter, ta.PositionFirst)
 	}
-	if ta.NewColumn.Equals(ta.OriginalColumn) {
+	if ta.NewColumn.Equals(ta.OldColumn) {
 		t.Errorf("Column definition unexpectedly NOT changed: still %s", ta.NewColumn.Definition(nil))
 	}
 

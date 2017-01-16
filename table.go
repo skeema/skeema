@@ -346,9 +346,9 @@ func (cc *columnsComparison) columnModifications() []TableAlterClause {
 		toCol := cc.toOrderCommonCols[n]
 		if fromCol.Name == toCol.Name && !fromCol.Equals(toCol) {
 			clauses = append(clauses, ModifyColumn{
-				Table:          cc.fromTable,
-				OriginalColumn: fromCol,
-				NewColumn:      toCol,
+				Table:     cc.fromTable,
+				OldColumn: fromCol,
+				NewColumn: toCol,
 			})
 		}
 	}
@@ -391,9 +391,9 @@ func (cc *columnsComparison) columnModifications() []TableAlterClause {
 		fromCol := cc.fromOrderCommonCols[greatestMoveFromPos]
 		toCol := cc.toOrderCommonCols[greatestMoveFromPos+greatestMoveAmount]
 		modify := ModifyColumn{
-			Table:          cc.toTable,
-			OriginalColumn: fromCol,
-			NewColumn:      toCol,
+			Table:     cc.toTable,
+			OldColumn: fromCol,
+			NewColumn: toCol,
 		}
 		if greatestMoveFromPos+greatestMoveAmount == 0 {
 			modify.PositionFirst = true

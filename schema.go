@@ -160,14 +160,14 @@ func (s *Schema) Tables() ([]*Table, error) {
 		} else {
 			col.Default = ColumnDefaultValue(rawColumn.Default.String)
 		}
-		if strings.Contains(strings.ToLower(rawColumn.Extra), "on update current_timestamp") {
+		if strings.HasPrefix(strings.ToLower(rawColumn.Extra), "on update ") {
 			// MariaDB strips fractional second precision here but includes it in SHOW
 			// CREATE TABLE. MySQL includes it in both places. Here we adjust the MariaDB
 			// one to look like MySQL, so that our generated DDL matches SHOW CREATE TABLE.
 			if openParen := strings.IndexByte(rawColumn.Type, '('); openParen > -1 && !strings.Contains(strings.ToLower(rawColumn.Extra), "current_timestamp(") {
-				col.Extra = fmt.Sprintf("%s%s", strings.ToUpper(rawColumn.Extra), rawColumn.Type[openParen:])
+				col.OnUpdate = fmt.Sprintf("%s%s", strings.ToUpper(rawColumn.Extra[10:]), rawColumn.Type[openParen:])
 			} else {
-				col.Extra = strings.ToUpper(rawColumn.Extra)
+				col.OnUpdate = strings.ToUpper(rawColumn.Extra[10:])
 			}
 		}
 		if rawColumn.Collation.Valid { // only text-based column types have a notion of charset and collation

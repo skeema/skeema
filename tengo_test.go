@@ -43,7 +43,7 @@ func aTable(nextAutoInc uint64) Table {
 			Name:     "last_update",
 			TypeInDB: "timestamp(2)",
 			Default:  ColumnDefaultExpression("CURRENT_TIMESTAMP(2)"),
-			Extra:    "ON UPDATE CURRENT_TIMESTAMP(2)",
+			OnUpdate: "CURRENT_TIMESTAMP(2)",
 		},
 		&Column{
 			Name:     "ssn",

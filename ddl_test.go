@@ -139,11 +139,11 @@ func TestSchemaDiffAddOrDropTable(t *testing.T) {
 	}
 
 	// Test impact of statement modifiers (allowing/forbidding drop) on previous drop
-	if stmt, err := td2.Statement(StatementModifiers{AllowDropTable: false}); err == nil {
-		t.Errorf("Modifier AllowDropTable=false not working; no error returned for %s", stmt)
+	if stmt, err := td2.Statement(StatementModifiers{AllowUnsafe: false}); err == nil {
+		t.Errorf("Modifier AllowUnsafe=false not working; no error returned for %s", stmt)
 	}
-	if stmt, err := td2.Statement(StatementModifiers{AllowDropTable: true}); err != nil {
-		t.Errorf("Modifier AllowDropTable=true not working; error (%s) returned for %s", err, stmt)
+	if stmt, err := td2.Statement(StatementModifiers{AllowUnsafe: true}); err != nil {
+		t.Errorf("Modifier AllowUnsafe=true not working; error (%s) returned for %s", err, stmt)
 	}
 
 	// Test impact of statement modifiers on creation of auto-inc table with non-default starting value
@@ -205,7 +205,6 @@ func TestSchemaDiffAddOrDropTable(t *testing.T) {
 	if td2.Table != &ust {
 		t.Error("Pointer in table diff does not point to expected value")
 	}
-
 }
 
 func TestSchemaDiffAlterTable(t *testing.T) {
@@ -296,12 +295,73 @@ func TestSchemaDiffAlterTable(t *testing.T) {
 	if dropCol, ok := clause.(DropColumn); !ok {
 		t.Errorf("Incorrect type of alter clause returned: expected %T, found %T", dropCol, clause)
 	}
-	if stmt, err := alter.Statement(StatementModifiers{AllowDropColumn: false}); err == nil {
-		t.Errorf("Modifier AllowDropColumn=false not working; no error returned for %s", stmt)
+	if stmt, err := alter.Statement(StatementModifiers{AllowUnsafe: false}); err == nil {
+		t.Errorf("Modifier AllowUnsafe=false not working; no error returned for %s", stmt)
 	}
-	if stmt, err := alter.Statement(StatementModifiers{AllowDropColumn: true}); err != nil {
-		t.Errorf("Modifier AllowDropColumn=true not working; error (%s) returned for %s", err, stmt)
+	if stmt, err := alter.Statement(StatementModifiers{AllowUnsafe: true}); err != nil {
+		t.Errorf("Modifier AllowUnsafe=true not working; error (%s) returned for %s", err, stmt)
 	}
+}
+
+func TestAlterTableStatementAllowUnsafeMods(t *testing.T) {
+	t1 := aTable(1)
+	t2 := aTable(1)
+	s1 := aSchema("s1", &t1)
+	s2 := aSchema("s2", &t2)
+
+	getAlter := func(a, b *Schema) AlterTable {
+		sd, err := NewSchemaDiff(a, b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(sd.TableDiffs) != 1 {
+			t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
+		}
+		td, ok := sd.TableDiffs[0].(AlterTable)
+		if !ok {
+			t.Fatalf("Incorrect type of table diff returned: expected %T, found %T", td, sd.TableDiffs[0])
+		}
+		return td
+	}
+	assertSafe := func(a, b *Schema) {
+		alter := getAlter(a, b)
+		if _, err := alter.Statement(StatementModifiers{AllowUnsafe: false}); err != nil {
+			t.Errorf("alter.Statement unexpectedly returned error when AllowUnsafe=false: %s", err)
+		} else if _, err := alter.Statement(StatementModifiers{AllowUnsafe: true}); err != nil {
+			t.Errorf("alter.Statement unexpectedly returned error yet only when AllowUnsafe=true: %s", err)
+		}
+	}
+	assertUnsafe := func(a, b *Schema) {
+		alter := getAlter(a, b)
+		if _, err := alter.Statement(StatementModifiers{AllowUnsafe: false}); err == nil {
+			t.Error("alter.Statement did not return error when AllowUnsafe=false")
+		} else if _, err := alter.Statement(StatementModifiers{AllowUnsafe: true}); err != nil {
+			t.Errorf("alter.Statement unexpectedly returned error even with AllowUnsafe=true: %s", err)
+		}
+	}
+
+	// Removing an index is safe
+	t2.SecondaryIndexes = t2.SecondaryIndexes[0 : len(t2.SecondaryIndexes)-1]
+	t2.createStatement = t2.GeneratedCreateStatement()
+	assertSafe(&s1, &s2)
+
+	// Removing a column is unsafe
+	t2 = aTable(1)
+	t2.Columns = t2.Columns[0 : len(t2.Columns)-1]
+	t2.createStatement = t2.GeneratedCreateStatement()
+	assertUnsafe(&s1, &s2)
+
+	// Changing col type to increase its size is safe
+	t2 = aTable(1)
+	t2.Columns[0].TypeInDB = "int unsigned"
+	t2.createStatement = t2.GeneratedCreateStatement()
+	assertSafe(&s1, &s2)
+
+	// Changing col type to change to signed is unsafe
+	t2 = aTable(1)
+	t2.Columns[0].TypeInDB = "smallint(5)"
+	t2.createStatement = t2.GeneratedCreateStatement()
+	assertUnsafe(&s1, &s2)
 }
 
 func TestAlterTableStatementOnlineMods(t *testing.T) {
@@ -348,5 +408,76 @@ func TestAlterTableStatementOnlineMods(t *testing.T) {
 		t.Errorf("Expected blank-string statement if no clauses present, regardless of mods; instead found: %s", stmt)
 	} else if err != nil {
 		t.Errorf("Expected no error from statement with no clauses present; instead found: %s", err)
+	}
+}
+
+func TestModifyColumnUnsafe(t *testing.T) {
+	assertUnsafe := func(type1, type2 string, expected bool) {
+		mc := ModifyColumn{
+			OldColumn: &Column{TypeInDB: type1},
+			NewColumn: &Column{TypeInDB: type2},
+		}
+		if actual := mc.Unsafe(); actual != expected {
+			t.Errorf("For %s -> %s, expected unsafe=%t, instead found unsafe=%t", type1, type2, expected, actual)
+		}
+	}
+
+	expectUnsafe := [][]string{
+		{"int unsigned", "int"},
+		{"bigint(11)", "bigint(11) unsigned"},
+		{"enum('a', 'b', 'c')", "enum('a', 'aa', 'b', 'c'"},
+		{"set('abc', 'def', 'ghi')", "set('abc', 'def')"},
+		{"decimal(10,5)", "decimal(10,4)"},
+		{"decimal(10,5)", "decimal(9,5)"},
+		{"decimal(10,5)", "decimal(9,6)"},
+		{"varchar(20)", "varchar(19)"},
+		{"varbinary(40)", "varbinary(35)"},
+		{"varchar(20)", "varbinary(20)"},
+		{"char(10)", "char(15)"},
+		{"timestamp(5)", "timestamp"},
+		{"datetime(4)", "datetime(3)"},
+		{"float", "float(10,5)"},
+		{"double", "float"},
+		{"float(10,5)", "float(10,4)"},
+		{"double(10,5)", "double(9,5)"},
+		{"float(10,5)", "double(10,4)"},
+		{"mediumint", "smallint"},
+		{"mediumint(1)", "tinyint"},
+		{"longblob", "blob"},
+		{"mediumtext", "tinytext"},
+		{"tinyblob", "longtext"},
+		{"varchar(200)", "text"},
+		{"char(30)", "varchar(30)"},
+	}
+	for _, types := range expectUnsafe {
+		assertUnsafe(types[0], types[1], true)
+	}
+
+	expectSafe := [][]string{
+		{"varchar(30)", "varchar(30)"},
+		{"mediumint(4)", "mediumint(3)"},
+		{"int zerofill", "int"},
+		{"enum('a', 'b', 'c')", "enum('a', 'b', 'c', 'd')"},
+		{"set('abc', 'def', 'ghi')", "set('abc', 'def', 'ghi', 'jkl')"},
+		{"decimal(9,4)", "decimal(10,4)"},
+		{"decimal(9,4)", "decimal(9,5)"},
+		{"varchar(20)", "varchar(21)"},
+		{"varbinary(40)", "varbinary(45)"},
+		{"timestamp", "timestamp(5)"},
+		{"datetime(3)", "datetime(4)"},
+		{"float(10,5)", "float"},
+		{"float", "double"},
+		{"float(10,4)", "float(10,5)"},
+		{"double(9,5)", "double(10,5)"},
+		{"float(10,4)", "double(11,4)"},
+		{"float(10,4)", "double"},
+		{"smallint", "mediumint"},
+		{"tinyint", "mediumint(1)"},
+		{"int(4) unsigned", "int(5) unsigned"},
+		{"blob", "longblob"},
+		{"tinytext", "mediumtext"},
+	}
+	for _, types := range expectSafe {
+		assertUnsafe(types[0], types[1], false)
 	}
 }

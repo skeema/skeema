@@ -43,11 +43,10 @@ func ParseCreateAutoInc(createStmt string) (string, uint64) {
 // for a particular table, and/or generate errors if certain clauses are
 // present.
 type StatementModifiers struct {
-	NextAutoInc     NextAutoIncMode
-	AllowDropTable  bool
-	AllowDropColumn bool
-	LockClause      string
-	AlgorithmClause string
+	NextAutoInc     NextAutoIncMode // How to handle differences in next-auto-inc values
+	AllowUnsafe     bool            // Whether to allow potentially-destructive DDL (drop table, drop column, modify col type, etc)
+	LockClause      string          // Include a LOCK=[value] clause in generated ALTER TABLE
+	AlgorithmClause string          // Include an ALGORITHM=[value] clause in generated ALTER TABLE
 }
 
 // TableDiff interface represents a difference between two tables. Structs
@@ -62,6 +61,7 @@ type TableDiff interface {
 // TABLE clause, such as ADD COLUMN, MODIFY COLUMN, ADD INDEX, etc.
 type TableAlterClause interface {
 	Clause() string
+	Unsafe() bool
 }
 
 // SchemaDiff stores a set of differences between two database schemas.
@@ -203,7 +203,7 @@ type DropTable struct {
 func (dt DropTable) Statement(mods StatementModifiers) (string, error) {
 	var err error
 	stmt := dt.Table.DropStatement()
-	if !mods.AllowDropTable {
+	if !mods.AllowUnsafe {
 		err = NewForbiddenDiffError("DROP TABLE not permitted", stmt)
 	}
 	return stmt, err
@@ -225,8 +225,7 @@ func (at AlterTable) Statement(mods StatementModifiers) (string, error) {
 	clauseStrings := make([]string, 0, len(at.Clauses))
 	var err error
 	for _, clause := range at.Clauses {
-		switch clause := clause.(type) {
-		case ChangeAutoIncrement:
+		if clause, ok := clause.(ChangeAutoIncrement); ok {
 			if mods.NextAutoInc == NextAutoIncIgnore {
 				continue
 			} else if mods.NextAutoInc == NextAutoIncIfIncreased && clause.OldNextAutoIncrement >= clause.NewNextAutoIncrement {
@@ -234,10 +233,9 @@ func (at AlterTable) Statement(mods StatementModifiers) (string, error) {
 			} else if mods.NextAutoInc == NextAutoIncIfAlready && clause.OldNextAutoIncrement <= 1 {
 				continue
 			}
-		case DropColumn:
-			if !mods.AllowDropColumn {
-				err = NewForbiddenDiffError("DROP COLUMN not permitted", "")
-			}
+		}
+		if err == nil && !mods.AllowUnsafe && clause.Unsafe() {
+			err = NewForbiddenDiffError("Unsafe or potentially destructive ALTER TABLE not permitted", "")
 		}
 		clauseStrings = append(clauseStrings, clause.Clause())
 	}
@@ -303,6 +301,12 @@ func (ac AddColumn) Clause() string {
 	return fmt.Sprintf("ADD COLUMN %s%s", ac.Column.Definition(ac.Table), positionClause)
 }
 
+// Unsafe returns true if this clause is potentially destructive of data.
+// AddColumn is never unsafe.
+func (ac AddColumn) Unsafe() bool {
+	return false
+}
+
 ///// DropColumn ///////////////////////////////////////////////////////////////
 
 // DropColumn represents a column that was present on the left-side ("from")
@@ -318,6 +322,12 @@ func (dc DropColumn) Clause() string {
 	return fmt.Sprintf("DROP COLUMN %s", EscapeIdentifier(dc.Column.Name))
 }
 
+// Unsafe returns true if this clause is potentially destructive of data.
+// DropColumn is always unsafe.
+func (dc DropColumn) Unsafe() bool {
+	return true
+}
+
 ///// AddIndex /////////////////////////////////////////////////////////////////
 
 // AddIndex represents a new index that is present on the right-side ("to")
@@ -331,6 +341,12 @@ type AddIndex struct {
 // Clause returns an ADD INDEX clause of an ALTER TABLE statement.
 func (ai AddIndex) Clause() string {
 	return fmt.Sprintf("ADD %s", ai.Index.Definition())
+}
+
+// Unsafe returns true if this clause is potentially destructive of data.
+// AddIndex is never unsafe.
+func (ai AddIndex) Unsafe() bool {
+	return false
 }
 
 ///// DropIndex ////////////////////////////////////////////////////////////////
@@ -351,19 +367,35 @@ func (di DropIndex) Clause() string {
 	return fmt.Sprintf("DROP INDEX %s", EscapeIdentifier(di.Index.Name))
 }
 
+// Unsafe returns true if this clause is potentially destructive of data.
+// DropIndex is never considered unsafe for now. Future versions of Go La Tengo
+// may include more advanced logic to check if an index is redundant or actually
+// in-use, and may consider dropping of in-use indexes to be unsafe.
+func (di DropIndex) Unsafe() bool {
+	return false
+}
+
 ///// RenameColumn /////////////////////////////////////////////////////////////
 
 // RenameColumn represents a column that exists in both versions of the table,
 // but with a different name. It satisfies the TableAlterClause interface.
 type RenameColumn struct {
-	Table          *Table
-	OriginalColumn *Column
-	NewName        string
+	Table     *Table
+	OldColumn *Column
+	NewName   string
 }
 
 // Clause returns a CHANGE COLUMN clause of an ALTER TABLE statement.
 func (rc RenameColumn) Clause() string {
 	panic(fmt.Errorf("Rename Column not yet supported"))
+}
+
+// Unsafe returns true if this clause is potentially destructive of data.
+// RenameColumn is always considered unsafe, despite it not directly destroying
+// data, because it is high-risk for interfering with application logic that may
+// be continuing to use the old column name.
+func (rc RenameColumn) Unsafe() bool {
+	return true
 }
 
 ///// ModifyColumn /////////////////////////////////////////////////////////////
@@ -372,11 +404,11 @@ func (rc RenameColumn) Clause() string {
 // ModifyColumn represents a column that exists in both versions of the table,
 // but with a different definition. It satisfies the TableAlterClause interface.
 type ModifyColumn struct {
-	Table          *Table
-	OriginalColumn *Column
-	NewColumn      *Column
-	PositionFirst  bool
-	PositionAfter  *Column
+	Table         *Table
+	OldColumn     *Column
+	NewColumn     *Column
+	PositionFirst bool
+	PositionAfter *Column
 }
 
 // Clause returns a MODIFY COLUMN clause of an ALTER TABLE statement.
@@ -394,6 +426,141 @@ func (mc ModifyColumn) Clause() string {
 	return fmt.Sprintf("MODIFY COLUMN %s%s", mc.NewColumn.Definition(mc.Table), positionClause)
 }
 
+// Unsafe returns true if this clause is potentially destructive of data.
+// ModifyColumn's safety depends on the nature of the column change; for example,
+// increasing the size of a varchar is safe, but changing decreasing the size or
+// changing the column type entirely is considered unsafe.
+func (mc ModifyColumn) Unsafe() bool {
+	if mc.OldColumn.CharSet != mc.NewColumn.CharSet {
+		return true
+	}
+
+	oldType := strings.ToLower(mc.OldColumn.TypeInDB)
+	newType := strings.ToLower(mc.NewColumn.TypeInDB)
+	if oldType == newType {
+		return false
+	}
+
+	// Changing signedness is unsafe
+	if (strings.Contains(oldType, "unsigned") && !strings.Contains(newType, "unsigned")) || (!strings.Contains(oldType, "unsigned") && strings.Contains(newType, "unsigned")) {
+		return true
+	}
+
+	bothSamePrefix := func(prefix ...string) bool {
+		for _, candidate := range prefix {
+			if strings.HasPrefix(oldType, candidate) && strings.HasPrefix(newType, candidate) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// For enum and set, adding to end of value list is safe; any other change is unsafe
+	if bothSamePrefix("enum", "set") {
+		return !strings.HasPrefix(newType, oldType[0:len(oldType)-1])
+	}
+
+	// decimal(a,b) -> decimal(x,y) unsafe if x < a or y < b
+	if bothSamePrefix("decimal") {
+		re := regexp.MustCompile(`^decimal\((\d+),(\d+)\)`)
+		oldMatches := re.FindStringSubmatch(oldType)
+		newMatches := re.FindStringSubmatch(newType)
+		if oldMatches == nil || newMatches == nil {
+			return true
+		}
+		oldPrecision, _ := strconv.Atoi(oldMatches[1])
+		oldScale, _ := strconv.Atoi(oldMatches[2])
+		newPrecision, _ := strconv.Atoi(newMatches[1])
+		newScale, _ := strconv.Atoi(newMatches[2])
+		return (newPrecision < oldPrecision || newScale < oldScale)
+	}
+
+	// varchar(x) -> varchar(y) or varbinary(x) -> varbinary(y) unsafe if y < x
+	if bothSamePrefix("varchar", "varbinary") {
+		re := regexp.MustCompile(`^var(?:char|binary)\((\d+)\)`)
+		oldMatches := re.FindStringSubmatch(oldType)
+		newMatches := re.FindStringSubmatch(newType)
+		if oldMatches == nil || newMatches == nil {
+			return true
+		}
+		oldSize, _ := strconv.Atoi(oldMatches[1])
+		newSize, _ := strconv.Atoi(newMatches[1])
+		return newSize < oldSize
+	}
+
+	// time, timestamp, datetime: unsafe if decreasing or removing fractional second precision
+	// but always safe if adding fsp when none was there before
+	if bothSamePrefix("time", "timestamp", "datetime") {
+		if !strings.ContainsRune(oldType, '(') {
+			return false
+		} else if !strings.ContainsRune(newType, '(') {
+			return true
+		}
+		re := regexp.MustCompile(`^[^(]+\((\d+)\)`)
+		oldMatches := re.FindStringSubmatch(oldType)
+		newMatches := re.FindStringSubmatch(newType)
+		if oldMatches == nil || newMatches == nil {
+			return true
+		}
+		oldSize, _ := strconv.Atoi(oldMatches[1])
+		newSize, _ := strconv.Atoi(newMatches[1])
+		return newSize < oldSize
+	}
+
+	// float or double:
+	// double -> double(x,y) or float -> float(x,y) unsafe
+	// double(x,y) -> double or float(x,y) -> float IS safe (no parens = hardware max used)
+	// double(a,b) -> double(x,y) or float(a,b) -> float(x,y) unsafe if x < a or y < b
+	// Converting from float to double may be safe (same rules as above), but double to float always unsafe
+	if bothSamePrefix("float", "double") || (strings.HasPrefix(oldType, "float") && strings.HasPrefix(newType, "double")) {
+		if !strings.ContainsRune(newType, '(') { // no parens = max allowed for type
+			return false
+		} else if !strings.ContainsRune(oldType, '(') {
+			return true
+		}
+		re := regexp.MustCompile(`^(?:float|double)\((\d+),(\d+)\)`)
+		oldMatches := re.FindStringSubmatch(oldType)
+		newMatches := re.FindStringSubmatch(newType)
+		if oldMatches == nil || newMatches == nil {
+			return true
+		}
+		oldPrecision, _ := strconv.Atoi(oldMatches[1])
+		oldScale, _ := strconv.Atoi(oldMatches[2])
+		newPrecision, _ := strconv.Atoi(newMatches[1])
+		newScale, _ := strconv.Atoi(newMatches[2])
+		return (newPrecision < oldPrecision || newScale < oldScale)
+	}
+
+	// int, blob, text type families: unsafe if reducing to a smaller-storage type
+	isSafeSizeChange := func(ranking []string) bool {
+		oldRank := -1
+		newRank := -1
+		for n, typeName := range ranking {
+			if strings.HasPrefix(oldType, typeName) {
+				oldRank = n
+			}
+			if strings.HasPrefix(newType, typeName) {
+				newRank = n
+			}
+		}
+		if oldRank == -1 || newRank == -1 {
+			return false
+		}
+		return newRank >= oldRank
+	}
+	intRank := []string{"tinyint", "smallint", "mediumint", "int", "bigint"}
+	blobRank := []string{"tinyblob", "blob", "mediumblob", "longblob"}
+	textRank := []string{"tinytext", "text", "mediumtext", "longtext"}
+	if isSafeSizeChange(intRank) || isSafeSizeChange(blobRank) || isSafeSizeChange(textRank) {
+		return false
+	}
+
+	// All other changes considered unsafe. This includes more radical column type
+	// changes. Also includes anything involving fixed-width types, in which length
+	// increases have padding implications.
+	return true
+}
+
 ///// ChangeAutoIncrement //////////////////////////////////////////////////////
 
 // ChangeAutoIncrement represents a difference in next-auto-increment value
@@ -407,6 +574,12 @@ type ChangeAutoIncrement struct {
 // Clause returns an AUTO_INCREMENT clause of an ALTER TABLE statement.
 func (cai ChangeAutoIncrement) Clause() string {
 	return fmt.Sprintf("AUTO_INCREMENT = %d", cai.NewNextAutoIncrement)
+}
+
+// Unsafe returns true if this clause is potentially destructive of data.
+// ChangeAutoIncrement is currently never considered unsafe.
+func (cai ChangeAutoIncrement) Unsafe() bool {
+	return false
 }
 
 ///// ChangeCharSet ////////////////////////////////////////////////////////////
@@ -427,6 +600,14 @@ func (ccs ChangeCharSet) Clause() string {
 		collationClause = fmt.Sprintf(" COLLATE = %s", ccs.Collation)
 	}
 	return fmt.Sprintf("DEFAULT CHARACTER SET = %s%s", ccs.CharSet, collationClause)
+}
+
+// Unsafe returns true if this clause is potentially destructive of data.
+// ChangeCharSet is always considered unsafe, due to the complexity involved in
+// properly changing character sets of existing data in MySQL without causing
+// corruption.
+func (ccs ChangeCharSet) Unsafe() bool {
+	return true
 }
 
 ///// ChangeCreateOptions //////////////////////////////////////////////////////
@@ -497,6 +678,12 @@ func (cco ChangeCreateOptions) Clause() string {
 	return strings.Join(subclauses, " ")
 }
 
+// Unsafe returns true if this clause is potentially destructive of data.
+// ChangeCreateOptions is never considered unsafe.
+func (cco ChangeCreateOptions) Unsafe() bool {
+	return false
+}
+
 ///// ChangeComment ////////////////////////////////////////////////////////////
 
 // ChangeComment represents a difference in the table-level comment between two
@@ -510,6 +697,12 @@ type ChangeComment struct {
 // comment.
 func (cc ChangeComment) Clause() string {
 	return fmt.Sprintf("COMMENT '%s'", EscapeValueForCreateTable(cc.NewComment))
+}
+
+// Unsafe returns true if this clause is potentially destructive of data.
+// ChangeComment is never considered unsafe.
+func (cc ChangeComment) Unsafe() bool {
+	return false
 }
 
 ///// ChangeStorageEngine //////////////////////////////////////////////////////
@@ -528,4 +721,11 @@ type ChangeStorageEngine struct {
 // storage engine.
 func (cse ChangeStorageEngine) Clause() string {
 	return fmt.Sprintf("ENGINE=%s", cse.NewStorageEngine)
+}
+
+// Unsafe returns true if this clause is potentially destructive of data.
+// ChangeStorageEngine is always considered unsafe, due to the potential
+// complexity in converting a table's data to the new storage engine.
+func (cse ChangeStorageEngine) Unsafe() bool {
+	return true
 }
