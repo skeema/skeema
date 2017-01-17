@@ -49,10 +49,10 @@ func clonePushOptionsToDiff() {
 	}
 
 	descRewrites := map[string]string{
-		"allow-drop-table":  "In output, include a DROP TABLE for any table without a corresponding *.sql file",
-		"allow-drop-column": "In output, include DROP COLUMN clauses where appropriate",
-		"alter-wrapper":     "Output ALTER TABLEs as shell commands rather than just raw DDL; see manual for template vars",
-		"all":               "For dirs mapping to multiple instances or schemas, diff against all, not just the first",
+		"allow-unsafe":    "Permit generating ALTER or DROP operations that are potentially destructive",
+		"alter-wrapper":   "Output ALTER TABLEs as shell commands rather than just raw DDL; see manual for template vars",
+		"all":             "For dirs mapping to multiple instances or schemas, diff against all, not just the first",
+		"safe-below-size": "Always permit generating destructive operations for tables below this size in bytes",
 	}
 	hiddenRewrites := map[string]bool{
 		"all":                  false,

@@ -96,11 +96,10 @@ func PullHandler(cfg *mycli.Config) error {
 			}
 		}
 
-		// We're permissive of drops here since we don't ever actually execute the
-		// generated statement! We just examine its type.
+		// We're permissive of unsafe operations here since we don't ever actually
+		// execute the generated statement! We just examine its type.
 		mods := tengo.StatementModifiers{
-			AllowDropTable:  true,
-			AllowDropColumn: true,
+			AllowUnsafe: true,
 		}
 		// pull command updates next auto-increment value for existing table always
 		// if requested, or only if previously present in file otherwise

@@ -50,7 +50,7 @@ type Column struct {
 	Nullable      bool
 	AutoIncrement bool
 	Default       ColumnDefault
-	Extra         string
+	OnUpdate      string
 	CharSet       string // Only populated if textual type
 	Collation     string // Only populated if textual type and differs from CharSet's default collation
 	Comment       string
@@ -61,7 +61,7 @@ type Column struct {
 // SET clause to be omitted if the table and column have the same *collation*
 // (mirroring the specific display logic used by SHOW CREATE TABLE)
 func (c *Column) Definition(table *Table) string {
-	var charSet, collation, nullability, autoIncrement, defaultValue, extraModifiers, comment string
+	var charSet, collation, nullability, autoIncrement, defaultValue, onUpdate, comment string
 	emitDefault := c.CanHaveDefault()
 	if c.CharSet != "" && (table == nil || c.Collation != table.Collation || c.CharSet != table.CharSet) {
 		// Note that we need to compare both Collation AND CharSet above, since
@@ -86,13 +86,13 @@ func (c *Column) Definition(table *Table) string {
 	if emitDefault {
 		defaultValue = fmt.Sprintf(" %s", c.Default.Clause())
 	}
-	if c.Extra != "" {
-		extraModifiers = fmt.Sprintf(" %s", c.Extra)
+	if c.OnUpdate != "" {
+		onUpdate = fmt.Sprintf(" ON UPDATE %s", c.OnUpdate)
 	}
 	if c.Comment != "" {
 		comment = fmt.Sprintf(" COMMENT '%s'", EscapeValueForCreateTable(c.Comment))
 	}
-	return fmt.Sprintf("%s %s%s%s%s%s%s%s%s", EscapeIdentifier(c.Name), c.TypeInDB, charSet, collation, nullability, autoIncrement, defaultValue, extraModifiers, comment)
+	return fmt.Sprintf("%s %s%s%s%s%s%s%s%s", EscapeIdentifier(c.Name), c.TypeInDB, charSet, collation, nullability, autoIncrement, defaultValue, onUpdate, comment)
 }
 
 // Equals returns true if two columns are identical, false otherwise.

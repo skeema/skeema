@@ -57,14 +57,13 @@ func NewDDLStatement(diff tengo.TableDiff, mods tengo.StatementModifiers, target
 	}
 	ddl.setErr(err)
 
-	// If --allow-below-size option in use, enable additional statement modifiers
+	// If --safe-below-size option in use, enable additional statement modifier
 	// if the table's size is less than the supplied option value
-	allowBelowSize, err := target.Dir.Config.GetBytes("allow-below-size")
+	safeBelowSize, err := target.Dir.Config.GetBytes("safe-below-size")
 	ddl.setErr(err)
-	if ddl.Err == nil && tableSize < int64(allowBelowSize) {
-		mods.AllowDropTable = true
-		mods.AllowDropColumn = true
-		log.Debugf("Allowing drops for table %s: size=%d < allow-below-size=%d", tableName, tableSize, allowBelowSize)
+	if ddl.Err == nil && tableSize < int64(safeBelowSize) {
+		mods.AllowUnsafe = true
+		log.Debugf("Allowing unsafe operations for table %s: size=%d < safe-below-size=%d", tableName, tableSize, safeBelowSize)
 	}
 
 	// Options may indicate some/all DDL gets executed by shelling out to another program.

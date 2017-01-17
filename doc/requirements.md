@@ -31,7 +31,7 @@ You can prevent Skeema from dropping the temporary schema entirely after each ru
 In order for all functionality in Skeema to work, it needs the following privileges in your application schemas (i.e., all databases aside from system schemas and the temporary schema):
 
 * `CREATE` -- in order for `skeema push` to execute CREATE TABLE statements
-* `DROP` -- in order for `skeema push --allow-drop-table` to execute DROP TABLE statements; omit this privilege on application schemas if you do not plan to ever drop tables via Skeema
+* `DROP` -- in order for `skeema push --allow-unsafe` to execute DROP TABLE statements; omit this privilege on application schemas if you do not plan to ever drop tables via Skeema
 * `ALTER` -- in order for `skeema push` to execute ALTER TABLE statements
 * `INDEX` -- in order for `skeema push` to execute ALTER TABLE statements that manipulate indexes
 
@@ -56,7 +56,6 @@ The `SHOW DATABASES` global privilege is recommended. Technically it should be r
 * Skeema does not automatically verify that there is sufficient free disk space to perform an ALTER operation.
 * External online schema change tools can, in theory, be buggy and cause data loss. Skeema does not endorse or guarantee any particular third-party tool.
 * There is no tracking of *in-flight* operations yet. This means in a large production environment where schema changes take a long time to run, it is the user's responsibility to ensure that Skeema is only run from one location in a manner that prevents concurrent execution. This will be improved in future releases.
-* Skeema does **not** currently prevent changing the **type** of an existing column, even though this is a destructive action in some cases, such as reducing the size of a column. Future versions may be more protective about this scenario and require supplying an option to confirm.
 * Accidentally running schema changes against a replica directly, instead of the master, may break replication. It is the user's responsibility to ensure that the host and port options in each `.skeema` configuration file point only to masters.
 * As with the vast majority of open source software, Skeema is distributed without warranties of any kind. See LICENSE.
 

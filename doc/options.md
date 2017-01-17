@@ -3,9 +3,7 @@
 ### Index
 
 * [all](#all)
-* [allow-below-size](#allow-below-size)
-* [allow-drop-column](#allow-drop-column)
-* [allow-drop-table](#allow-drop-table)
+* [allow-unsafe](#allow-unsafe)
 * [alter-algorithm](#alter-algorithm)
 * [alter-lock](#alter-lock)
 * [alter-wrapper](#alter-wrapper)
@@ -25,6 +23,7 @@
 * [password](#password)
 * [port](#port)
 * [reuse-temp-schema](#reuse-temp-schema)
+* [safe-below-size](#safe-below-size)
 * [schema](#schema)
 * [socket](#socket)
 * [temp-schema](#temp-schema)
@@ -45,23 +44,7 @@ Ordinarily, for individual directories that map to multiple instances and/or mul
 
 This is one of the only cases where the options for `skeema diff` differ from `skeema push`. The behavior in this respect is the opposite for `skeema push`: that command defaults to operating on all instances and schemas, unless the [first-only](#first-only) option is used, in which case it only operates on the first instance and schema per directory.
 
-### allow-below-size
-
-Commands | diff, push
---- | :---
-**Default** | 0
-**Type** | size
-**Restrictions** | none
-
-For any table below the specified size (in bytes), Skeema will allow execution of DROP TABLE statements, even if [allow-drop-table](#allow-drop-table) has not be enabled; and it will also allow ALTER TABLE ... DROP COLUMN statements, even if [allow-drop-column](#allow-drop-column) has not be enabled.
-
-The size comparison is a strict less-than. This means that with the default value of 0, no drops will be allowed automatically, as no table can be less than 0 bytes.
-
-To only allow drops on *empty* tables (ones without any rows), set [allow-below-size](#allow-below-size) to 1. Skeema always treats empty tables as size 0 bytes as a special-case.
-
-This option is intended to permit rapid development when altering a new table before it's in use, or dropping a table that was never in use. The intended pattern is to set [allow-below-size](#allow-below-size) in a global option file, likely to a higher value in the development environment and a lower value in the production environment. Then, whenever drops of a larger size are needed, the user should supply [--allow-drop-table](#allow-drop-table) or [--allow-drop-column](#allow-drop-column) *manually on the command-line* when appropriate.
-
-### allow-drop-column
+### allow-unsafe
 
 Commands | diff, push
 --- | :---
@@ -69,25 +52,19 @@ Commands | diff, push
 **Type** | boolean
 **Restrictions** | none
 
-If set to false, `skeema diff` outputs ALTER TABLE statements containing at least one DROP COLUMN clause as commented-out, and `skeema push` skips their execution. Note that the entire ALTER TABLE statement is skipped in this case, even if it contained additional clauses besides the DROP COLUMN clause. (This is to prevent problems with column renames, which Skeema does not yet support.)
+If set to false, `skeema diff` outputs unsafe DDL statements as commented-out, and `skeema push` skips their execution.
 
-If set to true, ALTER TABLE ... DROP COLUMN statements are always permitted, regardless of table size and regardless of use of the [allow-below-size](#allow-below-size) option.
+The following operations are considered unsafe:
 
-It is not recommended to enable this setting in an option file, especially in the production environment. It is safer to require users to supply it manually on the command-line on an as-needed basis.
+* Any DROP TABLE statement
+* Any ALTER TABLE statement that includes at least one DROP COLUMN clause
+* Any ALTER TABLE statement that includes a MODIFY COLUMN clause which changes the type of an existing column in a way that potentially causes data loss, length truncation, or reduction in precision
+* Any ALTER TABLE statement that includes a MODIFY COLUMN clause which changes the character set of an existing column
+* Any ALTER TABLE statement that includes an ENGINE clause which changes the table's storage engine
 
-### allow-drop-table
+If set to true, these operations are fully permitted, for all tables. It is not recommended to enable this setting in an option file, especially in the production environment. It is safer to require users to supply it manually on the command-line on an as-needed basis, to serve as a confirmation step for unsafe operations.
 
-Commands | diff, push
---- | :---
-**Default** | false
-**Type** | boolean
-**Restrictions** | none
-
-If set to false, `skeema diff` outputs DROP TABLE statements as commented-out, and `skeema push` skips their execution.
-
-If set to true, DROP TABLE statements are always permitted, regardless of table size and regardless of use of the [allow-below-size](#allow-below-size) option.
-
-It is not recommended to enable this setting in an option file, especially in the production environment. It is safer to require users to supply it manually on the command-line on an as-needed basis.
+To conditionally control execution of unsafe operations based on table size, see the [safe-below-size](#safe-below-size) option.
 
 ### alter-algorithm
 
@@ -261,7 +238,7 @@ This option enables debug logging in all commands. The extra output is sent to S
 * When `skeema diff` or `skeema push` encounters tables that cannot be ALTERed due to use of features not yet supported by Skeema, the debug log will indicate which specific line(s) of the CREATE TABLE statement are using such features.
 * When any command encounters non-fatal problems in a *.sql file, they will be logged. This can include extra ignored statements before/after the CREATE TABLE statement, or a table whose name does not match its filename.
 * If a panic occurs in Skeema's main thread, a full stack trace will be logged.
-* Options that control conditional logic based on table sizes, such as [allow-below-size](#allow-below-size) and [alter-wrapper-min-size](#alter-wrapper-min-size), provide debug output with size information whenever their condition is triggered.
+* Options that control conditional logic based on table sizes, such as [safe-below-size](#safe-below-size) and [alter-wrapper-min-size](#alter-wrapper-min-size), provide debug output with size information whenever their condition is triggered.
 * Upon exiting, the numeric exit code will be logged.
 
 ### default-character-set
@@ -427,6 +404,22 @@ Commands | *all*
 If false, each Skeema operation will create a temporary schema, perform some DDL operations in it (including creating empty versions of tables), drop those tables, and then drop the temporary schema. If true, the step to drop the temporary schema is skipped, and then subsequent operations will re-use the existing schema.
 
 This option most likely does not impact the list of privileges required for Skeema's user, since CREATE and DROP privileges will still be needed on the temporary schema to create or drop tables within the schema.
+
+### safe-below-size
+
+Commands | diff, push
+--- | :---
+**Default** | 0
+**Type** | size
+**Restrictions** | none
+
+For any table below the specified size (in bytes), Skeema will allow execution of unsafe operations, even if [allow-unsafe](#allow-unsafe) has not be enabled. (To see a list of which operations are considered unsafe, see the documentation for [allow-unsafe](#allow-unsafe).)
+
+The size comparison is a strict less-than. This means that with the default value of 0, no unsafe operations will be allowed automatically, as no table can be less than 0 bytes.
+
+To only allow unsafe operations on *empty* tables (ones without any rows), set [safe-below-size](#safe-below-size) to 1. Skeema always treats empty tables as size 0 bytes as a special-case.
+
+This option is intended to permit rapid development when altering a new table before it's in use, or dropping a table that was never in use. The intended pattern is to set [safe-below-size](#safe-below-size) in a global option file, potentially to a higher value in the development environment and a lower value in the production environment. This way, whenever unsafe operations are to be run on a larger table, the user must supply [--allow-unsafe](#allow-unsafe) *manually on the command-line* when appropriate to confirm the action.
 
 ### schema
 

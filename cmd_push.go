@@ -26,17 +26,16 @@ top of the file. If no environment name is supplied, the default is
 
 	cmd := mycli.NewCommand("push", summary, desc, PushHandler)
 	cmd.AddOption(mycli.BoolOption("verify", 0, true, "Test all generated ALTER statements on temp schema to verify correctness"))
-	cmd.AddOption(mycli.BoolOption("allow-drop-table", 0, false, "Permit dropping any table that has no corresponding *.sql file"))
-	cmd.AddOption(mycli.BoolOption("allow-drop-column", 0, false, "Permit dropping columns that are no longer present in *.sql file"))
+	cmd.AddOption(mycli.BoolOption("allow-unsafe", 0, false, "Permit running ALTER or DROP operations that are potentially destructive"))
 	cmd.AddOption(mycli.BoolOption("dry-run", 0, false, "Output DDL but don't run it; equivalent to `skeema diff`"))
-	cmd.AddOption(mycli.BoolOption("first-only", 0, false, "For dirs mapping to multiple instances or schemas, just run against the first"))
+	cmd.AddOption(mycli.BoolOption("first-only", '1', false, "For dirs mapping to multiple instances or schemas, just run against the first per dir"))
 	cmd.AddOption(mycli.BoolOption("all", 0, false, "<overridden by diff command>").Hidden())
 	cmd.AddOption(mycli.StringOption("alter-wrapper", 'x', "", "External bin to shell out to for ALTER TABLE; see manual for template vars"))
 	cmd.AddOption(mycli.StringOption("alter-wrapper-min-size", 0, "0", "Ignore --alter-wrapper for tables smaller than this size in bytes"))
 	cmd.AddOption(mycli.StringOption("alter-lock", 0, "", `Apply a LOCK clause to all ALTER TABLEs (valid values: "NONE", "SHARED", "EXCLUSIVE")`))
 	cmd.AddOption(mycli.StringOption("alter-algorithm", 0, "", `Apply an ALGORITHM clause to all ALTER TABLEs (valid values: "INPLACE", "COPY")`))
 	cmd.AddOption(mycli.StringOption("ddl-wrapper", 'X', "", "Like --alter-wrapper, but applies to all DDL types (CREATE, DROP, ALTER)"))
-	cmd.AddOption(mycli.StringOption("allow-below-size", 0, "0", "For tables under this size, act as if --allow-drop-table --allow-drop-column"))
+	cmd.AddOption(mycli.StringOption("safe-below-size", 0, "0", "Always permit destructive operations for tables below this size in bytes"))
 	cmd.AddOption(mycli.StringOption("concurrent-instances", 'c', "1", "Perform operations on this number of instances concurrently"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
@@ -205,8 +204,7 @@ func pushWorker(sps *sharedPushState) {
 
 			// Set configuration-dependent statement modifiers here inside the Target
 			// loop, since the config for these may var per dir!
-			mods.AllowDropTable = t.Dir.Config.GetBool("allow-drop-table")
-			mods.AllowDropColumn = t.Dir.Config.GetBool("allow-drop-column")
+			mods.AllowUnsafe = t.Dir.Config.GetBool("allow-unsafe")
 			mods.AlgorithmClause, err = t.Dir.Config.GetEnum("alter-algorithm", "INPLACE", "COPY", "DEFAULT")
 			if err != nil {
 				sps.setFatalError(err)

@@ -33,16 +33,21 @@ Most Skeema commands need to perform intermediate operations in a scratch space 
 
 When operating on the temporary database, Skeema refuses to drop a table if it contains any rows, and likewise refuses to drop the database if any tables contain any rows. This prevents disaster if someone accidentally points [temp-schema](options.md#temp-schema) at a real schema, or accidentally starts storing real data in the temporary schema.
 
-#### Dropping tables and columns is prevented by default
+#### Destructive operations are prevented by default
 
-Destructive actions only occur when specifically requested. This prevents human error with running `skeema push` from an out-of-date repo working copy, as well as misinterpreting accidental attempts to rename tables or columns (both of which are not yet supported).
+Destructive operations only occur when specifically requested via the [allow-unsafe option](options.md#allow-unsafe). This prevents human error with running `skeema push` from an out-of-date repo working copy, as well as misinterpreting accidental attempts to rename tables or columns (both of which are not yet supported).
 
-* `skeema push` refuses to run any generated DROP TABLE statement, unless the [allow-drop-table option](options.md#allow-drop-table) is provided.
-* `skeema push` refuses to run any generated ALTER TABLE statement that drops columns, unless the [allow-drop-column option](options.md#allow-drop-column) is provided.
+The following operations are considered unsafe:
 
-`skeema diff` also provides the same two options, even though `skeema diff` never actually modifies tables regardless. These options are present so that `skeema diff` can serve as a safe dry-run that exactly matches the logic for `skeema push`.
+* Dropping a table
+* Altering a table to drop an existing column
+* Altering a table to change the type of an existing column in a way that potentially causes data loss, length truncation, or reduction in precision
+* Altering a table to change the character set of an existing column
+* Altering a table to change its storage engine
 
-You may also configure Skeema to always permit dropping tables or columns below a certain size (in bytes), or always permit dropping tables or columns only for tables that have no rows. See the [allow-below-size option](options.md#allow-below-size).
+Note that `skeema diff` also provides the [allow-unsafe option](options.md#allow-unsafe), even though `skeema diff` never actually modifies tables regardless. This option is present so that `skeema diff` can serve as a safe dry-run that exactly matches the logic for `skeema push`. If not explicitly allowed, `skeema diff` will display unsafe operations as commented-out DDL.
+
+You may also configure Skeema to always permit unsafe operations on tables below a certain size (in bytes), or always permit unsafe operations on tables that have no rows. See the [safe-below-size option](options.md#safe-below-size).
 
 #### Auto-generated DDL is verified for correctness
 

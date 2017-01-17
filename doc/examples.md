@@ -38,20 +38,20 @@ Ordinarily, in between `skeema diff` and `skeema push`, you would want to make a
 
 ### Generate DDL from adding or removing files
 
-Similarly, if you add new .sql files with CREATE TABLE statements, these will be included in the output of `skeema diff` or execution of `skeema push`. Removing files translates to DROP TABLE, but only if --allow-drop-table is used.
+Similarly, if you add new .sql files with CREATE TABLE statements, these will be included in the output of `skeema diff` or execution of `skeema push`. Removing files translates to DROP TABLE, but only if --allow-unsafe is used.
 
 ```
 vi product/comments.sql
 skeema diff
 rm product/tags.sql
 skeema diff
-skeema diff --allow-drop-table
-skeema push --allow-drop-table
+skeema diff --allow-unsafe
+skeema push --allow-unsafe
 ```
 
-[![asciicast](https://asciinema.org/a/7nic9hyphd1m0xlprpzitbp56.png)](https://asciinema.org/a/7nic9hyphd1m0xlprpzitbp56)
+[![asciicast](https://asciinema.org/a/6n64ie4v1sberpnnosexnn4ua.png)](https://asciinema.org/a/6n64ie4v1sberpnnosexnn4ua)
 
-To make things more convenient and loosen the --allow-drop-table safety for smaller tables, try the [allow-below-size](options.md#allow-below-size) option. For example, putting `allow-below-size=10m` in ~/schemas/.skeema will remove the requirement of specifying --allow-drop-table when dropping any table under 10 megabytes in size. Or use `allow-below-size=1` to only loosen safeties for tables that have no rows. (Skeema always treats zero-row tables as size 0 bytes, as a special-case.)
+To aid in rapid development, you can configure Skeema to always allow dropping empty tables or small tables with the [safe-below-size](options.md#safe-below-size) option. For example, putting `safe-below-size=10m` in ~/schemas/.skeema will remove the requirement of specifying --allow-unsafe when dropping any table under 10 megabytes in size. Or use `safe-below-size=1` to only loosen safeties for tables that have no rows. (Skeema always treats zero-row tables as size 0 bytes, as a special-case.)
 
 ### Normalize format of CREATE TABLE files, and check for syntax errors
 
@@ -117,7 +117,7 @@ This example shows how to configure Skeema to use the following set of rules:
   * Be fully permissive about dropping tables or columns in dev, regardless of table size
   * Just use standard ALTERs, no online DDL or external OSC tool
 * Any environment EXCEPT development
-  * Only automatically allow dropping tables or columns for tables that have no rows. For any table with at least one row, force the user to supply --allow-drop-table or --allow-drop-column on the command-line to confirm when needed.
+  * Only automatically allow dropping tables or columns for tables that have no rows. For any table with at least one row, force the user to supply --allow-unsafe on the command-line to confirm when needed.
   * For ALTERs, for any table 1GB or later, use pt-online-schema-change
   * For ALTERs, for any table below 1GB, use MySQL 5.6 online DDL. (Some specific ALTERs will fail due to requiring offline DDL; in this case the user can supply --skip-alter-algorithm and/or --skip-alter-lock as needed.)
 * Staging
@@ -130,13 +130,12 @@ alter-wrapper="/usr/local/bin/pt-online-schema-change --alter {CLAUSES} D={SCHEM
 alter-wrapper-min-size=1g
 alter-algorithm=inplace
 alter-lock=none
-allow-below-size=1
+safe-below-size=1
 
 [development]
 host=localhost
 socket=/var/lib/mysql/mysql.sock
-allow-drop-table
-allow-drop-column
+allow-unsafe
 skip-alter-wrapper
 skip-alter-algorithm
 skip-alter-lock
