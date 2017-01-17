@@ -603,11 +603,10 @@ func (ccs ChangeCharSet) Clause() string {
 }
 
 // Unsafe returns true if this clause is potentially destructive of data.
-// ChangeCharSet is always considered unsafe, due to the complexity involved in
-// properly changing character sets of existing data in MySQL without causing
-// corruption.
+// ChangeCharSet is never considered unsafe, since it only affects the *default*
+// character set of new columns, with no change to existing columns.
 func (ccs ChangeCharSet) Unsafe() bool {
-	return true
+	return false
 }
 
 ///// ChangeCreateOptions //////////////////////////////////////////////////////

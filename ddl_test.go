@@ -480,4 +480,19 @@ func TestModifyColumnUnsafe(t *testing.T) {
 	for _, types := range expectSafe {
 		assertUnsafe(types[0], types[1], false)
 	}
+
+	// Special case: confirm changing the character set of a column is unsafe, but
+	// changing collation within same character set is safe
+	mc := ModifyColumn{
+		OldColumn: &Column{TypeInDB: "varchar(30)", CharSet: "latin1"},
+		NewColumn: &Column{TypeInDB: "varchar(30)", CharSet: "utf8mb4"},
+	}
+	if !mc.Unsafe() {
+		t.Error("For changing character set, expected unsafe=true, instead found unsafe=false")
+	}
+	mc.NewColumn.CharSet = "latin1"
+	mc.NewColumn.Collation = "latin1_bin"
+	if mc.Unsafe() {
+		t.Error("For changing collation but not character set, expected unsafe=false, instead found unsafe=true")
+	}
 }
