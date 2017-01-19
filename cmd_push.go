@@ -29,7 +29,7 @@ top of the file. If no environment name is supplied, the default is
 	cmd.AddOption(mycli.BoolOption("allow-unsafe", 0, false, "Permit running ALTER or DROP operations that are potentially destructive"))
 	cmd.AddOption(mycli.BoolOption("dry-run", 0, false, "Output DDL but don't run it; equivalent to `skeema diff`"))
 	cmd.AddOption(mycli.BoolOption("first-only", '1', false, "For dirs mapping to multiple instances or schemas, just run against the first per dir"))
-	cmd.AddOption(mycli.BoolOption("all", 0, false, "<overridden by diff command>").Hidden())
+	cmd.AddOption(mycli.BoolOption("brief", 'q', false, "<overridden by diff command>").Hidden())
 	cmd.AddOption(mycli.StringOption("alter-wrapper", 'x', "", "External bin to shell out to for ALTER TABLE; see manual for template vars"))
 	cmd.AddOption(mycli.StringOption("alter-wrapper-min-size", 0, "0", "Ignore --alter-wrapper for tables smaller than this size in bytes"))
 	cmd.AddOption(mycli.StringOption("alter-lock", 0, "", `Apply a LOCK clause to all ALTER TABLEs (valid values: "NONE", "SHARED", "EXCLUSIVE")`))
@@ -46,11 +46,13 @@ top of the file. If no environment name is supplied, the default is
 type sharedPushState struct {
 	targetGroups       <-chan TargetGroup
 	dryRun             bool
+	briefOutput        bool
 	errCount           int
 	diffCount          int
 	unsupportedCount   int
 	lastStdoutInstance string
 	lastStdoutSchema   string
+	seenInstance       map[string]bool
 	fatalError         error
 	*sync.WaitGroup
 	*sync.Mutex // protects counters as well as STDOUT output and tracking vars
@@ -72,26 +74,14 @@ func PushHandler(cfg *mycli.Config) error {
 		return err
 	}
 
-	// `skeema push` and `skeema diff` have different defaults / option names for
-	// controlling whether or not to only take the first instance and first schema
-	// for dirs that normally multiple to multiple of one or both.
-	// that map to multiple instances and/or schemas, e.g. in a sharded setup):
-	// `skeema push` defaults to taking all, but can be overridden via --first-only.
-	// `skeema diff` defaults to taking the first only, but can be overridden via --all.
-	var firstOnly bool
-	if cfg.CLI.Command.Name == "diff" {
-		firstOnly = !cfg.GetBool("all")
-	} else {
-		firstOnly = cfg.GetBool("first-only")
-	}
-
 	// The 2nd param of dir.TargetGroups indicates that SQLFile errors are to be
 	// treated as fatal. This is required for push and diff. Otherwise, a file with
 	// invalid CREATE TABLE SQL would lead to a table being missing in the temp
 	// schema, which would confuse the logic that diffs schemas.
 	sps := &sharedPushState{
-		targetGroups: dir.TargetGroups(firstOnly, true),
+		targetGroups: dir.TargetGroups(cfg.GetBool("first-only"), true),
 		dryRun:       cfg.GetBool("dry-run"),
+		briefOutput:  cfg.GetBool("brief") && cfg.GetBool("dry-run"),
 		Mutex:        new(sync.Mutex),
 		WaitGroup:    new(sync.WaitGroup),
 	}
@@ -195,7 +185,7 @@ func pushWorker(sps *sharedPushState) {
 				}
 			}
 
-			if t.Dir.Config.GetBool("verify") && len(diff.TableDiffs) > 0 {
+			if t.Dir.Config.GetBool("verify") && len(diff.TableDiffs) > 0 && !sps.briefOutput {
 				if err := t.verifyDiff(diff); err != nil {
 					sps.setFatalError(err)
 					return
@@ -204,7 +194,7 @@ func pushWorker(sps *sharedPushState) {
 
 			// Set configuration-dependent statement modifiers here inside the Target
 			// loop, since the config for these may var per dir!
-			mods.AllowUnsafe = t.Dir.Config.GetBool("allow-unsafe")
+			mods.AllowUnsafe = t.Dir.Config.GetBool("allow-unsafe") || sps.briefOutput
 			mods.AlgorithmClause, err = t.Dir.Config.GetEnum("alter-algorithm", "INPLACE", "COPY", "DEFAULT")
 			if err != nil {
 				sps.setFatalError(err)
@@ -297,6 +287,18 @@ func (sps *sharedPushState) setFatalError(err error) {
 // TODO: buffer output from external commands and also prevent interleaving there
 func (sps *sharedPushState) syncPrintf(instance *tengo.Instance, schemaName string, format string, a ...interface{}) {
 	sps.Lock()
+	defer sps.Unlock()
+
+	if sps.briefOutput {
+		if sps.seenInstance == nil {
+			sps.seenInstance = make(map[string]bool)
+		}
+		if _, already := sps.seenInstance[instance.String()]; !already {
+			fmt.Printf("%s\n", instance)
+			sps.seenInstance[instance.String()] = true
+		}
+		return
+	}
 	if instance.String() != sps.lastStdoutInstance || schemaName != sps.lastStdoutSchema {
 		fmt.Printf("-- instance: %s\n", instance)
 		if schemaName != "" {
@@ -306,5 +308,4 @@ func (sps *sharedPushState) syncPrintf(instance *tengo.Instance, schemaName stri
 		sps.lastStdoutSchema = schemaName
 	}
 	fmt.Printf(format, a...)
-	sps.Unlock()
 }

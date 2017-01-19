@@ -2,12 +2,12 @@
 
 ### Index
 
-* [all](#all)
 * [allow-unsafe](#allow-unsafe)
 * [alter-algorithm](#alter-algorithm)
 * [alter-lock](#alter-lock)
 * [alter-wrapper](#alter-wrapper)
 * [alter-wrapper-min-size](#alter-wrapper-min-size)
+* [brief](#brief)
 * [concurrent-instances](#concurrent-instances)
 * [connect-options](#connect-options)
 * [ddl-wrapper](#ddl-wrapper)
@@ -31,18 +31,6 @@
 * [verify](#verify)
 
 ---
-
-### all
-
-Commands | diff
---- | :---
-**Default** | false
-**Type** | boolean
-**Restrictions** | none
-
-Ordinarily, for individual directories that map to multiple instances and/or multiple schemas, `skeema diff` only performs a diff against the first instance and schema per directory. With [all](#all), `skeema diff` instead will diff against all instances mapped to the directory, and all mapped schemas for each instance. In a sharded environment, this can be useful to see if any shards are still using an out-of-date schema.
-
-This is one of the only cases where the options for `skeema diff` differ from `skeema push`. The behavior in this respect is the opposite for `skeema push`: that command defaults to operating on all instances and schemas, unless the [first-only](#first-only) option is used, in which case it only operates on the first instance and schema per directory.
 
 ### allow-unsafe
 
@@ -145,17 +133,31 @@ If [alter-wrapper-min-size](#alter-wrapper-min-size) is set to a value greater t
 
 If this option is supplied along with *both* [alter-wrapper](#alter-wrapper) and [ddl-wrapper](#ddl-wrapper), ALTERs on tables below the specified size will still have [ddl-wrapper](#ddl-wrapper) applied. This configuration is not recommended due to its complexity.
 
+### brief
+
+Commands | diff
+--- | :---
+**Default** | false
+**Type** | boolean
+**Restrictions** | none
+
+Ordinarily, `skeema diff` outputs DDL statements to STDOUT. With [brief](#brief), `skeema diff` will instead only output a newline-delimited list of unique instances (host:port) that had at least one difference. This can be useful in a sharded environment, to see which shards are not up-to-date with the latest schema changes.
+
+Only the STDOUT portion of `skeema diff`'s output is affected by this option; logging output to STDERR still occurs as normal. To filter that out, use shell redirection as usual; for example, `skeema diff 2>/dev/null` will eliminate the STDERR logging. However, take care to examine the process's exit code (`$?`) in this case, to avoid missing error conditions. See `skeema diff --help` to interpret the exit code values.
+
+Since its purpose is to just see which instances contain schema differences, enabling the [brief](#brief) option always automatically disables the [verify](#verify) option and enables the [allow-unsafe](#allow-unsafe) option.
+
 ### concurrent-instances
 
-Commands | push
+Commands | diff, push
 --- | :---
 **Default** | 1
 **Type** | int
 **Restrictions** | Must be a positive integer
 
-By default, `skeema push` only operates on one instance at a time. To operate on multiple instances simultaneously, set [concurrent-instances](#concurrent-instances) to the number of database instances to run on concurrently. This is useful in an environment with multiple shards or pools.
+By default, `skeema diff` and `skeema push` only operate on one instance at a time. To operate on multiple instances simultaneously, set [concurrent-instances](#concurrent-instances) to the number of database instances to run on concurrently. This is useful in an environment with multiple shards or pools.
 
-On each individual database instance, only one DDL operation will be run at a time, regardless of [concurrent-instances](#concurrent-instances). Concurrency within an instance may be configurable in a future version of Skeema.
+On each individual database instance, only one DDL operation will be run at a time by `skeema push`, regardless of [concurrent-instances](#concurrent-instances). Concurrency within an instance may be configurable in a future version of Skeema.
 
 ### connect-options
 
@@ -297,17 +299,15 @@ Running `skeema push --dry-run` is exactly equivalent to running `skeema diff`: 
 
 ### first-only
 
-Commands | push
+Commands | diff, push
 --- | :---
 **Default** | false
 **Type** | boolean
 **Restrictions** | none
 
-Ordinarily, for individual directories that map to multiple instances and/or multiple schemas, `skeema push` will operate on all mapped instances, and all mapped schemas on those instances. If the [first-only](#first-only) option is used, `skeema push` instead only operates on the first instance and schema per directory. 
+Ordinarily, for individual directories that map to multiple instances and/or multiple schemas, `skeema diff` and `skeema push` will operate on all mapped instances, and all mapped schemas on those instances. If the [first-only](#first-only) option is used, these commands instead only operate on the first instance and schema per directory.
 
-In a sharded environment, this option can be useful to test a change just on one shard before pushing it out on all shards. Alternatively, for more complex control, a similar effect can be achieved by using environment names. For example, you could create an environment called "production-canary" with [host](#host) configured to map to a subset of the instances in the "production" environment.
-
-The [first-only](#first-only) option is one of the only cases where the options for `skeema push` differ from `skeema diff`. The behavior in this respect is the opposite for `skeema diff`: that command defaults to operating on only the first instance and schema, unless its [all](#all) option is used, in which case it operates on all instances and schemas per directory like `skeema push`.
+In a sharded environment, this option can be useful to examine or execute a change only on one shard, before pushing it out on all shards. Alternatively, for more complex control, a similar effect can be achieved by using environment names. For example, you could create an environment called "production-canary" with [host](#host) configured to map to a subset of the instances in the "production" environment.
 
 ### host
 
