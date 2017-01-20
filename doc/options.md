@@ -99,6 +99,7 @@ This command supports use of special variables. Skeema will dynamically replace 
 * `{SCHEMA}` -- schema name defined by the [schema](#schema) option for the directory being processed
 * `{USER}` -- MySQL username defined by the [user](#user) option either via command-line or option file
 * `{PASSWORD}` -- MySQL password defined by the [password](#password) option either via command-line or option file
+* `{PASSWORDX}` -- Behaves like {PASSWORD} when the command-line is executed, but only displays X's whenever the command-line is displayed on STDOUT
 * `{ENVIRONMENT}` -- environment name from the first positional arg on the command-line, or "production" if none specified
 * `{DDL}` -- Full `ALTER TABLE` statement, including all clauses
 * `{TABLE}` -- table name that this ALTER is for
@@ -214,6 +215,7 @@ This command supports use of special variables. Skeema will dynamically replace 
 * `{SCHEMA}` -- schema name defined by the [schema](#schema) option for the directory being processed
 * `{USER}` -- MySQL username defined by the [user](#user) option either via command-line or option file
 * `{PASSWORD}` -- MySQL password defined by the [password](#password) option either via command-line or option file
+* `{PASSWORDX}` -- Behaves like {PASSWORD} when the command-line is executed, but only displays X's whenever the command-line is displayed on STDOUT
 * `{ENVIRONMENT}` -- environment name from the first positional arg on the command-line, or "production" if none specified
 * `{DDL}` -- Full DDL statement, including all clauses
 * `{TABLE}` -- table name that this DDL is for
@@ -334,6 +336,7 @@ Environments using external service discovery systems should set [host](#host) t
 * `{SCHEMA}` -- literal value of the [schema](#schema) option for the directory being processed
 * `{USER}` -- MySQL username defined by the [user](#user) option either via command-line or option file
 * `{PASSWORD}` -- MySQL password defined by the [password](#password) option either via command-line or option file
+* `{PASSWORDX}` -- Behaves like {PASSWORD} when the command-line is executed, but only displays X's whenever the command-line is displayed on STDOUT
 * `{ENVIRONMENT}` -- environment name from the first positional arg on the command-line, or "production" if none specified
 * `{DIRNAME}` -- The base name of the directory being processed
 * `{DIRPARENT}` -- The base name of the parent of the directory being processed
@@ -452,6 +455,7 @@ Some sharded environments need more flexibility -- for example, where some schem
 * `{PORT}` -- port number for the database instance being processed
 * `{USER}` -- MySQL username defined by the [user](#user) option either via command-line or option file
 * `{PASSWORD}` -- MySQL password defined by the [password](#password) option either via command-line or option file
+* `{PASSWORDX}` -- Behaves like {PASSWORD} when the command-line is executed, but only displays X's whenever the command-line is displayed on STDOUT
 * `{ENVIRONMENT}` -- environment name from the first positional arg on the command-line, or "production" if none specified
 * `{DIRNAME}` -- The base name of the directory being processed.
 * `{DIRPARENT}` -- The base name of the parent of the directory being processed.

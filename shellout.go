@@ -21,10 +21,14 @@ var noQuotesNeeded = regexp.MustCompile(`^[\w/@%=:.,+-]*$`)
 
 // ShellOut represents a command-line for an external command, executed via sh -c
 type ShellOut struct {
-	Command string
+	Command          string
+	PrintableCommand string // Same as Command, but used in String() if non-empty; useful for hiding passwords in output
 }
 
 func (s *ShellOut) String() string {
+	if s.PrintableCommand != "" {
+		return s.PrintableCommand
+	}
 	return s.Command
 }
 
@@ -92,9 +96,10 @@ func (s *ShellOut) RunCaptureSplit() ([]string, error) {
 
 // NewShellOut takes a shell command-line string and returns a ShellOut, without
 // performing any variable interpolation.
-func NewShellOut(command string) *ShellOut {
+func NewShellOut(command, printableCommand string) *ShellOut {
 	return &ShellOut{
-		Command: command,
+		Command:          command,
+		PrintableCommand: printableCommand,
 	}
 }
 
@@ -127,14 +132,16 @@ func NewInterpolatedShellOut(command string, dir *Dir, extra map[string]string) 
 	asis := []string{"user", "password", "schema", "host", "port"}
 	for _, name := range asis {
 		value := dir.Config.Get(strings.ToLower(name))
+		raw := dir.Config.GetRaw(strings.ToLower(name))
 		// any value containing shell exec will itself need be run thru
 		// NewInterpolatedShellOut at some point, so not available for interpolation
 		// here, to avoid recursive shellouts. They can still be supplied via the
 		// extra map instead; that's handled later.
-		if !strings.ContainsRune(value, '`') {
+		if value == raw || raw[0] != '`' {
 			values[strings.ToUpper(name)] = value
 		}
 	}
+	values["PASSWORDX"] = values["PASSWORD"]
 
 	// If the command has an "environment" positional arg, add its value as-is too
 	if _, hasEnvironment := dir.Config.CLI.Command.OptionValue("environment"); hasEnvironment {
@@ -162,9 +169,13 @@ func NewInterpolatedShellOut(command string, dir *Dir, extra map[string]string) 
 		values[strings.ToUpper(name)] = val
 	}
 
+	var suppressPassword bool
 	replacer := func(input string) string {
 		input = strings.ToUpper(input[1 : len(input)-1])
 		if value, ok := values[input]; ok {
+			if input == "PASSWORDX" && suppressPassword {
+				return strings.Repeat("X", len(value))
+			}
 			return escapeVarValue(value)
 		}
 		err = fmt.Errorf("Unknown variable {%s}", input)
@@ -172,7 +183,12 @@ func NewInterpolatedShellOut(command string, dir *Dir, extra map[string]string) 
 	}
 
 	result := varPlaceholder.ReplaceAllStringFunc(command, replacer)
-	return NewShellOut(result), err
+	if strings.Contains(strings.ToUpper(command), "{PASSWORDX}") {
+		suppressPassword = true
+		resultWithoutPassword := varPlaceholder.ReplaceAllStringFunc(command, replacer)
+		return NewShellOut(result, resultWithoutPassword), err
+	}
+	return NewShellOut(result, result), err
 }
 
 // escapeVarValue takes a string, and wraps it in single-quotes so that it will

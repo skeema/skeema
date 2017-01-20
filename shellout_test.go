@@ -8,7 +8,7 @@ import (
 
 func TestRunCaptureSplit(t *testing.T) {
 	assertResult := func(command string, expectedTokens ...string) {
-		s := NewShellOut(command)
+		s := NewShellOut(command, "")
 		result, err := s.RunCaptureSplit()
 		if err != nil {
 			t.Logf("Unexpected error return from %#v: %s", s, err)
@@ -54,10 +54,26 @@ func TestNewInterpolatedShellOut(t *testing.T) {
 			t.Errorf("Expected NewInterpolatedShellOut to return ShellOut.Command of %s, instead found %s", expected, s.Command)
 		}
 	}
-
 	assertShellOut("/bin/echo {HOST} {SCHEMA} {user} {PASSWORD} {DirName} {DIRPARENT} {DIRPATH}", "/bin/echo ahost aschema someone  someschema somehost /var/schemas/somehost/someschema")
 	assertShellOut("/bin/echo {HOST} {SOMETHING}", "/bin/echo 'overridden value' new_value", "host=overridden value", "something=new_value")
 	assertShellOut("/bin/echo {connopts}", `/bin/echo 'sql_mode='"'"'STRICT_ALL_TABLES,ALLOW_INVALID_DATES'"'"''`)
+
+	dir = getDir("/var/schemas/somehost/someschema", "host=ahost", "schema=aschema", "user=someone", "password=SuPeRsEcReT", "port=3306", "connect-options=")
+	assertShellOutHidePW := func(command, expected, expectedOutput string) {
+		s, err := NewInterpolatedShellOut(command, dir, nil)
+		if err != nil {
+			t.Errorf("Unexpected error from NewInterpolatedShellOut on %s: %s", command, err)
+		} else {
+			if s.Command != expected {
+				t.Errorf("Expected NewInterpolatedShellOut to return ShellOut.Command of %s, instead found %s", expected, s.Command)
+			}
+			if s.String() != expectedOutput {
+				t.Errorf("Expected NewInterpolatedShellOut to return ShellOut.PrintableCommand of %s, instead found %s", expectedOutput, s.String())
+			}
+		}
+	}
+	assertShellOutHidePW("mysql -h {HOST} -u {USER} -p{PASSWORDX} -P {PORT} {SCHEMA}", "mysql -h ahost -u someone -pSuPeRsEcReT -P 3306 aschema", "mysql -h ahost -u someone -pXXXXXXXXXXX -P 3306 aschema")
+	assertShellOutHidePW("mysql -h {HOST} -u {USER} -p{PASSWORD} -P {PORT} {SCHEMA}", "mysql -h ahost -u someone -pSuPeRsEcReT -P 3306 aschema", "mysql -h ahost -u someone -pSuPeRsEcReT -P 3306 aschema")
 
 	s, err := NewInterpolatedShellOut("/bin/echo {HOST} {iNvAlId} {SCHEMA}", dir, nil)
 	if err == nil {
