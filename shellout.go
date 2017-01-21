@@ -8,8 +8,6 @@ import (
 	"path"
 	"regexp"
 	"strings"
-
-	"github.com/skeema/mycli"
 )
 
 // varPlaceholder is a regexp for detecting placeholders in format "{VARNAME}"
@@ -108,19 +106,11 @@ func NewShellOut(command, printableCommand string) *ShellOut {
 // directory and its configuration, as well as any additional values provided
 // in the extra map.
 //
-// The following variables are supplied as-is from the dir's configuration,
-// UNLESS the variable value itself contains backticks, in which case it is
-// not available in this context:
+// The following variables are supplied as-is from the dir's configuration:
 //   {USER}, {PASSWORD}, {SCHEMA}, {HOST}, {PORT}
 //
-// The following variables supply the *base name* (relative name) of whichever
-// directory had a .skeema file defining the variable:
-//   {HOSTDIR}, {SCHEMADIR}
-// For example, if dir is /opt/schemas/myhost/someschema, usually the host will
-// be defined in /opt/schemas/myhost/.skeema (so HOSTDIR="myhost") and the
-// schema defined in /opt/schemas/myhost/someschema/.skeema (so
-// SCHEMADIR="someschema"). These variables are typically useful for passing to
-// service discovery.
+// These additional variables are always set; see function source code:
+//   {PASSWORDX}, {ENVIRONMENT}, {DIRNAME}, {DIRPATH}, {CONNOPTS}
 //
 // Vars are case-insensitive, but all-caps is recommended for visual reasons.
 // If any unknown variable is contained in the command string, a non-nil error
@@ -141,6 +131,8 @@ func NewInterpolatedShellOut(command string, dir *Dir, extra map[string]string) 
 			values[strings.ToUpper(name)] = value
 		}
 	}
+
+	// PASSWORDX works like PASSWORD, but is hidden when the command-line is printed
 	values["PASSWORDX"] = values["PASSWORD"]
 
 	// If the command has an "environment" positional arg, add its value as-is too
@@ -148,18 +140,11 @@ func NewInterpolatedShellOut(command string, dir *Dir, extra map[string]string) 
 		values["ENVIRONMENT"] = dir.Config.Get("environment")
 	}
 
-	hostSource := dir.Config.Source("host")
-	if file, ok := hostSource.(*mycli.File); ok {
-		values["HOSTDIR"] = path.Base(file.Dir)
-	}
-	schemaSource := dir.Config.Source("schema")
-	if file, ok := schemaSource.(*mycli.File); ok {
-		values["SCHEMADIR"] = path.Base(file.Dir)
-	}
+	// DIRNAME and DIRPATH reflect the dir being evaluated
 	values["DIRNAME"] = path.Base(dir.Path)
-	values["DIRPARENT"] = path.Base(path.Dir(dir.Path))
 	values["DIRPATH"] = dir.Path
 
+	// CONNOPTS is connect-options with driver-specific options removed
 	if values["CONNOPTS"], err = RealConnectOptions(dir.Config.Get("connect-options")); err != nil {
 		return nil, err
 	}

@@ -82,15 +82,15 @@ func TestInstances(t *testing.T) {
 	assertInstances(map[string]string{"host": "some.db.host", "connect-options": ","}, true)
 	assertInstances(map[string]string{"host": "some.db.host:3306", "port": "3307"}, true)
 	assertInstances(map[string]string{"host": "@@@@@"}, true)
-	assertInstances(map[string]string{"host": "`echo {INVALID_VAR}`"}, true)
+	assertInstances(map[string]string{"host-wrapper": "`echo {INVALID_VAR}`", "host": "irrelevant"}, true)
 
-	// dynamic hosts via command execution
-	assertInstances(map[string]string{"host": "`/usr/bin/printf 'some.db.host'`"}, false, "some.db.host:3306")
-	assertInstances(map[string]string{"host": "`/usr/bin/printf 'some.db.host\n'`"}, false, "some.db.host:3306")
-	assertInstances(map[string]string{"host": "`/usr/bin/printf 'some.db.host\nother.db.host'`", "port": "3333"}, false, "some.db.host:3333", "other.db.host:3333")
-	assertInstances(map[string]string{"host": "`/usr/bin/printf 'some.db.host\tother.db.host:3316'`", "port": "3316"}, false, "some.db.host:3316", "other.db.host:3316")
-	assertInstances(map[string]string{"host": "`/usr/bin/printf 'localhost,remote.host:3307,other.host'`", "socket": "/var/lib/mysql/mysql.sock"}, false, "localhost:/var/lib/mysql/mysql.sock", "remote.host:3307", "other.host:3306")
-	assertInstances(map[string]string{"host": "`/bin/echo -n`"}, false)
+	// dynamic hosts via host-wrapper command execution
+	assertInstances(map[string]string{"host-wrapper": "/usr/bin/printf '{HOST}:3306'", "host": "some.db.host"}, false, "some.db.host:3306")
+	assertInstances(map[string]string{"host-wrapper": "`/usr/bin/printf '{HOST}\n'`", "host": "some.db.host:3306"}, false, "some.db.host:3306")
+	assertInstances(map[string]string{"host-wrapper": "/usr/bin/printf 'some.db.host\nother.db.host'", "host": "ignored", "port": "3333"}, false, "some.db.host:3333", "other.db.host:3333")
+	assertInstances(map[string]string{"host-wrapper": "/usr/bin/printf 'some.db.host\tother.db.host:3316'", "host": "ignored", "port": "3316"}, false, "some.db.host:3316", "other.db.host:3316")
+	assertInstances(map[string]string{"host-wrapper": "/usr/bin/printf 'localhost,remote.host:3307,other.host'", "host": "ignored", "socket": "/var/lib/mysql/mysql.sock"}, false, "localhost:/var/lib/mysql/mysql.sock", "remote.host:3307", "other.host:3306")
+	assertInstances(map[string]string{"host-wrapper": "/bin/echo -n", "host": "ignored"}, false)
 }
 
 func TestInstanceDefaultParams(t *testing.T) {

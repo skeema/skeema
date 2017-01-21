@@ -18,6 +18,7 @@
 * [dry-run](#dry-run)
 * [first-only](#first-only)
 * [host](#host)
+* [host-wrapper](#host-wrapper)
 * [include-auto-inc](#include-auto-inc)
 * [normalize](#normalize)
 * [password](#password)
@@ -94,25 +95,21 @@ This option causes Skeema to shell out to an external process for running ALTER 
 
 This command supports use of special variables. Skeema will dynamically replace these with an appropriate value when building the final command-line. See [options with variable interpolation](config.md#options-with-variable-interpolation) for more information. The following variables are supported by `alter-wrapper`:
 
-* `{HOST}` -- hostname (or IP) defined by the [host](#host) option for the directory being processed
-* `{PORT}` -- port number defined by the [port](#port) option for the directory being processed
-* `{SCHEMA}` -- schema name defined by the [schema](#schema) option for the directory being processed
+* `{HOST}` -- hostname (or IP) that this ALTER TABLE targets
+* `{PORT}` -- port number for the host that this ALTER TABLE targets
+* `{SCHEMA}` -- schema name containing the table that this ALTER TABLE targets
 * `{USER}` -- MySQL username defined by the [user](#user) option either via command-line or option file
 * `{PASSWORD}` -- MySQL password defined by the [password](#password) option either via command-line or option file
 * `{PASSWORDX}` -- Behaves like {PASSWORD} when the command-line is executed, but only displays X's whenever the command-line is displayed on STDOUT
-* `{ENVIRONMENT}` -- environment name from the first positional arg on the command-line, or "production" if none specified
+* `{ENVIRONMENT}` -- environment name from the first positional arg on Skeema's command-line, or "production" if none specified
 * `{DDL}` -- Full `ALTER TABLE` statement, including all clauses
-* `{TABLE}` -- table name that this ALTER is for
-* `{SIZE}` -- size of table that this ALTER is for, in bytes. This will always be 0 for tables without any rows.
-* `{CLAUSES}` -- Body of the ALTER statement, i.e. everything *after* `ALTER TABLE <name> `. This is what pt-online-schema-change's --alter option expects.
-* `{TYPE}` -- the word "ALTER" in all caps.
+* `{TABLE}` -- table name that this ALTER TABLE targets
+* `{SIZE}` -- size of table that this ALTER TABLE targets, in bytes. For tables with no rows, this will be 0, regardless of actual size of the empty table on disk.
+* `{CLAUSES}` -- Body of the ALTER TABLE statement, i.e. everything *after* `ALTER TABLE <name> `. This is what pt-online-schema-change's --alter option expects.
+* `{TYPE}` -- always the word "ALTER" in all caps.
 * `{CONNOPTS}` -- Session variables passed through from the [connect-options](#connect-options) option
-* `{DIRNAME}` -- The base name of the directory being processed.
-* `{DIRPARENT}` -- The base name of the parent of the directory being processed.
+* `{DIRNAME}` -- The base name (last path element) of the directory being processed.
 * `{DIRPATH}` -- The full (absolute) path of the directory being processed.
-* `{HOSTDIR}` -- Base name of whichever directory's .skeema file defined the [host](#host) option for the directory being processed. Sometimes useful as a key in a service discovery lookup or log message. Typically will be the same as `{DIRPARENT}`.
-* `{SCHEMADIR}` -- Base name of whichever directory's .skeema file defined the [schema](#schema) option for the directory being processed. Typically this will be the same as `{DIRNAME}`, the base name of the directory being processed.
-
 
 This option can be used for integration with an online schema change tool, logging system, CI workflow, or any other tool (or combination of tools via a custom script) that you wish. An example `alter-wrapper` for executing `pt-online-schema-change` is included [in the FAQ](faq.md#how-do-i-configure-skeema-to-use-online-schema-change-tools).
 
@@ -210,24 +207,21 @@ For even more fine-grained control, such as different behavior for CREATE vs DRO
 
 This command supports use of special variables. Skeema will dynamically replace these with an appropriate value when building the final command-line. See [options with variable interpolation](config.md#options-with-variable-interpolation) for more information. The following variables are supported by `ddl-wrapper`:
 
-* `{HOST}` -- hostname (or IP) defined by the [host](#host) option for the directory being processed
-* `{PORT}` -- port number defined by the [port](#port) option for the directory being processed
-* `{SCHEMA}` -- schema name defined by the [schema](#schema) option for the directory being processed
+* `{HOST}` -- hostname (or IP) that this DDL statement targets
+* `{PORT}` -- port number for the host that this DDL statement targets
+* `{SCHEMA}` -- schema name containing the table that this DDL statement targets
 * `{USER}` -- MySQL username defined by the [user](#user) option either via command-line or option file
 * `{PASSWORD}` -- MySQL password defined by the [password](#password) option either via command-line or option file
 * `{PASSWORDX}` -- Behaves like {PASSWORD} when the command-line is executed, but only displays X's whenever the command-line is displayed on STDOUT
-* `{ENVIRONMENT}` -- environment name from the first positional arg on the command-line, or "production" if none specified
+* `{ENVIRONMENT}` -- environment name from the first positional arg on Skeema's command-line, or "production" if none specified
 * `{DDL}` -- Full DDL statement, including all clauses
-* `{TABLE}` -- table name that this DDL is for
-* `{SIZE}` -- size of table that this DDL is for, in bytes. This will always be 0 for tables without any rows, or for `CREATE TABLE` statements.
+* `{TABLE}` -- table name that this DDL statement targets
+* `{SIZE}` -- size of table that this DDL statement targets, in bytes. For tables with no rows, this will be 0, regardless of actual size of the empty table on disk. It will also be 0 for CREATE TABLE statements.
 * `{CLAUSES}` -- Body of the DDL statement, i.e. everything *after* `ALTER TABLE <name> ` or `CREATE TABLE <name> `. This is blank for `DROP TABLE` statements.
 * `{TYPE}` -- the word "CREATE", "DROP", or "ALTER" in all caps.
 * `{CONNOPTS}` -- Session variables passed through from the [connect-options](#connect-options) option
-* `{DIRNAME}` -- The base name of the directory being processed.
-* `{DIRPARENT}` -- The base name of the parent of the directory being processed.
+* `{DIRNAME}` -- The base name (last path element) of the directory being processed.
 * `{DIRPATH}` -- The full (absolute) path of the directory being processed.
-* `{HOSTDIR}` -- Base name of whichever directory's .skeema file defined the [host](#host) option for the directory being processed. Sometimes useful as a key in a service discovery lookup or log message. Typically will be the same as `{DIRPARENT}`.
-* `{SCHEMADIR}` -- Base name of whichever directory's .skeema file defined the [schema](#schema) option for the directory being processed. Typically this will be the same as `{DIRNAME}`, the base name of the directory being processed.
 
 ### debug
 
@@ -319,30 +313,48 @@ Commands | *all*
 **Type** | string
 **Restrictions** | see [limitations on placement](config.md#limitations-on-host-and-schema-options)
 
-Specifies one or more hostnames, IPv4 addresses, or IPv6 addresses to connect to. Port numbers may optionally be included using `hostname:port` syntax in [host](#host) instead of using the separate [port](#port) option. IPv6 addresses must be wrapped in brackets; if also including a port, use format `[ipv6:address:here]:port`.
+Specifies the hostname, IP address, or lookup key to connect to when processing this directory or its subdirectories. A port number may optionally be included using `hostname:port` syntax in [host](#host) instead of using the separate [port](#port) option. IPv6 addresses must be wrapped in brackets; if also including a port, use format `[ipv6:address:here]:port`.
 
 If host is "localhost", and no port is specified (inline or via the [port option](#port)), the connection will use a UNIX domain socket instead of TCP/IP. See the [socket option](#socket) to specify the socket file path. This behavior is consistent with how the standard MySQL client operates. If you wish to connect to localhost using TCP/IP, supply host by IP ("127.0.0.1").
 
-In option files, the value of the [host](#host) option may take any of these forms: 
+For simple sharded environments with a small number of shards, you may optionally specify multiple addresses in a single [host](#host) value by using a comma-separated list. In this situation, `skeema diff` and `skeema push` operate on all listed hosts, unless their [first-only option](#first-only) is used. `skeema pull` always just operates on the first host as its source of truth.
 
-* A single hostname/address
-* Multiple hostnames/addresses, separated by commas
-* A backtick-wrapped command line to execute; the command's STDOUT will be split on a consistent delimiter (newline, tab, comma, or space) and each token will be treated as a hostname/address, optionally with port
+Skeema can optionally integrate with service discovery systems via the [host-wrapper option](#host-wrapper). In this situation, the purpose of [host](#host) changes: instead of specifying a hostname or address, [host](#host) is used for specifying a lookup key, which the service discovery system maps to one or more addresses. The lookup key may be inserted in the external command-line via the `{HOST}` placeholder variable. See the documentation for [host-wrapper](#host-wrapper) for more information. In this configuration [host](#host) should be just a single value, never a comma-separated list; in a sharded environment it is the service discovery system's responsibility to map a single lookup key to multiple addresses when appropriate.
 
-The ability to specify multiple hostnames is useful in sharded environments, where several databases all have the same set of tables, and therefore each schema change needs to be applied in multiple places.
+In all cases, the specified host(s) should always be master instances, not replicas.
 
-Environments using external service discovery systems should set [host](#host) to a backtick-wrapped external command shellout. This permits the directory to be mapped to one or more master host(s) (optionally with port) dynamically. The command line may contain special variables, which Skeema will dynamically replace with appropriate values. See [options with variable interpolation](config.md#options-with-variable-interpolation) for more information. The following variables are supported for this option:
+### host-wrapper
 
-* `{SCHEMA}` -- literal value of the [schema](#schema) option for the directory being processed
-* `{USER}` -- MySQL username defined by the [user](#user) option either via command-line or option file
-* `{PASSWORD}` -- MySQL password defined by the [password](#password) option either via command-line or option file
-* `{PASSWORDX}` -- Behaves like {PASSWORD} when the command-line is executed, but only displays X's whenever the command-line is displayed on STDOUT
-* `{ENVIRONMENT}` -- environment name from the first positional arg on the command-line, or "production" if none specified
-* `{DIRNAME}` -- The base name of the directory being processed
-* `{DIRPARENT}` -- The base name of the parent of the directory being processed
-* `{DIRPATH}` -- The full (absolute) path of the directory being processed
+Commands | *all*
+--- | :---
+**Default** | *empty string*
+**Type** | string
+**Restrictions** | none
 
-Above, "the directory being processed" refers to a leaf directory defining the [schema option](#schema) and containing \*.sql files. To configure generic discovery lookups using a combination of environment name and directory names, you could use a directory structure of repo_root/pool_name/schema_name/\*.sql and then specify ``host=`/path/to/service_discovery_lookup.sh {ENVIRONMENT} {DIRPARENT}` `` in repo_root/.skeema. In this case `{DIRPARENT}` will end up being the pool name to pass to service discovery.
+This option controls how the [host](#host) option is interpreted, and can be used to allow Skeema to interface with service discovery systems. 
+
+By default, [host-wrapper](#host-wrapper) is blank, and [host](#host) values are interpreted literally as domain names or addresses (no service discovery). To configure Skeema to use service discovery instead, set [host-wrapper](#host-wrapper) to an external command-line to execute. Then, whenever Skeema needs to perform an operation on one or more database instances, it will execute the external command to determine which instances to operate on, instead of using [host](#host) as a literal value.
+
+The command line may contain special placeholder variables, which Skeema will dynamically replace with appropriate values. See [options with variable interpolation](config.md#options-with-variable-interpolation) for more information. The following variables are supported for this option:
+
+* `{HOST}` -- the value of the [host](#host) option, to use as a lookup key
+* `{ENVIRONMENT}` -- environment name from the first positional arg on Skeema's command-line, or "production" if none specified
+* `{DIRNAME}` -- The base name (last path element) of the directory being processed.
+* `{DIRPATH}` -- The full (absolute) path of the directory being processed.
+* `{SCHEMA}` -- the value of the [schema](#schema) option for the directory being processed
+
+Above, "the directory being processed" refers to a leaf directory defining the [schema option](#schema) and containing \*.sql files.
+
+The command's STDOUT will be split on a consistent delimiter (newline, tab, comma, or space), and each token will be treated as an address. Here, "address" means any of the following formats:
+
+* hostname
+* hostname:port
+* ipv4
+* ipv4:port
+* [ipv6]
+* [ipv6]:port
+
+If ports are omitted, the [port](#port) option is used instead, which defaults to MySQL's standard port 3306.
 
 The external command should only return addresses of master instances, never replicas.
 
@@ -456,12 +468,9 @@ Some sharded environments need more flexibility -- for example, where some schem
 * `{USER}` -- MySQL username defined by the [user](#user) option either via command-line or option file
 * `{PASSWORD}` -- MySQL password defined by the [password](#password) option either via command-line or option file
 * `{PASSWORDX}` -- Behaves like {PASSWORD} when the command-line is executed, but only displays X's whenever the command-line is displayed on STDOUT
-* `{ENVIRONMENT}` -- environment name from the first positional arg on the command-line, or "production" if none specified
-* `{DIRNAME}` -- The base name of the directory being processed.
-* `{DIRPARENT}` -- The base name of the parent of the directory being processed.
+* `{ENVIRONMENT}` -- environment name from the first positional arg on Skeema's command-line, or "production" if none specified
+* `{DIRNAME}` -- The base name (last path element) of the directory being processed. May be useful as a key in a service discovery lookup.
 * `{DIRPATH}` -- The full (absolute) path of the directory being processed.
-* `{HOSTDIR}` -- Base name of whichever directory's .skeema file defined the [host](#host) option for the directory being processed. Sometimes useful as a key in a service discovery lookup or log message. Typically will be the same as `{DIRPARENT}`.
-* `{SCHEMADIR}` -- Base name of whichever directory's .skeema file defined the [schema](#schema) option for the directory being processed. Typically this will be the same as `{DIRNAME}`, the base name of the directory being processed.
 
 ### socket
 

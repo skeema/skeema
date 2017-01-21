@@ -165,23 +165,20 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 	socketValue := dir.Config.Get("socket")
 	socketWasSupplied := dir.Config.Supplied("socket")
 
-	// Interpret the host value: it may be a single literal hostname, or it may be
-	// a backtick-wrapped shellout.
-	hostValue := dir.Config.Get("host")       // Get strips quotes (including backticks) from fully quoted-wrapped values
-	rawHostValue := dir.Config.GetRaw("host") // GetRaw does not strip quotes
+	// Interpret the host value: if host-wrapper is set, use it to interpret the
+	// host list; otherwise assume host is a comma-separated list of literal
+	// hostnames.
 	var hosts []string
-	if rawHostValue != hostValue && rawHostValue[0] == '`' { // no need to check len, the Changed check above already tells us host != ""
-		s, err := NewInterpolatedShellOut(hostValue, dir, nil)
+	if dir.Config.Changed("host-wrapper") {
+		s, err := NewInterpolatedShellOut(dir.Config.Get("host-wrapper"), dir, nil)
 		if err != nil {
 			return nil, err
 		}
 		if hosts, err = s.RunCaptureSplit(); err != nil {
 			return nil, err
 		}
-	} else if strings.ContainsAny(hostValue, ",") {
-		hosts = dir.Config.GetSlice("host", ',', true)
 	} else {
-		hosts = []string{hostValue}
+		hosts = dir.Config.GetSlice("host", ',', true)
 	}
 
 	// For each hostname, construct a DSN and use it to create an Instance

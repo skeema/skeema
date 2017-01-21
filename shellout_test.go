@@ -54,7 +54,7 @@ func TestNewInterpolatedShellOut(t *testing.T) {
 			t.Errorf("Expected NewInterpolatedShellOut to return ShellOut.Command of %s, instead found %s", expected, s.Command)
 		}
 	}
-	assertShellOut("/bin/echo {HOST} {SCHEMA} {user} {PASSWORD} {DirName} {DIRPARENT} {DIRPATH}", "/bin/echo ahost aschema someone  someschema somehost /var/schemas/somehost/someschema")
+	assertShellOut("/bin/echo {HOST} {SCHEMA} {user} {PASSWORD} {DirName} {DIRPATH}", "/bin/echo ahost aschema someone  someschema /var/schemas/somehost/someschema")
 	assertShellOut("/bin/echo {HOST} {SOMETHING}", "/bin/echo 'overridden value' new_value", "host=overridden value", "something=new_value")
 	assertShellOut("/bin/echo {connopts}", `/bin/echo 'sql_mode='"'"'STRICT_ALL_TABLES,ALLOW_INVALID_DATES'"'"''`)
 

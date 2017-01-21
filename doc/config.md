@@ -126,7 +126,7 @@ Most other commands (`skeema diff`, `skeema push`, `skeema pull`, `skeema lint`)
 
 ### Options with variable interpolation
 
-Some string-type options, such as [alter-wrapper](options.md#alter-wrapper), are always interpreted as external commands to execute. A few other string-type options, such as [host](options.md#host), are optionally interpreted as external commands if the value is wrapped in backticks.
+Some string-type options, such as [alter-wrapper](options.md#alter-wrapper), are always interpreted as external commands to execute. A few other string-type options, such as [schema](options.md#schema), are optionally interpreted as external commands only if the entire option value is wrapped in backticks.
 
 In either case, the external command-line supports interpolation of variable placeholders, which appear in all-caps and are wrapped in braces like `{VARNAME}`. For example, this line may appear in a .skeema file to configure use of pt-online-schema-change:
 
@@ -134,10 +134,10 @@ In either case, the external command-line supports interpolation of variable pla
 alter-wrapper=/usr/local/bin/pt-online-schema-change --alter {CLAUSES} D={SCHEMA},t={TABLE},h={HOST},P={PORT},u={USER},p={PASSWORDX}
 ```
 
-Or this line might be used in a .skeema file to configure service discovery for dynamically mapping the directory to database instances, based on the environment name and directory name:
+Or this line might be used in a .skeema file to configure service discovery via [host-wrapper](options.md#host-wrapper), to dynamically map [host](options.md#host) values to database instances, instead of using the host value literally as an address:
 
 ```ini
-host=`/path/to/service_discovery_lookup.sh {ENVIRONMENT} {DIRPARENT}`
+host-wrapper=/path/to/service_discovery_lookup.sh /databases/{ENVIRONMENT}/{HOST}
 ```
 
 The placeholders are automatically replaced with the correct values for the current operation. Each option lists what variables it supports.

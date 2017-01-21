@@ -91,12 +91,12 @@ Note that these ALTERs generally aren't replication-friendly due to lag they cre
 
 ### How do I configure Skeema to use service discovery?
 
-There are several possibilities here, all based on how the [host option](options.md#host) is configured:
+There are several possibilities here, all based on how the [host](options.md#host) and [host-wrapper](options.md#host-wrapper) options are configured:
 
-* DNS: This works if you can provide a consistently up-to-date domain name for the master of each pool. It isn't friendly towards sharded environments though, nor is it a good solution if nonstandard port numbers are in use. (Skeema does not yet support SRV record lookups.)
+* DNS: [host](options.md#host) set to a domain name, and [host-wrapper](options.md#host-wrapper) left blank. This works if you can provide a consistently up-to-date domain name for the master of each pool. It isn't friendly towards sharded environments though, nor is it a good solution if nonstandard port numbers are in use. (Skeema does not yet support SRV record lookups.)
 
-* External command shellout: by setting [host](options.md#host) to a backtick-wrapped external command line, you can configure Skeema to obtain hosts (and optionally ports) dynamically from the output of any arbitrary script. This permits you to interface with any service discovery client, to do lookups like "return the master of pool foo" or "return all shard masters for sharded pool xyz".
+* External command shellout: configuring [host-wrapper](options.md#host-wrapper) to shell out to a service discovery client. In this configuration, rather than [host](options.md#host) being set to a literal address, it should be a lookup key to pass to service discovery. The [host-wrapper](options.md#host-wrapper) command-line can then use the `{HOST}` placeholder variable to obtain each directory's lookup key, such as `host-wrapper=/path/to/service_discovery_lookup.sh /databases/{ENVIRONMENT}/{HOST}`. The executed script should be capable of doing lookups such as "return the master of pool foo" or "return all shard masters for sharded pool xyz".
 
-* Configuration management: You could use a system like Chef or Puppet to rewrite directories' .skeema config files periodically, ensuring that an up-to-date master IP is listed in each file.
+* Configuration management: You could use a system like Chef or Puppet to rewrite directories' .skeema config files periodically, ensuring that an up-to-date master IP is listed for [host](options.md#host) in each file.
 
 Simpler integration with etcd, Consul, and ZooKeeper is planned for future releases.
