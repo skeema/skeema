@@ -99,14 +99,14 @@ func InitHandler(cfg *mycli.Config) error {
 		}
 		s, err := inst.Schema(onlySchema)
 		if err != nil {
-			return err
+			return NewExitValue(CodeFatalError, "Cannot examine schema %s: %s", onlySchema, err)
 		}
 		schemas = []*tengo.Schema{s}
 	} else {
 		var err error
 		schemas, err = inst.Schemas()
 		if err != nil {
-			return err
+			return NewExitValue(CodeFatalError, "Cannot examine schemas on %s: %s", inst, err)
 		}
 	}
 
@@ -203,7 +203,7 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 	log.Infof("Populating %s", schemaDir.Path)
 	tables, err := s.Tables()
 	if err != nil {
-		return err
+		return fmt.Errorf("Cannot obtain table information for %s: %s", s.Name, err)
 	}
 	for _, t := range tables {
 		createStmt := t.CreateStatement()

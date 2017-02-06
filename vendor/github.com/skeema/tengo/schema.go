@@ -67,15 +67,15 @@ func (s *Schema) Tables() ([]*Table, error) {
 
 	// Obtain the tables in the schema
 	var rawTables []struct {
-		Name               string        `db:"table_name"`
-		Type               string        `db:"table_type"`
-		Engine             string        `db:"engine"`
-		AutoIncrement      sql.NullInt64 `db:"auto_increment"`
-		TableCollation     string        `db:"table_collation"`
-		CreateOptions      string        `db:"create_options"`
-		Comment            string        `db:"table_comment"`
-		CharSet            string        `db:"character_set_name"`
-		CollationIsDefault string        `db:"is_default"`
+		Name               string         `db:"table_name"`
+		Type               string         `db:"table_type"`
+		Engine             sql.NullString `db:"engine"`
+		AutoIncrement      sql.NullInt64  `db:"auto_increment"`
+		TableCollation     sql.NullString `db:"table_collation"`
+		CreateOptions      sql.NullString `db:"create_options"`
+		Comment            string         `db:"table_comment"`
+		CharSet            string         `db:"character_set_name"`
+		CollationIsDefault string         `db:"is_default"`
 	}
 	query := `
 		SELECT t.table_name, t.table_type, t.engine, t.auto_increment, t.table_collation,
@@ -86,33 +86,33 @@ func (s *Schema) Tables() ([]*Table, error) {
 		WHERE  t.table_schema = ?
 		AND    t.table_type = 'BASE TABLE'`
 	if err := db.Select(&rawTables, query, s.Name); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Error querying information_schema.tables: %s", err)
 	}
 
 	s.tables = make([]*Table, len(rawTables))
 	for n, rawTable := range rawTables {
 		s.tables[n] = &Table{
 			Name:    rawTable.Name,
-			Engine:  rawTable.Engine,
+			Engine:  rawTable.Engine.String,
 			CharSet: rawTable.CharSet,
 			Comment: rawTable.Comment,
 		}
-		if rawTable.CollationIsDefault == "" {
-			s.tables[n].Collation = rawTable.TableCollation
+		if rawTable.CollationIsDefault == "" && rawTable.TableCollation.Valid {
+			s.tables[n].Collation = rawTable.TableCollation.String
 		}
 		if rawTable.AutoIncrement.Valid {
 			s.tables[n].NextAutoIncrement = uint64(rawTable.AutoIncrement.Int64)
 		}
-		if rawTable.CreateOptions != "" && rawTable.CreateOptions != "PARTITIONED" {
+		if rawTable.CreateOptions.Valid && rawTable.CreateOptions.String != "" && rawTable.CreateOptions.String != "PARTITIONED" {
 			// information_schema.tables.create_options annoyingly contains "partitioned"
 			// if the table is partitioned, despite this not being present as-is in the
 			// table table definition. All other create_options are present verbatim.
 			// Currently in mysql-server/sql/sql_show.cc, it's always at the *end* of
 			// create_options... but just to code defensively we handle any location.
-			if strings.HasPrefix(rawTable.CreateOptions, "PARTITIONED ") {
-				s.tables[n].CreateOptions = strings.Replace(rawTable.CreateOptions, "PARTITIONED ", "", 1)
+			if strings.HasPrefix(rawTable.CreateOptions.String, "PARTITIONED ") {
+				s.tables[n].CreateOptions = strings.Replace(rawTable.CreateOptions.String, "PARTITIONED ", "", 1)
 			} else {
-				s.tables[n].CreateOptions = strings.Replace(rawTable.CreateOptions, " PARTITIONED", "", 1)
+				s.tables[n].CreateOptions = strings.Replace(rawTable.CreateOptions.String, " PARTITIONED", "", 1)
 			}
 		}
 	}
@@ -128,20 +128,18 @@ func (s *Schema) Tables() ([]*Table, error) {
 		Comment            string         `db:"column_comment"`
 		CharSet            sql.NullString `db:"character_set_name"`
 		Collation          sql.NullString `db:"collation_name"`
-		TableCollation     string         `db:"table_collation"`
 		CollationIsDefault sql.NullString `db:"is_default"`
 	}
 	query = `
 		SELECT    c.table_name, c.column_name, c.column_type, c.is_nullable, c.column_default,
 		          c.extra, c.column_comment, c.character_set_name, c.collation_name,
-		          t.table_collation, co.is_default
+		          co.is_default
 		FROM      columns c
-		JOIN      tables t ON t.table_name = c.table_name AND t.table_schema = c.table_schema
 		LEFT JOIN collations co ON co.collation_name = c.collation_name
 		WHERE     c.table_schema = ?
 		ORDER BY  c.table_name, c.ordinal_position`
 	if err := db.Select(&rawColumns, query, s.Name); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Error querying information_schema.columns: %s", err)
 	}
 	columnsByTableName := make(map[string][]*Column)
 	columnsByTableAndName := make(map[string]*Column)
@@ -194,13 +192,13 @@ func (s *Schema) Tables() ([]*Table, error) {
 	// We cannot use an ORDER BY on this query, since only the unsorted result
 	// matches the same order of secondary indexes as the CREATE TABLE statement.
 	var rawIndexes []struct {
-		Name       string        `db:"index_name"`
-		TableName  string        `db:"table_name"`
-		NonUnique  uint8         `db:"non_unique"`
-		SeqInIndex uint8         `db:"seq_in_index"`
-		ColumnName string        `db:"column_name"`
-		SubPart    sql.NullInt64 `db:"sub_part"`
-		Comment    string        `db:"index_comment"`
+		Name       string         `db:"index_name"`
+		TableName  string         `db:"table_name"`
+		NonUnique  uint8          `db:"non_unique"`
+		SeqInIndex uint8          `db:"seq_in_index"`
+		ColumnName string         `db:"column_name"`
+		SubPart    sql.NullInt64  `db:"sub_part"`
+		Comment    sql.NullString `db:"index_comment"`
 	}
 	query = `
 		SELECT   index_name, table_name, non_unique, seq_in_index, column_name,
@@ -208,7 +206,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 		FROM     statistics
 		WHERE    table_schema = ?`
 	if err := db.Select(&rawIndexes, query, s.Name); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Error querying information_schema.statistics: %s", err)
 	}
 	primaryKeyByTableName := make(map[string]*Index)
 	secondaryIndexesByTableName := make(map[string][]*Index)
@@ -222,7 +220,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 			Unique:   rawIndex.NonUnique == 0,
 			Columns:  make([]*Column, 0),
 			SubParts: make([]uint16, 0),
-			Comment:  rawIndex.Comment,
+			Comment:  rawIndex.Comment.String,
 		}
 		if strings.ToUpper(index.Name) == "PRIMARY" {
 			primaryKeyByTableName[rawIndex.TableName] = index
@@ -268,7 +266,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 	for _, t := range s.tables {
 		t.createStatement, err = s.instance.ShowCreateTable(s, t)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("Error executing SHOW CREATE TABLE: %s", err)
 		}
 		if t.createStatement != t.GeneratedCreateStatement() {
 			t.UnsupportedDDL = true
