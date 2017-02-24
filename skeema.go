@@ -9,7 +9,7 @@ import (
 	"github.com/skeema/mycli"
 )
 
-const version = "0.1 (pre-release)"
+const version = "0.2 (beta)"
 const rootDesc = `Skeema is a MySQL schema management tool. It allows you to export a database
 schema to the filesystem, and apply online schema changes by modifying files.`
 
