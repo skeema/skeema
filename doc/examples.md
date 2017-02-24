@@ -126,7 +126,7 @@ This example shows how to configure Skeema to use the following set of rules:
   * Has its own mysql instance, reached via TCP/IP, on the standard 3306 port
 
 ```ini
-alter-wrapper="/usr/local/bin/pt-online-schema-change --alter {CLAUSES} D={SCHEMA},t={TABLE},h={HOST},P={PORT},u={USER},p={PASSWORDX}"
+alter-wrapper="/usr/local/bin/pt-online-schema-change --execute --alter {CLAUSES} D={SCHEMA},t={TABLE},h={HOST},P={PORT},u={USER},p={PASSWORDX}"
 alter-wrapper-min-size=1g
 alter-algorithm=inplace
 alter-lock=none

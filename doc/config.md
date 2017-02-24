@@ -131,7 +131,7 @@ Some string-type options, such as [alter-wrapper](options.md#alter-wrapper), are
 In either case, the external command-line supports interpolation of variable placeholders, which appear in all-caps and are wrapped in braces like `{VARNAME}`. For example, this line may appear in a .skeema file to configure use of pt-online-schema-change:
 
 ```ini
-alter-wrapper=/usr/local/bin/pt-online-schema-change --alter {CLAUSES} D={SCHEMA},t={TABLE},h={HOST},P={PORT},u={USER},p={PASSWORDX}
+alter-wrapper=/usr/local/bin/pt-online-schema-change --execute --alter {CLAUSES} D={SCHEMA},t={TABLE},h={HOST},P={PORT},u={USER},p={PASSWORDX}
 ```
 
 Or this line might be used in a .skeema file to configure service discovery via [host-wrapper](options.md#host-wrapper), to dynamically map [host](options.md#host) values to database instances, instead of using the host value literally as an address:

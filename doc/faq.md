@@ -72,7 +72,7 @@ Please see the [requirements doc](requirements.md#responsibilities-for-the-user)
 The [alter-wrapper option](options.md#alter-wrapper) for `skeema diff` and `skeema push` allows you to shell out to arbitrary external command(s) to perform ALTERs. You can set this option in `~/.skeema` or any other `.skeema` config file to automatically apply it every time. For example, to always use `pt-online-schema-change` to perform ALTERs, you might have a config file line of:
 
 ```ini
-alter-wrapper=/usr/local/bin/pt-online-schema-change --alter {CLAUSES} D={SCHEMA},t={TABLE},h={HOST},P={PORT},u={USER},p={PASSWORDX}
+alter-wrapper=/usr/local/bin/pt-online-schema-change --execute --alter {CLAUSES} D={SCHEMA},t={TABLE},h={HOST},P={PORT},u={USER},p={PASSWORDX}
 ```
 
 The brace-wrapped variables will automatically be replaced with appropriate values from the corresponding `.skeema` files. A few special explanations about the command-line above:
