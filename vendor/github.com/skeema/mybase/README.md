@@ -1,6 +1,6 @@
-# mycli
+# mybase
 
-A light-weight Golang framework for building command-line applications
+A light-weight Golang framework for building command-line applications, with MySQL-like option handling
 
 ## Features
 
@@ -15,7 +15,7 @@ A light-weight Golang framework for building command-line applications
 
 ## Motivation
 
-Unlike other Go CLI packages, mycli attempts to provide MySQL-like option parsing on the [command-line](http://dev.mysql.com/doc/refman/5.6/en/command-line-options.html) and in [option files](http://dev.mysql.com/doc/refman/5.6/en/option-files.html). In brief, this means:
+Unlike other Go CLI packages, mybase attempts to provide MySQL-like option parsing on the [command-line](http://dev.mysql.com/doc/refman/5.6/en/command-line-options.html) and in [option files](http://dev.mysql.com/doc/refman/5.6/en/option-files.html). In brief, this means:
 
 * In option names, underscores are automatically converted to dashes.
 * Boolean options may have their value omitted to mean true ("--foo" means "--foo=true"). Meanwhile, falsey values include "off", "false", and "0".
@@ -31,7 +31,7 @@ MySQL is a trademark of Oracle Corp.
 
 ## Status
 
-mycli should be considered beta software. The API is stable, but documentation and generic examples still need to be written. For now, see the [Skeema codebase](http://github.com/skeema/skeema) for a canonical example using all features of mycli.
+mybase should be considered beta software. The API is stable, but documentation and generic examples still need to be written. For now, see the [Skeema codebase](http://github.com/skeema/skeema) for a canonical example using all features of mybase.
 
 ### Future development
 
@@ -43,7 +43,7 @@ The following features are **not** yet implemented, but are planned for future r
 * API for re-reading all option files that have changed
 * Command aliases
 
-Unit test coverage of mycli is still incomplete; code coverage is currently around 40%. This will be improved in future releases.
+Unit test coverage of mybase is still incomplete; code coverage is currently around 40%. This will be improved in future releases.
 
 ## Authors
 

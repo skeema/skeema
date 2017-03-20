@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/skeema/mycli"
+	"github.com/skeema/mybase"
 	"github.com/skeema/tengo"
 )
 
@@ -18,25 +18,25 @@ func (source dummySource) OptionValue(optionName string) (string, bool) {
 
 // getConfig returns a stub config based on a single map of key->value string
 // pairs. All keys in the map will automatically be considered valid options.
-func getConfig(values map[string]string) *mycli.Config {
-	cmd := mycli.NewCommand("test", "1.0", "this is for testing", nil)
+func getConfig(values map[string]string) *mybase.Config {
+	cmd := mybase.NewCommand("test", "1.0", "this is for testing", nil)
 	for key := range values {
-		cmd.AddOption(mycli.StringOption(key, 0, "", key))
+		cmd.AddOption(mybase.StringOption(key, 0, "", key))
 	}
-	cli := &mycli.CommandLine{
+	cli := &mybase.CommandLine{
 		Command: cmd,
 	}
-	return mycli.NewConfig(cli, dummySource(values))
+	return mybase.NewConfig(cli, dummySource(values))
 }
 
 func TestInstances(t *testing.T) {
 	assertInstances := func(optionValues map[string]string, expectError bool, expectedInstances ...string) []*tengo.Instance {
-		cmd := mycli.NewCommand("test", "1.0", "this is for testing", nil)
+		cmd := mybase.NewCommand("test", "1.0", "this is for testing", nil)
 		AddGlobalOptions(cmd)
-		cli := &mycli.CommandLine{
+		cli := &mybase.CommandLine{
 			Command: cmd,
 		}
-		cfg := mycli.NewConfig(cli, dummySource(optionValues))
+		cfg := mybase.NewConfig(cli, dummySource(optionValues))
 		dir := &Dir{
 			Path:    "/tmp/dummydir",
 			Config:  cfg,

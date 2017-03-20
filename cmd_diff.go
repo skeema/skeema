@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/skeema/mycli"
+	"github.com/skeema/mybase"
 )
 
 func init() {
@@ -23,14 +23,14 @@ The ` + "`" + `skeema diff` + "`" + ` command is equivalent to ` + "`" + `skeema
 An exit code of 0 will be returned if no differences were found, 1 if some
 differences were found, or 2+ if an error occurred.`
 
-	cmd := mycli.NewCommand("diff", summary, desc, DiffHandler)
+	cmd := mybase.NewCommand("diff", summary, desc, DiffHandler)
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 	clonePushOptionsToDiff()
 }
 
 // DiffHandler is the handler method for `skeema diff`
-func DiffHandler(cfg *mycli.Config) error {
+func DiffHandler(cfg *mybase.Config) error {
 	// We just delegate to PushHandler, forcing dry-run to be enabled and always
 	// using concurrency of 1
 	cfg.CLI.OptionValues["dry-run"] = "1"

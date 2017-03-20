@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/skeema/mycli"
+	"github.com/skeema/mybase"
 	"github.com/skeema/tengo"
 )
 
@@ -27,19 +27,19 @@ For example, running ` + "`" + `skeema init staging` + "`" + ` will add config d
 default is "production", so directives will be written to the [production]
 section of the file.`
 
-	cmd := mycli.NewCommand("init", summary, desc, InitHandler)
-	cmd.AddOption(mycli.StringOption("host", 'h', "", "Database hostname or IP address"))
-	cmd.AddOption(mycli.StringOption("port", 'P', "3306", "Port to use for database host"))
-	cmd.AddOption(mycli.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix socket file used if host is localhost"))
-	cmd.AddOption(mycli.StringOption("dir", 'd', "<hostname>", "Base dir to use for this host's schemas"))
-	cmd.AddOption(mycli.StringOption("schema", 0, "", "Only import the one specified schema; skip creation of subdirs for each schema"))
-	cmd.AddOption(mycli.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in table files"))
+	cmd := mybase.NewCommand("init", summary, desc, InitHandler)
+	cmd.AddOption(mybase.StringOption("host", 'h', "", "Database hostname or IP address"))
+	cmd.AddOption(mybase.StringOption("port", 'P', "3306", "Port to use for database host"))
+	cmd.AddOption(mybase.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix socket file used if host is localhost"))
+	cmd.AddOption(mybase.StringOption("dir", 'd', "<hostname>", "Base dir to use for this host's schemas"))
+	cmd.AddOption(mybase.StringOption("schema", 0, "", "Only import the one specified schema; skip creation of subdirs for each schema"))
+	cmd.AddOption(mybase.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in table files"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
 
 // InitHandler is the handler method for `skeema init`
-func InitHandler(cfg *mycli.Config) error {
+func InitHandler(cfg *mybase.Config) error {
 	AddGlobalConfigFiles(cfg)
 
 	// Ordinarily, we use a dir structure of: host_dir/schema_name/*.sql
@@ -111,7 +111,7 @@ func InitHandler(cfg *mycli.Config) error {
 	}
 
 	// Figure out what needs to go in the hostDir's .skeema file.
-	hostOptionFile := mycli.NewFile(hostDir.Path, ".skeema")
+	hostOptionFile := mybase.NewFile(hostDir.Path, ".skeema")
 	hostOptionFile.SetOptionValue(environment, "host", inst.Host)
 	if inst.Host == "localhost" && inst.SocketPath != "" {
 		hostOptionFile.SetOptionValue(environment, "socket", inst.SocketPath)
@@ -178,7 +178,7 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 		// Put a .skeema file with the schema name in it. This is placed outside of
 		// any named section/environment since the default assumption is that schema
 		// names match between environments.
-		optionFile := mycli.NewFile(".skeema")
+		optionFile := mybase.NewFile(".skeema")
 		optionFile.SetOptionValue("", "schema", s.Name)
 		if overridesCharSet, overridesCollation, err := s.OverridesServerCharSet(); err == nil {
 			if overridesCharSet {

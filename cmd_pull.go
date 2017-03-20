@@ -5,7 +5,7 @@ import (
 	"os"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/skeema/mycli"
+	"github.com/skeema/mybase"
 	"github.com/skeema/tengo"
 )
 
@@ -23,15 +23,15 @@ running ` + "`" + `skeema pull staging` + "`" + ` will apply config directives f
 top of the file. If no environment name is supplied, the default is
 "production".`
 
-	cmd := mycli.NewCommand("pull", summary, desc, PullHandler)
-	cmd.AddOption(mycli.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in new table files, and update in existing files"))
-	cmd.AddOption(mycli.BoolOption("normalize", 0, true, "Reformat *.sql files to match SHOW CREATE TABLE"))
+	cmd := mybase.NewCommand("pull", summary, desc, PullHandler)
+	cmd.AddOption(mybase.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in new table files, and update in existing files"))
+	cmd.AddOption(mybase.BoolOption("normalize", 0, true, "Reformat *.sql files to match SHOW CREATE TABLE"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
 
 // PullHandler is the handler method for `skeema pull`
-func PullHandler(cfg *mycli.Config) error {
+func PullHandler(cfg *mybase.Config) error {
 	AddGlobalConfigFiles(cfg)
 	dir, err := NewDir(".", cfg)
 	if err != nil {

@@ -6,7 +6,7 @@ import (
 	"runtime/debug"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/skeema/mycli"
+	"github.com/skeema/mybase"
 )
 
 const version = "0.2 (beta)"
@@ -15,13 +15,13 @@ schema to the filesystem, and apply online schema changes by modifying files.`
 
 // CommandSuite is the root command. It is global so that subcommands can be
 // added to it via init() functions in each subcommand's source file.
-var CommandSuite = mycli.NewCommandSuite("skeema", version, rootDesc)
+var CommandSuite = mybase.NewCommandSuite("skeema", version, rootDesc)
 
 func main() {
 	// Add global options. Sub-commands may override these when needed.
 	AddGlobalOptions(CommandSuite)
 
-	var cfg *mycli.Config
+	var cfg *mybase.Config
 
 	defer func() {
 		if err := recover(); err != nil {
@@ -35,7 +35,7 @@ func main() {
 		}
 	}()
 
-	cfg, err := mycli.ParseCLI(CommandSuite, os.Args)
+	cfg, err := mybase.ParseCLI(CommandSuite, os.Args)
 	if err != nil {
 		Exit(NewExitValue(CodeBadConfig, err.Error()))
 	}

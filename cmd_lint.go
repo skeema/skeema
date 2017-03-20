@@ -5,7 +5,7 @@ import (
 	"os"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/skeema/mycli"
+	"github.com/skeema/mybase"
 )
 
 func init() {
@@ -28,13 +28,13 @@ An exit code of 0 will be returned if all files were already formatted properly,
 1 if some files were reformatted but all SQL was valid, or 2+ if at least one
 file had SQL syntax errors or some other error occurred.`
 
-	cmd := mycli.NewCommand("lint", summary, desc, LintHandler)
+	cmd := mybase.NewCommand("lint", summary, desc, LintHandler)
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
 
 // LintHandler is the handler method for `skeema lint`
-func LintHandler(cfg *mycli.Config) error {
+func LintHandler(cfg *mybase.Config) error {
 	AddGlobalConfigFiles(cfg)
 	dir, err := NewDir(".", cfg)
 	if err != nil {

@@ -13,15 +13,15 @@ import (
 	"time"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/skeema/mycli"
+	"github.com/skeema/mybase"
 	"github.com/skeema/tengo"
 )
 
 // Dir represents a directory that Skeema is interacting with.
 type Dir struct {
 	Path    string
-	Config  *mycli.Config // Unified config including this dir's options file (and its parents' open files)
-	section string        // For options files, which section name to use, if any
+	Config  *mybase.Config // Unified config including this dir's options file (and its parents' open files)
+	section string         // For options files, which section name to use, if any
 }
 
 // NewDir returns a value representing a directory that Skeema may operate upon.
@@ -31,7 +31,7 @@ type Dir struct {
 // baseConfig should only include "global" configurations; any config files in
 // parent dirs will automatically be read in and cascade appropriately into this
 // directory's config.
-func NewDir(path string, baseConfig *mycli.Config) (*Dir, error) {
+func NewDir(path string, baseConfig *mybase.Config) (*Dir, error) {
 	cleanPath, err := filepath.Abs(filepath.Clean(path))
 	if err == nil {
 		path = cleanPath
@@ -400,7 +400,7 @@ func (dir *Dir) Subdirs() ([]*Dir, error) {
 }
 
 // CreateSubdir creates and returns a new subdir of the current dir.
-func (dir *Dir) CreateSubdir(name string, optionFile *mycli.File) (*Dir, error) {
+func (dir *Dir) CreateSubdir(name string, optionFile *mybase.File) (*Dir, error) {
 	subdir := &Dir{
 		Path:    path.Join(dir.Path, name),
 		Config:  dir.Config.Clone(),
@@ -423,7 +423,7 @@ func (dir *Dir) CreateSubdir(name string, optionFile *mycli.File) (*Dir, error) 
 
 // CreateOptionFile writes the supplied unwritten option file to this dir, and
 // then adds it as a source for this dir's configuration.
-func (dir *Dir) CreateOptionFile(optionFile *mycli.File) error {
+func (dir *Dir) CreateOptionFile(optionFile *mybase.File) error {
 	optionFile.Dir = dir.Path
 	if err := optionFile.Write(false); err != nil {
 		return fmt.Errorf("Unable to write to %s: %s", optionFile.Path(), err)
@@ -581,12 +581,12 @@ func (dir *Dir) TargetTemplate(instance *tengo.Instance) Target {
 	return t
 }
 
-// OptionFile returns a pointer to a mycli.File for this directory, representing
+// OptionFile returns a pointer to a mybase.File for this directory, representing
 // the dir's .skeema file, if one exists. The file will be read and parsed; any
 // errors in either process will be returned. The section specified by
 // dir.section will automatically be selected for use in the file if it exists.
-func (dir *Dir) OptionFile() (*mycli.File, error) {
-	f := mycli.NewFile(dir.Path, ".skeema")
+func (dir *Dir) OptionFile() (*mybase.File, error) {
+	f := mybase.NewFile(dir.Path, ".skeema")
 	if err := f.Read(); err != nil {
 		return nil, err
 	}
@@ -597,19 +597,19 @@ func (dir *Dir) OptionFile() (*mycli.File, error) {
 	return f, nil
 }
 
-// cascadingOptionFiles returns a slice of *mycli.File, corresponding to the
+// cascadingOptionFiles returns a slice of *mybase.File, corresponding to the
 // option file in this dir as well as its parent dir hierarchy. Evaluation
 // of parent dirs stops once we hit either a directory containing .git, the
 // user's home directory, or the root of the filesystem. The result is ordered
 // such that the closest-to-root dir's File is returned first and this dir's
 // File last. The files will be read, but not parsed.
-func (dir *Dir) cascadingOptionFiles() (files []*mycli.File, errReturn error) {
+func (dir *Dir) cascadingOptionFiles() (files []*mybase.File, errReturn error) {
 	home := filepath.Clean(os.Getenv("HOME"))
 
 	// we know the first character will be a /, so discard the first split result
 	// which we know will be an empty string
 	components := strings.Split(dir.Path, string(os.PathSeparator))[1:]
-	files = make([]*mycli.File, 0, len(components))
+	files = make([]*mybase.File, 0, len(components))
 
 	// Examine parent dirs, going up one level at a time, stopping early if we
 	// hit either the user's home directory or a directory containing a .git subdir.
@@ -629,7 +629,7 @@ func (dir *Dir) cascadingOptionFiles() (files []*mycli.File, errReturn error) {
 			if fi.Name() == ".git" {
 				n = -1 // stop outer loop early, after done with this dir
 			} else if fi.Name() == ".skeema" {
-				f := mycli.NewFile(curPath, ".skeema")
+				f := mybase.NewFile(curPath, ".skeema")
 				if readErr := f.Read(); readErr != nil {
 					errReturn = readErr
 				} else {

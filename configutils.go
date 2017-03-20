@@ -11,46 +11,46 @@ import (
 	"syscall"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/skeema/mycli"
+	"github.com/skeema/mybase"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
 // This file contains misc functions relating to configuration or option
 // handling.
 
-// AddGlobalOptions adds Skeema global options to the supplied mycli.Command.
+// AddGlobalOptions adds Skeema global options to the supplied mybase.Command.
 // Typically cmd should be the top-level Command / Command Suite.
-func AddGlobalOptions(cmd *mycli.Command) {
+func AddGlobalOptions(cmd *mybase.Command) {
 	// Options typically only found in .skeema files -- all hidden by default
-	cmd.AddOption(mycli.StringOption("host", 0, "", "Database hostname or IP address").Hidden())
-	cmd.AddOption(mycli.StringOption("port", 0, "3306", "Port to use for database host").Hidden())
-	cmd.AddOption(mycli.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix socket file used if host is localhost").Hidden())
-	cmd.AddOption(mycli.StringOption("schema", 0, "", "Database schema name").Hidden())
-	cmd.AddOption(mycli.StringOption("default-character-set", 0, "", "Schema-level default character set").Hidden())
-	cmd.AddOption(mycli.StringOption("default-collation", 0, "", "Schema-level default collation").Hidden())
+	cmd.AddOption(mybase.StringOption("host", 0, "", "Database hostname or IP address").Hidden())
+	cmd.AddOption(mybase.StringOption("port", 0, "3306", "Port to use for database host").Hidden())
+	cmd.AddOption(mybase.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix socket file used if host is localhost").Hidden())
+	cmd.AddOption(mybase.StringOption("schema", 0, "", "Database schema name").Hidden())
+	cmd.AddOption(mybase.StringOption("default-character-set", 0, "", "Schema-level default character set").Hidden())
+	cmd.AddOption(mybase.StringOption("default-collation", 0, "", "Schema-level default collation").Hidden())
 
 	// Visible global options
-	cmd.AddOption(mycli.StringOption("user", 'u', "root", "Username to connect to database host"))
-	cmd.AddOption(mycli.StringOption("password", 'p', "<no password>", "Password for database user; supply with no value to prompt").ValueOptional())
-	cmd.AddOption(mycli.StringOption("host-wrapper", 'H', "", "External bin to shell out to for host lookup; see manual for template vars"))
-	cmd.AddOption(mycli.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema for intermediate operations, created and dropped each run unless --reuse-temp-schema"))
-	cmd.AddOption(mycli.StringOption("connect-options", 'o', "", "Comma-separated session options to set upon connecting to each database instance"))
-	cmd.AddOption(mycli.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done"))
-	cmd.AddOption(mycli.BoolOption("debug", 0, false, "Enable debug logging"))
+	cmd.AddOption(mybase.StringOption("user", 'u', "root", "Username to connect to database host"))
+	cmd.AddOption(mybase.StringOption("password", 'p', "<no password>", "Password for database user; supply with no value to prompt").ValueOptional())
+	cmd.AddOption(mybase.StringOption("host-wrapper", 'H', "", "External bin to shell out to for host lookup; see manual for template vars"))
+	cmd.AddOption(mybase.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema for intermediate operations, created and dropped each run unless --reuse-temp-schema"))
+	cmd.AddOption(mybase.StringOption("connect-options", 'o', "", "Comma-separated session options to set upon connecting to each database instance"))
+	cmd.AddOption(mybase.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done"))
+	cmd.AddOption(mybase.BoolOption("debug", 0, false, "Enable debug logging"))
 }
 
-// AddGlobalConfigFiles takes the mycli.Config generated from the CLI and adds
+// AddGlobalConfigFiles takes the mybase.Config generated from the CLI and adds
 // global option files as sources. It also handles special processing for a few
 // options. Generally, subcommand handlers should call AddGlobalConfigFiles at
 // the top of the method.
-func AddGlobalConfigFiles(cfg *mycli.Config) {
+func AddGlobalConfigFiles(cfg *mybase.Config) {
 	globalFilePaths := []string{"/etc/skeema", "/usr/local/etc/skeema"}
 	home := filepath.Clean(os.Getenv("HOME"))
 	if home != "" {
 		globalFilePaths = append(globalFilePaths, path.Join(home, ".my.cnf"), path.Join(home, ".skeema"))
 	}
 	for _, path := range globalFilePaths {
-		f := mycli.NewFile(path)
+		f := mybase.NewFile(path)
 		if !f.Exists() {
 			continue
 		}

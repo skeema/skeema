@@ -1,4 +1,4 @@
-package mycli
+package mybase
 
 import (
 	"bufio"
