@@ -2,9 +2,9 @@
 
 ### MySQL version and flavor
 
-Skeema is currently being tested extensively against MySQL 5.6, Percona Server 5.6, and MariaDB 10.1, all running on Linux. Only InnoDB tables are being used in all cases.
+Skeema is currently being tested extensively against MySQL 5.6, running on Linux. Percona Server 5.6 should also work. Only the InnoDB storage engine is supported for now. 
 
-Skeema is also expected to work on slightly older (5.5) or newer (5.7 / 10.2) versions as well, but won't be able to diff tables that use new features such as generated/virtual columns. Skeema automatically detects this situation, so there is no risk of generating an incorrect diff. If Skeema does not yet support a table/column feature that you need, please open a GitHub issue so that the work can be prioritized appropriately.
+Skeema is also expected to work on slightly older (5.5) or newer (5.7) versions as well, but won't be able to diff tables that use new features such as generated/virtual columns. Skeema automatically detects this situation, so there is no risk of generating an incorrect diff. If Skeema does not yet support a table/column feature that you need, please open a GitHub issue so that the work can be prioritized appropriately.
 
 Skeema is not currently intended for use on multi-master systems, including Galera, InnoDB Cluster, and traditional active-active master-master configurations. It also has not yet been evaluated on Amazon Aurora.
 
@@ -85,9 +85,7 @@ Skeema can CREATE or DROP tables using these features, but cannot ALTER them. Th
 * non-InnoDB storage engines
 * fulltext indexes
 * spatial types
-* generated/virtual columns (MySQL 5.7+ / Percona Server 5.7+ / MariaDB 5.2+)
+* generated/virtual columns (MySQL 5.7+)
 * column-level compression, with or without predefined dictionary (Percona Server 5.6.33+)
-* DEFAULT expressions (MariaDB 10.2+)
-* CHECK constraints (MariaDB 10.2+)
 
 You can still ALTER these tables externally from Skeema (e.g., direct invocation of `ALTER TABLE` or `pt-online-schema-change`). Afterwards, you can update your schema repo using `skeema pull`, which will work properly even on these tables.
