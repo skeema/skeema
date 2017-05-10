@@ -10,9 +10,13 @@ Skeema is a tool for managing MySQL tables and schema changes. It provides a CLI
 
 Skeema supports a pull-request-based workflow for schema change submission, review, and execution. This permits your team to manage schema changes in exactly the same way as you manage code changes.
 
+## Downloading
+
+Pre-built `skeema` binaries for Linux and macOS will be supplied later in Q2, once a formal release occurs. Stay tuned!
+
 ## Compiling
 
-Requires the [Go programming language toolchain](https://golang.org/dl/).
+Requires the [Go programming language toolchain](https://golang.org/dl/). Go version 1.6 or later is needed in order to properly use vendored dependencies.
 
 To download, build, and install Skeema, run:
 
