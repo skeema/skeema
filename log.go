@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"strings"
 
 	log "github.com/Sirupsen/logrus"
@@ -10,7 +11,7 @@ import (
 
 func init() {
 	log.SetFormatter(&customFormatter{
-		isTerminal: log.IsTerminal(),
+		isTerminal: log.IsTerminal(os.Stderr),
 	})
 }
 

@@ -5,8 +5,8 @@
 	"Deps": [
 		{
 			"ImportPath": "github.com/Sirupsen/logrus",
-			"Comment": "v0.11.0-2-g1445b7a",
-			"Rev": "1445b7a38228c041834afc69231b7966b9943397"
+			"Comment": "v0.11.5-18-g5b60b3d",
+			"Rev": "5b60b3d3ee017ed00bcd0225fcca7acab767844b"
 		},
 		{
 			"ImportPath": "github.com/VividCortex/mysqlerr",
