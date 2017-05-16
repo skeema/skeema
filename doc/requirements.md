@@ -89,3 +89,15 @@ Skeema can CREATE or DROP tables using these features, but cannot ALTER them. Th
 * column-level compression, with or without predefined dictionary (Percona Server 5.6.33+)
 
 You can still ALTER these tables externally from Skeema (e.g., direct invocation of `ALTER TABLE` or `pt-online-schema-change`). Afterwards, you can update your schema repo using `skeema pull`, which will work properly even on these tables.
+
+#### Renaming columns or tables
+
+Skeema cannot currently be used to rename columns within a table, or to rename entire tables. This is a shortcoming of Skeema's declarative approach: by expressing everything as a `CREATE TABLE`, there is no way for Skeema to know (with absolute certainty) the difference between a column rename vs dropping an existing column and adding a new column. A similar problem exists around renaming tables.
+
+A solution may be added in a future release. The prioritization will depend on user demand. Many companies disallow renames in production anyway, as they present substantial deploy-order complexity (e.g. it's impossible to deploy application code changes at the exact same time as a column or table rename in the database).
+
+Currently, Skeema will interpret attempts to rename as DROP-then-ADD operations. But since Skeema automatically flags any destructive action as unsafe, execution of these operations will be prevented unless the [allow-unsafe option](options.md#allow-unsafe) is used, or the table is below the size limit specified in the [safe-below-size option](options.md#safe-below-size).
+
+Note that for empty tables as a special-case, a rename is technically equivalent to a DROP-then-ADD anyway. In Skeema, if you configure [safe-below-size=1](options.md#safe-below-size), the tool will permit this operation on tables with 0 rows. This is completely safe, and can aid in rapid development.
+
+For tables with data, the work-around to handle renames is to do the appropriate `ALTER TABLE` manually (outside of Skeema) on all relevant databases. You can update your schema repo afterwards by running `skeema pull`.
