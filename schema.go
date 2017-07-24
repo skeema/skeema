@@ -322,8 +322,6 @@ func (s *Schema) Tables() ([]*Table, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Error executing SHOW CREATE TABLE: %s", err)
 		}
-		//fmt.Printf("\nIssued Create Statement: %v", t.createStatement)               //- CHRIS
-		//fmt.Printf("\nGenerated Create Statement: %v", t.GeneratedCreateStatement()) //- CHRIS
 		if t.createStatement != t.GeneratedCreateStatement() {
 			t.UnsupportedDDL = true
 		}

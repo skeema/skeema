@@ -21,7 +21,6 @@ type Table struct {
 	NextAutoIncrement uint64
 	UnsupportedDDL    bool // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
 	createStatement   string
-	//We need a new variable here to store []*Constraint -CHRIS
 }
 
 // AlterStatement returns the prefix to a SQL "ALTER TABLE" statement.
@@ -144,8 +143,6 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// If both tables have same output for SHOW CREATE TABLE, we know they're the same.
 	// We do this check prior to the UnsupportedDDL check so that we only emit the
 	// warning if the tables actually changed.
-	//fmt.Printf("\nFrom Create Statement: %s", from.createStatement) -CHRIS
-	//fmt.Printf("\nTo Create Statement: %s", to.createStatement) -CHRIS
 	if from.createStatement != "" && from.createStatement == to.createStatement {
 		return []TableAlterClause{}, true
 	}
