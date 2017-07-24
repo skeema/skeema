@@ -267,6 +267,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 	var rawConstraints []struct {
 		ConstraintName       string `db:"constraint_name"`
 		ColumnName           string `db:"column_name"`
+		ReferencedSchemaName string `db:"referenced_schema_name"`
 		ReferencedTableName  string `db:"referenced_table_name"`
 		ReferencedColumnName string `db:"referenced_column_name"`
 		UpdateRule           string `db:"update_rule"`
@@ -274,14 +275,15 @@ func (s *Schema) Tables() ([]*Table, error) {
 		TableName            string `db:"table_name"`
 	}
 
-	//You need two things in the WHERE clause because if you don't specificy the second, you get double the foreign key constraints.
+	//You need two things in the WHERE clause because if you don't specify the second, you get double the foreign key constraints.
 	//This is because skeema duplicates the entire database in question into a temporary database called _skeema_tmp
 	//This is skeema's temporary scratch space. The implication is that the foreign keys constraint records are doubled
 	//We don't need the ones from _skeema_tmp so we have to be more specific.
 	query = `SELECT 
 			key_column_usage.constraint_name AS constraint_name,
 			key_column_usage.column_name AS column_name,
-
+			
+			key_column_usage.referenced_table_schema AS referenced_schema_name,
 			key_column_usage.referenced_table_name AS referenced_table_name,
 			key_column_usage.referenced_column_name AS referenced_column_name,
 			referential_constraints.update_rule AS update_rule,
@@ -300,9 +302,19 @@ func (s *Schema) Tables() ([]*Table, error) {
 
 	constraintsByTableName := make(map[string][]*Constraint)
 	for _, rawConstraint := range rawConstraints {
+
+		// If this is a foreign key constraint which references a column in a table of a DIFFERENT database/schema,
+		// We need to include the ReferencedSchemaName in the constraint as it will be SIGNIFICANT to the
+		// contraint definition.
+		// If however it just references a table inside the current database/schema (s.Name), just provide "" to signal that we do not need it
+		referencedSchemaName := ""
+		if rawConstraint.ReferencedSchemaName != s.Name {
+			referencedSchemaName = rawConstraint.ReferencedSchemaName
+		}
 		constraint := &Constraint{
 			Name:                 rawConstraint.ConstraintName,
 			ColumnName:           rawConstraint.ColumnName,
+			ReferencedSchemaName: referencedSchemaName,
 			ReferencedTableName:  rawConstraint.ReferencedTableName,
 			ReferencedColumnName: rawConstraint.ReferencedColumnName,
 			UpdateRule:           rawConstraint.UpdateRule,
