@@ -375,6 +375,48 @@ func (di DropIndex) Unsafe() bool {
 	return false
 }
 
+///// AddConstraint /////////////////////////////////////////////////////////////////
+
+// AddConstraint represents a new constraint that is present on the right-side ("to")
+// schema version of the table, but not the left-side ("from") version. It
+// satisfies the TableAlterClause interface.
+type AddConstraint struct {
+	Table      *Table
+	Constraint *Constraint
+}
+
+// Clause returns an ADD CONSTRAINT clause of an ALTER TABLE statement.
+func (ac AddConstraint) Clause() string {
+	return fmt.Sprintf("ADD %s", ac.Constraint.Definition())
+}
+
+// Unsafe returns true if this clause is potentially destructive of data.
+// AddConstraint is never unsafe BUT will not fail if the data doesn't match the referenced table -> Is this an issue?
+func (ac AddConstraint) Unsafe() bool {
+	return false
+}
+
+///// DropConstraint ////////////////////////////////////////////////////////////////
+
+// DropConstraint represents an constraint that was present on the left-side ("from")
+// schema version of the table, but not the right-side ("to") version. It
+// satisfies the TableAlterClause interface.
+type DropConstraint struct {
+	Table      *Table
+	Constraint *Constraint
+}
+
+// Clause returns a DROP CONSTRAINT clause of an ALTER TABLE statement.
+func (dc DropConstraint) Clause() string {
+	return fmt.Sprintf("DROP FOREIGN KEY %s", EscapeIdentifier(dc.Constraint.Name))
+}
+
+// Unsafe returns true if this clause is potentially destructive of data.
+// Dropping a constraint is not destructive
+func (dc DropConstraint) Unsafe() bool {
+	return false
+}
+
 ///// RenameColumn /////////////////////////////////////////////////////////////
 
 // RenameColumn represents a column that exists in both versions of the table,

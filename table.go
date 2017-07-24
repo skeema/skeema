@@ -16,10 +16,12 @@ type Table struct {
 	Columns           []*Column
 	PrimaryKey        *Index
 	SecondaryIndexes  []*Index
+	Constraints       []*Constraint
 	Comment           string
 	NextAutoIncrement uint64
 	UnsupportedDDL    bool // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
 	createStatement   string
+	//We need a new variable here to store []*Constraint -CHRIS
 }
 
 // AlterStatement returns the prefix to a SQL "ALTER TABLE" statement.
@@ -49,7 +51,7 @@ func (t *Table) CreateStatement() string {
 // is true, this means the table uses MySQL features that Tengo does not yet
 // support, and so the output of this method will differ from MySQL.
 func (t *Table) GeneratedCreateStatement() string {
-	defs := make([]string, len(t.Columns), len(t.Columns)+len(t.SecondaryIndexes)+1)
+	defs := make([]string, len(t.Columns), len(t.Columns)+len(t.SecondaryIndexes)+len(t.Constraints)+1)
 	for n, c := range t.Columns {
 		defs[n] = c.Definition(t)
 	}
@@ -58,6 +60,9 @@ func (t *Table) GeneratedCreateStatement() string {
 	}
 	for _, idx := range t.SecondaryIndexes {
 		defs = append(defs, idx.Definition())
+	}
+	for _, cst := range t.Constraints {
+		defs = append(defs, cst.Definition())
 	}
 	var autoIncClause string
 	if t.NextAutoIncrement > 1 {
@@ -108,6 +113,16 @@ func (t *Table) SecondaryIndexesByName() map[string]*Index {
 	return result
 }
 
+// constraintsByName returns a mapping of constraint names to Contraint value
+// pointers, for all constraints in the table.
+func (t *Table) constraintsByName() map[string]*Constraint {
+	result := make(map[string]*Constraint, len(t.Constraints))
+	for _, cst := range t.Constraints {
+		result[cst.Name] = cst
+	}
+	return result
+}
+
 // HasAutoIncrement returns true if the table contains an auto-increment column,
 // or false otherwise.
 func (t *Table) HasAutoIncrement() bool {
@@ -129,6 +144,8 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// If both tables have same output for SHOW CREATE TABLE, we know they're the same.
 	// We do this check prior to the UnsupportedDDL check so that we only emit the
 	// warning if the tables actually changed.
+	//fmt.Printf("\nFrom Create Statement: %s", from.createStatement) -CHRIS
+	//fmt.Printf("\nTo Create Statement: %s", to.createStatement) -CHRIS
 	if from.createStatement != "" && from.createStatement == to.createStatement {
 		return []TableAlterClause{}, true
 	}
@@ -185,6 +202,25 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 		} else if !fromIdx.Equals(toIdx) {
 			drop := DropIndex{Table: to, Index: fromIdx}
 			add := AddIndex{Table: to, Index: toIdx}
+			clauses = append(clauses, drop, add)
+		}
+	}
+
+	// Compare constraints
+	fromConstraints := from.constraintsByName()
+	toConstraints := to.constraintsByName()
+	for _, toCst := range toConstraints {
+		if _, existedBefore := fromConstraints[toCst.Name]; !existedBefore {
+			clauses = append(clauses, AddConstraint{Table: to, Constraint: toCst})
+		}
+	}
+	for _, fromCst := range fromConstraints {
+		toCst, stillExists := toConstraints[fromCst.Name]
+		if !stillExists {
+			clauses = append(clauses, DropConstraint{Table: to, Constraint: fromCst})
+		} else if !fromCst.Equals(toCst) {
+			drop := DropConstraint{Table: to, Constraint: fromCst}
+			add := AddConstraint{Table: to, Constraint: toCst}
 			clauses = append(clauses, drop, add)
 		}
 	}
