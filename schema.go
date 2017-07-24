@@ -265,7 +265,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 
 	//Get all the constraints for all the tables and place them in the table object
 	var rawConstraints []struct {
-		ConstraintName       string `db:"constraint_name"`
+		Name                 string `db:"constraint_name"`
 		ColumnName           string `db:"column_name"`
 		ReferencedSchemaName string `db:"referenced_schema_name"`
 		ReferencedTableName  string `db:"referenced_table_name"`
@@ -311,9 +311,13 @@ func (s *Schema) Tables() ([]*Table, error) {
 		if rawConstraint.ReferencedSchemaName != s.Name {
 			referencedSchemaName = rawConstraint.ReferencedSchemaName
 		}
+
+		fullColNameStr := fmt.Sprintf("%s.%s.%s", s.Name, rawConstraint.TableName, rawConstraint.ColumnName)
+		column := columnsByTableAndName[fullColNameStr]
+
 		constraint := &Constraint{
-			Name:                 rawConstraint.ConstraintName,
-			ColumnName:           rawConstraint.ColumnName,
+			Name:                 rawConstraint.Name,
+			Column:               column,
 			ReferencedSchemaName: referencedSchemaName,
 			ReferencedTableName:  rawConstraint.ReferencedTableName,
 			ReferencedColumnName: rawConstraint.ReferencedColumnName,
