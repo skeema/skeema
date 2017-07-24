@@ -2,12 +2,14 @@ package tengo
 
 import (
 	"fmt"
+	"strings"
 )
 
 // Constraint represents a single Constraint in a table.
 type Constraint struct {
 	Name                 string
 	ColumnName           string
+	ReferencedSchemaName string
 	ReferencedTableName  string
 	ReferencedColumnName string
 	UpdateRule           string
@@ -20,13 +22,41 @@ func (cst *Constraint) Definition() string {
 	if cst == nil {
 		return ""
 	}
-	return fmt.Sprintf("CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s ON UPDATE %s",
+
+	// If the referenced schema == "", this means that the foreign key constraint does not reference a column from another database/schema
+	// We only include it in the definition if it is not ""
+	referencedIdentifierName := ""
+	if cst.ReferencedSchemaName != "" {
+		referencedIdentifierName = fmt.Sprintf("%s.%s",
+			EscapeIdentifier(cst.ReferencedSchemaName),
+			EscapeIdentifier(cst.ReferencedTableName))
+	} else {
+		referencedIdentifierName = fmt.Sprintf("%s",
+			EscapeIdentifier(cst.ReferencedTableName))
+	}
+
+	//MySQL does not output ON DELETE RESTRICT or ON UPDATE RESTRICT in its table create syntax.
+	//Therefore we need to omit these clauses as well if the UpdateRule or DeleteRule == "RESTRICT"
+	deleteRule := ""
+	if cst.DeleteRule != "RESTRICT" {
+		deleteRule = fmt.Sprintf("ON DELETE %s", cst.DeleteRule)
+	}
+
+	updateRule := ""
+	if cst.UpdateRule != "RESTRICT" {
+		updateRule = fmt.Sprintf("ON UPDATE %s", cst.UpdateRule)
+	}
+
+	def := fmt.Sprintf("CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) %s %s",
 		EscapeIdentifier(cst.Name),
 		EscapeIdentifier(cst.ColumnName),
-		EscapeIdentifier(cst.ReferencedTableName),
+		referencedIdentifierName,
 		EscapeIdentifier(cst.ReferencedColumnName),
-		cst.DeleteRule,
-		cst.UpdateRule)
+		deleteRule,
+		updateRule)
+
+	//Trim the tailing spaces which may be brought about due to the use of RESTRICT, which would render some extra spaces at the end.
+	return strings.Trim(def, " ")
 }
 
 // Equals returns true if two Constraints are identical, false otherwise.
@@ -43,6 +73,9 @@ func (cst *Constraint) Equals(other *Constraint) bool {
 		return false
 	}
 	if cst.ColumnName != other.ColumnName {
+		return false
+	}
+	if cst.ReferencedSchemaName != other.ReferencedSchemaName {
 		return false
 	}
 	if cst.ReferencedTableName != other.ReferencedTableName {
