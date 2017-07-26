@@ -8,7 +8,7 @@ import (
 // Constraint represents a single Constraint in a table.
 type Constraint struct {
 	Name                 string
-	ColumnName           string
+	Column               *Column
 	ReferencedSchemaName string
 	ReferencedTableName  string
 	ReferencedColumnName string
@@ -49,7 +49,7 @@ func (cst *Constraint) Definition() string {
 
 	def := fmt.Sprintf("CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) %s %s",
 		EscapeIdentifier(cst.Name),
-		EscapeIdentifier(cst.ColumnName),
+		EscapeIdentifier(cst.Column.Name),
 		referencedIdentifierName,
 		EscapeIdentifier(cst.ReferencedColumnName),
 		deleteRule,
@@ -72,7 +72,7 @@ func (cst *Constraint) Equals(other *Constraint) bool {
 	if cst.Name != other.Name {
 		return false
 	}
-	if cst.ColumnName != other.ColumnName {
+	if !cst.Column.Equals(other.Column) {
 		return false
 	}
 	if cst.ReferencedSchemaName != other.ReferencedSchemaName {

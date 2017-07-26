@@ -159,3 +159,68 @@ func aSchema(name string, tables ...*Table) Schema {
 	}
 	return s
 }
+
+//aCstTestTable - Generates the test table for testing foreign key constraints
+func aCstTestTable(nextAutoInc uint64) Table {
+	//cstATable is meant to reference cstBTable when used in the test
+	columns := []*Column{
+		&Column{
+			Name:          "id",
+			TypeInDB:      "int(11) unsigned NOT NULL AUTO_INCREMENT,",
+			AutoIncrement: true,
+			Default:       ColumnDefaultNull,
+		},
+		&Column{
+			Name:     "bID",
+			TypeInDB: "int(11) unsigned DEFAULT NULL",
+			Default:  ColumnDefaultNull,
+		},
+		&Column{
+			Name:     "cID",
+			TypeInDB: "int(11) unsigned DEFAULT NULL",
+			Default:  ColumnDefaultNull,
+		},
+	}
+
+	secondaryIndex := &Index{
+		Name:     "cID",
+		Columns:  []*Column{columns[2]},
+		SubParts: []uint16{0},
+	}
+
+	constraint := &Constraint{
+		Name:                 "cstatable_ibfk_2",
+		Column:               columns[2],
+		ReferencedSchemaName: "", //LEAVE BLANK TO SIGNAL ITS THE SAME SCHEMA AS THE CURRENT TABLE
+		ReferencedTableName:  "cstCTable",
+		ReferencedColumnName: "id",
+		DeleteRule:           "SET NULL",
+		UpdateRule:           "CASCADE",
+	}
+
+	var autoIncClause string
+	if nextAutoInc > 1 {
+		autoIncClause = fmt.Sprintf(" AUTO_INCREMENT=%d", nextAutoInc)
+	}
+	stmt := fmt.Sprintf(
+		"CREATE TABLE `cstATable` ("+
+			"`id` int(11) unsigned NOT NULL AUTO_INCREMENT,"+
+			"`bID` int(11) unsigned DEFAULT NULL,"+
+			"`cID` int(11) unsigned DEFAULT NULL,"+
+			"PRIMARY KEY (`id`),"+
+			"KEY `cID` (`cID`),"+
+			"CONSTRAINT `cstatable_ibfk_2` FOREIGN KEY (`cID`) REFERENCES `cstCTable` (`id`) ON DELETE SET NULL ON UPDATE CASCADE"+
+			") ENGINE=InnoDB%s DEFAULT CHARSET=utf8;", autoIncClause)
+
+	return Table{
+		Name:              "cstATable",
+		Engine:            "InnoDB",
+		CharSet:           "utf8",
+		Columns:           columns,
+		PrimaryKey:        primaryKey(columns[0]),
+		SecondaryIndexes:  []*Index{secondaryIndex},
+		Constraints:       []*Constraint{constraint},
+		NextAutoIncrement: nextAutoInc,
+		createStatement:   stmt,
+	}
+}
