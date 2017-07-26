@@ -159,3 +159,74 @@ func aSchema(name string, tables ...*Table) Schema {
 	}
 	return s
 }
+
+//aCstTestTableA - Generates the A test table for testing foreign key constraints
+func aCstTestTableA(nextAutoInc uint64) Table {
+	//cstATable is meant to reference cstBTable when used in the test
+	columns := []*Column{
+		&Column{
+			Name:          "id",
+			TypeInDB:      "int(11) unsigned NOT NULL AUTO_INCREMENT,",
+			AutoIncrement: true,
+			Default:       ColumnDefaultNull,
+		},
+		&Column{
+			Name:     "bID",
+			TypeInDB: "int(11) unsigned DEFAULT NULL",
+			Default:  ColumnDefaultNull,
+		},
+	}
+
+	var autoIncClause string
+	if nextAutoInc > 1 {
+		autoIncClause = fmt.Sprintf(" AUTO_INCREMENT=%d", nextAutoInc)
+	}
+	stmt := fmt.Sprintf(
+		"CREATE TABLE `cstATable` ("+
+			"`id` int(11) unsigned NOT NULL AUTO_INCREMENT,"+
+			"`bID` int(11) unsigned DEFAULT NULL,"+
+			"PRIMARY KEY (`id`)"+
+			") ENGINE=InnoDB%s DEFAULT CHARSET=utf8;", autoIncClause)
+
+	return Table{
+		Name:              "cstATable",
+		Engine:            "InnoDB",
+		CharSet:           "utf8",
+		Columns:           columns,
+		PrimaryKey:        primaryKey(columns[0]),
+		NextAutoIncrement: nextAutoInc,
+		createStatement:   stmt,
+	}
+}
+
+//aCstTestTableB - Generates the B test table for testing foreign key constraints
+func aCstTestTableB(nextAutoInc uint64) Table {
+	columns := []*Column{
+		&Column{
+			Name:          "id",
+			TypeInDB:      "int(11) unsigned NOT NULL AUTO_INCREMENT,",
+			AutoIncrement: true,
+			Default:       ColumnDefaultNull,
+		},
+	}
+
+	var autoIncClause string
+	if nextAutoInc > 1 {
+		autoIncClause = fmt.Sprintf(" AUTO_INCREMENT=%d", nextAutoInc)
+	}
+	stmt := fmt.Sprintf(
+		"CREATE TABLE `cstBTable` ("+
+			"`id` int(11) unsigned NOT NULL AUTO_INCREMENT,"+
+			"PRIMARY KEY (`id`)"+
+			") ENGINE=InnoDB%s DEFAULT CHARSET=utf8;", autoIncClause)
+
+	return Table{
+		Name:              "cstBTable",
+		Engine:            "InnoDB",
+		CharSet:           "utf8",
+		Columns:           columns,
+		PrimaryKey:        primaryKey(columns[0]),
+		NextAutoIncrement: nextAutoInc,
+		createStatement:   stmt,
+	}
+}
