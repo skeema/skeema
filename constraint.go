@@ -35,8 +35,8 @@ func (cst *Constraint) Definition() string {
 			EscapeIdentifier(cst.ReferencedTableName))
 	}
 
-	//MySQL does not output ON DELETE RESTRICT or ON UPDATE RESTRICT in its table create syntax.
-	//Therefore we need to omit these clauses as well if the UpdateRule or DeleteRule == "RESTRICT"
+	// MySQL does not output ON DELETE RESTRICT or ON UPDATE RESTRICT in its table create syntax.
+	// Therefore we need to omit these clauses as well if the UpdateRule or DeleteRule == "RESTRICT"
 	deleteRule := ""
 	if cst.DeleteRule != "RESTRICT" {
 		deleteRule = fmt.Sprintf("ON DELETE %s", cst.DeleteRule)
@@ -55,7 +55,7 @@ func (cst *Constraint) Definition() string {
 		deleteRule,
 		updateRule)
 
-	//Trim the tailing spaces which may be brought about due to the use of RESTRICT, which would render some extra spaces at the end.
+	// Trim the tailing spaces which may be brought about due to the use of RESTRICT, which would render some extra spaces at the end.
 	return strings.Trim(def, " ")
 }
 
