@@ -231,6 +231,139 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 	}
 }
 
+func TestTableAlterAddOrDropConstraint(t *testing.T) {
+	var (
+		to     Table
+		from   Table
+		taIx1  AddIndex
+		taCst1 AddConstraint
+		taIx2  DropIndex
+		taCst2 DropConstraint
+
+		ok bool
+	)
+
+	from = aCstTestTable(1)
+	to = aCstTestTable(1)
+
+	// Add the foreign key constraint
+
+	newSecIndex :=
+		&Index{
+			Name:     "bID",
+			Columns:  []*Column{to.Columns[1]},
+			SubParts: []uint16{0},
+		}
+
+	newCst :=
+		&Constraint{
+			Name:                 "cstatable_ibfk_1",
+			Column:               to.Columns[1],
+			ReferencedSchemaName: "", //LEAVE BLANK TO SIGNAL ITS THE SAME SCHEMA AS THE CURRENT TABLE
+			ReferencedTableName:  "cstBTable",
+			ReferencedColumnName: "id",
+			DeleteRule:           "RESTRICT",
+			UpdateRule:           "CASCADE",
+		}
+	to.SecondaryIndexes = append(to.SecondaryIndexes, newSecIndex)
+	to.Constraints = append(to.Constraints, newCst)
+	to.createStatement = to.GeneratedCreateStatement()
+
+	// Normal Comparison should yield add Index, add Constraint
+	tableAlters, supported := from.Diff(&to)
+	if len(tableAlters) != 2 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
+	}
+	taIx1, ok = tableAlters[0].(AddIndex)
+	if !ok {
+		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taIx1, tableAlters[0])
+	}
+	if taIx1.Table != &to || taIx1.Index != newSecIndex {
+		t.Error("Pointers in table alter do not point to expected values")
+	}
+
+	taCst1, ok = tableAlters[1].(AddConstraint)
+
+	if !ok {
+		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taCst1, tableAlters[0])
+	}
+	if taCst1.Table != &to || taCst1.Constraint != newCst {
+		t.Error("Pointers in table alter do not point to expected values")
+	}
+
+	// Reverse comparison should yield a drop index, drop constraint
+	tableAlters, supported = to.Diff(&from)
+	if len(tableAlters) != 2 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
+	}
+	taIx2, ok = tableAlters[0].(DropIndex)
+	if !ok {
+		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taIx2, tableAlters[0])
+	}
+	if taIx2.Table != &from || taIx2.Index != newSecIndex {
+		t.Error("Pointers in table alter do not point to expected values")
+	}
+
+	taCst2, ok = tableAlters[1].(DropConstraint)
+	if !ok {
+		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taCst2, tableAlters[0])
+	}
+	if taCst2.Table != &from || taCst2.Constraint != newCst {
+		t.Error("Pointers in table alter do not point to expected values")
+	}
+
+	// Start over; change an existing constraint
+	to = aCstTestTable(1)
+	to.Constraints[0].UpdateRule = "SET NULL"
+	to.createStatement = to.GeneratedCreateStatement()
+	tableAlters, supported = from.Diff(&to)
+	if len(tableAlters) != 2 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
+	}
+	taCst2, ok = tableAlters[0].(DropConstraint)
+	if !ok {
+		t.Fatalf("Incorrect type of table alter[0] returned: expected %T, found %T", taCst2, tableAlters[0])
+	}
+	if taCst2.Table != &to || taCst2.Constraint != from.Constraints[0] {
+		t.Error("Pointers in table alter[0] do not point to expected values")
+	}
+	taCst1, ok = tableAlters[1].(AddConstraint)
+	if !ok {
+		t.Fatalf("Incorrect type of table alter[1] returned: expected %T, found %T", taCst1, tableAlters[1])
+	}
+	if taCst1.Table != &to || taCst1.Constraint != to.Constraints[0] {
+		t.Error("Pointers in table alter[1] do not point to expected values")
+	}
+
+	// Remove a constraint
+	to.Constraints = []*Constraint{}
+	to.createStatement = to.GeneratedCreateStatement()
+	tableAlters, supported = from.Diff(&to)
+	if len(tableAlters) != 1 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
+	}
+	taCst2, ok = tableAlters[0].(DropConstraint)
+	if !ok {
+		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taCst2, tableAlters[0])
+	}
+	if taCst2.Table != &to || taCst2.Constraint != from.Constraints[0] {
+		t.Error("Pointers in table alter do not point to expected values")
+	}
+
+	// Reverse comparison should yield an add constraint
+	tableAlters, supported = to.Diff(&from)
+	if len(tableAlters) != 1 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
+	}
+	taCst1, ok = tableAlters[0].(AddConstraint)
+	if !ok {
+		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taCst1, tableAlters[0])
+	}
+	if taCst1.Table != &from || taCst1.Constraint != from.Constraints[0] {
+		t.Error("Pointers in table alter do not point to expected values")
+	}
+}
+
 func TestTableAlterModifyColumn(t *testing.T) {
 	from := aTable(1)
 	to := aTable(1)

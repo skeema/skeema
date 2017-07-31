@@ -117,6 +117,9 @@ func (s *Schema) Tables() ([]*Table, error) {
 		}
 	}
 
+	// Information about what's inside a table is acqured through MySQL's INFORMATION_SCHEMA Database which provides reflective information
+	// on all the tables in the MySQL database. We make quireies on this database to ascertain the state of the schema.
+
 	// Obtain the columns in all tables in the schema
 	var rawColumns []struct {
 		Name               string         `db:"column_name"`
@@ -258,6 +261,73 @@ func (s *Schema) Tables() ([]*Table, error) {
 	for _, t := range s.tables {
 		t.PrimaryKey = primaryKeyByTableName[t.Name]
 		t.SecondaryIndexes = secondaryIndexesByTableName[t.Name]
+	}
+
+	//Get all the constraints for all the tables and place them in the table object
+	var rawConstraints []struct {
+		Name                 string `db:"constraint_name"`
+		ColumnName           string `db:"column_name"`
+		ReferencedSchemaName string `db:"referenced_schema_name"`
+		ReferencedTableName  string `db:"referenced_table_name"`
+		ReferencedColumnName string `db:"referenced_column_name"`
+		UpdateRule           string `db:"update_rule"`
+		DeleteRule           string `db:"delete_rule"`
+		TableName            string `db:"table_name"`
+	}
+
+	//You need two things in the WHERE clause because if you don't specify the second, you get double the foreign key constraints.
+	//This is because skeema duplicates the entire database in question into a temporary database called _skeema_tmp
+	//This is skeema's temporary scratch space. The implication is that the foreign keys constraint records are doubled
+	//We don't need the ones from _skeema_tmp so we have to be more specific.
+	query = `SELECT 
+			key_column_usage.constraint_name AS constraint_name,
+			key_column_usage.column_name AS column_name,
+			
+			key_column_usage.referenced_table_schema AS referenced_schema_name,
+			key_column_usage.referenced_table_name AS referenced_table_name,
+			key_column_usage.referenced_column_name AS referenced_column_name,
+			referential_constraints.update_rule AS update_rule,
+			referential_constraints.delete_rule AS delete_rule,
+
+			key_column_usage.table_name AS table_name
+
+			FROM key_column_usage
+			INNER JOIN referential_constraints ON key_column_usage.constraint_name = referential_constraints.constraint_name
+			WHERE key_column_usage.table_schema = ? AND referential_constraints.constraint_schema = ?
+			AND key_column_usage.referenced_column_name IS NOT NULL;`
+
+	if err := db.Select(&rawConstraints, query, s.Name, s.Name); err != nil {
+		return nil, fmt.Errorf("Error querying information_schema.statistics: %s", err)
+	}
+
+	constraintsByTableName := make(map[string][]*Constraint)
+	for _, rawConstraint := range rawConstraints {
+
+		// If this is a foreign key constraint which references a column in a table of a DIFFERENT database/schema,
+		// We need to include the ReferencedSchemaName in the constraint as it will be SIGNIFICANT to the
+		// contraint definition.
+		// If however it just references a table inside the current database/schema (s.Name), just provide "" to signal that we do not need it
+		referencedSchemaName := ""
+		if rawConstraint.ReferencedSchemaName != s.Name {
+			referencedSchemaName = rawConstraint.ReferencedSchemaName
+		}
+
+		fullColNameStr := fmt.Sprintf("%s.%s.%s", s.Name, rawConstraint.TableName, rawConstraint.ColumnName)
+		column := columnsByTableAndName[fullColNameStr]
+
+		constraint := &Constraint{
+			Name:                 rawConstraint.Name,
+			Column:               column,
+			ReferencedSchemaName: referencedSchemaName,
+			ReferencedTableName:  rawConstraint.ReferencedTableName,
+			ReferencedColumnName: rawConstraint.ReferencedColumnName,
+			UpdateRule:           rawConstraint.UpdateRule,
+			DeleteRule:           rawConstraint.DeleteRule,
+		}
+		constraintsByTableName[rawConstraint.TableName] = append(constraintsByTableName[rawConstraint.TableName], constraint)
+	}
+	for _, t := range s.tables {
+		t.Constraints = constraintsByTableName[t.Name]
 	}
 
 	// Obtain actual SHOW CREATE TABLE output and store in each table. Compare

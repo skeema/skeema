@@ -37,9 +37,9 @@ Go La Tengo **cannot** yet diff tables containing any of the following MySQL fea
 * DEFAULT expressions (MariaDB 10.2+)
 * CHECK constraints (MariaDB 10.2+)
 
-This list is not necessarily exhaustive. Many of these will be implemented in subsequent releases.
+This list is not necessarily exhaustive.
 
-Go La Tengo also does not yet support rename operations, e.g. column renames or table renames.
+Many of these will be implemented in subsequent releases.
 
 ### Other databases besides MySQL
 
@@ -51,7 +51,7 @@ Support for entirely different database systems, such as PostgreSQL and SQL Serv
 
 * http://github.com/go-sql-driver/mysql (Mozilla Public License 2.0)
 * http://github.com/jmoiron/sqlx (MIT License)
-* http://github.com/VividCortex/mysqlerr (MIT License)
+* http://github.com/VividCortex/mysqlerr (no copyright specified)
 
 ## Contributors
 
