@@ -160,9 +160,9 @@ func aSchema(name string, tables ...*Table) Schema {
 	return s
 }
 
-//aCstTestTable - Generates the test table for testing foreign key constraints
+// aCstTestTable - Generates the test table for testing foreign key constraints
 func aCstTestTable(nextAutoInc uint64) Table {
-	//cstATable is meant to reference cstBTable when used in the test
+	// cstATable is meant to reference cstBTable when used in the test
 	columns := []*Column{
 		&Column{
 			Name:          "id",
@@ -191,7 +191,7 @@ func aCstTestTable(nextAutoInc uint64) Table {
 	constraint := &Constraint{
 		Name:                 "cstatable_ibfk_2",
 		Column:               columns[2],
-		ReferencedSchemaName: "", //LEAVE BLANK TO SIGNAL ITS THE SAME SCHEMA AS THE CURRENT TABLE
+		ReferencedSchemaName: "", // LEAVE BLANK TO SIGNAL ITS THE SAME SCHEMA AS THE CURRENT TABLE
 		ReferencedTableName:  "cstCTable",
 		ReferencedColumnName: "id",
 		DeleteRule:           "SET NULL",

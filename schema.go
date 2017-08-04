@@ -60,6 +60,8 @@ func (s *Schema) Tables() ([]*Table, error) {
 		return nil, fmt.Errorf("Schema.Tables: schema %s has been detached from its instance", s.Name)
 	}
 
+	// We use MySQL's information_schema to perform schema introspection and build
+	// corresponding structs
 	db, err := s.instance.Connect("information_schema", "")
 	if err != nil {
 		return nil, err
@@ -116,9 +118,6 @@ func (s *Schema) Tables() ([]*Table, error) {
 			}
 		}
 	}
-
-	// Information about what's inside a table is acqured through MySQL's INFORMATION_SCHEMA Database which provides reflective information
-	// on all the tables in the MySQL database. We make quireies on this database to ascertain the state of the schema.
 
 	// Obtain the columns in all tables in the schema
 	var rawColumns []struct {
@@ -263,7 +262,7 @@ func (s *Schema) Tables() ([]*Table, error) {
 		t.SecondaryIndexes = secondaryIndexesByTableName[t.Name]
 	}
 
-	//Get all the constraints for all the tables and place them in the table object
+	// Get all the constraints for all the tables and place them in the table object
 	var rawConstraints []struct {
 		Name                 string `db:"constraint_name"`
 		ColumnName           string `db:"column_name"`
@@ -275,34 +274,22 @@ func (s *Schema) Tables() ([]*Table, error) {
 		TableName            string `db:"table_name"`
 	}
 
-	//You need two things in the WHERE clause because if you don't specify the second, you get double the foreign key constraints.
-	//This is because skeema duplicates the entire database in question into a temporary database called _skeema_tmp
-	//This is skeema's temporary scratch space. The implication is that the foreign keys constraint records are doubled
-	//We don't need the ones from _skeema_tmp so we have to be more specific.
-	query = `SELECT 
-			key_column_usage.constraint_name AS constraint_name,
-			key_column_usage.column_name AS column_name,
-			
-			key_column_usage.referenced_table_schema AS referenced_schema_name,
-			key_column_usage.referenced_table_name AS referenced_table_name,
-			key_column_usage.referenced_column_name AS referenced_column_name,
-			referential_constraints.update_rule AS update_rule,
-			referential_constraints.delete_rule AS delete_rule,
-
-			key_column_usage.table_name AS table_name
-
-			FROM key_column_usage
-			INNER JOIN referential_constraints ON key_column_usage.constraint_name = referential_constraints.constraint_name
-			WHERE key_column_usage.table_schema = ? AND referential_constraints.constraint_schema = ?
-			AND key_column_usage.referenced_column_name IS NOT NULL;`
+	query = `
+		SELECT   kcu.constraint_name, kcu.table_name, kcu.column_name,
+		         kcu.referenced_table_name, kcu.referenced_column_name,
+		         kcu.referenced_table_schema AS referenced_schema_name,
+		         rc.update_rule, rc.delete_rule
+		FROM     key_column_usage kcu
+		JOIN     referential_constraints rc ON kcu.constraint_name = rc.constraint_name
+		WHERE    kcu.table_schema = ? AND rc.constraint_schema = ? AND
+		         kcu.referenced_column_name IS NOT NULL`
 
 	if err := db.Select(&rawConstraints, query, s.Name, s.Name); err != nil {
-		return nil, fmt.Errorf("Error querying information_schema.statistics: %s", err)
+		return nil, fmt.Errorf("Error querying foreign key constraints: %s", err)
 	}
 
 	constraintsByTableName := make(map[string][]*Constraint)
 	for _, rawConstraint := range rawConstraints {
-
 		// If this is a foreign key constraint which references a column in a table of a DIFFERENT database/schema,
 		// We need to include the ReferencedSchemaName in the constraint as it will be SIGNIFICANT to the
 		// contraint definition.

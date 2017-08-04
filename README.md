@@ -8,7 +8,7 @@ Most of Go La Tengo's current functionality is focused on MySQL schema introspec
 
 ### Schema introspection
 
-Go La Tengo examines several `information_schema` tables in order to build Go struct values representing schemas (databases), tables, columns, and indexes. These values can then be diffed to generate corresponding DDL statements.
+Go La Tengo examines several `information_schema` tables in order to build Go struct values representing schemas (databases), tables, columns, indexes, and foreign key constraints. These values can then be diffed to generate corresponding DDL statements.
 
 ### Instance modeling
 
@@ -26,7 +26,6 @@ This is alpha software. The API is subject to change, and no backwards-compatibi
 
 Go La Tengo **cannot** yet diff tables containing any of the following MySQL features:
 
-* foreign keys
 * compressed tables
 * partitioned tables
 * triggers
@@ -38,23 +37,26 @@ Go La Tengo **cannot** yet diff tables containing any of the following MySQL fea
 * DEFAULT expressions (MariaDB 10.2+)
 * CHECK constraints (MariaDB 10.2+)
 
-This list is not necessarily exhaustive.
+This list is not necessarily exhaustive. Many of these will be implemented in subsequent releases.
 
-Many of these will be implemented in subsequent releases.
+Go La Tengo also does not yet support rename operations, e.g. column renames or table renames.
 
 ### Other databases besides MySQL
 
-Go La Tengo currently only aims to support MySQL, MariaDB, and Percona Server. Support for other databases, such as PostgreSQL and SQL Server, may be added in the future if there's sufficient demand. However, this will require a major refactor introducing backwards-incompatible changes.
+Go La Tengo currently only aims to support MySQL and Percona Server. MariaDB currently works as well, but is not explicitly supported or tested against.
+
+Support for entirely different database systems, such as PostgreSQL and SQL Server, may be added in the future if there's sufficient demand. However, this will require a major refactor introducing backwards-incompatible changes.
 
 ## External Dependencies
 
 * http://github.com/go-sql-driver/mysql (Mozilla Public License 2.0)
 * http://github.com/jmoiron/sqlx (MIT License)
-* http://github.com/VividCortex/mysqlerr (no copyright specified)
+* http://github.com/VividCortex/mysqlerr (MIT License)
 
-## Authors
+## Contributors
 
-[@evanelias](https://github.com/evanelias)
+* [@evanelias](https://github.com/evanelias) - Creator and maintainer
+* [@chrisjpalmer](https://github.com/chrisjpalmer) - Added foreign key support
 
 ## License
 
