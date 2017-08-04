@@ -308,9 +308,9 @@ func (s *Schema) Tables() ([]*Table, error) {
 		// contraint definition.
 		// If however it just references a table inside the current database/schema (s.Name), just provide "" to signal that we do not need it
 		referencedSchemaName := ""
-		if rawConstraint.ReferencedSchemaName != s.Name {
-			referencedSchemaName = rawConstraint.ReferencedSchemaName
-		}
+		if strings.ToLower(rawConstraint.ReferencedSchemaName) != strings.ToLower(s.Name) {
+                referencedSchemaName = rawConstraint.ReferencedSchemaName
+        }
 
 		fullColNameStr := fmt.Sprintf("%s.%s.%s", s.Name, rawConstraint.TableName, rawConstraint.ColumnName)
 		column := columnsByTableAndName[fullColNameStr]
@@ -338,9 +338,9 @@ func (s *Schema) Tables() ([]*Table, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Error executing SHOW CREATE TABLE: %s", err)
 		}
-		if t.createStatement != t.GeneratedCreateStatement() {
-			t.UnsupportedDDL = true
-		}
+		if strings.ToLower(t.createStatement) != strings.ToLower(t.GeneratedCreateStatement()) {
+                t.UnsupportedDDL = true
+        }
 	}
 
 	return s.tables, nil

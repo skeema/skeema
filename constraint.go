@@ -39,15 +39,15 @@ func (cst *Constraint) Definition() string {
 	//Therefore we need to omit these clauses as well if the UpdateRule or DeleteRule == "RESTRICT"
 	deleteRule := ""
 	if cst.DeleteRule != "RESTRICT" {
-		deleteRule = fmt.Sprintf("ON DELETE %s", cst.DeleteRule)
+		deleteRule = fmt.Sprintf(" ON DELETE %s", cst.DeleteRule)
 	}
 
 	updateRule := ""
 	if cst.UpdateRule != "RESTRICT" {
-		updateRule = fmt.Sprintf("ON UPDATE %s", cst.UpdateRule)
+		updateRule = fmt.Sprintf(" ON UPDATE %s", cst.UpdateRule)
 	}
 
-	def := fmt.Sprintf("CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) %s %s",
+	def := fmt.Sprintf("CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)%s%s",
 		EscapeIdentifier(cst.Name),
 		EscapeIdentifier(cst.Column.Name),
 		referencedIdentifierName,
