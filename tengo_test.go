@@ -160,9 +160,9 @@ func aSchema(name string, tables ...*Table) Schema {
 	return s
 }
 
-// aCstTestTable - Generates the test table for testing foreign key constraints
-func aCstTestTable(nextAutoInc uint64) Table {
-	// cstATable is meant to reference cstBTable when used in the test
+// aFkTestTable - Generates the test table for testing foreign key constraints
+func aFkTestTable(nextAutoInc uint64) Table {
+	// fkATable is meant to reference fkBTable when used in the test
 	columns := []*Column{
 		&Column{
 			Name:          "id",
@@ -188,11 +188,11 @@ func aCstTestTable(nextAutoInc uint64) Table {
 		SubParts: []uint16{0},
 	}
 
-	constraint := &Constraint{
-		Name:                 "cstatable_ibfk_2",
+	foreignKey := &ForeignKey{
+		Name:                 "fkatable_ibfk_2",
 		Column:               columns[2],
 		ReferencedSchemaName: "", // LEAVE BLANK TO SIGNAL ITS THE SAME SCHEMA AS THE CURRENT TABLE
-		ReferencedTableName:  "cstCTable",
+		ReferencedTableName:  "fkCTable",
 		ReferencedColumnName: "id",
 		DeleteRule:           "SET NULL",
 		UpdateRule:           "CASCADE",
@@ -203,23 +203,23 @@ func aCstTestTable(nextAutoInc uint64) Table {
 		autoIncClause = fmt.Sprintf(" AUTO_INCREMENT=%d", nextAutoInc)
 	}
 	stmt := fmt.Sprintf(
-		"CREATE TABLE `cstATable` ("+
+		"CREATE TABLE `fkATable` ("+
 			"`id` int(11) unsigned NOT NULL AUTO_INCREMENT,"+
 			"`bID` int(11) unsigned DEFAULT NULL,"+
 			"`cID` int(11) unsigned DEFAULT NULL,"+
 			"PRIMARY KEY (`id`),"+
 			"KEY `cID` (`cID`),"+
-			"CONSTRAINT `cstatable_ibfk_2` FOREIGN KEY (`cID`) REFERENCES `cstCTable` (`id`) ON DELETE SET NULL ON UPDATE CASCADE"+
+			"CONSTRAINT `fkatable_ibfk_2` FOREIGN KEY (`cID`) REFERENCES `fkCTable` (`id`) ON DELETE SET NULL ON UPDATE CASCADE"+
 			") ENGINE=InnoDB%s DEFAULT CHARSET=utf8;", autoIncClause)
 
 	return Table{
-		Name:              "cstATable",
+		Name:              "fkATable",
 		Engine:            "InnoDB",
 		CharSet:           "utf8",
 		Columns:           columns,
 		PrimaryKey:        primaryKey(columns[0]),
 		SecondaryIndexes:  []*Index{secondaryIndex},
-		Constraints:       []*Constraint{constraint},
+		ForeignKeys:       []*ForeignKey{foreignKey},
 		NextAutoIncrement: nextAutoInc,
 		createStatement:   stmt,
 	}

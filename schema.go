@@ -262,8 +262,8 @@ func (s *Schema) Tables() ([]*Table, error) {
 		t.SecondaryIndexes = secondaryIndexesByTableName[t.Name]
 	}
 
-	// Get all the constraints for all the tables and place them in the table object
-	var rawConstraints []struct {
+	// Get all the foreign keys for all the tables and place them in the table object
+	var rawForeignKeys []struct {
 		Name                 string `db:"constraint_name"`
 		ColumnName           string `db:"column_name"`
 		ReferencedSchemaName string `db:"referenced_schema_name"`
@@ -284,37 +284,37 @@ func (s *Schema) Tables() ([]*Table, error) {
 		WHERE    kcu.table_schema = ? AND rc.constraint_schema = ? AND
 		         kcu.referenced_column_name IS NOT NULL`
 
-	if err := db.Select(&rawConstraints, query, s.Name, s.Name); err != nil {
+	if err := db.Select(&rawForeignKeys, query, s.Name, s.Name); err != nil {
 		return nil, fmt.Errorf("Error querying foreign key constraints: %s", err)
 	}
 
-	constraintsByTableName := make(map[string][]*Constraint)
-	for _, rawConstraint := range rawConstraints {
+	foreignKeysByTableName := make(map[string][]*ForeignKey)
+	for _, rawForeignKey := range rawForeignKeys {
 		// If this is a foreign key constraint which references a column in a table of a DIFFERENT database/schema,
 		// We need to include the ReferencedSchemaName in the constraint as it will be SIGNIFICANT to the
 		// contraint definition.
 		// If however it just references a table inside the current database/schema (s.Name), just provide "" to signal that we do not need it
 		referencedSchemaName := ""
-		if rawConstraint.ReferencedSchemaName != s.Name {
-			referencedSchemaName = rawConstraint.ReferencedSchemaName
+		if rawForeignKey.ReferencedSchemaName != s.Name {
+			referencedSchemaName = rawForeignKey.ReferencedSchemaName
 		}
 
-		fullColNameStr := fmt.Sprintf("%s.%s.%s", s.Name, rawConstraint.TableName, rawConstraint.ColumnName)
+		fullColNameStr := fmt.Sprintf("%s.%s.%s", s.Name, rawForeignKey.TableName, rawForeignKey.ColumnName)
 		column := columnsByTableAndName[fullColNameStr]
 
-		constraint := &Constraint{
-			Name:                 rawConstraint.Name,
+		foreignKey := &ForeignKey{
+			Name:                 rawForeignKey.Name,
 			Column:               column,
 			ReferencedSchemaName: referencedSchemaName,
-			ReferencedTableName:  rawConstraint.ReferencedTableName,
-			ReferencedColumnName: rawConstraint.ReferencedColumnName,
-			UpdateRule:           rawConstraint.UpdateRule,
-			DeleteRule:           rawConstraint.DeleteRule,
+			ReferencedTableName:  rawForeignKey.ReferencedTableName,
+			ReferencedColumnName: rawForeignKey.ReferencedColumnName,
+			UpdateRule:           rawForeignKey.UpdateRule,
+			DeleteRule:           rawForeignKey.DeleteRule,
 		}
-		constraintsByTableName[rawConstraint.TableName] = append(constraintsByTableName[rawConstraint.TableName], constraint)
+		foreignKeysByTableName[rawForeignKey.TableName] = append(foreignKeysByTableName[rawForeignKey.TableName], foreignKey)
 	}
 	for _, t := range s.tables {
-		t.Constraints = constraintsByTableName[t.Name]
+		t.ForeignKeys = foreignKeysByTableName[t.Name]
 	}
 
 	// Obtain actual SHOW CREATE TABLE output and store in each table. Compare

@@ -375,45 +375,46 @@ func (di DropIndex) Unsafe() bool {
 	return false
 }
 
-///// AddConstraint /////////////////////////////////////////////////////////////////
+///// AddForeignKey ////////////////////////////////////////////////////////////
 
-// AddConstraint represents a new constraint that is present on the right-side ("to")
-// schema version of the table, but not the left-side ("from") version. It
-// satisfies the TableAlterClause interface.
-type AddConstraint struct {
+// AddForeignKey represents a new foreign key that is present on the right-side
+// ("to") schema version of the table, but not the left-side ("from") version.
+// It satisfies the TableAlterClause interface.
+type AddForeignKey struct {
 	Table      *Table
-	Constraint *Constraint
+	ForeignKey *ForeignKey
 }
 
-// Clause returns an ADD CONSTRAINT clause of an ALTER TABLE statement.
-func (ac AddConstraint) Clause() string {
-	return fmt.Sprintf("ADD %s", ac.Constraint.Definition())
+// Clause returns an ADD CONSTRAINT ... FOREIGN KEY clause of an ALTER TABLE
+// statement.
+func (afk AddForeignKey) Clause() string {
+	return fmt.Sprintf("ADD %s", afk.ForeignKey.Definition())
 }
 
 // Unsafe returns true if this clause is potentially destructive of data.
-// AddConstraint is never unsafe BUT will not fail if the data doesn't match the referenced table -> Is this an issue?
-func (ac AddConstraint) Unsafe() bool {
+// TODO: figure out how to handle safety, use of foreign_key_checks=0, etc.
+func (afk AddForeignKey) Unsafe() bool {
 	return false
 }
 
-///// DropConstraint ////////////////////////////////////////////////////////////////
+///// DropForeignKey ///////////////////////////////////////////////////////////
 
-// DropConstraint represents an constraint that was present on the left-side ("from")
-// schema version of the table, but not the right-side ("to") version. It
-// satisfies the TableAlterClause interface.
-type DropConstraint struct {
+// DropForeignKey represents a foreign key that was present on the left-side
+// ("from") schema version of the table, but not the right-side ("to") version.
+// It satisfies the TableAlterClause interface.
+type DropForeignKey struct {
 	Table      *Table
-	Constraint *Constraint
+	ForeignKey *ForeignKey
 }
 
-// Clause returns a DROP CONSTRAINT clause of an ALTER TABLE statement.
-func (dc DropConstraint) Clause() string {
-	return fmt.Sprintf("DROP FOREIGN KEY %s", EscapeIdentifier(dc.Constraint.Name))
+// Clause returns a DROP FOREIGN KEY clause of an ALTER TABLE statement.
+func (dfk DropForeignKey) Clause() string {
+	return fmt.Sprintf("DROP FOREIGN KEY %s", EscapeIdentifier(dfk.ForeignKey.Name))
 }
 
 // Unsafe returns true if this clause is potentially destructive of data.
-// Dropping a constraint is not destructive
-func (dc DropConstraint) Unsafe() bool {
+// Dropping a foreign key is not destructive.
+func (dfk DropForeignKey) Unsafe() bool {
 	return false
 }
 

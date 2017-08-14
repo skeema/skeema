@@ -16,7 +16,7 @@ type Table struct {
 	Columns           []*Column
 	PrimaryKey        *Index
 	SecondaryIndexes  []*Index
-	Constraints       []*Constraint
+	ForeignKeys       []*ForeignKey
 	Comment           string
 	NextAutoIncrement uint64
 	UnsupportedDDL    bool // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
@@ -50,7 +50,7 @@ func (t *Table) CreateStatement() string {
 // is true, this means the table uses MySQL features that Tengo does not yet
 // support, and so the output of this method will differ from MySQL.
 func (t *Table) GeneratedCreateStatement() string {
-	defs := make([]string, len(t.Columns), len(t.Columns)+len(t.SecondaryIndexes)+len(t.Constraints)+1)
+	defs := make([]string, len(t.Columns), len(t.Columns)+len(t.SecondaryIndexes)+len(t.ForeignKeys)+1)
 	for n, c := range t.Columns {
 		defs[n] = c.Definition(t)
 	}
@@ -60,8 +60,8 @@ func (t *Table) GeneratedCreateStatement() string {
 	for _, idx := range t.SecondaryIndexes {
 		defs = append(defs, idx.Definition())
 	}
-	for _, cst := range t.Constraints {
-		defs = append(defs, cst.Definition())
+	for _, fk := range t.ForeignKeys {
+		defs = append(defs, fk.Definition())
 	}
 	var autoIncClause string
 	if t.NextAutoIncrement > 1 {
@@ -112,12 +112,12 @@ func (t *Table) SecondaryIndexesByName() map[string]*Index {
 	return result
 }
 
-// constraintsByName returns a mapping of constraint names to Contraint value
-// pointers, for all constraints in the table.
-func (t *Table) constraintsByName() map[string]*Constraint {
-	result := make(map[string]*Constraint, len(t.Constraints))
-	for _, cst := range t.Constraints {
-		result[cst.Name] = cst
+// foreignKeysByName returns a mapping of foreign key names to ForeignKey value
+// pointers, for all foreign keys in the table.
+func (t *Table) foreignKeysByName() map[string]*ForeignKey {
+	result := make(map[string]*ForeignKey, len(t.ForeignKeys))
+	for _, fk := range t.ForeignKeys {
+		result[fk.Name] = fk
 	}
 	return result
 }
@@ -203,21 +203,21 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 		}
 	}
 
-	// Compare constraints
-	fromConstraints := from.constraintsByName()
-	toConstraints := to.constraintsByName()
-	for _, toCst := range toConstraints {
-		if _, existedBefore := fromConstraints[toCst.Name]; !existedBefore {
-			clauses = append(clauses, AddConstraint{Table: to, Constraint: toCst})
+	// Compare foreign keys
+	fromForeignKeys := from.foreignKeysByName()
+	toForeignKeys := to.foreignKeysByName()
+	for _, toFk := range toForeignKeys {
+		if _, existedBefore := fromForeignKeys[toFk.Name]; !existedBefore {
+			clauses = append(clauses, AddForeignKey{Table: to, ForeignKey: toFk})
 		}
 	}
-	for _, fromCst := range fromConstraints {
-		toCst, stillExists := toConstraints[fromCst.Name]
+	for _, fromFk := range fromForeignKeys {
+		toFk, stillExists := toForeignKeys[fromFk.Name]
 		if !stillExists {
-			clauses = append(clauses, DropConstraint{Table: to, Constraint: fromCst})
-		} else if !fromCst.Equals(toCst) {
-			drop := DropConstraint{Table: to, Constraint: fromCst}
-			add := AddConstraint{Table: to, Constraint: toCst}
+			clauses = append(clauses, DropForeignKey{Table: to, ForeignKey: fromFk})
+		} else if !fromFk.Equals(toFk) {
+			drop := DropForeignKey{Table: to, ForeignKey: fromFk}
+			add := AddForeignKey{Table: to, ForeignKey: toFk}
 			clauses = append(clauses, drop, add)
 		}
 	}

@@ -231,9 +231,9 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 	}
 }
 
-func TestTableAlterAddOrDropConstraint(t *testing.T) {
-	from := aCstTestTable(1)
-	to := aCstTestTable(1)
+func TestTableAlterAddOrDropForeignKey(t *testing.T) {
+	from := aFkTestTable(1)
+	to := aFkTestTable(1)
 
 	// Add the foreign key constraint
 	newSecIndex :=
@@ -243,20 +243,20 @@ func TestTableAlterAddOrDropConstraint(t *testing.T) {
 			SubParts: []uint16{0},
 		}
 
-	newCst := &Constraint{
-		Name:                 "cstatable_ibfk_1",
+	newFk := &ForeignKey{
+		Name:                 "fkatable_ibfk_1",
 		Column:               to.Columns[1],
 		ReferencedSchemaName: "", // LEAVE BLANK TO SIGNAL ITS THE SAME SCHEMA AS THE CURRENT TABLE
-		ReferencedTableName:  "cstBTable",
+		ReferencedTableName:  "fkBTable",
 		ReferencedColumnName: "id",
 		DeleteRule:           "RESTRICT",
 		UpdateRule:           "CASCADE",
 	}
 	to.SecondaryIndexes = append(to.SecondaryIndexes, newSecIndex)
-	to.Constraints = append(to.Constraints, newCst)
+	to.ForeignKeys = append(to.ForeignKeys, newFk)
 	to.createStatement = to.GeneratedCreateStatement()
 
-	// Normal Comparison should yield add Index, add Constraint
+	// Normal Comparison should yield add Index, add ForeignKey
 	tableAlters, supported := from.Diff(&to)
 	if len(tableAlters) != 2 || !supported {
 		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
@@ -269,15 +269,15 @@ func TestTableAlterAddOrDropConstraint(t *testing.T) {
 		t.Error("Pointers in table alter do not point to expected values")
 	}
 
-	taCst1, ok := tableAlters[1].(AddConstraint)
+	taFk1, ok := tableAlters[1].(AddForeignKey)
 	if !ok {
-		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taCst1, tableAlters[0])
+		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taFk1, tableAlters[0])
 	}
-	if taCst1.Table != &to || taCst1.Constraint != newCst {
+	if taFk1.Table != &to || taFk1.ForeignKey != newFk {
 		t.Error("Pointers in table alter do not point to expected values")
 	}
 
-	// Reverse comparison should yield a drop index, drop constraint
+	// Reverse comparison should yield a drop index, drop foreign key
 	tableAlters, supported = to.Diff(&from)
 	if len(tableAlters) != 2 || !supported {
 		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
@@ -290,62 +290,62 @@ func TestTableAlterAddOrDropConstraint(t *testing.T) {
 		t.Error("Pointers in table alter do not point to expected values")
 	}
 
-	taCst2, ok := tableAlters[1].(DropConstraint)
+	taFk2, ok := tableAlters[1].(DropForeignKey)
 	if !ok {
-		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taCst2, tableAlters[0])
+		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taFk2, tableAlters[0])
 	}
-	if taCst2.Table != &from || taCst2.Constraint != newCst {
+	if taFk2.Table != &from || taFk2.ForeignKey != newFk {
 		t.Error("Pointers in table alter do not point to expected values")
 	}
 
-	// Start over; change an existing constraint
-	to = aCstTestTable(1)
-	to.Constraints[0].UpdateRule = "SET NULL"
+	// Start over; change an existing foreign key
+	to = aFkTestTable(1)
+	to.ForeignKeys[0].UpdateRule = "SET NULL"
 	to.createStatement = to.GeneratedCreateStatement()
 	tableAlters, supported = from.Diff(&to)
 	if len(tableAlters) != 2 || !supported {
 		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
 	}
-	taCst2, ok = tableAlters[0].(DropConstraint)
+	taFk2, ok = tableAlters[0].(DropForeignKey)
 	if !ok {
-		t.Fatalf("Incorrect type of table alter[0] returned: expected %T, found %T", taCst2, tableAlters[0])
+		t.Fatalf("Incorrect type of table alter[0] returned: expected %T, found %T", taFk2, tableAlters[0])
 	}
-	if taCst2.Table != &to || taCst2.Constraint != from.Constraints[0] {
+	if taFk2.Table != &to || taFk2.ForeignKey != from.ForeignKeys[0] {
 		t.Error("Pointers in table alter[0] do not point to expected values")
 	}
-	taCst1, ok = tableAlters[1].(AddConstraint)
+	taFk1, ok = tableAlters[1].(AddForeignKey)
 	if !ok {
-		t.Fatalf("Incorrect type of table alter[1] returned: expected %T, found %T", taCst1, tableAlters[1])
+		t.Fatalf("Incorrect type of table alter[1] returned: expected %T, found %T", taFk1, tableAlters[1])
 	}
-	if taCst1.Table != &to || taCst1.Constraint != to.Constraints[0] {
+	if taFk1.Table != &to || taFk1.ForeignKey != to.ForeignKeys[0] {
 		t.Error("Pointers in table alter[1] do not point to expected values")
 	}
 
-	// Remove a constraint
-	to.Constraints = []*Constraint{}
+	// Remove a foreign key
+	to.ForeignKeys = []*ForeignKey{}
 	to.createStatement = to.GeneratedCreateStatement()
 	tableAlters, supported = from.Diff(&to)
 	if len(tableAlters) != 1 || !supported {
 		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
 	}
-	taCst2, ok = tableAlters[0].(DropConstraint)
+	taFk2, ok = tableAlters[0].(DropForeignKey)
 	if !ok {
-		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taCst2, tableAlters[0])
+		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taFk2, tableAlters[0])
 	}
-	if taCst2.Table != &to || taCst2.Constraint != from.Constraints[0] {
+	if taFk2.Table != &to || taFk2.ForeignKey != from.ForeignKeys[0] {
 		t.Error("Pointers in table alter do not point to expected values")
 	}
 
-	// Reverse comparison should yield an add constraint
+	// Reverse comparison should yield an add foreign key
 	tableAlters, supported = to.Diff(&from)
 	if len(tableAlters) != 1 || !supported {
 		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
 	}
-	taCst1, ok = tableAlters[0].(AddConstraint)
+	taFk1, ok = tableAlters[0].(AddForeignKey)
 	if !ok {
-		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taCst1, tableAlters[0])
+		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taFk1, tableAlters[0])
 	}
-	if taCst1.Table != &from || taCst1.Constraint != from.Constraints[0] {
+	if taFk1.Table != &from || taFk1.ForeignKey != from.ForeignKeys[0] {
 		t.Error("Pointers in table alter do not point to expected values")
 	}
 }
