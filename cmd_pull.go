@@ -109,8 +109,10 @@ func PullHandler(cfg *mybase.Config) error {
 			mods.NextAutoInc = tengo.NextAutoIncIfAlready
 		}
 
+		// ignoreTableRegex := t.Dir.Config.Get("ignore-table-regex")
 		for _, td := range diff.TableDiffs {
 			stmt, err := td.Statement(mods)
+			fmt.Printf("test: %s\n", td.Table)
 			if err != nil {
 				return err
 			}
