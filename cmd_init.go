@@ -181,7 +181,10 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 		return nil
 	}
 	ignoreSchemaRegex := parentDir.Config.Get("ignore-schema-regex")
-	schemaRE, _ := regexp.Compile(ignoreSchemaRegex)
+	schemaRE, err := regexp.Compile(ignoreSchemaRegex)
+	if err != nil {
+		return fmt.Errorf("Invalid regular expression on ignore-schema-regex: %s; %s", ignoreSchemaRegex, err)
+	}
 	if ignoreSchemaRegex != "" && schemaRE.MatchString(s.Name) {
 		log.Infof("Skipping schema %s because of --ignore-schema-regex='%s'", s.Name, ignoreSchemaRegex)
 		return nil
@@ -220,9 +223,18 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 	if err != nil {
 		return fmt.Errorf("Cannot obtain table information for %s: %s", s.Name, err)
 	}
-	optionFile, _ := schemaDir.OptionFile()
-	ignoreTableRegex, _ := optionFile.OptionValue("ignore-table-regex")
-	re, _ := regexp.Compile(ignoreTableRegex)
+	optionFile, err := schemaDir.OptionFile()
+	if err != nil {
+		return fmt.Errorf("Unable to find option file: %s", err)
+	}
+	ignoreTableRegex, err := optionFile.OptionValue("ignore-table-regex")
+	if err != nil {
+		return fmt.Errorf("Unable to find ignore-table-regex in option file: %s", err)
+	}
+	re, err := regexp.Compile(ignoreTableRegex)
+	if err != nil {
+		return fmt.Errorf("Invalid regular expression on ignore-table-regex: %s; %s", ignoreTableRegex, err)
+	}
 	for _, t := range tables {
 		if ignoreTableRegex != "" && re.MatchString(t.Name) {
 			log.Infof("Skipping table %s because --ignore-table-regex matched %s", t.Name, ignoreTableRegex)
