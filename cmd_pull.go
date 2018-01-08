@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/skeema/mybase"
@@ -108,14 +109,33 @@ func PullHandler(cfg *mybase.Config) error {
 		} else {
 			mods.NextAutoInc = tengo.NextAutoIncIfAlready
 		}
-
+		ignoreTableRegex := t.Dir.Config.Get("ignore-table-regex")
+		re, err := regexp.Compile(ignoreTableRegex)
+		if err != nil {
+			return fmt.Errorf("Invalid regular expression on ignore-table-regex: %s; %s", ignoreTableRegex, err)
+		}
 		// ignoreTableRegex := t.Dir.Config.Get("ignore-table-regex")
 		for _, td := range diff.TableDiffs {
 			stmt, err := td.Statement(mods)
-			fmt.Printf("test: %s\n", td.Table)
 			if err != nil {
 				return err
 			}
+			tableName := ""
+			switch td := td.(type) {
+			case tengo.CreateTable:
+				tableName = td.Table.Name
+			case tengo.DropTable:
+				tableName = td.Table.Name
+			case tengo.AlterTable:
+				tableName = td.Table.Name
+			default:
+				return fmt.Errorf("Unsupported diff type %T", td)
+			}
+			if ignoreTableRegex != "" && re.MatchString(tableName) {
+				log.Infof("Skipping table %s because --ignore-table-regex matched %s", tableName, ignoreTableRegex)
+				continue
+			}
+
 			switch td := td.(type) {
 			case tengo.CreateTable:
 				sf := SQLFile{
