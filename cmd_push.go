@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -205,11 +206,32 @@ func pushWorker(sps *sharedPushState) {
 				sps.setFatalError(err)
 				return
 			}
-
+			ignoreTableRegex := t.Dir.Config.Get("ignore-table-regex")
+			re, err := regexp.Compile(ignoreTableRegex)
+			if err != nil {
+				sps.setFatalError(fmt.Errorf("Invalid regular expression on ignore-table-regex: %s; %s", ignoreTableRegex, err))
+				return
+			}
 			for n, tableDiff := range diff.TableDiffs {
 				ddl := NewDDLStatement(tableDiff, mods, t)
 				if ddl == nil {
 					// skip blank DDL (which may happen due to NextAutoInc modifier)
+					continue
+				}
+				tableName := ""
+				switch td := tableDiff.(type) {
+				case tengo.CreateTable:
+					tableName = td.Table.Name
+				case tengo.DropTable:
+					tableName = td.Table.Name
+				case tengo.AlterTable:
+					tableName = td.Table.Name
+				default:
+					sps.setFatalError(fmt.Errorf("Unsupported diff type %T", td))
+					return
+				}
+				if ignoreTableRegex != "" && re.MatchString(tableName) {
+					log.Infof("Skipping table %s because --ignore-table-regex matched %s", tableName, ignoreTableRegex)
 					continue
 				}
 				targetStmtCount++
