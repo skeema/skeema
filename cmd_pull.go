@@ -135,7 +135,6 @@ func PullHandler(cfg *mybase.Config) error {
 				log.Infof("Skipping table %s because --ignore-table-regex matched %s", tableName, ignoreTableRegex)
 				continue
 			}
-
 			switch td := td.(type) {
 			case tengo.CreateTable:
 				sf := SQLFile{
