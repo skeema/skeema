@@ -268,7 +268,9 @@ func (s *Schema) Tables() ([]*Table, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Error executing SHOW CREATE TABLE: %s", err)
 		}
-		if t.createStatement != t.GeneratedCreateStatement() {
+		beforeTable, _ := ParseCreateAutoInc(t.createStatement)
+		afterTable, _ := ParseCreateAutoInc(t.GeneratedCreateStatement())
+		if beforeTable != afterTable {
 			t.UnsupportedDDL = true
 		}
 	}
