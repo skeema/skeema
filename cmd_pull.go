@@ -116,10 +116,6 @@ func PullHandler(cfg *mybase.Config) error {
 		}
 		// ignoreTableRegex := t.Dir.Config.Get("ignore-table-regex")
 		for _, td := range diff.TableDiffs {
-			stmt, err := td.Statement(mods)
-			if err != nil {
-				return err
-			}
 			tableName := ""
 			switch td := td.(type) {
 			case tengo.CreateTable:
@@ -134,6 +130,10 @@ func PullHandler(cfg *mybase.Config) error {
 			if ignoreTableRegex != "" && re.MatchString(tableName) {
 				log.Infof("Skipping table %s because --ignore-table-regex matched %s", tableName, ignoreTableRegex)
 				continue
+			}
+			stmt, err := td.Statement(mods)
+			if err != nil {
+				return err
 			}
 			switch td := td.(type) {
 			case tengo.CreateTable:
@@ -193,16 +193,20 @@ func PullHandler(cfg *mybase.Config) error {
 		// updated. Handle same as AlterTable case, since created/dropped tables don't
 		// ever end up in UnsupportedTables since they don't do a diff operation.
 		for _, table := range diff.UnsupportedTables {
+			createStmt := table.CreateStatement()
+			if table.HasAutoIncrement() && !t.Dir.Config.GetBool("include-auto-inc") {
+				createStmt, _ = tengo.ParseCreateAutoInc(createStmt)
+			}
 			sf := SQLFile{
 				Dir:      t.Dir,
 				FileName: fmt.Sprintf("%s.sql", table.Name),
-				Contents: table.CreateStatement(),
+				Contents: createStmt,
 			}
 			var length int
 			if length, err = sf.Write(); err != nil {
 				return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
 			}
-			log.Infof("Wrote %s (%d bytes) -- updated file to reflect table alterations", sf.Path(), length)
+			log.Infof("Wrote %s (%d bytes) -- updated file to reflect (unsupported) table alterations", sf.Path(), length)
 		}
 
 		if dir.Config.GetBool("normalize") {
