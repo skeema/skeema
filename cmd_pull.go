@@ -207,6 +207,11 @@ func PullHandler(cfg *mybase.Config) error {
 				return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
 			}
 			log.Infof("Wrote %s (%d bytes) -- updated file to reflect (unsupported) table alterations", sf.Path(), length)
+			if t.Dir.Config.GetBool("debug") {
+				log.Warnf("Table %s: table uses unsupported features", table.Name)
+				t.logUnsupportedTableDiff(table.Name)
+			}
+
 		}
 
 		if dir.Config.GetBool("normalize") {
