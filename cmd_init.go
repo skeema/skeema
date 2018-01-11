@@ -35,6 +35,8 @@ section of the file.`
 	cmd.AddOption(mybase.StringOption("dir", 'd', "<hostname>", "Base dir to use for this host's schemas"))
 	cmd.AddOption(mybase.StringOption("schema", 0, "", "Only import the one specified schema; skip creation of subdirs for each schema"))
 	cmd.AddOption(mybase.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in table files"))
+	cmd.AddOption(mybase.StringOption("ignore-schema-regex", 0, "", "Ignore schemas that match regex"))
+	cmd.AddOption(mybase.StringOption("ignore-table-regex", 0, "", "Ignore tables that match regex"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
