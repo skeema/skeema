@@ -262,7 +262,9 @@ func (s *Schema) Tables() ([]*Table, error) {
 
 	// Obtain actual SHOW CREATE TABLE output and store in each table. Compare
 	// with what we expect the create DDL to be, to determine if we support
-	// diffing for the table.
+	// diffing for the table. Ignore next-auto-increment differences in this
+	// comparison, since the value may have changed between our previous
+	// information_schema introspection and our current SHOW CREATE TABLE call!
 	for _, t := range s.tables {
 		t.createStatement, err = s.instance.ShowCreateTable(s, t)
 		if err != nil {
