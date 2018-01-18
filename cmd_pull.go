@@ -128,7 +128,7 @@ func PullHandler(cfg *mybase.Config) error {
 				return fmt.Errorf("Unsupported diff type %T", td)
 			}
 			if ignoreTableRegex != "" && re.MatchString(tableName) {
-				log.Infof("Skipping table %s because --ignore-table-regex matched %s", tableName, ignoreTableRegex)
+				log.Debugf("Skipping table %s because ignore-table-regex matched %s", tableName, ignoreTableRegex)
 				continue
 			}
 			stmt, err := td.Statement(mods)
