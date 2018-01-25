@@ -137,21 +137,6 @@ func PullHandler(cfg *mybase.Config) error {
 			if err != nil {
 				return err
 			}
-			tableName := ""
-			switch td := td.(type) {
-			case tengo.CreateTable:
-				tableName = td.Table.Name
-			case tengo.DropTable:
-				tableName = td.Table.Name
-			case tengo.AlterTable:
-				tableName = td.Table.Name
-			default:
-				return fmt.Errorf("Unsupported diff type %T", td)
-			}
-			stmt, err := td.Statement(mods)
-			if err != nil {
-				return err
-			}
 			switch td := td.(type) {
 			case tengo.CreateTable:
 				sf := SQLFile{
