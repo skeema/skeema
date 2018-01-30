@@ -233,7 +233,7 @@ func pushWorker(sps *sharedPushState) {
 					return
 				}
 				if ignoreTableRegex != "" && re.MatchString(tableName) {
-					log.Debugf("Skipping table %s because ignore-table matched %s", tableName, ignoreTableRegex)
+					log.Warnf("Skipping table %s because ignore-table matched %s", tableName, ignoreTableRegex)
 					continue
 				}
 				targetStmtCount++

@@ -186,7 +186,7 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 		return fmt.Errorf("Invalid regular expression on ignore-schema: %s; %s", ignoreSchemaRegex, sErr)
 	}
 	if ignoreSchemaRegex != "" && schemaRE.MatchString(s.Name) {
-		log.Debugf("Skipping schema %s because of ignore-schema='%s'", s.Name, ignoreSchemaRegex)
+		log.Warnf("Skipping schema %s because of ignore-schema='%s'", s.Name, ignoreSchemaRegex)
 		return nil
 	}
 
@@ -230,7 +230,7 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 	}
 	for _, t := range tables {
 		if ignoreTableRegex != "" && re.MatchString(t.Name) {
-			log.Debugf("Skipping table %s because ignore-table matched %s", t.Name, ignoreTableRegex)
+			log.Warnf("Skipping table %s because ignore-table matched %s", t.Name, ignoreTableRegex)
 			continue
 		}
 		createStmt := t.CreateStatement()
