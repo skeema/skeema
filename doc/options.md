@@ -19,8 +19,8 @@
 * [first-only](#first-only)
 * [host](#host)
 * [host-wrapper](#host-wrapper)
-* [ignore-schema-regex](#ignore-schema-regex)
-* [ignore-table-regex](#ignore-table-regex)
+* [ignore-schema](#ignore-schema)
+* [ignore-table](#ignore-table)
 * [include-auto-inc](#include-auto-inc)
 * [normalize](#normalize)
 * [password](#password)
@@ -360,7 +360,7 @@ If ports are omitted, the [port](#port) option is used instead, which defaults t
 
 The external command should only return addresses of master instances, never replicas.
 
-### ignore-schema-regex
+### ignore-schema
 Commands | init
 --- | :---
 **Default** | *empty string*
@@ -369,14 +369,14 @@ Commands | init
 
 Normally skeema will run iterating through every not system schema. This option will allow you to ignore schemas that you do not want to be used with skeema.
 
-### ignore-table-regex
+### ignore-table
 Commands | init
 --- | :---
 **Default** | *empty string*
 **Type** | String
 **Restrictions** | valid regex
 
-Many tools like gh-ost and pt-online-schema-change will create temporary tables that you will not want to have as part of your skeema workflow. When initializing skeema you can run `skeema init --ignore-table-regex="^_.*" ...` to setup your cluster to not look at these temporary files. Any valid regex can be used.
+Many tools like gh-ost and pt-online-schema-change will create temporary tables that you will not want to have as part of your skeema workflow. When initializing skeema you can run `skeema init --ignore-table="^_.*" ...` to setup your cluster to not look at these temporary files. Any valid regex can be used.
 
 ### include-auto-inc
 

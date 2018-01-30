@@ -27,8 +27,8 @@ top of the file. If no environment name is supplied, the default is
 	cmd := mybase.NewCommand("pull", summary, desc, PullHandler)
 	cmd.AddOption(mybase.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in new table files, and update in existing files"))
 	cmd.AddOption(mybase.BoolOption("normalize", 0, true, "Reformat *.sql files to match SHOW CREATE TABLE"))
-	cmd.AddOption(mybase.StringOption("ignore-schema-regex", 0, "", "Ignore schemas that match regex"))
-	cmd.AddOption(mybase.StringOption("ignore-table-regex", 0, "", "Ignore tables that match regex"))
+	cmd.AddOption(mybase.StringOption("ignore-schema", 0, "", "Ignore schemas that match regex"))
+	cmd.AddOption(mybase.StringOption("ignore-table", 0, "", "Ignore tables that match regex"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
@@ -111,10 +111,10 @@ func PullHandler(cfg *mybase.Config) error {
 		} else {
 			mods.NextAutoInc = tengo.NextAutoIncIfAlready
 		}
-		ignoreTableRegex := t.Dir.Config.Get("ignore-table-regex")
+		ignoreTableRegex := t.Dir.Config.Get("ignore-table")
 		re, err := regexp.Compile(ignoreTableRegex)
 		if err != nil {
-			return fmt.Errorf("Invalid regular expression on ignore-table-regex: %s; %s", ignoreTableRegex, err)
+			return fmt.Errorf("Invalid regular expression on ignore-table: %s; %s", ignoreTableRegex, err)
 		}
 		for _, td := range diff.TableDiffs {
 			tableName := ""
@@ -129,7 +129,7 @@ func PullHandler(cfg *mybase.Config) error {
 				return fmt.Errorf("Unsupported diff type %T", td)
 			}
 			if ignoreTableRegex != "" && re.MatchString(tableName) {
-				log.Debugf("Skipping table %s because ignore-table-regex matched %s", tableName, ignoreTableRegex)
+				log.Debugf("Skipping table %s because ignore-table matched %s", tableName, ignoreTableRegex)
 				continue
 			}
 			stmt, err := td.Statement(mods)

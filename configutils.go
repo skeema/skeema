@@ -26,8 +26,8 @@ func AddGlobalOptions(cmd *mybase.Command) {
 	cmd.AddOption(mybase.StringOption("port", 0, "3306", "Port to use for database host").Hidden())
 	cmd.AddOption(mybase.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix socket file used if host is localhost").Hidden())
 	cmd.AddOption(mybase.StringOption("schema", 0, "", "Database schema name").Hidden())
-	cmd.AddOption(mybase.StringOption("ignore-schema-regex", 0, "", "Ignore schemas that match regex").Hidden())
-	cmd.AddOption(mybase.StringOption("ignore-table-regex", 0, "", "Ignore tables that match regex").Hidden())
+	cmd.AddOption(mybase.StringOption("ignore-schema", 0, "", "Ignore schemas that match regex").Hidden())
+	cmd.AddOption(mybase.StringOption("ignore-table", 0, "", "Ignore tables that match regex").Hidden())
 	cmd.AddOption(mybase.StringOption("default-character-set", 0, "", "Schema-level default character set").Hidden())
 	cmd.AddOption(mybase.StringOption("default-collation", 0, "", "Schema-level default collation").Hidden())
 
