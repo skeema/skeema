@@ -114,7 +114,7 @@ func PullHandler(cfg *mybase.Config) error {
 		ignoreTableRegex := t.Dir.Config.Get("ignore-table")
 		re, err := regexp.Compile(ignoreTableRegex)
 		if err != nil {
-			return fmt.Warnf("Invalid regular expression on ignore-table: %s; %s", ignoreTableRegex, err)
+			return fmt.Errorf("Invalid regular expression on ignore-table: %s; %s", ignoreTableRegex, err)
 		}
 		for _, td := range diff.TableDiffs {
 			tableName := ""
