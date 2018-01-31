@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/skeema/mybase"
@@ -21,7 +22,7 @@ You may optionally pass an environment name as a CLI option. This will affect
 which section of .skeema config files is used for obtaining a database instance
 to test the SQL DDL against. For example, running ` + "`" + `skeema lint staging` + "`" + ` will
 apply config directives from the [staging] section of config files, as well as
-any sectionless directives at the top of the file. If no environment name is 
+any sectionless directives at the top of the file. If no environment name is
 supplied, the default is "production".
 
 An exit code of 0 will be returned if all files were already formatted properly,
@@ -50,6 +51,17 @@ func LintHandler(cfg *mybase.Config) error {
 			continue
 		}
 
+		ignoreSchema := t.Dir.Config.Get("ignore-schema")
+		re, sErr := regexp.Compile(ignoreSchema)
+		if sErr != nil {
+			return fmt.Errorf("Invalid regular expression on ignore-schema: %s; %s", ignoreSchema, sErr)
+		}
+		dir := fmt.Sprintf("%s", t.Dir)
+		if ignoreSchema != "" && re.MatchString(dir) {
+			log.Warnf("Skipping schema %s because of ignore-schema='%s'", dir, ignoreSchema)
+			continue
+		}
+
 		log.Infof("Linting %s", t.Dir)
 
 		for _, sf := range t.SQLFileErrors {
@@ -57,8 +69,17 @@ func LintHandler(cfg *mybase.Config) error {
 			sqlErrCount++
 		}
 
+		ignoreTable := t.Dir.Config.Get("ignore-table")
+		re, err := regexp.Compile(ignoreTable)
+		if err != nil {
+			return fmt.Errorf("Invalid regular expression on ignore-table: %s; %s", ignoreTable, err)
+		}
 		tables, _ := t.SchemaFromDir.Tables() // can ignore error since table list already guaranteed to be cached
 		for _, table := range tables {
+			if ignoreTable != "" && re.MatchString(table.Name) {
+				log.Warnf("Skipping table %s because ignore-table matched %s", table.Name, ignoreTable)
+				continue
+			}
 			sf := SQLFile{
 				Dir:      t.Dir,
 				FileName: fmt.Sprintf("%s.sql", table.Name),

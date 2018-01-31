@@ -19,6 +19,8 @@
 * [first-only](#first-only)
 * [host](#host)
 * [host-wrapper](#host-wrapper)
+* [ignore-schema](#ignore-schema)
+* [ignore-table](#ignore-table)
 * [include-auto-inc](#include-auto-inc)
 * [normalize](#normalize)
 * [password](#password)
@@ -249,7 +251,7 @@ Commands | *all*
 
 This option specifies the default character set to use for a particular schema. Its name and purpose matches the corresponding option in MySQL `db.opt` files. In Skeema, this option is only needed in cases where some schemas have a different default character set than the server-level default.
 
-When `skeema init` or `skeema pull` imports a schema subdirectory for the first time, or when `skeema pull` updates an existing schema subdirectory, the schema's default character set will be compared to the instance's server-level default character set. If they differ, [default-character-set](#default-character-set) will be populated in the subdir's .skeema file automatically. Otherwise, it will be omitted. 
+When `skeema init` or `skeema pull` imports a schema subdirectory for the first time, or when `skeema pull` updates an existing schema subdirectory, the schema's default character set will be compared to the instance's server-level default character set. If they differ, [default-character-set](#default-character-set) will be populated in the subdir's .skeema file automatically. Otherwise, it will be omitted.
 
 If a new schema is being created for the first time via `skeema push`, and [default-character-set](#default-character-set) has been set, it will be included as part of the `CREATE DATABASE` statement. If it has not been set, the instance's default server-level character set is used instead.
 
@@ -265,7 +267,7 @@ Commands | *all*
 
 This option specifies the default collation to use for a particular schema. Its name and purpose matches the corresponding option in MySQL `db.opt` files. In Skeema, this option is only needed in cases where some schemas have a different default collation than the server-level default.
 
-When `skeema init` or `skeema pull` imports a schema subdirectory for the first time, or when `skeema pull` updates an existing schema subdirectory, the schema's default collation will be compared to the instance's server-level default collation. If they differ, [default-collation](#default-collation) will be populated in the subdir's .skeema file automatically. Otherwise, it will be omitted. 
+When `skeema init` or `skeema pull` imports a schema subdirectory for the first time, or when `skeema pull` updates an existing schema subdirectory, the schema's default collation will be compared to the instance's server-level default collation. If they differ, [default-collation](#default-collation) will be populated in the subdir's .skeema file automatically. Otherwise, it will be omitted.
 
 If a new schema is being created for the first time via `skeema push`, and [default-collation](#default-collation) has been set, it will be included as part of the `CREATE DATABASE` statement. If it has not been set, the instance's default server-level collation is used instead.
 
@@ -331,7 +333,7 @@ Commands | *all*
 **Type** | string
 **Restrictions** | none
 
-This option controls how the [host](#host) option is interpreted, and can be used to allow Skeema to interface with service discovery systems. 
+This option controls how the [host](#host) option is interpreted, and can be used to allow Skeema to interface with service discovery systems.
 
 By default, [host-wrapper](#host-wrapper) is blank, and [host](#host) values are interpreted literally as domain names or addresses (no service discovery). To configure Skeema to use service discovery instead, set [host-wrapper](#host-wrapper) to an external command-line to execute. Then, whenever Skeema needs to perform an operation on one or more database instances, it will execute the external command to determine which instances to operate on, instead of using [host](#host) as a literal value.
 
@@ -358,6 +360,24 @@ If ports are omitted, the [port](#port) option is used instead, which defaults t
 
 The external command should only return addresses of master instances, never replicas.
 
+### ignore-schema
+Commands | init
+--- | :---
+**Default** | *empty string*
+**Type** | String
+**Restrictions** | valid regex
+
+Normally skeema will run iterating through every not system schema. This option will allow you to ignore schemas that you do not want to be used with skeema.
+
+### ignore-table
+Commands | init
+--- | :---
+**Default** | *empty string*
+**Type** | String
+**Restrictions** | valid regex
+
+Many tools like gh-ost and pt-online-schema-change will create temporary tables that you will not want to have as part of your skeema workflow. When initializing skeema you can run `skeema init --ignore-table="^_.*" ...` to setup your cluster to not look at these temporary files. Any valid regex can be used.
+
 ### include-auto-inc
 
 Commands | init, pull
@@ -376,7 +396,7 @@ Only set this to true if you intentionally need to track auto_increment values i
 
 ### normalize
 
-Commands | pull 
+Commands | pull
 --- | :---
 **Default** | true
 **Type** | boolean
@@ -502,7 +522,7 @@ Commands | *all*
 **Type** | string
 **Restrictions** | none
 
-Specifies the name of the MySQL user to connect with. 
+Specifies the name of the MySQL user to connect with.
 
 ### verify
 
@@ -515,4 +535,3 @@ Commands | diff, push
 Controls whether generated `ALTER TABLE` statements are automatically verified for correctness. If true, each generated ALTER will be tested in the temporary schema. See [the FAQ](faq.md#auto-generated-ddl-is-verified-for-correctness) for more information.
 
 It is recommended that this variable be left at its default of true, but if desired you can disable verification for speed reasons.
-

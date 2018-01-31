@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/skeema/mybase"
@@ -26,6 +27,8 @@ top of the file. If no environment name is supplied, the default is
 	cmd := mybase.NewCommand("pull", summary, desc, PullHandler)
 	cmd.AddOption(mybase.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in new table files, and update in existing files"))
 	cmd.AddOption(mybase.BoolOption("normalize", 0, true, "Reformat *.sql files to match SHOW CREATE TABLE"))
+	cmd.AddOption(mybase.StringOption("ignore-schema", 0, "", "Ignore schemas that match regex"))
+	cmd.AddOption(mybase.StringOption("ignore-table", 0, "", "Ignore tables that match regex"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
@@ -108,8 +111,27 @@ func PullHandler(cfg *mybase.Config) error {
 		} else {
 			mods.NextAutoInc = tengo.NextAutoIncIfAlready
 		}
-
+		ignoreTable := t.Dir.Config.Get("ignore-table")
+		re, err := regexp.Compile(ignoreTable)
+		if err != nil {
+			return fmt.Errorf("Invalid regular expression on ignore-table: %s; %s", ignoreTable, err)
+		}
 		for _, td := range diff.TableDiffs {
+			tableName := ""
+			switch td := td.(type) {
+			case tengo.CreateTable:
+				tableName = td.Table.Name
+			case tengo.DropTable:
+				tableName = td.Table.Name
+			case tengo.AlterTable:
+				tableName = td.Table.Name
+			default:
+				return fmt.Errorf("Unsupported diff type %T", td)
+			}
+			if ignoreTable != "" && re.MatchString(tableName) {
+				log.Warnf("Skipping table %s because ignore-table matched %s", tableName, ignoreTable)
+				continue
+			}
 			stmt, err := td.Statement(mods)
 			if err != nil {
 				return err
@@ -172,16 +194,24 @@ func PullHandler(cfg *mybase.Config) error {
 		// updated. Handle same as AlterTable case, since created/dropped tables don't
 		// ever end up in UnsupportedTables since they don't do a diff operation.
 		for _, table := range diff.UnsupportedTables {
+			createStmt := table.CreateStatement()
+			if table.HasAutoIncrement() && !t.Dir.Config.GetBool("include-auto-inc") {
+				createStmt, _ = tengo.ParseCreateAutoInc(createStmt)
+			}
 			sf := SQLFile{
 				Dir:      t.Dir,
 				FileName: fmt.Sprintf("%s.sql", table.Name),
-				Contents: table.CreateStatement(),
+				Contents: createStmt,
 			}
 			var length int
 			if length, err = sf.Write(); err != nil {
 				return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
 			}
-			log.Infof("Wrote %s (%d bytes) -- updated file to reflect table alterations", sf.Path(), length)
+			log.Infof("Wrote %s (%d bytes) -- updated file to reflect (unsupported) table alterations", sf.Path(), length)
+			if t.Dir.Config.GetBool("debug") {
+				log.Warnf("Table %s: table uses unsupported features", table.Name)
+				t.logUnsupportedTableDiff(table.Name)
+			}
 		}
 
 		if dir.Config.GetBool("normalize") {
