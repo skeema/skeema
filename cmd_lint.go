@@ -51,6 +51,17 @@ func LintHandler(cfg *mybase.Config) error {
 			continue
 		}
 
+		ignoreSchema := t.Dir.Config.Get("ignore-schema")
+		re, sErr := regexp.Compile(ignoreSchema)
+		if sErr != nil {
+			return fmt.Errorf("Invalid regular expression on ignore-schema: %s; %s", ignoreSchema, sErr)
+		}
+		dir := fmt.Sprintf("%s", t.Dir)
+		if ignoreSchema != "" && re.MatchString(dir) {
+			log.Warnf("Skipping schema %s because of ignore-schema='%s'", dir, ignoreSchema)
+			continue
+		}
+
 		log.Infof("Linting %s", t.Dir)
 
 		for _, sf := range t.SQLFileErrors {
