@@ -208,10 +208,10 @@ func pushWorker(sps *sharedPushState) {
 				sps.setFatalError(err)
 				return
 			}
-			ignoreTableRegex := t.Dir.Config.Get("ignore-table")
-			re, err := regexp.Compile(ignoreTableRegex)
+			ignoreTable := t.Dir.Config.Get("ignore-table")
+			re, err := regexp.Compile(ignoreTable)
 			if err != nil {
-				sps.setFatalError(fmt.Errorf("Invalid regular expression on ignore-table: %s; %s", ignoreTableRegex, err))
+				sps.setFatalError(fmt.Errorf("Invalid regular expression on ignore-table: %s; %s", ignoreTable, err))
 				return
 			}
 			for n, tableDiff := range diff.TableDiffs {
@@ -232,8 +232,8 @@ func pushWorker(sps *sharedPushState) {
 					sps.setFatalError(fmt.Errorf("Unsupported diff type %T", td))
 					return
 				}
-				if ignoreTableRegex != "" && re.MatchString(tableName) {
-					log.Warnf("Skipping table %s because ignore-table matched %s", tableName, ignoreTableRegex)
+				if ignoreTable != "" && re.MatchString(tableName) {
+					log.Warnf("Skipping table %s because ignore-table matched %s", tableName, ignoreTable)
 					continue
 				}
 				targetStmtCount++

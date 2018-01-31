@@ -111,10 +111,10 @@ func PullHandler(cfg *mybase.Config) error {
 		} else {
 			mods.NextAutoInc = tengo.NextAutoIncIfAlready
 		}
-		ignoreTableRegex := t.Dir.Config.Get("ignore-table")
-		re, err := regexp.Compile(ignoreTableRegex)
+		ignoreTable := t.Dir.Config.Get("ignore-table")
+		re, err := regexp.Compile(ignoreTable)
 		if err != nil {
-			return fmt.Errorf("Invalid regular expression on ignore-table: %s; %s", ignoreTableRegex, err)
+			return fmt.Errorf("Invalid regular expression on ignore-table: %s; %s", ignoreTable, err)
 		}
 		for _, td := range diff.TableDiffs {
 			tableName := ""
@@ -128,8 +128,8 @@ func PullHandler(cfg *mybase.Config) error {
 			default:
 				return fmt.Errorf("Unsupported diff type %T", td)
 			}
-			if ignoreTableRegex != "" && re.MatchString(tableName) {
-				log.Warnf("Skipping table %s because ignore-table matched %s", tableName, ignoreTableRegex)
+			if ignoreTable != "" && re.MatchString(tableName) {
+				log.Warnf("Skipping table %s because ignore-table matched %s", tableName, ignoreTable)
 				continue
 			}
 			stmt, err := td.Statement(mods)
