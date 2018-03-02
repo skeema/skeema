@@ -55,6 +55,11 @@ func aTable(nextAutoInc uint64) Table {
 			TypeInDB: "tinyint(1)",
 			Default:  ColumnDefaultValue("1"),
 		},
+		&Column{
+			Name:     "alive_bit",
+			TypeInDB: "bit(1)",
+			Default:  ColumnDefaultExpression("b'1'"),
+		},
 	}
 	secondaryIndexes := []*Index{
 		&Index{
@@ -81,11 +86,11 @@ func aTable(nextAutoInc uint64) Table {
   `+"`"+`last_update`+"`"+` timestamp(2) NOT NULL DEFAULT CURRENT_TIMESTAMP(2) ON UPDATE CURRENT_TIMESTAMP(2),
   `+"`"+`ssn`+"`"+` char(10) NOT NULL,
   `+"`"+`alive`+"`"+` tinyint(1) NOT NULL DEFAULT '1',
+  `+"`"+`alive_bit`+"`"+` bit(1) NOT NULL DEFAULT b'1',
   PRIMARY KEY (`+"`"+`actor_id`+"`"+`),
   UNIQUE KEY `+"`"+`idx_ssn`+"`"+` (`+"`"+`ssn`+"`"+`),
   KEY `+"`"+`idx_actor_name`+"`"+` (`+"`"+`last_name`+"`"+`(10),`+"`"+`first_name`+"`"+`(1))
 ) ENGINE=InnoDB%s DEFAULT CHARSET=utf8`, autoIncClause)
-
 	return Table{
 		Name:              "actor",
 		Engine:            "InnoDB",
