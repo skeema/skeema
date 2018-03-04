@@ -28,6 +28,8 @@ func ColumnDefaultValue(value string) ColumnDefault {
 // represents a SQL expression, which won't be wrapped in quotes. Traditionally
 // in MySQL this must be either "CURRENT_TIMESTAMP" or, if using fractional
 // second precision, "CURRENT_TIMESTAMP(N)" where N is a digit.
+// This form may also be used to bit literals, which use b'n' syntax and don't require
+// the digit represented by n to be quoted.
 func ColumnDefaultExpression(expression string) ColumnDefault {
 	return ColumnDefault{Value: expression}
 }
