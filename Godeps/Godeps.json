@@ -1,7 +1,7 @@
 {
 	"ImportPath": "github.com/skeema/skeema",
 	"GoVersion": "go1.7",
-	"GodepVersion": "v79",
+	"GodepVersion": "v80",
 	"Deps": [
 		{
 			"ImportPath": "github.com/Sirupsen/logrus",
@@ -38,7 +38,7 @@
 		},
 		{
 			"ImportPath": "github.com/skeema/tengo",
-			"Rev": "625de021b29afdca49e3cb955aef854ca5b6b69c"
+			"Rev": "ac7a7583e60021875ad8f0489ec5a74c1d27a67c"
 		},
 		{
 			"ImportPath": "golang.org/x/crypto/ssh/terminal",

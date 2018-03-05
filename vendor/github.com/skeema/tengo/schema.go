@@ -155,6 +155,8 @@ func (s *Schema) Tables() ([]*Table, error) {
 			col.Default = ColumnDefaultNull
 		} else if strings.HasPrefix(rawColumn.Default.String, "CURRENT_TIMESTAMP") && (strings.HasPrefix(rawColumn.Type, "timestamp") || strings.HasPrefix(rawColumn.Type, "datetime")) {
 			col.Default = ColumnDefaultExpression(rawColumn.Default.String)
+		} else if strings.HasPrefix(rawColumn.Type, "bit") && strings.HasPrefix(rawColumn.Default.String, "b'") {
+			col.Default = ColumnDefaultExpression(rawColumn.Default.String)
 		} else {
 			col.Default = ColumnDefaultValue(rawColumn.Default.String)
 		}
