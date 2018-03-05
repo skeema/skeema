@@ -52,10 +52,14 @@ Go La Tengo currently only aims to support MySQL, MariaDB, and Percona Server. S
 * http://github.com/jmoiron/sqlx (MIT License)
 * http://github.com/VividCortex/mysqlerr (MIT License)
 
-## Contributors
+## Credits
 
-* [@evanelias](https://github.com/evanelias) - Creator and maintainer
-* [@tomkrouper](https://github.com/tomkrouper) - Bug fixes
+Created and maintained by [@evanelias](https://github.com/evanelias).
+
+Additional [contributions](https://github.com/skeema/tengo/graphs/contributors) by:
+
+* [@tomkrouper](https://github.com/tomkrouper)
+* [@efixler](https://github.com/efixler)
 
 ## License
 

@@ -297,8 +297,8 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	}
 
 	// Start over; delete a col, move last col to its former position, and add a new col after that
-	// FROM: actor_id, first_name, last_name, last_updated, ssn, alive
-	// TO:   actor_id, first_name, last_name, alive, age, ssn
+	// FROM: actor_id, first_name, last_name, last_updated, ssn, alive, alive_bit
+	// TO:   actor_id, first_name, last_name, alive, alive_bit, age, ssn
 	// current move algo treats this as a move of ssn to be after alive, rather than alive to be after last_name
 	to = aTable(1)
 	newCol := &Column{
@@ -307,7 +307,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 		Nullable: true,
 		Default:  ColumnDefaultNull,
 	}
-	to.Columns = append(to.Columns[0:3], to.Columns[5], newCol, to.Columns[4])
+	to.Columns = append(to.Columns[0:3], to.Columns[5], to.Columns[6], newCol, to.Columns[4])
 	to.createStatement = to.GeneratedCreateStatement()
 	tableAlters, supported = from.Diff(&to)
 	if len(tableAlters) != 3 || !supported {
@@ -325,15 +325,15 @@ func TestTableAlterModifyColumn(t *testing.T) {
 		if modify.NewColumn.Name != "ssn" {
 			t.Error("Pointers in table alter[1] do not point to expected values")
 		}
-		if modify.PositionFirst || modify.PositionAfter.Name != "alive" {
-			t.Errorf("Expected moved column to be after alive / first=false, instead found after %v / first=%t", modify.PositionAfter, modify.PositionFirst)
+		if modify.PositionFirst || modify.PositionAfter.Name != "alive_bit" {
+			t.Errorf("Expected moved column to be after alive_bit / first=false, instead found after %v / first=%t", modify.PositionAfter, modify.PositionFirst)
 		}
 	} else {
 		t.Errorf("Incorrect type of table alter[1] returned: expected %T, found %T", modify, tableAlters[1])
 	}
 	if add, ok := tableAlters[2].(AddColumn); ok {
-		if add.PositionFirst || add.PositionAfter.Name != "alive" {
-			t.Errorf("Expected new column to be after alive / first=false, instead found after %v / first=%t", add.PositionAfter, add.PositionFirst)
+		if add.PositionFirst || add.PositionAfter.Name != "alive_bit" {
+			t.Errorf("Expected new column to be after alive_bit / first=false, instead found after %v / first=%t", add.PositionAfter, add.PositionFirst)
 		}
 	} else {
 		t.Errorf("Incorrect type of table alter[2] returned: expected %T, found %T", add, tableAlters[2])

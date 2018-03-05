@@ -25,11 +25,10 @@ func ColumnDefaultValue(value string) ColumnDefault {
 }
 
 // ColumnDefaultExpression is a constructor for creating a default value that
-// represents a SQL expression, which won't be wrapped in quotes. Traditionally
-// in MySQL this must be either "CURRENT_TIMESTAMP" or, if using fractional
-// second precision, "CURRENT_TIMESTAMP(N)" where N is a digit.
-// This form may also be used to bit literals, which use b'n' syntax and don't require
-// the digit represented by n to be quoted.
+// represents a SQL expression, which won't be wrapped in quotes. Examples
+// include "CURRENT_TIMESTAMP", "CURRENT_TIMESTAMP(N)" where N is a digit for
+// fractional precision, or bit-value literals "b'N'" where N is a value
+// expressed in binary.
 func ColumnDefaultExpression(expression string) ColumnDefault {
 	return ColumnDefault{Value: expression}
 }
