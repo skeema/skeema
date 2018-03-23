@@ -2,6 +2,7 @@ package mybase
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -378,6 +379,22 @@ func (cfg *Config) GetBytes(name string) (uint64, error) {
 
 	numVal, err := strconv.ParseUint(value, 10, 64)
 	return numVal * multiplier, err
+}
+
+// GetRegexp returns an option's value as a compiled *regexp.Regexp. If the
+// option value isn't set (empty string), returns nil,nil. If the option value
+// is set but cannot be compiled as a valid regular expression, returns nil and
+// an error value. Panics if the named option does not exist.
+func (cfg *Config) GetRegexp(name string) (*regexp.Regexp, error) {
+	value := strings.ToLower(cfg.Get(name))
+	if value == "" {
+		return nil, nil
+	}
+	re, err := regexp.Compile(value)
+	if err != nil {
+		return nil, fmt.Errorf("Invalid regexp for option %s: %s", name, value)
+	}
+	return re, nil
 }
 
 // Unquote takes a string, trims whitespace on both ends, and then examines

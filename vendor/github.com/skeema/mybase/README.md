@@ -51,7 +51,7 @@ Unit test coverage of mybase is still incomplete; code coverage is currently aro
 
 ## License
 
-**Copyright 2017 Skeema LLC**
+**Copyright 2018 Skeema LLC**
 
 ```text
 Licensed under the Apache License, Version 2.0 (the "License");

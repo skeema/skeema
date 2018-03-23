@@ -10,6 +10,10 @@ import (
 type OptionType int
 
 // Constants representing different OptionType enumerated values.
+// Note that there intentionally aren't separate types for int, comma-separated
+// list, regex, etc. From the perspective of the CLI or an option file, these
+// are all strings; callers may *process* a string value as a different Golang
+// type at runtime using Config.GetInt, Config.GetSlice, etc.
 const (
 	OptionTypeString OptionType = iota // String-valued option
 	OptionTypeBool                     // Boolean-valued option

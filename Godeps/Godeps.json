@@ -1,7 +1,7 @@
 {
 	"ImportPath": "github.com/skeema/skeema",
 	"GoVersion": "go1.7",
-	"GodepVersion": "v80",
+	"GodepVersion": "v79",
 	"Deps": [
 		{
 			"ImportPath": "github.com/Sirupsen/logrus",
@@ -34,7 +34,7 @@
 		},
 		{
 			"ImportPath": "github.com/skeema/mybase",
-			"Rev": "9fe414cbcc2946213214f9c7912f82e6582b32cf"
+			"Rev": "bf75f2af7b7170036f63ff4645f7afd9206f5c7b"
 		},
 		{
 			"ImportPath": "github.com/skeema/tengo",
