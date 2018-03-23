@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"regexp"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/skeema/mybase"
@@ -27,8 +26,6 @@ top of the file. If no environment name is supplied, the default is
 	cmd := mybase.NewCommand("pull", summary, desc, PullHandler)
 	cmd.AddOption(mybase.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in new table files, and update in existing files"))
 	cmd.AddOption(mybase.BoolOption("normalize", 0, true, "Reformat *.sql files to match SHOW CREATE TABLE"))
-	cmd.AddOption(mybase.StringOption("ignore-schema", 0, "", "Ignore schemas that match regex"))
-	cmd.AddOption(mybase.StringOption("ignore-table", 0, "", "Ignore tables that match regex"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
@@ -111,10 +108,9 @@ func PullHandler(cfg *mybase.Config) error {
 		} else {
 			mods.NextAutoInc = tengo.NextAutoIncIfAlready
 		}
-		ignoreTable := t.Dir.Config.Get("ignore-table")
-		re, err := regexp.Compile(ignoreTable)
+		ignoreTable, err := t.Dir.Config.GetRegexp("ignore-table")
 		if err != nil {
-			return fmt.Errorf("Invalid regular expression on ignore-table: %s; %s", ignoreTable, err)
+			return err
 		}
 		for _, td := range diff.TableDiffs {
 			tableName := ""
@@ -128,8 +124,8 @@ func PullHandler(cfg *mybase.Config) error {
 			default:
 				return fmt.Errorf("Unsupported diff type %T", td)
 			}
-			if ignoreTable != "" && re.MatchString(tableName) {
-				log.Warnf("Skipping table %s because ignore-table matched %s", tableName, ignoreTable)
+			if ignoreTable != nil && ignoreTable.MatchString(tableName) {
+				log.Warnf("Skipping table %s because ignore-table='%s'", tableName, ignoreTable)
 				continue
 			}
 			stmt, err := td.Statement(mods)
@@ -209,7 +205,7 @@ func PullHandler(cfg *mybase.Config) error {
 			}
 			log.Infof("Wrote %s (%d bytes) -- updated file to reflect (unsupported) table alterations", sf.Path(), length)
 			if t.Dir.Config.GetBool("debug") {
-				log.Warnf("Table %s: table uses unsupported features", table.Name)
+				log.Warnf("Table %s uses unsupported features", table.Name)
 				t.logUnsupportedTableDiff(table.Name)
 			}
 		}

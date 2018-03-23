@@ -6,19 +6,21 @@ Handling and parsing of options is intentionally designed to be very similar to 
 
 ### Option types
 
-Options generally take values, which can be *string*, *enum*, *int*, *size*, or *boolean* types depending on the option.
+Options generally take values, which can be *string*, *enum*, *regular expression*, *int*, *size*, or *boolean* types depending on the option.
 
 Non-boolean options require a value. For example, you cannot provide --host on the command-line without also specifying a value, nor can you have a line that only contains "host\n" in an options file. The only special-case is the [password](options.md#password) option, which behaves like it does in the MySQL client: you may omit a value to prompt for password on STDIN.
 
-Boolean options do not require a value; simply specifying the option alone is equivalent to passing a true value. The option name may be prefixed with "skip-" or "disable-" to set a false value. In other words, on the command-line `--skip-foo` is equivalent to `--foo=false` or `--foo=0`; this may also be used in option files without the `--` prefix. 
+**Boolean** options do not require a value; simply specifying the option alone is equivalent to passing a true value. The option name may be prefixed with "skip-" or "disable-" to set a false value. In other words, on the command-line `--skip-foo` is equivalent to `--foo=false` or `--foo=0`; this may also be used in option files without the `--` prefix.
 
-String options may be set to any string of 0 or more characters.
+**String** options may be set to any string of 0 or more characters.
 
-Enum options behave like string options, except the set of allowed values is restricted. The option reference lists what values are permitted in each case.
+**Enum** options behave like string options, except the set of allowed values is restricted. The option reference lists what values are permitted in each case.
 
-Int options must be set to an integer value.
+**Regular expression** options are used for string-matching. The value should be supplied *without* any surrounding delimiter; for example, use `--ignore-schema='^test.*'`, **NOT** `--ignore-schema='/^test.*/'`. To make a match be case-insensitive, put `(?i)` at the beginning of the regex. For example, `--ignore-schema='(?i)^test.*'` will match "TESTING", "Test", "test", etc.
 
-Size options are a special-case of int options. They are used in options that deal with file or table sizes, in bytes. Size values may optionally have a suffix of "K", "M", or "G" to multiply the preceding number by 1024, 1024^2, or 1024^3 respectively. Options that deal with table sizes query information_schema to compute the size of a table; be aware that the value obtained may be slightly inaccurate. As a special-case, Skeema treats any table without any rows as size 0 bytes, even though they actually take up a few KB on disk. This way, you may configure a size option to a value of 1 to mean any table with at least one row.
+**Int** options must be set to an integer value.
+
+**Size** options are a special-case of int options. They are used in options that deal with file or table sizes, in bytes. Size values may optionally have a suffix of "K", "M", or "G" to multiply the preceding number by 1024, 1024^2, or 1024^3 respectively. Options that deal with table sizes query information_schema to compute the size of a table; be aware that the value obtained may be slightly inaccurate. As a special-case, Skeema treats any table without any rows as size 0 bytes, even though they actually take up a few KB on disk. This way, you may configure a size option to a value of 1 to mean any table with at least one row.
 
 ### Specifying options on the command-line
 

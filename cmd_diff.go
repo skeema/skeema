@@ -24,8 +24,6 @@ An exit code of 0 will be returned if no differences were found, 1 if some
 differences were found, or 2+ if an error occurred.`
 
 	cmd := mybase.NewCommand("diff", summary, desc, DiffHandler)
-	cmd.AddOption(mybase.StringOption("ignore-schema", 0, "", "Ignore schemas that match regex"))
-	cmd.AddOption(mybase.StringOption("ignore-table", 0, "", "Ignore tables that match regex"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 	clonePushOptionsToDiff()

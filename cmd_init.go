@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -180,12 +179,10 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 	if s.Name == parentDir.Config.Get("temp-schema") {
 		return nil
 	}
-	ignoreSchema := parentDir.Config.Get("ignore-schema")
-	schemaRE, sErr := regexp.Compile(ignoreSchema)
-	if sErr != nil {
-		return fmt.Errorf("Invalid regular expression on ignore-schema: %s; %s", ignoreSchema, sErr)
-	}
-	if ignoreSchema != "" && schemaRE.MatchString(s.Name) {
+
+	if ignoreSchema, err := parentDir.Config.GetRegexp("ignore-schema"); err != nil {
+		return err
+	} else if ignoreSchema != nil && ignoreSchema.MatchString(s.Name) {
 		log.Warnf("Skipping schema %s because of ignore-schema='%s'", s.Name, ignoreSchema)
 		return nil
 	}
@@ -223,13 +220,12 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 	if err != nil {
 		return fmt.Errorf("Cannot obtain table information for %s: %s", s.Name, err)
 	}
-	ignoreTable := parentDir.Config.Get("ignore-table")
-	re, err := regexp.Compile(ignoreTable)
+	ignoreTable, err := parentDir.Config.GetRegexp("ignore-table")
 	if err != nil {
-		return fmt.Errorf("Invalid regular expression on ignore-table: %s; %s", ignoreTable, err)
+		return err
 	}
 	for _, t := range tables {
-		if ignoreTable != "" && re.MatchString(t.Name) {
+		if ignoreTable != nil && ignoreTable.MatchString(t.Name) {
 			log.Warnf("Skipping table %s because ignore-table matched %s", t.Name, ignoreTable)
 			continue
 		}

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"sync"
 
@@ -38,8 +37,6 @@ top of the file. If no environment name is supplied, the default is
 	cmd.AddOption(mybase.StringOption("ddl-wrapper", 'X', "", "Like --alter-wrapper, but applies to all DDL types (CREATE, DROP, ALTER)"))
 	cmd.AddOption(mybase.StringOption("safe-below-size", 0, "0", "Always permit destructive operations for tables below this size in bytes"))
 	cmd.AddOption(mybase.StringOption("concurrent-instances", 'c', "1", "Perform operations on this number of instances concurrently"))
-	cmd.AddOption(mybase.StringOption("ignore-schema", 0, "", "Ignore schemas that match regex"))
-	cmd.AddOption(mybase.StringOption("ignore-table", 0, "", "Ignore tables that match regex"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 	clonePushOptionsToDiff()
@@ -208,10 +205,9 @@ func pushWorker(sps *sharedPushState) {
 				sps.setFatalError(err)
 				return
 			}
-			ignoreTable := t.Dir.Config.Get("ignore-table")
-			re, err := regexp.Compile(ignoreTable)
+			ignoreTable, err := t.Dir.Config.GetRegexp("ignore-table")
 			if err != nil {
-				sps.setFatalError(fmt.Errorf("Invalid regular expression on ignore-table: %s; %s", ignoreTable, err))
+				sps.setFatalError(err)
 				return
 			}
 			for n, tableDiff := range diff.TableDiffs {
@@ -232,8 +228,8 @@ func pushWorker(sps *sharedPushState) {
 					sps.setFatalError(fmt.Errorf("Unsupported diff type %T", td))
 					return
 				}
-				if ignoreTable != "" && re.MatchString(tableName) {
-					log.Warnf("Skipping table %s because ignore-table matched %s", tableName, ignoreTable)
+				if ignoreTable != nil && ignoreTable.MatchString(tableName) {
+					log.Warnf("Skipping table %s because ignore-table='%s'", tableName, ignoreTable)
 					continue
 				}
 				targetStmtCount++

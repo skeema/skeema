@@ -361,22 +361,28 @@ If ports are omitted, the [port](#port) option is used instead, which defaults t
 The external command should only return addresses of master instances, never replicas.
 
 ### ignore-schema
-Commands | init
+Commands | *all*
 --- | :---
 **Default** | *empty string*
-**Type** | String
-**Restrictions** | valid regex
+**Type** | regular expression
+**Restrictions** | none
 
-Normally skeema will run iterating through every not system schema. This option will allow you to ignore schemas that you do not want to be used with skeema.
+Ordinarily, Skeema only ignores system schemas: information_schema, performance_schema, sys, test, mysql. The [ignore-schema](#ignore-schema) option allows you to specify a regular expression of *additional* schema names to ignore. (The system schemas are always ignored regardless.)
+
+The value of this option must be a valid regex, and should not be wrapped in delimiters. See the [option types](config.md#option-types) documentation for an example, and information on how to do case-insensitive matching.
+
+When supplied on the command-line to `skeema init`, the value will be persisted into the auto-generated .skeema option file, so that subsequent commands continue to ignore the corresponding schema names.
 
 ### ignore-table
-Commands | init
+Commands | *all*
 --- | :---
 **Default** | *empty string*
-**Type** | String
-**Restrictions** | valid regex
+**Type** | regular expression
+**Restrictions** | none
 
-Many tools like gh-ost and pt-online-schema-change will create temporary tables that you will not want to have as part of your skeema workflow. When initializing skeema you can run `skeema init --ignore-table="^_.*" ...` to setup your cluster to not look at these temporary files. Any valid regex can be used.
+Many external tools such as gh-ost and pt-online-schema-change will create temporary tables that you will not want to have as part of your Skeema workflow. The [ignore-table](#ignore-table) option allows you to specify a regular expression of table names to ignore. For example, `skeema init --ignore-table='^_.*' ...` tells Skeema to ignore tables that have a leading underscore in their name.
+
+When supplied on the command-line to `skeema init`, the value will be persisted into the auto-generated .skeema option file, so that subsequent commands continue to ignore the corresponding table names.
 
 ### include-auto-inc
 

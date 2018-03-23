@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"regexp"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/skeema/mybase"
@@ -51,13 +50,9 @@ func LintHandler(cfg *mybase.Config) error {
 			continue
 		}
 
-		ignoreSchema := t.Dir.Config.Get("ignore-schema")
-		re, sErr := regexp.Compile(ignoreSchema)
-		if sErr != nil {
-			return fmt.Errorf("Invalid regular expression on ignore-schema: %s; %s", ignoreSchema, sErr)
-		}
-		dir := fmt.Sprintf("%s", t.Dir)
-		if ignoreSchema != "" && re.MatchString(dir) {
+		if ignoreSchema, err := t.Dir.Config.GetRegexp("ignore-schema"); err != nil {
+			return err
+		} else if ignoreSchema != nil && ignoreSchema.MatchString(dir.String()) {
 			log.Warnf("Skipping schema %s because of ignore-schema='%s'", dir, ignoreSchema)
 			continue
 		}
@@ -69,15 +64,14 @@ func LintHandler(cfg *mybase.Config) error {
 			sqlErrCount++
 		}
 
-		ignoreTable := t.Dir.Config.Get("ignore-table")
-		re, err := regexp.Compile(ignoreTable)
+		ignoreTable, err := t.Dir.Config.GetRegexp("ignore-table")
 		if err != nil {
-			return fmt.Errorf("Invalid regular expression on ignore-table: %s; %s", ignoreTable, err)
+			return err
 		}
 		tables, _ := t.SchemaFromDir.Tables() // can ignore error since table list already guaranteed to be cached
 		for _, table := range tables {
-			if ignoreTable != "" && re.MatchString(table.Name) {
-				log.Warnf("Skipping table %s because ignore-table matched %s", table.Name, ignoreTable)
+			if ignoreTable != nil && ignoreTable.MatchString(table.Name) {
+				log.Warnf("Skipping table %s because ignore-table='%s'", table.Name, ignoreTable)
 				continue
 			}
 			sf := SQLFile{
