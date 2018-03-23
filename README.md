@@ -39,9 +39,14 @@ The `skeema` binary is supported on macOS and Linux. For now, it cannot be compi
 
 Several InnoDB features (compression, partitioning, etc) and rare/new MySQL column types are not yet supported. Skeema is able to *create* or *drop* tables using these features, but not *alter* them. The output of `skeema diff` and `skeema push` clearly displays when this is the case. You may still make such alters directly/manually (outside of Skeema), and then update the corresponding CREATE TABLE files via `skeema pull`.
 
-## Authors
+## Credits
 
-[@evanelias](https://github.com/evanelias)
+Created and maintained by [@evanelias](https://github.com/evanelias).
+
+Additional [contributions](https://github.com/skeema/skeema/graphs/contributors) by:
+
+* [@tomkrouper](https://github.com/tomkrouper)
+* [@efixler](https://github.com/efixler)
 
 ## License
 
