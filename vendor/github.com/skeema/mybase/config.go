@@ -386,7 +386,7 @@ func (cfg *Config) GetBytes(name string) (uint64, error) {
 // is set but cannot be compiled as a valid regular expression, returns nil and
 // an error value. Panics if the named option does not exist.
 func (cfg *Config) GetRegexp(name string) (*regexp.Regexp, error) {
-	value := strings.ToLower(cfg.Get(name))
+	value := cfg.Get(name)
 	if value == "" {
 		return nil, nil
 	}
