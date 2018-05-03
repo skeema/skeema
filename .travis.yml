@@ -1,0 +1,10 @@
+sudo: required
+language: go
+go:
+  - "1.10.x"
+services:
+  - docker
+
+notifications:
+  email: false
+
