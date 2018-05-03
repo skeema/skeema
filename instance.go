@@ -371,7 +371,10 @@ func (instance *Instance) DropSchema(schema *Schema, onlyIfEmpty bool) error {
 }
 
 // AlterSchema changes the character set and/or collation of the supplied schema
-// on instance.
+// on instance. Supply an empty string for newCharSet to only change the
+// collation, or supply an empty string for newCollation to use the default
+// collation of newCharSet. (Supplying an empty string for both is also allowed,
+// but is a no-op.)
 func (instance *Instance) AlterSchema(schema *Schema, newCharSet, newCollation string) error {
 	db, err := instance.Connect(schema.Name, "")
 	if err != nil {
@@ -452,6 +455,17 @@ func (instance *Instance) CloneSchema(src, dest *Schema) error {
 	}
 	dest.PurgeTableCache()
 	return nil
+}
+
+// DefaultCharSetAndCollation returns the instance's default character set and
+// collation
+func (instance *Instance) DefaultCharSetAndCollation() (serverCharSet, serverCollation string, err error) {
+	db, err := instance.Connect("information_schema", "")
+	if err != nil {
+		return
+	}
+	err = db.QueryRow("SELECT @@global.character_set_server, @@global.collation_server").Scan(&serverCharSet, &serverCollation)
+	return
 }
 
 // baseDSN returns a DSN with the database (schema) name and params stripped.

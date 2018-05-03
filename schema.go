@@ -347,23 +347,15 @@ func (s *Schema) OverridesServerCharSet() (overridesCharSet bool, overridesColla
 	if s.instance == nil {
 		return false, false, fmt.Errorf("Attempted to check character set and collation on schema %s which has been detached from its instance", s.Name)
 	}
-	if s.Collation == "" && s.CharSet == "" {
-		return false, false, nil
-	}
 
-	db, err := s.instance.Connect("information_schema", "")
+	serverCharSet, serverCollation, err := s.instance.DefaultCharSetAndCollation()
 	if err != nil {
 		return false, false, err
 	}
-	var serverCharSet, serverCollation string
-	err = db.QueryRow("SELECT @@global.character_set_server, @@global.collation_server").Scan(&serverCharSet, &serverCollation)
-	if err != nil {
-		return false, false, err
-	}
-	if s.CharSet != "" && serverCharSet != s.CharSet {
+	if serverCharSet != s.CharSet {
 		// Different charset also inherently means different collation
 		return true, true, nil
-	} else if s.Collation != "" && serverCollation != s.Collation {
+	} else if serverCollation != s.Collation {
 		return false, true, nil
 	}
 	return false, false, nil
