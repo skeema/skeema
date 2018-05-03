@@ -51,6 +51,7 @@ Go La Tengo currently only aims to support MySQL, MariaDB, and Percona Server. S
 * http://github.com/go-sql-driver/mysql (Mozilla Public License 2.0)
 * http://github.com/jmoiron/sqlx (MIT License)
 * http://github.com/VividCortex/mysqlerr (MIT License)
+* http://github.com/fsouza/go-dockerclient (BSD License)
 
 ## Credits
 
