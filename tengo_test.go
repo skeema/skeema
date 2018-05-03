@@ -12,7 +12,13 @@ func TestMain(m *testing.M) {
 }
 
 func TestIntegration(t *testing.T) {
-	RunSuite(&TengoIntegrationSuite{}, t, "mysql:5.6")
+	images := SplitEnv("TENGO_TEST_IMAGES")
+	if len(images) == 0 {
+		fmt.Println("TENGO_TEST_IMAGES env var is not set, so integration tests will be skipped!")
+		fmt.Println("To run integration tests, you may set TENGO_TEST_IMAGES to a comma-separated")
+		fmt.Println("list of Docker images. Example:\n# TENGO_TEST_IMAGES=\"mysql:5.6,mysql:5.7\" go test")
+	}
+	RunSuite(&TengoIntegrationSuite{}, t, images)
 }
 
 type TengoIntegrationSuite struct {

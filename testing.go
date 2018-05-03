@@ -36,7 +36,7 @@ type IntegrationTestSuite interface {
 // followed by the test itself. Finally, suite.Teardown(backend) will be run.
 // Backends are just strings, and may contain docker image names or any other
 // string representation that the test suite understands.
-func RunSuite(suite IntegrationTestSuite, t *testing.T, backends ...string) {
+func RunSuite(suite IntegrationTestSuite, t *testing.T, backends []string) {
 	var suiteName string
 	suiteType := reflect.TypeOf(suite)
 	suiteVal := reflect.ValueOf(suite)
@@ -44,6 +44,10 @@ func RunSuite(suite IntegrationTestSuite, t *testing.T, backends ...string) {
 		suiteName = suiteVal.Elem().Type().Name()
 	} else {
 		suiteName = suiteType.Name()
+	}
+
+	if len(backends) == 0 {
+		t.Skipf("Skipping integration test suite %s: No backends supplied", suiteName)
 	}
 
 	for _, backend := range backends {
@@ -72,6 +76,18 @@ func RunSuite(suite IntegrationTestSuite, t *testing.T, backends ...string) {
 			t.Fatalf("RunSuite %s: Teardown(%s) failed: %s", suiteName, backend, err)
 		}
 	}
+}
+
+// SplitEnv examines the specified environment variable and splits its value on
+// commas to return a list of strings. Note that if the env variable is blank or
+// unset, an empty slice will be returned; this behavior differs from that of
+// strings.Split.
+func SplitEnv(key string) []string {
+	value := os.Getenv(key)
+	if value == "" {
+		return []string{}
+	}
+	return strings.Split(value, ",")
 }
 
 // DockerizedInstance represents a containerized copy of mysql-server, plus a

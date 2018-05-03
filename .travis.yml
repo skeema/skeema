@@ -8,3 +8,5 @@ services:
 notifications:
   email: false
 
+env:
+  TENGO_TEST_IMAGES="mysql:5.6,mysql:5.7"
