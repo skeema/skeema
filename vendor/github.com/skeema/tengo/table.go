@@ -33,12 +33,13 @@ func (t *Table) DropStatement() string {
 }
 
 // CreateStatement returns a SQL statement that, if run, would create this
-// table. Ordinarily this will be pre-cached from a prior call to SHOW CREATE
-// TABLE, but if not, tengo will auto-generate what it thinks the CREATE TABLE
-// statement should be.
+// table. This returns the actual SHOW CREATE TABLE output previously obtained
+// from the database upon creating the tengo.Table (e.g. from Schema.Tables).
+// If that output has not previously been obtained, this method panics, as it
+// is indicative of programmer error.
 func (t *Table) CreateStatement() string {
 	if t.createStatement == "" {
-		return t.GeneratedCreateStatement()
+		panic(fmt.Errorf("Table.CreateStatement(): No pre-cached SHOW CREATE TABLE available for %s", t.Name))
 	}
 	return t.createStatement
 }
