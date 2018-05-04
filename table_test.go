@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestGeneratedCreateStatement(t *testing.T) {
+func TestTableGeneratedCreateStatement(t *testing.T) {
 	for nextAutoInc := uint64(1); nextAutoInc < 3; nextAutoInc++ {
 		table := aTable(nextAutoInc)
 		if table.GeneratedCreateStatement() != table.createStatement {
@@ -22,6 +22,29 @@ func TestGeneratedCreateStatement(t *testing.T) {
 	if table.GeneratedCreateStatement() == table.createStatement {
 		t.Error("Expected unsupported table's generated DDL to differ from actual DDL, but they match")
 	}
+}
+
+func TestTableCreateStatement(t *testing.T) {
+	table := aTable(1)
+	if table.CreateStatement() != table.createStatement {
+		t.Error("table.CreateStatement returned unexpected result")
+	}
+
+	// Confirm missing value causes method to panic
+	table.createStatement = ""
+	func() {
+		var didPanic bool
+		defer func() {
+			r := recover()
+			if r != nil {
+				didPanic = true
+			}
+		}()
+		table.CreateStatement()
+		if !didPanic {
+			t.Error("Expected panic on Table.CreateStatement() without prepopulated data, but did not panic.")
+		}
+	}()
 }
 
 func TestTableAlterAddOrDropColumn(t *testing.T) {
