@@ -1,5 +1,9 @@
 # Go La Tengo
 
+[![build status](https://img.shields.io/travis/skeema/tengo/master.svg)](http://travis-ci.org/skeema/tengo)
+[![code coverage](https://img.shields.io/coveralls/skeema/tengo.svg)](https://coveralls.io/r/skeema/tengo)
+[![godoc](https://img.shields.io/badge/godoc-master-blue.svg)](https://godoc.org/github.com/skeema/tengo)
+
 Hoboken's finest indie Golang database automation library
 
 ## Features
@@ -51,6 +55,7 @@ Go La Tengo currently only aims to support MySQL, MariaDB, and Percona Server. S
 * http://github.com/go-sql-driver/mysql (Mozilla Public License 2.0)
 * http://github.com/jmoiron/sqlx (MIT License)
 * http://github.com/VividCortex/mysqlerr (MIT License)
+* http://github.com/fsouza/go-dockerclient (BSD License)
 
 ## Credits
 

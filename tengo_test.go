@@ -7,7 +7,64 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	UseFilteredDriverLogger()
 	os.Exit(m.Run())
+}
+
+func TestIntegration(t *testing.T) {
+	images := SplitEnv("TENGO_TEST_IMAGES")
+	if len(images) == 0 {
+		fmt.Println("TENGO_TEST_IMAGES env var is not set, so integration tests will be skipped!")
+		fmt.Println("To run integration tests, you may set TENGO_TEST_IMAGES to a comma-separated")
+		fmt.Println("list of Docker images. Example:\n# TENGO_TEST_IMAGES=\"mysql:5.6,mysql:5.7\" go test")
+	}
+	RunSuite(&TengoIntegrationSuite{}, t, images)
+}
+
+type TengoIntegrationSuite struct {
+	d *DockerizedInstance
+}
+
+func (s *TengoIntegrationSuite) Setup(backend string) (err error) {
+	s.d, err = CreateDockerizedInstance(backend)
+	return err
+}
+
+func (s *TengoIntegrationSuite) Teardown(backend string) error {
+	return s.d.Destroy()
+}
+
+func (s *TengoIntegrationSuite) BeforeTest(method string, backend string) error {
+	if err := s.d.NukeData(); err != nil {
+		return err
+	}
+	_, err := s.d.SourceSQL("testdata/integration.sql")
+	return err
+}
+
+func (s *TengoIntegrationSuite) GetSchema(t *testing.T, schemaName string) *Schema {
+	t.Helper()
+	schema, err := s.d.Schema(schemaName)
+	if schema == nil || err != nil {
+		t.Fatalf("Unable to obtain schema %s: %s", schemaName, err)
+	}
+	return schema
+}
+
+func (s *TengoIntegrationSuite) GetTable(t *testing.T, schemaName string, tableName string) *Table {
+	t.Helper()
+	_, table := s.GetSchemaAndTable(t, schemaName, tableName)
+	return table
+}
+
+func (s *TengoIntegrationSuite) GetSchemaAndTable(t *testing.T, schemaName string, tableName string) (*Schema, *Table) {
+	t.Helper()
+	schema := s.GetSchema(t, schemaName)
+	table, err := schema.Table(tableName)
+	if table == nil || err != nil {
+		t.Fatalf("Unable to obtain table %s.%s: %s", schemaName, tableName, err)
+	}
+	return schema, table
 }
 
 func primaryKey(cols ...*Column) *Index {
@@ -22,53 +79,53 @@ func primaryKey(cols ...*Column) *Index {
 
 func aTable(nextAutoInc uint64) Table {
 	columns := []*Column{
-		&Column{
+		{
 			Name:          "actor_id",
 			TypeInDB:      "smallint(5) unsigned",
 			AutoIncrement: true,
 			Default:       ColumnDefaultNull,
 		},
-		&Column{
+		{
 			Name:     "first_name",
 			TypeInDB: "varchar(45)",
 			Default:  ColumnDefaultNull,
 		},
-		&Column{
+		{
 			Name:     "last_name",
 			Nullable: true,
 			TypeInDB: "varchar(45)",
 			Default:  ColumnDefaultNull,
 		},
-		&Column{
+		{
 			Name:     "last_update",
 			TypeInDB: "timestamp(2)",
 			Default:  ColumnDefaultExpression("CURRENT_TIMESTAMP(2)"),
 			OnUpdate: "CURRENT_TIMESTAMP(2)",
 		},
-		&Column{
+		{
 			Name:     "ssn",
 			TypeInDB: "char(10)",
 			Default:  ColumnDefaultNull,
 		},
-		&Column{
+		{
 			Name:     "alive",
 			TypeInDB: "tinyint(1)",
 			Default:  ColumnDefaultValue("1"),
 		},
-		&Column{
+		{
 			Name:     "alive_bit",
 			TypeInDB: "bit(1)",
 			Default:  ColumnDefaultExpression("b'1'"),
 		},
 	}
 	secondaryIndexes := []*Index{
-		&Index{
+		{
 			Name:     "idx_ssn",
 			Columns:  []*Column{columns[4]},
 			SubParts: []uint16{0},
 			Unique:   true,
 		},
-		&Index{
+		{
 			Name:     "idx_actor_name",
 			Columns:  []*Column{columns[2], columns[1]},
 			SubParts: []uint16{10, 1},
@@ -105,12 +162,12 @@ func aTable(nextAutoInc uint64) Table {
 
 func anotherTable() Table {
 	columns := []*Column{
-		&Column{
+		{
 			Name:     "actor_id",
 			TypeInDB: "smallint(5) unsigned",
 			Default:  ColumnDefaultNull,
 		},
-		&Column{
+		{
 			Name:     "film_name",
 			TypeInDB: "varchar(60)",
 			Default:  ColumnDefaultNull,
