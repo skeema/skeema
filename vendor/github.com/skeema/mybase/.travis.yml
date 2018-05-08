@@ -1,0 +1,19 @@
+language: go
+go:
+  - "1.10.x"
+
+notifications:
+  email: false
+
+before_install:
+  - go get golang.org/x/lint/golint
+  - go get github.com/mattn/goveralls
+
+script:
+  - go test -v -coverprofile=coverage.out -covermode=count
+  - go vet ./...
+  - test -z "$(gofmt -s -d . 2>&1)"
+  - golint -set_exit_status ./...
+
+after_script:
+  - goveralls -coverprofile=coverage.out -service=travis-ci
