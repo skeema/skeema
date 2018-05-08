@@ -5,7 +5,7 @@ import (
 	"os"
 	"runtime/debug"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
 )
 
