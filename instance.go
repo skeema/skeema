@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
-	"reflect"
 	"strings"
 	"sync"
 
@@ -59,22 +58,23 @@ func NewInstance(driver, dsn string) (*Instance, error) {
 	}
 
 	// See if an instance with the supplied dsn already exists. Note that we forbid
-	// creating a duplicate instance that has a different user, pass, or default
-	// params; having multiple Instances that refer to the same underlying DB
-	// server instance would break caching logic.
-	// TODO: permit changing the username, password, and/or params of an existing
-	// instance through another set of methods
+	// creating a duplicate instance referring to the same underlying DB, as this
+	// would break caching logic around schema introspection.
+	// TODO: Remove caching logic, it causes more trouble than it's worth!
 	allInstances.Lock()
 	defer allInstances.Unlock()
 	instance, already := allInstances.byDSN[base]
 	if already {
+		// If the new DSN indicates use of a different user or pass, this is
+		// unsupported for now. If the DSN indicates use of different default
+		// params, use those for new connections going forwards.
+		// TODO: This is all temporary until the caching logic is removed altogether!
 		if instance.User != parsedConfig.User {
 			return nil, fmt.Errorf("Instance already exists, but with different username")
 		} else if instance.Password != parsedConfig.Passwd {
 			return nil, fmt.Errorf("Instance already exists, but with different password")
-		} else if !reflect.DeepEqual(instance.defaultParams, params) {
-			return nil, fmt.Errorf("Instance already exists, but with different default params")
 		}
+		instance.defaultParams = params
 		return instance, nil
 	}
 

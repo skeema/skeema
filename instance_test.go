@@ -99,21 +99,23 @@ func TestNewInstanceDedupes(t *testing.T) {
 
 	inst1 := newInstance(dsn1)
 	if newInstance(dsn1) != inst1 {
-		t.Errorf("Expected NewInstance to return same pointer for duplicate DSN, but it did not")
+		t.Error("Expected NewInstance to return same pointer for duplicate DSN, but it did not")
 	}
 	if newInstance(dsn2) != inst1 {
-		t.Errorf("Expected NewInstance to return same pointer for DSN that only differed by schema, but it did not")
+		t.Error("Expected NewInstance to return same pointer for DSN that only differed by schema, but it did not")
 	}
 	if newInstance(dsn3) != inst1 {
-		t.Errorf("Expected NewInstance to return same pointer for DSN that only differed by lack of schema, but it did not")
+		t.Error("Expected NewInstance to return same pointer for DSN that only differed by lack of schema, but it did not")
 	}
 	if newInstance(dsn4) == inst1 {
-		t.Errorf("Expected NewInstance to return different pointer for DSN that has different port, but it did not")
+		t.Error("Expected NewInstance to return different pointer for DSN that has different port, but it did not")
 	}
-	if inst5, err := NewInstance("mysql", dsn5); inst5 != nil || err == nil {
-		t.Errorf("Expected NewInstance to return an error upon using DSN that only differs by schema or params, but it did not")
+	if newInstance(dsn5) != inst1 {
+		t.Error("Expected NewInstance to return same pointer for DSN that only differed by default params, but it did not")
 	}
-
+	if inst1.defaultParams["foo"] != "bar" {
+		t.Error("Expected NewInstance with new default params to update previous value, but it did not")
+	}
 }
 
 func TestInstanceBuildParamString(t *testing.T) {
