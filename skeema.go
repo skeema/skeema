@@ -24,14 +24,11 @@ func main() {
 	var cfg *mybase.Config
 
 	defer func() {
-		if err := recover(); err != nil {
-			if cfg == nil || !cfg.GetBool("debug") {
-				Exit(NewExitValue(CodeFatalError, fmt.Sprint(err)))
-			} else {
-				log.Error(err)
+		if iface := recover(); iface != nil {
+			if cfg != nil && cfg.GetBool("debug") {
 				log.Debug(string(debug.Stack()))
-				Exit(NewExitValue(CodeFatalError, ""))
 			}
+			Exit(NewExitValue(CodeFatalError, fmt.Sprint(iface)))
 		}
 	}()
 

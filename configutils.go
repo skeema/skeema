@@ -46,34 +46,39 @@ func AddGlobalOptions(cmd *mybase.Command) {
 // options. Generally, subcommand handlers should call AddGlobalConfigFiles at
 // the top of the method.
 func AddGlobalConfigFiles(cfg *mybase.Config) {
-	globalFilePaths := []string{"/etc/skeema", "/usr/local/etc/skeema"}
-	home := filepath.Clean(os.Getenv("HOME"))
-	if home != "" {
-		globalFilePaths = append(globalFilePaths, path.Join(home, ".my.cnf"), path.Join(home, ".skeema"))
-	}
-	for _, path := range globalFilePaths {
-		f := mybase.NewFile(path)
-		if !f.Exists() {
-			continue
+	// Most logic in this method needs to be skipped for tests. Otherwise, if the
+	// user running the test happens to have a ~/.my.cnf, ~/.skeema, /etc/skeema,
+	// or so forth, it would get picked up by the test.
+	if !cfg.IsTest {
+		globalFilePaths := []string{"/etc/skeema", "/usr/local/etc/skeema"}
+		home := filepath.Clean(os.Getenv("HOME"))
+		if home != "" {
+			globalFilePaths = append(globalFilePaths, path.Join(home, ".my.cnf"), path.Join(home, ".skeema"))
 		}
-		if err := f.Read(); err != nil {
-			log.Warnf("Ignoring global option file %s due to read error: %s", f.Path(), err)
-			continue
-		}
-		if strings.HasSuffix(path, ".my.cnf") {
-			f.IgnoreUnknownOptions = true
-		}
-		if err := f.Parse(cfg); err != nil {
-			log.Warnf("Ignoring global option file %s due to parse error: %s", f.Path(), err)
-			continue
-		}
-		if strings.HasSuffix(path, ".my.cnf") {
-			_ = f.UseSection("skeema", "client", "mysql") // safe to ignore error (doesn't matter if section doesn't exist)
-		} else {
-			_ = f.UseSection(cfg.Get("environment")) // safe to ignore error (doesn't matter if section doesn't exist)
-		}
+		for _, path := range globalFilePaths {
+			f := mybase.NewFile(path)
+			if !f.Exists() {
+				continue
+			}
+			if err := f.Read(); err != nil {
+				log.Warnf("Ignoring global option file %s due to read error: %s", f.Path(), err)
+				continue
+			}
+			if strings.HasSuffix(path, ".my.cnf") {
+				f.IgnoreUnknownOptions = true
+			}
+			if err := f.Parse(cfg); err != nil {
+				log.Warnf("Ignoring global option file %s due to parse error: %s", f.Path(), err)
+				continue
+			}
+			if strings.HasSuffix(path, ".my.cnf") {
+				_ = f.UseSection("skeema", "client", "mysql") // safe to ignore error (doesn't matter if section doesn't exist)
+			} else {
+				_ = f.UseSection(cfg.Get("environment")) // safe to ignore error (doesn't matter if section doesn't exist)
+			}
 
-		cfg.AddSource(f)
+			cfg.AddSource(f)
+		}
 	}
 
 	// The host and schema options are special -- most commands only expect

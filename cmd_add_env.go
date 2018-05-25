@@ -6,6 +6,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
+	"github.com/skeema/tengo"
 )
 
 func init() {
@@ -57,14 +58,20 @@ func AddEnvHandler(cfg *mybase.Config) error {
 		return NewExitValue(CodeBadConfig, "This command should be run against a --dir whose .skeema file already defines a host for another environment")
 	}
 
+	// Create a tengo.Instance representing the supplied host. We intentionally
+	// don't actually test connectivity here though, since this command only
+	// manipulates the option file. We can't use dir.FirstInstance() here since
+	// that checks connectivity.
+	var inst *tengo.Instance
 	if !cfg.OnCLI("host") {
 		return NewExitValue(CodeBadConfig, "`skeema add-environment` requires --host to be supplied on CLI")
 	}
-	inst, err := dir.FirstInstance()
-	if err != nil {
+	if instances, err := dir.Instances(); err != nil {
 		return err
-	} else if inst == nil {
+	} else if len(instances) == 0 {
 		return NewExitValue(CodeBadConfig, "Command line did not specify which instance to connect to")
+	} else {
+		inst = instances[0]
 	}
 
 	hostOptionFile.SetOptionValue(environment, "host", inst.Host)

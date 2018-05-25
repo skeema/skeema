@@ -31,8 +31,7 @@ differences were found, or 2+ if an error occurred.`
 
 // DiffHandler is the handler method for `skeema diff`
 func DiffHandler(cfg *mybase.Config) error {
-	// We just delegate to PushHandler, forcing dry-run to be enabled and always
-	// using concurrency of 1
+	// We just delegate to PushHandler, forcing dry-run to be enabled
 	cfg.CLI.OptionValues["dry-run"] = "1"
 	return PushHandler(cfg)
 }
