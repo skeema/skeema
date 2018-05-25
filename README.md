@@ -24,7 +24,7 @@ There is currently a limitation wherein all DSNs for a single instance must conn
 
 ## Status
 
-This is alpha software. The API is subject to change, and no backwards-compatibility promises are being made at this time. Unit tests are present, but functional tests are still needed. Documentation and usage examples have not yet been completed.
+This is alpha software. The API is subject to change, and no backwards-compatibility promises are being made at this time. Documentation and usage examples have not yet been completed.
 
 ### Unsupported in diffs
 
