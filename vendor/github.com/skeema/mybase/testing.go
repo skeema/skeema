@@ -33,6 +33,7 @@ func ParseFakeCLI(t *testing.T, cmd *Command, commandLine string, sources ...Opt
 	for _, src := range sources {
 		cfg.AddSource(src)
 	}
+	cfg.IsTest = true
 	return cfg
 }
 
