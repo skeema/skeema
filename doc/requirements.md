@@ -2,11 +2,11 @@
 
 ### MySQL version and flavor
 
-Skeema is currently being tested extensively against MySQL 5.6, running on Linux. Percona Server 5.6 should also work. Only the InnoDB storage engine is supported for now. 
+Skeema is tested extensively against MySQL 5.6 and 5.7, running on Linux. Percona Server 5.6 and 5.7 should also work fine. Only the InnoDB storage engine is primarily supported; other storage engines are often perfectly functional in Skeema, but it depends on whether any esoteric features of the engine are used.
 
-Skeema is also expected to work on slightly older (5.5) or newer (5.7) versions as well, but won't be able to diff tables that use new features such as generated/virtual columns. Skeema automatically detects this situation, so there is no risk of generating an incorrect diff. If Skeema does not yet support a table/column feature that you need, please open a GitHub issue so that the work can be prioritized appropriately.
+Some MySQL features -- such as foreign keys, partitioned tables, and generated/virtual columns -- are not yet supported in Skeema's diff operations. Skeema automatically detects this situation, so there is no risk of generating an incorrect diff. If Skeema does not yet support a table/column feature that you need, please open a GitHub issue so that the work can be prioritized appropriately.
 
-Skeema is not currently intended for use on multi-master systems, including Galera, InnoDB Cluster, and traditional active-active master-master configurations. It also has not yet been evaluated on Amazon Aurora.
+Skeema is not currently intended for use on multi-master replication topologies, including Galera, InnoDB Cluster, and traditional active-active master-master configurations. It also has not yet been evaluated on Amazon Aurora.
 
 ### Privileges
 
@@ -67,6 +67,8 @@ Many of these will be added in future releases.
 
 Skeema does not yet support connecting to MySQL using SSL.
 
+Due to protocol-level authentication changes, Skeema cannot interact with MySQL 8.0 yet. This will be fixed in the near future, as the Golang MySQL driver only added support for 8.0 connections very recently.
+
 #### Ignored by Skeema
 
 The following features are completely ignored by Skeema. Their presence in a schema won't immediately break anything, but Skeema will not interact with them. This means that `skeema init` and `skeema pull` won't create file representations of them; `skeema diff` and `skeema push` will not detect or alter them.
@@ -80,9 +82,8 @@ The following features are completely ignored by Skeema. Their presence in a sch
 Skeema can CREATE or DROP tables using these features, but cannot ALTER them. The output of `skeema diff` and `skeema push` will note that it cannot generate or run ALTER TABLE for tables using these features, so the affected table(s) will be skipped, but the rest of the operation will proceed as normal. 
 
 * foreign keys
-* compressed tables
 * partitioned tables
-* non-InnoDB storage engines
+* some features of non-InnoDB storage engines
 * fulltext indexes
 * spatial types
 * generated/virtual columns (MySQL 5.7+)

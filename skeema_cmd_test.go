@@ -1,0 +1,622 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"strings"
+	"testing"
+)
+
+func (s *SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
+	s.handleCommand(t, CodeBadConfig, ".", "skeema init") // no host
+
+	// Invalid environment name
+	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir mydb -h %s -P %d '[nope]'", s.d.Instance.Host, s.d.Instance.Port)
+
+	// Specifying a single schema that doesn't exist on the instance
+	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir mydb -h %s -P %d --schema doesntexist", s.d.Instance.Host, s.d.Instance.Port)
+
+	// Successful standard execution. Also confirm user is not persisted to .skeema
+	// since not specified on CLI.
+	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+	s.verifyFiles(t, cfg, "../golden/init")
+	if _, setsOption := getOptionFile(t, "mydb", cfg).OptionValue("user"); setsOption {
+		t.Error("Did not expect user to be persisted to .skeema, but it was")
+	}
+
+	// Specifying an unreachable host should fail with fatal error
+	s.handleCommand(t, CodeFatalError, ".", "skeema init --dir baddb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port-100)
+
+	// host-wrapper with no output should fail
+	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir baddb -h xyz --host-wrapper='echo'")
+
+	// Test successful init with --user specified on CLI, persisting to .skeema
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema init --dir withuser -h %s -P %d --user root", s.d.Instance.Host, s.d.Instance.Port)
+	if _, setsOption := getOptionFile(t, "withuser", cfg).OptionValue("user"); !setsOption {
+		t.Error("Expected user to be persisted to .skeema, but it was not")
+	}
+
+	// Can't init into a dir with existing option file
+	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+
+	// Can't init off of base dir that already specifies a schema
+	s.handleCommand(t, CodeBadConfig, "mydb/product", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+
+	// Test successful init for a single schema. Source a SQL file first that,
+	// among other things, changes the default charset and collation for the
+	// schema in question.
+	s.sourceSQL(t, "push1.sql")
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema init --dir combined -h %s -P %d --schema analytics", s.d.Instance.Host, s.d.Instance.Port)
+	dir, err := NewDir("combined", cfg)
+	if err != nil {
+		t.Fatalf("Unexpected error from NewDir: %s", err)
+	}
+	optionFile := getOptionFile(t, "combined", cfg)
+	for _, option := range []string{"host", "schema", "default-character-set", "default-collation"} {
+		if _, setsOption := optionFile.OptionValue(option); !setsOption {
+			t.Errorf("Expected .skeema to contain %s, but it does not", option)
+		}
+	}
+	if subdirs, err := dir.Subdirs(); err != nil {
+		t.Fatalf("Unexpected error listing subdirs of %s: %s", dir, err)
+	} else if len(subdirs) > 0 {
+		t.Errorf("Expected %s to have no subdirs, but it has %d", dir, len(subdirs))
+	}
+	if sqlFiles, err := dir.SQLFiles(); err != nil {
+		t.Fatalf("Unexpected error listing *.sql in %s: %s", dir, err)
+	} else if len(sqlFiles) < 1 {
+		t.Errorf("Expected %s to have *.sql files, but it does not", dir)
+	}
+
+	// Test successful init without a --dir
+	expectDir := fmt.Sprintf("%s:%d", s.d.Instance.Host, s.d.Instance.Port)
+	if _, err = os.Stat(expectDir); err == nil {
+		t.Fatalf("Expected dir %s to not exist yet, but it does", expectDir)
+	}
+	s.handleCommand(t, CodeSuccess, ".", "skeema init -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+	if _, err = os.Stat(expectDir); err != nil {
+		t.Fatalf("Expected dir %s to exist now, but it does not", expectDir)
+	}
+
+	// init should fail if a parent dir has an invalid .skeema file
+	makeDir(t, "hasbadoptions")
+	writeFile(t, "hasbadoptions/.skeema", "invalid file will not parse")
+	s.handleCommand(t, CodeFatalError, "hasbadoptions", "skeema init -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+
+	// init should fail if the --dir specifies an existing non-directory file; or
+	// if the --dir already contains a subdir matching a schema name; or if the
+	// --dir already contains a .sql file and --schema was used to only do 1 level
+	writeFile(t, "nondir", "foo bar")
+	s.handleCommand(t, CodeCantCreate, ".", "skeema init --dir nondir -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+	makeDir(t, "alreadyexists/product")
+	s.handleCommand(t, CodeCantCreate, ".", "skeema init --dir alreadyexists -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+	makeDir(t, "hassql")
+	writeFile(t, "hassql/foo.sql", "foo")
+	s.handleCommand(t, CodeFatalError, ".", "skeema init --dir hassql --schema product -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+}
+
+func (s *SkeemaIntegrationSuite) TestAddEnvHandler(t *testing.T) {
+	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+
+	// add-environment should fail on a dir that does not exist
+	s.handleCommand(t, CodeBadConfig, ".", "skeema add-environment --host my.staging.db.com --dir does/not/exist staging")
+
+	// add-environment should fail on a dir that does not already contain a .skeema file
+	s.handleCommand(t, CodeBadConfig, ".", "skeema add-environment --host my.staging.db.com staging")
+
+	// bad environment name should fail
+	s.handleCommand(t, CodeBadConfig, ".", "skeema add-environment --host my.staging.db.com --dir mydb '[staging]'")
+
+	// preexisting environment name should fail
+	s.handleCommand(t, CodeBadConfig, ".", "skeema add-environment --host my.staging.db.com --dir mydb production")
+
+	// non-host-level directory should fail
+	s.handleCommand(t, CodeBadConfig, ".", "skeema add-environment --host my.staging.db.com --dir mydb/product staging")
+
+	// lack of host on CLI should fail
+	s.handleCommand(t, CodeBadConfig, ".", "skeema add-environment --dir mydb staging")
+
+	// None of the above failed commands should have modified any files
+	s.verifyFiles(t, cfg, "../golden/init")
+	origFile := getOptionFile(t, "mydb", cfg)
+
+	// valid dir should succeed and add the section to the .skeema file
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema add-environment --host my.staging.db.com --dir mydb staging")
+	file := getOptionFile(t, "mydb", cfg)
+	origFile.SetOptionValue("staging", "host", "my.staging.db.com")
+	origFile.SetOptionValue("staging", "port", "3306")
+	if !origFile.SameContents(file) {
+		t.Fatalf("File contents of %s do not match expectation", file.Path())
+	}
+
+	// Nonstandard port should work properly; ditto for user option persisting
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema add-environment --host my.ci.db.com -P 3307 -ufoobar --dir mydb ci")
+	file = getOptionFile(t, "mydb", cfg)
+	origFile.SetOptionValue("ci", "host", "my.ci.db.com")
+	origFile.SetOptionValue("ci", "port", "3307")
+	origFile.SetOptionValue("ci", "user", "foobar")
+	if !origFile.SameContents(file) {
+		t.Fatalf("File contents of %s do not match expectation", file.Path())
+	}
+
+	// localhost and socket should work properly
+	s.handleCommand(t, CodeSuccess, ".", "skeema add-environment -h localhost -S /var/lib/mysql/mysql.sock --dir mydb development")
+	file = getOptionFile(t, "mydb", cfg)
+	origFile.SetOptionValue("development", "host", "localhost")
+	origFile.SetOptionValue("development", "socket", "/var/lib/mysql/mysql.sock")
+	if !origFile.SameContents(file) {
+		t.Fatalf("File contents of %s do not match expectation", file.Path())
+	}
+}
+
+func (s *SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+
+	// In product db, alter one table and drop one table;
+	// In analytics db, add one table and alter the schema's charset and collation;
+	// Create a new db and put one table in it
+	s.sourceSQL(t, "pull1.sql")
+	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	s.verifyFiles(t, cfg, "../golden/pull1")
+
+	// Revert db back to previous state, and pull again to test the opposite
+	// behaviors: delete dir for new schema, remove charset/collation from .skeema,
+	// etc
+	s.cleanData(t, "setup.sql")
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	s.verifyFiles(t, cfg, "../golden/init")
+
+	// Files with invalid SQL should still be corrected upon pull. Files with extra
+	// text before/after the CREATE TABLE should be trimmed. Files with nonstandard
+	// formatting of their CREATE TABLE should be normalized.
+	contents := readFile(t, "mydb/product/comments.sql")
+	writeFile(t, "mydb/product/comments.sql", strings.Replace(contents, "DEFAULT", "DEFALUT", 1))
+	contents = readFile(t, "mydb/product/posts.sql")
+	writeFile(t, "mydb/product/posts.sql", fmt.Sprintf("# random comment\n%s", contents))
+	contents = readFile(t, "mydb/analytics/activity.sql")
+	writeFile(t, "mydb/analytics/activity.sql", strings.Replace(contents, "`", "", -1))
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --debug")
+	s.verifyFiles(t, cfg, "../golden/init")
+}
+
+func (s *SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+
+	// Initial lint should be a no-op that returns exit code 0
+	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema lint")
+	s.verifyFiles(t, cfg, "../golden/init")
+
+	// Alter a few files in a way that is still valid SQL, but doesn't match
+	// the database's native format. Lint should rewrite these files and then
+	// return exit code CodeDifferencesFound.
+	productDir, err := NewDir("mydb/product", cfg)
+	if err != nil {
+		t.Fatalf("Unable to obtain dir for mydb/product: %s", err)
+	}
+	sqlFiles, err := productDir.SQLFiles()
+	if err != nil || len(sqlFiles) < 4 {
+		t.Fatalf("Unable to obtain *.sql files from %s", productDir)
+	}
+	rewriteFiles := func(includeSyntaxError bool) {
+		for n, sf := range sqlFiles {
+			if sf.Error != nil {
+				t.Fatalf("Unexpected error in file %s: %s", sf.Path(), sf.Error)
+			}
+			switch n {
+			case 0:
+				if includeSyntaxError {
+					sf.Contents = strings.Replace(sf.Contents, "DEFAULT", "DEFALUT", 1)
+				}
+			case 1:
+				sf.Contents = strings.ToLower(sf.Contents)
+			case 2:
+				sf.Contents = strings.Replace(sf.Contents, "`", "", -1)
+			case 3:
+				sf.Contents = strings.Replace(sf.Contents, "\n", " ", -1)
+			}
+			if _, err := sf.Write(); err != nil {
+				t.Fatalf("Unable to rewrite %s: %s", sf.Path(), err)
+			}
+		}
+	}
+	rewriteFiles(false)
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint")
+	s.verifyFiles(t, cfg, "../golden/init")
+
+	// Add a new file with invalid SQL, and also make the previous valid rewrites.
+	// Lint should rewrite the valid files but return exit code CodeFatalError due
+	// to there being at least 1 file with invalid SQL.
+	rewriteFiles(true)
+	s.handleCommand(t, CodeFatalError, ".", "skeema lint")
+
+	// Manually restore the file with invalid SQL; the files should now verify,
+	// confirming that the fatal error did not prevent the other files from being
+	// reformatted; re-linting should yield no changes.
+	sqlFiles[0].Contents = strings.Replace(sqlFiles[0].Contents, "DEFALUT", "DEFAULT", 1)
+	if _, err := sqlFiles[0].Write(); err != nil {
+		t.Fatalf("Unable to rewrite %s: %s", sqlFiles[0].Path(), err)
+	}
+	s.verifyFiles(t, cfg, "../golden/init")
+	s.handleCommand(t, CodeSuccess, ".", "skeema lint")
+
+	// Files with valid SQL, but not CREATE TABLE statements, should also trigger
+	// CodeFatalError.
+	sqlFiles[0].Contents = "INSERT INTO foo (col1, col2) VALUES (123, 456)"
+	if _, err := sqlFiles[0].Write(); err != nil {
+		t.Fatalf("Unable to rewrite %s: %s", sqlFiles[0].Path(), err)
+	}
+	s.handleCommand(t, CodeFatalError, ".", "skeema lint")
+}
+
+func (s *SkeemaIntegrationSuite) TestDiffHandler(t *testing.T) {
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+
+	// no-op diff should yield no differences
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// --host and --schema have no effect if supplied on CLI
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff --host=1.2.3.4 --schema=whatever")
+
+	// It isn't possible to disable --dry-run with diff
+	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema diff --skip-dry-run")
+	if !cfg.GetBool("dry-run") {
+		t.Error("Expected --skip-dry-run to have no effect on `skeema diff`, but it disabled dry-run")
+	}
+
+	s.dbExec(t, "analytics", "ALTER TABLE pageviews DROP COLUMN domain")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
+
+	// Confirm --brief works as expected
+	oldStdout := os.Stdout
+	if outFile, err := os.Create("diff-brief.out"); err != nil {
+		t.Fatalf("Unable to redirect stdout to a file: %s", err)
+	} else {
+		os.Stdout = outFile
+		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --brief")
+		outFile.Close()
+		os.Stdout = oldStdout
+		expectOut := fmt.Sprintf("%s\n", s.d.Instance)
+		actualOut := readFile(t, "diff-brief.out")
+		if actualOut != expectOut {
+			t.Errorf("Unexpected output from `skeema diff --brief`\nExpected:\n%sActual:\n%s", expectOut, actualOut)
+		}
+		if err := os.Remove("diff-brief.out"); err != nil {
+			t.Fatalf("Unable to delete diff-brief.out: %s", err)
+		}
+	}
+}
+
+func (s *SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+
+	// Verify clean-slate operation: wipe the DB; push; wipe the files; re-init
+	// the files; verify the files match. The push inherently verifies creation of
+	// schemas and tables.
+	s.cleanData(t)
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	s.reinitAndVerifyFiles(t, "", "")
+
+	// Test bad option values
+	s.handleCommand(t, CodeBadConfig, ".", "skeema push --concurrent-instances=0")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema push --alter-algorithm=invalid")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema push --alter-lock=invalid")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema push --ignore-table='+'")
+
+	// Make some changes on the db side, so that our next successful push attempt
+	// will include dropping a table, dropping a col, adding a col, changing db
+	// charset and collation
+	s.sourceSQL(t, "push1.sql")
+
+	// push1.sql intentionally included no changes to the `product` schema, so push
+	// from there should succeed and not impact anything in `analytics`
+	s.handleCommand(t, CodeSuccess, "mydb/product", "skeema push")
+	s.assertExists(t, "analytics", "widget_counts", "")
+	s.assertExists(t, "analytics", "activity", "rolled_up")
+	s.assertMissing(t, "analytics", "pageviews", "domain")
+
+	// push from base dir, without any args, should succeed for safe changes but
+	// not for unsafe ones. It also should not affect the `bonus` schema (which
+	// exists on db but not on filesystem, but push should never drop schemas)
+	s.handleCommand(t, CodeFatalError, ".", "skeema push")  // CodeFatalError due to unsafe changes not being allowed
+	s.assertExists(t, "analytics", "widget_counts", "")     // not dropped by push (unsafe)
+	s.assertExists(t, "analytics", "activity", "rolled_up") // not dropped by push (unsafe)
+	s.assertExists(t, "analytics", "pageviews", "domain")   // re-created by push
+	s.assertExists(t, "bonus", "placeholder", "")           // not affected by push (never drops schemas)
+	if analytics, err := s.d.Schema("analytics"); err != nil || analytics == nil {
+		t.Fatalf("Unexpected error obtaining schema: %s", err)
+	} else {
+		serverCharSet, serverCollation, err := s.d.DefaultCharSetAndCollation()
+		if err != nil {
+			t.Fatalf("Unable to obtain server default charset and collation: %s", err)
+		}
+		if serverCharSet != analytics.CharSet || serverCollation != analytics.Collation {
+			t.Errorf("Expected analytics schema to have charset/collation=%s/%s, instead found %s/%s", serverCharSet, serverCollation, analytics.CharSet, analytics.Collation)
+		}
+	}
+
+	// push from base dir, with --safe-below-size=1, should allow the dropping of
+	// col activity.rolled_up (table has no rows) but not table widget_counts
+	// which has 1 row
+	s.handleCommand(t, CodeFatalError, ".", "skeema push --safe-below-size=1") // CodeFatalError due to unsafe changes not being allowed
+	s.assertExists(t, "analytics", "widget_counts", "")
+	s.assertMissing(t, "analytics", "activity", "rolled_up")
+	s.assertExists(t, "analytics", "pageviews", "domain")
+	s.assertExists(t, "bonus", "placeholder", "")
+
+	// push from base dir, with --allow-unsafe, will drop table widget_counts
+	// despite it having 1 row
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
+	s.assertMissing(t, "analytics", "widget_counts", "")
+	s.assertMissing(t, "analytics", "activity", "rolled_up")
+	s.assertExists(t, "analytics", "pageviews", "domain")
+	s.assertExists(t, "bonus", "placeholder", "")
+
+	// invalid SQL prevents push from working in an entire dir, but not in a
+	// dir for a different schema
+	contents := readFile(t, "mydb/product/comments.sql")
+	writeFile(t, "mydb/product/comments.sql", strings.Replace(contents, "PRIMARY KEY", "foo int,\nPRIMARY KEY", 1))
+	contents = readFile(t, "mydb/product/users.sql")
+	writeFile(t, "mydb/product/users.sql", strings.Replace(contents, "PRIMARY KEY", "foo int INVALID SQL HERE,\nPRIMARY KEY", 1))
+	writeFile(t, "mydb/bonus/.skeema", "schema=bonus\n")
+	writeFile(t, "mydb/bonus/table2.sql", "CREATE TABLE table2 (name varchar(20) NOT NULL, PRIMARY KEY (name))")
+	s.handleCommand(t, CodeFatalError, ".", "skeema push")
+	s.assertMissing(t, "product", "comments", "foo")
+	s.assertMissing(t, "product", "users", "foo")
+	s.assertExists(t, "bonus", "table2", "")
+}
+
+func (s *SkeemaIntegrationSuite) TestAutoInc(t *testing.T) {
+	// Insert 2 rows into product.users, so that next auto-inc value is now 3
+	s.dbExec(t, "product", "INSERT INTO users (name) VALUES (?), (?)", "foo", "bar")
+
+	// Normal init omits auto-inc values. diff views this as no differences.
+	s.reinitAndVerifyFiles(t, "", "")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// pull and lint should make no changes
+	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	s.verifyFiles(t, cfg, "../golden/init")
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema lint")
+	s.verifyFiles(t, cfg, "../golden/init")
+
+	// pull with --include-auto-inc should include auto-inc values greater than 1
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --include-auto-inc")
+	s.verifyFiles(t, cfg, "../golden/autoinc")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// Inserting another row should still be ignored by diffs
+	s.dbExec(t, "product", "INSERT INTO users (name) VALUES (?)", "something")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// However, if table's next auto-inc is LOWER than sqlfile's, this is a
+	// difference.
+	s.dbExec(t, "product", "DELETE FROM users WHERE id > 1")
+	s.dbExec(t, "product", "ALTER TABLE users AUTO_INCREMENT=2")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// init with --include-auto-inc should include auto-inc values greater than 1
+	s.reinitAndVerifyFiles(t, "--include-auto-inc", "../golden/autoinc")
+}
+
+func (s *SkeemaIntegrationSuite) TestUnsupportedAlter(t *testing.T) {
+	s.sourceSQL(t, "unsupported1.sql")
+
+	// init should work fine with an unsupported table
+	s.reinitAndVerifyFiles(t, "", "../golden/unsupported")
+
+	// Back to clean slate for db and files
+	s.cleanData(t, "setup.sql")
+	s.reinitAndVerifyFiles(t, "", "../golden/init")
+
+	// apply change to db directly, and confirm pull still works
+	s.sourceSQL(t, "unsupported1.sql")
+	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull --debug")
+	s.verifyFiles(t, cfg, "../golden/unsupported")
+
+	// back to clean slate for db only
+	s.cleanData(t, "setup.sql")
+
+	// lint should be able to fix formatting problems in unsupported table files
+	contents := readFile(t, "mydb/product/subscriptions.sql")
+	writeFile(t, "mydb/product/subscriptions.sql", strings.Replace(contents, "`", "", -1))
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint")
+	s.verifyFiles(t, cfg, "../golden/unsupported")
+
+	// diff should return CodeDifferencesFound, vs push should return
+	// CodePartialError
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --debug")
+	s.handleCommand(t, CodePartialError, ".", "skeema push")
+
+	// diff/push still ok if *creating* or *dropping* unsupported table
+	s.dbExec(t, "product", "DROP TABLE subscriptions")
+	s.assertMissing(t, "product", "subscriptions", "")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	s.assertExists(t, "product", "subscriptions", "")
+	if err := os.Remove("mydb/product/subscriptions.sql"); err != nil {
+		t.Fatalf("Unexpected error removing a file: %s", err)
+	}
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
+	s.assertMissing(t, "product", "subscriptions", "")
+}
+
+func (s *SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
+	s.sourceSQL(t, "ignore1.sql")
+
+	// init: valid regexes should work properly and persist to option files
+	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d --ignore-schema='^archives$' --ignore-table='^_'", s.d.Instance.Host, s.d.Instance.Port)
+	s.verifyFiles(t, cfg, "../golden/ignore")
+
+	// pull: nothing should be updated due to ignore options
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	s.verifyFiles(t, cfg, "../golden/ignore")
+
+	// diff/push: no differences. This should still be the case even if we add a
+	// file corresponding to an ignored table, with a different definition than
+	// the db has.
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	writeFile(t, "mydb/product/_widgets.sql", "CREATE TABLE _widgets (id int) ENGINE=InnoDB;\n")
+	writeFile(t, "mydb/analytics/_newtable.sql", "CREATE TABLE _newtable (id int) ENGINE=InnoDB;\n")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// lint: ignored schemas and tables should be ignored
+	// To set up this test, we do a pull that overrides the previous ignore options
+	// and then edit those files so that they contain formatting mistakes or even
+	// invalid SQL.
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --ignore-schema='' --ignore-table=''")
+	contents := readFile(t, "mydb/analytics/_trending.sql")
+	newContents := strings.Replace(contents, "`", "", -1)
+	writeFile(t, "mydb/analytics/_trending.sql", newContents)
+	writeFile(t, "mydb/archives/bar.sql", "CREATE TABLE bar (this is not valid SQL whatever)")
+	s.handleCommand(t, CodeSuccess, ".", "skeema lint")
+	if readFile(t, "mydb/analytics/_trending.sql") != newContents {
+		t.Error("Expected `skeema lint` to ignore mydb/analytics/_trending.sql, but it did not")
+	}
+	if readFile(t, "mydb/archives/bar.sql") != "CREATE TABLE bar (this is not valid SQL whatever)" {
+		t.Error("Expected `skeema lint` to ignore mydb/archives/bar.sql, but it did not")
+	}
+
+	// pull, lint, init: invalid regexes should error
+	s.handleCommand(t, CodeFatalError, ".", "skeema lint --ignore-schema='+'")
+	s.handleCommand(t, CodeFatalError, ".", "skeema lint --ignore-table='+'")
+	s.handleCommand(t, CodeFatalError, ".", "skeema pull --ignore-table='+'")
+	s.handleCommand(t, CodeFatalError, ".", "skeema init --dir badre1 -h %s -P %d --ignore-schema='+'", s.d.Instance.Host, s.d.Instance.Port)
+	s.handleCommand(t, CodeFatalError, ".", "skeema init --dir badre2 -h %s -P %d --ignore-table='+'", s.d.Instance.Host, s.d.Instance.Port)
+}
+
+func (s *SkeemaIntegrationSuite) TestDirEdgeCases(t *testing.T) {
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+
+	// Invalid option file should break all commands
+	oldContents := readFile(t, "mydb/.skeema")
+	writeFile(t, "mydb/.skeema", "invalid contents\n")
+	s.handleCommand(t, CodeFatalError, "mydb", "skeema pull")
+	s.handleCommand(t, CodeFatalError, "mydb", "skeema diff")
+	s.handleCommand(t, CodeFatalError, "mydb", "skeema lint")
+	s.handleCommand(t, CodeFatalError, ".", "skeema add-environment --host my.staging.db.com --dir mydb staging")
+	writeFile(t, "mydb/.skeema", oldContents)
+
+	// Hidden directories are ignored, even if they contain a .skeema file, whether
+	// valid or invalid. Extra directories are also ignored if they contain no
+	// .skeema file.
+	writeFile(t, ".hidden/.skeema", "invalid contents\n")
+	writeFile(t, ".hidden/whatever.sql", "CREATE TABLE whatever (this is not valid SQL oh well)")
+	writeFile(t, "whatever/whatever.sql", "CREATE TABLE whatever (this is not valid SQL oh well)")
+	writeFile(t, "mydb/.hidden/.skeema", "schema=whatever\n")
+	writeFile(t, "mydb/.hidden/whatever.sql", "CREATE TABLE whatever (this is not valid SQL oh well)")
+	writeFile(t, "mydb/whatever/whatever.sql", "CREATE TABLE whatever (this is not valid SQL oh well)")
+	writeFile(t, "mydb/product/.hidden/.skeema", "schema=whatever\n")
+	writeFile(t, "mydb/product/.hidden/whatever.sql", "CREATE TABLE whatever (this is not valid SQL oh well)")
+	writeFile(t, "mydb/product/whatever/whatever.sql", "CREATE TABLE whatever (this is not valid SQL oh well)")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	s.handleCommand(t, CodeSuccess, ".", "skeema lint")
+}
+
+func (s *SkeemaIntegrationSuite) TestReuseTempSchema(t *testing.T) {
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+
+	// Ensure that re-using temp schema works as expected, and does not confuse
+	// subsequent commands
+	for n := 0; n < 2; n++ {
+		cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull --reuse-temp-schema --temp-schema=verytemp")
+		s.assertExists(t, "verytemp", "", "")
+		s.verifyFiles(t, cfg, "../golden/init")
+	}
+}
+
+func (s *SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+
+	// Make product dir now map to 3 schemas: product, product2, product3
+	contents := readFile(t, "mydb/product/.skeema")
+	contents = strings.Replace(contents, "schema=product", "schema=product,product2,product3", 1)
+	writeFile(t, "mydb/product/.skeema", contents)
+
+	// push should now create product2 and product3
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	s.assertExists(t, "product2", "", "")
+	s.assertExists(t, "product3", "posts", "")
+
+	// diff should be clear after
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// pull should not create separate dirs for the new schemas or mess with
+	// the .skeema file
+	assertDirMissing := func(dirPath string) {
+		t.Helper()
+		if _, err := os.Stat(dirPath); !os.IsNotExist(err) {
+			t.Errorf("Expected dir %s to not exist, but it does (or other err=%v)", dirPath, err)
+		}
+	}
+	assertDirMissing("mydb/product1")
+	assertDirMissing("mydb/product2")
+	if readFile(t, "mydb/product/.skeema") != contents {
+		t.Error("Unexpected change to mydb/product/.skeema contents")
+	}
+
+	// pull should still reflect changes properly, if made to the first sharded
+	// product schema or to the unsharded analytics schema
+	s.dbExec(t, "product", "ALTER TABLE comments ADD COLUMN `approved` tinyint(1) unsigned NOT NULL")
+	s.dbExec(t, "analytics", "ALTER TABLE activity ADD COLUMN `rolled_up` tinyint(1) unsigned NOT NULL")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	sfContents := readFile(t, "mydb/product/comments.sql")
+	if !strings.Contains(sfContents, "`approved` tinyint(1) unsigned") {
+		t.Error("Pull did not update mydb/product/comments.sql as expected")
+	}
+	sfContents = readFile(t, "mydb/analytics/activity.sql")
+	if !strings.Contains(sfContents, "`rolled_up` tinyint(1) unsigned") {
+		t.Error("Pull did not update mydb/analytics/activity.sql as expected")
+	}
+
+	// push should re-apply the changes to the other 2 product shards; diff
+	// should be clean after
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	s.assertExists(t, "product2", "comments", "approved")
+	s.assertExists(t, "product3", "comments", "approved")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// schema shellouts should also work properly. First get rid of product schema
+	// manually (since push won't ever drop a db) and then push should create
+	// product1 as a new schema.
+	contents = strings.Replace(contents, "schema=product,product2,product3", "schema=`/usr/bin/printf 'product1 product2 product3'`", 1)
+	writeFile(t, "mydb/product/.skeema", contents)
+	s.dbExec(t, "", "DROP DATABASE product")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	s.assertExists(t, "product1", "posts", "")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	assertDirMissing("mydb/product1") // dir is still called mydb/product
+	assertDirMissing("mydb/product2")
+	if readFile(t, "mydb/product/.skeema") != contents {
+		t.Error("Unexpected change to mydb/product/.skeema contents")
+	}
+
+	// Test schema=* behavior, which should map to all the schemas, meaning that
+	// a push will replace the previous tables of the analytics schema with the
+	// tables of the product schemas
+	if err := os.RemoveAll("mydb/analytics"); err != nil {
+		t.Fatalf("Unable to delete mydb/analytics/: %s", err)
+	}
+	contents = strings.Replace(contents, "schema=`/usr/bin/printf 'product1 product2 product3'`", "schema=*", 1)
+	writeFile(t, "mydb/product/.skeema", contents)
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
+	s.assertExists(t, "product1", "posts", "")
+	s.assertExists(t, "analytics", "posts", "")
+	s.assertMissing(t, "analytics", "pageviews", "")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// Since analytics is the first alphabetically, it is now the prototype
+	// as far as pull is concerned
+	s.dbExec(t, "analytics", "CREATE TABLE `foo` (id int)")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	readFile(t, "mydb/product/foo.sql")                          // just confirming it exists
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff") // since 3 schemas missing foo
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	s.assertExists(t, "product1", "foo", "")
+	s.assertExists(t, "product2", "foo", "")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+}

@@ -173,7 +173,7 @@ func NewInterpolatedShellOut(command string, dir *Dir, extra map[string]string) 
 		resultWithoutPassword := varPlaceholder.ReplaceAllStringFunc(command, replacer)
 		return NewShellOut(result, resultWithoutPassword), err
 	}
-	return NewShellOut(result, result), err
+	return NewShellOut(result, ""), err
 }
 
 // escapeVarValue takes a string, and wraps it in single-quotes so that it will

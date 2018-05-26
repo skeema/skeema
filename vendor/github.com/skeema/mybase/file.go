@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"unicode"
 )
@@ -290,6 +291,19 @@ func (f *File) SetOptionValue(sectionName, optionName, value string) {
 func (f *File) UnsetOptionValue(sectionName, optionName string) {
 	section := f.getOrCreateSection(sectionName)
 	delete(section.Values, optionName)
+}
+
+// SameContents returns true if f and other have the same sections and values.
+// Ordering, formatting, comments, filename, and directory do not affect the
+// results of this comparison. Both files must be parsed by the caller prior
+// to calling this method, otherwise this method panics to indicate programmer
+// error.
+// This method is primarily intended for unit testing purposes.
+func (f *File) SameContents(other *File) bool {
+	if !f.parsed || !other.parsed {
+		panic(errors.New("File.SameContents called on a file that has not yet been parsed"))
+	}
+	return reflect.DeepEqual(f.sectionIndex, other.sectionIndex)
 }
 
 func (f *File) getOrCreateSection(name string) *Section {

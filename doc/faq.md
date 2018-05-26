@@ -59,9 +59,13 @@ When performing a large diff or push that affects dozens or hundreds of tables, 
 
 If a table uses a feature not supported by Skeema or its [Go La Tengo](https://github.com/skeema/tengo) automation library, such as compression or foreign keys, Skeema will refuse to generate ALTERs for the table. These cases are detected by comparing the output of `SHOW CREATE TABLE` to what Skeema thinks the generated CREATE TABLE should be, and flagging any discrepancies as tables that aren't supported for diffing or altering. This is noted in the output, and does not block execution of other schema changes. When in doubt, always check `skeema diff` as a safe dry-run prior to using `skeema push`.
 
+#### Extensive automated testing suite
+
+Skeema has an extensive suite of unit, integration, and functional tests; its library Tengo does as well. This suite includes testing against a Dockerized database instance of multiple versions of MySQL.
+
 #### Pedigree
 
-Skeema's author has been using MySQL for over 13 years, and is a former member of Facebook's elite team that maintains and automates the world's largest MySQL environment. Prior to Facebook, he started and led the database team at Tumblr, and created the open-source Ruby database automation library and shard-split tool [Jetpants](https://github.com/tumblr/jetpants). Rest assured that safety of data is baked into Skeema's DNA.
+Skeema's author has been using MySQL for over 15 years, and is a former member of Facebook's elite team that maintains and automates the world's largest MySQL environment. Prior to Facebook, he started and led the database team at Tumblr, and created the open-source Ruby database automation library and shard-split tool [Jetpants](https://github.com/tumblr/jetpants). Rest assured that safety of data is baked into Skeema's DNA.
 
 #### Responsibilities for the user
 

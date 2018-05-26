@@ -22,6 +22,7 @@ type OptionValuer interface {
 // OptionValuer interface.
 type Config struct {
 	CLI            *CommandLine            // Parsed command-line
+	IsTest         bool                    // true if Config generated from test logic, false otherwise
 	sources        []OptionValuer          // Sources of option values, excluding CLI or Command; higher indexes override lower indexes
 	unifiedValues  map[string]string       // Precomputed cache of option name => value
 	unifiedSources map[string]OptionValuer // Precomputed cache of option name => which source supplied it

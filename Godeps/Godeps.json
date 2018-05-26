@@ -235,11 +235,11 @@
 		},
 		{
 			"ImportPath": "github.com/skeema/mybase",
-			"Rev": "ee15b69d0631c5b93610a6119f7709a7d3a0121d"
+			"Rev": "59feabaee6bd70326153fa395ff06ee43a4f15dd"
 		},
 		{
 			"ImportPath": "github.com/skeema/tengo",
-			"Rev": "fd4524499ce9fdc7d87f96d02eacfc96f62e7f67"
+			"Rev": "9ee4eb030cd38ee874ed0d680a2b11289729254e"
 		},
 		{
 			"ImportPath": "golang.org/x/crypto/ssh/terminal",

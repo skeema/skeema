@@ -6,6 +6,22 @@ import (
 	"testing"
 )
 
+func TestShellOutRun(t *testing.T) {
+	assertResult := func(command string, expectSuccess bool) {
+		t.Helper()
+		s := NewShellOut(command, "")
+		if err := s.Run(); expectSuccess && err != nil {
+			t.Errorf("Expected command `%s` to return no error, but it returned error %s", command, err)
+		} else if !expectSuccess && err == nil {
+			t.Errorf("Expected command `%s` to return an error, but it did not", command)
+		}
+	}
+	assertResult("", false)
+	assertResult("false", false)
+	assertResult("/does/not/exist", false)
+	assertResult("true", true)
+}
+
 func TestRunCaptureSplit(t *testing.T) {
 	assertResult := func(command string, expectedTokens ...string) {
 		s := NewShellOut(command, "")
@@ -25,6 +41,16 @@ func TestRunCaptureSplit(t *testing.T) {
 	assertResult(`/usr/bin/printf ',,,commas,  have the,,next priority, if no newlines'`, "commas", "have the", "next priority", "if no newlines")
 	assertResult("/usr/bin/printf 'spaces    work  if no other   delimiters'", "spaces", "work", "if", "no", "other", "delimiters")
 	assertResult(`/usr/bin/printf 'intentionally "no support" for quotes'`, "intentionally", `"no`, `support"`, "for", "quotes")
+
+	// Test error responses
+	s := NewShellOut("", "")
+	if _, err := s.RunCaptureSplit(); err == nil {
+		t.Error("Expected empty shellout to error, but it did not")
+	}
+	s = NewShellOut("false", "")
+	if _, err := s.RunCaptureSplit(); err == nil {
+		t.Error("Expected non-zero exit code from shellout to error, but it did not")
+	}
 }
 
 func TestNewInterpolatedShellOut(t *testing.T) {

@@ -52,8 +52,8 @@ func LintHandler(cfg *mybase.Config) error {
 
 		if ignoreSchema, err := t.Dir.Config.GetRegexp("ignore-schema"); err != nil {
 			return err
-		} else if ignoreSchema != nil && ignoreSchema.MatchString(dir.String()) {
-			log.Warnf("Skipping schema %s because of ignore-schema='%s'", dir, ignoreSchema)
+		} else if ignoreSchema != nil && ignoreSchema.MatchString(t.SchemaFromDir.Name) {
+			log.Warnf("Skipping schema %s because of ignore-schema='%s'", t.SchemaFromDir.Name, ignoreSchema)
 			continue
 		}
 

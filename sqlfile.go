@@ -18,8 +18,10 @@ import (
 // [4] is any text after the table body -- we ignore this
 var reParseCreate = regexp.MustCompile(`(?is)^(.*)\s*create\s+table\s+(?:if\s+not\s+exists\s+)?` + "`?([^\\s`]+)`?" + `\s+([^;]+);?\s*(.*)$`)
 
-// We disallow CREATE TABLE SELECT and CREATE TABLE LIKE expressions
-var reBodyDisallowed = regexp.MustCompile(`(?i)^(as\s+select|select|like|[(]\s+like)`)
+// We attempt to disallow CREATE TABLE SELECT and CREATE TABLE LIKE expressions,
+// although this is not a comprehensive check by any means, as that would
+// require a full SQL DDL parser
+var reBodyDisallowed = regexp.MustCompile(`(?i)^(as\s+select|select|like|[(]\s*like)`)
 
 // MaxSQLFileSize specifies the largest SQL file that is considered valid;
 // we assume legit CREATE TABLE statements should always be under 16KB.
@@ -94,6 +96,9 @@ func (sf *SQLFile) Delete() error {
 // It is the caller's responsibility to populate sf.Contents prior to calling
 // this method.
 func (sf *SQLFile) validateContents() error {
+	sf.Error = nil
+	sf.Warnings = nil
+
 	if len(sf.Contents) > MaxSQLFileSize {
 		sf.Error = fmt.Errorf("%s: file is too large; size of %d bytes exceeds max of %d bytes", sf.Path(), len(sf.Contents), MaxSQLFileSize)
 		return sf.Error

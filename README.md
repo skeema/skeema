@@ -35,9 +35,9 @@ To download, build, and install Skeema, run:
 
 Skeema is currently in public beta.
 
-The `skeema` binary is supported on macOS and Linux. For now, it cannot be compiled on Windows. On the database side, testing has primarily been performed against MySQL 5.6, running on Linux.
+The `skeema` binary is supported on macOS and Linux. For now, it cannot be compiled on Windows. On the database side, testing is primarily performed against MySQL 5.6 and 5.7, running on Linux.
 
-Several InnoDB features (compression, partitioning, etc) and rare/new MySQL column types are not yet supported. Skeema is able to *create* or *drop* tables using these features, but not *alter* them. The output of `skeema diff` and `skeema push` clearly displays when this is the case. You may still make such alters directly/manually (outside of Skeema), and then update the corresponding CREATE TABLE files via `skeema pull`.
+Several MySQL features (foreign keys, partitioning) and rare/new MySQL column types are not yet supported. Skeema is able to *create* or *drop* tables using these features, but not *alter* them. The output of `skeema diff` and `skeema push` clearly displays when this is the case. You may still make such alters directly/manually (outside of Skeema), and then update the corresponding CREATE TABLE files via `skeema pull`.
 
 ## Credits
 

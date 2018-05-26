@@ -48,27 +48,33 @@ func (ev *ExitValue) Error() string {
 	return ev.message
 }
 
-// Exit terminates the program. If a non-nil err is supplied, and its Error
-// method returns a non-empty string, it will be logged to STDERR. If err is
-// an ExitValue, its Code will be used for the program's exit code. Otherwise,
-// if err is nil, exit code 0 will be used; if non-nil then exit code 2.
+// ExitCode returns an exit code corresponding to the supplied error. If err
+// is nil, code 0 (success) is returned. If err is an *ExitValue, its Code is
+// returned. Otherwise, exit 2 code (fatal error) is returned.
+func ExitCode(err error) int {
+	if err == nil {
+		return CodeSuccess
+	} else if ev, ok := err.(*ExitValue); ok {
+		return ev.Code
+	}
+	return CodeFatalError
+}
+
+// Exit terminates the program with the appropriate exit code and log output.
 func Exit(err error) {
+	exitCode := ExitCode(err)
 	if err == nil {
 		log.Debug("Exit code 0 (SUCCESS)")
-		os.Exit(0)
-	}
-	exitCode := CodeFatalError
-	if ev, ok := err.(*ExitValue); ok {
-		exitCode = ev.Code
-	}
-	message := err.Error()
-	if message != "" {
-		if exitCode >= CodeFatalError {
-			log.Error(message)
-		} else {
-			log.Warn(message)
+	} else {
+		message := err.Error()
+		if message != "" {
+			if exitCode >= CodeFatalError {
+				log.Error(message)
+			} else {
+				log.Warn(message)
+			}
 		}
+		log.Debugf("Exit code %d", exitCode)
 	}
-	log.Debugf("Exit code %d", exitCode)
 	os.Exit(exitCode)
 }

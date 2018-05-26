@@ -71,7 +71,7 @@ func PushHandler(cfg *mybase.Config) error {
 		err = fmt.Errorf("concurrent-instances cannot be less than 1")
 	}
 	if err != nil {
-		return err
+		return NewExitValue(CodeBadConfig, err.Error())
 	}
 
 	// The 2nd param of dir.TargetGroups indicates that SQLFile errors are to be
@@ -197,17 +197,17 @@ func pushWorker(sps *sharedPushState) {
 			mods.AllowUnsafe = t.Dir.Config.GetBool("allow-unsafe") || sps.briefOutput
 			mods.AlgorithmClause, err = t.Dir.Config.GetEnum("alter-algorithm", "INPLACE", "COPY", "DEFAULT")
 			if err != nil {
-				sps.setFatalError(err)
+				sps.setFatalError(NewExitValue(CodeBadConfig, err.Error()))
 				return
 			}
 			mods.LockClause, err = t.Dir.Config.GetEnum("alter-lock", "NONE", "SHARED", "EXCLUSIVE", "DEFAULT")
 			if err != nil {
-				sps.setFatalError(err)
+				sps.setFatalError(NewExitValue(CodeBadConfig, err.Error()))
 				return
 			}
 			ignoreTable, err := t.Dir.Config.GetRegexp("ignore-table")
 			if err != nil {
-				sps.setFatalError(err)
+				sps.setFatalError(NewExitValue(CodeBadConfig, err.Error()))
 				return
 			}
 			for n, tableDiff := range diff.TableDiffs {
