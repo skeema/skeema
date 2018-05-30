@@ -199,12 +199,12 @@ func (s TengoIntegrationSuite) TestInstanceShowCreateTable(t *testing.T) {
 	}
 
 	t1expected := aTable(1)
-	if t1create != t1expected.createStatement {
-		t.Errorf("Mismatch for SHOW CREATE TABLE\nActual return from %s:\n%s\n----------\nExpected output: %s", s.d.Image, t1create, t1expected.createStatement)
+	if t1create != t1expected.CreateStatement {
+		t.Errorf("Mismatch for SHOW CREATE TABLE\nActual return from %s:\n%s\n----------\nExpected output: %s", s.d.Image, t1create, t1expected.CreateStatement)
 	}
 	t2expected := anotherTable()
-	if t2create != t2expected.createStatement {
-		t.Errorf("Mismatch for SHOW CREATE TABLE\nActual return from %s:\n%s\n----------\nExpected output: %s", s.d.Image, t2create, t2expected.createStatement)
+	if t2create != t2expected.CreateStatement {
+		t.Errorf("Mismatch for SHOW CREATE TABLE\nActual return from %s:\n%s\n----------\nExpected output: %s", s.d.Image, t2create, t2expected.CreateStatement)
 	}
 
 	// Test nonexistent table

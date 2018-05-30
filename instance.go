@@ -450,7 +450,7 @@ func (instance *Instance) CloneSchema(src, dest string) error {
 		return err
 	}
 	for _, t := range s.Tables {
-		_, err := db.Exec(t.CreateStatement())
+		_, err := db.Exec(t.CreateStatement)
 		if err != nil {
 			return err
 		}
@@ -677,11 +677,11 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	// comparison, since the value may have changed between our previous
 	// information_schema introspection and our current SHOW CREATE TABLE call!
 	for _, t := range tables {
-		t.createStatement, err = instance.ShowCreateTable(schema, t.Name)
+		t.CreateStatement, err = instance.ShowCreateTable(schema, t.Name)
 		if err != nil {
 			return nil, fmt.Errorf("Error executing SHOW CREATE TABLE: %s", err)
 		}
-		beforeTable, _ := ParseCreateAutoInc(t.createStatement)
+		beforeTable, _ := ParseCreateAutoInc(t.CreateStatement)
 		afterTable, _ := ParseCreateAutoInc(t.GeneratedCreateStatement())
 		if beforeTable != afterTable {
 			t.UnsupportedDDL = true

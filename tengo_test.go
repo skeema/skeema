@@ -156,7 +156,7 @@ func aTable(nextAutoInc uint64) Table {
 		PrimaryKey:        primaryKey(columns[0]),
 		SecondaryIndexes:  secondaryIndexes,
 		NextAutoIncrement: nextAutoInc,
-		createStatement:   stmt,
+		CreateStatement:   stmt,
 	}
 }
 
@@ -191,14 +191,14 @@ func anotherTable() Table {
 		Columns:          columns,
 		PrimaryKey:       primaryKey(columns[0], columns[1]),
 		SecondaryIndexes: []*Index{secondaryIndex},
-		createStatement:  stmt,
+		CreateStatement:  stmt,
 	}
 }
 
 func unsupportedTable() Table {
 	t := anotherTable()
 	t.Name += "_with_fk"
-	t.createStatement = `CREATE TABLE ` + "`" + `actor_in_film_with_fk` + "`" + ` (
+	t.CreateStatement = `CREATE TABLE ` + "`" + `actor_in_film_with_fk` + "`" + ` (
   ` + "`" + `actor_id` + "`" + ` smallint(5) unsigned NOT NULL,
   ` + "`" + `film_name` + "`" + ` varchar(60) NOT NULL,
   PRIMARY KEY (` + "`" + `actor_id` + "`" + `,` + "`" + `film_name` + "`" + `),
