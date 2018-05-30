@@ -1,6 +1,7 @@
 package tengo
 
 import (
+	"database/sql"
 	"net/url"
 	"reflect"
 	"testing"
@@ -8,15 +9,7 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// Give tests a way to avoid stomping on each others' cached instances, since
-// currently we don't permit creation of instances that only differ by user,
-// pass, or defaultParams
-func nukeInstanceCache() {
-	allInstances.byDSN = make(map[string]*Instance)
-}
-
 func TestNewInstance(t *testing.T) {
-	nukeInstanceCache()
 	assertError := func(driver, dsn string) {
 		instance, err := NewInstance(driver, dsn)
 		if instance != nil || err == nil {
@@ -81,50 +74,12 @@ func TestNewInstance(t *testing.T) {
 	assertInstance(dsn, expected)
 }
 
-func TestNewInstanceDedupes(t *testing.T) {
-	nukeInstanceCache()
-	dsn1 := "username:password@tcp(some.host:1234)/dbname"
-	dsn2 := "username:password@tcp(some.host:1234)/otherdb"
-	dsn3 := "username:password@tcp(some.host:1234)/"
-	dsn4 := "username:password@tcp(some.host:123)/dbname"
-	dsn5 := "username:password@tcp(some.host:1234)/otherdb?foo=bar"
-
-	newInstance := func(dsn string) *Instance {
-		inst, err := NewInstance("mysql", dsn)
-		if err != nil {
-			t.Fatalf("Unexpectedly received error %s from NewInstance(\"mysql\", \"%s\")", err, dsn)
-		}
-		return inst
-	}
-
-	inst1 := newInstance(dsn1)
-	if newInstance(dsn1) != inst1 {
-		t.Error("Expected NewInstance to return same pointer for duplicate DSN, but it did not")
-	}
-	if newInstance(dsn2) != inst1 {
-		t.Error("Expected NewInstance to return same pointer for DSN that only differed by schema, but it did not")
-	}
-	if newInstance(dsn3) != inst1 {
-		t.Error("Expected NewInstance to return same pointer for DSN that only differed by lack of schema, but it did not")
-	}
-	if newInstance(dsn4) == inst1 {
-		t.Error("Expected NewInstance to return different pointer for DSN that has different port, but it did not")
-	}
-	if newInstance(dsn5) != inst1 {
-		t.Error("Expected NewInstance to return same pointer for DSN that only differed by default params, but it did not")
-	}
-	if inst1.defaultParams["foo"] != "bar" {
-		t.Error("Expected NewInstance with new default params to update previous value, but it did not")
-	}
-}
-
 func TestInstanceBuildParamString(t *testing.T) {
 	assertParamString := func(defaultOptions, addOptions, expectOptions string) {
 		dsn := "username:password@tcp(1.2.3.4:3306)/"
 		if defaultOptions != "" {
 			dsn += "?" + defaultOptions
 		}
-		nukeInstanceCache()
 		instance, err := NewInstance("mysql", dsn)
 		if err != nil {
 			t.Fatalf("NewInstance(\"mysql\", \"%s\") returned error: %s", dsn, err)
@@ -143,9 +98,6 @@ func TestInstanceBuildParamString(t *testing.T) {
 		if !reflect.DeepEqual(parsedResult, parsedExpected) {
 			t.Errorf("Expected param map %v, instead found %v", parsedExpected, parsedResult)
 		}
-
-		// nuke the Instance cache
-		nukeInstanceCache()
 	}
 
 	assertParamString("", "", "")
@@ -219,32 +171,29 @@ func (s TengoIntegrationSuite) TestInstanceSchemas(t *testing.T) {
 			t.Errorf("Schema %s returned multiple times from call to instance.Schemas", schema.Name)
 		}
 		seen[schema.Name] = true
-		if schema != byName[schema.Name] {
+		if !reflect.DeepEqual(schema, byName[schema.Name]) {
 			t.Errorf("Mismatch for schema %s between Schemas and SchemasByName", schema.Name)
 		}
-		if schema2, err := s.d.Schema(schema.Name); err != nil || schema2 != schema {
+		if schema2, err := s.d.Schema(schema.Name); err != nil || !reflect.DeepEqual(schema2, schema) {
 			t.Errorf("Mismatch for schema %s vs instance.Schema(%s); error=%s", schema.Name, schema.Name, err)
 		}
-		if !s.d.HasSchema(schema.Name) {
+		if has, err := s.d.HasSchema(schema.Name); !has || err != nil {
 			t.Errorf("Expected HasSchema(%s)==true, instead found false", schema.Name)
 		}
 	}
 
 	// Test negative responses
-	if s.d.HasSchema("doesnt_exist") {
+	if has, err := s.d.HasSchema("doesnt_exist"); has || err != nil {
 		t.Error("HasSchema(doesnt_exist) unexpectedly returning true")
 	}
-	if schema, err := s.d.Schema("doesnt_exist"); schema != nil || err != nil {
-		t.Errorf("Expected Schema(doesnt_exist) to return nil,nil; instead found %v,%s", schema, err)
+	if schema, err := s.d.Schema("doesnt_exist"); schema != nil || err != sql.ErrNoRows {
+		t.Errorf("Expected Schema(doesnt_exist) to return nil,sql.ErrNoRows; instead found %v,%s", schema, err)
 	}
 }
 
 func (s TengoIntegrationSuite) TestInstanceShowCreateTable(t *testing.T) {
-	schema, t1actual := s.GetSchemaAndTable(t, "testing", "actor")
-	t2actual := s.GetTable(t, "testing", "actor_in_film")
-
-	t1create, err1 := s.d.ShowCreateTable(schema, t1actual)
-	t2create, err2 := s.d.ShowCreateTable(schema, t2actual)
+	t1create, err1 := s.d.ShowCreateTable("testing", "actor")
+	t2create, err2 := s.d.ShowCreateTable("testing", "actor_in_film")
 	if err1 != nil || err2 != nil || t1create == "" || t2create == "" {
 		t.Fatalf("Unable to obtain SHOW CREATE TABLE output: err1=%s, err2=%s", err1, err2)
 	}
@@ -259,17 +208,14 @@ func (s TengoIntegrationSuite) TestInstanceShowCreateTable(t *testing.T) {
 	}
 
 	// Test nonexistent table
-	t3 := aTable(123)
-	t3.Name = "doesnt_exist"
-	t3create, err3 := s.d.ShowCreateTable(schema, &t3)
+	t3create, err3 := s.d.ShowCreateTable("testing", "doesnt_exist")
 	if t3create != "" || err3 == nil {
 		t.Errorf("Expected ShowCreateTable on invalid table to return empty string and error, instead err=%s, output=%s", err3, t3create)
 	}
 }
 
 func (s TengoIntegrationSuite) TestInstanceTableSize(t *testing.T) {
-	schema, table := s.GetSchemaAndTable(t, "testing", "has_rows")
-	size, err := s.d.TableSize(schema, table)
+	size, err := s.d.TableSize("testing", "has_rows")
 	if err != nil {
 		t.Errorf("Error from TableSize: %s", err)
 	} else if size < 1 {
@@ -277,36 +223,29 @@ func (s TengoIntegrationSuite) TestInstanceTableSize(t *testing.T) {
 	}
 
 	// Test nonexistent table
-	doesntExist := aTable(123)
-	doesntExist.Name = "doesnt_exist"
-	size, err = s.d.TableSize(schema, &doesntExist)
+	size, err = s.d.TableSize("testing", "doesnt_exist")
 	if size > 0 || err == nil {
 		t.Errorf("Expected TableSize to return 0 size and non-nil err for missing table, instead size=%d and err=%s", size, err)
 	}
 }
 
 func (s TengoIntegrationSuite) TestInstanceTableHasRows(t *testing.T) {
-	schema, tableWithRows := s.GetSchemaAndTable(t, "testing", "has_rows")
-	if hasRows, err := s.d.TableHasRows(schema, tableWithRows); err != nil {
+	if hasRows, err := s.d.TableHasRows("testing", "has_rows"); err != nil {
 		t.Errorf("Error from TableHasRows: %s", err)
 	} else if !hasRows {
 		t.Error("Expected TableHasRows to return true for has_rows, instead returned false")
 	}
 
-	tableNoRows := s.GetTable(t, "testing", "no_rows")
-	if hasRows, err := s.d.TableHasRows(schema, tableNoRows); err != nil {
+	if hasRows, err := s.d.TableHasRows("testing", "no_rows"); err != nil {
 		t.Errorf("Error from TableHasRows: %s", err)
 	} else if hasRows {
 		t.Error("Expected TableHasRows to return false for no_rows, instead returned true")
 	}
 
 	// Test nonexistent table
-	doesntExist := aTable(123)
-	doesntExist.Name = "doesnt_exist"
-	if _, err := s.d.TableHasRows(schema, &doesntExist); err == nil {
+	if _, err := s.d.TableHasRows("testing", "doesnt_exist"); err == nil {
 		t.Error("Expected TableHasRows to return error for nonexistent table, but it did not")
 	}
-
 }
 
 func (s TengoIntegrationSuite) TestInstanceCreateSchema(t *testing.T) {
@@ -339,42 +278,42 @@ func (s TengoIntegrationSuite) TestInstanceCreateSchema(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestInstanceDropSchema(t *testing.T) {
-	schema1 := s.GetSchema(t, "testing")      // has tables, and one has rows
-	schema2 := s.GetSchema(t, "testcollate")  // does not have tables
-	schema3 := s.GetSchema(t, "testcharcoll") // has tables, but none have rows
-
 	// Dropping a schema with non-empty tables when onlyIfEmpty==true should fail
-	if err := s.d.DropSchema(schema1, true); err == nil {
+	if err := s.d.DropSchema("testing", true); err == nil {
 		t.Error("Expected dropping a schema with tables to fail when onlyIfEmpty==true, but it did not")
 	}
 
 	// Dropping a schema without tables when onlyIfEmpty==true should succeed
-	if err := s.d.DropSchema(schema2, true); err != nil {
+	if err := s.d.DropSchema("testcollate", true); err != nil {
 		t.Errorf("Expected dropping a schema without tables to succeed when onlyIfEmpty==true, but error=%s", err)
 	}
 
 	// Dropping a schema with only empty tables when onlyIfEmpty==true should succeed
-	if err := s.d.DropSchema(schema3, true); err != nil {
+	if err := s.d.DropSchema("testcharcoll", true); err != nil {
 		t.Errorf("Expected dropping a schema with only empty tables to succeed when onlyIfEmpty==true, but error=%s", err)
 	}
 
 	// Dropping a schema with non-empty tables when onlyIfEmpty==false should succeed
-	if err := s.d.DropSchema(schema1, false); err != nil {
+	if err := s.d.DropSchema("testing", false); err != nil {
 		t.Errorf("Expected dropping a schema with tables to succeed when onlyIfEmpty==false, but error=%s", err)
 	}
 
 	// Dropping a schema that doesn't exist should fail
-	if err := s.d.DropSchema(schema1, false); err == nil {
+	if err := s.d.DropSchema("testing", false); err == nil {
 		t.Error("Expected dropping a nonexistent schema to fail, but error was nil")
 	}
 }
 
 func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
-	assertNoError := func(schema *Schema, newCharSet, newCollation, expectCharSet, expectCollation string) {
+	assertNoError := func(schemaName, newCharSet, newCollation, expectCharSet, expectCollation string) {
 		t.Helper()
-		if err := s.d.AlterSchema(schema, newCharSet, newCollation); err != nil {
-			t.Errorf("Expected alter of %s to (%s,%s) would not error, but returned %s", schema.Name, newCharSet, newCollation, err)
+		if err := s.d.AlterSchema(schemaName, newCharSet, newCollation); err != nil {
+			t.Errorf("Expected alter of %s to (%s,%s) would not error, but returned %s", schemaName, newCharSet, newCollation, err)
 		} else {
+			schema, err := s.d.Schema(schemaName)
+			if err != nil {
+				t.Fatalf("Unexpected error fetching schema: %s", err)
+			}
 			if schema.CharSet != expectCharSet {
 				t.Errorf("Expected post-alter charset to be %s, instead found %s", expectCharSet, schema.CharSet)
 			}
@@ -383,38 +322,37 @@ func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
 			}
 		}
 	}
-	assertError := func(schema *Schema, newCharSet, newCollation string) {
+	assertError := func(schemaName, newCharSet, newCollation string) {
 		t.Helper()
-		if err := s.d.AlterSchema(schema, newCharSet, newCollation); err == nil {
-			t.Errorf("Expected alter of %s to (%s,%s) would return error, but returned nil instead", schema.Name, newCharSet, newCollation)
+		if err := s.d.AlterSchema(schemaName, newCharSet, newCollation); err == nil {
+			t.Errorf("Expected alter of %s to (%s,%s) would return error, but returned nil instead", schemaName, newCharSet, newCollation)
 		}
 	}
-
-	schema1 := s.GetSchema(t, "testing")      // instance-default charset and collation
-	schema2 := s.GetSchema(t, "testcharset")  // utf8mb4 charset with its default collation (utf8mb4_general_ci)
-	schema3 := s.GetSchema(t, "testcharcoll") // utf8mb4 with utf8mb4_unicode_ci
-	schema4 := aSchema("nonexistent")
 
 	instCharSet, instCollation, err := s.d.DefaultCharSetAndCollation()
 	if err != nil {
 		t.Fatalf("Unable to fetch instance default charset and collation: %s", err)
 	}
 
+	// `testing` has instance-default charset and collation
+	// `testcharset` has utf8mb4 charset with its default collation (utf8mb4_general_ci)
+	// `testcharcoll` has utf8mb4 with utf8mb4_unicode_ci
+
 	// Test no-op conditions
-	assertNoError(schema1, "", "", instCharSet, instCollation)
-	assertNoError(schema2, "utf8mb4", "", "utf8mb4", "utf8mb4_general_ci")
-	assertNoError(schema2, "", "utf8mb4_general_ci", "utf8mb4", "utf8mb4_general_ci")
-	assertNoError(schema3, "utf8mb4", "utf8mb4_unicode_ci", "utf8mb4", "utf8mb4_unicode_ci")
+	assertNoError("testing", "", "", instCharSet, instCollation)
+	assertNoError("testcharset", "utf8mb4", "", "utf8mb4", "utf8mb4_general_ci")
+	assertNoError("testcharset", "", "utf8mb4_general_ci", "utf8mb4", "utf8mb4_general_ci")
+	assertNoError("testcharcoll", "utf8mb4", "utf8mb4_unicode_ci", "utf8mb4", "utf8mb4_unicode_ci")
 
 	// Test known error conditions
-	assertError(schema1, "badcharset", "badcollation") // charset and collation are invalid
-	assertError(schema2, "utf8", "latin1_swedish_ci")  // charset and collation do not match
-	assertError(&schema4, "utf8mb4", "")               // schema does not actually exist in instance
+	assertError("testing", "badcharset", "badcollation")    // charset and collation are invalid
+	assertError("testcharset", "utf8", "latin1_swedish_ci") // charset and collation do not match
+	assertError("nonexistent", "utf8mb4", "")               // schema does not actually exist in instance
 
 	// Test successful alters
-	assertNoError(schema2, "", "utf8mb4_unicode_ci", "utf8mb4", "utf8mb4_unicode_ci")
-	assertNoError(schema3, "latin1", "", "latin1", "latin1_swedish_ci")
-	assertNoError(schema1, "utf8mb4", "utf8mb4_general_ci", "utf8mb4", "utf8mb4_general_ci")
+	assertNoError("testcharset", "", "utf8mb4_unicode_ci", "utf8mb4", "utf8mb4_unicode_ci")
+	assertNoError("testcharcoll", "latin1", "", "latin1", "latin1_swedish_ci")
+	assertNoError("testing", "utf8mb4", "utf8mb4_general_ci", "utf8mb4", "utf8mb4_general_ci")
 }
 
 func (s TengoIntegrationSuite) TestInstanceCloneSchema(t *testing.T) {
@@ -423,29 +361,29 @@ func (s TengoIntegrationSuite) TestInstanceCloneSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create new empty schema: %s", err)
 	}
-	if tables, err := dst.Tables(); err != nil || len(tables) > 0 {
-		t.Fatalf("Failed to verify no tables in new schema: err=%s, len(tables)=%d", err, len(tables))
+	if len(dst.Tables) > 0 {
+		t.Fatalf("Failed to verify no tables in new schema: err=%s, len(tables)=%d", err, len(dst.Tables))
 	}
-	srcTables, err := src.Tables()
-	if err != nil || len(srcTables) < 1 {
-		t.Fatalf("Failed to obtain non-empty table list for source: err=%s, len(tables)=%d", err, len(srcTables))
+	if len(src.Tables) < 1 {
+		t.Fatalf("Failed to obtain non-empty table list for source: err=%s, len(tables)=%d", err, len(src.Tables))
 	}
 
-	if err := s.d.CloneSchema(src, dst); err != nil {
+	if err := s.d.CloneSchema(src.Name, dst.Name); err != nil {
 		t.Fatalf("Failed to clone schema: %s", err)
 	}
-	if tables, err := dst.Tables(); err != nil || len(tables) != len(srcTables) {
-		t.Errorf("Failed to verify table count in cloned schema: err=%s, len(srcTables)=%d, len(dstTables)=%d", err, len(srcTables), len(tables))
+	dst = s.GetSchema(t, dst.Name)
+	if len(dst.Tables) != len(src.Tables) {
+		t.Errorf("Failed to verify table count in cloned schema: err=%s, len(srcTables)=%d, len(dstTables)=%d", err, len(src.Tables), len(dst.Tables))
 	}
 
 	// Cloning again should fail due to table name already existing
-	if err := s.d.CloneSchema(src, dst); err == nil {
+	if err := s.d.CloneSchema(src.Name, dst.Name); err == nil {
 		t.Error("Expected second clone attempt to fail, but error is nil")
 	}
 
 	// Verify that tables were cloned but data was not: dropping dest with
 	// onlyIfEmpty==true should still succeed
-	if err := s.d.DropSchema(dst, true); err != nil {
+	if err := s.d.DropSchema(dst.Name, true); err != nil {
 		t.Errorf("Error dropping destination schema: %s", err)
 	}
 }

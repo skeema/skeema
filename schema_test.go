@@ -11,20 +11,17 @@ func (s TengoIntegrationSuite) TestSchemaTables(t *testing.T) {
 	schema := s.GetSchema(t, "testing")
 
 	// Currently at least 7 tables in testing schema in testdata/integration.sql
-	tables, err := schema.Tables()
-	if err != nil || len(tables) < 7 {
-		t.Errorf("Expected at least 7 tables, instead found %d, err=%s", len(tables), err)
+	if len(schema.Tables) < 7 {
+		t.Errorf("Expected at least 7 tables, instead found %d", len(schema.Tables))
 	}
 
 	// Ensure TablesByName is returning the same set of tables
-	byName, err := schema.TablesByName()
-	if err != nil {
-		t.Errorf("TablesByName returned error: %s", err)
-	} else if len(byName) != len(tables) {
-		t.Errorf("len(byName) != len(tables): %d vs %d", len(byName), len(tables))
+	byName := schema.TablesByName()
+	if len(byName) != len(schema.Tables) {
+		t.Errorf("len(byName) != len(tables): %d vs %d", len(byName), len(schema.Tables))
 	}
 	seen := make(map[string]bool, len(byName))
-	for _, table := range tables {
+	for _, table := range schema.Tables {
 		if seen[table.Name] {
 			t.Errorf("Table %s returned multiple times from call to instance.Tables", table.Name)
 		}
@@ -32,8 +29,8 @@ func (s TengoIntegrationSuite) TestSchemaTables(t *testing.T) {
 		if table != byName[table.Name] {
 			t.Errorf("Mismatch for table %s between Tables and TablesByName", table.Name)
 		}
-		if table2, err := schema.Table(table.Name); err != nil || table2 != table {
-			t.Errorf("Mismatch for table %s vs schema.Table(%s); error=%s", table.Name, table.Name, err)
+		if table2 := schema.Table(table.Name); table2 != table {
+			t.Errorf("Mismatch for table %s vs schema.Table(%s)", table.Name, table.Name)
 		}
 		if !schema.HasTable(table.Name) {
 			t.Errorf("Expected HasTable(%s)==true, instead found false", table.Name)
@@ -44,8 +41,8 @@ func (s TengoIntegrationSuite) TestSchemaTables(t *testing.T) {
 	if schema.HasTable("doesnt_exist") {
 		t.Error("HasTable(doesnt_exist) unexpectedly returning true")
 	}
-	if table, err := schema.Table("doesnt_exist"); table != nil || err != nil {
-		t.Errorf("Expected Table(doesnt_exist) to return nil,nil; instead found %v,%s", table, err)
+	if table := schema.Table("doesnt_exist"); table != nil {
+		t.Errorf("Expected Table(doesnt_exist) to return nil; instead found %v", table)
 	}
 }
 
@@ -69,11 +66,7 @@ func (s TengoIntegrationSuite) TestSchemaIntrospection(t *testing.T) {
 	}
 
 	// ensure tables are all supported (except where known not to be)
-	tables, err := schema.Tables()
-	if err != nil {
-		t.Fatalf("Unexpected error from schema.Tables(): %s", err)
-	}
-	for _, table := range tables {
+	for _, table := range schema.Tables {
 		shouldBeUnsupported := (table.Name == unsupportedTable().Name)
 		if table.UnsupportedDDL != shouldBeUnsupported {
 			t.Errorf("Table %s: expected UnsupportedDDL==%v, instead found %v", table.Name, shouldBeUnsupported, !shouldBeUnsupported)
@@ -107,7 +100,7 @@ func (s TengoIntegrationSuite) TestSchemaOverridesServerCharSet(t *testing.T) {
 		{testcharcollSchema, true, true},
 	}
 	for _, testRow := range testTable {
-		overrideCharset, overrideCollation, err := testRow.schema.OverridesServerCharSet()
+		overrideCharset, overrideCollation, err := testRow.schema.OverridesServerCharSet(s.d.Instance)
 		if err != nil {
 			t.Errorf("Unexpected error from OverridesServerCharSet: %s", err)
 		} else {
@@ -122,49 +115,7 @@ func (s TengoIntegrationSuite) TestSchemaOverridesServerCharSet(t *testing.T) {
 
 	// Confirm error returned from calling method on a nil schema
 	var nilSchema *Schema
-	if _, _, err = nilSchema.OverridesServerCharSet(); err == nil {
+	if _, _, err = nilSchema.OverridesServerCharSet(s.d.Instance); err == nil {
 		t.Error("Expected OverridesServerCharSet to return error for nil schema, but it did not")
-	}
-}
-
-func (s TengoIntegrationSuite) TestSchemaCachedCopy(t *testing.T) {
-	schema := s.GetSchema(t, "testing")
-
-	clone, err := schema.CachedCopy()
-	if err != nil {
-		t.Errorf("Unexpected error from schema.CachedCopy(): %s", err)
-	}
-
-	// Confirm diff still works
-	sd, err := clone.Diff(schema)
-	if err != nil {
-		t.Errorf("Unexpected error from diff on a cached-copy schema: %s", err)
-	} else if len(sd.TableDiffs) > 0 {
-		t.Error("Non-empty diff unexpectedly returned")
-	}
-
-	// Confirm PurgeTableCache intentionally does not purge anything on a detached
-	// instance
-	if clone.tables == nil {
-		t.Fatal("Incorrect assumption of test (cached copy of schema should already have table cache pre-populated)")
-	}
-	clone.PurgeTableCache()
-	if clone.tables == nil {
-		t.Error("Expected PurgeTableCache to be a no-op on a detached schema, but it was not")
-	}
-
-	// Confirm that methods requiring an instance return an error
-	if _, _, err = clone.OverridesServerCharSet(); err == nil {
-		t.Error("Expected OverridesServerCharSet to fail with detached instance, but it did not")
-	}
-	clone.tables = nil
-	if _, err = clone.Tables(); err == nil {
-		t.Error("Expected Tables() to fail with detached instance with artificially purged table cache, but it did not")
-	}
-
-	// Confirm CachedCopy of nil schema is nil
-	var nilSchema *Schema
-	if clone, err = nilSchema.CachedCopy(); clone != nil || err != nil {
-		t.Error("Cached copy of nil schema did work as expected")
 	}
 }

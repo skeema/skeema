@@ -35,10 +35,7 @@ func TestParseCreateAutoInc(t *testing.T) {
 
 func TestSchemaDiffEmpty(t *testing.T) {
 	assertEmptyDiff := func(a, b *Schema) {
-		sd, err := NewSchemaDiff(a, b)
-		if err != nil {
-			t.Fatal(err)
-		}
+		sd := NewSchemaDiff(a, b)
 		if len(sd.TableDiffs) != 0 {
 			t.Errorf("Expected no table diffs, instead found %d", len(sd.TableDiffs))
 		}
@@ -61,10 +58,7 @@ func TestSchemaDiffEmpty(t *testing.T) {
 
 func TestSchemaDiffSchemaDDL(t *testing.T) {
 	assertDiffSchemaDDL := func(a, b *Schema, expectedSchemaDDL string) {
-		sd, err := NewSchemaDiff(a, b)
-		if err != nil {
-			t.Fatal(err)
-		}
+		sd := NewSchemaDiff(a, b)
 		if sd.SchemaDDL != expectedSchemaDDL {
 			t.Errorf("For a=%s/%s and b=%s/%s, expected SchemaDDL=\"%s\", instead found \"%s\"", a.CharSet, a.Collation, b.CharSet, b.Collation, expectedSchemaDDL, sd.SchemaDDL)
 		}
@@ -107,10 +101,7 @@ func TestSchemaDiffAddOrDropTable(t *testing.T) {
 	s2 := aSchema("s2", &s2t1, &s2t2)
 
 	// Test table create
-	sd, err := NewSchemaDiff(&s1, &s2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sd := NewSchemaDiff(&s1, &s2)
 	if len(sd.TableDiffs) != 1 {
 		t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
 	}
@@ -123,10 +114,7 @@ func TestSchemaDiffAddOrDropTable(t *testing.T) {
 	}
 
 	// Test table drop (opposite diff direction of above)
-	sd, err = NewSchemaDiff(&s2, &s1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sd = NewSchemaDiff(&s2, &s1)
 	if len(sd.TableDiffs) != 1 {
 		t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
 	}
@@ -149,10 +137,7 @@ func TestSchemaDiffAddOrDropTable(t *testing.T) {
 	// Test impact of statement modifiers on creation of auto-inc table with non-default starting value
 	s2t2.NextAutoIncrement = 5
 	s2t2.createStatement = s2t2.GeneratedCreateStatement()
-	sd, err = NewSchemaDiff(&s1, &s2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sd = NewSchemaDiff(&s1, &s2)
 	if len(sd.TableDiffs) != 1 {
 		t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
 	}
@@ -177,10 +162,7 @@ func TestSchemaDiffAddOrDropTable(t *testing.T) {
 	ust := unsupportedTable()
 	s1 = aSchema("s1")
 	s2 = aSchema("s2", &ust)
-	sd, err = NewSchemaDiff(&s1, &s2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sd = NewSchemaDiff(&s1, &s2)
 	if len(sd.TableDiffs) != 1 {
 		t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
 	}
@@ -191,10 +173,7 @@ func TestSchemaDiffAddOrDropTable(t *testing.T) {
 	if td.Table != &ust {
 		t.Error("Pointer in table diff does not point to expected value")
 	}
-	sd, err = NewSchemaDiff(&s2, &s1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sd = NewSchemaDiff(&s2, &s1)
 	if len(sd.TableDiffs) != 1 {
 		t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
 	}
@@ -214,10 +193,7 @@ func TestSchemaDiffAlterTable(t *testing.T) {
 		t2 := aTable(to)
 		s1 := aSchema("s1", &t1)
 		s2 := aSchema("s2", &t2)
-		sd, err := NewSchemaDiff(&s1, &s2)
-		if err != nil {
-			t.Fatal(err)
-		}
+		sd := NewSchemaDiff(&s1, &s2)
 		if len(sd.TableDiffs) != 1 {
 			t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
 		}
@@ -256,10 +232,7 @@ func TestSchemaDiffAlterTable(t *testing.T) {
 
 	// Helper for testing column adds or drops
 	getAlter := func(left, right *Schema) (TableDiff, TableAlterClause) {
-		sd, err := NewSchemaDiff(left, right)
-		if err != nil {
-			t.Fatal(err)
-		}
+		sd := NewSchemaDiff(left, right)
 		if len(sd.TableDiffs) != 1 {
 			t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
 		}
@@ -310,10 +283,7 @@ func TestAlterTableStatementAllowUnsafeMods(t *testing.T) {
 	s2 := aSchema("s2", &t2)
 
 	getAlter := func(a, b *Schema) AlterTable {
-		sd, err := NewSchemaDiff(a, b)
-		if err != nil {
-			t.Fatal(err)
-		}
+		sd := NewSchemaDiff(a, b)
 		if len(sd.TableDiffs) != 1 {
 			t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
 		}

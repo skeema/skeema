@@ -75,7 +75,7 @@ type SchemaDiff struct {
 }
 
 // NewSchemaDiff computes the set of differences between two database schemas.
-func NewSchemaDiff(from, to *Schema) (*SchemaDiff, error) {
+func NewSchemaDiff(from, to *Schema) *SchemaDiff {
 	result := &SchemaDiff{
 		FromSchema:        from,
 		ToSchema:          to,
@@ -85,7 +85,7 @@ func NewSchemaDiff(from, to *Schema) (*SchemaDiff, error) {
 	}
 
 	if from == nil && to == nil {
-		return result, nil
+		return result
 	} else if from == nil {
 		result.SchemaDDL = to.CreateStatement()
 	} else if to == nil {
@@ -94,51 +94,42 @@ func NewSchemaDiff(from, to *Schema) (*SchemaDiff, error) {
 		result.SchemaDDL = from.AlterStatement(to.CharSet, to.Collation)
 	}
 
-	fromTablesByName, fromErr := from.TablesByName()
-	toTablesByName, toErr := to.TablesByName()
-	if fromErr != nil {
-		return nil, fromErr
-	} else if toErr != nil {
-		return nil, toErr
-	}
+	fromTablesByName := from.TablesByName()
+	toTablesByName := to.TablesByName()
 
-	toTables, err := to.Tables()
-	if err != nil {
-		return nil, err
-	}
-	for n := range toTables {
-		newTable := toTables[n]
-		if _, existedBefore := fromTablesByName[newTable.Name]; !existedBefore {
-			result.TableDiffs = append(result.TableDiffs, CreateTable{Table: newTable})
-		}
-	}
-
-	fromTables, err := from.Tables()
-	if err != nil {
-		return nil, err
-	}
-	for n := range fromTables {
-		origTable := fromTables[n]
-		newTable, stillExists := toTablesByName[origTable.Name]
-		if stillExists {
-			clauses, supported := origTable.Diff(newTable)
-			if !supported {
-				result.UnsupportedTables = append(result.UnsupportedTables, newTable)
-			} else if len(clauses) > 0 {
-				alter := AlterTable{
-					Table:   origTable,
-					Clauses: clauses,
-				}
-				result.TableDiffs = append(result.TableDiffs, alter)
-			} else {
-				result.SameTables = append(result.SameTables, newTable)
+	if to != nil {
+		for n := range to.Tables {
+			newTable := to.Tables[n]
+			if _, existedBefore := fromTablesByName[newTable.Name]; !existedBefore {
+				result.TableDiffs = append(result.TableDiffs, CreateTable{Table: newTable})
 			}
-		} else {
-			result.TableDiffs = append(result.TableDiffs, DropTable{Table: origTable})
 		}
 	}
 
-	return result, nil
+	if from != nil {
+		for n := range from.Tables {
+			origTable := from.Tables[n]
+			newTable, stillExists := toTablesByName[origTable.Name]
+			if stillExists {
+				clauses, supported := origTable.Diff(newTable)
+				if !supported {
+					result.UnsupportedTables = append(result.UnsupportedTables, newTable)
+				} else if len(clauses) > 0 {
+					alter := AlterTable{
+						Table:   origTable,
+						Clauses: clauses,
+					}
+					result.TableDiffs = append(result.TableDiffs, alter)
+				} else {
+					result.SameTables = append(result.SameTables, newTable)
+				}
+			} else {
+				result.TableDiffs = append(result.TableDiffs, DropTable{Table: origTable})
+			}
+		}
+	}
+
+	return result
 }
 
 // String returns the set of differences between two schemas as a single string.

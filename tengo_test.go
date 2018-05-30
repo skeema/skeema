@@ -51,18 +51,18 @@ func (s *TengoIntegrationSuite) GetSchema(t *testing.T, schemaName string) *Sche
 	return schema
 }
 
-func (s *TengoIntegrationSuite) GetTable(t *testing.T, schemaName string, tableName string) *Table {
+func (s *TengoIntegrationSuite) GetTable(t *testing.T, schemaName, tableName string) *Table {
 	t.Helper()
 	_, table := s.GetSchemaAndTable(t, schemaName, tableName)
 	return table
 }
 
-func (s *TengoIntegrationSuite) GetSchemaAndTable(t *testing.T, schemaName string, tableName string) (*Schema, *Table) {
+func (s *TengoIntegrationSuite) GetSchemaAndTable(t *testing.T, schemaName, tableName string) (*Schema, *Table) {
 	t.Helper()
 	schema := s.GetSchema(t, schemaName)
-	table, err := schema.Table(tableName)
-	if table == nil || err != nil {
-		t.Fatalf("Unable to obtain table %s.%s: %s", schemaName, tableName, err)
+	table := schema.Table(tableName)
+	if table == nil {
+		t.Fatalf("Table %s.%s unexpectedly does not exist", schemaName, tableName)
 	}
 	return schema, table
 }
@@ -217,7 +217,7 @@ func aSchema(name string, tables ...*Table) Schema {
 		Name:      name,
 		CharSet:   "latin1",
 		Collation: "latin1_swedish_ci",
-		tables:    tables,
+		Tables:    tables,
 	}
 	return s
 }
