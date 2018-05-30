@@ -387,3 +387,31 @@ func (s TengoIntegrationSuite) TestInstanceCloneSchema(t *testing.T) {
 		t.Errorf("Error dropping destination schema: %s", err)
 	}
 }
+
+func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
+	// Ensure our unit test fixtures and integration test fixtures match
+	schema, aTableFromDB := s.GetSchemaAndTable(t, "testing", "actor")
+	aTableFromUnit := aTable(1)
+	clauses, supported := aTableFromDB.Diff(&aTableFromUnit)
+	if !supported {
+		t.Error("Diff unexpectedly not supported for testing.actor")
+	} else if len(clauses) > 0 {
+		t.Errorf("Diff of testing.actor unexpectedly found %d clauses; expected 0", len(clauses))
+	}
+	aTableFromDB = s.GetTable(t, "testing", "actor_in_film")
+	aTableFromUnit = anotherTable()
+	clauses, supported = aTableFromDB.Diff(&aTableFromUnit)
+	if !supported {
+		t.Error("Diff unexpectedly not supported for testing.actor_in_film")
+	} else if len(clauses) > 0 {
+		t.Errorf("Diff of testing.actor_in_film unexpectedly found %d clauses; expected 0", len(clauses))
+	}
+
+	// ensure tables are all supported (except where known not to be)
+	for _, table := range schema.Tables {
+		shouldBeUnsupported := (table.Name == unsupportedTable().Name || table.Name == "partitioned")
+		if table.UnsupportedDDL != shouldBeUnsupported {
+			t.Errorf("Table %s: expected UnsupportedDDL==%v, instead found %v", table.Name, shouldBeUnsupported, !shouldBeUnsupported)
+		}
+	}
+}
