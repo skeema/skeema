@@ -21,18 +21,8 @@ type Instance struct {
 	Port           int
 	SocketPath     string
 	defaultParams  map[string]string
-	schemas        []*Schema
 	connectionPool map[string]*sqlx.DB // key is in format "schema?params" or just "schema" if no params
-	*sync.RWMutex                      // protects internal state
-}
-
-var allInstances struct {
-	sync.Mutex
-	byDSN map[string]*Instance
-}
-
-func init() {
-	allInstances.byDSN = make(map[string]*Instance)
+	*sync.RWMutex                      // protects connectionPool for concurrent operations
 }
 
 // NewInstance returns a pointer to a new Instance corresponding to the
@@ -57,28 +47,7 @@ func NewInstance(driver, dsn string) (*Instance, error) {
 		return nil, err
 	}
 
-	// See if an instance with the supplied dsn already exists. Note that we forbid
-	// creating a duplicate instance referring to the same underlying DB, as this
-	// would break caching logic around schema introspection.
-	// TODO: Remove caching logic, it causes more trouble than it's worth!
-	allInstances.Lock()
-	defer allInstances.Unlock()
-	instance, already := allInstances.byDSN[base]
-	if already {
-		// If the new DSN indicates use of a different user or pass, this is
-		// unsupported for now. If the DSN indicates use of different default
-		// params, use those for new connections going forwards.
-		// TODO: This is all temporary until the caching logic is removed altogether!
-		if instance.User != parsedConfig.User {
-			return nil, fmt.Errorf("Instance already exists, but with different username")
-		} else if instance.Password != parsedConfig.Passwd {
-			return nil, fmt.Errorf("Instance already exists, but with different password")
-		}
-		instance.defaultParams = params
-		return instance, nil
-	}
-
-	instance = &Instance{
+	instance := &Instance{
 		BaseDSN:        base,
 		Driver:         driver,
 		User:           parsedConfig.User,
@@ -101,7 +70,6 @@ func NewInstance(driver, dsn string) (*Instance, error) {
 		}
 	}
 
-	allInstances.byDSN[base] = instance
 	return instance, nil
 }
 
@@ -178,23 +146,30 @@ func (instance *Instance) CanConnect() (bool, error) {
 	return err == nil, err
 }
 
-// Schemas returns a slice of all schemas on the instance visible to the user.
-func (instance *Instance) Schemas() ([]*Schema, error) {
-	instance.RLock()
-	ret := instance.schemas
-	instance.RUnlock()
-	if ret != nil {
-		return ret, nil
-	}
-
+// SchemaNames returns a slice of all schema name strings on the instance
+// visible to the user. System schemas are excluded.
+func (instance *Instance) SchemaNames() ([]string, error) {
 	db, err := instance.Connect("information_schema", "")
 	if err != nil {
 		return nil, err
 	}
+	var result []string
+	query := `
+		SELECT schema_name
+		FROM   schemata
+		WHERE  schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'test', 'sys')`
+	if err := db.Select(&result, query); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
 
-	instance.Lock()
-	defer instance.Unlock()
-
+// Schemas returns a slice of all schemas on the instance visible to the user.
+func (instance *Instance) Schemas() ([]*Schema, error) {
+	db, err := instance.Connect("information_schema", "")
+	if err != nil {
+		return nil, err
+	}
 	var rawSchemas []struct {
 		Name      string `db:"schema_name"`
 		CharSet   string `db:"default_character_set_name"`
@@ -208,16 +183,20 @@ func (instance *Instance) Schemas() ([]*Schema, error) {
 		return nil, err
 	}
 
-	instance.schemas = make([]*Schema, len(rawSchemas))
+	schemas := make([]*Schema, len(rawSchemas))
 	for n, rawSchema := range rawSchemas {
-		instance.schemas[n] = &Schema{
+		tables, err := instance.querySchemaTables(rawSchema.Name)
+		if err != nil {
+			return nil, err
+		}
+		schemas[n] = &Schema{
 			Name:      rawSchema.Name,
 			CharSet:   rawSchema.CharSet,
 			Collation: rawSchema.Collation,
-			instance:  instance,
+			Tables:    tables,
 		}
 	}
-	return instance.schemas, nil
+	return schemas, nil
 }
 
 // SchemasByName returns a map of schema name string to *Schema, for all schemas
@@ -234,26 +213,65 @@ func (instance *Instance) SchemasByName() (map[string]*Schema, error) {
 	return result, nil
 }
 
-// Schema returns a single schema by name.
+// Schema returns a single schema by name. If the schema does not exist, nil
+// will be returned along with a sql.ErrNoRows error.
 func (instance *Instance) Schema(name string) (*Schema, error) {
-	byName, err := instance.SchemasByName()
+	db, err := instance.Connect("information_schema", "")
 	if err != nil {
 		return nil, err
 	}
-	return byName[name], nil
+	var rawSchema struct {
+		Name      string `db:"schema_name"`
+		CharSet   string `db:"default_character_set_name"`
+		Collation string `db:"default_collation_name"`
+	}
+	query := `
+		SELECT schema_name, default_character_set_name, default_collation_name
+		FROM   schemata
+		WHERE  schema_name = ?`
+	if err := db.Get(&rawSchema, query, name); err != nil {
+		return nil, err
+	}
+	tables, err := instance.querySchemaTables(name)
+	if err != nil {
+		return nil, err
+	}
+	return &Schema{
+		Name:      rawSchema.Name,
+		CharSet:   rawSchema.CharSet,
+		Collation: rawSchema.Collation,
+		Tables:    tables,
+	}, nil
 }
 
 // HasSchema returns true if this instance has a schema with the supplied name
-// visible to the user, or false otherwise.
-func (instance *Instance) HasSchema(name string) bool {
-	s, _ := instance.Schema(name)
-	return s != nil
+// visible to the user, or false otherwise. An error result will only be
+// returned if a connection or query failed entirely and we weren't able to
+// determine whether the schema exists.
+func (instance *Instance) HasSchema(name string) (bool, error) {
+	db, err := instance.Connect("information_schema", "")
+	if err != nil {
+		return false, err
+	}
+	var exists int
+	query := `
+		SELECT 1
+		FROM   schemata
+		WHERE  schema_name = ?`
+	err = db.Get(&exists, query, name)
+	if err == nil {
+		return true, nil
+	} else if err == sql.ErrNoRows {
+		return false, nil
+	} else {
+		return false, err
+	}
 }
 
 // ShowCreateTable returns a string with a CREATE TABLE statement, representing
 // how the instance views the specified table as having been created.
-func (instance *Instance) ShowCreateTable(schema *Schema, table *Table) (string, error) {
-	db, err := instance.Connect(schema.Name, "")
+func (instance *Instance) ShowCreateTable(schema, table string) (string, error) {
+	db, err := instance.Connect(schema, "")
 	if err != nil {
 		return "", err
 	}
@@ -262,7 +280,7 @@ func (instance *Instance) ShowCreateTable(schema *Schema, table *Table) (string,
 		TableName       string `db:"Table"`
 		CreateStatement string `db:"Create Table"`
 	}
-	query := fmt.Sprintf("SHOW CREATE TABLE %s", EscapeIdentifier(table.Name))
+	query := fmt.Sprintf("SHOW CREATE TABLE %s", EscapeIdentifier(table))
 	if err := db.Select(&createRows, query); err != nil {
 		return "", err
 	}
@@ -278,7 +296,7 @@ func (instance *Instance) ShowCreateTable(schema *Schema, table *Table) (string,
 // the error will be sql.ErrNoRows.
 // Please note that use of innodb_stats_persistent may negatively impact the
 // accuracy. For example, see https://bugs.mysql.com/bug.php?id=75428.
-func (instance *Instance) TableSize(schema *Schema, table *Table) (int64, error) {
+func (instance *Instance) TableSize(schema, table string) (int64, error) {
 	var result int64
 	db, err := instance.Connect("information_schema", "")
 	if err != nil {
@@ -288,30 +306,24 @@ func (instance *Instance) TableSize(schema *Schema, table *Table) (int64, error)
 		SELECT  data_length + index_length + data_free
 		FROM    tables
 		WHERE   table_schema = ? and table_name = ?`,
-		schema.Name, table.Name)
+		schema, table)
 	return result, err
 }
 
 // TableHasRows returns true if the table has at least one row. If an error
 // occurs in querying, also returns true (along with the error) since a false
 // positive is generally less dangerous in this case than a false negative.
-func (instance *Instance) TableHasRows(schema *Schema, table *Table) (bool, error) {
-	db, err := instance.Connect(schema.Name, "")
+func (instance *Instance) TableHasRows(schema, table string) (bool, error) {
+	db, err := instance.Connect(schema, "")
 	if err != nil {
 		return true, err
 	}
 	var result []int
-	query := fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", EscapeIdentifier(table.Name))
+	query := fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", EscapeIdentifier(table))
 	if err := db.Select(&result, query); err != nil {
 		return true, err
 	}
 	return len(result) != 0, nil
-}
-
-func (instance *Instance) purgeSchemaCache() {
-	instance.Lock()
-	instance.schemas = nil
-	instance.Unlock()
 }
 
 // CreateSchema creates a new database schema with the supplied name, and
@@ -331,31 +343,32 @@ func (instance *Instance) CreateSchema(name, charSet, collation string) (*Schema
 	if err != nil {
 		return nil, err
 	}
-
-	// Purge schema cache; next call to Schema will repopulate
-	instance.purgeSchemaCache()
 	return instance.Schema(name)
 }
 
 // DropSchema first drops all tables in the schema, and then drops the database
 // schema itself. If onlyIfEmpty==true, returns an error if any of the tables
 // have any rows.
-func (instance *Instance) DropSchema(schema *Schema, onlyIfEmpty bool) error {
+func (instance *Instance) DropSchema(schema string, onlyIfEmpty bool) error {
 	err := instance.DropTablesInSchema(schema, onlyIfEmpty)
 	if err != nil {
 		return err
 	}
 
-	db, err := instance.Connect(schema.Name, "")
+	s, err := instance.Schema(schema)
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec(schema.DropStatement())
+	db, err := instance.Connect("", "")
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(s.DropStatement())
 	if err != nil {
 		return err
 	}
 
-	prefix := fmt.Sprintf("%s?", schema.Name)
+	prefix := fmt.Sprintf("%s?", schema)
 	instance.Lock()
 	for key, connPool := range instance.connectionPool {
 		if strings.HasPrefix(key, prefix) {
@@ -364,9 +377,6 @@ func (instance *Instance) DropSchema(schema *Schema, onlyIfEmpty bool) error {
 		}
 	}
 	instance.Unlock()
-
-	// Purge schema cache; next call to Schema will repopulate
-	instance.purgeSchemaCache()
 	return nil
 }
 
@@ -375,62 +385,54 @@ func (instance *Instance) DropSchema(schema *Schema, onlyIfEmpty bool) error {
 // collation, or supply an empty string for newCollation to use the default
 // collation of newCharSet. (Supplying an empty string for both is also allowed,
 // but is a no-op.)
-func (instance *Instance) AlterSchema(schema *Schema, newCharSet, newCollation string) error {
-	db, err := instance.Connect(schema.Name, "")
+func (instance *Instance) AlterSchema(schema, newCharSet, newCollation string) error {
+	s, err := instance.Schema(schema)
 	if err != nil {
 		return err
 	}
-	statement := schema.AlterStatement(newCharSet, newCollation)
+	statement := s.AlterStatement(newCharSet, newCollation)
 	if statement == "" {
 		return nil
+	}
+	db, err := instance.Connect("", "")
+	if err != nil {
+		return err
 	}
 	if _, err = db.Exec(statement); err != nil {
 		return err
 	}
-
-	// Purge schema cache, so that the call to Schema will repopulate with new
-	// charset and collation. (We can't just set them directly without querying
-	// since default-collation-for-charset info is handled by the database.)
-	instance.purgeSchemaCache()
-	alteredSchema, err := instance.Schema(schema.Name)
-	if err == nil {
-		*schema = *alteredSchema
-	}
-	return err
+	return nil
 }
 
 // DropTablesInSchema drops all tables in a schema. If onlyIfEmpty==true,
 // returns an error if any of the tables have any rows.
-func (instance *Instance) DropTablesInSchema(schema *Schema, onlyIfEmpty bool) error {
-	db, err := instance.Connect(schema.Name, "foreign_key_checks=0")
+func (instance *Instance) DropTablesInSchema(schema string, onlyIfEmpty bool) error {
+	s, err := instance.Schema(schema)
 	if err != nil {
 		return err
 	}
-	tables, err := schema.Tables()
-	if err != nil {
-		return err
-	}
-
 	if onlyIfEmpty {
-		for _, t := range tables {
-			hasRows, err := instance.TableHasRows(schema, t)
+		for _, t := range s.Tables {
+			hasRows, err := instance.TableHasRows(schema, t.Name)
 			if err != nil {
 				return err
 			}
 			if hasRows {
-				return fmt.Errorf("DropTablesInSchema: table %s.%s has at least one row", EscapeIdentifier(schema.Name), EscapeIdentifier(t.Name))
+				return fmt.Errorf("DropTablesInSchema: table %s.%s has at least one row", EscapeIdentifier(schema), EscapeIdentifier(t.Name))
 			}
 		}
 	}
 
-	for _, t := range tables {
+	db, err := instance.Connect(schema, "foreign_key_checks=0")
+	if err != nil {
+		return err
+	}
+	for _, t := range s.Tables {
 		_, err := db.Exec(t.DropStatement())
 		if err != nil {
 			return err
 		}
 	}
-
-	schema.PurgeTableCache()
 	return nil
 }
 
@@ -438,22 +440,21 @@ func (instance *Instance) DropTablesInSchema(schema *Schema, onlyIfEmpty bool) e
 // Ideally dest should be an empty schema, or at least be pre-verified for not
 // having existing tables with conflicting names, but this is the caller's
 // responsibility to confirm.
-func (instance *Instance) CloneSchema(src, dest *Schema) error {
-	db, err := instance.Connect(dest.Name, "foreign_key_checks=0")
+func (instance *Instance) CloneSchema(src, dest string) error {
+	s, err := instance.Schema(src)
 	if err != nil {
 		return err
 	}
-	tables, err := src.Tables()
+	db, err := instance.Connect(dest, "foreign_key_checks=0")
 	if err != nil {
 		return err
 	}
-	for _, t := range tables {
-		_, err := db.Exec(t.CreateStatement())
+	for _, t := range s.Tables {
+		_, err := db.Exec(t.CreateStatement)
 		if err != nil {
 			return err
 		}
 	}
-	dest.PurgeTableCache()
 	return nil
 }
 
@@ -466,6 +467,228 @@ func (instance *Instance) DefaultCharSetAndCollation() (serverCharSet, serverCol
 	}
 	err = db.QueryRow("SELECT @@global.character_set_server, @@global.collation_server").Scan(&serverCharSet, &serverCollation)
 	return
+}
+
+func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
+	db, err := instance.Connect("information_schema", "")
+	if err != nil {
+		return nil, err
+	}
+
+	// Obtain the tables in the schema
+	var rawTables []struct {
+		Name               string         `db:"table_name"`
+		Type               string         `db:"table_type"`
+		Engine             sql.NullString `db:"engine"`
+		AutoIncrement      sql.NullInt64  `db:"auto_increment"`
+		TableCollation     sql.NullString `db:"table_collation"`
+		CreateOptions      sql.NullString `db:"create_options"`
+		Comment            string         `db:"table_comment"`
+		CharSet            string         `db:"character_set_name"`
+		CollationIsDefault string         `db:"is_default"`
+	}
+	query := `
+		SELECT t.table_name, t.table_type, t.engine, t.auto_increment, t.table_collation,
+		       UPPER(t.create_options) AS create_options, t.table_comment,
+		       c.character_set_name, c.is_default
+		FROM   tables t
+		JOIN   collations c ON t.table_collation = c.collation_name
+		WHERE  t.table_schema = ?
+		AND    t.table_type = 'BASE TABLE'`
+	if err := db.Select(&rawTables, query, schema); err != nil {
+		return nil, fmt.Errorf("Error querying information_schema.tables: %s", err)
+	}
+	tables := make([]*Table, len(rawTables))
+	for n, rawTable := range rawTables {
+		tables[n] = &Table{
+			Name:    rawTable.Name,
+			Engine:  rawTable.Engine.String,
+			CharSet: rawTable.CharSet,
+			Comment: rawTable.Comment,
+		}
+		if rawTable.CollationIsDefault == "" && rawTable.TableCollation.Valid {
+			tables[n].Collation = rawTable.TableCollation.String
+		}
+		if rawTable.AutoIncrement.Valid {
+			tables[n].NextAutoIncrement = uint64(rawTable.AutoIncrement.Int64)
+		}
+		if rawTable.CreateOptions.Valid && rawTable.CreateOptions.String != "" && rawTable.CreateOptions.String != "PARTITIONED" {
+			// information_schema.tables.create_options annoyingly contains "partitioned"
+			// if the table is partitioned, despite this not being present as-is in the
+			// table table definition. All other create_options are present verbatim.
+			// Currently in mysql-server/sql/sql_show.cc, it's always at the *end* of
+			// create_options... but just to code defensively we handle any location.
+			if strings.HasPrefix(rawTable.CreateOptions.String, "PARTITIONED ") {
+				tables[n].CreateOptions = strings.Replace(rawTable.CreateOptions.String, "PARTITIONED ", "", 1)
+			} else {
+				tables[n].CreateOptions = strings.Replace(rawTable.CreateOptions.String, " PARTITIONED", "", 1)
+			}
+		}
+	}
+
+	// Obtain the columns in all tables in the schema
+	var rawColumns []struct {
+		Name               string         `db:"column_name"`
+		TableName          string         `db:"table_name"`
+		Type               string         `db:"column_type"`
+		IsNullable         string         `db:"is_nullable"`
+		Default            sql.NullString `db:"column_default"`
+		Extra              string         `db:"extra"`
+		Comment            string         `db:"column_comment"`
+		CharSet            sql.NullString `db:"character_set_name"`
+		Collation          sql.NullString `db:"collation_name"`
+		CollationIsDefault sql.NullString `db:"is_default"`
+	}
+	query = `
+		SELECT    c.table_name, c.column_name, c.column_type, c.is_nullable, c.column_default,
+		          c.extra, c.column_comment, c.character_set_name, c.collation_name,
+		          co.is_default
+		FROM      columns c
+		LEFT JOIN collations co ON co.collation_name = c.collation_name
+		WHERE     c.table_schema = ?
+		ORDER BY  c.table_name, c.ordinal_position`
+	if err := db.Select(&rawColumns, query, schema); err != nil {
+		return nil, fmt.Errorf("Error querying information_schema.columns: %s", err)
+	}
+	columnsByTableName := make(map[string][]*Column)
+	columnsByTableAndName := make(map[string]*Column)
+	for _, rawColumn := range rawColumns {
+		col := &Column{
+			Name:          rawColumn.Name,
+			TypeInDB:      rawColumn.Type,
+			Nullable:      strings.ToUpper(rawColumn.IsNullable) == "YES",
+			AutoIncrement: strings.Contains(rawColumn.Extra, "auto_increment"),
+			Comment:       rawColumn.Comment,
+		}
+		if !rawColumn.Default.Valid {
+			col.Default = ColumnDefaultNull
+		} else if strings.HasPrefix(rawColumn.Default.String, "CURRENT_TIMESTAMP") && (strings.HasPrefix(rawColumn.Type, "timestamp") || strings.HasPrefix(rawColumn.Type, "datetime")) {
+			col.Default = ColumnDefaultExpression(rawColumn.Default.String)
+		} else if strings.HasPrefix(rawColumn.Type, "bit") && strings.HasPrefix(rawColumn.Default.String, "b'") {
+			col.Default = ColumnDefaultExpression(rawColumn.Default.String)
+		} else {
+			col.Default = ColumnDefaultValue(rawColumn.Default.String)
+		}
+		if strings.HasPrefix(strings.ToLower(rawColumn.Extra), "on update ") {
+			// MariaDB strips fractional second precision here but includes it in SHOW
+			// CREATE TABLE. MySQL includes it in both places. Here we adjust the MariaDB
+			// one to look like MySQL, so that our generated DDL matches SHOW CREATE TABLE.
+			if openParen := strings.IndexByte(rawColumn.Type, '('); openParen > -1 && !strings.Contains(strings.ToLower(rawColumn.Extra), "current_timestamp(") {
+				col.OnUpdate = fmt.Sprintf("%s%s", strings.ToUpper(rawColumn.Extra[10:]), rawColumn.Type[openParen:])
+			} else {
+				col.OnUpdate = strings.ToUpper(rawColumn.Extra[10:])
+			}
+		}
+		if rawColumn.Collation.Valid { // only text-based column types have a notion of charset and collation
+			col.CharSet = rawColumn.CharSet.String
+			if rawColumn.CollationIsDefault.String == "" {
+				// SHOW CREATE TABLE only includes col's collation if it differs from col's charset's default collation
+				col.Collation = rawColumn.Collation.String
+			}
+		}
+		if columnsByTableName[rawColumn.TableName] == nil {
+			columnsByTableName[rawColumn.TableName] = make([]*Column, 0)
+		}
+		columnsByTableName[rawColumn.TableName] = append(columnsByTableName[rawColumn.TableName], col)
+		fullNameStr := fmt.Sprintf("%s.%s.%s", schema, rawColumn.TableName, rawColumn.Name)
+		columnsByTableAndName[fullNameStr] = col
+	}
+	for n, t := range tables {
+		tables[n].Columns = columnsByTableName[t.Name]
+	}
+
+	// Obtain the indexes of all tables in the schema. Since multi-column indexes
+	// have multiple rows in the result set, we do two passes over the result: one
+	// to figure out which indexes exist, and one to stitch together the col info.
+	// We cannot use an ORDER BY on this query, since only the unsorted result
+	// matches the same order of secondary indexes as the CREATE TABLE statement.
+	var rawIndexes []struct {
+		Name       string         `db:"index_name"`
+		TableName  string         `db:"table_name"`
+		NonUnique  uint8          `db:"non_unique"`
+		SeqInIndex uint8          `db:"seq_in_index"`
+		ColumnName string         `db:"column_name"`
+		SubPart    sql.NullInt64  `db:"sub_part"`
+		Comment    sql.NullString `db:"index_comment"`
+	}
+	query = `
+		SELECT   index_name, table_name, non_unique, seq_in_index, column_name,
+		         sub_part, index_comment
+		FROM     statistics
+		WHERE    table_schema = ?`
+	if err := db.Select(&rawIndexes, query, schema); err != nil {
+		return nil, fmt.Errorf("Error querying information_schema.statistics: %s", err)
+	}
+	primaryKeyByTableName := make(map[string]*Index)
+	secondaryIndexesByTableName := make(map[string][]*Index)
+	indexesByTableAndName := make(map[string]*Index)
+	for _, rawIndex := range rawIndexes {
+		if rawIndex.SeqInIndex > 1 {
+			continue
+		}
+		index := &Index{
+			Name:     rawIndex.Name,
+			Unique:   rawIndex.NonUnique == 0,
+			Columns:  make([]*Column, 0),
+			SubParts: make([]uint16, 0),
+			Comment:  rawIndex.Comment.String,
+		}
+		if strings.ToUpper(index.Name) == "PRIMARY" {
+			primaryKeyByTableName[rawIndex.TableName] = index
+			index.PrimaryKey = true
+		} else {
+			if secondaryIndexesByTableName[rawIndex.TableName] == nil {
+				secondaryIndexesByTableName[rawIndex.TableName] = make([]*Index, 0)
+			}
+			secondaryIndexesByTableName[rawIndex.TableName] = append(secondaryIndexesByTableName[rawIndex.TableName], index)
+		}
+		fullNameStr := fmt.Sprintf("%s.%s.%s", schema, rawIndex.TableName, rawIndex.Name)
+		indexesByTableAndName[fullNameStr] = index
+	}
+	for _, rawIndex := range rawIndexes {
+		fullIndexNameStr := fmt.Sprintf("%s.%s.%s", schema, rawIndex.TableName, rawIndex.Name)
+		index, ok := indexesByTableAndName[fullIndexNameStr]
+		if !ok {
+			panic(fmt.Errorf("Cannot find index %s", fullIndexNameStr))
+		}
+		fullColNameStr := fmt.Sprintf("%s.%s.%s", schema, rawIndex.TableName, rawIndex.ColumnName)
+		col, ok := columnsByTableAndName[fullColNameStr]
+		if !ok {
+			panic(fmt.Errorf("Cannot find indexed column %s for index %s", fullColNameStr, fullIndexNameStr))
+		}
+		for len(index.Columns) < int(rawIndex.SeqInIndex) {
+			index.Columns = append(index.Columns, new(Column))
+		}
+		index.Columns[rawIndex.SeqInIndex-1] = col
+		if rawIndex.SubPart.Valid {
+			index.SubParts = append(index.SubParts, uint16(rawIndex.SubPart.Int64))
+		} else {
+			index.SubParts = append(index.SubParts, 0)
+		}
+	}
+	for _, t := range tables {
+		t.PrimaryKey = primaryKeyByTableName[t.Name]
+		t.SecondaryIndexes = secondaryIndexesByTableName[t.Name]
+	}
+
+	// Obtain actual SHOW CREATE TABLE output and store in each table. Compare
+	// with what we expect the create DDL to be, to determine if we support
+	// diffing for the table. Ignore next-auto-increment differences in this
+	// comparison, since the value may have changed between our previous
+	// information_schema introspection and our current SHOW CREATE TABLE call!
+	for _, t := range tables {
+		t.CreateStatement, err = instance.ShowCreateTable(schema, t.Name)
+		if err != nil {
+			return nil, fmt.Errorf("Error executing SHOW CREATE TABLE: %s", err)
+		}
+		beforeTable, _ := ParseCreateAutoInc(t.CreateStatement)
+		afterTable, _ := ParseCreateAutoInc(t.GeneratedCreateStatement())
+		if beforeTable != afterTable {
+			t.UnsupportedDDL = true
+		}
+	}
+
+	return tables, nil
 }
 
 // baseDSN returns a DSN with the database (schema) name and params stripped.

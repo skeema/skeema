@@ -72,7 +72,7 @@ CREATE TABLE grab_bag (
 	name varchar(100) NOT NULL,
 	code char(8) DEFAULT 'XYZ01234',
 	created_at timestamp(2) DEFAULT CURRENT_TIMESTAMP(2),
-	updated_at timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	updated_at timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 	alive tinyint(1) DEFAULT '1' COMMENT 'column comment',
 	flags bit(8) DEFAULT b'1',
 	PRIMARY KEY (id, code),
@@ -80,6 +80,16 @@ CREATE TABLE grab_bag (
 	INDEX recency (updated_at, created_at),
 	INDEX owner_idx (owner_id) COMMENT 'index comment'
 ) AUTO_INCREMENT=123;
+
+CREATE TABLE partitioned (
+	id int unsigned NOT NULL AUTO_INCREMENT,
+	customer_id int unsigned NOT NULL,
+	info text,
+	PRIMARY KEY (id, customer_id)
+) ENGINE=InnoDB ROW_FORMAT=REDUNDANT PARTITION BY RANGE (customer_id) (
+	PARTITION p0 VALUES LESS THAN (123),
+	PARTITION p1 VALUES LESS THAN MAXVALUE
+);
 
 use testcharcoll
 
