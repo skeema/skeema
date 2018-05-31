@@ -206,7 +206,7 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 			}
 			dsn = fmt.Sprintf("%s@tcp(%s:%d)/?%s", userAndPass, host, thisPortValue, params)
 		}
-		instance, err := tengo.NewInstance("mysql", dsn)
+		instance, err := NewInstance("mysql", dsn)
 		if err != nil || instance == nil {
 			if dir.Config.Changed("password") {
 				safeUserPass := fmt.Sprintf("%s:*****", dir.Config.Get("user"))
@@ -512,14 +512,12 @@ func (dir *Dir) TargetTemplate(instance *tengo.Instance) Target {
 	sqlFiles, err := dir.SQLFiles()
 	if err != nil {
 		t.Err = fmt.Errorf("Unable to list SQL files in %s: %s", dir, err)
-		return t
 	}
 
 	// TODO: want to skip binlogging for all temp schema actions, if super priv available
 	var tx *sql.Tx
 	if tx, err = t.lockTempSchema(30 * time.Second); err != nil {
 		t.Err = fmt.Errorf("Unable to lock temporary schema on %s: %s", instance, err)
-		return t
 	}
 	defer func() {
 		unlockErr := t.unlockTempSchema(tx)
@@ -528,24 +526,22 @@ func (dir *Dir) TargetTemplate(instance *tengo.Instance) Target {
 		}
 	}()
 
-	tempSchema, err := instance.Schema(tempSchemaName)
-	if err != nil {
+	if has, err := instance.HasSchema(tempSchemaName); err != nil {
 		t.Err = fmt.Errorf("Unable to check for existence of temp schema on %s: %s", instance, err)
-		return t
-	}
-	if tempSchema != nil {
+	} else if has {
 		// Attempt to drop any tables already present in tempSchema, but fail if
 		// any of them actually have 1 or more rows
-		if err := instance.DropTablesInSchema(tempSchema, true); err != nil {
+		if err := instance.DropTablesInSchema(tempSchemaName, true); err != nil {
 			t.Err = fmt.Errorf("Cannot drop existing temp schema tables on %s: %s", instance, err)
-			return t
 		}
 	} else {
-		tempSchema, err = instance.CreateSchema(tempSchemaName, dir.Config.Get("default-character-set"), dir.Config.Get("default-collation"))
+		_, err = instance.CreateSchema(tempSchemaName, dir.Config.Get("default-character-set"), dir.Config.Get("default-collation"))
 		if err != nil {
 			t.Err = fmt.Errorf("Cannot create temporary schema on %s: %s", instance, err)
-			return t
 		}
+	}
+	if t.Err != nil {
+		return t
 	}
 
 	db, err := instance.Connect(tempSchemaName, "")
@@ -571,16 +567,18 @@ func (dir *Dir) TargetTemplate(instance *tengo.Instance) Target {
 			t.SQLFileErrors[sf.Path()] = sf
 		}
 	}
-	if t.SchemaFromDir, err = tempSchema.CachedCopy(); err != nil {
-		t.Err = fmt.Errorf("Unable to clone temporary schema on %s: %s", instance, err)
+	t.SchemaFromDir, err = instance.Schema(tempSchemaName)
+	if err != nil {
+		t.Err = fmt.Errorf("Unable to obtain temp schema on %s: %s", instance, err)
+		return t
 	}
 
 	if dir.Config.GetBool("reuse-temp-schema") {
-		if err := instance.DropTablesInSchema(tempSchema, true); err != nil {
+		if err := instance.DropTablesInSchema(tempSchemaName, true); err != nil {
 			t.Err = fmt.Errorf("Cannot drop tables in temporary schema on %s: %s", instance, err)
 		}
 	} else {
-		if err := instance.DropSchema(tempSchema, true); err != nil {
+		if err := instance.DropSchema(tempSchemaName, true); err != nil {
 			t.Err = fmt.Errorf("Cannot drop temporary schema on %s: %s", instance, err)
 		}
 	}

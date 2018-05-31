@@ -160,8 +160,9 @@ func generateTargetsForDir(dir *Dir, targetsByInstance TargetGroupMap, firstOnly
 				// template's, so that we can "correct" its name without affecting other
 				// targets.
 				t := template
+				schemaCopy := *t.SchemaFromDir
+				t.SchemaFromDir = &schemaCopy
 				t.Instance = inst
-				t.SchemaFromDir, _ = t.SchemaFromDir.CachedCopy() // error not possible so safe to ignore
 				t.SchemaFromDir.Name = schemaName
 				t.SchemaFromInstance = schemasByName[schemaName] // this may be nil if schema doesn't exist yet; callers handle that
 				targetsByInstance.Add(&t)
@@ -228,23 +229,22 @@ func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 		}
 	}()
 
-	tempSchema, err := t.Instance.Schema(tempSchemaName)
-	if err != nil {
+	if has, err := t.Instance.HasSchema(tempSchemaName); err != nil {
 		return err
-	}
-	if tempSchema != nil {
+	} else if has {
 		// Attempt to drop any tables already present in tempSchema, but fail if
 		// any of them actually have 1 or more rows
-		if err := t.Instance.DropTablesInSchema(tempSchema, true); err != nil {
+		if err := t.Instance.DropTablesInSchema(tempSchemaName, true); err != nil {
 			return fmt.Errorf("verifyDiff: cannot drop existing tables for %s on %s: %s", t.Dir, t.Instance, err)
 		}
 	} else {
-		tempSchema, err = t.Instance.CreateSchema(tempSchemaName, t.Dir.Config.Get("default-character-set"), t.Dir.Config.Get("default-collation"))
+		_, err = t.Instance.CreateSchema(tempSchemaName, t.Dir.Config.Get("default-character-set"), t.Dir.Config.Get("default-collation"))
 		if err != nil {
 			return fmt.Errorf("verifyDiff: cannot create temporary schema for %s on %s: %s", t.Dir, t.Instance, err)
 		}
 	}
-	if err = t.Instance.CloneSchema(t.SchemaFromInstance, tempSchema); err != nil {
+
+	if err := t.Instance.CloneSchema(t.SchemaFromInstance.Name, tempSchemaName); err != nil {
 		return err
 	}
 
@@ -274,17 +274,19 @@ func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 		}
 		tableNameToDDL[alter.Table.Name] = stmt
 	}
-	postAlterTables, err := tempSchema.TablesByName()
+
+	tempSchema, err := t.Instance.Schema(tempSchemaName)
 	if err != nil {
 		return err
 	}
-	expectTables, _ := t.SchemaFromDir.TablesByName() // can ignore error since we know table list already cached
+	postAlterTables := tempSchema.TablesByName()
+	expectTables := t.SchemaFromDir.TablesByName()
 
 	for name, stmt := range tableNameToDDL {
 		// We have to compare CREATE TABLE statements without their next auto-inc
 		// values, since divergence there may be expected depending on settings
-		expected, _ := tengo.ParseCreateAutoInc(expectTables[name].CreateStatement())
-		actual, _ := tengo.ParseCreateAutoInc(postAlterTables[name].CreateStatement())
+		expected, _ := tengo.ParseCreateAutoInc(expectTables[name].CreateStatement)
+		actual, _ := tengo.ParseCreateAutoInc(postAlterTables[name].CreateStatement)
 		if expected != actual {
 			return fmt.Errorf("verifyDiff: Failure on table %s\nDDL:\n%s\n\nEXPECTED POST-ALTER:\n%s\n\nACTUAL POST-ALTER:\n%s\n\nRun command again with --skip-verify if this discrepancy is safe to ignore", name, stmt, expected, actual)
 		}
@@ -292,11 +294,11 @@ func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 
 	// Clean up the temp schema
 	if t.Dir.Config.GetBool("reuse-temp-schema") {
-		if err = t.Instance.DropTablesInSchema(tempSchema, true); err != nil {
+		if err = t.Instance.DropTablesInSchema(tempSchemaName, true); err != nil {
 			return fmt.Errorf("verifyDiff: cannot drop tables in temporary schema for %s on %s: %s", t.Dir, t.Instance, err)
 		}
 	} else {
-		if err = t.Instance.DropSchema(tempSchema, true); err != nil {
+		if err = t.Instance.DropSchema(tempSchemaName, true); err != nil {
 			return fmt.Errorf("verifyDiff: cannot drop temporary schema for %s on %s: %s", t.Dir, t.Instance, err)
 		}
 	}
@@ -312,15 +314,15 @@ func (t *Target) logUnsupportedTableDiff(name string) {
 	var expectedCreate, actualCreate string
 
 	// Figure out which part is unsupported; this will determine what we're diffing
-	if dirTable, err := t.SchemaFromDir.Table(name); err == nil && dirTable != nil && dirTable.UnsupportedDDL {
+	if dirTable := t.SchemaFromDir.Table(name); dirTable != nil && dirTable.UnsupportedDDL {
 		expectedCreate = dirTable.GeneratedCreateStatement()
-		actualCreate = dirTable.CreateStatement()
-	} else if instTable, err := t.SchemaFromInstance.Table(name); err == nil && instTable != nil && instTable.UnsupportedDDL {
+		actualCreate = dirTable.CreateStatement
+	} else if instTable := t.SchemaFromInstance.Table(name); instTable != nil && instTable.UnsupportedDDL {
 		expectedCreate = instTable.GeneratedCreateStatement()
-		actualCreate = instTable.CreateStatement()
-	} else if dirTable != nil && instTable != nil && dirTable.CreateStatement() != instTable.CreateStatement() {
-		expectedCreate = dirTable.CreateStatement()
-		actualCreate = instTable.CreateStatement()
+		actualCreate = instTable.CreateStatement
+	} else if dirTable != nil && instTable != nil && dirTable.CreateStatement != instTable.CreateStatement {
+		expectedCreate = dirTable.CreateStatement
+		actualCreate = instTable.CreateStatement
 	} else {
 		return
 	}

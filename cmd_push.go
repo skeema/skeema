@@ -155,12 +155,9 @@ func pushWorker(sps *sharedPushState) {
 				log.Debug(warning)
 			}
 
-			diff, err := tengo.NewSchemaDiff(t.SchemaFromInstance, t.SchemaFromDir)
-			if err != nil {
-				sps.setFatalError(err)
-				return
-			}
+			diff := tengo.NewSchemaDiff(t.SchemaFromInstance, t.SchemaFromDir)
 			var targetStmtCount int
+			var err error
 
 			if diff.SchemaDDL != "" {
 				sps.syncPrintf(t.Instance, "", "%s;\n", diff.SchemaDDL)
@@ -173,7 +170,7 @@ func pushWorker(sps *sharedPushState) {
 							return
 						}
 					} else if strings.HasPrefix(diff.SchemaDDL, "ALTER DATABASE") {
-						err = t.Instance.AlterSchema(t.SchemaFromInstance, t.SchemaFromDir.CharSet, t.SchemaFromDir.Collation)
+						err := t.Instance.AlterSchema(t.SchemaFromInstance.Name, t.SchemaFromDir.CharSet, t.SchemaFromDir.Collation)
 						if err != nil {
 							sps.setFatalError(fmt.Errorf("Unable to alter defaults for schema %s on %s: %s", t.SchemaFromInstance.Name, t.Instance, err))
 							return

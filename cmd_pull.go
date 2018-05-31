@@ -59,39 +59,36 @@ func PullHandler(cfg *mybase.Config) error {
 			continue
 		}
 
-		diff, err := tengo.NewSchemaDiff(t.SchemaFromDir, t.SchemaFromInstance)
-		if err != nil {
-			return err
-		}
+		diff := tengo.NewSchemaDiff(t.SchemaFromDir, t.SchemaFromInstance)
 
 		// Handle changes in schema's default character set and/or collation by
-		// persisting changes to the dir's option file. Errors here are just surfaced
-		// as warnings.
+		// persisting changes to the dir's option file. File operation errors here
+		// are just surfaced as warnings.
 		if diff.SchemaDDL != "" {
+			instCharSet, instCollation, err := t.Instance.DefaultCharSetAndCollation()
+			if err != nil {
+				return err
+			}
 			optionFile, err := t.Dir.OptionFile()
 			if err != nil {
 				log.Warnf("Unable to update character set and/or collation for %s/.skeema: %s", t.Dir, err)
 			} else if optionFile == nil {
 				log.Warnf("Unable to update character set and/or collation for %s/.skeema: cannot read file", t.Dir)
 			} else {
-				if overridesCharSet, overridesCollation, err := t.SchemaFromInstance.OverridesServerCharSet(); err == nil {
-					if overridesCharSet {
-						optionFile.SetOptionValue("", "default-character-set", t.SchemaFromInstance.CharSet)
-					} else {
-						optionFile.UnsetOptionValue("", "default-character-set")
-					}
-					if overridesCollation {
-						optionFile.SetOptionValue("", "default-collation", t.SchemaFromInstance.Collation)
-					} else {
-						optionFile.UnsetOptionValue("", "default-collation")
-					}
-					if err = optionFile.Write(true); err != nil {
-						log.Warnf("Unable to update character set and/or collation for %s: %s", optionFile.Path(), err)
-					} else {
-						log.Infof("Wrote %s -- updated schema-level default-character-set and default-collation", optionFile.Path())
-					}
+				if instCharSet != t.SchemaFromInstance.CharSet {
+					optionFile.SetOptionValue("", "default-character-set", t.SchemaFromInstance.CharSet)
 				} else {
+					optionFile.UnsetOptionValue("", "default-character-set")
+				}
+				if instCollation != t.SchemaFromInstance.Collation {
+					optionFile.SetOptionValue("", "default-collation", t.SchemaFromInstance.Collation)
+				} else {
+					optionFile.UnsetOptionValue("", "default-collation")
+				}
+				if err = optionFile.Write(true); err != nil {
 					log.Warnf("Unable to update character set and/or collation for %s: %s", optionFile.Path(), err)
+				} else {
+					log.Infof("Wrote %s -- updated schema-level default-character-set and default-collation", optionFile.Path())
 				}
 			}
 		}
@@ -165,7 +162,7 @@ func PullHandler(cfg *mybase.Config) error {
 					continue
 				}
 				table := td.Table
-				createStmt, err := t.Instance.ShowCreateTable(t.SchemaFromInstance, table)
+				createStmt, err := t.Instance.ShowCreateTable(t.SchemaFromInstance.Name, table.Name)
 				if err != nil {
 					return err
 				}
@@ -190,7 +187,7 @@ func PullHandler(cfg *mybase.Config) error {
 		// updated. Handle same as AlterTable case, since created/dropped tables don't
 		// ever end up in UnsupportedTables since they don't do a diff operation.
 		for _, table := range diff.UnsupportedTables {
-			createStmt := table.CreateStatement()
+			createStmt := table.CreateStatement
 			if table.HasAutoIncrement() && !t.Dir.Config.GetBool("include-auto-inc") {
 				createStmt, _ = tengo.ParseCreateAutoInc(createStmt)
 			}
@@ -222,8 +219,8 @@ func PullHandler(cfg *mybase.Config) error {
 				for _, warning := range sf.Warnings {
 					log.Debug(warning)
 				}
-				if table.CreateStatement() != sf.Contents {
-					sf.Contents = table.CreateStatement()
+				if table.CreateStatement != sf.Contents {
+					sf.Contents = table.CreateStatement
 					var length int
 					if length, err = sf.Write(); err != nil {
 						return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
@@ -261,6 +258,11 @@ func findNewSchemas(dir *Dir) error {
 		if err != nil {
 			return err
 		}
+		instCharSet, instCollation, err := instance.DefaultCharSetAndCollation()
+		if err != nil {
+			return err
+		}
+
 		subdirHasSchema := make(map[string]bool)
 		for _, subdir := range subdirs {
 			// We only want to evaluate subdirs that explicitly define the schema option
@@ -299,7 +301,7 @@ func findNewSchemas(dir *Dir) error {
 			for _, s := range schemas {
 				if !subdirHasSchema[s.Name] {
 					// use same logic from init command
-					if err := PopulateSchemaDir(s, dir, true); err != nil {
+					if err := PopulateSchemaDir(s, dir, true, instCharSet != s.CharSet, instCollation != s.Collation); err != nil {
 						return err
 					}
 				}

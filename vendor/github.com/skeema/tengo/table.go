@@ -18,8 +18,8 @@ type Table struct {
 	SecondaryIndexes  []*Index
 	Comment           string
 	NextAutoIncrement uint64
-	UnsupportedDDL    bool // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
-	createStatement   string
+	UnsupportedDDL    bool   // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
+	CreateStatement   string // complete SHOW CREATE TABLE obtained from an instance
 }
 
 // AlterStatement returns the prefix to a SQL "ALTER TABLE" statement.
@@ -30,18 +30,6 @@ func (t *Table) AlterStatement() string {
 // DropStatement returns a SQL statement that, if run, would drop this table.
 func (t *Table) DropStatement() string {
 	return fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(t.Name))
-}
-
-// CreateStatement returns a SQL statement that, if run, would create this
-// table. This returns the actual SHOW CREATE TABLE output previously obtained
-// from the database upon creating the tengo.Table (e.g. from Schema.Tables).
-// If that output has not previously been obtained, this method panics, as it
-// is indicative of programmer error.
-func (t *Table) CreateStatement() string {
-	if t.createStatement == "" {
-		panic(fmt.Errorf("Table.CreateStatement(): No pre-cached SHOW CREATE TABLE available for %s", t.Name))
-	}
-	return t.createStatement
 }
 
 // GeneratedCreateStatement generates a CREATE TABLE statement based on the
@@ -130,7 +118,7 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// If both tables have same output for SHOW CREATE TABLE, we know they're the same.
 	// We do this check prior to the UnsupportedDDL check so that we only emit the
 	// warning if the tables actually changed.
-	if from.createStatement != "" && from.createStatement == to.createStatement {
+	if from.CreateStatement != "" && from.CreateStatement == to.CreateStatement {
 		return []TableAlterClause{}, true
 	}
 

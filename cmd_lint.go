@@ -68,8 +68,7 @@ func LintHandler(cfg *mybase.Config) error {
 		if err != nil {
 			return err
 		}
-		tables, _ := t.SchemaFromDir.Tables() // can ignore error since table list already guaranteed to be cached
-		for _, table := range tables {
+		for _, table := range t.SchemaFromDir.Tables {
 			if ignoreTable != nil && ignoreTable.MatchString(table.Name) {
 				log.Warnf("Skipping table %s because ignore-table='%s'", table.Name, ignoreTable)
 				continue
@@ -84,8 +83,8 @@ func LintHandler(cfg *mybase.Config) error {
 			for _, warning := range sf.Warnings {
 				log.Debug(warning)
 			}
-			if table.CreateStatement() != sf.Contents {
-				sf.Contents = table.CreateStatement()
+			if table.CreateStatement != sf.Contents {
+				sf.Contents = table.CreateStatement
 				var length int
 				if length, err = sf.Write(); err != nil {
 					return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)

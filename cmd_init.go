@@ -96,7 +96,9 @@ func InitHandler(cfg *mybase.Config) error {
 	// Build list of schemas
 	var schemas []*tengo.Schema
 	if onlySchema != "" {
-		if !inst.HasSchema(onlySchema) {
+		if has, err := inst.HasSchema(onlySchema); err != nil {
+			return err
+		} else if !has {
 			return NewExitValue(CodeBadConfig, "Schema %s does not exist on instance %s", onlySchema, inst)
 		}
 		s, err := inst.Schema(onlySchema)
@@ -110,6 +112,12 @@ func InitHandler(cfg *mybase.Config) error {
 		if err != nil {
 			return NewExitValue(CodeFatalError, "Cannot examine schemas on %s: %s", inst, err)
 		}
+	}
+
+	// Look up server charset and collation, so that we know which schemas override
+	instCharSet, instCollation, err := inst.DefaultCharSetAndCollation()
+	if err != nil {
+		return err
 	}
 
 	// Figure out what needs to go in the hostDir's .skeema file.
@@ -133,13 +141,11 @@ func InitHandler(cfg *mybase.Config) error {
 		// schema name is placed outside of any named section/environment since the
 		// default assumption is that schema names match between environments
 		hostOptionFile.SetOptionValue("", "schema", onlySchema)
-		if overridesCharSet, overridesCollation, err := schemas[0].OverridesServerCharSet(); err == nil {
-			if overridesCharSet {
-				hostOptionFile.SetOptionValue("", "default-character-set", schemas[0].CharSet)
-			}
-			if overridesCollation {
-				hostOptionFile.SetOptionValue("", "default-collation", schemas[0].Collation)
-			}
+		if instCharSet != schemas[0].CharSet {
+			hostOptionFile.SetOptionValue("", "default-character-set", schemas[0].CharSet)
+		}
+		if instCollation != schemas[0].Collation {
+			hostOptionFile.SetOptionValue("", "default-collation", schemas[0].Collation)
 		}
 	}
 
@@ -160,7 +166,7 @@ func InitHandler(cfg *mybase.Config) error {
 
 	// Iterate over the schemas. For each one, create a dir with .skeema and *.sql files
 	for _, s := range schemas {
-		if err := PopulateSchemaDir(s, hostDir, separateSchemaSubdir); err != nil {
+		if err := PopulateSchemaDir(s, hostDir, separateSchemaSubdir, instCharSet != s.CharSet, instCollation != s.Collation); err != nil {
 			return err
 		}
 	}
@@ -174,7 +180,7 @@ func InitHandler(cfg *mybase.Config) error {
 // *.sql files will be put in parentDir, and it will be the caller's
 // responsibility to ensure its .skeema option file exists and maps to the
 // correct schema name.
-func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
+func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir, includeCharSet, includeCollation bool) error {
 	// Ignore any attempt to populate a dir for the temp schema
 	if s.Name == parentDir.Config.Get("temp-schema") {
 		return nil
@@ -195,13 +201,11 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 		// names match between environments.
 		optionFile := mybase.NewFile(".skeema")
 		optionFile.SetOptionValue("", "schema", s.Name)
-		if overridesCharSet, overridesCollation, err := s.OverridesServerCharSet(); err == nil {
-			if overridesCharSet {
-				optionFile.SetOptionValue("", "default-character-set", s.CharSet)
-			}
-			if overridesCollation {
-				optionFile.SetOptionValue("", "default-collation", s.Collation)
-			}
+		if includeCharSet {
+			optionFile.SetOptionValue("", "default-character-set", s.CharSet)
+		}
+		if includeCollation {
+			optionFile.SetOptionValue("", "default-collation", s.Collation)
 		}
 		if schemaDir, err = parentDir.CreateSubdir(s.Name, optionFile); err != nil {
 			return NewExitValue(CodeCantCreate, "Unable to use directory %s for schema %s: %s", path.Join(parentDir.Path, s.Name), s.Name, err)
@@ -216,20 +220,16 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 	}
 
 	log.Infof("Populating %s", schemaDir.Path)
-	tables, err := s.Tables()
-	if err != nil {
-		return fmt.Errorf("Cannot obtain table information for %s: %s", s.Name, err)
-	}
 	ignoreTable, err := parentDir.Config.GetRegexp("ignore-table")
 	if err != nil {
 		return err
 	}
-	for _, t := range tables {
+	for _, t := range s.Tables {
 		if ignoreTable != nil && ignoreTable.MatchString(t.Name) {
 			log.Warnf("Skipping table %s because ignore-table matched %s", t.Name, ignoreTable)
 			continue
 		}
-		createStmt := t.CreateStatement()
+		createStmt := t.CreateStatement
 
 		// Special handling for auto-increment tables: strip next-auto-inc value,
 		// unless user specifically wants to keep it in .sql file

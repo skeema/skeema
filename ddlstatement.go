@@ -205,9 +205,9 @@ func (ddl *DDLStatement) setErr(err error) {
 // the target. If the table has no rows, this method always returns a size of 0,
 // even though information_schema normally indicates at least 16kb in this case.
 func (ddl *DDLStatement) getTableSize(target *Target, table *tengo.Table) (int64, error) {
-	hasRows, err := target.Instance.TableHasRows(target.SchemaFromInstance, table)
+	hasRows, err := target.Instance.TableHasRows(target.SchemaFromInstance.Name, table.Name)
 	if !hasRows || err != nil {
 		return 0, err
 	}
-	return target.Instance.TableSize(target.SchemaFromInstance, table)
+	return target.Instance.TableSize(target.SchemaFromInstance.Name, table.Name)
 }

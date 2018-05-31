@@ -303,7 +303,7 @@ func (s *SkeemaIntegrationSuite) objectExists(schemaName, tableName, columnName 
 		return false, phrase, fmt.Errorf("Unable to obtain %s: %s", phrase, err)
 	}
 
-	table, err := schema.Table(tableName)
+	table := schema.Table(tableName)
 	if columnName == "" {
 		return table != nil, phrase, err
 	} else if err != nil {
@@ -349,11 +349,6 @@ func (s *SkeemaIntegrationSuite) dbExec(t *testing.T, schemaName, query string, 
 	_, err = db.Exec(query, args...)
 	if err != nil {
 		t.Fatalf("Error running query on DockerizedInstance.\nSchema: %s\nQuery: %s\nError: %s", schemaName, query, err)
-	}
-	if schemaName != "" {
-		if schema, err := s.d.Schema(schemaName); err == nil {
-			schema.PurgeTableCache()
-		}
 	}
 }
 

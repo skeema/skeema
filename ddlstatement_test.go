@@ -39,10 +39,7 @@ func (s *SkeemaIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 			break
 		}
 	}
-	sd, err := tengo.NewSchemaDiff(target.SchemaFromInstance, target.SchemaFromDir)
-	if err != nil {
-		t.Fatalf("Unexpected error from tengo.NewSchemaDiff: %s", err)
-	}
+	sd := tengo.NewSchemaDiff(target.SchemaFromInstance, target.SchemaFromDir)
 	if len(sd.TableDiffs) != 4 {
 		// modifications in ddlstatement.sql should have yielded 4 diffs: one drop
 		// table, one create table, and two alter tables (one to a table with rows

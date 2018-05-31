@@ -234,12 +234,12 @@ func (di *DockerizedInstance) Destroy() error {
 // mysql-server, making it useful as a per-test cleanup method in
 // implementations of IntegrationTestSuite.BeforeTest.
 func (di *DockerizedInstance) NukeData() error {
-	schemas, err := di.Instance.Schemas()
+	schemas, err := di.Instance.SchemaNames()
 	if err != nil {
 		return err
 	}
-	for _, s := range schemas {
-		if err := di.DropSchema(s, false); err != nil {
+	for _, schema := range schemas {
+		if err := di.DropSchema(schema, false); err != nil {
 			return err
 		}
 	}
@@ -275,7 +275,6 @@ func (di *DockerizedInstance) SourceSQL(filePath string) (string, error) {
 	if err = di.DockerClient.StartExec(exec.ID, startOpts); err != nil {
 		return "", err
 	}
-	di.purgeSchemaCache()
 	stdoutStr := stdout.String()
 	stderrStr := strings.Replace(stderr.String(), "Warning: Using a password on the command line interface can be insecure.\n", "", 1)
 	if strings.Contains(stderrStr, "ERROR") {
