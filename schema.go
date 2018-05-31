@@ -1,7 +1,6 @@
 package tengo
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -85,27 +84,4 @@ func (s *Schema) AlterStatement(charSet, collation string) string {
 		return ""
 	}
 	return fmt.Sprintf("ALTER DATABASE %s%s%s", EscapeIdentifier(s.Name), charSetClause, collateClause)
-}
-
-// OverridesServerCharSet checks if the schema's default character set and
-// collation differ from an instance's server-level default character set
-// and collation. The first return value will be true if the schema's charset
-// differs from the instance's; the second return value will be true if the
-// schema's collation differs from the instance's.
-func (s *Schema) OverridesServerCharSet(instance *Instance) (overridesCharSet bool, overridesCollation bool, err error) {
-	if s == nil {
-		return false, false, errors.New("Attempted to check character set and collation on a nil schema")
-	}
-
-	serverCharSet, serverCollation, err := instance.DefaultCharSetAndCollation()
-	if err != nil {
-		return false, false, err
-	}
-	if serverCharSet != s.CharSet {
-		// Different charset also inherently means different collation
-		return true, true, nil
-	} else if serverCollation != s.Collation {
-		return false, true, nil
-	}
-	return false, false, nil
 }
