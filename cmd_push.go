@@ -164,7 +164,7 @@ func pushWorker(sps *sharedPushState) {
 				targetStmtCount++
 				if !sps.dryRun {
 					if strings.HasPrefix(diff.SchemaDDL, "CREATE DATABASE") && t.SchemaFromInstance == nil {
-						t.SchemaFromInstance, err = t.Instance.CreateSchema(schemaName, t.SchemaFromDir.CharSet, t.SchemaFromDir.Collation)
+						_, err = t.Instance.CreateSchema(schemaName, t.SchemaFromDir.CharSet, t.SchemaFromDir.Collation)
 						if err != nil {
 							sps.setFatalError(fmt.Errorf("Error creating schema %s on %s: %s", schemaName, t.Instance, err))
 							return

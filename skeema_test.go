@@ -290,6 +290,8 @@ func (s *SkeemaIntegrationSuite) objectExists(schemaName, tableName, columnName 
 	}
 	if tableName == "" && columnName == "" {
 		phrase = fmt.Sprintf("schema %s", schemaName)
+		has, err := s.d.HasSchema(schemaName)
+		return has, phrase, err
 	} else if columnName == "" {
 		phrase = fmt.Sprintf("table %s.%s", schemaName, tableName)
 	} else {
@@ -297,12 +299,9 @@ func (s *SkeemaIntegrationSuite) objectExists(schemaName, tableName, columnName 
 	}
 
 	schema, err := s.d.Schema(schemaName)
-	if tableName == "" && columnName == "" {
-		return schema != nil, phrase, err
-	} else if err != nil {
+	if err != nil {
 		return false, phrase, fmt.Errorf("Unable to obtain %s: %s", phrase, err)
 	}
-
 	table := schema.Table(tableName)
 	if columnName == "" {
 		return table != nil, phrase, err

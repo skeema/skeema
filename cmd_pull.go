@@ -294,12 +294,16 @@ func findNewSchemas(dir *Dir) error {
 			} else if inst == nil {
 				return fmt.Errorf("Unable to obtain instance for %s", dir)
 			}
-			schemas, err := inst.Schemas()
+			schemaNames, err := inst.SchemaNames()
 			if err != nil {
 				return err
 			}
-			for _, s := range schemas {
-				if !subdirHasSchema[s.Name] {
+			for _, name := range schemaNames {
+				if !subdirHasSchema[name] {
+					s, err := inst.Schema(name)
+					if err != nil {
+						return err
+					}
 					// use same logic from init command
 					if err := PopulateSchemaDir(s, dir, true, instCharSet != s.CharSet, instCollation != s.Collation); err != nil {
 						return err

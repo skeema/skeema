@@ -274,13 +274,9 @@ func (dir *Dir) SchemaNames(instance *tengo.Instance) ([]string, error) {
 
 	if schemaValue == "*" {
 		// This automatically already filters out information_schema, performance_schema, sys, test, mysql
-		schemasByName, err := instance.SchemasByName()
+		schemaNames, err := instance.SchemaNames()
 		if err != nil {
 			return nil, err
-		}
-		schemaNames := make([]string, 0, len(schemasByName))
-		for name := range schemasByName {
-			schemaNames = append(schemaNames, name)
 		}
 		// Schema name list must be sorted so that generateTargetsForDir with
 		// firstOnly==true consistently grabs the alphabetically first schema

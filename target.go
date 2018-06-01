@@ -146,13 +146,14 @@ func generateTargetsForDir(dir *Dir, targetsByInstance TargetGroupMap, firstOnly
 				targetsByInstance.AddInstanceError(inst, dir, err)
 				continue
 			}
-			schemasByName, err := inst.SchemasByName()
+			if len(schemaNames) > 1 && firstOnly {
+				schemaNames = schemaNames[0:1]
+			}
+
+			schemasByName, err := inst.SchemasByName(schemaNames...)
 			if err != nil {
 				targetsByInstance.AddInstanceError(inst, dir, err)
 				continue
-			}
-			if len(schemaNames) > 1 && firstOnly {
-				schemaNames = schemaNames[0:1]
 			}
 			for _, schemaName := range schemaNames {
 				// Copy the template into a new Target. Using inst, set its Instance and
@@ -213,6 +214,12 @@ func generateTargetsForDir(dir *Dir, targetsByInstance TargetGroupMap, firstOnly
 // bring a table from the version in SchemaFromInstance to the version in
 // SchemaFromDir.
 func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
+	// If the schema is being newly created on the instance, we know there are
+	// no alters and therefore nothing to verify
+	if t.SchemaFromInstance == nil {
+		return nil
+	}
+
 	// Populate the temp schema with a copy of the tables from SchemaFromInstance,
 	// the "before" state of the tables
 	tempSchemaName := t.Dir.Config.Get("temp-schema")

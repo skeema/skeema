@@ -94,24 +94,16 @@ func InitHandler(cfg *mybase.Config) error {
 	}
 
 	// Build list of schemas
-	var schemas []*tengo.Schema
+	schemaNameFilter := []string{}
 	if onlySchema != "" {
-		if has, err := inst.HasSchema(onlySchema); err != nil {
-			return err
-		} else if !has {
-			return NewExitValue(CodeBadConfig, "Schema %s does not exist on instance %s", onlySchema, inst)
-		}
-		s, err := inst.Schema(onlySchema)
-		if err != nil {
-			return NewExitValue(CodeFatalError, "Cannot examine schema %s: %s", onlySchema, err)
-		}
-		schemas = []*tengo.Schema{s}
-	} else {
-		var err error
-		schemas, err = inst.Schemas()
-		if err != nil {
-			return NewExitValue(CodeFatalError, "Cannot examine schemas on %s: %s", inst, err)
-		}
+		schemaNameFilter = []string{onlySchema}
+	}
+	schemas, err := inst.Schemas(schemaNameFilter...)
+	if err != nil {
+		return NewExitValue(CodeFatalError, "Cannot examine schemas on %s: %s", inst, err)
+	}
+	if onlySchema != "" && len(schemas) == 0 {
+		return NewExitValue(CodeBadConfig, "Schema %s does not exist on instance %s", onlySchema, inst)
 	}
 
 	// Look up server charset and collation, so that we know which schemas override
