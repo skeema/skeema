@@ -182,6 +182,20 @@ func (s TengoIntegrationSuite) TestInstanceSchemas(t *testing.T) {
 		}
 	}
 
+	// Test SchemasByName with args
+	byName, err = s.d.SchemasByName("testcharset", "doesnt_exist", "testcharcoll")
+	if err != nil {
+		t.Errorf("SchemasByName returned error: %s", err)
+	}
+	if len(byName) != 2 {
+		t.Errorf("SchemasByName returned wrong number of results; expected 2, found %d", len(byName))
+	}
+	for name, schema := range byName {
+		if name != schema.Name || (name != "testcharset" && name != "testcharcoll") {
+			t.Errorf("SchemasByName returned mismatching schema: key=%s, name=%s", name, schema.Name)
+		}
+	}
+
 	// Test negative responses
 	if has, err := s.d.HasSchema("doesnt_exist"); has || err != nil {
 		t.Error("HasSchema(doesnt_exist) unexpectedly returning true")

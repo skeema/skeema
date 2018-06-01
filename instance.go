@@ -164,8 +164,11 @@ func (instance *Instance) SchemaNames() ([]string, error) {
 	return result, nil
 }
 
-// Schemas returns a slice of all schemas on the instance visible to the user.
-func (instance *Instance) Schemas() ([]*Schema, error) {
+// Schemas returns a slice of schemas on the instance visible to the user. If
+// called with no args, all non-system schemas will be returned. Or pass one or
+// more schema names as args to filter the result to just those schemas.
+// Note that the ordering of the resulting slice is not guaranteed.
+func (instance *Instance) Schemas(onlyNames ...string) ([]*Schema, error) {
 	db, err := instance.Connect("information_schema", "")
 	if err != nil {
 		return nil, err
@@ -175,11 +178,23 @@ func (instance *Instance) Schemas() ([]*Schema, error) {
 		CharSet   string `db:"default_character_set_name"`
 		Collation string `db:"default_collation_name"`
 	}
-	query := `
-		SELECT schema_name, default_character_set_name, default_collation_name
-		FROM   schemata
-		WHERE  schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'test', 'sys')`
-	if err := db.Select(&rawSchemas, query); err != nil {
+
+	var args []interface{}
+	var query string
+
+	if len(onlyNames) == 0 {
+		query = `
+			SELECT schema_name, default_character_set_name, default_collation_name
+			FROM   schemata
+			WHERE  schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'test', 'sys')`
+	} else {
+		query = `
+			SELECT schema_name, default_character_set_name, default_collation_name
+			FROM   schemata
+			WHERE  schema_name IN (?)`
+		query, args, err = sqlx.In(query, onlyNames)
+	}
+	if err := db.Select(&rawSchemas, query, args...); err != nil {
 		return nil, err
 	}
 
@@ -199,10 +214,11 @@ func (instance *Instance) Schemas() ([]*Schema, error) {
 	return schemas, nil
 }
 
-// SchemasByName returns a map of schema name string to *Schema, for all schemas
-// that exist on the instance.
-func (instance *Instance) SchemasByName() (map[string]*Schema, error) {
-	schemas, err := instance.Schemas()
+// SchemasByName returns a map of schema name string to *Schema.  If
+// called with no args, all non-system schemas will be returned. Or pass one or
+// more schema names as args to filter the result to just those schemas.
+func (instance *Instance) SchemasByName(onlyNames ...string) (map[string]*Schema, error) {
+	schemas, err := instance.Schemas(onlyNames...)
 	if err != nil {
 		return nil, err
 	}
@@ -216,32 +232,13 @@ func (instance *Instance) SchemasByName() (map[string]*Schema, error) {
 // Schema returns a single schema by name. If the schema does not exist, nil
 // will be returned along with a sql.ErrNoRows error.
 func (instance *Instance) Schema(name string) (*Schema, error) {
-	db, err := instance.Connect("information_schema", "")
+	schemas, err := instance.Schemas(name)
 	if err != nil {
 		return nil, err
+	} else if len(schemas) == 0 {
+		return nil, sql.ErrNoRows
 	}
-	var rawSchema struct {
-		Name      string `db:"schema_name"`
-		CharSet   string `db:"default_character_set_name"`
-		Collation string `db:"default_collation_name"`
-	}
-	query := `
-		SELECT schema_name, default_character_set_name, default_collation_name
-		FROM   schemata
-		WHERE  schema_name = ?`
-	if err := db.Get(&rawSchema, query, name); err != nil {
-		return nil, err
-	}
-	tables, err := instance.querySchemaTables(name)
-	if err != nil {
-		return nil, err
-	}
-	return &Schema{
-		Name:      rawSchema.Name,
-		CharSet:   rawSchema.CharSet,
-		Collation: rawSchema.Collation,
-		Tables:    tables,
-	}, nil
+	return schemas[0], nil
 }
 
 // HasSchema returns true if this instance has a schema with the supplied name
@@ -334,16 +331,32 @@ func (instance *Instance) CreateSchema(name, charSet, collation string) (*Schema
 	if err != nil {
 		return nil, err
 	}
-	schema := Schema{
+	// Technically the server defaults would be used anyway if these are left
+	// blank, but we need the returned Schema value to reflect the correct values,
+	// and we can avoid re-querying this way
+	if charSet == "" || collation == "" {
+		defCharSet, defCollation, err := instance.DefaultCharSetAndCollation()
+		if err != nil {
+			return nil, err
+		}
+		if charSet == "" {
+			charSet = defCharSet
+		}
+		if collation == "" {
+			collation = defCollation
+		}
+	}
+	schema := &Schema{
 		Name:      name,
 		CharSet:   charSet,
 		Collation: collation,
+		Tables:    []*Table{},
 	}
 	_, err = db.Exec(schema.CreateStatement())
 	if err != nil {
 		return nil, err
 	}
-	return instance.Schema(name)
+	return schema, nil
 }
 
 // DropSchema first drops all tables in the schema, and then drops the database
@@ -355,9 +368,11 @@ func (instance *Instance) DropSchema(schema string, onlyIfEmpty bool) error {
 		return err
 	}
 
-	s, err := instance.Schema(schema)
-	if err != nil {
-		return err
+	// No need to actually obtain the fully hydrated schema value; we already know
+	// it has no tables after the call above, and the schema's name alone is
+	// sufficient to call Schema.DropStatement() to generate the necessary SQL
+	s := &Schema{
+		Name: schema,
 	}
 	db, err := instance.Connect("", "")
 	if err != nil {
