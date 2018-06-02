@@ -202,7 +202,7 @@ func pushWorker(sps *sharedPushState) {
 				sps.setFatalError(NewExitValue(CodeBadConfig, err.Error()))
 				return
 			}
-			ignoreTable, err := t.Dir.Config.GetRegexp("ignore-table")
+			mods.IgnoreTable, err = t.Dir.Config.GetRegexp("ignore-table")
 			if err != nil {
 				sps.setFatalError(NewExitValue(CodeBadConfig, err.Error()))
 				return
@@ -210,23 +210,7 @@ func pushWorker(sps *sharedPushState) {
 			for n, tableDiff := range diff.TableDiffs {
 				ddl := NewDDLStatement(tableDiff, mods, t)
 				if ddl == nil {
-					// skip blank DDL (which may happen due to NextAutoInc modifier)
-					continue
-				}
-				tableName := ""
-				switch td := tableDiff.(type) {
-				case tengo.CreateTable:
-					tableName = td.Table.Name
-				case tengo.DropTable:
-					tableName = td.Table.Name
-				case tengo.AlterTable:
-					tableName = td.Table.Name
-				default:
-					sps.setFatalError(fmt.Errorf("Unsupported diff type %T", td))
-					return
-				}
-				if ignoreTable != nil && ignoreTable.MatchString(tableName) {
-					log.Warnf("Skipping table %s because ignore-table='%s'", tableName, ignoreTable)
+					// skip blank DDL (due to mods.NextAutoInc, mods.IgnoreTable, etc)
 					continue
 				}
 				targetStmtCount++

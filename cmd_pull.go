@@ -105,29 +105,18 @@ func PullHandler(cfg *mybase.Config) error {
 		} else {
 			mods.NextAutoInc = tengo.NextAutoIncIfAlready
 		}
-		ignoreTable, err := t.Dir.Config.GetRegexp("ignore-table")
+		mods.IgnoreTable, err = t.Dir.Config.GetRegexp("ignore-table")
 		if err != nil {
 			return err
 		}
 		for _, td := range diff.TableDiffs {
-			tableName := ""
-			switch td := td.(type) {
-			case tengo.CreateTable:
-				tableName = td.Table.Name
-			case tengo.DropTable:
-				tableName = td.Table.Name
-			case tengo.AlterTable:
-				tableName = td.Table.Name
-			default:
-				return fmt.Errorf("Unsupported diff type %T", td)
-			}
-			if ignoreTable != nil && ignoreTable.MatchString(tableName) {
-				log.Warnf("Skipping table %s because ignore-table='%s'", tableName, ignoreTable)
-				continue
-			}
 			stmt, err := td.Statement(mods)
 			if err != nil {
 				return err
+			}
+			// skip if mods caused the diff to be a no-op
+			if stmt == "" {
+				continue
 			}
 			switch td := td.(type) {
 			case tengo.CreateTable:
@@ -157,10 +146,6 @@ func PullHandler(cfg *mybase.Config) error {
 				}
 				log.Infof("Deleted %s -- table no longer exists", sf.Path())
 			case tengo.AlterTable:
-				// skip if mods caused the diff to be a no-op
-				if stmt == "" {
-					continue
-				}
 				table := td.Table
 				createStmt, err := t.Instance.ShowCreateTable(t.SchemaFromInstance.Name, table.Name)
 				if err != nil {
