@@ -47,6 +47,7 @@ type StatementModifiers struct {
 	AllowUnsafe     bool            // Whether to allow potentially-destructive DDL (drop table, drop column, modify col type, etc)
 	LockClause      string          // Include a LOCK=[value] clause in generated ALTER TABLE
 	AlgorithmClause string          // Include an ALGORITHM=[value] clause in generated ALTER TABLE
+	IgnoreTable     *regexp.Regexp  // Generate blank DDL if table name matches this regexp
 }
 
 // TableDiff interface represents a difference between two tables. Structs
@@ -173,6 +174,9 @@ type CreateTable struct {
 
 // Statement returns a DDL statement containing CREATE TABLE.
 func (ct CreateTable) Statement(mods StatementModifiers) (string, error) {
+	if mods.IgnoreTable != nil && mods.IgnoreTable.MatchString(ct.Table.Name) {
+		return "", nil
+	}
 	stmt := ct.Table.CreateStatement
 	if ct.Table.HasAutoIncrement() && (mods.NextAutoInc == NextAutoIncIgnore || mods.NextAutoInc == NextAutoIncIfAlready) {
 		stmt, _ = ParseCreateAutoInc(stmt)
@@ -192,6 +196,9 @@ type DropTable struct {
 // forbid running the statement, *it will still be returned as-is* but err will
 // be non-nil. It is the caller's responsibility to handle appropriately.
 func (dt DropTable) Statement(mods StatementModifiers) (string, error) {
+	if mods.IgnoreTable != nil && mods.IgnoreTable.MatchString(dt.Table.Name) {
+		return "", nil
+	}
 	var err error
 	stmt := dt.Table.DropStatement()
 	if !mods.AllowUnsafe {
@@ -213,6 +220,9 @@ type AlterTable struct {
 // forbid running the statement, *it will still be returned as-is* but err will
 // be non-nil. It is the caller's responsibility to handle appropriately.
 func (at AlterTable) Statement(mods StatementModifiers) (string, error) {
+	if mods.IgnoreTable != nil && mods.IgnoreTable.MatchString(at.Table.Name) {
+		return "", nil
+	}
 	clauseStrings := make([]string, 0, len(at.Clauses))
 	var err error
 	for _, clause := range at.Clauses {

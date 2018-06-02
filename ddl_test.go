@@ -2,6 +2,7 @@ package tengo
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -379,6 +380,51 @@ func TestAlterTableStatementOnlineMods(t *testing.T) {
 	} else if err != nil {
 		t.Errorf("Expected no error from statement with no clauses present; instead found: %s", err)
 	}
+}
+
+func TestIgnoreTableMod(t *testing.T) {
+	table := anotherTable()
+	col := &Column{
+		Name:     "something",
+		TypeInDB: "smallint(5) unsigned",
+		Default:  ColumnDefaultNull,
+	}
+	addCol := AddColumn{
+		Table:  &table,
+		Column: col,
+	}
+	alter := AlterTable{
+		Table:   &table,
+		Clauses: []TableAlterClause{addCol},
+	}
+	create := CreateTable{
+		Table: &table,
+	}
+	drop := DropTable{
+		Table: &table,
+	}
+	assertStatement := func(re string, tableName string, expectNonemptyStatement bool) {
+		t.Helper()
+		mods := StatementModifiers{
+			AllowUnsafe: true,
+		}
+		if re != "" {
+			mods.IgnoreTable = regexp.MustCompile(re)
+		}
+		table.Name = tableName
+		if stmt, err := alter.Statement(mods); err != nil || (stmt == "") == expectNonemptyStatement {
+			t.Errorf("Unexpected result for alter: re=%s, table=%s, expectNonEmpty=%t, actual=%s, err=%s", re, tableName, expectNonemptyStatement, stmt, err)
+		}
+		if stmt, err := create.Statement(mods); err != nil || (stmt == "") == expectNonemptyStatement {
+			t.Errorf("Unexpected result for create: re=%s, table=%s, expectNonEmpty=%t, actual=%s, err=%s", re, tableName, expectNonemptyStatement, stmt, err)
+		}
+		if stmt, err := drop.Statement(mods); err != nil || (stmt == "") == expectNonemptyStatement {
+			t.Errorf("Unexpected result for drop: re=%s, table=%s, expectNonEmpty=%t, actual=%s, err=%s", re, tableName, expectNonemptyStatement, stmt, err)
+		}
+	}
+	assertStatement("", "testing", true)
+	assertStatement("^hello", "testing", true)
+	assertStatement("^test", "testing", false)
 }
 
 func TestModifyColumnUnsafe(t *testing.T) {
