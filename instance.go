@@ -705,31 +705,3 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 
 	return tables, nil
 }
-
-// baseDSN returns a DSN with the database (schema) name and params stripped.
-// Currently only supports MySQL, via go-sql-driver/mysql's DSN format.
-func baseDSN(dsn string) string {
-	tokens := strings.SplitAfter(dsn, "/")
-	return strings.Join(tokens[0:len(tokens)-1], "")
-}
-
-// paramMap builds a map representing all params in the DSN.
-// This does not rely on mysql.ParseDSN because that handles some vars
-// separately; i.e. mysql.Config's params field does NOT include all
-// params that are passed in!
-func paramMap(dsn string) map[string]string {
-	parts := strings.Split(dsn, "?")
-	if len(parts) == 1 {
-		return make(map[string]string)
-	}
-	params := parts[len(parts)-1]
-	values, _ := url.ParseQuery(params)
-
-	// Convert values, which is map[string][]string, to single-valued map[string]string
-	// i.e. if a param is present multiple times, we only keep the first value
-	result := make(map[string]string, len(values))
-	for key := range values {
-		result[key] = values.Get(key)
-	}
-	return result
-}

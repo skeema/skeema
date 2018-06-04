@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -62,4 +64,47 @@ func SplitHostOptionalPort(hostaddr string) (string, int, error) {
 	}
 
 	return host, port, nil
+}
+
+// ParseCreateAutoInc parses a CREATE TABLE statement, formatted in the same
+// manner as SHOW CREATE TABLE, and removes the table-level next-auto-increment
+// clause if present. The modified CREATE TABLE will be returned, along with
+// the next auto-increment value if one was found.
+func ParseCreateAutoInc(createStmt string) (string, uint64) {
+	reParseCreate := regexp.MustCompile(`[)] ENGINE=\w+ (AUTO_INCREMENT=(\d+) )DEFAULT CHARSET=`)
+	matches := reParseCreate.FindStringSubmatch(createStmt)
+	if matches == nil {
+		return createStmt, 0
+	}
+	nextAutoInc, _ := strconv.ParseUint(matches[2], 10, 64)
+	newStmt := strings.Replace(createStmt, matches[1], "", 1)
+	return newStmt, nextAutoInc
+}
+
+// baseDSN returns a DSN with the database (schema) name and params stripped.
+// Currently only supports MySQL, via go-sql-driver/mysql's DSN format.
+func baseDSN(dsn string) string {
+	tokens := strings.SplitAfter(dsn, "/")
+	return strings.Join(tokens[0:len(tokens)-1], "")
+}
+
+// paramMap builds a map representing all params in the DSN.
+// This does not rely on mysql.ParseDSN because that handles some vars
+// separately; i.e. mysql.Config's params field does NOT include all
+// params that are passed in!
+func paramMap(dsn string) map[string]string {
+	parts := strings.Split(dsn, "?")
+	if len(parts) == 1 {
+		return make(map[string]string)
+	}
+	params := parts[len(parts)-1]
+	values, _ := url.ParseQuery(params)
+
+	// Convert values, which is map[string][]string, to single-valued map[string]string
+	// i.e. if a param is present multiple times, we only keep the first value
+	result := make(map[string]string, len(values))
+	for key := range values {
+		result[key] = values.Get(key)
+	}
+	return result
 }
