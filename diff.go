@@ -4,10 +4,11 @@
 package tengo
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/pmezard/go-difflib/difflib"
 )
 
 // NextAutoIncMode enumerates various ways of handling AUTO_INCREMENT
@@ -34,31 +35,22 @@ type StatementModifiers struct {
 	IgnoreTable     *regexp.Regexp  // Generate blank DDL if table name matches this regexp
 }
 
-// TableDiff interface represents a difference between two tables. Structs
-// satisfying this interface can generate a DDL Statement prefix, such as ALTER
-// TABLE, CREATE TABLE, DROP TABLE, etc.
-type TableDiff interface {
-	Statement(StatementModifiers) (string, error)
-}
-
 // SchemaDiff stores a set of differences between two database schemas.
 type SchemaDiff struct {
-	FromSchema        *Schema
-	ToSchema          *Schema
-	SchemaDDL         string      // a single statement affecting the schema itself (CREATE DATABASE, ALTER DATABASE, or DROP DATABASE), or blank string if n/a
-	TableDiffs        []TableDiff // a set of statements that, if run, would turn FromSchema into ToSchema
-	SameTables        []*Table    // slice of tables that were identical between schemas
-	UnsupportedTables []*Table    // slice of tables that changed, but in ways not parsable by this version of tengo. Table is version from ToSchema.
+	FromSchema *Schema
+	ToSchema   *Schema
+	SchemaDDL  string       // a single statement affecting the schema itself (CREATE DATABASE, ALTER DATABASE, or DROP DATABASE), or blank string if n/a
+	TableDiffs []*TableDiff // a set of statements that, if run, would turn FromSchema into ToSchema
+	SameTables []*Table     // slice of tables that were identical between schemas
 }
 
 // NewSchemaDiff computes the set of differences between two database schemas.
 func NewSchemaDiff(from, to *Schema) *SchemaDiff {
 	result := &SchemaDiff{
-		FromSchema:        from,
-		ToSchema:          to,
-		TableDiffs:        make([]TableDiff, 0),
-		SameTables:        make([]*Table, 0),
-		UnsupportedTables: make([]*Table, 0),
+		FromSchema: from,
+		ToSchema:   to,
+		TableDiffs: make([]*TableDiff, 0),
+		SameTables: make([]*Table, 0),
 	}
 
 	if from == nil && to == nil {
@@ -78,7 +70,7 @@ func NewSchemaDiff(from, to *Schema) *SchemaDiff {
 		for n := range to.Tables {
 			newTable := to.Tables[n]
 			if _, existedBefore := fromTablesByName[newTable.Name]; !existedBefore {
-				result.TableDiffs = append(result.TableDiffs, CreateTable{Table: newTable})
+				result.TableDiffs = append(result.TableDiffs, NewCreateTable(newTable))
 			}
 		}
 	}
@@ -88,20 +80,14 @@ func NewSchemaDiff(from, to *Schema) *SchemaDiff {
 			origTable := from.Tables[n]
 			newTable, stillExists := toTablesByName[origTable.Name]
 			if stillExists {
-				clauses, supported := origTable.Diff(newTable)
-				if !supported {
-					result.UnsupportedTables = append(result.UnsupportedTables, newTable)
-				} else if len(clauses) > 0 {
-					alter := AlterTable{
-						Table:   origTable,
-						Clauses: clauses,
-					}
-					result.TableDiffs = append(result.TableDiffs, alter)
+				td := NewAlterTable(origTable, newTable)
+				if td != nil {
+					result.TableDiffs = append(result.TableDiffs, td)
 				} else {
 					result.SameTables = append(result.SameTables, newTable)
 				}
 			} else {
-				result.TableDiffs = append(result.TableDiffs, DropTable{Table: origTable})
+				result.TableDiffs = append(result.TableDiffs, NewDropTable(origTable))
 			}
 		}
 	}
@@ -119,6 +105,22 @@ func (sd *SchemaDiff) String() string {
 	return strings.Join(diffStatements, "")
 }
 
+// FilteredTableDiffs returns any TableDiffs of the specified type(s).
+func (sd *SchemaDiff) FilteredTableDiffs(onlyTypes ...TableDiffType) []*TableDiff {
+	result := make([]*TableDiff, 0, len(sd.TableDiffs))
+	for _, td := range sd.TableDiffs {
+		for _, typ := range onlyTypes {
+			if td.Type == typ {
+				result = append(result, td)
+				break
+			}
+		}
+	}
+	return result
+}
+
+///// Errors ///////////////////////////////////////////////////////////////////
+
 // ForbiddenDiffError can be returned by TableDiff.Statement when the supplied
 // statement modifiers do not permit the generated TableDiff to be used in this
 // situation.
@@ -132,76 +134,213 @@ func (e *ForbiddenDiffError) Error() string {
 	return e.Reason
 }
 
-// NewForbiddenDiffError is a constructor for ForbiddenDiffError.
-func NewForbiddenDiffError(reason, statement string) error {
-	return &ForbiddenDiffError{
-		Reason:    reason,
-		Statement: statement,
+// IsForbiddenDiff returns true if err represents an "unsafe" alteration that
+// has not explicitly been permitted by the supplied StatementModifiers.
+func IsForbiddenDiff(err error) bool {
+	_, ok := err.(*ForbiddenDiffError)
+	return ok
+}
+
+// UnsupportedDiffError can be returned by TableDiff.Statement if Tengo is
+// unable to transform the table due to use of unsupported features.
+type UnsupportedDiffError struct {
+	Name                string
+	ExpectedCreateTable string
+	ActualCreateTable   string
+}
+
+// Error satisfies the builtin error interface.
+func (e *UnsupportedDiffError) Error() string {
+	return fmt.Sprintf("Table %s uses unsupported features and cannot be diff'ed", e.Name)
+}
+
+// ExtendedError returns a string with more information about why the table is
+// not supported.
+func (e *UnsupportedDiffError) ExtendedError() string {
+	diff := difflib.UnifiedDiff{
+		A:        difflib.SplitLines(e.ExpectedCreateTable),
+		B:        difflib.SplitLines(e.ActualCreateTable),
+		FromFile: "Expected",
+		ToFile:   "MySQL-actual",
+		Context:  0,
+	}
+	diffText, err := difflib.GetUnifiedDiffString(diff)
+	if err != nil {
+		return err.Error()
+	}
+	return diffText
+}
+
+// IsUnsupportedDiff returns true if err represents a table that cannot be
+// diff'ed due to use of features not supported by this package.
+func IsUnsupportedDiff(err error) bool {
+	_, ok := err.(*UnsupportedDiffError)
+	return ok
+}
+
+///// TableDiff ////////////////////////////////////////////////////////////////
+
+// TableDiffType enumerates possible ways that tables differ.
+type TableDiffType int
+
+// Constants representing the types of diffs between tables.
+const (
+	TableDiffCreate TableDiffType = iota // CREATE TABLE
+	TableDiffAlter                       // ALTER TABLE
+	TableDiffDrop                        // DROP TABLE
+	TableDiffRename                      // RENAME TABLE
+)
+
+func (tdt TableDiffType) String() string {
+	switch tdt {
+	case TableDiffCreate:
+		return "CREATE"
+	case TableDiffAlter:
+		return "ALTER"
+	case TableDiffDrop:
+		return "DROP"
+	default: // TableDiffRename not supported yet
+		panic(fmt.Errorf("Unsupported diff type %d", tdt))
 	}
 }
 
-///// CreateTable //////////////////////////////////////////////////////////////
-
-// CreateTable represents a new table that only exists in the right-side ("to")
-// schema. It satisfies the TableDiff interface.
-type CreateTable struct {
-	Table *Table
+// TableDiff represents a difference between two tables.
+type TableDiff struct {
+	Type         TableDiffType
+	From         *Table
+	To           *Table
+	alterClauses []TableAlterClause
+	supported    bool
 }
 
-// Statement returns a DDL statement containing CREATE TABLE.
-func (ct CreateTable) Statement(mods StatementModifiers) (string, error) {
-	if mods.IgnoreTable != nil && mods.IgnoreTable.MatchString(ct.Table.Name) {
-		return "", nil
+// NewCreateTable returns a *TableDiff representing a CREATE TABLE statement,
+// i.e. a table that only exists in the "to" side schema in a diff.
+func NewCreateTable(table *Table) *TableDiff {
+	return &TableDiff{
+		Type:      TableDiffCreate,
+		To:        table,
+		supported: true,
 	}
-	stmt := ct.Table.CreateStatement
-	if ct.Table.HasAutoIncrement() && (mods.NextAutoInc == NextAutoIncIgnore || mods.NextAutoInc == NextAutoIncIfAlready) {
-		stmt, _ = ParseCreateAutoInc(stmt)
-	}
-	return stmt, nil
 }
 
-///// DropTable ////////////////////////////////////////////////////////////////
-
-// DropTable represents a table that only exists in the left-side ("from")
-// schema. It satisfies the TableDiff interface.
-type DropTable struct {
-	Table *Table
+// NewAlterTable returns a *TableDiff representing an ALTER TABLE statement,
+// i.e. a table that exists in the "from" and "to" side schemas but with one
+// or more differences. If the supplied tables are identical, nil will be
+// returned instead of a TableDiff.
+func NewAlterTable(from, to *Table) *TableDiff {
+	clauses, supported := from.Diff(to)
+	if supported && len(clauses) == 0 {
+		return nil
+	}
+	return &TableDiff{
+		Type:         TableDiffAlter,
+		From:         from,
+		To:           to,
+		alterClauses: clauses,
+		supported:    supported,
+	}
 }
 
-// Statement returns a DDL statement containing DROP TABLE. Note that if mods
-// forbid running the statement, *it will still be returned as-is* but err will
-// be non-nil. It is the caller's responsibility to handle appropriately.
-func (dt DropTable) Statement(mods StatementModifiers) (string, error) {
-	if mods.IgnoreTable != nil && mods.IgnoreTable.MatchString(dt.Table.Name) {
-		return "", nil
+// NewDropTable returns a *TableDiff representing a DROP TABLE statement,
+// i.e. a table that only exists in the "from" side schema in a diff.
+func NewDropTable(table *Table) *TableDiff {
+	return &TableDiff{
+		Type:      TableDiffDrop,
+		From:      table,
+		supported: true,
 	}
+}
+
+// TypeString returns the type of table diff as a string.
+func (td *TableDiff) TypeString() string {
+	return td.Type.String()
+}
+
+// Statement returns the full DDL statement corresponding to the TableDiff. A
+// blank string may be returned if the mods indicate the statement should be
+// skipped. If the mods indicate the statement should be disallowed, it will
+// still be returned as-is, but the error will be non-nil. Be sure not to
+// ignore the error value of this method.
+func (td *TableDiff) Statement(mods StatementModifiers) (string, error) {
+	if mods.IgnoreTable != nil {
+		if (td.From != nil && mods.IgnoreTable.MatchString(td.From.Name)) || (td.To != nil && mods.IgnoreTable.MatchString(td.To.Name)) {
+			return "", nil
+		}
+	}
+
 	var err error
-	stmt := dt.Table.DropStatement()
-	if !mods.AllowUnsafe {
-		err = NewForbiddenDiffError("DROP TABLE not permitted", stmt)
+	switch td.Type {
+	case TableDiffCreate:
+		stmt := td.To.CreateStatement
+		if td.To.HasAutoIncrement() && (mods.NextAutoInc == NextAutoIncIgnore || mods.NextAutoInc == NextAutoIncIfAlready) {
+			stmt, _ = ParseCreateAutoInc(stmt)
+		}
+		return stmt, nil
+	case TableDiffAlter:
+		return td.alterStatement(mods)
+	case TableDiffDrop:
+		stmt := td.From.DropStatement()
+		if !mods.AllowUnsafe {
+			err = &ForbiddenDiffError{
+				Reason:    "DROP TABLE not permitted",
+				Statement: stmt,
+			}
+		}
+		return stmt, err
+	default: // TableDiffRename not supported yet
+		panic(fmt.Errorf("Unsupported diff type %d", td.Type))
 	}
-	return stmt, err
 }
 
-///// AlterTable ///////////////////////////////////////////////////////////////
-
-// AlterTable represents a table that exists on both schemas, but with one or
-// more differences in table definition. It satisfies the TableDiff interface.
-type AlterTable struct {
-	Table   *Table
-	Clauses []TableAlterClause
+// Clauses returns the body of the statement represented by the table diff.
+// For DROP statements, this will be an empty string. For CREATE statements,
+// it will be everything after "CREATE TABLE [name] ". For ALTER statements,
+// it will be everything after "ALTER TABLE [name] ".
+func (td *TableDiff) Clauses(mods StatementModifiers) (string, error) {
+	stmt, err := td.Statement(mods)
+	if stmt == "" {
+		return stmt, err
+	}
+	switch td.Type {
+	case TableDiffCreate:
+		prefix := fmt.Sprintf("CREATE TABLE %s ", EscapeIdentifier(td.To.Name))
+		return strings.Replace(stmt, prefix, "", 1), err
+	case TableDiffAlter:
+		prefix := fmt.Sprintf("%s ", td.From.AlterStatement())
+		return strings.Replace(stmt, prefix, "", 1), err
+	case TableDiffDrop:
+		return "", err
+	default: // TableDiffRename not supported yet
+		panic(fmt.Errorf("Unsupported diff type %d", td.Type))
+	}
 }
 
-// Statement returns a DDL statement containing ALTER TABLE. Note that if mods
-// forbid running the statement, *it will still be returned as-is* but err will
-// be non-nil. It is the caller's responsibility to handle appropriately.
-func (at AlterTable) Statement(mods StatementModifiers) (string, error) {
-	if mods.IgnoreTable != nil && mods.IgnoreTable.MatchString(at.Table.Name) {
-		return "", nil
+func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
+	if !td.supported {
+		if td.To.UnsupportedDDL {
+			return "", &UnsupportedDiffError{
+				Name:                td.To.Name,
+				ExpectedCreateTable: td.To.GeneratedCreateStatement(),
+				ActualCreateTable:   td.To.CreateStatement,
+			}
+		} else if td.From.UnsupportedDDL {
+			return "", &UnsupportedDiffError{
+				Name:                td.From.Name,
+				ExpectedCreateTable: td.From.GeneratedCreateStatement(),
+				ActualCreateTable:   td.From.CreateStatement,
+			}
+		} else {
+			return "", &UnsupportedDiffError{
+				Name:                td.From.Name,
+				ExpectedCreateTable: td.From.CreateStatement,
+				ActualCreateTable:   td.To.CreateStatement,
+			}
+		}
 	}
-	clauseStrings := make([]string, 0, len(at.Clauses))
+
+	clauseStrings := make([]string, 0, len(td.alterClauses))
 	var err error
-	for _, clause := range at.Clauses {
+	for _, clause := range td.alterClauses {
 		if clause, ok := clause.(ChangeAutoIncrement); ok {
 			if mods.NextAutoInc == NextAutoIncIgnore {
 				continue
@@ -212,13 +351,15 @@ func (at AlterTable) Statement(mods StatementModifiers) (string, error) {
 			}
 		}
 		if err == nil && !mods.AllowUnsafe && clause.Unsafe() {
-			err = NewForbiddenDiffError("Unsafe or potentially destructive ALTER TABLE not permitted", "")
+			err = &ForbiddenDiffError{
+				Reason:    "Unsafe or potentially destructive ALTER TABLE not permitted",
+				Statement: "",
+			}
 		}
 		clauseStrings = append(clauseStrings, clause.Clause())
 	}
-
 	if len(clauseStrings) == 0 {
-		return "", err
+		return "", nil
 	}
 
 	if mods.LockClause != "" {
@@ -230,23 +371,9 @@ func (at AlterTable) Statement(mods StatementModifiers) (string, error) {
 		clauseStrings = append([]string{algorithmClause}, clauseStrings...)
 	}
 
-	stmt := fmt.Sprintf("%s %s", at.Table.AlterStatement(), strings.Join(clauseStrings, ", "))
+	stmt := fmt.Sprintf("%s %s", td.From.AlterStatement(), strings.Join(clauseStrings, ", "))
 	if fde, isForbiddenDiff := err.(*ForbiddenDiffError); isForbiddenDiff {
 		fde.Statement = stmt
 	}
 	return stmt, err
-}
-
-///// RenameTable //////////////////////////////////////////////////////////////
-
-// RenameTable represents a table that exists on both schemas, but with a
-// different name. It satisfies the TableDiff interface.
-type RenameTable struct {
-	Table   *Table
-	NewName string
-}
-
-// Statement returns a DDL statement containing RENAME TABLE.
-func (rt RenameTable) Statement(mods StatementModifiers) (string, error) {
-	return "", errors.New("Rename Table not yet supported")
 }
