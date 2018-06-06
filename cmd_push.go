@@ -209,15 +209,25 @@ func pushWorker(sps *sharedPushState) {
 			}
 			for n, tableDiff := range diff.TableDiffs {
 				ddl := NewDDLStatement(tableDiff, mods, t)
-				if ddl == nil {
-					// skip blank DDL (due to mods.NextAutoInc, mods.IgnoreTable, etc)
+				if ddl.IsNoop() {
 					continue
 				}
 				targetStmtCount++
+				if err, ok := ddl.Err.(*tengo.UnsupportedDiffError); ok {
+					sps.incrementUnsupportedCount()
+					log.Warnf("Skipping table %s: unable to generate ALTER TABLE due to use of unsupported features. Use --debug for more information.", err.Name)
+					DebugLogUnsupportedDiff(err)
+					continue
+				}
 				sps.incrementDiffCount()
 				if ddl.Err != nil {
-					log.Errorf("%s. The affected DDL statement will be skipped. See --help for more information.", ddl.Err)
 					sps.incrementErrCount(1)
+					if tengo.IsForbiddenDiff(ddl.Err) {
+						log.Errorf("%s due to supplied options. The affected DDL statement will be skipped. See --help for more information.", ddl.Err)
+					} else {
+						log.Errorf("A fatal error occurred with pre-processing a DDL statement: %s. The affected DDL statement will be skipped.", ddl.Err)
+						continue
+					}
 				}
 				sps.syncPrintf(t.Instance, schemaName, "%s\n", ddl.String())
 				if !sps.dryRun && ddl.Err == nil && ddl.Execute() != nil {
@@ -228,16 +238,6 @@ func pushWorker(sps *sharedPushState) {
 					}
 					sps.incrementErrCount(skipCount)
 					break
-				}
-			}
-			for _, table := range diff.UnsupportedTables {
-				sps.incrementUnsupportedCount()
-				targetStmtCount++
-				if t.Dir.Config.GetBool("debug") {
-					log.Warnf("Skipping table %s: unable to generate ALTER TABLE due to use of unsupported features", table.Name)
-					t.logUnsupportedTableDiff(table.Name)
-				} else {
-					log.Warnf("Skipping table %s: unable to generate ALTER TABLE due to use of unsupported features. Use --debug for more information.", table.Name)
 				}
 			}
 

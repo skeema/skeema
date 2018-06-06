@@ -61,16 +61,16 @@ func (s *SkeemaIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 			t.Fatalf("Expected this configuration to result in all DDLs being shellouts, but %v is not", ddl)
 		}
 		var expected string
-		switch diff := diff.(type) {
-		case tengo.AlterTable:
-			if diff.Table.Name == "rollups" {
+		switch diff.Type {
+		case tengo.TableDiffAlter:
+			if diff.To.Name == "rollups" {
 				// no rows, so ddl-wrapper used. verify the statement separately.
 				expected = "/bin/echo ddl-wrapper analytics.rollups ALTER"
 				expectedStmt := "ALTER TABLE `rollups` ALGORITHM=INPLACE, LOCK=NONE, ADD COLUMN `value` bigint(20) DEFAULT NULL"
 				if ddl.stmt != expectedStmt {
 					t.Errorf("Expected statement:\n%s\nActual statement:\n%s\n", expectedStmt, ddl.stmt)
 				}
-			} else if diff.Table.Name == "pageviews" {
+			} else if diff.To.Name == "pageviews" {
 				// has 1 row, so alter-wrapper used. verify the execution separately to
 				// sanity-check the quoting rules.
 				expected = "/bin/echo alter-wrapper analytics.pageviews ALTER 'ADD COLUMN `domain` varchar(40) NOT NULL DEFAULT '\"'\"'skeema.net'\"'\"''"
@@ -79,11 +79,11 @@ func (s *SkeemaIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 					t.Errorf("Expected output:\n%sActual output:\n%sErr:\n%v\n", expectedOutput, actualOutput, err)
 				}
 			} else {
-				t.Fatalf("Unexpected AlterTable for %s; perhaps test fixture changed without updating this test?", diff.Table.Name)
+				t.Fatalf("Unexpected AlterTable for %s; perhaps test fixture changed without updating this test?", diff.To.Name)
 			}
-		case tengo.DropTable:
+		case tengo.TableDiffDrop:
 			expected = "/bin/echo ddl-wrapper analytics.widget_counts DROP"
-		case tengo.CreateTable:
+		case tengo.TableDiffCreate:
 			expected = "/bin/echo ddl-wrapper analytics.activity CREATE"
 		}
 		if ddl.shellOut.Command != expected {

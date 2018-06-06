@@ -109,87 +109,63 @@ func PullHandler(cfg *mybase.Config) error {
 		if err != nil {
 			return err
 		}
+
 		for _, td := range diff.TableDiffs {
-			stmt, err := td.Statement(mods)
-			if err != nil {
-				return err
+			stmt, stmtErr := td.Statement(mods)
+			if stmtErr != nil && !tengo.IsUnsupportedDiff(stmtErr) {
+				return stmtErr
 			}
 			// skip if mods caused the diff to be a no-op
-			if stmt == "" {
+			if stmt == "" && stmtErr == nil {
 				continue
 			}
-			switch td := td.(type) {
-			case tengo.CreateTable:
+
+			// For DROP TABLE, we're deleting corresponding table file; vs other
+			// types we're updating/rewriting the file.
+			if td.Type == tengo.TableDiffDrop {
 				sf := SQLFile{
 					Dir:      t.Dir,
-					FileName: fmt.Sprintf("%s.sql", td.Table.Name),
-					Contents: stmt,
-				}
-				if length, err := sf.Write(); err != nil {
-					return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
-				} else if _, hadErr := t.SQLFileErrors[sf.Path()]; hadErr {
-					// SQL files with syntax errors will result in tengo.CreateTable since
-					// the temp schema will be missing the table, however we can detect this
-					// scenario by looking in the Target's SQLFileErrors
-					log.Infof("Wrote %s (%d bytes) -- updated file to replace invalid SQL", sf.Path(), length)
-				} else {
-					log.Infof("Wrote %s (%d bytes) -- new table", sf.Path(), length)
-				}
-			case tengo.DropTable:
-				table := td.Table
-				sf := SQLFile{
-					Dir:      t.Dir,
-					FileName: fmt.Sprintf("%s.sql", table.Name),
+					FileName: fmt.Sprintf("%s.sql", td.From.Name),
 				}
 				if err := sf.Delete(); err != nil {
 					return fmt.Errorf("Unable to delete %s: %s", sf.Path(), err)
 				}
 				log.Infof("Deleted %s -- table no longer exists", sf.Path())
-			case tengo.AlterTable:
-				table := td.Table
-				createStmt, err := t.Instance.ShowCreateTable(t.SchemaFromInstance.Name, table.Name)
-				if err != nil {
-					return err
-				}
-				sf := SQLFile{
-					Dir:      t.Dir,
-					FileName: fmt.Sprintf("%s.sql", table.Name),
-					Contents: createStmt,
-				}
-				var length int
-				if length, err = sf.Write(); err != nil {
-					return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
-				}
-				log.Infof("Wrote %s (%d bytes) -- updated file to reflect table alterations", sf.Path(), length)
-			case tengo.RenameTable:
-				return fmt.Errorf("Table renames not yet supported")
-			default:
-				return fmt.Errorf("Unsupported diff type %T", td)
+				continue
 			}
-		}
 
-		// Tables that use features not supported by tengo diff still need files
-		// updated. Handle same as AlterTable case, since created/dropped tables don't
-		// ever end up in UnsupportedTables since they don't do a diff operation.
-		for _, table := range diff.UnsupportedTables {
-			createStmt := table.CreateStatement
-			if table.HasAutoIncrement() && !t.Dir.Config.GetBool("include-auto-inc") {
-				createStmt, _ = tengo.ParseCreateAutoInc(createStmt)
-			}
+			var reason string
 			sf := SQLFile{
 				Dir:      t.Dir,
-				FileName: fmt.Sprintf("%s.sql", table.Name),
-				Contents: createStmt,
+				FileName: fmt.Sprintf("%s.sql", td.To.Name),
+				Contents: stmt,
 			}
-			var length int
-			if length, err = sf.Write(); err != nil {
+
+			// For ALTER TABLE, we don't care about the ALTER statement, but we do
+			// need to get the corresponding CREATE TABLE and process auto-inc properly
+			if td.Type == tengo.TableDiffAlter {
+				sf.Contents = td.To.CreateStatement
+				if td.To.HasAutoIncrement() && !t.Dir.Config.GetBool("include-auto-inc") && td.From.NextAutoIncrement <= 1 {
+					sf.Contents, _ = tengo.ParseCreateAutoInc(sf.Contents)
+				}
+				reason = "updated file to reflect table alterations"
+				if tengo.IsUnsupportedDiff(stmtErr) {
+					log.Warnf("Table %s uses unsupported features", td.To.Name)
+					DebugLogUnsupportedDiff(stmtErr.(*tengo.UnsupportedDiffError))
+				}
+			} else if _, hadErr := t.SQLFileErrors[sf.Path()]; hadErr {
+				// SQL files with syntax errors will result in TableDiffCreate since the
+				// temp schema will be missing the table
+				reason = "updated file to replace invalid SQL"
+			} else {
+				reason = "new table"
+			}
+
+			length, err := sf.Write()
+			if err != nil {
 				return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
 			}
-			log.Infof("Wrote %s (%d bytes) -- updated file to reflect (unsupported) table alterations", sf.Path(), length)
-			if t.Dir.Config.GetBool("debug") {
-				log.Warnf("Table %s uses unsupported features", table.Name)
-				t.logUnsupportedTableDiff(table.Name)
-			}
+			log.Infof("Wrote %s (%d bytes) -- %s", sf.Path(), length, reason)
 		}
 
 		if dir.Config.GetBool("normalize") {

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/tengo"
@@ -15,10 +14,10 @@ import (
 // run directly against a DB.
 type DDLStatement struct {
 	// Err represents errors that occur from applying statement modifiers (which
-	// can forbid destructive DDL), from building an external command string (which
-	// could reference invalid template variables), or from executing the DDL
-	// (errors from the DB directly, or a nonzero exit code from an external
-	// command)
+	// can forbid destructive DDL), from tables using unsupported features,
+	// from building an external command string (which could reference invalid
+	// template variables), or from executing the DDL (errors from the DB directly,
+	// or a nonzero exit code from an external command)
 	Err error
 
 	stmt     string
@@ -28,34 +27,27 @@ type DDLStatement struct {
 	schemaName string
 }
 
-// NewDDLStatement creates and returns a DDLStatement. It may return nil if
-// the StatementModifiers cause it to be a no-op. In the case of an error
+// NewDDLStatement creates and returns a DDLStatement. In the case of an error
 // constructing the statement (mods disallowing destructive DDL, invalid
-// variable interpolation in --alter-wrapper, etc), a non-nil DDLStatement will
-// still be returned, but its Err field will be non-nil, preventing any
-// execution of the DDLStatement.
-func NewDDLStatement(diff tengo.TableDiff, mods tengo.StatementModifiers, target *Target) *DDLStatement {
+// variable interpolation in --alter-wrapper, etc), the returned value's Err
+// field will be non-nil, preventing any execution of the DDLStatement.
+func NewDDLStatement(diff *tengo.TableDiff, mods tengo.StatementModifiers, target *Target) *DDLStatement {
 	ddl := &DDLStatement{
 		instance:   target.Instance,
 		schemaName: target.SchemaFromDir.Name,
 	}
 	var err error
 
-	// Look up size of affected table. This will be 0 for CREATE TABLE statements.
+	// Gather name and size of affected table. Size will be 0 for CREATE TABLE statements.
 	var tableName string
 	var tableSize int64
-	switch diff := diff.(type) {
-	case tengo.AlterTable:
-		tableSize, err = ddl.getTableSize(target, diff.Table)
-		tableName = diff.Table.Name
-	case tengo.DropTable:
-		tableSize, err = ddl.getTableSize(target, diff.Table)
-		tableName = diff.Table.Name
-	case tengo.CreateTable:
-		tableName = diff.Table.Name
-		err = nil
+	if diff.From != nil { // ALTER or DROP
+		tableName = diff.From.Name
+		tableSize, err = ddl.getTableSize(target, diff.From)
+		ddl.setErr(err)
+	} else { // CREATE
+		tableName = diff.To.Name
 	}
-	ddl.setErr(err)
 
 	// If --safe-below-size option in use, enable additional statement modifier
 	// if the table's size is less than the supplied option value
@@ -68,7 +60,7 @@ func NewDDLStatement(diff tengo.TableDiff, mods tengo.StatementModifiers, target
 
 	// Options may indicate some/all DDL gets executed by shelling out to another program.
 	wrapper := target.Dir.Config.Get("ddl-wrapper")
-	if _, isAlter := diff.(tengo.AlterTable); isAlter && target.Dir.Config.Changed("alter-wrapper") {
+	if diff.Type == tengo.TableDiffAlter && target.Dir.Config.Changed("alter-wrapper") {
 		minSize, err := target.Dir.Config.GetBytes("alter-wrapper-min-size")
 		ddl.setErr(err)
 		if tableSize >= int64(minSize) {
@@ -92,14 +84,13 @@ func NewDDLStatement(diff tengo.TableDiff, mods tengo.StatementModifiers, target
 		}
 	}
 
-	// Get the raw DDL statement as a string.
+	// Get the raw DDL statement as a string. This may set stmt to a blank string
+	// if the statement should be skipped due to mods, or if the diff could not
+	// be generated due to use of unsupported table features.
 	ddl.stmt, err = diff.Statement(mods)
 	ddl.setErr(err)
 	if ddl.stmt == "" {
-		// mods may result in a statement that should be skipped, but not due to
-		// error. For example, the only change may be to next-auto-inc value, which
-		// mods specify to ignore. This is represented by a nil DDLStatement.
-		return nil
+		return ddl
 	}
 
 	// Apply wrapper if relevant
@@ -111,28 +102,13 @@ func NewDDLStatement(diff tengo.TableDiff, mods tengo.StatementModifiers, target
 			"DDL":    ddl.stmt,
 			"TABLE":  tableName,
 			"SIZE":   strconv.FormatInt(tableSize, 10),
+			"TYPE":   diff.TypeString(),
 		}
+		extras["CLAUSES"], _ = diff.Clauses(mods)
 		if ddl.instance.SocketPath != "" {
 			delete(extras, "PORT")
 			extras["SOCKET"] = ddl.instance.SocketPath
 		}
-
-		switch diff := diff.(type) {
-		case tengo.AlterTable:
-			prefix := fmt.Sprintf("%s ", diff.Table.AlterStatement())
-			extras["CLAUSES"] = strings.Replace(ddl.stmt, prefix, "", 1)
-			extras["TYPE"] = "ALTER"
-		case tengo.CreateTable:
-			prefix := fmt.Sprintf("CREATE TABLE %s ", tengo.EscapeIdentifier(diff.Table.Name))
-			extras["CLAUSES"] = strings.Replace(ddl.stmt, prefix, "", 1)
-			extras["TYPE"] = "CREATE"
-		case tengo.DropTable:
-			extras["CLAUSES"] = ""
-			extras["TYPE"] = "DROP"
-		default: // currently includes case tengo.RenameTable
-			ddl.setErr(fmt.Errorf("TableDiff type %T not yet supported", diff))
-		}
-
 		ddl.shellOut, err = NewInterpolatedShellOut(wrapper, target.Dir, extras)
 		ddl.setErr(err)
 	}
@@ -147,12 +123,18 @@ func (ddl *DDLStatement) IsShellOut() bool {
 	return (ddl.shellOut != nil)
 }
 
+// IsNoop returns true if the DDL statement should be skipped due to the
+// statement modifiers supplied to the constructor.
+func (ddl *DDLStatement) IsNoop() bool {
+	return ddl.stmt == "" && ddl.Err == nil
+}
+
 // String returns a string representation of ddl. If an external command is in
 // use, the returned string will be prefixed with "\!", the MySQL CLI command
 // shortcut for "system" shellout. If ddl.Err is non-nil, the returned string
 // will be commented-out by wrapping in /* ... */ long-style comment.
 func (ddl *DDLStatement) String() string {
-	if ddl == nil {
+	if ddl.stmt == "" {
 		return ""
 	}
 	var stmt string
@@ -171,17 +153,14 @@ func (ddl *DDLStatement) String() string {
 // or shelling out to an external program, as appropriate.
 func (ddl *DDLStatement) Execute() error {
 	// Refuse to execute no-ops or errors
-	if ddl == nil {
-		return nil
+	if ddl.IsNoop() {
+		return errors.New("Attempted to execute empty DDL statement")
 	} else if ddl.Err != nil {
 		return ddl.Err
 	}
 	if ddl.IsShellOut() {
 		ddl.Err = ddl.shellOut.Run()
 	} else {
-		if ddl.stmt == "" {
-			return errors.New("Attempted to execute empty DDL statement")
-		}
 		if db, err := ddl.instance.Connect(ddl.schemaName, ""); err != nil {
 			ddl.Err = err
 		} else {

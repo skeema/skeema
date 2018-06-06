@@ -4,10 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/pmezard/go-difflib/difflib"
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/tengo"
 )
@@ -264,22 +262,18 @@ func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 	}
 	tableNameToDDL := make(map[string]string)
 
-	// Iterate over the TableDiffs in the SchemaDiff. For any that are an ALTER,
-	// run it against the table in the temp schema, and see if the table now matches
-	// the version in the toTables map.
-	for _, tableDiff := range diff.TableDiffs {
-		alter, ok := tableDiff.(tengo.AlterTable)
-		if !ok {
-			continue
-		}
-		stmt, _ := tableDiff.Statement(mods) // fine to ignore errors for verifying DDL against temporary schema
+	// Iterate over the ALTER-type TableDiffs in the SchemaDiff. Run each against
+	// the table in the temp schema, and confirm the table now matches the version
+	// in the toTables map.
+	for _, td := range diff.FilteredTableDiffs(tengo.TableDiffAlter) {
+		stmt, _ := td.Statement(mods) // fine to ignore errors for verifying DDL against temporary schema
 		if stmt == "" {
 			continue
 		}
 		if _, err = db.Exec(stmt); err != nil {
 			return err
 		}
-		tableNameToDDL[alter.Table.Name] = stmt
+		tableNameToDDL[td.From.Name] = stmt
 	}
 
 	tempSchema, err := t.Instance.Schema(tempSchemaName)
@@ -311,44 +305,6 @@ func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 	}
 
 	return nil
-}
-
-// logUnsupportedTableDiff provides debug logging to identify why a table (or
-// the diff operation between two versions of a table) is considered
-// unsupported. It is "best effort" and simply returns early if it encounters
-// any errors.
-func (t *Target) logUnsupportedTableDiff(name string) {
-	var expectedCreate, actualCreate string
-
-	// Figure out which part is unsupported; this will determine what we're diffing
-	if dirTable := t.SchemaFromDir.Table(name); dirTable != nil && dirTable.UnsupportedDDL {
-		expectedCreate = dirTable.GeneratedCreateStatement()
-		actualCreate = dirTable.CreateStatement
-	} else if instTable := t.SchemaFromInstance.Table(name); instTable != nil && instTable.UnsupportedDDL {
-		expectedCreate = instTable.GeneratedCreateStatement()
-		actualCreate = instTable.CreateStatement
-	} else if dirTable != nil && instTable != nil && dirTable.CreateStatement != instTable.CreateStatement {
-		expectedCreate = dirTable.CreateStatement
-		actualCreate = instTable.CreateStatement
-	} else {
-		return
-	}
-
-	diff := difflib.UnifiedDiff{
-		A:        difflib.SplitLines(expectedCreate),
-		B:        difflib.SplitLines(actualCreate),
-		FromFile: "Skeema-expected",
-		ToFile:   "MySQL-actual",
-		Context:  0,
-	}
-	diffText, err := difflib.GetUnifiedDiffString(diff)
-	if err == nil {
-		for _, line := range strings.Split(diffText, "\n") {
-			if len(line) > 0 {
-				log.Debug(line)
-			}
-		}
-	}
 }
 
 func (t *Target) lockTempSchema(maxWait time.Duration) (*sql.Tx, error) {

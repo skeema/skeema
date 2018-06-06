@@ -19,7 +19,7 @@ Pre-built `skeema` binaries for Linux and macOS will be supplied later in Q2, on
 
 ## Compiling
 
-Requires the [Go programming language toolchain](https://golang.org/dl/). Go version 1.6 or later is needed in order to properly use vendored dependencies.
+Requires the [Go programming language toolchain](https://golang.org/dl/). The latest version, Go version 1.10, is currently required. Older versions may be supported in the near future.
 
 To download, build, and install Skeema, run:
 
