@@ -166,17 +166,30 @@ func (s *SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	s.verifyFiles(t, cfg, "../golden/init")
 
-	// Files with invalid SQL should still be corrected upon pull. Files with extra
-	// text before/after the CREATE TABLE should be trimmed. Files with nonstandard
-	// formatting of their CREATE TABLE should be normalized.
-	contents := readFile(t, "mydb/product/comments.sql")
-	writeFile(t, "mydb/product/comments.sql", strings.Replace(contents, "DEFAULT", "DEFALUT", 1))
+	// Files with invalid SQL should still be corrected upon pull. Files with
+	// nonstandard formatting of their CREATE TABLE should be normalized, even if
+	// there was an ignored auto-increment change. However, files with extraneous
+	// text before/after the CREATE TABLE should remain as-is UNLESS there were
+	// other changes triggering a file rewrite.
+	contents := readFile(t, "mydb/analytics/activity.sql")
+	writeFile(t, "mydb/analytics/activity.sql", strings.Replace(contents, "DEFAULT", "DEFALUT", 1))
+	s.dbExec(t, "product", "INSERT INTO comments (post_id, user_id) VALUES (555, 777)")
+	contents = readFile(t, "mydb/product/comments.sql")
+	writeFile(t, "mydb/product/comments.sql", strings.Replace(contents, "`", "", -1))
 	contents = readFile(t, "mydb/product/posts.sql")
 	writeFile(t, "mydb/product/posts.sql", fmt.Sprintf("# random comment\n%s", contents))
-	contents = readFile(t, "mydb/analytics/activity.sql")
-	writeFile(t, "mydb/analytics/activity.sql", strings.Replace(contents, "`", "", -1))
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --debug")
 	s.verifyFiles(t, cfg, "../golden/init")
+	contents = readFile(t, "mydb/product/posts.sql")
+	if !strings.Contains(contents, "# random comment") {
+		t.Error("Expected mydb/product/posts.sql to retain its extraneous comment, but it was removed")
+	}
+	writeFile(t, "mydb/product/posts.sql", strings.Replace(contents, "`", "", -1))
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --debug")
+	s.verifyFiles(t, cfg, "../golden/init")
+	if strings.Contains(readFile(t, "mydb/product/posts.sql"), "# random comment") {
+		t.Error("Expected mydb/product/posts.sql to lose its extraneous comment due to other rewrite, but it was retained")
+	}
 }
 
 func (s *SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
@@ -398,6 +411,15 @@ func (s *SkeemaIntegrationSuite) TestAutoInc(t *testing.T) {
 
 	// init with --include-auto-inc should include auto-inc values greater than 1
 	s.reinitAndVerifyFiles(t, "--include-auto-inc", "../golden/autoinc")
+
+	// now that the file has a next auto-inc value, subsequent pull operations
+	// should update the value, even without --include-auto-inc
+	s.dbExec(t, "product", "INSERT INTO users (name) VALUES (?)", "something")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	if !strings.Contains(readFile(t, "mydb/product/users.sql"), "AUTO_INCREMENT=4") {
+		t.Error("Expected mydb/product/users.sql to contain AUTO_INCREMENT=4 after pull, but it did not")
+	}
+
 }
 
 func (s *SkeemaIntegrationSuite) TestUnsupportedAlter(t *testing.T) {
@@ -461,6 +483,12 @@ func (s *SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
 	writeFile(t, "mydb/product/_widgets.sql", "CREATE TABLE _widgets (id int) ENGINE=InnoDB;\n")
 	writeFile(t, "mydb/analytics/_newtable.sql", "CREATE TABLE _newtable (id int) ENGINE=InnoDB;\n")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// pull should also ignore that file corresponding to an ignored table
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	if readFile(t, "mydb/product/_widgets.sql") != "CREATE TABLE _widgets (id int) ENGINE=InnoDB;\n" {
+		t.Error("Expected pull to ignore mydb/product/_widgets.sql entirely, but it did not")
+	}
 
 	// lint: ignored schemas and tables should be ignored
 	// To set up this test, we do a pull that overrides the previous ignore options

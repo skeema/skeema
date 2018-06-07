@@ -112,11 +112,18 @@ func PullHandler(cfg *mybase.Config) error {
 
 		for _, td := range diff.TableDiffs {
 			stmt, stmtErr := td.Statement(mods)
+			// Errors are fatal, except for UnsupportedDiffError which we can safely
+			// ignore (since pull doesn't actually run ALTERs; it just needs to know
+			// which tables were altered)
 			if stmtErr != nil && !tengo.IsUnsupportedDiff(stmtErr) {
 				return stmtErr
 			}
-			// skip if mods caused the diff to be a no-op
+			// skip if mods caused the diff to be a no-op; if it's an ALTER, treat it
+			// as an unchanged table so that --normalize logic still runs
 			if stmt == "" && stmtErr == nil {
+				if td.Type == tengo.TableDiffAlter {
+					diff.SameTables = append(diff.SameTables, td.To)
+				}
 				continue
 			}
 
@@ -170,6 +177,9 @@ func PullHandler(cfg *mybase.Config) error {
 
 		if dir.Config.GetBool("normalize") {
 			for _, table := range diff.SameTables {
+				if mods.IgnoreTable != nil && mods.IgnoreTable.MatchString(table.Name) {
+					continue
+				}
 				sf := SQLFile{
 					Dir:      t.Dir,
 					FileName: fmt.Sprintf("%s.sql", table.Name),
@@ -180,8 +190,12 @@ func PullHandler(cfg *mybase.Config) error {
 				for _, warning := range sf.Warnings {
 					log.Debug(warning)
 				}
-				if table.CreateStatement != sf.Contents {
-					sf.Contents = table.CreateStatement
+				newContents := table.CreateStatement
+				if table.HasAutoIncrement() && !t.Dir.Config.GetBool("include-auto-inc") && t.SchemaFromDir.Table(table.Name).NextAutoIncrement <= 1 {
+					newContents, _ = tengo.ParseCreateAutoInc(newContents)
+				}
+				if sf.Contents != newContents {
+					sf.Contents = newContents
 					var length int
 					if length, err = sf.Write(); err != nil {
 						return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)

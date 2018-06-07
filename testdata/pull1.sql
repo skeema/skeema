@@ -1,5 +1,6 @@
 use product
 ALTER TABLE posts ADD COLUMN status varchar(20) DEFAULT 'published';
+INSERT INTO posts (user_id) VALUES (12345);
 DROP TABLE comments;
 
 use analytics
