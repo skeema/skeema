@@ -245,20 +245,19 @@ func (s *SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
 	// Manually restore the file with invalid SQL; the files should now verify,
 	// confirming that the fatal error did not prevent the other files from being
 	// reformatted; re-linting should yield no changes.
-	sqlFiles[0].Contents = strings.Replace(sqlFiles[0].Contents, "DEFALUT", "DEFAULT", 1)
-	if _, err := sqlFiles[0].Write(); err != nil {
-		t.Fatalf("Unable to rewrite %s: %s", sqlFiles[0].Path(), err)
-	}
+	writeFile(t, sqlFiles[0].Path(), strings.Replace(sqlFiles[0].Contents, "DEFALUT", "DEFAULT", 1))
 	s.verifyFiles(t, cfg, "../golden/init")
 	s.handleCommand(t, CodeSuccess, ".", "skeema lint")
 
 	// Files with valid SQL, but not CREATE TABLE statements, should also trigger
 	// CodeFatalError.
-	sqlFiles[0].Contents = "INSERT INTO foo (col1, col2) VALUES (123, 456)"
-	if _, err := sqlFiles[0].Write(); err != nil {
-		t.Fatalf("Unable to rewrite %s: %s", sqlFiles[0].Path(), err)
-	}
+	writeFile(t, sqlFiles[0].Path(), "INSERT INTO foo (col1, col2) VALUES (123, 456)")
 	s.handleCommand(t, CodeFatalError, ".", "skeema lint")
+
+	// Files with wrong table name should yield a fatal error, by virtue of
+	// SQLFile.Read() failing
+	writeFile(t, sqlFiles[0].Path(), "CREATE TABLE whatever (id int)")
+	s.handleCommand(t, CodeFatalError, ".", "skeema lint --debug")
 }
 
 func (s *SkeemaIntegrationSuite) TestDiffHandler(t *testing.T) {
@@ -498,6 +497,7 @@ func (s *SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
 	contents := readFile(t, "mydb/analytics/_trending.sql")
 	newContents := strings.Replace(contents, "`", "", -1)
 	writeFile(t, "mydb/analytics/_trending.sql", newContents)
+	writeFile(t, "mydb/analytics/_hmm.sql", "lolololol no valid sql here")
 	writeFile(t, "mydb/archives/bar.sql", "CREATE TABLE bar (this is not valid SQL whatever)")
 	s.handleCommand(t, CodeSuccess, ".", "skeema lint")
 	if readFile(t, "mydb/analytics/_trending.sql") != newContents {

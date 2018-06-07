@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -132,12 +133,19 @@ func (s *SkeemaIntegrationSuite) handleCommand(t *testing.T, expectedExitCode in
 	err := cfg.HandleCommand()
 	if actualExitCode := ExitCode(err); actualExitCode != expectedExitCode {
 		t.Errorf("Unexpected exit code from `%s`: Expected code=%d, found code=%d, message=%s", fullCommandLine, expectedExitCode, actualExitCode, err)
+	} else if actualExitCode == 0 {
+		log.Debug("Exit code 0 (SUCCESS)")
+	} else if actualExitCode >= CodeFatalError {
+		log.Error(err.Error())
+	} else {
+		log.Warn(err.Error())
 	}
 	if pwd != "" && pwd != "." {
 		if err := os.Chdir(s.workspace()); err != nil {
 			t.Fatalf("Unable to cd to %s: %s", s.workspace(), err)
 		}
 	}
+	fmt.Fprintf(os.Stderr, "\n")
 	return cfg
 }
 

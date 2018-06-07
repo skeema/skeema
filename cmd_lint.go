@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
@@ -59,15 +60,19 @@ func LintHandler(cfg *mybase.Config) error {
 
 		log.Infof("Linting %s", t.Dir)
 
-		for _, sf := range t.SQLFileErrors {
-			log.Error(sf.Error)
-			sqlErrCount++
-		}
-
 		ignoreTable, err := t.Dir.Config.GetRegexp("ignore-table")
 		if err != nil {
 			return err
 		}
+
+		for _, sf := range t.SQLFileErrors {
+			assumedTableName := strings.TrimSuffix(sf.FileName, ".sql")
+			if ignoreTable == nil || !ignoreTable.MatchString(assumedTableName) {
+				log.Error(sf.Error)
+				sqlErrCount++
+			}
+		}
+
 		for _, table := range t.SchemaFromDir.Tables {
 			if ignoreTable != nil && ignoreTable.MatchString(table.Name) {
 				log.Warnf("Skipping table %s because ignore-table='%s'", table.Name, ignoreTable)
