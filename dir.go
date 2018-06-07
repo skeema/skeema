@@ -278,6 +278,18 @@ func (dir *Dir) SchemaNames(instance *tengo.Instance) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Remove ignored schemas
+		if ignoreSchema, err := dir.Config.GetRegexp("ignore-schema"); err != nil {
+			return nil, err
+		} else if ignoreSchema != nil {
+			keepNames := make([]string, 0, len(schemaNames))
+			for _, name := range schemaNames {
+				if !ignoreSchema.MatchString(name) {
+					keepNames = append(keepNames, name)
+				}
+			}
+			schemaNames = keepNames
+		}
 		// Schema name list must be sorted so that generateTargetsForDir with
 		// firstOnly==true consistently grabs the alphabetically first schema
 		sort.Strings(schemaNames)

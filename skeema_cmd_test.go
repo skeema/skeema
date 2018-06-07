@@ -647,4 +647,13 @@ func (s *SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 	s.assertExists(t, "product1", "foo", "")
 	s.assertExists(t, "product2", "foo", "")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// Test combination of ignore-schema and schema=*
+	contents = strings.Replace(contents, "schema=*", "schema=*\nignore-schema=2$", 1)
+	writeFile(t, "mydb/product/.skeema", contents)
+	writeFile(t, "mydb/product/foo2.sql", "CREATE TABLE `foo2` (id int);\n")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	s.assertExists(t, "product1", "foo2", "")
+	s.assertMissing(t, "product2", "foo2", "")
+	s.assertExists(t, "product3", "foo2", "")
 }
