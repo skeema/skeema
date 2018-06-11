@@ -451,28 +451,6 @@ func (instance *Instance) DropTablesInSchema(schema string, onlyIfEmpty bool) er
 	return nil
 }
 
-// CloneSchema copies all tables (just definitions, not data) from src to dest.
-// Ideally dest should be an empty schema, or at least be pre-verified for not
-// having existing tables with conflicting names, but this is the caller's
-// responsibility to confirm.
-func (instance *Instance) CloneSchema(src, dest string) error {
-	s, err := instance.Schema(src)
-	if err != nil {
-		return err
-	}
-	db, err := instance.Connect(dest, "foreign_key_checks=0")
-	if err != nil {
-		return err
-	}
-	for _, t := range s.Tables {
-		_, err := db.Exec(t.CreateStatement)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // DefaultCharSetAndCollation returns the instance's default character set and
 // collation
 func (instance *Instance) DefaultCharSetAndCollation() (serverCharSet, serverCollation string, err error) {

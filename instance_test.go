@@ -369,39 +369,6 @@ func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
 	assertNoError("testing", "utf8mb4", "utf8mb4_general_ci", "utf8mb4", "utf8mb4_general_ci")
 }
 
-func (s TengoIntegrationSuite) TestInstanceCloneSchema(t *testing.T) {
-	src := s.GetSchema(t, "testing")
-	dst, err := s.d.CreateSchema("clone", "", "")
-	if err != nil {
-		t.Fatalf("Failed to create new empty schema: %s", err)
-	}
-	if len(dst.Tables) > 0 {
-		t.Fatalf("Failed to verify no tables in new schema: err=%s, len(tables)=%d", err, len(dst.Tables))
-	}
-	if len(src.Tables) < 1 {
-		t.Fatalf("Failed to obtain non-empty table list for source: err=%s, len(tables)=%d", err, len(src.Tables))
-	}
-
-	if err := s.d.CloneSchema(src.Name, dst.Name); err != nil {
-		t.Fatalf("Failed to clone schema: %s", err)
-	}
-	dst = s.GetSchema(t, dst.Name)
-	if len(dst.Tables) != len(src.Tables) {
-		t.Errorf("Failed to verify table count in cloned schema: err=%s, len(srcTables)=%d, len(dstTables)=%d", err, len(src.Tables), len(dst.Tables))
-	}
-
-	// Cloning again should fail due to table name already existing
-	if err := s.d.CloneSchema(src.Name, dst.Name); err == nil {
-		t.Error("Expected second clone attempt to fail, but error is nil")
-	}
-
-	// Verify that tables were cloned but data was not: dropping dest with
-	// onlyIfEmpty==true should still succeed
-	if err := s.d.DropSchema(dst.Name, true); err != nil {
-		t.Errorf("Error dropping destination schema: %s", err)
-	}
-}
-
 func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	// Ensure our unit test fixtures and integration test fixtures match
 	schema, aTableFromDB := s.GetSchemaAndTable(t, "testing", "actor")
