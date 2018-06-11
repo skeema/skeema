@@ -230,11 +230,7 @@ func findNewSchemas(dir *Dir) error {
 
 	if dir.HasHost() && !dir.HasSchema() {
 		instance, err := dir.FirstInstance()
-		if err != nil {
-			return err
-		}
-		instCharSet, instCollation, err := instance.DefaultCharSetAndCollation()
-		if err != nil {
+		if err != nil || instance == nil {
 			return err
 		}
 
@@ -263,21 +259,24 @@ func findNewSchemas(dir *Dir) error {
 
 		// Compare dirs to schemas, UNLESS subdirs exist but don't actually map to schemas directly
 		if len(subdirHasSchema) > 0 || len(subdirs) == 0 {
-			inst, err := dir.FirstInstance()
-			if err != nil {
-				return err
-			} else if inst == nil {
-				return fmt.Errorf("Unable to obtain instance for %s", dir)
-			}
-			schemaNames, err := inst.SchemaNames()
+			var instCharSet, instCollation string
+			schemaNames, err := instance.SchemaNames()
 			if err != nil {
 				return err
 			}
 			for _, name := range schemaNames {
+				// If no existing subdir maps to the schema, we need to create and populate new dir
 				if !subdirHasSchema[name] {
-					s, err := inst.Schema(name)
+					s, err := instance.Schema(name)
 					if err != nil {
 						return err
+					}
+					// Lazily fetch instance charset and collation upon first need
+					if instCharSet == "" {
+						instCharSet, instCollation, err = instance.DefaultCharSetAndCollation()
+						if err != nil {
+							return err
+						}
 					}
 					// use same logic from init command
 					if err := PopulateSchemaDir(s, dir, true, instCharSet != s.CharSet, instCollation != s.Collation); err != nil {
