@@ -422,29 +422,83 @@ func (instance *Instance) AlterSchema(schema, newCharSet, newCollation string) e
 // DropTablesInSchema drops all tables in a schema. If onlyIfEmpty==true,
 // returns an error if any of the tables have any rows.
 func (instance *Instance) DropTablesInSchema(schema string, onlyIfEmpty bool) error {
-	s, err := instance.Schema(schema)
-	if err != nil {
-		return err
-	}
-	if onlyIfEmpty {
-		for _, t := range s.Tables {
-			hasRows, err := instance.TableHasRows(schema, t.Name)
-			if err != nil {
-				return err
-			}
-			if hasRows {
-				return fmt.Errorf("DropTablesInSchema: table %s.%s has at least one row", EscapeIdentifier(schema), EscapeIdentifier(t.Name))
-			}
-		}
-	}
-
 	db, err := instance.Connect(schema, "foreign_key_checks=0")
 	if err != nil {
 		return err
 	}
-	for _, t := range s.Tables {
-		_, err := db.Exec(t.DropStatement())
-		if err != nil {
+
+	// Obtain table names directly; faster than going through instance.Schema(schema)
+	// since we don't need other info besides the names
+	var names []string
+	query := `
+		SELECT table_name
+		FROM   information_schema.tables
+		WHERE  table_schema = ?
+		AND    table_type = 'BASE TABLE'`
+	if err := db.Select(&names, query, schema); err != nil {
+		return err
+	} else if len(names) == 0 {
+		return nil
+	}
+
+	if onlyIfEmpty {
+		workers := len(names)/10 + 1
+		if workers > 15 {
+			workers = 15
+		}
+		nameQueue := make(chan string)
+		errOut := make(chan error, workers)
+		for n := 0; n < workers; n++ {
+			go func() {
+				for name := range nameQueue {
+					var result []int
+					err := db.Select(&result, fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", EscapeIdentifier(name)))
+					if err == nil && len(result) != 0 {
+						err = fmt.Errorf("DropTablesInSchema: table %s.%s has at least one row", EscapeIdentifier(schema), EscapeIdentifier(name))
+					}
+					if err != nil {
+						errOut <- err
+						return
+					}
+				}
+				errOut <- nil
+			}()
+		}
+		for _, name := range names {
+			nameQueue <- name
+		}
+		close(nameQueue)
+		for n := 0; n < workers; n++ {
+			if err := <-errOut; err != nil {
+				return err
+			}
+		}
+	}
+
+	workers := len(names)/10 + 1
+	if workers > 5 {
+		workers = 5
+	}
+	nameQueue := make(chan string)
+	errOut := make(chan error, workers)
+	for n := 0; n < workers; n++ {
+		go func() {
+			for name := range nameQueue {
+				stmt := fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(name))
+				if _, err := db.Exec(stmt); err != nil {
+					errOut <- err
+					return
+				}
+			}
+			errOut <- nil
+		}()
+	}
+	for _, name := range names {
+		nameQueue <- name
+	}
+	close(nameQueue)
+	for n := 0; n < workers; n++ {
+		if err := <-errOut; err != nil {
 			return err
 		}
 	}
