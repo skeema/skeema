@@ -664,22 +664,51 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		t.SecondaryIndexes = secondaryIndexesByTableName[t.Name]
 	}
 
-	// Obtain actual SHOW CREATE TABLE output and store in each table. Compare
-	// with what we expect the create DDL to be, to determine if we support
-	// diffing for the table. Ignore next-auto-increment differences in this
-	// comparison, since the value may have changed between our previous
-	// information_schema introspection and our current SHOW CREATE TABLE call!
-	for _, t := range tables {
+	// Obtain actual SHOW CREATE TABLE output and store in each table. Since
+	// there's no way in MySQL to bulk fetch this for multiple tables at once,
+	// potentially use multiple goroutines to make this faster.
+	if len(tables) > 0 {
+		workers := len(tables)/10 + 1
+		if workers > 10 {
+			workers = 10
+		}
+		tableQueue := make(chan *Table)
+		errOut := make(chan error, workers)
+		for n := 0; n < workers; n++ {
+			go instance.queryCreateTable(schema, tableQueue, errOut)
+		}
+		for _, t := range tables {
+			tableQueue <- t
+		}
+		close(tableQueue)
+		for n := 0; n < workers; n++ {
+			if err := <-errOut; err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return tables, nil
+}
+
+func (instance *Instance) queryCreateTable(schema string, tableQueue <-chan *Table, errOut chan<- error) {
+	var err error
+	for t := range tableQueue {
 		t.CreateStatement, err = instance.ShowCreateTable(schema, t.Name)
 		if err != nil {
-			return nil, fmt.Errorf("Error executing SHOW CREATE TABLE: %s", err)
+			errOut <- fmt.Errorf("Error executing SHOW CREATE TABLE: %s", err)
+			return
 		}
+
+		// Compare what we expect the create DDL to be, to determine if we support
+		// diffing for the table. Ignore next-auto-increment differences in this
+		// comparison, since the value may have changed between our previous
+		// information_schema introspection and our current SHOW CREATE TABLE call!
 		beforeTable, _ := ParseCreateAutoInc(t.CreateStatement)
 		afterTable, _ := ParseCreateAutoInc(t.GeneratedCreateStatement())
 		if beforeTable != afterTable {
 			t.UnsupportedDDL = true
 		}
 	}
-
-	return tables, nil
+	errOut <- nil
 }
