@@ -491,6 +491,9 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	if err := db.Select(&rawTables, query, schema); err != nil {
 		return nil, fmt.Errorf("Error querying information_schema.tables: %s", err)
 	}
+	if len(rawTables) == 0 {
+		return []*Table{}, nil
+	}
 	tables := make([]*Table, len(rawTables))
 	for n, rawTable := range rawTables {
 		tables[n] = &Table{
@@ -667,31 +670,29 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	// Obtain actual SHOW CREATE TABLE output and store in each table. Since
 	// there's no way in MySQL to bulk fetch this for multiple tables at once,
 	// potentially use multiple goroutines to make this faster.
-	if len(tables) > 0 {
-		workers := len(tables)/10 + 1
-		if workers > 10 {
-			workers = 10
-		}
-		tableQueue := make(chan *Table)
-		errOut := make(chan error, workers)
-		for n := 0; n < workers; n++ {
-			go instance.queryCreateTable(schema, tableQueue, errOut)
-		}
-		for _, t := range tables {
-			tableQueue <- t
-		}
-		close(tableQueue)
-		for n := 0; n < workers; n++ {
-			if err := <-errOut; err != nil {
-				return nil, err
-			}
+	workers := len(tables)/10 + 1
+	if workers > 10 {
+		workers = 10
+	}
+	tableQueue := make(chan *Table)
+	errOut := make(chan error, workers)
+	for n := 0; n < workers; n++ {
+		go instance.hydrateCreateTable(schema, tableQueue, errOut)
+	}
+	for _, t := range tables {
+		tableQueue <- t
+	}
+	close(tableQueue)
+	for n := 0; n < workers; n++ {
+		if err := <-errOut; err != nil {
+			return nil, err
 		}
 	}
 
 	return tables, nil
 }
 
-func (instance *Instance) queryCreateTable(schema string, tableQueue <-chan *Table, errOut chan<- error) {
+func (instance *Instance) hydrateCreateTable(schema string, tableQueue <-chan *Table, errOut chan<- error) {
 	var err error
 	for t := range tableQueue {
 		t.CreateStatement, err = instance.ShowCreateTable(schema, t.Name)
