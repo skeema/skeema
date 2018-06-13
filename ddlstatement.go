@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/tengo"
@@ -36,17 +37,19 @@ func NewDDLStatement(diff *tengo.TableDiff, mods tengo.StatementModifiers, targe
 		instance:   target.Instance,
 		schemaName: target.SchemaFromDir.Name,
 	}
-	var err error
 
-	// Gather name and size of affected table. Size will be 0 for CREATE TABLE statements.
+	// Obtain table name, and possibly its current size (only if we actually need it)
 	var tableName string
 	var tableSize int64
-	if diff.From != nil { // ALTER or DROP
-		tableName = diff.From.Name
-		tableSize, err = ddl.getTableSize(target, diff.From)
-		ddl.setErr(err)
-	} else { // CREATE
+	var err error
+	if diff.Type == tengo.TableDiffCreate { // current size is inherently 0 for CREATE
 		tableName = diff.To.Name
+	} else { // ALTER or DROP
+		tableName = diff.From.Name
+		if anyOptChanged(target, "safe-below-size", "alter-wrapper-min-size") || wrapperUsesSize(target, "alter-wrapper", "ddl-wrapper") {
+			tableSize, err = ddl.getTableSize(target, diff.From)
+			ddl.setErr(err)
+		}
 	}
 
 	// If --safe-below-size option in use, enable additional statement modifier
@@ -114,6 +117,28 @@ func NewDDLStatement(diff *tengo.TableDiff, mods tengo.StatementModifiers, targe
 	}
 
 	return ddl
+}
+
+// anyOptChanged returns true if any of the specified option names have been
+// overridden from their default values for target's config
+func anyOptChanged(target *Target, options ...string) bool {
+	for _, opt := range options {
+		if target.Dir.Config.Changed(opt) {
+			return true
+		}
+	}
+	return false
+}
+
+// wrapperUsesSize returns true if any of the specified option names (which
+// should refer to "wrapper" command-lines) references the {SIZE} template var
+func wrapperUsesSize(target *Target, options ...string) bool {
+	for _, opt := range options {
+		if strings.Contains(strings.ToUpper(target.Dir.Config.Get(opt)), "{SIZE}") {
+			return true
+		}
+	}
+	return false
 }
 
 // IsShellOut returns true if the DDL is to be executed via shelling out to an

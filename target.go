@@ -249,56 +249,67 @@ func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 		}
 	}
 
-	if err := t.Instance.CloneSchema(t.SchemaFromInstance.Name, tempSchemaName); err != nil {
-		return err
-	}
-
-	db, err := t.Instance.Connect(tempSchemaName, "")
+	db, err := t.Instance.Connect(tempSchemaName, "foreign_key_checks=0")
 	if err != nil {
 		return fmt.Errorf("verifyDiff: cannot connect to %s: %s", t.Instance, err)
 	}
 	mods := tengo.StatementModifiers{
 		NextAutoInc: tengo.NextAutoIncIgnore,
 	}
-	tableNameToDDL := make(map[string]string)
 
-	// Iterate over the ALTER-type TableDiffs in the SchemaDiff. Run each against
-	// the table in the temp schema, and confirm the table now matches the version
-	// in the toTables map.
+	// Iterate over the ALTER-type TableDiffs in the SchemaDiff and index by table
+	// name, so that we can group statements that affect the same table.
+	type verification struct {
+		From   *tengo.Table
+		To     *tengo.Table
+		Alters []string
+	}
+	verifications := make(map[string]*verification)
+
 	for _, td := range diff.FilteredTableDiffs(tengo.TableDiffAlter) {
 		stmt, _ := td.Statement(mods) // fine to ignore errors for verifying DDL against temporary schema
-		if stmt == "" {
-			continue
+		if stmt != "" {
+			if _, already := verifications[td.From.Name]; already {
+				verifications[td.From.Name].Alters = append(verifications[td.From.Name].Alters, stmt)
+				verifications[td.From.Name].To = td.To
+			} else {
+				verifications[td.From.Name] = &verification{
+					From:   td.From,
+					To:     td.To,
+					Alters: []string{stmt},
+				}
+			}
 		}
-		if _, err = db.Exec(stmt); err != nil {
+	}
+
+	// For each altered table, do the following in the temp schema: create the
+	// "from" version of the table; run the relevant ALTERs; confirm the table
+	// now identically matches the "to" side of the table (ignoring changes to
+	// next auto-inc, which are expected); drop the table in the temp schema.
+	for name, v := range verifications {
+		if _, err := db.Exec(v.From.CreateStatement); err != nil {
 			return err
 		}
-		tableNameToDDL[td.From.Name] = stmt
-	}
-
-	tempSchema, err := t.Instance.Schema(tempSchemaName)
-	if err != nil {
-		return err
-	}
-	postAlterTables := tempSchema.TablesByName()
-	expectTables := t.SchemaFromDir.TablesByName()
-
-	for name, stmt := range tableNameToDDL {
-		// We have to compare CREATE TABLE statements without their next auto-inc
-		// values, since divergence there may be expected depending on settings
-		expected, _ := tengo.ParseCreateAutoInc(expectTables[name].CreateStatement)
-		actual, _ := tengo.ParseCreateAutoInc(postAlterTables[name].CreateStatement)
-		if expected != actual {
-			return fmt.Errorf("verifyDiff: Failure on table %s\nDDL:\n%s\n\nEXPECTED POST-ALTER:\n%s\n\nACTUAL POST-ALTER:\n%s\n\nRun command again with --skip-verify if this discrepancy is safe to ignore", name, stmt, expected, actual)
+		for _, stmt := range v.Alters {
+			if _, err := db.Exec(stmt); err != nil {
+				return err
+			}
+		}
+		expected, _ := tengo.ParseCreateAutoInc(v.To.CreateStatement)
+		actual, err := t.Instance.ShowCreateTable(tempSchemaName, v.To.Name)
+		if err != nil {
+			return err
+		}
+		if _, err := db.Exec(v.To.DropStatement()); err != nil {
+			return err
+		}
+		if actual, _ = tengo.ParseCreateAutoInc(actual); expected != actual {
+			return fmt.Errorf("verifyDiff: Failure on table %s\nDDL:\n%v\n\nEXPECTED POST-ALTER:\n%s\n\nACTUAL POST-ALTER:\n%s\n\nRun command again with --skip-verify if this discrepancy is safe to ignore", name, v.Alters, expected, actual)
 		}
 	}
 
 	// Clean up the temp schema
-	if t.Dir.Config.GetBool("reuse-temp-schema") {
-		if err = t.Instance.DropTablesInSchema(tempSchemaName, true); err != nil {
-			return fmt.Errorf("verifyDiff: cannot drop tables in temporary schema for %s on %s: %s", t.Dir, t.Instance, err)
-		}
-	} else {
+	if !t.Dir.Config.GetBool("reuse-temp-schema") {
 		if err = t.Instance.DropSchema(tempSchemaName, true); err != nil {
 			return fmt.Errorf("verifyDiff: cannot drop temporary schema for %s on %s: %s", t.Dir, t.Instance, err)
 		}
