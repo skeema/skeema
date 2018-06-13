@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -545,6 +546,9 @@ func (dir *Dir) TargetTemplate(instance *tengo.Instance) Target {
 		t.Err = fmt.Errorf("Cannot connect to %s: %s", instance, err)
 		return t
 	}
+	defer db.SetMaxOpenConns(0)
+	db.SetMaxOpenConns(5)
+	var wg sync.WaitGroup
 	for _, sf := range sqlFiles {
 		if sf.Error != nil {
 			t.SQLFileErrors[sf.Path()] = sf
@@ -553,16 +557,21 @@ func (dir *Dir) TargetTemplate(instance *tengo.Instance) Target {
 		for _, warning := range sf.Warnings {
 			t.SQLFileWarnings = append(t.SQLFileWarnings, warning)
 		}
-		_, err := db.Exec(sf.Contents)
-		if err != nil {
-			if tengo.IsSyntaxError(err) {
-				sf.Error = fmt.Errorf("%s: SQL syntax error: %s", sf.Path(), err)
-			} else {
-				sf.Error = fmt.Errorf("%s: Error executing DDL: %s", sf.Path(), err)
+		wg.Add(1)
+		go func(sf *SQLFile) {
+			defer wg.Done()
+			_, err := db.Exec(sf.Contents)
+			if err != nil {
+				if tengo.IsSyntaxError(err) {
+					sf.Error = fmt.Errorf("%s: SQL syntax error: %s", sf.Path(), err)
+				} else {
+					sf.Error = fmt.Errorf("%s: Error executing DDL: %s", sf.Path(), err)
+				}
+				t.SQLFileErrors[sf.Path()] = sf
 			}
-			t.SQLFileErrors[sf.Path()] = sf
-		}
+		}(sf)
 	}
+	wg.Wait()
 	t.SchemaFromDir, err = instance.Schema(tempSchemaName)
 	if err != nil {
 		t.Err = fmt.Errorf("Unable to obtain temp schema on %s: %s", instance, err)
