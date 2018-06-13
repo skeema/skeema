@@ -272,7 +272,10 @@ func (instance *Instance) ShowCreateTable(schema, table string) (string, error) 
 	if err != nil {
 		return "", err
 	}
+	return showCreateTable(db, table)
+}
 
+func showCreateTable(db *sqlx.DB, table string) (string, error) {
 	var createRows []struct {
 		TableName       string `db:"Table"`
 		CreateStatement string `db:"Create Table"`
@@ -284,7 +287,6 @@ func (instance *Instance) ShowCreateTable(schema, table string) (string, error) 
 	if len(createRows) != 1 {
 		return "", sql.ErrNoRows
 	}
-
 	return createRows[0].CreateStatement, nil
 }
 
@@ -315,6 +317,10 @@ func (instance *Instance) TableHasRows(schema, table string) (bool, error) {
 	if err != nil {
 		return true, err
 	}
+	return tableHasRows(db, table)
+}
+
+func tableHasRows(db *sqlx.DB, table string) (bool, error) {
 	var result []int
 	query := fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", EscapeIdentifier(table))
 	if err := db.Select(&result, query); err != nil {
@@ -441,63 +447,35 @@ func (instance *Instance) DropTablesInSchema(schema string, onlyIfEmpty bool) er
 		return nil
 	}
 
+	errOut := make(chan error, len(names))
+	defer db.SetMaxOpenConns(0)
+
 	if onlyIfEmpty {
-		workers := len(names)/10 + 1
-		if workers > 15 {
-			workers = 15
-		}
-		nameQueue := make(chan string)
-		errOut := make(chan error, workers)
-		for n := 0; n < workers; n++ {
-			go func() {
-				for name := range nameQueue {
-					var result []int
-					err := db.Select(&result, fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", EscapeIdentifier(name)))
-					if err == nil && len(result) != 0 {
-						err = fmt.Errorf("DropTablesInSchema: table %s.%s has at least one row", EscapeIdentifier(schema), EscapeIdentifier(name))
-					}
-					if err != nil {
-						errOut <- err
-						return
-					}
-				}
-				errOut <- nil
-			}()
-		}
+		db.SetMaxOpenConns(15)
 		for _, name := range names {
-			nameQueue <- name
+			go func(name string) {
+				hasRows, err := tableHasRows(db, name)
+				if err == nil && hasRows {
+					err = fmt.Errorf("DropTablesInSchema: table %s.%s has at least one row", EscapeIdentifier(schema), EscapeIdentifier(name))
+				}
+				errOut <- err
+			}(name)
 		}
-		close(nameQueue)
-		for n := 0; n < workers; n++ {
+		for range names {
 			if err := <-errOut; err != nil {
 				return err
 			}
 		}
 	}
 
-	workers := len(names)/10 + 1
-	if workers > 5 {
-		workers = 5
-	}
-	nameQueue := make(chan string)
-	errOut := make(chan error, workers)
-	for n := 0; n < workers; n++ {
-		go func() {
-			for name := range nameQueue {
-				stmt := fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(name))
-				if _, err := db.Exec(stmt); err != nil {
-					errOut <- err
-					return
-				}
-			}
-			errOut <- nil
-		}()
-	}
+	db.SetMaxOpenConns(5)
 	for _, name := range names {
-		nameQueue <- name
+		go func(name string) {
+			_, err := db.Exec(fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(name)))
+			errOut <- err
+		}(name)
 	}
-	close(nameQueue)
-	for n := 0; n < workers; n++ {
+	for range names {
 		if err := <-errOut; err != nil {
 			return err
 		}
@@ -723,47 +701,38 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 
 	// Obtain actual SHOW CREATE TABLE output and store in each table. Since
 	// there's no way in MySQL to bulk fetch this for multiple tables at once,
-	// potentially use multiple goroutines to make this faster.
-	workers := len(tables)/10 + 1
-	if workers > 10 {
-		workers = 10
+	// use multiple goroutines to make this faster.
+	db, err = instance.Connect(schema, "")
+	if err != nil {
+		return nil, err
 	}
-	tableQueue := make(chan *Table)
-	errOut := make(chan error, workers)
-	for n := 0; n < workers; n++ {
-		go instance.hydrateCreateTable(schema, tableQueue, errOut)
-	}
+	defer db.SetMaxOpenConns(0)
+	db.SetMaxOpenConns(10)
+	errOut := make(chan error, len(tables))
 	for _, t := range tables {
-		tableQueue <- t
+		go func(t *Table) {
+			var err error
+			if t.CreateStatement, err = showCreateTable(db, t.Name); err != nil {
+				errOut <- fmt.Errorf("Error executing SHOW CREATE TABLE: %s", err)
+				return
+			}
+			// Compare what we expect the create DDL to be, to determine if we support
+			// diffing for the table. Ignore next-auto-increment differences in this
+			// comparison, since the value may have changed between our previous
+			// information_schema introspection and our current SHOW CREATE TABLE call!
+			beforeTable, _ := ParseCreateAutoInc(t.CreateStatement)
+			afterTable, _ := ParseCreateAutoInc(t.GeneratedCreateStatement())
+			if beforeTable != afterTable {
+				t.UnsupportedDDL = true
+			}
+			errOut <- nil
+		}(t)
 	}
-	close(tableQueue)
-	for n := 0; n < workers; n++ {
+	for range tables {
 		if err := <-errOut; err != nil {
 			return nil, err
 		}
 	}
 
 	return tables, nil
-}
-
-func (instance *Instance) hydrateCreateTable(schema string, tableQueue <-chan *Table, errOut chan<- error) {
-	var err error
-	for t := range tableQueue {
-		t.CreateStatement, err = instance.ShowCreateTable(schema, t.Name)
-		if err != nil {
-			errOut <- fmt.Errorf("Error executing SHOW CREATE TABLE: %s", err)
-			return
-		}
-
-		// Compare what we expect the create DDL to be, to determine if we support
-		// diffing for the table. Ignore next-auto-increment differences in this
-		// comparison, since the value may have changed between our previous
-		// information_schema introspection and our current SHOW CREATE TABLE call!
-		beforeTable, _ := ParseCreateAutoInc(t.CreateStatement)
-		afterTable, _ := ParseCreateAutoInc(t.GeneratedCreateStatement())
-		if beforeTable != afterTable {
-			t.UnsupportedDDL = true
-		}
-	}
-	errOut <- nil
 }
