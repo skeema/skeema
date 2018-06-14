@@ -1,7 +1,7 @@
 sudo: required
 language: go
 go:
-  - "1.10.x"
+  - "1.9.x"
 services:
   - docker
 
@@ -12,15 +12,17 @@ env:
   global:
     - SKEEMA_TEST_IMAGES="mysql:5.6,mysql:5.7"
 
+install: true
+
 before_install:
   - go get golang.org/x/lint/golint
   - go get github.com/mattn/goveralls
 
 script:
   - go test -v -coverprofile=coverage.out -covermode=count
-  - go vet ./...
+  - go vet
   - test -z "$(gofmt -s -d *.go 2>&1)"
-  - golint -set_exit_status .
+  - golint -set_exit_status
 
 after_script:
   - goveralls -coverprofile=coverage.out -service=travis-ci

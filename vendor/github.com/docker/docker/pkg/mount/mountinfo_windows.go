@@ -1,6 +1,6 @@
-package mount
+package mount // import "github.com/docker/docker/pkg/mount"
 
-func parseMountTable(f FilterFunc) ([]*Info, error) {
+func parseMountTable() ([]*Info, error) {
 	// Do NOT return an error!
 	return nil, nil
 }
