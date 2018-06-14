@@ -468,7 +468,7 @@ func (instance *Instance) DropTablesInSchema(schema string, onlyIfEmpty bool) er
 		}
 	}
 
-	db.SetMaxOpenConns(5)
+	db.SetMaxOpenConns(10)
 	for _, name := range names {
 		go func(name string) {
 			_, err := db.Exec(fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(name)))
