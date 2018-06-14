@@ -559,7 +559,7 @@ func (dir *Dir) TargetTemplate(instance *tengo.Instance) Target {
 		return t
 	}
 	defer db.SetMaxOpenConns(0)
-	db.SetMaxOpenConns(5)
+	db.SetMaxOpenConns(10)
 	var wg sync.WaitGroup
 	for _, sf := range sqlFiles {
 		if sf.Error != nil {
