@@ -716,13 +716,16 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 				errOut <- fmt.Errorf("Error executing SHOW CREATE TABLE: %s", err)
 				return
 			}
+			if t.Engine == "InnoDB" {
+				t.CreateStatement = NormalizeCreateOptions(t.CreateStatement)
+			}
 			// Compare what we expect the create DDL to be, to determine if we support
 			// diffing for the table. Ignore next-auto-increment differences in this
 			// comparison, since the value may have changed between our previous
 			// information_schema introspection and our current SHOW CREATE TABLE call!
-			beforeTable, _ := ParseCreateAutoInc(t.CreateStatement)
-			afterTable, _ := ParseCreateAutoInc(t.GeneratedCreateStatement())
-			if beforeTable != afterTable {
+			actual, _ := ParseCreateAutoInc(t.CreateStatement)
+			expected, _ := ParseCreateAutoInc(t.GeneratedCreateStatement())
+			if actual != expected {
 				t.UnsupportedDDL = true
 			}
 			errOut <- nil

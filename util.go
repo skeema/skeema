@@ -81,6 +81,23 @@ func ParseCreateAutoInc(createStmt string) (string, uint64) {
 	return newStmt, nextAutoInc
 }
 
+var normalizeCreateRegexps = map[*regexp.Regexp]string{
+	regexp.MustCompile(" /\\*!50606 (STORAGE|COLUMN_FORMAT) (DISK|MEMORY|FIXED|DYNAMIC) \\*/"): "",
+	regexp.MustCompile(" USING (HASH|BTREE)"):                                                  "",
+	regexp.MustCompile("`\\) KEY_BLOCK_SIZE=\\d+"):                                             "`)",
+}
+
+// NormalizeCreateOptions adjusts the supplied CREATE TABLE statement to remove
+// any no-op table options that are persisted in SHOW CREATE TABLE, but not
+// reflected in information_schema and serve no purpose for InnoDB tables.
+// This function is not guaranteed to be safe for non-InnoDB tables.
+func NormalizeCreateOptions(createStmt string) string {
+	for re, replacement := range normalizeCreateRegexps {
+		createStmt = re.ReplaceAllString(createStmt, replacement)
+	}
+	return createStmt
+}
+
 // baseDSN returns a DSN with the database (schema) name and params stripped.
 // Currently only supports MySQL, via go-sql-driver/mysql's DSN format.
 func baseDSN(dsn string) string {

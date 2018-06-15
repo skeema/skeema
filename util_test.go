@@ -64,3 +64,21 @@ func TestParseCreateAutoInc(t *testing.T) {
 		t.Errorf("Failed to properly parse AUTO_INCREMENT value: expected 123, found %d", nextAutoInc)
 	}
 }
+
+func TestNormalizeCreateOptions(t *testing.T) {
+	input := "CREATE TABLE `problems` (\n" +
+		"  `name` varchar(30) /*!50606 STORAGE MEMORY */ /*!50606 COLUMN_FORMAT DYNAMIC */ DEFAULT NULL,\n" +
+		"  `num` int(10) unsigned NOT NULL /*!50606 STORAGE DISK */ /*!50606 COLUMN_FORMAT FIXED */,\n" +
+		"  KEY `idx1` (`name`) USING HASH KEY_BLOCK_SIZE=4 COMMENT 'lol',\n" +
+		"  KEY `idx2` (`num`) USING BTREE\n" +
+		") ENGINE=InnoDB DEFAULT CHARSET=latin1 KEY_BLOCK_SIZE=8;\n"
+	expect := "CREATE TABLE `problems` (\n" +
+		"  `name` varchar(30) DEFAULT NULL,\n" +
+		"  `num` int(10) unsigned NOT NULL,\n" +
+		"  KEY `idx1` (`name`) COMMENT 'lol',\n" +
+		"  KEY `idx2` (`num`)\n" +
+		") ENGINE=InnoDB DEFAULT CHARSET=latin1 KEY_BLOCK_SIZE=8;\n"
+	if actual := NormalizeCreateOptions(input); actual != expect {
+		t.Errorf("NormalizeCreateOptions returned unexpected value. Expected:\n%s\nActual:\n%s", expect, actual)
+	}
+}
