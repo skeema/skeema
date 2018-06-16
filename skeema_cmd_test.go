@@ -544,6 +544,76 @@ func (s *SkeemaIntegrationSuite) TestDirEdgeCases(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema lint")
 }
 
+// This test covers usage of clauses that have no effect in InnoDB, but are still
+// shown by MySQL in SHOW CREATE TABLE, despite not being reflected anywhere in
+// information_schema. Skeema ignores/strips these clauses so that they do not
+// trip up its "unsupported table" validation logic.
+func (s *SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
+	withClauses := "CREATE TABLE `problems` (\n" +
+		"  `name` varchar(30) /*!50606 STORAGE MEMORY */ /*!50606 COLUMN_FORMAT DYNAMIC */ DEFAULT NULL,\n" +
+		"  `num` int(10) unsigned NOT NULL /*!50606 STORAGE DISK */ /*!50606 COLUMN_FORMAT FIXED */,\n" +
+		"  KEY `idx1` (`name`) USING HASH KEY_BLOCK_SIZE=4 COMMENT 'lol',\n" +
+		"  KEY `idx2` (`num`) USING BTREE\n" +
+		") ENGINE=InnoDB DEFAULT CHARSET=latin1 KEY_BLOCK_SIZE=8;\n"
+	withoutClauses := "CREATE TABLE `problems` (\n" +
+		"  `name` varchar(30) DEFAULT NULL,\n" +
+		"  `num` int(10) unsigned NOT NULL,\n" +
+		"  KEY `idx1` (`name`) COMMENT 'lol',\n" +
+		"  KEY `idx2` (`num`)\n" +
+		") ENGINE=InnoDB DEFAULT CHARSET=latin1 KEY_BLOCK_SIZE=8;\n"
+	assertFileNormalized := func() {
+		t.Helper()
+		if contents := readFile(t, "mydb/product/problems.sql"); contents != withoutClauses {
+			t.Errorf("File mydb/product/problems.sql not normalized. Expected:\n%s\nFound:\n%s", withoutClauses, contents)
+		}
+	}
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+
+	// pull strips the clauses from new table
+	s.dbExec(t, "product", withClauses)
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	assertFileNormalized()
+
+	// pull normalizes files to remove the clauses from an unchanged table
+	writeFile(t, "mydb/product/problems.sql", withClauses)
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	assertFileNormalized()
+
+	// lint normalizes files to remove the clauses
+	writeFile(t, "mydb/product/problems.sql", withClauses)
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint")
+	assertFileNormalized()
+
+	// diff views the clauses as no-ops if present in file but not db, or vice versa
+	s.dbExec(t, "product", "DROP TABLE `problems`")
+	s.dbExec(t, "product", withoutClauses)
+	writeFile(t, "mydb/product/problems.sql", withClauses)
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	s.dbExec(t, "product", "DROP TABLE `problems`")
+	s.dbExec(t, "product", withClauses)
+	writeFile(t, "mydb/product/problems.sql", withoutClauses)
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// init strips the clauses when it writes files
+	// (current db state: file still has extra clauses from previous)
+	if err := os.RemoveAll("mydb"); err != nil {
+		t.Fatalf("Unable to clean directory: %s", err)
+	}
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+	assertFileNormalized()
+
+	// push with other changes to same table ignores clauses / does not break
+	// validation, in either direction
+	newFileContents := strings.Replace(withoutClauses, "  KEY `idx1`", "  newcol int COLUMN_FORMAT FIXED,\n  KEY `idx1`", 1)
+	writeFile(t, "mydb/product/problems.sql", newFileContents)
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	s.dbExec(t, "product", "DROP TABLE `problems`")
+	s.dbExec(t, "product", withoutClauses)
+	s.dbExec(t, "product", "ALTER TABLE `problems` DROP INDEX `idx2`")
+	writeFile(t, "mydb/product/problems.sql", withClauses)
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+}
+
 func (s *SkeemaIntegrationSuite) TestReuseTempSchema(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
 

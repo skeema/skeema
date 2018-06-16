@@ -131,15 +131,29 @@ func (s *SkeemaIntegrationSuite) handleCommand(t *testing.T, expectedExitCode in
 	fakeFileSource := mybase.SimpleSource(map[string]string{"password": s.d.Instance.Password})
 	cfg := mybase.ParseFakeCLI(t, CommandSuite, fullCommandLine, fakeFileSource)
 	err := cfg.HandleCommand()
-	if actualExitCode := ExitCode(err); actualExitCode != expectedExitCode {
-		t.Errorf("Unexpected exit code from `%s`: Expected code=%d, found code=%d, message=%s", fullCommandLine, expectedExitCode, actualExitCode, err)
-	} else if actualExitCode == 0 {
-		log.Debug("Exit code 0 (SUCCESS)")
-	} else if actualExitCode >= CodeFatalError {
-		log.Error(err.Error())
-	} else {
-		log.Warn(err.Error())
+
+	actualExitCode := ExitCode(err)
+	var msg string
+	if err != nil {
+		msg = err.Error()
 	}
+	if actualExitCode == 0 {
+		log.Info("Exit code 0 (SUCCESS)")
+	} else if actualExitCode >= CodeFatalError {
+		if msg == "" {
+			msg = "FATAL"
+		}
+		log.Errorf("Exit code %d (%s)", actualExitCode, msg)
+	} else {
+		if msg == "" {
+			msg = "WARNING"
+		}
+		log.Warnf("Exit code %d (%s)", actualExitCode, msg)
+	}
+	if actualExitCode != expectedExitCode {
+		t.Errorf("Unexpected exit code from `%s`: Expected code=%d, found code=%d, message=%s", fullCommandLine, expectedExitCode, actualExitCode, err)
+	}
+
 	if pwd != "" && pwd != "." {
 		if err := os.Chdir(s.workspace()); err != nil {
 			t.Fatalf("Unable to cd to %s: %s", s.workspace(), err)

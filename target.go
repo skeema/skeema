@@ -300,6 +300,12 @@ func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 		if err != nil {
 			return err
 		}
+		if v.To.Engine == "InnoDB" {
+			// Strip out clauses that have no effect in InnoDB and are not reflected
+			// in information_schema
+			actual = tengo.NormalizeCreateOptions(actual)
+		}
+
 		if _, err := db.Exec(v.To.DropStatement()); err != nil {
 			return err
 		}
