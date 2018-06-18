@@ -306,7 +306,6 @@ func (s *SkeemaIntegrationSuite) TestDiffHandler(t *testing.T) {
 	replacement := fmt.Sprintf("),\n  %s\n", strings.Join(lines, ",\n  "))
 	contents = strings.Replace(contents, ")\n", replacement, 1)
 	writeFile(t, "mydb/product/posts.sql", contents)
-	fmt.Println(contents) /// TODO REMOVE
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --verify")
 }
 
