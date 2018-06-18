@@ -296,6 +296,18 @@ func (s *SkeemaIntegrationSuite) TestDiffHandler(t *testing.T) {
 			t.Fatalf("Unable to delete diff-brief.out: %s", err)
 		}
 	}
+
+	// Confirm --verify not tripped up by unexpected index reordering
+	contents := readFile(t, "mydb/product/posts.sql")
+	lines := make([]string, 6)
+	for n := range lines {
+		lines[n] = fmt.Sprintf("KEY `idxnew_%d` (created_at)", n)
+	}
+	replacement := fmt.Sprintf("),\n  %s\n", strings.Join(lines, ",\n  "))
+	contents = strings.Replace(contents, ")\n", replacement, 1)
+	writeFile(t, "mydb/product/posts.sql", contents)
+	fmt.Println(contents) /// TODO REMOVE
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --verify")
 }
 
 func (s *SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
