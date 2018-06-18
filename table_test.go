@@ -1,6 +1,7 @@
 package tengo
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -228,6 +229,51 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 	}
 	if ta.Table != &from || ta.Index != from.PrimaryKey {
 		t.Error("Pointers in table alter do not point to expected values")
+	}
+}
+
+func TestTableAlterAddIndexOrder(t *testing.T) {
+	from := aTable(1)
+	to := aTable(1)
+
+	// Add 10 secondary indexes, and ensure their order is preserved
+	for n := 0; n < 10; n++ {
+		to.SecondaryIndexes = append(to.SecondaryIndexes, &Index{
+			Name:     fmt.Sprintf("newidx_%d", n),
+			Columns:  []*Column{to.Columns[0]},
+			SubParts: []uint16{0},
+		})
+	}
+	to.CreateStatement = to.GeneratedCreateStatement()
+	tableAlters, supported := from.Diff(&to)
+	if len(tableAlters) != 10 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 10, found %d, supported=%t", len(tableAlters), supported)
+	}
+	for n := 0; n < 10; n++ {
+		ta, ok := tableAlters[n].(AddIndex)
+		if !ok {
+			t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
+		}
+		expectName := fmt.Sprintf("newidx_%d", n)
+		if ta.Index.Name != expectName {
+			t.Errorf("Incorrect index order: expected alters[%d] to be index name %s, instead found %s", n, expectName, ta.Index.Name)
+		}
+	}
+
+	// Also modify an existing index, and ensure its corresponding drop + re-add
+	// comes before the other 10 adds
+	to.SecondaryIndexes[1].SubParts[1] = 6
+	tableAlters, supported = from.Diff(&to)
+	if len(tableAlters) != 12 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 12, found %d, supported=%t", len(tableAlters), supported)
+	}
+	if ta, ok := tableAlters[0].(DropIndex); !ok {
+		t.Errorf("Expected alters[0] to be a DropIndex, instead found %T", ta)
+	}
+	if ta, ok := tableAlters[1].(AddIndex); !ok {
+		t.Errorf("Expected alters[1] to be an AddIndex, instead found %T", ta)
+	} else if ta.Index.Name != to.SecondaryIndexes[1].Name {
+		t.Errorf("Expected alters[1] to be on index %s, instead found %s", to.SecondaryIndexes[1].Name, ta.Index.Name)
 	}
 }
 

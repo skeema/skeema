@@ -162,11 +162,6 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// Compare secondary indexes
 	fromIndexes := from.SecondaryIndexesByName()
 	toIndexes := to.SecondaryIndexesByName()
-	for _, toIdx := range toIndexes {
-		if _, existedBefore := fromIndexes[toIdx.Name]; !existedBefore {
-			clauses = append(clauses, AddIndex{Table: to, Index: toIdx})
-		}
-	}
 	for _, fromIdx := range fromIndexes {
 		toIdx, stillExists := toIndexes[fromIdx.Name]
 		if !stillExists {
@@ -175,6 +170,11 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 			drop := DropIndex{Table: to, Index: fromIdx}
 			add := AddIndex{Table: to, Index: toIdx}
 			clauses = append(clauses, drop, add)
+		}
+	}
+	for _, toIdx := range to.SecondaryIndexes {
+		if _, existedBefore := fromIndexes[toIdx.Name]; !existedBefore {
+			clauses = append(clauses, AddIndex{Table: to, Index: toIdx})
 		}
 	}
 
