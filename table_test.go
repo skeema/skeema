@@ -25,6 +25,44 @@ func TestTableGeneratedCreateStatement(t *testing.T) {
 	}
 }
 
+func TestClusteredIndexKey(t *testing.T) {
+	table := aTable(1)
+	if table.ClusteredIndexKey() == nil || table.ClusteredIndexKey() != table.PrimaryKey {
+		t.Error("ClusteredIndexKey() did not return primary key when it was supposed to")
+	}
+	table.Engine = "MyISAM"
+	if table.ClusteredIndexKey() != nil {
+		t.Errorf("Expected ClusteredIndexKey() to return nil for non-InnoDB table, instead found %+v", table.ClusteredIndexKey())
+	}
+	table.Engine = "InnoDB"
+
+	table.PrimaryKey = nil
+	if table.ClusteredIndexKey() != table.SecondaryIndexes[0] {
+		t.Errorf("Expected ClusteredIndexKey() to return %+v, instead found %+v", table.SecondaryIndexes[0], table.ClusteredIndexKey())
+	}
+
+	table.SecondaryIndexes[0], table.SecondaryIndexes[1] = table.SecondaryIndexes[1], table.SecondaryIndexes[0]
+	if table.ClusteredIndexKey() != table.SecondaryIndexes[1] {
+		t.Errorf("Expected ClusteredIndexKey() to return %+v, instead found %+v", table.SecondaryIndexes[1], table.ClusteredIndexKey())
+	}
+
+	table.Columns[4].Nullable = true
+	if table.ClusteredIndexKey() != nil {
+		t.Errorf("Expected ClusteredIndexKey() to return nil for table with unique-but-nullable index, instead found %+v", table.ClusteredIndexKey())
+	}
+	table.Columns[4].Nullable = false
+
+	table.SecondaryIndexes[0].Unique = true
+	if table.ClusteredIndexKey() != table.SecondaryIndexes[1] {
+		t.Errorf("Expected ClusteredIndexKey() to return %+v, instead found %+v", table.SecondaryIndexes[1], table.ClusteredIndexKey())
+	}
+
+	table.Columns[2].Nullable = false
+	if table.ClusteredIndexKey() != table.SecondaryIndexes[0] {
+		t.Errorf("Expected ClusteredIndexKey() to return %+v, instead found %+v", table.SecondaryIndexes[0], table.ClusteredIndexKey())
+	}
+}
+
 func TestTableAlterAddOrDropColumn(t *testing.T) {
 	from := aTable(1)
 	to := aTable(1)

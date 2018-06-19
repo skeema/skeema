@@ -108,6 +108,31 @@ func (t *Table) HasAutoIncrement() bool {
 	return false
 }
 
+// ClusteredIndexKey returns which index is used for an InnoDB table's clustered
+// index. This will be the primary key if one exists; otherwise, it will be the
+// first unique key with non-nullable columns. If there is no such key, or if
+// the table's engine isn't InnoDB, this method returns nil.
+func (t *Table) ClusteredIndexKey() *Index {
+	if t.Engine != "InnoDB" {
+		return nil
+	}
+	if t.PrimaryKey != nil {
+		return t.PrimaryKey
+	}
+Outer:
+	for _, index := range t.SecondaryIndexes {
+		if index.Unique {
+			for _, col := range index.Columns {
+				if col.Nullable {
+					continue Outer
+				}
+			}
+			return index
+		}
+	}
+	return nil
+}
+
 // Diff returns a set of differences between this table and another table.
 func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	from := t // keeping name as t in method definition to satisfy linter
