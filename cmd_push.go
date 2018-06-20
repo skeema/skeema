@@ -29,6 +29,7 @@ top of the file. If no environment name is supplied, the default is
 	cmd.AddOption(mybase.BoolOption("allow-unsafe", 0, false, "Permit running ALTER or DROP operations that are potentially destructive"))
 	cmd.AddOption(mybase.BoolOption("dry-run", 0, false, "Output DDL but don't run it; equivalent to `skeema diff`"))
 	cmd.AddOption(mybase.BoolOption("first-only", '1', false, "For dirs mapping to multiple instances or schemas, just run against the first per dir"))
+	cmd.AddOption(mybase.BoolOption("exact-match", 0, false, "Follow *.sql table definitions exactly, even for differences with no functional impact"))
 	cmd.AddOption(mybase.BoolOption("brief", 'q', false, "<overridden by diff command>").Hidden())
 	cmd.AddOption(mybase.StringOption("alter-wrapper", 'x', "", "External bin to shell out to for ALTER TABLE; see manual for template vars"))
 	cmd.AddOption(mybase.StringOption("alter-wrapper-min-size", 0, "0", "Ignore --alter-wrapper for tables smaller than this size in bytes"))
@@ -192,6 +193,7 @@ func pushWorker(sps *sharedPushState) {
 			// Set configuration-dependent statement modifiers here inside the Target
 			// loop, since the config for these may var per dir!
 			mods.AllowUnsafe = t.Dir.Config.GetBool("allow-unsafe") || sps.briefOutput
+			mods.StrictIndexOrder = t.Dir.Config.GetBool("exact-match")
 			mods.AlgorithmClause, err = t.Dir.Config.GetEnum("alter-algorithm", "INPLACE", "COPY", "DEFAULT")
 			if err != nil {
 				sps.setFatalError(NewExitValue(CodeBadConfig, err.Error()))
