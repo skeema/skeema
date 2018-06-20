@@ -76,9 +76,9 @@ CREATE TABLE grab_bag (
 	alive tinyint(1) DEFAULT '1' COMMENT 'column comment',
 	flags bit(8) DEFAULT b'1',
 	PRIMARY KEY (id, code),
-	UNIQUE INDEX name_idx (name),
-	INDEX recency (updated_at, created_at),
-	INDEX owner_idx (owner_id) COMMENT 'index comment'
+	UNIQUE KEY name_idx (name),
+	KEY recency (updated_at, created_at),
+	KEY owner_idx (owner_id) COMMENT 'index comment'
 ) AUTO_INCREMENT=123;
 
 CREATE TABLE partitioned (

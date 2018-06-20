@@ -184,22 +184,31 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 		}
 	}
 
-	// Compare secondary indexes
-	fromIndexes := from.SecondaryIndexesByName()
+	// Compare secondary indexes. There is no way to modify an index without
+	// dropping and re-adding it. There's also no way to re-position an index
+	// without dropping and re-adding all preexisting indexes that now come after.
 	toIndexes := to.SecondaryIndexesByName()
-	for _, fromIdx := range fromIndexes {
-		toIdx, stillExists := toIndexes[fromIdx.Name]
-		if !stillExists {
+	fromIndexStillExist := make([]*Index, 0) // ordered list of indexes from "from" that still exist in "to"
+	for _, fromIdx := range from.SecondaryIndexes {
+		if _, stillExists := toIndexes[fromIdx.Name]; stillExists {
+			fromIndexStillExist = append(fromIndexStillExist, fromIdx)
+		} else {
 			clauses = append(clauses, DropIndex{Table: to, Index: fromIdx})
-		} else if !fromIdx.Equals(toIdx) {
-			drop := DropIndex{Table: to, Index: fromIdx}
-			add := AddIndex{Table: to, Index: toIdx}
-			clauses = append(clauses, drop, add)
 		}
 	}
+	var fromCursor int
 	for _, toIdx := range to.SecondaryIndexes {
-		if _, existedBefore := fromIndexes[toIdx.Name]; !existedBefore {
+		for fromCursor < len(fromIndexStillExist) && !fromIndexStillExist[fromCursor].Equals(toIdx) {
+			clauses = append(clauses, DropIndex{Table: to, Index: fromIndexStillExist[fromCursor]})
+			fromCursor++
+		}
+		if fromCursor >= len(fromIndexStillExist) {
+			// Already went through everything in the "from" list, so all remaining "to"
+			// indexes are adds
 			clauses = append(clauses, AddIndex{Table: to, Index: toIdx})
+		} else {
+			// Current position "to" matches cursor position "from"; nothing to add or drop
+			fromCursor++
 		}
 	}
 
