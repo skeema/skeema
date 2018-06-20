@@ -620,7 +620,7 @@ func (s *SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
 	s.dbExec(t, "product", "DROP TABLE `problems`")
 	s.dbExec(t, "product", withoutClauses)
-	s.dbExec(t, "product", "ALTER TABLE `problems` DROP INDEX `idx2`")
+	s.dbExec(t, "product", "ALTER TABLE `problems` DROP KEY `idx2`")
 	writeFile(t, "mydb/product/problems.sql", withClauses)
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
 }
