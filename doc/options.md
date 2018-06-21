@@ -16,6 +16,7 @@
 * [default-collation](#default-collation)
 * [dir](#dir)
 * [dry-run](#dry-run)
+* [exact-match](#exact-match)
 * [first-only](#first-only)
 * [host](#host)
 * [host-wrapper](#host-wrapper)
@@ -295,6 +296,24 @@ Commands | push
 
 Running `skeema push --dry-run` is exactly equivalent to running `skeema diff`: the DDL will be generated and printed, but not executed. The same code path is used in both cases. The *only* difference is that `skeema diff` has its own help/usage text, but otherwise the command logic is the same as `skeema push --dry-run`.
 
+### exact-match
+
+Commands | diff, push
+--- | :---
+**Default** | false
+**Type** | boolean
+**Restrictions** | none
+
+Ordinarily, `skeema diff` and `skeema push` ignore certain table differences which have no functional impact in MySQL and serve purely cosmetic purposes. For example, if two tables list their indexes in a different order, this difference is normally ignored to avoid needlessly dropping and re-adding the indexes, which may be slow if the table is large.
+
+If the [exact-match](#exact-match) option is used, these purely-cosmetic differences will be included in the generated `ALTER TABLE` statements instead of being suppressed. In other words, Skeema will attempt to make the exact table definition in MySQL exactly match the corresponding table definition specified in the *.sql file.
+
+Be aware that MySQL itself sometimes also suppresses attempts to make cosmetic changes to a table's definition! You must combine the [exact-match](#exact-match) option with [alter-algorithm=COPY](#alter-algorithm) to circumvent this behavior on the MySQL side. This forces MySQL to rebuild the table, which will be slow for large tables.
+
+Currently, [exact-match](#exact-match) only affects index ordering. In the near future, once foreign keys are supported, this option will affect foreign key naming and ordering as well.
+
+In the one case in InnoDB when index ordering has a functional impact (tables with no primary key, but multiple unique indexes over all non-nullable columns), Skeema will automatically respect index ordering, regardless of whether [exact-match](#exact-match) is enabled.
+
 ### first-only
 
 Commands | diff, push
@@ -540,4 +559,4 @@ Commands | diff, push
 
 Controls whether generated `ALTER TABLE` statements are automatically verified for correctness. If true, each generated ALTER will be tested in the temporary schema. See [the FAQ](faq.md#auto-generated-ddl-is-verified-for-correctness) for more information.
 
-It is recommended that this variable be left at its default of true, but if desired you can disable verification for speed reasons.
+It is recommended that this option be left at its default of true, but if desired you can disable verification for performance reasons.

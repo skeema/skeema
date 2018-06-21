@@ -28,11 +28,12 @@ const (
 // for a particular table, and/or generate errors if certain clauses are
 // present.
 type StatementModifiers struct {
-	NextAutoInc     NextAutoIncMode // How to handle differences in next-auto-inc values
-	AllowUnsafe     bool            // Whether to allow potentially-destructive DDL (drop table, drop column, modify col type, etc)
-	LockClause      string          // Include a LOCK=[value] clause in generated ALTER TABLE
-	AlgorithmClause string          // Include an ALGORITHM=[value] clause in generated ALTER TABLE
-	IgnoreTable     *regexp.Regexp  // Generate blank DDL if table name matches this regexp
+	NextAutoInc      NextAutoIncMode // How to handle differences in next-auto-inc values
+	AllowUnsafe      bool            // Whether to allow potentially-destructive DDL (drop table, drop column, modify col type, etc)
+	LockClause       string          // Include a LOCK=[value] clause in generated ALTER TABLE
+	AlgorithmClause  string          // Include an ALGORITHM=[value] clause in generated ALTER TABLE
+	IgnoreTable      *regexp.Regexp  // Generate blank DDL if table name matches this regexp
+	StrictIndexOrder bool            // If true, maintain index order even in cases where there is no functional difference
 }
 
 // SchemaDiff stores a set of differences between two database schemas.
@@ -338,15 +339,44 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 		}
 	}
 
+	// Ignore index repositioning, unless StrictIndexOrder enabled, or unless the
+	// order is actually relevant to the clustered index key
+	trivialIndexMoves := make(map[string]bool)
+	if !mods.StrictIndexOrder && td.To.ClusteredIndexKey() == td.To.PrimaryKey {
+		// Iterate through the clauses to find cases where we drop an index and then
+		// later re-add the exact same index. (Note that the drop will *always* come
+		// before the subsequent re-add in td.alterClauses in this case.)
+		droppedIndexes := make(map[string]*Index)
+		for _, clause := range td.alterClauses {
+			switch clause := clause.(type) {
+			case DropIndex:
+				droppedIndexes[clause.Index.Name] = clause.Index
+			case AddIndex:
+				if index, dropped := droppedIndexes[clause.Index.Name]; dropped && index.Equals(clause.Index) {
+					trivialIndexMoves[clause.Index.Name] = true
+				}
+			}
+		}
+	}
+
 	clauseStrings := make([]string, 0, len(td.alterClauses))
 	var err error
 	for _, clause := range td.alterClauses {
-		if clause, ok := clause.(ChangeAutoIncrement); ok {
+		switch clause := clause.(type) {
+		case ChangeAutoIncrement:
 			if mods.NextAutoInc == NextAutoIncIgnore {
 				continue
 			} else if mods.NextAutoInc == NextAutoIncIfIncreased && clause.OldNextAutoIncrement >= clause.NewNextAutoIncrement {
 				continue
 			} else if mods.NextAutoInc == NextAutoIncIfAlready && clause.OldNextAutoIncrement <= 1 {
+				continue
+			}
+		case DropIndex:
+			if trivialIndexMoves[clause.Index.Name] {
+				continue
+			}
+		case AddIndex:
+			if trivialIndexMoves[clause.Index.Name] {
 				continue
 			}
 		}

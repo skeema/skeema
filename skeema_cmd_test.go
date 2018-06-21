@@ -296,17 +296,6 @@ func (s *SkeemaIntegrationSuite) TestDiffHandler(t *testing.T) {
 			t.Fatalf("Unable to delete diff-brief.out: %s", err)
 		}
 	}
-
-	// Confirm --verify not tripped up by unexpected index reordering
-	contents := readFile(t, "mydb/product/posts.sql")
-	lines := make([]string, 6)
-	for n := range lines {
-		lines[n] = fmt.Sprintf("KEY `idxnew_%d` (created_at)", n)
-	}
-	replacement := fmt.Sprintf("),\n  %s\n", strings.Join(lines, ",\n  "))
-	contents = strings.Replace(contents, ")\n", replacement, 1)
-	writeFile(t, "mydb/product/posts.sql", contents)
-	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --verify")
 }
 
 func (s *SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
@@ -386,6 +375,51 @@ func (s *SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 	s.assertMissing(t, "product", "comments", "foo")
 	s.assertMissing(t, "product", "users", "foo")
 	s.assertExists(t, "bonus", "table2", "")
+}
+
+func (s *SkeemaIntegrationSuite) TestIndexOrdering(t *testing.T) {
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+
+	// Add 6 new redundant indexes to posts.sql. Place them before the existing
+	// secondary index.
+	contentsOrig := readFile(t, "mydb/product/posts.sql")
+	lines := make([]string, 6)
+	for n := range lines {
+		lines[n] = fmt.Sprintf("KEY `idxnew_%d` (`created_at`)", n)
+	}
+	joinedLines := strings.Join(lines, ",\n  ")
+	contentsIndexesFirst := strings.Replace(contentsOrig, "PRIMARY KEY (`id`),\n", fmt.Sprintf("PRIMARY KEY (`id`),\n  %s,\n", joinedLines), 1)
+	writeFile(t, "mydb/product/posts.sql", contentsIndexesFirst)
+
+	// push should add the indexes, and afterwards diff should report no
+	// differences, even though the index order in the file differs from what is
+	// in mysql
+	s.handleCommand(t, CodeSuccess, "", "skeema push")
+	s.handleCommand(t, CodeSuccess, "", "skeema diff")
+
+	// however, diff --exact-match can see the differences
+	s.handleCommand(t, CodeDifferencesFound, "", "skeema diff --exact-match")
+
+	// pull should re-write the file such that the indexes are now last, just like
+	// what's actually in mysql
+	s.handleCommand(t, CodeSuccess, "", "skeema pull")
+	contentsIndexesLast := strings.Replace(contentsOrig, ")\n", fmt.Sprintf("),\n  %s\n", joinedLines), 1)
+	if fileContents := readFile(t, "mydb/product/posts.sql"); fileContents == contentsIndexesFirst {
+		t.Error("Expected skeema pull to rewrite mydb/product/posts.sql to put indexes last, but file remained unchanged")
+	} else if fileContents != contentsIndexesLast {
+		t.Errorf("Expected skeema pull to rewrite mydb/product/posts.sql to put indexes last, but it did something else entirely. Contents:\n%s\nExpected:\n%s\n", fileContents, contentsIndexesLast)
+	}
+
+	// Edit posts.sql to put the new indexes first again, and ensure
+	// push --exact-match actually reorders them
+	writeFile(t, "mydb/product/posts.sql", contentsIndexesFirst)
+	s.handleCommand(t, CodeSuccess, "", "skeema push --exact-match --alter-algorithm=COPY")
+	s.handleCommand(t, CodeSuccess, "", "skeema diff")
+	s.handleCommand(t, CodeSuccess, "", "skeema diff --exact-match")
+	s.handleCommand(t, CodeSuccess, "", "skeema pull")
+	if fileContents := readFile(t, "mydb/product/posts.sql"); fileContents != contentsIndexesFirst {
+		t.Errorf("Expected skeema pull to have no effect at this point, but instead file now looks like this:\n%s", fileContents)
+	}
 }
 
 func (s *SkeemaIntegrationSuite) TestAutoInc(t *testing.T) {
@@ -620,7 +654,7 @@ func (s *SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
 	s.dbExec(t, "product", "DROP TABLE `problems`")
 	s.dbExec(t, "product", withoutClauses)
-	s.dbExec(t, "product", "ALTER TABLE `problems` DROP INDEX `idx2`")
+	s.dbExec(t, "product", "ALTER TABLE `problems` DROP KEY `idx2`")
 	writeFile(t, "mydb/product/problems.sql", withClauses)
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
 }

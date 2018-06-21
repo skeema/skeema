@@ -9,7 +9,7 @@ import (
 
 // TableAlterClause interface represents a specific single-element difference
 // between two tables. Structs satisfying this interface can generate an ALTER
-// TABLE clause, such as ADD COLUMN, MODIFY COLUMN, ADD INDEX, etc.
+// TABLE clause, such as ADD COLUMN, MODIFY COLUMN, ADD KEY, etc.
 type TableAlterClause interface {
 	Clause() string
 	Unsafe() bool
@@ -71,15 +71,15 @@ func (dc DropColumn) Unsafe() bool {
 
 ///// AddIndex /////////////////////////////////////////////////////////////////
 
-// AddIndex represents a new index that is present on the right-side ("to")
-// schema version of the table, but not the left-side ("from") version. It
-// satisfies the TableAlterClause interface.
+// AddIndex represents an index that is present on the right-side ("to")
+// schema version of the table, but was not identically present on the left-
+// side ("from") version. It satisfies the TableAlterClause interface.
 type AddIndex struct {
 	Table *Table
 	Index *Index
 }
 
-// Clause returns an ADD INDEX clause of an ALTER TABLE statement.
+// Clause returns an ADD KEY clause of an ALTER TABLE statement.
 func (ai AddIndex) Clause() string {
 	return fmt.Sprintf("ADD %s", ai.Index.Definition())
 }
@@ -93,19 +93,19 @@ func (ai AddIndex) Unsafe() bool {
 ///// DropIndex ////////////////////////////////////////////////////////////////
 
 // DropIndex represents an index that was present on the left-side ("from")
-// schema version of the table, but not the right-side ("to") version. It
-// satisfies the TableAlterClause interface.
+// schema version of the table, but not identically present the right-side
+// ("to") version. It satisfies the TableAlterClause interface.
 type DropIndex struct {
 	Table *Table
 	Index *Index
 }
 
-// Clause returns a DROP INDEX clause of an ALTER TABLE statement.
+// Clause returns a DROP KEY clause of an ALTER TABLE statement.
 func (di DropIndex) Clause() string {
 	if di.Index.PrimaryKey {
 		return "DROP PRIMARY KEY"
 	}
-	return fmt.Sprintf("DROP INDEX %s", EscapeIdentifier(di.Index.Name))
+	return fmt.Sprintf("DROP KEY %s", EscapeIdentifier(di.Index.Name))
 }
 
 // Unsafe returns true if this clause is potentially destructive of data.
