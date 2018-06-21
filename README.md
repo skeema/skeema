@@ -30,12 +30,11 @@ This is alpha software. The API is subject to change, and no backwards-compatibi
 
 Go La Tengo **cannot** yet diff tables containing any of the following MySQL features:
 
-* compressed tables
 * partitioned tables
 * triggers
-* non-InnoDB storage engines
 * fulltext indexes
 * spatial types
+* special features of non-InnoDB storage engines
 * generated/virtual columns (MySQL 5.7+ / Percona Server 5.7+ / MariaDB 5.2+)
 * column-level compression, with or without predefined dictionary (Percona Server 5.6.33+)
 * DEFAULT expressions (MariaDB 10.2+)
@@ -47,9 +46,7 @@ Go La Tengo also does not yet support rename operations, e.g. column renames or 
 
 ### Other databases besides MySQL
 
-Go La Tengo currently only aims to support MySQL and Percona Server. MariaDB currently works as well, but is not explicitly supported or tested against.
-
-Support for entirely different database systems, such as PostgreSQL and SQL Server, may be added in the future if there's sufficient demand. However, this will require a major refactor introducing backwards-incompatible changes.
+Go La Tengo currently only aims to support MySQL, MariaDB, and Percona Server. Support for other databases, such as PostgreSQL and SQL Server, may be added in the future if there's sufficient demand. However, this will require a major refactor introducing backwards-incompatible changes.
 
 ## External Dependencies
 

@@ -390,7 +390,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// ensure tables are all supported (except where known not to be)
 	for _, table := range schema.Tables {
-		shouldBeUnsupported := (table.Name == unsupportedTable().Name || table.Name == "partitioned")
+		shouldBeUnsupported := (table.Name == unsupportedTable().Name)
 		if table.UnsupportedDDL != shouldBeUnsupported {
 			t.Errorf("Table %s: expected UnsupportedDDL==%v, instead found %v", table.Name, shouldBeUnsupported, !shouldBeUnsupported)
 		}

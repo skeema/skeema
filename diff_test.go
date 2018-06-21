@@ -305,13 +305,8 @@ func TestSchemaDiffFilteredTableDiffs(t *testing.T) {
 }
 
 func TestTableDiffUnsupportedAlter(t *testing.T) {
-	// unsupportedTable() returns same thing as anotherTable() but with different
-	// table name and with FK added. We just need to make the table names match
-	// before diff'ing the tables.
-	t1 := anotherTable()
+	t1 := supportedTable()
 	t2 := unsupportedTable()
-	t1.Name = t2.Name
-	t1.CreateStatement = t1.GeneratedCreateStatement()
 
 	assertUnsupported := func(td *TableDiff) {
 		t.Helper()
@@ -330,7 +325,15 @@ func TestTableDiffUnsupportedAlter(t *testing.T) {
 		// table was on the "to" or "from" side, the message should show what part
 		// of the unsupported table triggered the issue.
 		extended := err.(*UnsupportedDiffError).ExtendedError()
-		expected := "--- Expected\n+++ MySQL-actual\n@@ -5 +5,2 @@\n-  KEY `film_name` (`film_name`)\n+  KEY `film_name` (`film_name`),\n+  CONSTRAINT `fk_actor_id` FOREIGN KEY (`actor_id`) REFERENCES `actor` (`actor_id`)\n"
+		expected := `--- Expected
++++ MySQL-actual
+@@ -6 +6,4 @@
+-) ENGINE=InnoDB DEFAULT CHARSET=latin1
++) ENGINE=InnoDB DEFAULT CHARSET=latin1 ROW_FORMAT=REDUNDANT
++   /*!50100 PARTITION BY RANGE (customer_id)
++   (PARTITION p0 VALUES LESS THAN (123) ENGINE = InnoDB,
++    PARTITION p1 VALUES LESS THAN MAXVALUE ENGINE = InnoDB) */
+`
 		if expected != extended {
 			t.Errorf("Output of ExtendedError() did not match expectation. Returned value:\n%s", extended)
 		}

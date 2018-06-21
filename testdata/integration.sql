@@ -27,14 +27,17 @@ CREATE TABLE actor_in_film (
 	KEY film_name (film_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-# Keep this in sync with tengo_test.go's unsupportedTable()
-CREATE TABLE actor_in_film_with_fk (
-  actor_id smallint(5) unsigned NOT NULL,
-  film_name varchar(60) NOT NULL,
-  PRIMARY KEY (actor_id,film_name),
-  KEY film_name (film_name),
-  CONSTRAINT fk_actor_id FOREIGN KEY (actor_id) REFERENCES actor (actor_id)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+# Keep this in sync with tengo_test.go's unsupportedTable(), or make that
+# function use a different unsupported feature once partitioning is supported
+CREATE TABLE orders (
+	id int unsigned NOT NULL AUTO_INCREMENT,
+	customer_id int unsigned NOT NULL,
+	info text,
+	PRIMARY KEY (id, customer_id)
+) ENGINE=InnoDB ROW_FORMAT=REDUNDANT PARTITION BY RANGE (customer_id) (
+	PARTITION p0 VALUES LESS THAN (123),
+	PARTITION p1 VALUES LESS THAN MAXVALUE
+);
 
 CREATE TABLE has_rows (
 	id int unsigned NOT NULL AUTO_INCREMENT,
@@ -80,16 +83,6 @@ CREATE TABLE grab_bag (
 	KEY recency (updated_at, created_at),
 	KEY owner_idx (owner_id) COMMENT 'index comment'
 ) AUTO_INCREMENT=123;
-
-CREATE TABLE partitioned (
-	id int unsigned NOT NULL AUTO_INCREMENT,
-	customer_id int unsigned NOT NULL,
-	info text,
-	PRIMARY KEY (id, customer_id)
-) ENGINE=InnoDB ROW_FORMAT=REDUNDANT PARTITION BY RANGE (customer_id) (
-	PARTITION p0 VALUES LESS THAN (123),
-	PARTITION p1 VALUES LESS THAN MAXVALUE
-);
 
 use testcharcoll
 

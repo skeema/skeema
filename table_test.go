@@ -943,7 +943,7 @@ func TestTableAlterUnsupportedTable(t *testing.T) {
 	from, to := unsupportedTable(), unsupportedTable()
 	newCol := &Column{
 		Name:     "age",
-		TypeInDB: "int unsigned",
+		TypeInDB: "int(10) unsigned",
 		Nullable: true,
 		Default:  ColumnDefaultNull,
 	}
@@ -954,8 +954,7 @@ func TestTableAlterUnsupportedTable(t *testing.T) {
 	}
 
 	// Confirm same behavior even if only one side is marked as unsupported
-	from, to = anotherTable(), unsupportedTable()
-	from.Name = to.Name
+	from, to = supportedTable(), unsupportedTable()
 	if tableAlters, supported := from.Diff(&to); len(tableAlters) != 0 || supported {
 		t.Fatalf("Expected diff of unsupported tables to yield no alters; instead found %d", len(tableAlters))
 	}
