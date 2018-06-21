@@ -1,0 +1,30 @@
+sudo: required
+language: go
+go:
+  - "1.9.x"
+services:
+  - docker
+
+notifications:
+  email: false
+
+env:
+  global:
+    - TENGO_TEST_IMAGES="mysql:5.6,mysql:5.7"
+
+before_install:
+  - go get golang.org/x/lint/golint
+  - go get github.com/mattn/goveralls
+  - go get github.com/golang/dep/cmd/dep
+
+install:
+  - dep ensure
+
+script:
+  - go test -v -coverprofile=coverage.out -covermode=count
+  - go vet
+  - test -z "$(gofmt -s -d *.go 2>&1)"
+  - golint -set_exit_status
+
+after_script:
+  - goveralls -coverprofile=coverage.out -service=travis-ci

@@ -1,5 +1,9 @@
 # Go La Tengo
 
+[![build status](https://img.shields.io/travis/skeema/tengo/master.svg)](http://travis-ci.org/skeema/tengo)
+[![code coverage](https://img.shields.io/coveralls/skeema/tengo.svg)](https://coveralls.io/r/skeema/tengo)
+[![godoc](https://img.shields.io/badge/godoc-master-blue.svg)](https://godoc.org/github.com/skeema/tengo)
+
 Hoboken's finest indie Golang database automation library
 
 ## Features
@@ -20,7 +24,7 @@ There is currently a limitation wherein all DSNs for a single instance must conn
 
 ## Status
 
-This is alpha software. The API is subject to change, and no backwards-compatibility promises are being made at this time. Unit tests are present, but functional tests are still needed. Documentation and usage examples have not yet been completed.
+This is alpha software. The API is subject to change, and no backwards-compatibility promises are being made at this time. Documentation and usage examples have not yet been completed.
 
 ### Unsupported in diffs
 
@@ -52,15 +56,22 @@ Support for entirely different database systems, such as PostgreSQL and SQL Serv
 * http://github.com/go-sql-driver/mysql (Mozilla Public License 2.0)
 * http://github.com/jmoiron/sqlx (MIT License)
 * http://github.com/VividCortex/mysqlerr (MIT License)
+* http://github.com/fsouza/go-dockerclient (BSD License)
+* http://github.com/pmezard/go-difflib/difflib (BSD License)
 
-## Contributors
+## Credits
 
-* [@evanelias](https://github.com/evanelias) - Creator and maintainer
-* [@chrisjpalmer](https://github.com/chrisjpalmer) - Added foreign key support
+Created and maintained by [@evanelias](https://github.com/evanelias).
+
+Additional [contributions](https://github.com/skeema/tengo/graphs/contributors) by:
+
+* [@tomkrouper](https://github.com/tomkrouper)
+* [@efixler](https://github.com/efixler)
+* [@chrisjpalmer](https://github.com/chrisjpalmer)
 
 ## License
 
-**Copyright 2017 Skeema LLC**
+**Copyright 2018 Skeema LLC**
 
 ```text
 Licensed under the Apache License, Version 2.0 (the "License");

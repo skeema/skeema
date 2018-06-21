@@ -19,8 +19,8 @@ type Table struct {
 	ForeignKeys       []*ForeignKey
 	Comment           string
 	NextAutoIncrement uint64
-	UnsupportedDDL    bool // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
-	createStatement   string
+	UnsupportedDDL    bool   // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
+	CreateStatement   string // complete SHOW CREATE TABLE obtained from an instance
 }
 
 // AlterStatement returns the prefix to a SQL "ALTER TABLE" statement.
@@ -31,17 +31,6 @@ func (t *Table) AlterStatement() string {
 // DropStatement returns a SQL statement that, if run, would drop this table.
 func (t *Table) DropStatement() string {
 	return fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(t.Name))
-}
-
-// CreateStatement returns a SQL statement that, if run, would create this
-// table. Ordinarily this will be pre-cached from a prior call to SHOW CREATE
-// TABLE, but if not, tengo will auto-generate what it thinks the CREATE TABLE
-// statement should be.
-func (t *Table) CreateStatement() string {
-	if t.createStatement == "" {
-		return t.GeneratedCreateStatement()
-	}
-	return t.createStatement
 }
 
 // GeneratedCreateStatement generates a CREATE TABLE statement based on the
@@ -133,6 +122,31 @@ func (t *Table) HasAutoIncrement() bool {
 	return false
 }
 
+// ClusteredIndexKey returns which index is used for an InnoDB table's clustered
+// index. This will be the primary key if one exists; otherwise, it will be the
+// first unique key with non-nullable columns. If there is no such key, or if
+// the table's engine isn't InnoDB, this method returns nil.
+func (t *Table) ClusteredIndexKey() *Index {
+	if t.Engine != "InnoDB" {
+		return nil
+	}
+	if t.PrimaryKey != nil {
+		return t.PrimaryKey
+	}
+Outer:
+	for _, index := range t.SecondaryIndexes {
+		if index.Unique {
+			for _, col := range index.Columns {
+				if col.Nullable {
+					continue Outer
+				}
+			}
+			return index
+		}
+	}
+	return nil
+}
+
 // Diff returns a set of differences between this table and another table.
 func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	from := t // keeping name as t in method definition to satisfy linter
@@ -143,7 +157,7 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// If both tables have same output for SHOW CREATE TABLE, we know they're the same.
 	// We do this check prior to the UnsupportedDDL check so that we only emit the
 	// warning if the tables actually changed.
-	if from.createStatement != "" && from.createStatement == to.createStatement {
+	if from.CreateStatement != "" && from.CreateStatement == to.CreateStatement {
 		return []TableAlterClause{}, true
 	}
 
@@ -184,22 +198,31 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 		}
 	}
 
-	// Compare secondary indexes
-	fromIndexes := from.SecondaryIndexesByName()
+	// Compare secondary indexes. There is no way to modify an index without
+	// dropping and re-adding it. There's also no way to re-position an index
+	// without dropping and re-adding all preexisting indexes that now come after.
 	toIndexes := to.SecondaryIndexesByName()
-	for _, toIdx := range toIndexes {
-		if _, existedBefore := fromIndexes[toIdx.Name]; !existedBefore {
-			clauses = append(clauses, AddIndex{Table: to, Index: toIdx})
+	fromIndexStillExist := make([]*Index, 0) // ordered list of indexes from "from" that still exist in "to"
+	for _, fromIdx := range from.SecondaryIndexes {
+		if _, stillExists := toIndexes[fromIdx.Name]; stillExists {
+			fromIndexStillExist = append(fromIndexStillExist, fromIdx)
+		} else {
+			clauses = append(clauses, DropIndex{Table: to, Index: fromIdx})
 		}
 	}
-	for _, fromIdx := range fromIndexes {
-		toIdx, stillExists := toIndexes[fromIdx.Name]
-		if !stillExists {
-			clauses = append(clauses, DropIndex{Table: to, Index: fromIdx})
-		} else if !fromIdx.Equals(toIdx) {
-			drop := DropIndex{Table: to, Index: fromIdx}
-			add := AddIndex{Table: to, Index: toIdx}
-			clauses = append(clauses, drop, add)
+	var fromCursor int
+	for _, toIdx := range to.SecondaryIndexes {
+		for fromCursor < len(fromIndexStillExist) && !fromIndexStillExist[fromCursor].Equals(toIdx) {
+			clauses = append(clauses, DropIndex{Table: to, Index: fromIndexStillExist[fromCursor]})
+			fromCursor++
+		}
+		if fromCursor >= len(fromIndexStillExist) {
+			// Already went through everything in the "from" list, so all remaining "to"
+			// indexes are adds
+			clauses = append(clauses, AddIndex{Table: to, Index: toIdx})
+		} else {
+			// Current position "to" matches cursor position "from"; nothing to add or drop
+			fromCursor++
 		}
 	}
 
