@@ -246,6 +246,90 @@ func supportedTable() Table {
 	}
 }
 
+func foreignKeyTable() Table {
+	columns := []*Column{
+		{
+			Name:     "id",
+			TypeInDB: "int(10) unsigned",
+			Default:  ColumnDefaultNull,
+		},
+		{
+			Name:     "customer_id",
+			TypeInDB: "int(10) unsigned",
+			Default:  ColumnDefaultNull,
+			Nullable: true,
+		},
+		{
+			Name:     "product_line",
+			TypeInDB: "char(12)",
+			Default:  ColumnDefaultNull,
+		},
+		{
+			Name:     "model",
+			TypeInDB: "int(10) unsigned",
+			Default:  ColumnDefaultNull,
+		},
+	}
+
+	secondaryIndexes := []*Index{
+		{
+			Name:     "customer",
+			Columns:  []*Column{columns[1]},
+			SubParts: []uint16{0},
+		},
+		{
+			Name:     "product",
+			Columns:  []*Column{columns[2], columns[3]},
+			Unique:   true,
+			SubParts: []uint16{0, 0},
+		},
+	}
+
+	foreignKeys := []*ForeignKey{
+		{
+			Name:                  "customer_fk",
+			Columns:               columns[1:2],
+			ReferencedSchemaName:  "purchasing",
+			ReferencedTableName:   "customers",
+			ReferencedColumnNames: []string{"id"},
+			DeleteRule:            "SET NULL",
+			UpdateRule:            "RESTRICT",
+		},
+		{
+			Name:                  "product_fk",
+			Columns:               columns[2:4],
+			ReferencedSchemaName:  "", // same schema as this table
+			ReferencedTableName:   "products",
+			ReferencedColumnNames: []string{"line", "model"},
+			DeleteRule:            "CASCADE",
+			UpdateRule:            "CASCADE",
+		},
+	}
+
+	stmt := strings.Replace(`CREATE TABLE ~warranties~ (
+  ~id~ int(10) unsigned NOT NULL,
+  ~customer_id~ int(10) unsigned DEFAULT NULL,
+  ~product_line~ char(12) NOT NULL,
+  ~model~ int(10) unsigned NOT NULL,
+  PRIMARY KEY (~id~),
+  UNIQUE KEY ~product~ (~product_line~,~model~),
+  KEY ~customer~ (~customer_id~),
+  CONSTRAINT ~customer_fk~ FOREIGN KEY (~customer_id~) REFERENCES ~purchasing~.~customers~ (~id~),
+  CONSTRAINT ~product_fk~ FOREIGN KEY (~product_line~, ~model~) REFERENCES ~products~ (~line~, ~model~)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1`, "~", "`", -1)
+
+	return Table{
+		Name:             "warranties",
+		Engine:           "InnoDB",
+		CharSet:          "latin1",
+		Columns:          columns,
+		PrimaryKey:       primaryKey(columns[0]),
+		SecondaryIndexes: secondaryIndexes,
+		ForeignKeys:      foreignKeys,
+		CreateStatement:  stmt,
+	}
+}
+
 func aSchema(name string, tables ...*Table) Schema {
 	if tables == nil {
 		tables = []*Table{}
@@ -257,69 +341,4 @@ func aSchema(name string, tables ...*Table) Schema {
 		Tables:    tables,
 	}
 	return s
-}
-
-// aFkTestTable - Generates the test table for testing foreign key constraints
-func aFkTestTable(nextAutoInc uint64) Table {
-	// fkATable is meant to reference fkBTable when used in the test
-	columns := []*Column{
-		&Column{
-			Name:          "id",
-			TypeInDB:      "int(11) unsigned NOT NULL AUTO_INCREMENT,",
-			AutoIncrement: true,
-			Default:       ColumnDefaultNull,
-		},
-		&Column{
-			Name:     "bID",
-			TypeInDB: "int(11) unsigned DEFAULT NULL",
-			Default:  ColumnDefaultNull,
-		},
-		&Column{
-			Name:     "cID",
-			TypeInDB: "int(11) unsigned DEFAULT NULL",
-			Default:  ColumnDefaultNull,
-		},
-	}
-
-	secondaryIndex := &Index{
-		Name:     "cID",
-		Columns:  []*Column{columns[2]},
-		SubParts: []uint16{0},
-	}
-
-	foreignKey := &ForeignKey{
-		Name:                 "fkatable_ibfk_2",
-		Column:               columns[2],
-		ReferencedSchemaName: "", // LEAVE BLANK TO SIGNAL ITS THE SAME SCHEMA AS THE CURRENT TABLE
-		ReferencedTableName:  "fkCTable",
-		ReferencedColumnName: "id",
-		DeleteRule:           "SET NULL",
-		UpdateRule:           "CASCADE",
-	}
-
-	var autoIncClause string
-	if nextAutoInc > 1 {
-		autoIncClause = fmt.Sprintf(" AUTO_INCREMENT=%d", nextAutoInc)
-	}
-	stmt := fmt.Sprintf(
-		"CREATE TABLE `fkATable` ("+
-			"`id` int(11) unsigned NOT NULL AUTO_INCREMENT,"+
-			"`bID` int(11) unsigned DEFAULT NULL,"+
-			"`cID` int(11) unsigned DEFAULT NULL,"+
-			"PRIMARY KEY (`id`),"+
-			"KEY `cID` (`cID`),"+
-			"CONSTRAINT `fkatable_ibfk_2` FOREIGN KEY (`cID`) REFERENCES `fkCTable` (`id`) ON DELETE SET NULL ON UPDATE CASCADE"+
-			") ENGINE=InnoDB%s DEFAULT CHARSET=utf8;", autoIncClause)
-
-	return Table{
-		Name:              "fkATable",
-		Engine:            "InnoDB",
-		CharSet:           "utf8",
-		Columns:           columns,
-		PrimaryKey:        primaryKey(columns[0]),
-		SecondaryIndexes:  []*Index{secondaryIndex},
-		ForeignKeys:       []*ForeignKey{foreignKey},
-		NextAutoIncrement: nextAutoInc,
-		CreateStatement:   stmt,
-	}
 }

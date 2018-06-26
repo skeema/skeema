@@ -1,3 +1,4 @@
+SET foreign_key_checks=0;
 CREATE DATABASE testing;
 CREATE DATABASE testcollate DEFAULT COLLATE latin1_bin;
 CREATE DATABASE testcharset DEFAULT CHARACTER SET utf8mb4;
@@ -39,6 +40,19 @@ CREATE TABLE orders (
 	PARTITION p1 VALUES LESS THAN MAXVALUE
 );
 
+# Keep this table in sync with tengo_test.go's foreignKeyTable()
+CREATE TABLE warranties (
+  id int(10) unsigned NOT NULL,
+  customer_id int(10) unsigned DEFAULT NULL,
+  product_line char(12) NOT NULL,
+  model int(10) unsigned NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY product (product_line,model),
+  KEY customer (customer_id),
+  CONSTRAINT customer_fk FOREIGN KEY (customer_id) REFERENCES purchasing.customers (id),
+  CONSTRAINT product_fk FOREIGN KEY (product_line, model) REFERENCES products (line, model)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
 CREATE TABLE has_rows (
 	id int unsigned NOT NULL AUTO_INCREMENT,
 	name varchar(30),
@@ -61,13 +75,11 @@ CREATE TABLE no_pk (
 	price decimal(10, 2) DEFAULT '99.95',
 	index name_idx (name)
 );
-	
 
 CREATE TABLE eww_myisam (
 	id int unsigned NOT NULL AUTO_INCREMENT,
 	PRIMARY KEY (id)
 ) ENGINE=MyISAM;
-
 
 CREATE TABLE grab_bag (
 	id bigint unsigned NOT NULL AUTO_INCREMENT,

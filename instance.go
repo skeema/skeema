@@ -702,50 +702,46 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	// Obtain the foreign keys of the tables in the schema
 	var rawForeignKeys []struct {
 		Name                 string `db:"constraint_name"`
-		ColumnName           string `db:"column_name"`
-		ReferencedSchemaName string `db:"referenced_schema_name"`
-		ReferencedTableName  string `db:"referenced_table_name"`
-		ReferencedColumnName string `db:"referenced_column_name"`
+		TableName            string `db:"table_name"`
 		UpdateRule           string `db:"update_rule"`
 		DeleteRule           string `db:"delete_rule"`
-		TableName            string `db:"table_name"`
+		ReferencedTableName  string `db:"referenced_table_name"`
+		ReferencedSchemaName string `db:"referenced_schema"`
+		ReferencedColumnName string `db:"referenced_column_name"`
+		ColumnLookupKey      string `db:"col_lookup_key"`
 	}
 	query = `
-		SELECT   kcu.constraint_name, kcu.table_name, kcu.column_name,
-		         kcu.referenced_table_name, kcu.referenced_column_name,
-		         kcu.referenced_table_schema AS referenced_schema_name,
-		         rc.update_rule, rc.delete_rule
-		FROM     key_column_usage kcu
-		JOIN     referential_constraints rc ON kcu.constraint_name = rc.constraint_name
-		WHERE    kcu.table_schema = ? AND rc.constraint_schema = ? AND
-		         kcu.referenced_column_name IS NOT NULL`
-	if err := db.Select(&rawForeignKeys, query, schema, schema); err != nil {
+		SELECT   rc.constraint_name, rc.table_name, rc.update_rule, rc.delete_rule, rc.referenced_table_name,
+		         IF(rc.constraint_schema=rc.unique_constraint_schema, '', rc.unique_constraint_schema) AS referenced_schema,
+		         kcu.referenced_column_name,
+		         CONCAT(kcu.constraint_schema, '.', kcu.table_name, '.', kcu.column_name) AS col_lookup_key
+		FROM     referential_constraints rc
+		JOIN     key_column_usage kcu ON kcu.constraint_name = rc.constraint_name AND kcu.constraint_schema = rc.constraint_schema
+		WHERE    rc.constraint_schema = ?
+		ORDER BY rc.constraint_name, kcu.ordinal_position`
+	if err := db.Select(&rawForeignKeys, query, schema); err != nil {
 		return nil, fmt.Errorf("Error querying foreign key constraints: %s", err)
 	}
 	foreignKeysByTableName := make(map[string][]*ForeignKey)
+	foreignKeysByName := make(map[string]*ForeignKey)
 	for _, rawForeignKey := range rawForeignKeys {
-		// If this is a foreign key constraint which references a column in a table of a DIFFERENT database/schema,
-		// We need to include the ReferencedSchemaName in the constraint as it will be SIGNIFICANT to the
-		// contraint definition.
-		// If however it just references a table inside the current database/schema (s.Name), just provide "" to signal that we do not need it
-		referencedSchemaName := ""
-		if rawForeignKey.ReferencedSchemaName != schema {
-			referencedSchemaName = rawForeignKey.ReferencedSchemaName
+		col := columnsByTableAndName[rawForeignKey.ColumnLookupKey]
+		if fk, already := foreignKeysByName[rawForeignKey.Name]; already {
+			fk.Columns = append(fk.Columns, col)
+			fk.ReferencedColumnNames = append(fk.ReferencedColumnNames, rawForeignKey.ReferencedColumnName)
+		} else {
+			foreignKey := &ForeignKey{
+				Name:                  rawForeignKey.Name,
+				ReferencedSchemaName:  rawForeignKey.ReferencedSchemaName,
+				ReferencedTableName:   rawForeignKey.ReferencedTableName,
+				UpdateRule:            rawForeignKey.UpdateRule,
+				DeleteRule:            rawForeignKey.DeleteRule,
+				Columns:               []*Column{col},
+				ReferencedColumnNames: []string{rawForeignKey.ReferencedColumnName},
+			}
+			foreignKeysByName[rawForeignKey.Name] = foreignKey
+			foreignKeysByTableName[rawForeignKey.TableName] = append(foreignKeysByTableName[rawForeignKey.TableName], foreignKey)
 		}
-
-		fullColNameStr := fmt.Sprintf("%s.%s.%s", schema, rawForeignKey.TableName, rawForeignKey.ColumnName)
-		column := columnsByTableAndName[fullColNameStr]
-
-		foreignKey := &ForeignKey{
-			Name:                 rawForeignKey.Name,
-			Column:               column,
-			ReferencedSchemaName: referencedSchemaName,
-			ReferencedTableName:  rawForeignKey.ReferencedTableName,
-			ReferencedColumnName: rawForeignKey.ReferencedColumnName,
-			UpdateRule:           rawForeignKey.UpdateRule,
-			DeleteRule:           rawForeignKey.DeleteRule,
-		}
-		foreignKeysByTableName[rawForeignKey.TableName] = append(foreignKeysByTableName[rawForeignKey.TableName], foreignKey)
 	}
 	for _, t := range tables {
 		t.ForeignKeys = foreignKeysByTableName[t.Name]

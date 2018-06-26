@@ -256,6 +256,92 @@ func TestSchemaDiffAlterTable(t *testing.T) {
 	}
 }
 
+func TestSchemaDiffForeignKeys(t *testing.T) {
+	t1 := foreignKeyTable()
+	t2 := foreignKeyTable()
+	s1 := aSchema("s1", &t1)
+	s2 := aSchema("s2", &t2)
+
+	// Helper to ensure that AddForeignKey and DropForeignKey clauses get split
+	// into separate TableDiffs
+	assertDiffs := func(from, to *Schema, expectAddFK, expectDropFK, expectOther int) {
+		t.Helper()
+		sd := NewSchemaDiff(from, to)
+		expectTableDiffs := 1
+		if expectAddFK > 0 && expectDropFK > 0 {
+			expectTableDiffs++
+		}
+		if len(sd.TableDiffs) != expectTableDiffs {
+			t.Errorf("Incorrect number of TableDiffs: expected %d, found %d", expectTableDiffs, len(sd.TableDiffs))
+			return
+		}
+		for n, td := range sd.TableDiffs {
+			if n == 1 && td.From.Name != sd.TableDiffs[0].From.Name {
+				t.Errorf("Expected TableDiffs[1] to affect same table as TableDiffs[0] (%s), instead found %s", sd.TableDiffs[0].From.Name, td.From.Name)
+				break
+			}
+			var seenAdd, seenDrop bool
+			for _, clause := range td.alterClauses {
+				switch clause.(type) {
+				case AddForeignKey:
+					expectAddFK--
+					seenAdd = true
+					if seenDrop {
+						t.Error("Unexpectedly found AddForeignKey and DropForeignKey clauses in the same TableDiff")
+					}
+				case DropForeignKey:
+					expectDropFK--
+					seenDrop = true
+					if seenAdd {
+						t.Error("Unexpectedly found AddForeignKey and DropForeignKey clauses in the same TableDiff")
+					}
+					if n == 1 {
+						t.Errorf("Expected clauses for second TableDiff of same table to only consist of AddForeignKey, instead found %T", clause)
+					}
+				default:
+					expectOther--
+					if n == 1 {
+						t.Errorf("Expected clauses for second TableDiff of same table to only consist of AddForeignKey, instead found %T", clause)
+					}
+				}
+			}
+		}
+		if expectAddFK != 0 || expectDropFK != 0 || expectOther != 0 {
+			t.Errorf("Did not find expected count of each clause type; counters remaining: add=%d drop=%d other=%d", expectAddFK, expectDropFK, expectOther)
+		}
+	}
+
+	// Dropping multiple FKs and making other changes: all one TableDiff
+	t2.ForeignKeys = []*ForeignKey{}
+	t2.Comment = "Hello world"
+	t2.CreateStatement = t2.GeneratedCreateStatement()
+	assertDiffs(&s1, &s2, 0, 2, 1)
+
+	// Adding multiple FKs and making other changes: all one TableDiff
+	assertDiffs(&s2, &s1, 2, 0, 1)
+
+	// Modifying one FK and making other changes: two TableDiffs
+	t2 = foreignKeyTable()
+	t2.ForeignKeys[0].UpdateRule = "SET NULL"
+	t2.Comment = "Hello world"
+	t2.CreateStatement = t2.GeneratedCreateStatement()
+	assertDiffs(&s1, &s2, 1, 1, 1)
+
+	// Adding and dropping unrelated FKs: two TableDiffs
+	t2 = foreignKeyTable()
+	t2.ForeignKeys[1] = &ForeignKey{
+		Name:                  "actor_fk",
+		Columns:               t2.Columns[0:1],
+		ReferencedSchemaName:  "",
+		ReferencedTableName:   "actor",
+		ReferencedColumnNames: []string{"actor_id"},
+		DeleteRule:            "RESTRICT",
+		UpdateRule:            "CASCADE",
+	}
+	t2.CreateStatement = t2.GeneratedCreateStatement()
+	assertDiffs(&s1, &s2, 1, 1, 0)
+}
+
 func TestSchemaDiffFilteredTableDiffs(t *testing.T) {
 	s1t1 := anotherTable()
 	s1t2 := aTable(1)

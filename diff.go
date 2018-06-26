@@ -82,10 +82,10 @@ func NewSchemaDiff(from, to *Schema) *SchemaDiff {
 			newTable, stillExists := toTablesByName[origTable.Name]
 			if stillExists {
 				td := NewAlterTable(origTable, newTable)
-				if td != nil {
-					result.TableDiffs = append(result.TableDiffs, td)
-				} else {
+				if td == nil { // tables are the same
 					result.SameTables = append(result.SameTables, newTable)
+				} else {
+					result.TableDiffs = append(result.TableDiffs, td.Normalize()...)
 				}
 			} else {
 				result.TableDiffs = append(result.TableDiffs, NewDropTable(origTable))
@@ -255,6 +255,55 @@ func NewDropTable(table *Table) *TableDiff {
 // TypeString returns the type of table diff as a string.
 func (td *TableDiff) TypeString() string {
 	return td.Type.String()
+}
+
+// Normalize potentially splits the TableDiff into multiple separate TableDiffs
+// if the clauses contain potential conflicts. In some versions of MySQL, it is
+// not advisable to add and drop foreign keys in the same ALTER TABLE statement;
+// additionally, it is never legal to add and drop a foreign key of the same
+// name in the same statement.
+// In all other cases, this method just returns a single-element slice
+// containing the receiver, otherwise unchanged.
+func (td *TableDiff) Normalize() []*TableDiff {
+	if td.Type != TableDiffAlter || !td.supported {
+		return []*TableDiff{td}
+	}
+
+	var fkDrops, fkAdds int
+	for _, clause := range td.alterClauses {
+		switch clause.(type) {
+		case AddForeignKey:
+			fkAdds++
+		case DropForeignKey:
+			fkDrops++
+		}
+	}
+	if fkAdds == 0 || fkDrops == 0 {
+		return []*TableDiff{td}
+	}
+
+	// At this point, we know td both adds and drops foreign keys. Split it into
+	// two new TableDiffs, such that the first one has all of the clauses except
+	// the AddForeignKey clauses, which are all exclusively in the second
+	// TableDiff.
+	result := make([]*TableDiff, 2)
+	for n := range result {
+		result[n] = &TableDiff{
+			Type:         TableDiffAlter,
+			From:         td.From,
+			To:           td.To,
+			alterClauses: []TableAlterClause{},
+			supported:    true,
+		}
+	}
+	for _, clause := range td.alterClauses {
+		if _, ok := clause.(AddForeignKey); ok {
+			result[1].alterClauses = append(result[1].alterClauses, clause)
+		} else {
+			result[0].alterClauses = append(result[0].alterClauses, clause)
+		}
+	}
+	return result
 }
 
 // Statement returns the full DDL statement corresponding to the TableDiff. A

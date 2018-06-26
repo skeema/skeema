@@ -133,7 +133,6 @@ func (afk AddForeignKey) Clause() string {
 }
 
 // Unsafe returns true if this clause is potentially destructive of data.
-// TODO: figure out how to handle safety, use of foreign_key_checks=0, etc.
 func (afk AddForeignKey) Unsafe() bool {
 	return false
 }

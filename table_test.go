@@ -271,44 +271,28 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 }
 
 func TestTableAlterAddOrDropForeignKey(t *testing.T) {
-	from := aFkTestTable(1)
-	to := aFkTestTable(1)
+	from := anotherTable()
+	to := anotherTable()
 
 	// Add the foreign key constraint
-	newSecIndex :=
-		&Index{
-			Name:     "bID",
-			Columns:  []*Column{to.Columns[1]},
-			SubParts: []uint16{0},
-		}
-
 	newFk := &ForeignKey{
-		Name:                 "fkatable_ibfk_1",
-		Column:               to.Columns[1],
-		ReferencedSchemaName: "", // leave blank to signal its the same schema as the current table
-		ReferencedTableName:  "fkBTable",
-		ReferencedColumnName: "id",
-		DeleteRule:           "RESTRICT",
-		UpdateRule:           "CASCADE",
+		Name:                  "actor_fk",
+		Columns:               to.Columns[0:1],
+		ReferencedSchemaName:  "", // leave blank to signal its the same schema as the current table
+		ReferencedTableName:   "actor",
+		ReferencedColumnNames: []string{"actor_id"},
+		DeleteRule:            "RESTRICT",
+		UpdateRule:            "CASCADE",
 	}
-	to.SecondaryIndexes = append(to.SecondaryIndexes, newSecIndex)
 	to.ForeignKeys = append(to.ForeignKeys, newFk)
 	to.CreateStatement = to.GeneratedCreateStatement()
 
-	// Normal Comparison should yield add Index, add ForeignKey
+	// Normal Comparison should yield add ForeignKey
 	tableAlters, supported := from.Diff(&to)
-	if len(tableAlters) != 2 || !supported {
-		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
+	if len(tableAlters) != 1 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
 	}
-	taIx1, ok := tableAlters[0].(AddIndex)
-	if !ok {
-		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taIx1, tableAlters[0])
-	}
-	if taIx1.Table != &to || taIx1.Index != newSecIndex {
-		t.Error("Pointers in table alter do not point to expected values")
-	}
-
-	taFk1, ok := tableAlters[1].(AddForeignKey)
+	taFk1, ok := tableAlters[0].(AddForeignKey)
 	if !ok {
 		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taFk1, tableAlters[0])
 	}
@@ -316,20 +300,12 @@ func TestTableAlterAddOrDropForeignKey(t *testing.T) {
 		t.Error("Pointers in table alter do not point to expected values")
 	}
 
-	// Reverse comparison should yield a drop index, drop foreign key
+	// Reverse comparison should yield a drop foreign key
 	tableAlters, supported = to.Diff(&from)
-	if len(tableAlters) != 2 || !supported {
-		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
+	if len(tableAlters) != 1 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
 	}
-	taIx2, ok := tableAlters[0].(DropIndex)
-	if !ok {
-		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taIx2, tableAlters[0])
-	}
-	if taIx2.Table != &from || taIx2.Index != newSecIndex {
-		t.Error("Pointers in table alter do not point to expected values")
-	}
-
-	taFk2, ok := tableAlters[1].(DropForeignKey)
+	taFk2, ok := tableAlters[0].(DropForeignKey)
 	if !ok {
 		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taFk2, tableAlters[0])
 	}
@@ -337,9 +313,33 @@ func TestTableAlterAddOrDropForeignKey(t *testing.T) {
 		t.Error("Pointers in table alter do not point to expected values")
 	}
 
-	// Start over; change an existing foreign key
-	to = aFkTestTable(1)
-	to.ForeignKeys[0].UpdateRule = "SET NULL"
+	// New situation: changing an existing foreign key
+	from = foreignKeyTable()
+	to = foreignKeyTable()
+	to.ForeignKeys[1].UpdateRule = "SET NULL"
+	to.CreateStatement = to.GeneratedCreateStatement()
+	tableAlters, supported = from.Diff(&to)
+	if len(tableAlters) != 2 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
+	}
+	taFk2, ok = tableAlters[0].(DropForeignKey)
+	if !ok {
+		t.Fatalf("Incorrect type of table alter[0] returned: expected %T, found %T", taFk2, tableAlters[0])
+	}
+	if taFk2.Table != &to || taFk2.ForeignKey != from.ForeignKeys[1] {
+		t.Error("Pointers in table alter[0] do not point to expected values")
+	}
+	taFk1, ok = tableAlters[1].(AddForeignKey)
+	if !ok {
+		t.Fatalf("Incorrect type of table alter[1] returned: expected %T, found %T", taFk1, tableAlters[1])
+	}
+	if taFk1.Table != &to || taFk1.ForeignKey != to.ForeignKeys[1] {
+		t.Error("Pointers in table alter[1] do not point to expected values")
+	}
+
+	// Changing the first FK should not affect 2nd FK, since FKs are not ordered
+	to = foreignKeyTable()
+	to.ForeignKeys[0].ReferencedSchemaName = ""
 	to.CreateStatement = to.GeneratedCreateStatement()
 	tableAlters, supported = from.Diff(&to)
 	if len(tableAlters) != 2 || !supported {
@@ -358,34 +358,6 @@ func TestTableAlterAddOrDropForeignKey(t *testing.T) {
 	}
 	if taFk1.Table != &to || taFk1.ForeignKey != to.ForeignKeys[0] {
 		t.Error("Pointers in table alter[1] do not point to expected values")
-	}
-
-	// Remove a foreign key
-	to.ForeignKeys = []*ForeignKey{}
-	to.CreateStatement = to.GeneratedCreateStatement()
-	tableAlters, supported = from.Diff(&to)
-	if len(tableAlters) != 1 || !supported {
-		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
-	}
-	taFk2, ok = tableAlters[0].(DropForeignKey)
-	if !ok {
-		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taFk2, tableAlters[0])
-	}
-	if taFk2.Table != &to || taFk2.ForeignKey != from.ForeignKeys[0] {
-		t.Error("Pointers in table alter do not point to expected values")
-	}
-
-	// Reverse comparison should yield an add foreign key
-	tableAlters, supported = to.Diff(&from)
-	if len(tableAlters) != 1 || !supported {
-		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
-	}
-	taFk1, ok = tableAlters[0].(AddForeignKey)
-	if !ok {
-		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taFk1, tableAlters[0])
-	}
-	if taFk1.Table != &from || taFk1.ForeignKey != from.ForeignKeys[0] {
-		t.Error("Pointers in table alter do not point to expected values")
 	}
 }
 
