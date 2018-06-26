@@ -12,7 +12,7 @@ Most of Go La Tengo's current functionality is focused on MySQL schema introspec
 
 ### Schema introspection
 
-Go La Tengo examines several `information_schema` tables in order to build Go struct values representing schemas (databases), tables, columns, and indexes. These values can then be diffed to generate corresponding DDL statements.
+Go La Tengo examines several `information_schema` tables in order to build Go struct values representing schemas (databases), tables, columns, indexes, and foreign key constraints. These values can then be diffed to generate corresponding DDL statements.
 
 ### Instance modeling
 
@@ -30,13 +30,11 @@ This is alpha software. The API is subject to change, and no backwards-compatibi
 
 Go La Tengo **cannot** yet diff tables containing any of the following MySQL features:
 
-* foreign keys
-* compressed tables
 * partitioned tables
 * triggers
-* non-InnoDB storage engines
 * fulltext indexes
 * spatial types
+* special features of non-InnoDB storage engines
 * generated/virtual columns (MySQL 5.7+ / Percona Server 5.7+ / MariaDB 5.2+)
 * column-level compression, with or without predefined dictionary (Percona Server 5.6.33+)
 * DEFAULT expressions (MariaDB 10.2+)
@@ -66,6 +64,7 @@ Additional [contributions](https://github.com/skeema/tengo/graphs/contributors) 
 
 * [@tomkrouper](https://github.com/tomkrouper)
 * [@efixler](https://github.com/efixler)
+* [@chrisjpalmer](https://github.com/chrisjpalmer)
 
 ## License
 

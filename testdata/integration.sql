@@ -1,3 +1,4 @@
+SET foreign_key_checks=0;
 CREATE DATABASE testing;
 CREATE DATABASE testcollate DEFAULT COLLATE latin1_bin;
 CREATE DATABASE testcharset DEFAULT CHARACTER SET utf8mb4;
@@ -27,13 +28,29 @@ CREATE TABLE actor_in_film (
 	KEY film_name (film_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-# Keep this in sync with tengo_test.go's unsupportedTable()
-CREATE TABLE actor_in_film_with_fk (
-  actor_id smallint(5) unsigned NOT NULL,
-  film_name varchar(60) NOT NULL,
-  PRIMARY KEY (actor_id,film_name),
-  KEY film_name (film_name),
-  CONSTRAINT fk_actor_id FOREIGN KEY (actor_id) REFERENCES actor (actor_id)
+# Keep this in sync with tengo_test.go's unsupportedTable(), or make that
+# function use a different unsupported feature once partitioning is supported
+CREATE TABLE orders (
+	id int unsigned NOT NULL AUTO_INCREMENT,
+	customer_id int unsigned NOT NULL,
+	info text,
+	PRIMARY KEY (id, customer_id)
+) ENGINE=InnoDB ROW_FORMAT=REDUNDANT PARTITION BY RANGE (customer_id) (
+	PARTITION p0 VALUES LESS THAN (123),
+	PARTITION p1 VALUES LESS THAN MAXVALUE
+);
+
+# Keep this table in sync with tengo_test.go's foreignKeyTable()
+CREATE TABLE warranties (
+  id int(10) unsigned NOT NULL,
+  customer_id int(10) unsigned DEFAULT NULL,
+  product_line char(12) NOT NULL,
+  model int(10) unsigned NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY product (product_line,model),
+  KEY customer (customer_id),
+  CONSTRAINT customer_fk FOREIGN KEY (customer_id) REFERENCES purchasing.customers (id),
+  CONSTRAINT product_fk FOREIGN KEY (product_line, model) REFERENCES products (line, model)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 CREATE TABLE has_rows (
@@ -58,13 +75,11 @@ CREATE TABLE no_pk (
 	price decimal(10, 2) DEFAULT '99.95',
 	index name_idx (name)
 );
-	
 
 CREATE TABLE eww_myisam (
 	id int unsigned NOT NULL AUTO_INCREMENT,
 	PRIMARY KEY (id)
 ) ENGINE=MyISAM;
-
 
 CREATE TABLE grab_bag (
 	id bigint unsigned NOT NULL AUTO_INCREMENT,
@@ -80,16 +95,6 @@ CREATE TABLE grab_bag (
 	KEY recency (updated_at, created_at),
 	KEY owner_idx (owner_id) COMMENT 'index comment'
 ) AUTO_INCREMENT=123;
-
-CREATE TABLE partitioned (
-	id int unsigned NOT NULL AUTO_INCREMENT,
-	customer_id int unsigned NOT NULL,
-	info text,
-	PRIMARY KEY (id, customer_id)
-) ENGINE=InnoDB ROW_FORMAT=REDUNDANT PARTITION BY RANGE (customer_id) (
-	PARTITION p0 VALUES LESS THAN (123),
-	PARTITION p1 VALUES LESS THAN MAXVALUE
-);
 
 use testcharcoll
 

@@ -3,6 +3,7 @@ package tengo
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -196,17 +197,137 @@ func anotherTable() Table {
 }
 
 func unsupportedTable() Table {
-	t := anotherTable()
-	t.Name += "_with_fk"
-	t.CreateStatement = `CREATE TABLE ` + "`" + `actor_in_film_with_fk` + "`" + ` (
-  ` + "`" + `actor_id` + "`" + ` smallint(5) unsigned NOT NULL,
-  ` + "`" + `film_name` + "`" + ` varchar(60) NOT NULL,
-  PRIMARY KEY (` + "`" + `actor_id` + "`" + `,` + "`" + `film_name` + "`" + `),
-  KEY ` + "`" + `film_name` + "`" + ` (` + "`" + `film_name` + "`" + `),
-  CONSTRAINT ` + "`" + `fk_actor_id` + "`" + ` FOREIGN KEY (` + "`" + `actor_id` + "`" + `) REFERENCES ` + "`" + `actor` + "`" + ` (` + "`" + `actor_id` + "`" + `)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1`
+	t := supportedTable()
+	t.CreateStatement += ` ROW_FORMAT=REDUNDANT
+   /*!50100 PARTITION BY RANGE (customer_id)
+   (PARTITION p0 VALUES LESS THAN (123) ENGINE = InnoDB,
+    PARTITION p1 VALUES LESS THAN MAXVALUE ENGINE = InnoDB) */`
 	t.UnsupportedDDL = true
 	return t
+}
+
+// Returns the same as unsupportedTable() but without partitioning, so that
+// the table is actually supported.
+func supportedTable() Table {
+	columns := []*Column{
+		{
+			Name:          "id",
+			TypeInDB:      "int(10) unsigned",
+			AutoIncrement: true,
+			Default:       ColumnDefaultNull,
+		},
+		{
+			Name:     "customer_id",
+			TypeInDB: "int(10) unsigned",
+			Default:  ColumnDefaultNull,
+		},
+		{
+			Name:     "info",
+			Nullable: true,
+			TypeInDB: "text",
+			Default:  ColumnDefaultNull,
+		},
+	}
+	stmt := strings.Replace(`CREATE TABLE ~orders~ (
+  ~id~ int(10) unsigned NOT NULL AUTO_INCREMENT,
+  ~customer_id~ int(10) unsigned NOT NULL,
+  ~info~ text,
+  PRIMARY KEY (~id~,~customer_id~)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1`, "~", "`", -1)
+	return Table{
+		Name:              "orders",
+		Engine:            "InnoDB",
+		CharSet:           "latin1",
+		Columns:           columns,
+		PrimaryKey:        primaryKey(columns[0:2]...),
+		SecondaryIndexes:  []*Index{},
+		NextAutoIncrement: 1,
+		CreateStatement:   stmt,
+	}
+}
+
+func foreignKeyTable() Table {
+	columns := []*Column{
+		{
+			Name:     "id",
+			TypeInDB: "int(10) unsigned",
+			Default:  ColumnDefaultNull,
+		},
+		{
+			Name:     "customer_id",
+			TypeInDB: "int(10) unsigned",
+			Default:  ColumnDefaultNull,
+			Nullable: true,
+		},
+		{
+			Name:     "product_line",
+			TypeInDB: "char(12)",
+			Default:  ColumnDefaultNull,
+		},
+		{
+			Name:     "model",
+			TypeInDB: "int(10) unsigned",
+			Default:  ColumnDefaultNull,
+		},
+	}
+
+	secondaryIndexes := []*Index{
+		{
+			Name:     "customer",
+			Columns:  []*Column{columns[1]},
+			SubParts: []uint16{0},
+		},
+		{
+			Name:     "product",
+			Columns:  []*Column{columns[2], columns[3]},
+			Unique:   true,
+			SubParts: []uint16{0, 0},
+		},
+	}
+
+	foreignKeys := []*ForeignKey{
+		{
+			Name:                  "customer_fk",
+			Columns:               columns[1:2],
+			ReferencedSchemaName:  "purchasing",
+			ReferencedTableName:   "customers",
+			ReferencedColumnNames: []string{"id"},
+			DeleteRule:            "SET NULL",
+			UpdateRule:            "RESTRICT",
+		},
+		{
+			Name:                  "product_fk",
+			Columns:               columns[2:4],
+			ReferencedSchemaName:  "", // same schema as this table
+			ReferencedTableName:   "products",
+			ReferencedColumnNames: []string{"line", "model"},
+			DeleteRule:            "CASCADE",
+			UpdateRule:            "CASCADE",
+		},
+	}
+
+	stmt := strings.Replace(`CREATE TABLE ~warranties~ (
+  ~id~ int(10) unsigned NOT NULL,
+  ~customer_id~ int(10) unsigned DEFAULT NULL,
+  ~product_line~ char(12) NOT NULL,
+  ~model~ int(10) unsigned NOT NULL,
+  PRIMARY KEY (~id~),
+  UNIQUE KEY ~product~ (~product_line~,~model~),
+  KEY ~customer~ (~customer_id~),
+  CONSTRAINT ~customer_fk~ FOREIGN KEY (~customer_id~) REFERENCES ~purchasing~.~customers~ (~id~),
+  CONSTRAINT ~product_fk~ FOREIGN KEY (~product_line~, ~model~) REFERENCES ~products~ (~line~, ~model~)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1`, "~", "`", -1)
+
+	return Table{
+		Name:             "warranties",
+		Engine:           "InnoDB",
+		CharSet:          "latin1",
+		Columns:          columns,
+		PrimaryKey:       primaryKey(columns[0]),
+		SecondaryIndexes: secondaryIndexes,
+		ForeignKeys:      foreignKeys,
+		CreateStatement:  stmt,
+	}
 }
 
 func aSchema(name string, tables ...*Table) Schema {

@@ -256,6 +256,122 @@ func TestSchemaDiffAlterTable(t *testing.T) {
 	}
 }
 
+func TestSchemaDiffForeignKeys(t *testing.T) {
+	t1 := foreignKeyTable()
+	t2 := foreignKeyTable()
+	s1 := aSchema("s1", &t1)
+	s2 := aSchema("s2", &t2)
+
+	// Helper to ensure that AddForeignKey and DropForeignKey clauses get split
+	// into separate TableDiffs
+	assertDiffs := func(from, to *Schema, expectAddFK, expectDropFK, expectOther int) {
+		t.Helper()
+		sd := NewSchemaDiff(from, to)
+		expectTableDiffs := 1
+		if expectAddFK > 0 && expectDropFK > 0 {
+			expectTableDiffs++
+		}
+		if len(sd.TableDiffs) != expectTableDiffs {
+			t.Errorf("Incorrect number of TableDiffs: expected %d, found %d", expectTableDiffs, len(sd.TableDiffs))
+			return
+		}
+		for n, td := range sd.TableDiffs {
+			if n == 1 && td.From.Name != sd.TableDiffs[0].From.Name {
+				t.Errorf("Expected TableDiffs[1] to affect same table as TableDiffs[0] (%s), instead found %s", sd.TableDiffs[0].From.Name, td.From.Name)
+				break
+			}
+			var seenAdd, seenDrop bool
+			for _, clause := range td.alterClauses {
+				switch clause.(type) {
+				case AddForeignKey:
+					expectAddFK--
+					seenAdd = true
+					if seenDrop {
+						t.Error("Unexpectedly found AddForeignKey and DropForeignKey clauses in the same TableDiff")
+					}
+				case DropForeignKey:
+					expectDropFK--
+					seenDrop = true
+					if seenAdd {
+						t.Error("Unexpectedly found AddForeignKey and DropForeignKey clauses in the same TableDiff")
+					}
+					if n == 1 {
+						t.Errorf("Expected clauses for second TableDiff of same table to only consist of AddForeignKey, instead found %T", clause)
+					}
+				default:
+					expectOther--
+					if n == 1 {
+						t.Errorf("Expected clauses for second TableDiff of same table to only consist of AddForeignKey, instead found %T", clause)
+					}
+				}
+			}
+		}
+		if expectAddFK != 0 || expectDropFK != 0 || expectOther != 0 {
+			t.Errorf("Did not find expected count of each clause type; counters remaining: add=%d drop=%d other=%d", expectAddFK, expectDropFK, expectOther)
+		}
+	}
+
+	// Dropping multiple FKs and making other changes: all one TableDiff
+	t2.ForeignKeys = []*ForeignKey{}
+	t2.Comment = "Hello world"
+	t2.CreateStatement = t2.GeneratedCreateStatement()
+	assertDiffs(&s1, &s2, 0, 2, 1)
+
+	// Adding multiple FKs and making other changes: all one TableDiff
+	assertDiffs(&s2, &s1, 2, 0, 1)
+
+	// Modifying one FK and making other changes: two TableDiffs
+	t2 = foreignKeyTable()
+	t2.ForeignKeys[1].ReferencedColumnNames[1] = "model_code"
+	t2.Comment = "Hello world"
+	t2.CreateStatement = t2.GeneratedCreateStatement()
+	assertDiffs(&s1, &s2, 1, 1, 1)
+
+	// Adding and dropping unrelated FKs: two TableDiffs
+	t2 = foreignKeyTable()
+	t2.ForeignKeys[1] = &ForeignKey{
+		Name:                  "actor_fk",
+		Columns:               t2.Columns[0:1],
+		ReferencedSchemaName:  "",
+		ReferencedTableName:   "actor",
+		ReferencedColumnNames: []string{"actor_id"},
+		DeleteRule:            "RESTRICT",
+		UpdateRule:            "CASCADE",
+	}
+	t2.CreateStatement = t2.GeneratedCreateStatement()
+	assertDiffs(&s1, &s2, 1, 1, 0)
+
+	// Renaming an FK: two TableDiffs, but both are blank unless enabling
+	// StatementModifiers.StrictForeignKeyNaming
+	t2 = foreignKeyTable()
+	t2.ForeignKeys[1].Name = fmt.Sprintf("_%s", t2.ForeignKeys[1].Name)
+	t2.CreateStatement = t2.GeneratedCreateStatement()
+	assertDiffs(&s1, &s2, 1, 1, 0)
+	for n, td := range NewSchemaDiff(&s1, &s2).TableDiffs {
+		mods := StatementModifiers{}
+		if actual, _ := td.Statement(mods); actual != "" {
+			t.Errorf("Expected blank ALTER without StrictForeignKeyNaming, instead found %s", actual)
+		}
+		mods.StrictForeignKeyNaming = true
+		actual, _ := td.Statement(mods)
+		if (n == 0 && !strings.Contains(actual, "DROP FOREIGN KEY")) || (n == 1 && !strings.Contains(actual, "ADD CONSTRAINT")) {
+			t.Errorf("Unexpected statement with StrictForeignKeyNaming for tablediff[%d]: returned %s", n, actual)
+		}
+	}
+
+	// Renaming an FK but also changing its definition: never blank statement
+	t2.ForeignKeys[1].Columns = t2.ForeignKeys[1].Columns[0:1]
+	t2.ForeignKeys[1].ReferencedColumnNames = t2.ForeignKeys[1].ReferencedColumnNames[0:1]
+	t2.CreateStatement = t2.GeneratedCreateStatement()
+	assertDiffs(&s1, &s2, 1, 1, 0)
+	for n, td := range NewSchemaDiff(&s1, &s2).TableDiffs {
+		actual, _ := td.Statement(StatementModifiers{})
+		if (n == 0 && !strings.Contains(actual, "DROP FOREIGN KEY")) || (n == 1 && !strings.Contains(actual, "ADD CONSTRAINT")) {
+			t.Errorf("Unexpected statement with StrictForeignKeyNaming for tablediff[%d]: returned %s", n, actual)
+		}
+	}
+}
+
 func TestSchemaDiffFilteredTableDiffs(t *testing.T) {
 	s1t1 := anotherTable()
 	s1t2 := aTable(1)
@@ -305,13 +421,8 @@ func TestSchemaDiffFilteredTableDiffs(t *testing.T) {
 }
 
 func TestTableDiffUnsupportedAlter(t *testing.T) {
-	// unsupportedTable() returns same thing as anotherTable() but with different
-	// table name and with FK added. We just need to make the table names match
-	// before diff'ing the tables.
-	t1 := anotherTable()
+	t1 := supportedTable()
 	t2 := unsupportedTable()
-	t1.Name = t2.Name
-	t1.CreateStatement = t1.GeneratedCreateStatement()
 
 	assertUnsupported := func(td *TableDiff) {
 		t.Helper()
@@ -330,7 +441,15 @@ func TestTableDiffUnsupportedAlter(t *testing.T) {
 		// table was on the "to" or "from" side, the message should show what part
 		// of the unsupported table triggered the issue.
 		extended := err.(*UnsupportedDiffError).ExtendedError()
-		expected := "--- Expected\n+++ MySQL-actual\n@@ -5 +5,2 @@\n-  KEY `film_name` (`film_name`)\n+  KEY `film_name` (`film_name`),\n+  CONSTRAINT `fk_actor_id` FOREIGN KEY (`actor_id`) REFERENCES `actor` (`actor_id`)\n"
+		expected := `--- Expected
++++ MySQL-actual
+@@ -6 +6,4 @@
+-) ENGINE=InnoDB DEFAULT CHARSET=latin1
++) ENGINE=InnoDB DEFAULT CHARSET=latin1 ROW_FORMAT=REDUNDANT
++   /*!50100 PARTITION BY RANGE (customer_id)
++   (PARTITION p0 VALUES LESS THAN (123) ENGINE = InnoDB,
++    PARTITION p1 VALUES LESS THAN MAXVALUE ENGINE = InnoDB) */
+`
 		if expected != extended {
 			t.Errorf("Output of ExtendedError() did not match expectation. Returned value:\n%s", extended)
 		}
@@ -443,7 +562,7 @@ func TestAlterTableStatementOnlineMods(t *testing.T) {
 			t.Errorf("Received unexpected error %s from statement with mods=%v", err, mods)
 			return
 		}
-		expect := fmt.Sprintf("ALTER TABLE `%s` %s%s", from.Name, middle, alter.alterClauses[0].Clause())
+		expect := fmt.Sprintf("ALTER TABLE `%s` %s%s", from.Name, middle, alter.alterClauses[0].Clause(mods))
 		if stmt != expect {
 			t.Errorf("Generated ALTER doesn't match expectation with mods=%v\n    Expected: %s\n    Found:    %s", mods, expect, stmt)
 		}
