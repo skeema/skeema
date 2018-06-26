@@ -172,7 +172,6 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// explicitly state to use a different charset/collation
 	if from.CharSet != to.CharSet || from.Collation != to.Collation {
 		clauses = append(clauses, ChangeCharSet{
-			Table:     to,
 			CharSet:   to.CharSet,
 			Collation: to.Collation,
 		})
@@ -188,12 +187,12 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// Compare PK
 	if !from.PrimaryKey.Equals(to.PrimaryKey) {
 		if from.PrimaryKey == nil {
-			clauses = append(clauses, AddIndex{Table: to, Index: to.PrimaryKey})
+			clauses = append(clauses, AddIndex{Index: to.PrimaryKey})
 		} else if to.PrimaryKey == nil {
-			clauses = append(clauses, DropIndex{Table: to, Index: from.PrimaryKey})
+			clauses = append(clauses, DropIndex{Index: from.PrimaryKey})
 		} else {
-			drop := DropIndex{Table: to, Index: from.PrimaryKey}
-			add := AddIndex{Table: to, Index: to.PrimaryKey}
+			drop := DropIndex{Index: from.PrimaryKey}
+			add := AddIndex{Index: to.PrimaryKey}
 			clauses = append(clauses, drop, add)
 		}
 	}
@@ -202,24 +201,33 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// dropping and re-adding it. There's also no way to re-position an index
 	// without dropping and re-adding all preexisting indexes that now come after.
 	toIndexes := to.SecondaryIndexesByName()
+	fromIndexes := from.SecondaryIndexesByName()
 	fromIndexStillExist := make([]*Index, 0) // ordered list of indexes from "from" that still exist in "to"
 	for _, fromIdx := range from.SecondaryIndexes {
 		if _, stillExists := toIndexes[fromIdx.Name]; stillExists {
 			fromIndexStillExist = append(fromIndexStillExist, fromIdx)
 		} else {
-			clauses = append(clauses, DropIndex{Table: to, Index: fromIdx})
+			clauses = append(clauses, DropIndex{Index: fromIdx})
 		}
 	}
 	var fromCursor int
 	for _, toIdx := range to.SecondaryIndexes {
 		for fromCursor < len(fromIndexStillExist) && !fromIndexStillExist[fromCursor].Equals(toIdx) {
-			clauses = append(clauses, DropIndex{Table: to, Index: fromIndexStillExist[fromCursor]})
+			stillIdx, stillExists := toIndexes[fromIndexStillExist[fromCursor].Name]
+			clauses = append(clauses, DropIndex{
+				Index:       fromIndexStillExist[fromCursor],
+				reorderOnly: stillExists && stillIdx.Equals(fromIndexStillExist[fromCursor]),
+			})
 			fromCursor++
 		}
 		if fromCursor >= len(fromIndexStillExist) {
 			// Already went through everything in the "from" list, so all remaining "to"
 			// indexes are adds
-			clauses = append(clauses, AddIndex{Table: to, Index: toIdx})
+			prevIdx, prevExisted := fromIndexes[toIdx.Name]
+			clauses = append(clauses, AddIndex{
+				Index:       toIdx,
+				reorderOnly: prevExisted && prevIdx.Equals(toIdx),
+			})
 		} else {
 			// Current position "to" matches cursor position "from"; nothing to add or drop
 			fromCursor++
@@ -229,35 +237,44 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// Compare foreign keys
 	fromForeignKeys := from.foreignKeysByName()
 	toForeignKeys := to.foreignKeysByName()
+	isRename := func(fk *ForeignKey, others []*ForeignKey) bool {
+		for _, other := range others {
+			if fk.Equivalent(other) {
+				return true
+			}
+		}
+		return false
+	}
 	for _, toFk := range toForeignKeys {
 		if _, existedBefore := fromForeignKeys[toFk.Name]; !existedBefore {
-			clauses = append(clauses, AddForeignKey{Table: to, ForeignKey: toFk})
+			clauses = append(clauses, AddForeignKey{
+				ForeignKey: toFk,
+				renameOnly: isRename(toFk, from.ForeignKeys),
+			})
 		}
 	}
 	for _, fromFk := range fromForeignKeys {
 		toFk, stillExists := toForeignKeys[fromFk.Name]
 		if !stillExists {
-			clauses = append(clauses, DropForeignKey{Table: to, ForeignKey: fromFk})
+			clauses = append(clauses, DropForeignKey{
+				ForeignKey: fromFk,
+				renameOnly: isRename(fromFk, to.ForeignKeys),
+			})
 		} else if !fromFk.Equals(toFk) {
-			drop := DropForeignKey{Table: to, ForeignKey: fromFk}
-			add := AddForeignKey{Table: to, ForeignKey: toFk}
+			drop := DropForeignKey{ForeignKey: fromFk}
+			add := AddForeignKey{ForeignKey: toFk}
 			clauses = append(clauses, drop, add)
 		}
 	}
 
 	// Compare storage engine
 	if from.Engine != to.Engine {
-		cse := ChangeStorageEngine{
-			Table:            to,
-			NewStorageEngine: to.Engine,
-		}
-		clauses = append(clauses, cse)
+		clauses = append(clauses, ChangeStorageEngine{NewStorageEngine: to.Engine})
 	}
 
 	// Compare next auto-inc value
 	if from.NextAutoIncrement != to.NextAutoIncrement && to.HasAutoIncrement() {
 		cai := ChangeAutoIncrement{
-			Table:                to,
 			NewNextAutoIncrement: to.NextAutoIncrement,
 			OldNextAutoIncrement: from.NextAutoIncrement,
 		}
@@ -267,7 +284,6 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// Compare create options
 	if from.CreateOptions != to.CreateOptions {
 		cco := ChangeCreateOptions{
-			Table:            to,
 			OldCreateOptions: from.CreateOptions,
 			NewCreateOptions: to.CreateOptions,
 		}
@@ -276,11 +292,7 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 
 	// Compare comment
 	if from.Comment != to.Comment {
-		cc := ChangeComment{
-			Table:      to,
-			NewComment: to.Comment,
-		}
-		clauses = append(clauses, cc)
+		clauses = append(clauses, ChangeComment{NewComment: to.Comment})
 	}
 
 	// If the SHOW CREATE TABLE output differed between the two tables, but we
@@ -351,7 +363,6 @@ func (cc *columnsComparison) columnDrops() []TableAlterClause {
 	for fromPos, stillPresent := range cc.fromStillPresent {
 		if !stillPresent {
 			clauses = append(clauses, DropColumn{
-				Table:  cc.fromTable,
 				Column: cc.fromTable.Columns[fromPos],
 			})
 		}

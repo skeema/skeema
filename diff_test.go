@@ -322,7 +322,7 @@ func TestSchemaDiffForeignKeys(t *testing.T) {
 
 	// Modifying one FK and making other changes: two TableDiffs
 	t2 = foreignKeyTable()
-	t2.ForeignKeys[0].UpdateRule = "SET NULL"
+	t2.ForeignKeys[1].ReferencedColumnNames[1] = "model_code"
 	t2.Comment = "Hello world"
 	t2.CreateStatement = t2.GeneratedCreateStatement()
 	assertDiffs(&s1, &s2, 1, 1, 1)
@@ -340,6 +340,36 @@ func TestSchemaDiffForeignKeys(t *testing.T) {
 	}
 	t2.CreateStatement = t2.GeneratedCreateStatement()
 	assertDiffs(&s1, &s2, 1, 1, 0)
+
+	// Renaming an FK: two TableDiffs, but both are blank unless enabling
+	// StatementModifiers.StrictForeignKeyNaming
+	t2 = foreignKeyTable()
+	t2.ForeignKeys[1].Name = fmt.Sprintf("_%s", t2.ForeignKeys[1].Name)
+	t2.CreateStatement = t2.GeneratedCreateStatement()
+	assertDiffs(&s1, &s2, 1, 1, 0)
+	for n, td := range NewSchemaDiff(&s1, &s2).TableDiffs {
+		mods := StatementModifiers{}
+		if actual, _ := td.Statement(mods); actual != "" {
+			t.Errorf("Expected blank ALTER without StrictForeignKeyNaming, instead found %s", actual)
+		}
+		mods.StrictForeignKeyNaming = true
+		actual, _ := td.Statement(mods)
+		if (n == 0 && !strings.Contains(actual, "DROP FOREIGN KEY")) || (n == 1 && !strings.Contains(actual, "ADD CONSTRAINT")) {
+			t.Errorf("Unexpected statement with StrictForeignKeyNaming for tablediff[%d]: returned %s", n, actual)
+		}
+	}
+
+	// Renaming an FK but also changing its definition: never blank statement
+	t2.ForeignKeys[1].Columns = t2.ForeignKeys[1].Columns[0:1]
+	t2.ForeignKeys[1].ReferencedColumnNames = t2.ForeignKeys[1].ReferencedColumnNames[0:1]
+	t2.CreateStatement = t2.GeneratedCreateStatement()
+	assertDiffs(&s1, &s2, 1, 1, 0)
+	for n, td := range NewSchemaDiff(&s1, &s2).TableDiffs {
+		actual, _ := td.Statement(StatementModifiers{})
+		if (n == 0 && !strings.Contains(actual, "DROP FOREIGN KEY")) || (n == 1 && !strings.Contains(actual, "ADD CONSTRAINT")) {
+			t.Errorf("Unexpected statement with StrictForeignKeyNaming for tablediff[%d]: returned %s", n, actual)
+		}
+	}
 }
 
 func TestSchemaDiffFilteredTableDiffs(t *testing.T) {
@@ -532,7 +562,7 @@ func TestAlterTableStatementOnlineMods(t *testing.T) {
 			t.Errorf("Received unexpected error %s from statement with mods=%v", err, mods)
 			return
 		}
-		expect := fmt.Sprintf("ALTER TABLE `%s` %s%s", from.Name, middle, alter.alterClauses[0].Clause())
+		expect := fmt.Sprintf("ALTER TABLE `%s` %s%s", from.Name, middle, alter.alterClauses[0].Clause(mods))
 		if stmt != expect {
 			t.Errorf("Generated ALTER doesn't match expectation with mods=%v\n    Expected: %s\n    Found:    %s", mods, expect, stmt)
 		}

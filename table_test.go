@@ -102,8 +102,8 @@ func TestTableAlterAddOrDropColumn(t *testing.T) {
 	if !ok {
 		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta2, tableAlters[0])
 	}
-	if ta2.Table != &to || ta2.Column != newCol {
-		t.Error("Pointers in table alter do not point to expected values")
+	if ta2.Column != newCol {
+		t.Error("Pointer in table alter does not point to expected value")
 	}
 
 	// Add an addition column to first position
@@ -177,8 +177,8 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 	if !ok {
 		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
 	}
-	if ta.Table != &to || ta.Index != newSecondary {
-		t.Error("Pointers in table alter do not point to expected values")
+	if ta.Index != newSecondary {
+		t.Error("Pointer in table alter does not point to expected value")
 	}
 
 	// Reverse comparison should yield a drop index
@@ -190,8 +190,8 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 	if !ok {
 		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta2, tableAlters[0])
 	}
-	if ta2.Table != &from || ta2.Index != newSecondary {
-		t.Error("Pointers in table alter do not point to expected values")
+	if ta2.Index != newSecondary {
+		t.Error("Pointer in table alter does not point to expected value")
 	}
 
 	// Start over; change the last existing secondary index
@@ -206,15 +206,15 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 	if !ok {
 		t.Fatalf("Incorrect type of table alter[0] returned: expected %T, found %T", ta2, tableAlters[0])
 	}
-	if ta2.Table != &to || ta2.Index != from.SecondaryIndexes[1] {
-		t.Error("Pointers in table alter[0] do not point to expected values")
+	if ta2.Index != from.SecondaryIndexes[1] {
+		t.Error("Pointer in table alter[0] does not point to expected value")
 	}
 	ta, ok = tableAlters[1].(AddIndex)
 	if !ok {
 		t.Fatalf("Incorrect type of table alter[1] returned: expected %T, found %T", ta, tableAlters[1])
 	}
-	if ta.Table != &to || ta.Index != to.SecondaryIndexes[1] {
-		t.Error("Pointers in table alter[1] do not point to expected values")
+	if ta.Index != to.SecondaryIndexes[1] {
+		t.Error("Pointer in table alter[1] does not point to expected value")
 	}
 
 	// Start over; change the primary key
@@ -230,15 +230,15 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 	if !ok {
 		t.Fatalf("Incorrect type of table alter[0] returned: expected %T, found %T", ta2, tableAlters[0])
 	}
-	if ta2.Table != &to || ta2.Index != from.PrimaryKey {
-		t.Error("Pointers in table alter[0] do not point to expected values")
+	if ta2.Index != from.PrimaryKey {
+		t.Error("Pointer in table alter[0] does not point to expected value")
 	}
 	ta, ok = tableAlters[1].(AddIndex)
 	if !ok {
 		t.Fatalf("Incorrect type of table alter[1] returned: expected %T, found %T", ta, tableAlters[1])
 	}
-	if ta.Table != &to || ta.Index != to.PrimaryKey {
-		t.Error("Pointers in table alter[1] do not point to expected values")
+	if ta.Index != to.PrimaryKey {
+		t.Error("Pointer in table alter[1] does not point to expected value")
 	}
 
 	// Remove the primary key
@@ -252,8 +252,8 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 	if !ok {
 		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta2, tableAlters[0])
 	}
-	if ta2.Table != &to || ta2.Index != from.PrimaryKey {
-		t.Error("Pointers in table alter do not point to expected values")
+	if ta2.Index != from.PrimaryKey {
+		t.Error("Pointer in table alter does not point to expected value")
 	}
 
 	// Reverse comparison should yield an add PK
@@ -265,8 +265,8 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 	if !ok {
 		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
 	}
-	if ta.Table != &from || ta.Index != from.PrimaryKey {
-		t.Error("Pointers in table alter do not point to expected values")
+	if ta.Index != from.PrimaryKey {
+		t.Error("Pointer in table alter does not point to expected value")
 	}
 }
 
@@ -296,8 +296,8 @@ func TestTableAlterAddOrDropForeignKey(t *testing.T) {
 	if !ok {
 		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taFk1, tableAlters[0])
 	}
-	if taFk1.Table != &to || taFk1.ForeignKey != newFk {
-		t.Error("Pointers in table alter do not point to expected values")
+	if taFk1.ForeignKey != newFk {
+		t.Error("Pointer in table alter does not point to expected value")
 	}
 
 	// Reverse comparison should yield a drop foreign key
@@ -309,8 +309,8 @@ func TestTableAlterAddOrDropForeignKey(t *testing.T) {
 	if !ok {
 		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", taFk2, tableAlters[0])
 	}
-	if taFk2.Table != &from || taFk2.ForeignKey != newFk {
-		t.Error("Pointers in table alter do not point to expected values")
+	if taFk2.ForeignKey != newFk {
+		t.Error("Pointer in table alter does not point to expected value")
 	}
 
 	// New situation: changing an existing foreign key
@@ -326,15 +326,15 @@ func TestTableAlterAddOrDropForeignKey(t *testing.T) {
 	if !ok {
 		t.Fatalf("Incorrect type of table alter[0] returned: expected %T, found %T", taFk2, tableAlters[0])
 	}
-	if taFk2.Table != &to || taFk2.ForeignKey != from.ForeignKeys[1] {
-		t.Error("Pointers in table alter[0] do not point to expected values")
+	if taFk2.ForeignKey != from.ForeignKeys[1] {
+		t.Error("Pointer in table alter[0] does not point to expected value")
 	}
 	taFk1, ok = tableAlters[1].(AddForeignKey)
 	if !ok {
 		t.Fatalf("Incorrect type of table alter[1] returned: expected %T, found %T", taFk1, tableAlters[1])
 	}
-	if taFk1.Table != &to || taFk1.ForeignKey != to.ForeignKeys[1] {
-		t.Error("Pointers in table alter[1] do not point to expected values")
+	if taFk1.ForeignKey != to.ForeignKeys[1] {
+		t.Error("Pointer in table alter[1] does not point to expected value")
 	}
 
 	// Changing the first FK should not affect 2nd FK, since FKs are not ordered
@@ -349,15 +349,15 @@ func TestTableAlterAddOrDropForeignKey(t *testing.T) {
 	if !ok {
 		t.Fatalf("Incorrect type of table alter[0] returned: expected %T, found %T", taFk2, tableAlters[0])
 	}
-	if taFk2.Table != &to || taFk2.ForeignKey != from.ForeignKeys[0] {
-		t.Error("Pointers in table alter[0] do not point to expected values")
+	if taFk2.ForeignKey != from.ForeignKeys[0] {
+		t.Error("Pointer in table alter[0] does not point to expected value")
 	}
 	taFk1, ok = tableAlters[1].(AddForeignKey)
 	if !ok {
 		t.Fatalf("Incorrect type of table alter[1] returned: expected %T, found %T", taFk1, tableAlters[1])
 	}
-	if taFk1.Table != &to || taFk1.ForeignKey != to.ForeignKeys[0] {
-		t.Error("Pointers in table alter[1] do not point to expected values")
+	if taFk1.ForeignKey != to.ForeignKeys[0] {
+		t.Error("Pointer in table alter[1] does not point to expected value")
 	}
 }
 
@@ -624,8 +624,8 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	}
 	// The alters should always be in this order: drops, modifications, adds
 	if drop, ok := tableAlters[0].(DropColumn); ok {
-		if drop.Table != &from || drop.Column != from.Columns[3] {
-			t.Error("Pointers in table alter[0] do not point to expected values")
+		if drop.Column != from.Columns[3] {
+			t.Error("Pointer in table alter[0] does not point to expected value")
 		}
 	} else {
 		t.Errorf("Incorrect type of table alter[0] returned: expected %T, found %T", drop, tableAlters[0])
@@ -692,8 +692,8 @@ func TestTableAlterChangeStorageEngine(t *testing.T) {
 		if !ok {
 			t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
 		}
-		if ta.Clause() != expected {
-			t.Errorf("Incorrect ALTER TABLE clause returned; expected: %s; found: %s", expected, ta.Clause())
+		if actual := ta.Clause(StatementModifiers{}); actual != expected {
+			t.Errorf("Incorrect ALTER TABLE clause returned; expected: %s; found: %s", expected, actual)
 		}
 	}
 
@@ -791,8 +791,8 @@ func TestTableAlterChangeCharSet(t *testing.T) {
 		if !ok {
 			t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
 		}
-		if ta.Clause() != expected {
-			t.Errorf("Incorrect ALTER TABLE clause returned; expected: %s; found: %s", expected, ta.Clause())
+		if actual := ta.Clause(StatementModifiers{}); actual != expected {
+			t.Errorf("Incorrect ALTER TABLE clause returned; expected: %s; found: %s", expected, actual)
 		}
 	}
 
@@ -839,7 +839,7 @@ func TestTableAlterChangeCreateOptions(t *testing.T) {
 		// Order of result isn't predictable, so convert to maps and compare
 		indexedClause := make(map[string]bool)
 		indexedExpected := make(map[string]bool)
-		for _, token := range strings.Split(ta.Clause(), " ") {
+		for _, token := range strings.Split(ta.Clause(StatementModifiers{}), " ") {
 			indexedClause[token] = true
 		}
 		for _, token := range strings.Split(expected, " ") {
@@ -847,12 +847,12 @@ func TestTableAlterChangeCreateOptions(t *testing.T) {
 		}
 
 		if len(indexedClause) != len(indexedExpected) {
-			t.Errorf("Incorrect ALTER TABLE clause returned; expected: %s; found: %s", expected, ta.Clause())
+			t.Errorf("Incorrect ALTER TABLE clause returned; expected: %s; found: %s", expected, ta.Clause(StatementModifiers{}))
 			return
 		}
 		for k, v := range indexedExpected {
 			if foundv, ok := indexedClause[k]; v != foundv || !ok {
-				t.Errorf("Incorrect ALTER TABLE clause returned; expected: %s; found: %s", expected, ta.Clause())
+				t.Errorf("Incorrect ALTER TABLE clause returned; expected: %s; found: %s", expected, ta.Clause(StatementModifiers{}))
 				return
 			}
 		}
@@ -898,8 +898,8 @@ func TestTableAlterChangeComment(t *testing.T) {
 		if !ok {
 			t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
 		}
-		if ta.Clause() != expected {
-			t.Errorf("Incorrect ALTER TABLE clause returned; expected: %s; found: %s", expected, ta.Clause())
+		if actual := ta.Clause(StatementModifiers{}); actual != expected {
+			t.Errorf("Incorrect ALTER TABLE clause returned; expected: %s; found: %s", expected, actual)
 		}
 	}
 
