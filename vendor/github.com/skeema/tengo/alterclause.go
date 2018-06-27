@@ -11,7 +11,13 @@ import (
 // between two tables. Structs satisfying this interface can generate an ALTER
 // TABLE clause, such as ADD COLUMN, MODIFY COLUMN, ADD KEY, etc.
 type TableAlterClause interface {
-	Clause() string
+	Clause(StatementModifiers) string
+}
+
+// Unsafer interface represents a type of clause that may have the ability to
+// destroy data. Structs satisfying this interface can indicate whether or not
+// this particular clause destroys data.
+type Unsafer interface {
 	Unsafe() bool
 }
 
@@ -28,7 +34,7 @@ type AddColumn struct {
 }
 
 // Clause returns an ADD COLUMN clause of an ALTER TABLE statement.
-func (ac AddColumn) Clause() string {
+func (ac AddColumn) Clause(_ StatementModifiers) string {
 	var positionClause string
 	if ac.PositionFirst {
 		// Positioning variables are mutually exclusive
@@ -42,24 +48,17 @@ func (ac AddColumn) Clause() string {
 	return fmt.Sprintf("ADD COLUMN %s%s", ac.Column.Definition(ac.Table), positionClause)
 }
 
-// Unsafe returns true if this clause is potentially destructive of data.
-// AddColumn is never unsafe.
-func (ac AddColumn) Unsafe() bool {
-	return false
-}
-
 ///// DropColumn ///////////////////////////////////////////////////////////////
 
 // DropColumn represents a column that was present on the left-side ("from")
 // schema version of the table, but not the right-side ("to") version. It
 // satisfies the TableAlterClause interface.
 type DropColumn struct {
-	Table  *Table
 	Column *Column
 }
 
 // Clause returns a DROP COLUMN clause of an ALTER TABLE statement.
-func (dc DropColumn) Clause() string {
+func (dc DropColumn) Clause(_ StatementModifiers) string {
 	return fmt.Sprintf("DROP COLUMN %s", EscapeIdentifier(dc.Column.Name))
 }
 
@@ -75,19 +74,16 @@ func (dc DropColumn) Unsafe() bool {
 // schema version of the table, but was not identically present on the left-
 // side ("from") version. It satisfies the TableAlterClause interface.
 type AddIndex struct {
-	Table *Table
-	Index *Index
+	Index       *Index
+	reorderOnly bool // true if index is being dropped and re-added just to re-order
 }
 
 // Clause returns an ADD KEY clause of an ALTER TABLE statement.
-func (ai AddIndex) Clause() string {
+func (ai AddIndex) Clause(mods StatementModifiers) string {
+	if !mods.StrictIndexOrder && ai.reorderOnly {
+		return ""
+	}
 	return fmt.Sprintf("ADD %s", ai.Index.Definition())
-}
-
-// Unsafe returns true if this clause is potentially destructive of data.
-// AddIndex is never unsafe.
-func (ai AddIndex) Unsafe() bool {
-	return false
 }
 
 ///// DropIndex ////////////////////////////////////////////////////////////////
@@ -96,24 +92,56 @@ func (ai AddIndex) Unsafe() bool {
 // schema version of the table, but not identically present the right-side
 // ("to") version. It satisfies the TableAlterClause interface.
 type DropIndex struct {
-	Table *Table
-	Index *Index
+	Index       *Index
+	reorderOnly bool // true if index is being dropped and re-added just to re-order
 }
 
 // Clause returns a DROP KEY clause of an ALTER TABLE statement.
-func (di DropIndex) Clause() string {
+func (di DropIndex) Clause(mods StatementModifiers) string {
+	if !mods.StrictIndexOrder && di.reorderOnly {
+		return ""
+	}
 	if di.Index.PrimaryKey {
 		return "DROP PRIMARY KEY"
 	}
 	return fmt.Sprintf("DROP KEY %s", EscapeIdentifier(di.Index.Name))
 }
 
-// Unsafe returns true if this clause is potentially destructive of data.
-// DropIndex is never considered unsafe for now. Future versions of Go La Tengo
-// may include more advanced logic to check if an index is redundant or actually
-// in-use, and may consider dropping of in-use indexes to be unsafe.
-func (di DropIndex) Unsafe() bool {
-	return false
+///// AddForeignKey ////////////////////////////////////////////////////////////
+
+// AddForeignKey represents a new foreign key that is present on the right-side
+// ("to") schema version of the table, but not the left-side ("from") version.
+// It satisfies the TableAlterClause interface.
+type AddForeignKey struct {
+	ForeignKey *ForeignKey
+	renameOnly bool // true if this FK is being dropped and re-added just to change name
+}
+
+// Clause returns an ADD CONSTRAINT ... FOREIGN KEY clause of an ALTER TABLE
+// statement.
+func (afk AddForeignKey) Clause(mods StatementModifiers) string {
+	if !mods.StrictForeignKeyNaming && afk.renameOnly {
+		return ""
+	}
+	return fmt.Sprintf("ADD %s", afk.ForeignKey.Definition())
+}
+
+///// DropForeignKey ///////////////////////////////////////////////////////////
+
+// DropForeignKey represents a foreign key that was present on the left-side
+// ("from") schema version of the table, but not the right-side ("to") version.
+// It satisfies the TableAlterClause interface.
+type DropForeignKey struct {
+	ForeignKey *ForeignKey
+	renameOnly bool // true if this FK is being dropped and re-added just to change name
+}
+
+// Clause returns a DROP FOREIGN KEY clause of an ALTER TABLE statement.
+func (dfk DropForeignKey) Clause(mods StatementModifiers) string {
+	if !mods.StrictForeignKeyNaming && dfk.renameOnly {
+		return ""
+	}
+	return fmt.Sprintf("DROP FOREIGN KEY %s", EscapeIdentifier(dfk.ForeignKey.Name))
 }
 
 ///// RenameColumn /////////////////////////////////////////////////////////////
@@ -121,13 +149,12 @@ func (di DropIndex) Unsafe() bool {
 // RenameColumn represents a column that exists in both versions of the table,
 // but with a different name. It satisfies the TableAlterClause interface.
 type RenameColumn struct {
-	Table     *Table
 	OldColumn *Column
 	NewName   string
 }
 
 // Clause returns a CHANGE COLUMN clause of an ALTER TABLE statement.
-func (rc RenameColumn) Clause() string {
+func (rc RenameColumn) Clause(_ StatementModifiers) string {
 	panic(fmt.Errorf("Rename Column not yet supported"))
 }
 
@@ -153,7 +180,7 @@ type ModifyColumn struct {
 }
 
 // Clause returns a MODIFY COLUMN clause of an ALTER TABLE statement.
-func (mc ModifyColumn) Clause() string {
+func (mc ModifyColumn) Clause(_ StatementModifiers) string {
 	var positionClause string
 	if mc.PositionFirst {
 		// Positioning variables are mutually exclusive
@@ -307,20 +334,20 @@ func (mc ModifyColumn) Unsafe() bool {
 // ChangeAutoIncrement represents a difference in next-auto-increment value
 // between two versions of a table. It satisfies the TableAlterClause interface.
 type ChangeAutoIncrement struct {
-	Table                *Table
 	OldNextAutoIncrement uint64
 	NewNextAutoIncrement uint64
 }
 
 // Clause returns an AUTO_INCREMENT clause of an ALTER TABLE statement.
-func (cai ChangeAutoIncrement) Clause() string {
+func (cai ChangeAutoIncrement) Clause(mods StatementModifiers) string {
+	if mods.NextAutoInc == NextAutoIncIgnore {
+		return ""
+	} else if mods.NextAutoInc == NextAutoIncIfIncreased && cai.OldNextAutoIncrement >= cai.NewNextAutoIncrement {
+		return ""
+	} else if mods.NextAutoInc == NextAutoIncIfAlready && cai.OldNextAutoIncrement <= 1 {
+		return ""
+	}
 	return fmt.Sprintf("AUTO_INCREMENT = %d", cai.NewNextAutoIncrement)
-}
-
-// Unsafe returns true if this clause is potentially destructive of data.
-// ChangeAutoIncrement is currently never considered unsafe.
-func (cai ChangeAutoIncrement) Unsafe() bool {
-	return false
 }
 
 ///// ChangeCharSet ////////////////////////////////////////////////////////////
@@ -329,25 +356,17 @@ func (cai ChangeAutoIncrement) Unsafe() bool {
 // collation between two versions of a table. It satisfies the TableAlterClause
 // interface.
 type ChangeCharSet struct {
-	Table     *Table
 	CharSet   string
 	Collation string // blank string means "default collation for CharSet"
 }
 
 // Clause returns a DEFAULT CHARACTER SET clause of an ALTER TABLE statement.
-func (ccs ChangeCharSet) Clause() string {
+func (ccs ChangeCharSet) Clause(_ StatementModifiers) string {
 	var collationClause string
 	if ccs.Collation != "" {
 		collationClause = fmt.Sprintf(" COLLATE = %s", ccs.Collation)
 	}
 	return fmt.Sprintf("DEFAULT CHARACTER SET = %s%s", ccs.CharSet, collationClause)
-}
-
-// Unsafe returns true if this clause is potentially destructive of data.
-// ChangeCharSet is never considered unsafe, since it only affects the *default*
-// character set of new columns, with no change to existing columns.
-func (ccs ChangeCharSet) Unsafe() bool {
-	return false
 }
 
 ///// ChangeCreateOptions //////////////////////////////////////////////////////
@@ -356,14 +375,13 @@ func (ccs ChangeCharSet) Unsafe() bool {
 // (row_format, stats_persistent, stats_auto_recalc, etc) between two versions
 // of a table. It satisfies the TableAlterClause interface.
 type ChangeCreateOptions struct {
-	Table            *Table
 	OldCreateOptions string
 	NewCreateOptions string
 }
 
 // Clause returns a clause of an ALTER TABLE statement that sets one or more
 // create options.
-func (cco ChangeCreateOptions) Clause() string {
+func (cco ChangeCreateOptions) Clause(_ StatementModifiers) string {
 	// Map of known defaults that make options no longer show up in create_options
 	// or SHOW CREATE TABLE.
 	knownDefaults := map[string]string{
@@ -418,31 +436,18 @@ func (cco ChangeCreateOptions) Clause() string {
 	return strings.Join(subclauses, " ")
 }
 
-// Unsafe returns true if this clause is potentially destructive of data.
-// ChangeCreateOptions is never considered unsafe.
-func (cco ChangeCreateOptions) Unsafe() bool {
-	return false
-}
-
 ///// ChangeComment ////////////////////////////////////////////////////////////
 
 // ChangeComment represents a difference in the table-level comment between two
 // versions of a table. It satisfies the TableAlterClause interface.
 type ChangeComment struct {
-	Table      *Table
 	NewComment string
 }
 
 // Clause returns a clause of an ALTER TABLE statement that changes a table's
 // comment.
-func (cc ChangeComment) Clause() string {
+func (cc ChangeComment) Clause(_ StatementModifiers) string {
 	return fmt.Sprintf("COMMENT '%s'", EscapeValueForCreateTable(cc.NewComment))
-}
-
-// Unsafe returns true if this clause is potentially destructive of data.
-// ChangeComment is never considered unsafe.
-func (cc ChangeComment) Unsafe() bool {
-	return false
 }
 
 ///// ChangeStorageEngine //////////////////////////////////////////////////////
@@ -453,13 +458,12 @@ func (cc ChangeComment) Unsafe() bool {
 // currently very limited, however it still provides the ability to generate
 // ALTERs that change engine.
 type ChangeStorageEngine struct {
-	Table            *Table
 	NewStorageEngine string
 }
 
 // Clause returns a clause of an ALTER TABLE statement that changes a table's
 // storage engine.
-func (cse ChangeStorageEngine) Clause() string {
+func (cse ChangeStorageEngine) Clause(_ StatementModifiers) string {
 	return fmt.Sprintf("ENGINE=%s", cse.NewStorageEngine)
 }
 

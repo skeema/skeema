@@ -699,6 +699,54 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		t.SecondaryIndexes = secondaryIndexesByTableName[t.Name]
 	}
 
+	// Obtain the foreign keys of the tables in the schema
+	var rawForeignKeys []struct {
+		Name                 string `db:"constraint_name"`
+		TableName            string `db:"table_name"`
+		UpdateRule           string `db:"update_rule"`
+		DeleteRule           string `db:"delete_rule"`
+		ReferencedTableName  string `db:"referenced_table_name"`
+		ReferencedSchemaName string `db:"referenced_schema"`
+		ReferencedColumnName string `db:"referenced_column_name"`
+		ColumnLookupKey      string `db:"col_lookup_key"`
+	}
+	query = `
+		SELECT   rc.constraint_name, rc.table_name, rc.update_rule, rc.delete_rule, rc.referenced_table_name,
+		         IF(rc.constraint_schema=rc.unique_constraint_schema, '', rc.unique_constraint_schema) AS referenced_schema,
+		         kcu.referenced_column_name,
+		         CONCAT(kcu.constraint_schema, '.', kcu.table_name, '.', kcu.column_name) AS col_lookup_key
+		FROM     referential_constraints rc
+		JOIN     key_column_usage kcu ON kcu.constraint_name = rc.constraint_name AND kcu.constraint_schema = rc.constraint_schema
+		WHERE    rc.constraint_schema = ?
+		ORDER BY rc.constraint_name, kcu.ordinal_position`
+	if err := db.Select(&rawForeignKeys, query, schema); err != nil {
+		return nil, fmt.Errorf("Error querying foreign key constraints: %s", err)
+	}
+	foreignKeysByTableName := make(map[string][]*ForeignKey)
+	foreignKeysByName := make(map[string]*ForeignKey)
+	for _, rawForeignKey := range rawForeignKeys {
+		col := columnsByTableAndName[rawForeignKey.ColumnLookupKey]
+		if fk, already := foreignKeysByName[rawForeignKey.Name]; already {
+			fk.Columns = append(fk.Columns, col)
+			fk.ReferencedColumnNames = append(fk.ReferencedColumnNames, rawForeignKey.ReferencedColumnName)
+		} else {
+			foreignKey := &ForeignKey{
+				Name:                  rawForeignKey.Name,
+				ReferencedSchemaName:  rawForeignKey.ReferencedSchemaName,
+				ReferencedTableName:   rawForeignKey.ReferencedTableName,
+				UpdateRule:            rawForeignKey.UpdateRule,
+				DeleteRule:            rawForeignKey.DeleteRule,
+				Columns:               []*Column{col},
+				ReferencedColumnNames: []string{rawForeignKey.ReferencedColumnName},
+			}
+			foreignKeysByName[rawForeignKey.Name] = foreignKey
+			foreignKeysByTableName[rawForeignKey.TableName] = append(foreignKeysByTableName[rawForeignKey.TableName], foreignKey)
+		}
+	}
+	for _, t := range tables {
+		t.ForeignKeys = foreignKeysByTableName[t.Name]
+	}
+
 	// Obtain actual SHOW CREATE TABLE output and store in each table. Since
 	// there's no way in MySQL to bulk fetch this for multiple tables at once,
 	// use multiple goroutines to make this faster.
