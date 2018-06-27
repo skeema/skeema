@@ -28,12 +28,13 @@ const (
 // for a particular table, and/or generate errors if certain clauses are
 // present.
 type StatementModifiers struct {
-	NextAutoInc      NextAutoIncMode // How to handle differences in next-auto-inc values
-	AllowUnsafe      bool            // Whether to allow potentially-destructive DDL (drop table, drop column, modify col type, etc)
-	LockClause       string          // Include a LOCK=[value] clause in generated ALTER TABLE
-	AlgorithmClause  string          // Include an ALGORITHM=[value] clause in generated ALTER TABLE
-	IgnoreTable      *regexp.Regexp  // Generate blank DDL if table name matches this regexp
-	StrictIndexOrder bool            // If true, maintain index order even in cases where there is no functional difference
+	NextAutoInc            NextAutoIncMode // How to handle differences in next-auto-inc values
+	AllowUnsafe            bool            // Whether to allow potentially-destructive DDL (drop table, drop column, modify col type, etc)
+	LockClause             string          // Include a LOCK=[value] clause in generated ALTER TABLE
+	AlgorithmClause        string          // Include an ALGORITHM=[value] clause in generated ALTER TABLE
+	IgnoreTable            *regexp.Regexp  // Generate blank DDL if table name matches this regexp
+	StrictIndexOrder       bool            // If true, maintain index order even in cases where there is no functional difference
+	StrictForeignKeyNaming bool            // If true, maintain foreign key names even if no functional difference in definition
 }
 
 // SchemaDiff stores a set of differences between two database schemas.
@@ -82,10 +83,10 @@ func NewSchemaDiff(from, to *Schema) *SchemaDiff {
 			newTable, stillExists := toTablesByName[origTable.Name]
 			if stillExists {
 				td := NewAlterTable(origTable, newTable)
-				if td != nil {
-					result.TableDiffs = append(result.TableDiffs, td)
-				} else {
+				if td == nil { // tables are the same
 					result.SameTables = append(result.SameTables, newTable)
+				} else {
+					result.TableDiffs = append(result.TableDiffs, td.Normalize()...)
 				}
 			} else {
 				result.TableDiffs = append(result.TableDiffs, NewDropTable(origTable))
@@ -257,6 +258,55 @@ func (td *TableDiff) TypeString() string {
 	return td.Type.String()
 }
 
+// Normalize potentially splits the TableDiff into multiple separate TableDiffs
+// if the clauses contain potential conflicts. In some versions of MySQL, it is
+// not advisable to add and drop foreign keys in the same ALTER TABLE statement;
+// additionally, it is never legal to add and drop a foreign key of the same
+// name in the same statement.
+// In all other cases, this method just returns a single-element slice
+// containing the receiver, otherwise unchanged.
+func (td *TableDiff) Normalize() []*TableDiff {
+	if td.Type != TableDiffAlter || !td.supported {
+		return []*TableDiff{td}
+	}
+
+	var fkDrops, fkAdds int
+	for _, clause := range td.alterClauses {
+		switch clause.(type) {
+		case AddForeignKey:
+			fkAdds++
+		case DropForeignKey:
+			fkDrops++
+		}
+	}
+	if fkAdds == 0 || fkDrops == 0 {
+		return []*TableDiff{td}
+	}
+
+	// At this point, we know td both adds and drops foreign keys. Split it into
+	// two new TableDiffs, such that the first one has all of the clauses except
+	// the AddForeignKey clauses, which are all exclusively in the second
+	// TableDiff.
+	result := make([]*TableDiff, 2)
+	for n := range result {
+		result[n] = &TableDiff{
+			Type:         TableDiffAlter,
+			From:         td.From,
+			To:           td.To,
+			alterClauses: []TableAlterClause{},
+			supported:    true,
+		}
+	}
+	for _, clause := range td.alterClauses {
+		if _, ok := clause.(AddForeignKey); ok {
+			result[1].alterClauses = append(result[1].alterClauses, clause)
+		} else {
+			result[0].alterClauses = append(result[0].alterClauses, clause)
+		}
+	}
+	return result
+}
+
 // Statement returns the full DDL statement corresponding to the TableDiff. A
 // blank string may be returned if the mods indicate the statement should be
 // skipped. If the mods indicate the statement should be disallowed, it will
@@ -339,54 +389,26 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 		}
 	}
 
-	// Ignore index repositioning, unless StrictIndexOrder enabled, or unless the
-	// order is actually relevant to the clustered index key
-	trivialIndexMoves := make(map[string]bool)
-	if !mods.StrictIndexOrder && td.To.ClusteredIndexKey() == td.To.PrimaryKey {
-		// Iterate through the clauses to find cases where we drop an index and then
-		// later re-add the exact same index. (Note that the drop will *always* come
-		// before the subsequent re-add in td.alterClauses in this case.)
-		droppedIndexes := make(map[string]*Index)
-		for _, clause := range td.alterClauses {
-			switch clause := clause.(type) {
-			case DropIndex:
-				droppedIndexes[clause.Index.Name] = clause.Index
-			case AddIndex:
-				if index, dropped := droppedIndexes[clause.Index.Name]; dropped && index.Equals(clause.Index) {
-					trivialIndexMoves[clause.Index.Name] = true
-				}
-			}
-		}
+	// Force StrictIndexOrder to be enabled for InnoDB tables that have no primary
+	// key and at least one unique index with non-nullable columns
+	if !mods.StrictIndexOrder && td.To.ClusteredIndexKey() != td.To.PrimaryKey {
+		mods.StrictIndexOrder = true
 	}
 
 	clauseStrings := make([]string, 0, len(td.alterClauses))
 	var err error
 	for _, clause := range td.alterClauses {
-		switch clause := clause.(type) {
-		case ChangeAutoIncrement:
-			if mods.NextAutoInc == NextAutoIncIgnore {
-				continue
-			} else if mods.NextAutoInc == NextAutoIncIfIncreased && clause.OldNextAutoIncrement >= clause.NewNextAutoIncrement {
-				continue
-			} else if mods.NextAutoInc == NextAutoIncIfAlready && clause.OldNextAutoIncrement <= 1 {
-				continue
-			}
-		case DropIndex:
-			if trivialIndexMoves[clause.Index.Name] {
-				continue
-			}
-		case AddIndex:
-			if trivialIndexMoves[clause.Index.Name] {
-				continue
+		if err == nil && !mods.AllowUnsafe {
+			if clause, ok := clause.(Unsafer); ok && clause.Unsafe() {
+				err = &ForbiddenDiffError{
+					Reason:    "Unsafe or potentially destructive ALTER TABLE not permitted",
+					Statement: "",
+				}
 			}
 		}
-		if err == nil && !mods.AllowUnsafe && clause.Unsafe() {
-			err = &ForbiddenDiffError{
-				Reason:    "Unsafe or potentially destructive ALTER TABLE not permitted",
-				Statement: "",
-			}
+		if clauseString := clause.Clause(mods); clauseString != "" {
+			clauseStrings = append(clauseStrings, clauseString)
 		}
-		clauseStrings = append(clauseStrings, clause.Clause())
 	}
 	if len(clauseStrings) == 0 {
 		return "", nil
