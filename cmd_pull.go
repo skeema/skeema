@@ -110,7 +110,17 @@ func PullHandler(cfg *mybase.Config) error {
 			return err
 		}
 
+		// Track which table names have already been seen, to handle cases where the
+		// same table shows up in two different TableDiffs. This can happen because
+		// Tengo avoids generating single ALTERs that both drop and add foreign keys
+		// in the same statement.
+		alreadySeen := make(map[string]bool)
+
 		for _, td := range diff.TableDiffs {
+			if td.To != nil && alreadySeen[td.To.Name] {
+				continue
+			}
+
 			stmt, stmtErr := td.Statement(mods)
 			// Errors are fatal, except for UnsupportedDiffError which we can safely
 			// ignore (since pull doesn't actually run ALTERs; it just needs to know
@@ -173,6 +183,7 @@ func PullHandler(cfg *mybase.Config) error {
 				return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
 			}
 			log.Infof("Wrote %s (%d bytes) -- %s", sf.Path(), length, reason)
+			alreadySeen[td.To.Name] = true
 		}
 
 		if dir.Config.GetBool("normalize") {
