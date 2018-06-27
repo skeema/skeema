@@ -40,7 +40,7 @@ Skeema is currently in public beta.
 
 The `skeema` binary is supported on macOS and Linux. For now, it cannot be compiled on Windows. On the database side, testing is primarily performed against MySQL 5.6 and 5.7, running on Linux.
 
-Several MySQL features (foreign keys, partitioning) and rare/new MySQL column types are not yet supported. Skeema is able to *create* or *drop* tables using these features, but not *alter* them. The output of `skeema diff` and `skeema push` clearly displays when this is the case. You may still make such alters directly/manually (outside of Skeema), and then update the corresponding CREATE TABLE files via `skeema pull`.
+A few uncommon MySQL features -- such as partitioning, fulltext indexes, spatial types, virtual columns -- are not yet supported. Skeema is able to *create* or *drop* tables using these features, but not *alter* them. The output of `skeema diff` and `skeema push` clearly displays when this is the case. You may still make such alters directly/manually (outside of Skeema), and then update the corresponding CREATE TABLE files via `skeema pull`.
 
 ## Credits
 
@@ -50,6 +50,7 @@ Additional [contributions](https://github.com/skeema/skeema/graphs/contributors)
 
 * [@tomkrouper](https://github.com/tomkrouper)
 * [@efixler](https://github.com/efixler)
+* [@chrisjpalmer](https://github.com/chrisjpalmer)
 
 ## License
 

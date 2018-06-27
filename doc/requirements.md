@@ -4,7 +4,7 @@
 
 Skeema is tested extensively against MySQL 5.6 and 5.7, running on Linux. Percona Server 5.6 and 5.7 should also work fine. Only the InnoDB storage engine is primarily supported; other storage engines are often perfectly functional in Skeema, but it depends on whether any esoteric features of the engine are used.
 
-Some MySQL features -- such as foreign keys, partitioned tables, and generated/virtual columns -- are not yet supported in Skeema's diff operations. Skeema automatically detects this situation, so there is no risk of generating an incorrect diff. If Skeema does not yet support a table/column feature that you need, please open a GitHub issue so that the work can be prioritized appropriately.
+Some MySQL features -- such as partitioned tables, fulltext indexes, and generated/virtual columns -- are not yet supported in Skeema's diff operations. Skeema automatically detects this situation, so there is no risk of generating an incorrect diff. If Skeema does not yet support a table/column feature that you need, please open a GitHub issue so that the work can be prioritized appropriately.
 
 Skeema is not currently intended for use on multi-master replication topologies, including Galera, InnoDB Cluster, and traditional active-active master-master configurations. It also has not yet been evaluated on Amazon Aurora.
 
@@ -81,7 +81,6 @@ The following features are completely ignored by Skeema. Their presence in a sch
 
 Skeema can CREATE or DROP tables using these features, but cannot ALTER them. The output of `skeema diff` and `skeema push` will note that it cannot generate or run ALTER TABLE for tables using these features, so the affected table(s) will be skipped, but the rest of the operation will proceed as normal. 
 
-* foreign keys
 * partitioned tables
 * some features of non-InnoDB storage engines
 * fulltext indexes
