@@ -254,10 +254,11 @@ func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 		return fmt.Errorf("verifyDiff: cannot connect to %s: %s", t.Instance, err)
 	}
 	mods := tengo.StatementModifiers{
-		NextAutoInc:      tengo.NextAutoIncIgnore,
-		StrictIndexOrder: true,   // needed since we must get the SHOW CREATE TABLEs to match
-		AllowUnsafe:      true,   // needed since we're just running against the temp schema
-		AlgorithmClause:  "COPY", // needed to avoid having MySQL ignore index changes that are simply reordered
+		NextAutoInc:            tengo.NextAutoIncIgnore,
+		StrictIndexOrder:       true,   // needed since we must get the SHOW CREATE TABLEs to match
+		StrictForeignKeyNaming: true,   // ditto
+		AllowUnsafe:            true,   // needed since we're just running against the temp schema
+		AlgorithmClause:        "COPY", // needed to avoid having MySQL ignore index changes that are simply reordered
 	}
 
 	// Iterate over the ALTER-type TableDiffs in the SchemaDiff and index by table

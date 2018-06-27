@@ -193,7 +193,10 @@ func pushWorker(sps *sharedPushState) {
 			// Set configuration-dependent statement modifiers here inside the Target
 			// loop, since the config for these may var per dir!
 			mods.AllowUnsafe = t.Dir.Config.GetBool("allow-unsafe") || sps.briefOutput
-			mods.StrictIndexOrder = t.Dir.Config.GetBool("exact-match")
+			if t.Dir.Config.GetBool("exact-match") {
+				mods.StrictIndexOrder = true
+				mods.StrictForeignKeyNaming = true
+			}
 			mods.AlgorithmClause, err = t.Dir.Config.GetEnum("alter-algorithm", "INPLACE", "COPY", "DEFAULT")
 			if err != nil {
 				sps.setFatalError(NewExitValue(CodeBadConfig, err.Error()))

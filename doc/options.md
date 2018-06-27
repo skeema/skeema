@@ -304,15 +304,16 @@ Commands | diff, push
 **Type** | boolean
 **Restrictions** | none
 
-Ordinarily, `skeema diff` and `skeema push` ignore certain table differences which have no functional impact in MySQL and serve purely cosmetic purposes. For example, if two tables list their indexes in a different order, this difference is normally ignored to avoid needlessly dropping and re-adding the indexes, which may be slow if the table is large.
+Ordinarily, `skeema diff` and `skeema push` ignore certain table differences which have no functional impact in MySQL and serve purely cosmetic purposes. Currently there are two such cases:
+
+* If a table's *.sql file lists its indexes in a different order than the live MySQL table, this difference is normally ignored to avoid needlessly dropping and re-adding the indexes, which may be slow if the table is large.
+* If a table's *.sql file has foreign keys with the same definition, but different name, this difference is normally ignored to avoid needlessly dropping and re-adding the foreign keys. This provides better compatibility with external tools like pt-online-schema-change, which need to manipulate foreign key names in order to function.
 
 If the [exact-match](#exact-match) option is used, these purely-cosmetic differences will be included in the generated `ALTER TABLE` statements instead of being suppressed. In other words, Skeema will attempt to make the exact table definition in MySQL exactly match the corresponding table definition specified in the *.sql file.
 
-Be aware that MySQL itself sometimes also suppresses attempts to make cosmetic changes to a table's definition! You must combine the [exact-match](#exact-match) option with [alter-algorithm=COPY](#alter-algorithm) to circumvent this behavior on the MySQL side. This forces MySQL to rebuild the table, which will be slow for large tables.
+Be aware that MySQL itself sometimes also suppresses attempts to make cosmetic changes to a table's definition! For example, MySQL may ignore attempts to cosmetically re-order indexes unless the table is forcibly rebuilt. You can combine the [exact-match](#exact-match) option with [alter-algorithm=COPY](#alter-algorithm) to circumvent this behavior on the MySQL side, but it may be slow for large tables.
 
-Currently, [exact-match](#exact-match) only affects index ordering. In the near future, once foreign keys are supported, this option will affect foreign key naming and ordering as well.
-
-In the one case in InnoDB when index ordering has a functional impact (tables with no primary key, but multiple unique indexes over all non-nullable columns), Skeema will automatically respect index ordering, regardless of whether [exact-match](#exact-match) is enabled.
+Please note that in the one case in InnoDB when index ordering has a functional impact (tables with no primary key, but multiple unique indexes over all non-nullable columns), Skeema will automatically respect index ordering, regardless of whether [exact-match](#exact-match) is enabled.
 
 ### first-only
 

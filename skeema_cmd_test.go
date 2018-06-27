@@ -422,6 +422,54 @@ func (s *SkeemaIntegrationSuite) TestIndexOrdering(t *testing.T) {
 	}
 }
 
+func (s *SkeemaIntegrationSuite) TestForeignKeyOptions(t *testing.T) {
+	s.sourceSQL(t, "foreignkey.sql")
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+
+	// Renaming an FK should not be considered a difference by default
+	oldContents := readFile(t, "mydb/product/posts.sql")
+	newContents := strings.Replace(oldContents, "user_fk", "usridfk", 1)
+	if oldContents == newContents {
+		t.Fatal("Expected mydb/product/posts.sql to contain foreign key definition, but it did not")
+	}
+	writeFile(t, "mydb/product/posts.sql", newContents)
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// pull won't update the file unless normalizing
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-normalize")
+	if readFile(t, "mydb/product/posts.sql") != newContents {
+		t.Error("Expected skeema pull --skip-normalize to leave file untouched, but it rewrote it")
+	}
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	if readFile(t, "mydb/product/posts.sql") != oldContents {
+		t.Error("Expected skeema pull to rewrite file, but it did not")
+	}
+
+	// Renaming an FK should be considered a difference with --exact-match
+	writeFile(t, "mydb/product/posts.sql", newContents)
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --exact-match")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --exact-match")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// Changing an FK definition should not break push or pull, even though this
+	// will be two non-noop ALTERs to the same table
+	changeContents := strings.Replace(newContents,
+		"FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)",
+		"FOREIGN KEY (`user_id`, `byline`) REFERENCES `users` (`id`, `name`)",
+		1)
+	if changeContents == newContents {
+		t.Fatal("Failed to update contents as expected")
+	}
+	writeFile(t, "mydb/product/posts.sql", changeContents)
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	writeFile(t, "mydb/product/posts.sql", newContents)
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-normalize")
+	if readFile(t, "mydb/product/posts.sql") != changeContents {
+		t.Error("Expected skeema pull to rewrite file, but it did not")
+	}
+}
+
 func (s *SkeemaIntegrationSuite) TestAutoInc(t *testing.T) {
 	// Insert 2 rows into product.users, so that next auto-inc value is now 3
 	s.dbExec(t, "product", "INSERT INTO users (name) VALUES (?), (?)", "foo", "bar")
