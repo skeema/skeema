@@ -54,6 +54,7 @@ func NewSchemaDiff(from, to *Schema) *SchemaDiff {
 		TableDiffs: make([]*TableDiff, 0),
 		SameTables: make([]*Table, 0),
 	}
+	addFKAlters := make([]*TableDiff, 0)
 
 	if from == nil && to == nil {
 		return result
@@ -86,13 +87,25 @@ func NewSchemaDiff(from, to *Schema) *SchemaDiff {
 				if td == nil { // tables are the same
 					result.SameTables = append(result.SameTables, newTable)
 				} else {
-					result.TableDiffs = append(result.TableDiffs, td.Normalize()...)
+					otherAlter, addFKAlter := td.SplitAddForeignKeys()
+					if otherAlter != nil {
+						result.TableDiffs = append(result.TableDiffs, otherAlter)
+					}
+					if addFKAlter != nil {
+						addFKAlters = append(addFKAlters, addFKAlter)
+					}
 				}
 			} else {
 				result.TableDiffs = append(result.TableDiffs, NewDropTable(origTable))
 			}
 		}
 	}
+
+	// We put ALTER TABLEs containing ADD FOREIGN KEY last, since the FKs may rely
+	// on tables, columns, or indexes that are being newly created earlier in the
+	// diff. (This is not a comprehensive solution yet though, since FKs can refer
+	// to other schemas, and NewSchemaDiff only operates within one schema.)
+	result.TableDiffs = append(result.TableDiffs, addFKAlters...)
 
 	return result
 }
@@ -258,53 +271,53 @@ func (td *TableDiff) TypeString() string {
 	return td.Type.String()
 }
 
-// Normalize potentially splits the TableDiff into multiple separate TableDiffs
-// if the clauses contain potential conflicts. In some versions of MySQL, it is
-// not advisable to add and drop foreign keys in the same ALTER TABLE statement;
-// additionally, it is never legal to add and drop a foreign key of the same
-// name in the same statement.
-// In all other cases, this method just returns a single-element slice
-// containing the receiver, otherwise unchanged.
-func (td *TableDiff) Normalize() []*TableDiff {
-	if td.Type != TableDiffAlter || !td.supported {
-		return []*TableDiff{td}
+// SplitAddForeignKeys looks through a TableDiff's alterClauses and pulls out
+// any AddForeignKey clauses into a separate TableDiff. The first returned
+// TableDiff is guaranteed to contain no AddForeignKey clauses, and the second
+// returned value is guaranteed to only consist of AddForeignKey clauses. If
+// the receiver contained no AddForeignKey clauses, the first return value will
+// be the receiver, and the second will be nil. If the receiver contained only
+// AddForeignKey clauses, the first return value will be nil, and the second
+// will be the receiver.
+// This method is useful for several reasons: it is desirable to only add FKs
+// after other alters have been made (since FKs rely on indexes on both sides);
+// it is illegal to drop and re-add an FK with the same name in the same ALTER;
+// some versions of MySQL recommend against dropping and adding FKs in the same
+// ALTER even if they have different names.
+func (td *TableDiff) SplitAddForeignKeys() (*TableDiff, *TableDiff) {
+	if td.Type != TableDiffAlter || !td.supported || len(td.alterClauses) == 0 {
+		return td, nil
 	}
 
-	var fkDrops, fkAdds int
-	for _, clause := range td.alterClauses {
-		switch clause.(type) {
-		case AddForeignKey:
-			fkAdds++
-		case DropForeignKey:
-			fkDrops++
-		}
-	}
-	if fkAdds == 0 || fkDrops == 0 {
-		return []*TableDiff{td}
-	}
-
-	// At this point, we know td both adds and drops foreign keys. Split it into
-	// two new TableDiffs, such that the first one has all of the clauses except
-	// the AddForeignKey clauses, which are all exclusively in the second
-	// TableDiff.
-	result := make([]*TableDiff, 2)
-	for n := range result {
-		result[n] = &TableDiff{
-			Type:         TableDiffAlter,
-			From:         td.From,
-			To:           td.To,
-			alterClauses: []TableAlterClause{},
-			supported:    true,
-		}
-	}
+	addFKClauses := make([]TableAlterClause, 0)
+	otherClauses := make([]TableAlterClause, 0, len(td.alterClauses))
 	for _, clause := range td.alterClauses {
 		if _, ok := clause.(AddForeignKey); ok {
-			result[1].alterClauses = append(result[1].alterClauses, clause)
+			addFKClauses = append(addFKClauses, clause)
 		} else {
-			result[0].alterClauses = append(result[0].alterClauses, clause)
+			otherClauses = append(otherClauses, clause)
 		}
 	}
-	return result
+	if len(addFKClauses) == 0 {
+		return td, nil
+	} else if len(otherClauses) == 0 {
+		return nil, td
+	}
+	result1 := &TableDiff{
+		Type:         TableDiffAlter,
+		From:         td.From,
+		To:           td.To,
+		alterClauses: otherClauses,
+		supported:    true,
+	}
+	result2 := &TableDiff{
+		Type:         TableDiffAlter,
+		From:         td.From,
+		To:           td.To,
+		alterClauses: addFKClauses,
+		supported:    true,
+	}
+	return result1, result2
 }
 
 // Statement returns the full DDL statement corresponding to the TableDiff. A

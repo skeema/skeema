@@ -257,96 +257,106 @@ func TestSchemaDiffAlterTable(t *testing.T) {
 }
 
 func TestSchemaDiffForeignKeys(t *testing.T) {
-	t1 := foreignKeyTable()
-	t2 := foreignKeyTable()
-	s1 := aSchema("s1", &t1)
-	s2 := aSchema("s2", &t2)
+	s1t1 := anotherTable()
+	s1t2 := foreignKeyTable()
+	s2t1 := anotherTable()
+	s2t2 := foreignKeyTable()
+	s1 := aSchema("s1", &s1t1, &s1t2)
+	s2 := aSchema("s2", &s2t1, &s2t2)
 
-	// Helper to ensure that AddForeignKey and DropForeignKey clauses get split
-	// into separate TableDiffs
-	assertDiffs := func(from, to *Schema, expectAddFK, expectDropFK, expectOther int) {
+	// Helper to ensure that AddForeignKey clauses get split into a separate
+	// TableDiff, at the end of the SchemaDiff.TableDiffs
+	assertDiffs := func(from, to *Schema, expectAddFKAlters, expectAddFKClauses, expectOtherAlters, expectOtherClauses int) {
 		t.Helper()
 		sd := NewSchemaDiff(from, to)
-		expectTableDiffs := 1
-		if expectAddFK > 0 && expectDropFK > 0 {
-			expectTableDiffs++
-		}
-		if len(sd.TableDiffs) != expectTableDiffs {
-			t.Errorf("Incorrect number of TableDiffs: expected %d, found %d", expectTableDiffs, len(sd.TableDiffs))
+		if len(sd.TableDiffs) != expectAddFKAlters+expectOtherAlters {
+			t.Errorf("Incorrect number of TableDiffs: expected %d, found %d", expectAddFKAlters+expectOtherAlters, len(sd.TableDiffs))
 			return
 		}
-		for n, td := range sd.TableDiffs {
-			if n == 1 && td.From.Name != sd.TableDiffs[0].From.Name {
-				t.Errorf("Expected TableDiffs[1] to affect same table as TableDiffs[0] (%s), instead found %s", sd.TableDiffs[0].From.Name, td.From.Name)
-				break
-			}
-			var seenAdd, seenDrop bool
+		for _, td := range sd.TableDiffs {
+			var seenAddFK, seenOther bool
 			for _, clause := range td.alterClauses {
-				switch clause.(type) {
-				case AddForeignKey:
-					expectAddFK--
-					seenAdd = true
-					if seenDrop {
-						t.Error("Unexpectedly found AddForeignKey and DropForeignKey clauses in the same TableDiff")
+				if _, ok := clause.(AddForeignKey); ok {
+					expectAddFKClauses--
+					seenAddFK = true
+					if seenOther {
+						t.Error("Unexpectedly found AddForeignKey clauses mixed with other clause types in same TableDiff")
 					}
-				case DropForeignKey:
-					expectDropFK--
-					seenDrop = true
-					if seenAdd {
-						t.Error("Unexpectedly found AddForeignKey and DropForeignKey clauses in the same TableDiff")
-					}
-					if n == 1 {
-						t.Errorf("Expected clauses for second TableDiff of same table to only consist of AddForeignKey, instead found %T", clause)
-					}
-				default:
-					expectOther--
-					if n == 1 {
-						t.Errorf("Expected clauses for second TableDiff of same table to only consist of AddForeignKey, instead found %T", clause)
+				} else {
+					expectOtherClauses--
+					seenOther = true
+					if seenAddFK {
+						t.Error("Unexpectedly found AddForeignKey clauses mixed with other clause types in same TableDiff")
 					}
 				}
 			}
+			if seenAddFK {
+				expectAddFKAlters--
+				if expectOtherAlters > 0 {
+					t.Error("Unexpectedly found a TableDiff with AddForeignKey before seeing all expected non-AddForeignKey TaleDiffs")
+				}
+			}
+			if seenOther {
+				expectOtherAlters--
+			}
 		}
-		if expectAddFK != 0 || expectDropFK != 0 || expectOther != 0 {
-			t.Errorf("Did not find expected count of each clause type; counters remaining: add=%d drop=%d other=%d", expectAddFK, expectDropFK, expectOther)
+		if expectAddFKAlters != 0 || expectOtherAlters != 0 {
+			t.Errorf("Did not find expected count of each alter type; counters remaining: addfk=%d other=%d", expectAddFKAlters, expectOtherAlters)
+		}
+		if expectAddFKClauses != 0 || expectOtherClauses != 0 {
+			t.Errorf("Did not find expected count of each clause type; counters remaining: addfk=%d other=%d", expectAddFKClauses, expectOtherClauses)
 		}
 	}
 
-	// Dropping multiple FKs and making other changes: all one TableDiff
-	t2.ForeignKeys = []*ForeignKey{}
-	t2.Comment = "Hello world"
-	t2.CreateStatement = t2.GeneratedCreateStatement()
-	assertDiffs(&s1, &s2, 0, 2, 1)
+	// Dropping multiple FKs and making other changes
+	s2t2.ForeignKeys = []*ForeignKey{}
+	s2t2.Comment = "Hello world"
+	s2t2.CreateStatement = s2t2.GeneratedCreateStatement()
+	assertDiffs(&s1, &s2, 0, 0, 1, 3)
 
-	// Adding multiple FKs and making other changes: all one TableDiff
-	assertDiffs(&s2, &s1, 2, 0, 1)
+	// Adding multiple FKs and making other changes
+	assertDiffs(&s2, &s1, 1, 2, 1, 1)
 
-	// Modifying one FK and making other changes: two TableDiffs
-	t2 = foreignKeyTable()
-	t2.ForeignKeys[1].ReferencedColumnNames[1] = "model_code"
-	t2.Comment = "Hello world"
-	t2.CreateStatement = t2.GeneratedCreateStatement()
-	assertDiffs(&s1, &s2, 1, 1, 1)
+	// Add an FK to one table; change one FK and make another change to other tbale
+	s2t1.ForeignKeys = []*ForeignKey{
+		{
+			Name:                  "actor_fk",
+			Columns:               s2t1.Columns[0:1],
+			ReferencedSchemaName:  "",
+			ReferencedTableName:   "actor",
+			ReferencedColumnNames: []string{"actor_id"},
+			DeleteRule:            "RESTRICT",
+			UpdateRule:            "CASCADE",
+		},
+	}
+	s2t1.CreateStatement = s2t1.GeneratedCreateStatement()
+	s2t2 = foreignKeyTable()
+	s2t2.ForeignKeys[1].ReferencedColumnNames[1] = "model_code"
+	s2t2.Comment = "Hello world"
+	s2t2.CreateStatement = s2t2.GeneratedCreateStatement()
+	assertDiffs(&s1, &s2, 2, 2, 1, 2)
 
-	// Adding and dropping unrelated FKs: two TableDiffs
-	t2 = foreignKeyTable()
-	t2.ForeignKeys[1] = &ForeignKey{
+	// Adding and dropping unrelated FKs
+	s2t1 = anotherTable()
+	s2t2 = foreignKeyTable()
+	s2t2.ForeignKeys[1] = &ForeignKey{
 		Name:                  "actor_fk",
-		Columns:               t2.Columns[0:1],
+		Columns:               s2t2.Columns[0:1],
 		ReferencedSchemaName:  "",
 		ReferencedTableName:   "actor",
 		ReferencedColumnNames: []string{"actor_id"},
 		DeleteRule:            "RESTRICT",
 		UpdateRule:            "CASCADE",
 	}
-	t2.CreateStatement = t2.GeneratedCreateStatement()
-	assertDiffs(&s1, &s2, 1, 1, 0)
+	s2t2.CreateStatement = s2t2.GeneratedCreateStatement()
+	assertDiffs(&s1, &s2, 1, 1, 1, 1)
 
 	// Renaming an FK: two TableDiffs, but both are blank unless enabling
 	// StatementModifiers.StrictForeignKeyNaming
-	t2 = foreignKeyTable()
-	t2.ForeignKeys[1].Name = fmt.Sprintf("_%s", t2.ForeignKeys[1].Name)
-	t2.CreateStatement = t2.GeneratedCreateStatement()
-	assertDiffs(&s1, &s2, 1, 1, 0)
+	s2t2 = foreignKeyTable()
+	s2t2.ForeignKeys[1].Name = fmt.Sprintf("_%s", s2t2.ForeignKeys[1].Name)
+	s2t2.CreateStatement = s2t2.GeneratedCreateStatement()
+	assertDiffs(&s1, &s2, 1, 1, 1, 1)
 	for n, td := range NewSchemaDiff(&s1, &s2).TableDiffs {
 		mods := StatementModifiers{}
 		if actual, _ := td.Statement(mods); actual != "" {
@@ -360,10 +370,10 @@ func TestSchemaDiffForeignKeys(t *testing.T) {
 	}
 
 	// Renaming an FK but also changing its definition: never blank statement
-	t2.ForeignKeys[1].Columns = t2.ForeignKeys[1].Columns[0:1]
-	t2.ForeignKeys[1].ReferencedColumnNames = t2.ForeignKeys[1].ReferencedColumnNames[0:1]
-	t2.CreateStatement = t2.GeneratedCreateStatement()
-	assertDiffs(&s1, &s2, 1, 1, 0)
+	s2t2.ForeignKeys[1].Columns = s2t2.ForeignKeys[1].Columns[0:1]
+	s2t2.ForeignKeys[1].ReferencedColumnNames = s2t2.ForeignKeys[1].ReferencedColumnNames[0:1]
+	s2t2.CreateStatement = s2t2.GeneratedCreateStatement()
+	assertDiffs(&s1, &s2, 1, 1, 1, 1)
 	for n, td := range NewSchemaDiff(&s1, &s2).TableDiffs {
 		actual, _ := td.Statement(StatementModifiers{})
 		if (n == 0 && !strings.Contains(actual, "DROP FOREIGN KEY")) || (n == 1 && !strings.Contains(actual, "ADD CONSTRAINT")) {
