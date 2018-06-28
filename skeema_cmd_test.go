@@ -422,7 +422,7 @@ func (s *SkeemaIntegrationSuite) TestIndexOrdering(t *testing.T) {
 	}
 }
 
-func (s *SkeemaIntegrationSuite) TestForeignKeyOptions(t *testing.T) {
+func (s *SkeemaIntegrationSuite) TestForeignKeys(t *testing.T) {
 	s.sourceSQL(t, "foreignkey.sql")
 	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
 
@@ -468,6 +468,14 @@ func (s *SkeemaIntegrationSuite) TestForeignKeyOptions(t *testing.T) {
 	if readFile(t, "mydb/product/posts.sql") != changeContents {
 		t.Error("Expected skeema pull to rewrite file, but it did not")
 	}
+
+	// Confirm that adding foreign keys occurs after other changes: construct
+	// a scenario where we're adding an FK that needs a new index on the "parent"
+	// (referenced) table, where the parent table name is alphabetically after
+	// the child table
+	s.dbExec(t, "product", "ALTER TABLE posts DROP FOREIGN KEY usridfk")
+	s.dbExec(t, "product", "ALTER TABLE users DROP KEY idname")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
 }
 
 func (s *SkeemaIntegrationSuite) TestAutoInc(t *testing.T) {

@@ -4,7 +4,7 @@
 [![code coverage](https://img.shields.io/coveralls/skeema/tengo.svg)](https://coveralls.io/r/skeema/tengo)
 [![godoc](https://img.shields.io/badge/godoc-master-blue.svg)](https://godoc.org/github.com/skeema/tengo)
 
-Hoboken's finest indie Golang database automation library
+Golang library for MySQL database automation
 
 ## Features
 
@@ -12,23 +12,19 @@ Most of Go La Tengo's current functionality is focused on MySQL schema introspec
 
 ### Schema introspection
 
-Go La Tengo examines several `information_schema` tables in order to build Go struct values representing schemas (databases), tables, columns, indexes, and foreign key constraints. These values can then be diffed to generate corresponding DDL statements.
+Go La Tengo examines several `information_schema` tables in order to build Go struct values representing schemas (databases), tables, columns, indexes, and foreign key constraints. These values can be diff'ed to generate corresponding DDL statements.
 
 ### Instance modeling
 
 The `tengo.Instance` struct models a single database instance. It keeps track of multiple, separate connection pools for using different default schema and session settings. This helps to avoid problems with Go's database/sql methods, which are incompatible with USE statements and SET SESSION statements.
 
-`tengo.Instance`'s constructor also automatically "de-dupes" instances, so that two DSNs referring to the same host:port will get a pointer to the same `tengo.Instance`.
-
-There is currently a limitation wherein all DSNs for a single instance must connect via the same username and password. This limitation may be lifted in a future release if a use-case becomes apparent. The current assumption is all database automation will connect via the same user for a given instance. Otherwise, significant complexity is introduced around permissions, in terms of caching schema lists that reflect only what each user is able to see.
-
 ## Status
 
-This is alpha software. The API is subject to change, and no backwards-compatibility promises are being made at this time. Documentation and usage examples have not yet been completed.
+This is beta software. The API is subject to change. Backwards-incompatible changes are avoided, but no guarantees are made yet. Documentation and usage examples have not yet been completed.
 
 ### Unsupported in diffs
 
-Go La Tengo **cannot** yet diff tables containing any of the following MySQL features:
+Go La Tengo **cannot** diff tables containing any of the following MySQL features yet:
 
 * partitioned tables
 * triggers
