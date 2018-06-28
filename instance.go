@@ -31,10 +31,6 @@ type Instance struct {
 // a schema name, it will be ignored. If it contains any params, they will be
 // applied as default params to all connections (in addition to whatever is
 // supplied in Connect).
-// If an Instance with the supplied dsn has already been created previously,
-// it will be returned instead of a new Instance being created. This
-// deduplication is necessary in order for Instance's internal caching to work
-// properly.
 func NewInstance(driver, dsn string) (*Instance, error) {
 	if driver != "mysql" {
 		return nil, fmt.Errorf("Unsupported driver \"%s\"", driver)
