@@ -46,7 +46,7 @@ func (s *SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	// among other things, changes the default charset and collation for the
 	// schema in question.
 	s.sourceSQL(t, "push1.sql")
-	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema init --dir combined -h %s -P %d --schema analytics", s.d.Instance.Host, s.d.Instance.Port)
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema init --dir combined -h %s -P %d --schema product", s.d.Instance.Host, s.d.Instance.Port)
 	dir, err := NewDir("combined", cfg)
 	if err != nil {
 		t.Fatalf("Unexpected error from NewDir: %s", err)
@@ -314,53 +314,53 @@ func (s *SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 	s.handleCommand(t, CodeBadConfig, ".", "skeema push --alter-lock=invalid")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema push --ignore-table='+'")
 
-	// Make some changes on the db side, so that our next successful push attempt
-	// will include dropping a table, dropping a col, adding a col, changing db
-	// charset and collation
+	// Make some changes on the db side, mix of safe and unsafe changes to
+	// multiple schemas. Remember, subsequent pushes will effectively be UN-DOING
+	// what push1.sql did, since we updated the db but not the filesystem.
 	s.sourceSQL(t, "push1.sql")
 
-	// push1.sql intentionally included no changes to the `product` schema, so push
-	// from there should succeed and not impact anything in `analytics`
-	s.handleCommand(t, CodeSuccess, "mydb/product", "skeema push")
-	s.assertExists(t, "analytics", "widget_counts", "")
-	s.assertExists(t, "analytics", "activity", "rolled_up")
-	s.assertMissing(t, "analytics", "pageviews", "domain")
+	// push from base dir, without any args, should succeed for schemas with safe
+	// changes (analytics) but not for schemas with 1 or more unsafe changes
+	// (product). It shouldn't not affect the `bonus` schema (which exists on db
+	// but not on filesystem, but push should never drop schemas)
+	s.handleCommand(t, CodeFatalError, "", "skeema push")            // CodeFatalError due to unsafe changes not being allowed
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff") // analytics dir was pushed fine tho
+	s.assertExists(t, "analytics", "pageviews", "")                  // re-created by push
+	s.assertMissing(t, "product", "users", "credits")                // product DDL skipped due to unsafe stmt
+	s.assertExists(t, "product", "posts", "featured")                // product DDL skipped due to unsafe stmt
+	s.assertExists(t, "bonus", "placeholder", "")                    // not affected by push (never drops schemas)
 
-	// push from base dir, without any args, should succeed for safe changes but
-	// not for unsafe ones. It also should not affect the `bonus` schema (which
-	// exists on db but not on filesystem, but push should never drop schemas)
-	s.handleCommand(t, CodeFatalError, ".", "skeema push")  // CodeFatalError due to unsafe changes not being allowed
-	s.assertExists(t, "analytics", "widget_counts", "")     // not dropped by push (unsafe)
-	s.assertExists(t, "analytics", "activity", "rolled_up") // not dropped by push (unsafe)
-	s.assertExists(t, "analytics", "pageviews", "domain")   // re-created by push
-	s.assertExists(t, "bonus", "placeholder", "")           // not affected by push (never drops schemas)
-	if analytics, err := s.d.Schema("analytics"); err != nil || analytics == nil {
+	// One exception to the "skip whole schema upon unsafe stmt" rule is schema-
+	// level DDL, which is executed separately as a special case
+	if product, err := s.d.Schema("product"); err != nil || product == nil {
 		t.Fatalf("Unexpected error obtaining schema: %s", err)
 	} else {
 		serverCharSet, serverCollation, err := s.d.DefaultCharSetAndCollation()
 		if err != nil {
 			t.Fatalf("Unable to obtain server default charset and collation: %s", err)
 		}
-		if serverCharSet != analytics.CharSet || serverCollation != analytics.Collation {
-			t.Errorf("Expected analytics schema to have charset/collation=%s/%s, instead found %s/%s", serverCharSet, serverCollation, analytics.CharSet, analytics.Collation)
+		if serverCharSet != product.CharSet || serverCollation != product.Collation {
+			t.Errorf("Expected schema should have charset/collation=%s/%s, instead found %s/%s", serverCharSet, serverCollation, product.CharSet, product.Collation)
 		}
 	}
 
-	// push from base dir, with --safe-below-size=1, should allow the dropping of
-	// col activity.rolled_up (table has no rows) but not table widget_counts
-	// which has 1 row
-	s.handleCommand(t, CodeFatalError, ".", "skeema push --safe-below-size=1") // CodeFatalError due to unsafe changes not being allowed
-	s.assertExists(t, "analytics", "widget_counts", "")
-	s.assertMissing(t, "analytics", "activity", "rolled_up")
-	s.assertExists(t, "analytics", "pageviews", "domain")
-	s.assertExists(t, "bonus", "placeholder", "")
+	// Delete *.sql file for analytics.rollups. Push from analytics dir with
+	// --safe-below-size=1 should fail since it has a row. Delete that row and
+	// try again, should succeed that time.
+	if err := os.Remove("mydb/analytics/rollups.sql"); err != nil {
+		t.Fatalf("Unexpected error removing a file: %s", err)
+	}
+	s.handleCommand(t, CodeFatalError, "mydb/analytics", "skeema push --safe-below-size=1")
+	s.assertExists(t, "analytics", "rollups", "")
+	s.dbExec(t, "analytics", "DELETE FROM rollups")
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema push --safe-below-size=1")
+	s.assertMissing(t, "analytics", "rollups", "")
 
-	// push from base dir, with --allow-unsafe, will drop table widget_counts
-	// despite it having 1 row
+	// push from base dir, with --allow-unsafe, will permit the changes to product
+	// schema to proceed
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
-	s.assertMissing(t, "analytics", "widget_counts", "")
-	s.assertMissing(t, "analytics", "activity", "rolled_up")
-	s.assertExists(t, "analytics", "pageviews", "domain")
+	s.assertMissing(t, "product", "posts", "featured")
+	s.assertExists(t, "product", "users", "credits")
 	s.assertExists(t, "bonus", "placeholder", "")
 
 	// invalid SQL prevents push from working in an entire dir, but not in a
@@ -370,6 +370,7 @@ func (s *SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 	contents = readFile(t, "mydb/product/users.sql")
 	writeFile(t, "mydb/product/users.sql", strings.Replace(contents, "PRIMARY KEY", "foo int INVALID SQL HERE,\nPRIMARY KEY", 1))
 	writeFile(t, "mydb/bonus/.skeema", "schema=bonus\n")
+	writeFile(t, "mydb/bonus/placeholder.sql", "CREATE TABLE placeholder (id int unsigned NOT NULL, PRIMARY KEY (id)) ENGINE=InnoDB")
 	writeFile(t, "mydb/bonus/table2.sql", "CREATE TABLE table2 (name varchar(20) NOT NULL, PRIMARY KEY (name))")
 	s.handleCommand(t, CodeFatalError, ".", "skeema push")
 	s.assertMissing(t, "product", "comments", "foo")
@@ -476,6 +477,23 @@ func (s *SkeemaIntegrationSuite) TestForeignKeys(t *testing.T) {
 	s.dbExec(t, "product", "ALTER TABLE posts DROP FOREIGN KEY usridfk")
 	s.dbExec(t, "product", "ALTER TABLE users DROP KEY idname")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+
+	// Test handling of unsafe operations combined with FK operations:
+	// Drop FK + add different FK + drop another col
+	// Confirm that if an unsafe operation is blocked, but there's also a 2nd
+	// ALTER for same table (due to splitting of drop FK + add FK into separate
+	// ALTERs) that both ALTERs are skipped.
+	oldContents = strings.Replace(oldContents, "`body` text,\n", "", 1)
+	if strings.Contains(oldContents, "`body`") || !strings.Contains(oldContents, "`user_fk`") {
+		t.Fatal("Failed to update contents as expected")
+	}
+	writeFile(t, "mydb/product/posts.sql", oldContents)
+	s.handleCommand(t, CodeFatalError, ".", "skeema push")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	contents := readFile(t, "mydb/product/posts.sql")
+	if !strings.Contains(contents, "`body`") || strings.Contains(contents, "`user_fk`") {
+		t.Error("Unsafe status did not properly affect both ALTERs on the table")
+	}
 }
 
 func (s *SkeemaIntegrationSuite) TestAutoInc(t *testing.T) {

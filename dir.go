@@ -448,6 +448,27 @@ func (dir *Dir) CreateOptionFile(optionFile *mybase.File) error {
 	return nil
 }
 
+// StatementModifiers returns a set of DDL modifiers, based on the directory's
+// configuration.
+func (dir *Dir) StatementModifiers(forceAllowUnsafe bool) (mods tengo.StatementModifiers, err error) {
+	mods.NextAutoInc = tengo.NextAutoIncIfIncreased
+	mods.AllowUnsafe = forceAllowUnsafe || dir.Config.GetBool("allow-unsafe")
+	if dir.Config.GetBool("exact-match") {
+		mods.StrictIndexOrder = true
+		mods.StrictForeignKeyNaming = true
+	}
+	if mods.AlgorithmClause, err = dir.Config.GetEnum("alter-algorithm", "INPLACE", "COPY", "DEFAULT"); err != nil {
+		return
+	}
+	if mods.LockClause, err = dir.Config.GetEnum("alter-lock", "NONE", "SHARED", "EXCLUSIVE", "DEFAULT"); err != nil {
+		return
+	}
+	if mods.IgnoreTable, err = dir.Config.GetRegexp("ignore-table"); err != nil {
+		return
+	}
+	return
+}
+
 // TargetGroups returns a channel for obtaining TargetGroups for this dir and
 // its subdirs. If firstOnly is true, any directory that normally maps to
 // multiple instances and/or schemas will only use of the first of each. If

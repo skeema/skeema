@@ -122,22 +122,18 @@ func PushHandler(cfg *mybase.Config) error {
 func pushWorker(sps *sharedPushState) {
 	defer sps.Done()
 
-	mods := tengo.StatementModifiers{
-		NextAutoInc: tengo.NextAutoIncIfIncreased,
-	}
-
 	for tg := range sps.targetGroups { // consume a TargetGroup from the channel
 		for _, t := range tg { // iterate over each Target in the TargetGroup
 			if sps.fatalError != nil {
 				return
 			}
-			if t.Err != nil {
+			// Skip this target if there's a fatal error with the dir or instance, not
+			// specific to one schema
+			if t.Err != nil && t.SchemaFromDir == nil {
 				if t.Instance == nil {
 					log.Errorf("Skipping %s: %s\n", t.Dir, t.Err)
-				} else if t.SchemaFromDir == nil {
-					log.Errorf("Skipping %s for %s: %s\n", t.Instance, t.Dir, t.Err)
 				} else {
-					log.Errorf("Skipping %s %s for %s: %s\n", t.Instance, t.SchemaFromDir.Name, t.Dir, t.Err)
+					log.Errorf("Skipping %s for %s: %s\n", t.Instance, t.Dir, t.Err)
 				}
 				sps.incrementErrCount(1)
 				continue
@@ -152,20 +148,25 @@ func pushWorker(sps *sharedPushState) {
 			} else {
 				log.Infof("Pushing changes from %s/*.sql to %s %s", t.Dir, t.Instance, schemaName)
 			}
+
+			if t.Err != nil {
+				log.Errorf("Skipping %s %s: %s\n", t.Instance, schemaName, t.Err)
+				sps.incrementErrCount(1)
+				continue
+			}
 			for _, warning := range t.SQLFileWarnings {
 				log.Debug(warning)
 			}
 
 			diff := tengo.NewSchemaDiff(t.SchemaFromInstance, t.SchemaFromDir)
 			var targetStmtCount int
-			var err error
 
 			if diff.SchemaDDL != "" {
 				sps.syncPrintf(t.Instance, "", "%s;\n", diff.SchemaDDL)
 				targetStmtCount++
 				if !sps.dryRun {
 					if strings.HasPrefix(diff.SchemaDDL, "CREATE DATABASE") && t.SchemaFromInstance == nil {
-						_, err = t.Instance.CreateSchema(schemaName, t.SchemaFromDir.CharSet, t.SchemaFromDir.Collation)
+						_, err := t.Instance.CreateSchema(schemaName, t.SchemaFromDir.CharSet, t.SchemaFromDir.Collation)
 						if err != nil {
 							sps.setFatalError(fmt.Errorf("Error creating schema %s on %s: %s", schemaName, t.Instance, err))
 							return
@@ -190,70 +191,66 @@ func pushWorker(sps *sharedPushState) {
 				}
 			}
 
-			// Set configuration-dependent statement modifiers here inside the Target
-			// loop, since the config for these may var per dir!
-			mods.AllowUnsafe = t.Dir.Config.GetBool("allow-unsafe") || sps.briefOutput
-			if t.Dir.Config.GetBool("exact-match") {
-				mods.StrictIndexOrder = true
-				mods.StrictForeignKeyNaming = true
-			}
-			mods.AlgorithmClause, err = t.Dir.Config.GetEnum("alter-algorithm", "INPLACE", "COPY", "DEFAULT")
+			// Obtain StatementModifiers based on the dir's config
+			mods, err := t.Dir.StatementModifiers(sps.briefOutput)
 			if err != nil {
 				sps.setFatalError(NewExitValue(CodeBadConfig, err.Error()))
 				return
 			}
-			mods.LockClause, err = t.Dir.Config.GetEnum("alter-lock", "NONE", "SHARED", "EXCLUSIVE", "DEFAULT")
-			if err != nil {
-				sps.setFatalError(NewExitValue(CodeBadConfig, err.Error()))
-				return
-			}
-			mods.IgnoreTable, err = t.Dir.Config.GetRegexp("ignore-table")
-			if err != nil {
-				sps.setFatalError(NewExitValue(CodeBadConfig, err.Error()))
-				return
-			}
-			for n, tableDiff := range diff.TableDiffs {
+
+			// Build DDLStatements for each TableDiff, handling pre-execution errors
+			// accordingly
+			ddls := make([]*DDLStatement, 0, len(diff.TableDiffs))
+			for _, tableDiff := range diff.TableDiffs {
 				ddl := NewDDLStatement(tableDiff, mods, t)
 				if ddl.IsNoop() {
 					continue
 				}
-				targetStmtCount++
-				if err, ok := ddl.Err.(*tengo.UnsupportedDiffError); ok {
+				targetStmtCount++ // counter for operations on this specific target
+				if ddl.Err == nil {
+					if sps.dryRun {
+						sps.syncPrintf(t.Instance, schemaName, "%s\n", ddl.String())
+						sps.incrementDiffCount()
+					} else {
+						ddls = append(ddls, ddl)
+					}
+				} else if err, ok := ddl.Err.(*tengo.UnsupportedDiffError); ok {
 					sps.incrementUnsupportedCount()
 					log.Warnf("Skipping table %s: unable to generate ALTER TABLE due to use of unsupported features. Use --debug for more information.", err.Name)
 					DebugLogUnsupportedDiff(err)
-					continue
-				}
-				sps.incrementDiffCount()
-				if ddl.Err != nil {
+				} else {
 					sps.incrementErrCount(1)
 					if tengo.IsForbiddenDiff(ddl.Err) {
-						log.Errorf("%s due to supplied options. The affected DDL statement will be skipped. See --help for more information.", ddl.Err)
+						log.Errorf("Destructive statement %s is considered unsafe. Use --allow-unsafe or --safe-below-size to permit this operation; see --help for more information.", ddl.String())
 					} else {
-						log.Errorf("A fatal error occurred with pre-processing a DDL statement: %s. The affected DDL statement will be skipped.", ddl.Err)
-						continue
+						log.Errorf("A fatal error occurred with pre-processing a DDL statement: %s.", ddl.Err)
 					}
-				}
-				sps.syncPrintf(t.Instance, schemaName, "%s\n", ddl.String())
-				if !sps.dryRun && ddl.Err == nil && ddl.Execute() != nil {
-					log.Errorf("Error running DDL on %s %s: %s", t.Instance, schemaName, ddl.Err)
-					skipCount := len(diff.TableDiffs) - n
-					if skipCount > 1 {
-						log.Warnf("Due to previous error, skipping %d additional statements on %s %s", skipCount-1, t.Instance, schemaName)
-					}
-					sps.incrementErrCount(skipCount)
+					t.Err = fmt.Errorf("Skipping %s %s due to error", t.Instance, schemaName)
 					break
 				}
 			}
 
-			if targetStmtCount == 0 {
+			// Execute DDL
+			for _, ddl := range ddls {
+				if t.Err != nil {
+					break
+				}
+				sps.syncPrintf(t.Instance, schemaName, "%s\n", ddl.String())
+				if ddl.Execute() != nil {
+					log.Errorf("Error running DDL on %s %s: %s", t.Instance, schemaName, ddl.Err)
+					t.Err = fmt.Errorf("Aborting early on %s %s due to error", t.Instance, schemaName)
+					sps.incrementErrCount(1)
+				}
+			}
+
+			if t.Err != nil {
+				log.Errorf("%s\n", t.Err)
+			} else if targetStmtCount == 0 {
 				log.Infof("%s %s: No differences found\n", t.Instance, schemaName)
 			} else {
-				var verb string
+				verb := "push"
 				if sps.dryRun {
 					verb = "diff"
-				} else {
-					verb = "push"
 				}
 				log.Infof("%s %s: %s complete\n", t.Instance, schemaName, verb)
 			}

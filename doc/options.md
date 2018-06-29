@@ -44,17 +44,17 @@ Commands | diff, push
 **Type** | boolean
 **Restrictions** | none
 
-If set to false, `skeema diff` outputs unsafe DDL statements as commented-out, and `skeema push` skips their execution.
+If set to the default of false, `skeema push` refuses to run any DDL on a database if any of the operations are "unsafe" -- that is, they have the potential to destroy data. Similarly, `skeema diff` also refuses to function in this case; even though `skeema diff` never executes DDL anyway, it serves as an accurate "dry run" for `skeema push` and therefore aborts in the same fashion.
 
 The following operations are considered unsafe:
 
-* Any DROP TABLE statement
-* Any ALTER TABLE statement that includes at least one DROP COLUMN clause
-* Any ALTER TABLE statement that includes a MODIFY COLUMN clause which changes the type of an existing column in a way that potentially causes data loss, length truncation, or reduction in precision
-* Any ALTER TABLE statement that includes a MODIFY COLUMN clause which changes the character set of an existing column
-* Any ALTER TABLE statement that includes an ENGINE clause which changes the table's storage engine
+* Dropping a table
+* Altering a table to drop a column
+* Altering a table to modify an existing column in a way that potentially causes data loss, length truncation, or reduction in precision
+* Altering a table to modify the character set of an existing column
+* Altering a table to change its storage engine
 
-If set to true, these operations are fully permitted, for all tables. It is not recommended to enable this setting in an option file, especially in the production environment. It is safer to require users to supply it manually on the command-line on an as-needed basis, to serve as a confirmation step for unsafe operations.
+If [allow-unsafe](#allow-unsafe) is set to true, these operations are fully permitted, for all tables. It is not recommended to enable this setting in an option file, especially in the production environment. It is safer to require users to supply it manually on the command-line on an as-needed basis, to serve as a confirmation step for unsafe operations.
 
 To conditionally control execution of unsafe operations based on table size, see the [safe-below-size](#safe-below-size) option.
 
@@ -140,7 +140,7 @@ Commands | diff
 --- | :---
 **Default** | false
 **Type** | boolean
-**Restrictions** | none
+**Restrictions** | Should only appear on command-line
 
 Ordinarily, `skeema diff` outputs DDL statements to STDOUT. With [brief](#brief), `skeema diff` will instead only output a newline-delimited list of unique instances (host:port) that had at least one difference. This can be useful in a sharded environment, to see which shards are not up-to-date with the latest schema changes.
 
