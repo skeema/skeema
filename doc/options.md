@@ -18,6 +18,7 @@
 * [dry-run](#dry-run)
 * [exact-match](#exact-match)
 * [first-only](#first-only)
+* [foreign-key-checks](#foreign-key-checks)
 * [host](#host)
 * [host-wrapper](#host-wrapper)
 * [ignore-schema](#ignore-schema)
@@ -174,8 +175,8 @@ Any string-valued variables must have their values wrapped in single-quotes. Tak
 
 Additionally the following MySQL variables *cannot* be set by this option, since it would interfere with Skeema's internal operations:
 
-* `autocommit`
-* `foreign_key_checks`
+* `autocommit` -- cannot be disabled in Skeema
+* `foreign_key_checks` -- see Skeema's own [foreign-key-checks](#foreign_key_checks) option to manipulate this
 
 Aside from these, any legal MySQL session variable may be set.
 
@@ -326,6 +327,22 @@ Commands | diff, push
 Ordinarily, for individual directories that map to multiple instances and/or multiple schemas, `skeema diff` and `skeema push` will operate on all mapped instances, and all mapped schemas on those instances. If the [first-only](#first-only) option is used, these commands instead only operate on the first instance and schema per directory.
 
 In a sharded environment, this option can be useful to examine or execute a change only on one shard, before pushing it out on all shards. Alternatively, for more complex control, a similar effect can be achieved by using environment names. For example, you could create an environment called "production-canary" with [host](#host) configured to map to a subset of the instances in the "production" environment.
+
+### foreign-key-checks
+
+Commands | push
+--- | :---
+**Default** | false
+**Type** | boolean
+**Restrictions** | none
+
+By default, `skeema push` executes DDL in a session with foreign key checks disabled. This way, when adding a new foreign key to an existing table, no immediate integrity check is performed on existing data. This results in faster `ALTER TABLE` execution, and eliminates one possible failure vector for the DDL.
+
+This behavior may be overridden by enabling the [foreign-key-checks](#foreign_key_checks) option. When enabled, `skeema push` enables foreign key checks for any `ALTER TABLE` that adds one or more foreign keys to an existing table. This means the server will validate existing data's referential integrity for new foreign keys, and the `ALTER TABLE` will fail with a fatal error if the constraint is not met for all rows.
+
+This option does not affect Skeema's behavior for other DDL, including `CREATE TABLE` or `DROP TABLE`. These statements are always executed in a session with foreign key checks disabled, to avoid any potential issues with thorny order-of-operations or circular references.
+
+This option has no effect in cases where an external OSC tool is being used via [alter-wrapper](#alter-wrapper) or [ddl-wrapper](#ddl-wrapper).
 
 ### host
 

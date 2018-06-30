@@ -24,8 +24,9 @@ type DDLStatement struct {
 	stmt     string
 	shellOut *ShellOut
 
-	instance   *tengo.Instance
-	schemaName string
+	instance      *tengo.Instance
+	schemaName    string
+	connectParams string
 }
 
 // NewDDLStatement creates and returns a DDLStatement. In the case of an error
@@ -94,6 +95,14 @@ func NewDDLStatement(diff *tengo.TableDiff, mods tengo.StatementModifiers, targe
 	ddl.setErr(err)
 	if ddl.stmt == "" {
 		return ddl
+	}
+
+	// If adding foreign key constraints, use foreign_key_checks=1 if requested
+	if wrapper == "" && diff.Type == tengo.TableDiffAlter &&
+		strings.Contains(ddl.stmt, "ADD CONSTRAINT") &&
+		strings.Contains(ddl.stmt, "FOREIGN KEY") &&
+		target.Dir.Config.GetBool("foreign-key-checks") {
+		ddl.connectParams = "foreign_key_checks=1"
 	}
 
 	// Apply wrapper if relevant
@@ -186,7 +195,7 @@ func (ddl *DDLStatement) Execute() error {
 	if ddl.IsShellOut() {
 		ddl.Err = ddl.shellOut.Run()
 	} else {
-		if db, err := ddl.instance.Connect(ddl.schemaName, ""); err != nil {
+		if db, err := ddl.instance.Connect(ddl.schemaName, ddl.connectParams); err != nil {
 			ddl.Err = err
 		} else {
 			_, ddl.Err = db.Exec(ddl.stmt)

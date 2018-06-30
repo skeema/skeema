@@ -53,8 +53,9 @@ func clonePushOptionsToDiff() {
 		"safe-below-size": "Always permit generating destructive operations for tables below this size in bytes",
 	}
 	hiddenRewrites := map[string]bool{
-		"brief":   false,
-		"dry-run": true,
+		"brief":              false,
+		"dry-run":            true,
+		"foreign-key-checks": true,
 	}
 
 	diffOptions := diff.Options()

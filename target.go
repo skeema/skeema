@@ -249,7 +249,7 @@ func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 		}
 	}
 
-	db, err := t.Instance.Connect(tempSchemaName, "foreign_key_checks=0")
+	db, err := t.Instance.Connect(tempSchemaName, "")
 	if err != nil {
 		return fmt.Errorf("verifyDiff: cannot connect to %s: %s", t.Instance, err)
 	}

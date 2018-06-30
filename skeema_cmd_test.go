@@ -429,16 +429,16 @@ func (s *SkeemaIntegrationSuite) TestForeignKeys(t *testing.T) {
 
 	// Renaming an FK should not be considered a difference by default
 	oldContents := readFile(t, "mydb/product/posts.sql")
-	newContents := strings.Replace(oldContents, "user_fk", "usridfk", 1)
-	if oldContents == newContents {
+	contents1 := strings.Replace(oldContents, "user_fk", "usridfk", 1)
+	if oldContents == contents1 {
 		t.Fatal("Expected mydb/product/posts.sql to contain foreign key definition, but it did not")
 	}
-	writeFile(t, "mydb/product/posts.sql", newContents)
+	writeFile(t, "mydb/product/posts.sql", contents1)
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
 	// pull won't update the file unless normalizing
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-normalize")
-	if readFile(t, "mydb/product/posts.sql") != newContents {
+	if readFile(t, "mydb/product/posts.sql") != contents1 {
 		t.Error("Expected skeema pull --skip-normalize to leave file untouched, but it rewrote it")
 	}
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
@@ -447,26 +447,26 @@ func (s *SkeemaIntegrationSuite) TestForeignKeys(t *testing.T) {
 	}
 
 	// Renaming an FK should be considered a difference with --exact-match
-	writeFile(t, "mydb/product/posts.sql", newContents)
+	writeFile(t, "mydb/product/posts.sql", contents1)
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --exact-match")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --exact-match")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
 	// Changing an FK definition should not break push or pull, even though this
 	// will be two non-noop ALTERs to the same table
-	changeContents := strings.Replace(newContents,
+	contents2 := strings.Replace(contents1,
 		"FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)",
 		"FOREIGN KEY (`user_id`, `byline`) REFERENCES `users` (`id`, `name`)",
 		1)
-	if changeContents == newContents {
+	if contents2 == contents1 {
 		t.Fatal("Failed to update contents as expected")
 	}
-	writeFile(t, "mydb/product/posts.sql", changeContents)
+	writeFile(t, "mydb/product/posts.sql", contents2)
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
-	writeFile(t, "mydb/product/posts.sql", newContents)
+	writeFile(t, "mydb/product/posts.sql", contents1)
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-normalize")
-	if readFile(t, "mydb/product/posts.sql") != changeContents {
+	if readFile(t, "mydb/product/posts.sql") != contents2 {
 		t.Error("Expected skeema pull to rewrite file, but it did not")
 	}
 
@@ -483,17 +483,25 @@ func (s *SkeemaIntegrationSuite) TestForeignKeys(t *testing.T) {
 	// Confirm that if an unsafe operation is blocked, but there's also a 2nd
 	// ALTER for same table (due to splitting of drop FK + add FK into separate
 	// ALTERs) that both ALTERs are skipped.
-	oldContents = strings.Replace(oldContents, "`body` text,\n", "", 1)
-	if strings.Contains(oldContents, "`body`") || !strings.Contains(oldContents, "`user_fk`") {
+	contents3 := strings.Replace(oldContents, "`body` text,\n", "", 1)
+	if strings.Contains(contents3, "`body`") || !strings.Contains(contents3, "`user_fk`") {
 		t.Fatal("Failed to update contents as expected")
 	}
-	writeFile(t, "mydb/product/posts.sql", oldContents)
+	writeFile(t, "mydb/product/posts.sql", contents3)
 	s.handleCommand(t, CodeFatalError, ".", "skeema push")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
-	contents := readFile(t, "mydb/product/posts.sql")
-	if !strings.Contains(contents, "`body`") || strings.Contains(contents, "`user_fk`") {
+	checkContents := readFile(t, "mydb/product/posts.sql")
+	if !strings.Contains(checkContents, "`body`") || strings.Contains(checkContents, "`user_fk`") {
 		t.Error("Unsafe status did not properly affect both ALTERs on the table")
 	}
+
+	// Test adding an FK where the existing data does not meet the constraint:
+	// should fail if foreign_key_checks=1, succeed if foreign_key_checks=0
+	s.dbExec(t, "product", "ALTER TABLE posts DROP FOREIGN KEY usridfk")
+	s.dbExec(t, "product", "INSERT INTO posts (user_id) VALUES (1234)")
+	writeFile(t, "mydb/product/posts.sql", contents1)
+	s.handleCommand(t, CodeFatalError, ".", "skeema push --foreign-key-checks")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
 }
 
 func (s *SkeemaIntegrationSuite) TestAutoInc(t *testing.T) {

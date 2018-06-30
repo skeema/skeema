@@ -318,7 +318,7 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 		"strict":            true,
 
 		// mysql session options that should not be overridden
-		"autocommit":         true,
+		"autocommit":         true, // always enabled by default in MySQL
 		"foreign_key_checks": true, // always disabled explicitly later in this method
 	}
 
