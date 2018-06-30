@@ -498,7 +498,7 @@ func (s *SkeemaIntegrationSuite) TestForeignKeys(t *testing.T) {
 	// Test adding an FK where the existing data does not meet the constraint:
 	// should fail if foreign_key_checks=1, succeed if foreign_key_checks=0
 	s.dbExec(t, "product", "ALTER TABLE posts DROP FOREIGN KEY usridfk")
-	s.dbExec(t, "product", "INSERT INTO posts (user_id) VALUES (1234)")
+	s.dbExec(t, "product", "INSERT INTO posts (user_id, byline) VALUES (1234, 'someone')")
 	writeFile(t, "mydb/product/posts.sql", contents1)
 	s.handleCommand(t, CodeFatalError, ".", "skeema push --foreign-key-checks")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
