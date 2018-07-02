@@ -676,6 +676,11 @@ func (s *SkeemaIntegrationSuite) TestDirEdgeCases(t *testing.T) {
 // information_schema. Skeema ignores/strips these clauses so that they do not
 // trip up its "unsupported table" validation logic.
 func (s *SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
+	// MariaDB does not consider STORAGE or COLUMN_FORMAT clauses as valid SQL
+	if strings.HasPrefix(s.d.Image, "mariadb") {
+		t.Skip("Test not relevant for image", s.d.Image)
+	}
+
 	withClauses := "CREATE TABLE `problems` (\n" +
 		"  `name` varchar(30) /*!50606 STORAGE MEMORY */ /*!50606 COLUMN_FORMAT DYNAMIC */ DEFAULT NULL,\n" +
 		"  `num` int(10) unsigned NOT NULL /*!50606 STORAGE DISK */ /*!50606 COLUMN_FORMAT FIXED */,\n" +
