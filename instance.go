@@ -634,6 +634,8 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			col.Default = ColumnDefaultNull
 		} else if newMariaFormat && rawColumn.Default.String[0] == '\'' {
 			col.Default = ColumnDefaultValue(strings.Trim(rawColumn.Default.String, "'"))
+		} else if newMariaFormat && rawColumn.Default.String == "NULL" {
+			col.Default = ColumnDefaultNull
 		} else if newMariaFormat {
 			col.Default = ColumnDefaultExpression(rawColumn.Default.String)
 		} else if strings.HasPrefix(rawColumn.Default.String, "CURRENT_TIMESTAMP") && (strings.HasPrefix(rawColumn.Type, "timestamp") || strings.HasPrefix(rawColumn.Type, "datetime")) {

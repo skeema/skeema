@@ -290,6 +290,53 @@ func (di *DockerizedInstance) IsNewMariaFormat() bool {
 	return di.Flavor() == FlavorMariaDB && (major > 10 || (major == 10 && minor >= 2))
 }
 
+// AdjustTableForFlavor takes a hard-coded table from a unit test, and modifies
+// it in-place to match the formatting expected for di's flavor and version
+func (di *DockerizedInstance) AdjustTableForFlavor(table *Table) {
+	major, minor, _ := di.Version()
+	is55 := major == 5 && minor == 5
+	isMaria102 := di.IsNewMariaFormat()
+	if !isMaria102 && !is55 {
+		return
+	}
+
+	for _, col := range table.Columns {
+		if isMaria102 {
+			if col.Default == ColumnDefaultForbidden && (strings.HasSuffix(col.TypeInDB, "blob") || strings.HasSuffix(col.TypeInDB, "text")) {
+				col.Default = ColumnDefaultNull
+			} else if col.Default.Quoted && strings.Contains(col.TypeInDB, "int") { // TODO also handle other numerics
+				col.Default.Quoted = false
+			} else if strings.Contains(col.Default.Value, "CURRENT_TIMESTAMP") {
+				col.Default.Value = strings.ToLower(col.Default.Value)
+				if !strings.HasSuffix(col.Default.Value, ")") {
+					col.Default.Value += "()"
+				}
+			}
+			if strings.Contains(col.OnUpdate, "CURRENT_TIMESTAMP") {
+				col.OnUpdate = strings.ToLower(col.OnUpdate)
+				if !strings.HasSuffix(col.OnUpdate, ")") {
+					col.OnUpdate += "()"
+				}
+			}
+		} else if is55 {
+			if strings.HasPrefix(col.TypeInDB, "timestamp(") {
+				col.TypeInDB = "timestamp"
+			} else if strings.HasPrefix(col.TypeInDB, "datetime(") {
+				col.TypeInDB = "datetime"
+			}
+			if strings.Contains(col.Default.Value, "CURRENT_TIMESTAMP(") {
+				col.Default.Value = "CURRENT_TIMESTAMP"
+			}
+			if strings.Contains(col.OnUpdate, "CURRENT_TIMESTAMP(") {
+				col.OnUpdate = "CURRENT_TIMESTAMP"
+			}
+		}
+	}
+	// TODO: fix partitioning style if isMaria102
+
+	table.CreateStatement = table.GeneratedCreateStatement()
+}
+
 type filteredLogger struct {
 	logger *log.Logger
 }

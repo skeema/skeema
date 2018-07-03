@@ -84,18 +84,20 @@ func aTable(nextAutoInc uint64) Table {
 			Name:          "actor_id",
 			TypeInDB:      "smallint(5) unsigned",
 			AutoIncrement: true,
-			Default:       ColumnDefaultNull,
+			Default:       ColumnDefaultForbidden,
 		},
 		{
 			Name:     "first_name",
 			TypeInDB: "varchar(45)",
 			Default:  ColumnDefaultNull,
+			CharSet:  "utf8",
 		},
 		{
 			Name:     "last_name",
 			Nullable: true,
 			TypeInDB: "varchar(45)",
 			Default:  ColumnDefaultNull,
+			CharSet:  "utf8",
 		},
 		{
 			Name:     "last_update",
@@ -107,6 +109,7 @@ func aTable(nextAutoInc uint64) Table {
 			Name:     "ssn",
 			TypeInDB: "char(10)",
 			Default:  ColumnDefaultNull,
+			CharSet:  "utf8",
 		},
 		{
 			Name:     "alive",
@@ -172,6 +175,7 @@ func anotherTable() Table {
 			Name:     "film_name",
 			TypeInDB: "varchar(60)",
 			Default:  ColumnDefaultNull,
+			CharSet:  "latin1",
 		},
 	}
 	secondaryIndex := &Index{
@@ -214,7 +218,7 @@ func supportedTable() Table {
 			Name:          "id",
 			TypeInDB:      "int(10) unsigned",
 			AutoIncrement: true,
-			Default:       ColumnDefaultNull,
+			Default:       ColumnDefaultForbidden,
 		},
 		{
 			Name:     "customer_id",

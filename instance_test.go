@@ -261,16 +261,13 @@ func (s TengoIntegrationSuite) TestInstanceShowCreateTable(t *testing.T) {
 	}
 
 	t1expected := aTable(1)
-	if s.d.IsNewMariaFormat() {
-		t1expected.CreateStatement = strings.Replace(t1expected.CreateStatement, "CURRENT_TIMESTAMP", "current_timestamp", -1)
-		t1expected.CreateStatement = strings.Replace(t1expected.CreateStatement, "tinyint(1) NOT NULL DEFAULT '1'", "tinyint(1) NOT NULL DEFAULT 1", 1)
-	}
-
+	s.d.AdjustTableForFlavor(&t1expected)
 	if t1create != t1expected.CreateStatement {
 		t.Errorf("Mismatch for SHOW CREATE TABLE\nActual return from %s:\n%s\n----------\nExpected output: %s", s.d.Image, t1create, t1expected.CreateStatement)
 	}
 
 	t2expected := anotherTable()
+	s.d.AdjustTableForFlavor(&t2expected)
 	if t2create != t2expected.CreateStatement {
 		t.Errorf("Mismatch for SHOW CREATE TABLE\nActual return from %s:\n%s\n----------\nExpected output: %s", s.d.Image, t2create, t2expected.CreateStatement)
 	}
@@ -427,18 +424,19 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	// Ensure our unit test fixtures and integration test fixtures match
 	schema, aTableFromDB := s.GetSchemaAndTable(t, "testing", "actor")
 	aTableFromUnit := aTable(1)
-	if s.d.IsNewMariaFormat() {
-		aTableFromUnit.CreateStatement = strings.Replace(aTableFromUnit.CreateStatement, "CURRENT_TIMESTAMP", "current_timestamp", -1)
-		aTableFromUnit.CreateStatement = strings.Replace(aTableFromUnit.CreateStatement, "tinyint(1) NOT NULL DEFAULT '1'", "tinyint(1) NOT NULL DEFAULT 1", 1)
-	}
+	s.d.AdjustTableForFlavor(&aTableFromUnit)
+	aTableFromUnit.CreateStatement = "" // Prevent diff from short-circuiting on equivalent CREATEs
 	clauses, supported := aTableFromDB.Diff(&aTableFromUnit)
 	if !supported {
 		t.Error("Diff unexpectedly not supported for testing.actor")
 	} else if len(clauses) > 0 {
 		t.Errorf("Diff of testing.actor unexpectedly found %d clauses; expected 0", len(clauses))
 	}
+
 	aTableFromDB = s.GetTable(t, "testing", "actor_in_film")
 	aTableFromUnit = anotherTable()
+	s.d.AdjustTableForFlavor(&aTableFromUnit)
+	aTableFromUnit.CreateStatement = "" // Prevent diff from short-circuiting on equivalent CREATEs
 	clauses, supported = aTableFromDB.Diff(&aTableFromUnit)
 	if !supported {
 		t.Error("Diff unexpectedly not supported for testing.actor_in_film")
