@@ -23,6 +23,8 @@ type Instance struct {
 	defaultParams  map[string]string
 	connectionPool map[string]*sqlx.DB // key is in format "schema?params" or just "schema" if no params
 	*sync.RWMutex                      // protects connectionPool for concurrent operations
+	flavor         Flavor
+	version        [3]int
 }
 
 // NewInstance returns a pointer to a new Instance corresponding to the
@@ -140,6 +142,39 @@ func (instance *Instance) CanConnect() (bool, error) {
 
 	_, err := instance.Connect("", "")
 	return err == nil, err
+}
+
+// Flavor returns this instance's flavor constant, representing the database
+// distribution/fork/vendor. If this is unable to be determined, FlavorUnknown
+// will be returned.
+func (instance *Instance) Flavor() Flavor {
+	if instance.flavor == FlavorUnknown {
+		instance.hydrateFlavorAndVersion()
+	}
+	return instance.flavor
+}
+
+// Version returns three ints representing the database's major, minor, and
+// patch version, respectively. If this is unable to be determined, all 0's
+// will be returned.
+func (instance *Instance) Version() (int, int, int) {
+	if instance.version[0] == 0 {
+		instance.hydrateFlavorAndVersion()
+	}
+	return instance.version[0], instance.version[1], instance.version[2]
+}
+
+func (instance *Instance) hydrateFlavorAndVersion() {
+	db, err := instance.Connect("", "")
+	if err != nil {
+		return
+	}
+	var flavorString, versionString string
+	if err = db.QueryRow("SELECT @@global.version_comment, @@global.version").Scan(&flavorString, &versionString); err != nil {
+		return
+	}
+	instance.flavor = ParseFlavor(flavorString)
+	instance.version = ParseVersion(versionString)
 }
 
 // SchemaNames returns a slice of all schema name strings on the instance
@@ -496,6 +531,12 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		return nil, err
 	}
 
+	// Obtain flavor and version info. MariaDB changed how default values are
+	// represented in information_schema in 10.2+.
+	flavor := instance.Flavor()
+	major, minor, _ := instance.Version()
+	newMariaFormat := flavor == FlavorMariaDB && (major > 10 || (major == 10 && minor >= 2))
+
 	// Obtain the tables in the schema
 	var rawTables []struct {
 		Name               string         `db:"table_name"`
@@ -584,8 +625,17 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			AutoIncrement: strings.Contains(rawColumn.Extra, "auto_increment"),
 			Comment:       rawColumn.Comment,
 		}
-		if !rawColumn.Default.Valid {
+		if col.AutoIncrement {
+			col.Default = ColumnDefaultForbidden
+		} else if !newMariaFormat && (strings.HasSuffix(col.TypeInDB, "blob") || strings.HasSuffix(col.TypeInDB, "text")) {
+			// Default values for blob and text types are not allowed, except in MariaDB 10.2+
+			col.Default = ColumnDefaultForbidden
+		} else if !rawColumn.Default.Valid {
 			col.Default = ColumnDefaultNull
+		} else if newMariaFormat && rawColumn.Default.String[0] == '\'' {
+			col.Default = ColumnDefaultValue(strings.Trim(rawColumn.Default.String, "'"))
+		} else if newMariaFormat {
+			col.Default = ColumnDefaultExpression(rawColumn.Default.String)
 		} else if strings.HasPrefix(rawColumn.Default.String, "CURRENT_TIMESTAMP") && (strings.HasPrefix(rawColumn.Type, "timestamp") || strings.HasPrefix(rawColumn.Type, "datetime")) {
 			col.Default = ColumnDefaultExpression(rawColumn.Default.String)
 		} else if strings.HasPrefix(rawColumn.Type, "bit") && strings.HasPrefix(rawColumn.Default.String, "b'") {
@@ -594,10 +644,12 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			col.Default = ColumnDefaultValue(rawColumn.Default.String)
 		}
 		if strings.HasPrefix(strings.ToLower(rawColumn.Extra), "on update ") {
-			// MariaDB strips fractional second precision here but includes it in SHOW
-			// CREATE TABLE. MySQL includes it in both places. Here we adjust the MariaDB
-			// one to look like MySQL, so that our generated DDL matches SHOW CREATE TABLE.
-			if openParen := strings.IndexByte(rawColumn.Type, '('); openParen > -1 && !strings.Contains(strings.ToLower(rawColumn.Extra), "current_timestamp(") {
+			// MariaDB 10.2+ lowercases the value. Previous versions of MariaDB omit
+			// the fractional second precision in information_schema but include it in
+			// SHOW CREATE TABLE.
+			if newMariaFormat {
+				col.OnUpdate = rawColumn.Extra[10:]
+			} else if openParen := strings.IndexByte(rawColumn.Type, '('); flavor == FlavorMariaDB && openParen > -1 && !strings.Contains(strings.ToLower(rawColumn.Extra), "current_timestamp(") {
 				col.OnUpdate = fmt.Sprintf("%s%s", strings.ToUpper(rawColumn.Extra[10:]), rawColumn.Type[openParen:])
 			} else {
 				col.OnUpdate = strings.ToUpper(rawColumn.Extra[10:])

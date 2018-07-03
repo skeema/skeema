@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/skeema/tengo"
 )
 
 func (s *SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
@@ -484,6 +486,7 @@ func (s *SkeemaIntegrationSuite) TestForeignKeys(t *testing.T) {
 	// ALTER for same table (due to splitting of drop FK + add FK into separate
 	// ALTERs) that both ALTERs are skipped.
 	contents3 := strings.Replace(oldContents, "`body` text,\n", "", 1)
+	contents3 = strings.Replace(contents3, "`body` text DEFAULT NULL,\n", "", 1) // MariaDB 10.2+
 	if strings.Contains(contents3, "`body`") || !strings.Contains(contents3, "`user_fk`") {
 		t.Fatal("Failed to update contents as expected")
 	}
@@ -677,8 +680,8 @@ func (s *SkeemaIntegrationSuite) TestDirEdgeCases(t *testing.T) {
 // trip up its "unsupported table" validation logic.
 func (s *SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 	// MariaDB does not consider STORAGE or COLUMN_FORMAT clauses as valid SQL
-	if strings.HasPrefix(s.d.Image, "mariadb") {
-		t.Skip("Test not relevant for image", s.d.Image)
+	if s.d.Flavor() == tengo.FlavorMariaDB {
+		t.Skip("Test not relevant for MariaDB-based image", s.d.Image)
 	}
 
 	withClauses := "CREATE TABLE `problems` (\n" +

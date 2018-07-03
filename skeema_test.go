@@ -168,6 +168,15 @@ func (s *SkeemaIntegrationSuite) handleCommand(t *testing.T, expectedExitCode in
 func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, dirExpectedBase string) {
 	t.Helper()
 
+	// MariaDB 10.2+ changes a few aspects of SHOW CREATE TABLE: default values are
+	// no longer quoted if non-strings; the blob and text types now permit default
+	// values; partitions are formatted differently. We must maintain a different
+	// set of golden files for comparing to MariaDB, so hackily manipulate the
+	// dirExpectedBase if needed.
+	if s.d.IsNewMariaFormat() {
+		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mariadb102", 1)
+	}
+
 	var compareDirs func(*Dir, *Dir)
 	compareDirs = func(a, b *Dir) {
 		t.Helper()
