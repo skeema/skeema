@@ -2,18 +2,22 @@ package tengo
 
 import (
 	"fmt"
-	"strings"
 )
 
 // ColumnDefault represents the default value for a column.
 type ColumnDefault struct {
-	Null   bool
-	Quoted bool
-	Value  string
+	Null      bool
+	Quoted    bool
+	Value     string
+	Forbidden bool // if true, column does not permit defaults
 }
 
 // ColumnDefaultNull indicates a column has a default value of NULL.
 var ColumnDefaultNull = ColumnDefault{Null: true}
+
+// ColumnDefaultForbidden indicates a column that is not allowed to have a
+// default value.
+var ColumnDefaultForbidden = ColumnDefault{Forbidden: true, Null: true}
 
 // ColumnDefaultValue is a constructor for creating non-NULL,
 // non-CURRENT_TIMESTAMP default values.
@@ -35,6 +39,9 @@ func ColumnDefaultExpression(expression string) ColumnDefault {
 
 // Clause returns the DEFAULT clause for use in a DDL statement.
 func (cd ColumnDefault) Clause() string {
+	if cd.Forbidden {
+		return ""
+	}
 	if cd.Null {
 		return "DEFAULT NULL"
 	} else if cd.Quoted {
@@ -63,7 +70,6 @@ type Column struct {
 // (mirroring the specific display logic used by SHOW CREATE TABLE)
 func (c *Column) Definition(table *Table) string {
 	var charSet, collation, nullability, autoIncrement, defaultValue, onUpdate, comment string
-	emitDefault := c.CanHaveDefault()
 	if c.CharSet != "" && (table == nil || c.Collation != table.Collation || c.CharSet != table.CharSet) {
 		// Note that we need to compare both Collation AND CharSet above, since
 		// Collation of "" is used to mean default collation *for the character set*.
@@ -74,9 +80,6 @@ func (c *Column) Definition(table *Table) string {
 	}
 	if !c.Nullable {
 		nullability = " NOT NULL"
-		if c.Default.Null {
-			emitDefault = false
-		}
 	} else if c.TypeInDB == "timestamp" {
 		// Oddly the timestamp type always displays nullability
 		nullability = " NULL"
@@ -84,7 +87,7 @@ func (c *Column) Definition(table *Table) string {
 	if c.AutoIncrement {
 		autoIncrement = " AUTO_INCREMENT"
 	}
-	if emitDefault {
+	if !c.Default.Forbidden && (c.Nullable || !c.Default.Null) {
 		defaultValue = fmt.Sprintf(" %s", c.Default.Clause())
 	}
 	if c.OnUpdate != "" {
@@ -107,16 +110,4 @@ func (c *Column) Equals(other *Column) bool {
 		return false
 	}
 	return *c == *other
-}
-
-// CanHaveDefault returns true if the column is allowed to have a DEFAULT clause.
-func (c *Column) CanHaveDefault() bool {
-	if c.AutoIncrement {
-		return false
-	}
-	// MySQL does not permit defaults for these types
-	if strings.HasSuffix(c.TypeInDB, "blob") || strings.HasSuffix(c.TypeInDB, "text") {
-		return false
-	}
-	return true
 }

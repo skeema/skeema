@@ -90,6 +90,7 @@ CREATE TABLE grab_bag (
 	updated_at timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 	alive tinyint(1) DEFAULT '1' COMMENT 'column comment',
 	flags bit(8) DEFAULT b'1',
+	metadata blob,
 	PRIMARY KEY (id, code),
 	UNIQUE KEY name_idx (name),
 	KEY recency (updated_at, created_at),

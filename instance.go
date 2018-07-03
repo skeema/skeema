@@ -625,7 +625,12 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			AutoIncrement: strings.Contains(rawColumn.Extra, "auto_increment"),
 			Comment:       rawColumn.Comment,
 		}
-		if !rawColumn.Default.Valid {
+		if col.AutoIncrement {
+			col.Default = ColumnDefaultForbidden
+		} else if !newMariaFormat && (strings.HasSuffix(col.TypeInDB, "blob") || strings.HasSuffix(col.TypeInDB, "text")) {
+			// Default values for blob and text types are not allowed, except in MariaDB 10.2+
+			col.Default = ColumnDefaultForbidden
+		} else if !rawColumn.Default.Valid {
 			col.Default = ColumnDefaultNull
 		} else if newMariaFormat && rawColumn.Default.String[0] == '\'' {
 			col.Default = ColumnDefaultValue(strings.Trim(rawColumn.Default.String, "'"))

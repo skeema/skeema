@@ -225,7 +225,7 @@ func supportedTable() Table {
 			Name:     "info",
 			Nullable: true,
 			TypeInDB: "text",
-			Default:  ColumnDefaultNull,
+			Default:  ColumnDefaultForbidden,
 		},
 	}
 	stmt := strings.Replace(`CREATE TABLE ~orders~ (
