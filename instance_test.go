@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/jmoiron/sqlx"
@@ -148,6 +149,53 @@ func (s TengoIntegrationSuite) TestInstanceConnect(t *testing.T) {
 		t.Errorf("Unexpected connection error: %s", err)
 	} else if db4 == db || db4 == db3 {
 		t.Error("Expected different DB pool to be returned from Connect with different params; instead was same")
+	}
+}
+
+func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
+	type parsed struct {
+		flavor Flavor
+		major  int
+		minor  int
+	}
+	imageToParsed := map[string]parsed{
+		"mysql:5.5":    {FlavorMySQL, 5, 5},
+		"mysql:5.6":    {FlavorMySQL, 5, 6},
+		"mysql:5.7":    {FlavorMySQL, 5, 7},
+		"mysql:8.0":    {FlavorMySQL, 8, 0},
+		"percona:5.5":  {FlavorPercona, 5, 5},
+		"percona:5.6":  {FlavorPercona, 5, 6},
+		"percona:5.7":  {FlavorPercona, 5, 7},
+		"percona:8.0":  {FlavorPercona, 8, 0},
+		"mariadb:10.1": {FlavorMariaDB, 10, 1},
+		"mariadb:10.2": {FlavorMariaDB, 10, 2},
+		"mariadb:10.3": {FlavorMariaDB, 10, 3},
+	}
+
+	var expected parsed
+	if result, ok := imageToParsed[s.d.Image]; ok {
+		expected = result
+	} else {
+		for image, result := range imageToParsed {
+			tokens := strings.SplitN(image, ":", 2)
+			if len(tokens) < 2 {
+				continue
+			}
+			repository, tag := tokens[0], tokens[1]
+			if strings.Contains(s.d.Image, repository) && strings.Contains(s.d.Image, tag) {
+				expected = result
+				break
+			}
+		}
+	}
+	if expected.flavor == FlavorUnknown {
+		t.Skip("No image map defined for", s.d.Image)
+	}
+	if actualFlavor := s.d.Flavor(); actualFlavor != expected.flavor {
+		t.Errorf("Expected image=%s to yield flavor=%s, instead found %s", s.d.Image, expected.flavor, actualFlavor)
+	}
+	if actualMajor, actualMinor, _ := s.d.Version(); actualMajor != expected.major || actualMinor != expected.minor {
+		t.Errorf("Expected image=%s to yield major=%d minor=%d, instead found major=%d minor=%d", s.d.Image, expected.major, expected.minor, actualMajor, actualMinor)
 	}
 }
 

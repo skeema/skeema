@@ -23,6 +23,8 @@ type Instance struct {
 	defaultParams  map[string]string
 	connectionPool map[string]*sqlx.DB // key is in format "schema?params" or just "schema" if no params
 	*sync.RWMutex                      // protects connectionPool for concurrent operations
+	flavor         Flavor
+	version        [3]int
 }
 
 // NewInstance returns a pointer to a new Instance corresponding to the
@@ -140,6 +142,39 @@ func (instance *Instance) CanConnect() (bool, error) {
 
 	_, err := instance.Connect("", "")
 	return err == nil, err
+}
+
+// Flavor returns this instance's flavor constant, representing the database
+// distribution/fork/vendor. If this is unable to be determined, FlavorUnknown
+// will be returned.
+func (instance *Instance) Flavor() Flavor {
+	if instance.flavor == FlavorUnknown {
+		instance.hydrateFlavorAndVersion()
+	}
+	return instance.flavor
+}
+
+// Version returns three ints representing the database's major, minor, and
+// patch version, respectively. If this is unable to be determined, all 0's
+// will be returned.
+func (instance *Instance) Version() (int, int, int) {
+	if instance.version[0] == 0 {
+		instance.hydrateFlavorAndVersion()
+	}
+	return instance.version[0], instance.version[1], instance.version[2]
+}
+
+func (instance *Instance) hydrateFlavorAndVersion() {
+	db, err := instance.Connect("", "")
+	if err != nil {
+		return
+	}
+	var flavorString, versionString string
+	if err = db.QueryRow("SELECT @@global.version_comment, @@global.version").Scan(&flavorString, &versionString); err != nil {
+		return
+	}
+	instance.flavor = ParseFlavor(flavorString)
+	instance.version = ParseVersion(versionString)
 }
 
 // SchemaNames returns a slice of all schema name strings on the instance
