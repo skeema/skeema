@@ -283,6 +283,13 @@ func (di *DockerizedInstance) SourceSQL(filePath string) (string, error) {
 	return stdoutStr, nil
 }
 
+// IsNewMariaFormat returns true if di is MariaDB 10.2+, which formats default
+// values in a different way in information_schema.
+func (di *DockerizedInstance) IsNewMariaFormat() bool {
+	major, minor, _ := di.Version()
+	return di.Flavor() == FlavorMariaDB && (major > 10 || (major == 10 && minor >= 2))
+}
+
 type filteredLogger struct {
 	logger *log.Logger
 }
