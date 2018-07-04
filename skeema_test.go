@@ -168,13 +168,19 @@ func (s *SkeemaIntegrationSuite) handleCommand(t *testing.T, expectedExitCode in
 func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, dirExpectedBase string) {
 	t.Helper()
 
-	// MariaDB 10.2+ changes a few aspects of SHOW CREATE TABLE: default values are
-	// no longer quoted if non-strings; the blob and text types now permit default
-	// values; partitions are formatted differently. We must maintain a different
-	// set of golden files for comparing to MariaDB, so hackily manipulate the
-	// dirExpectedBase if needed.
+	// Hackily manipulate dirExpectedBase if testing against a database backend
+	// with different SHOW CREATE TABLE rules:
+	// In MariaDB 10.2+, default values are no longer quoted if non-strings; the
+	// blob and text types now permit default values; partitions are formatted
+	// differently; default values and on-update rules for CURRENT_TIMESTAMP always
+	// include parens and lowercase the function name.
+	// In MySQL 5.5, DATETIME columns cannot have default or on-update of
+	// CURRENT_TIMESTAMP; only one TIMESTAMP column can have on-update;
+	// CURRENT_TIMESTAMP does not take an arg for specifying sub-second precision
 	if s.d.IsNewMariaFormat() {
 		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mariadb102", 1)
+	} else if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
+		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mysql55", 1)
 	}
 
 	var compareDirs func(*Dir, *Dir)

@@ -414,9 +414,13 @@ func (s *SkeemaIntegrationSuite) TestIndexOrdering(t *testing.T) {
 	}
 
 	// Edit posts.sql to put the new indexes first again, and ensure
-	// push --exact-match actually reorders them
+	// push --exact-match actually reorders them.
 	writeFile(t, "mydb/product/posts.sql", contentsIndexesFirst)
-	s.handleCommand(t, CodeSuccess, "", "skeema push --exact-match --alter-algorithm=COPY")
+	if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
+		s.handleCommand(t, CodeSuccess, "", "skeema push --exact-match")
+	} else {
+		s.handleCommand(t, CodeSuccess, "", "skeema push --exact-match --alter-algorithm=COPY")
+	}
 	s.handleCommand(t, CodeSuccess, "", "skeema diff")
 	s.handleCommand(t, CodeSuccess, "", "skeema diff --exact-match")
 	s.handleCommand(t, CodeSuccess, "", "skeema pull")
@@ -679,9 +683,12 @@ func (s *SkeemaIntegrationSuite) TestDirEdgeCases(t *testing.T) {
 // information_schema. Skeema ignores/strips these clauses so that they do not
 // trip up its "unsupported table" validation logic.
 func (s *SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
-	// MariaDB does not consider STORAGE or COLUMN_FORMAT clauses as valid SQL
+	// MariaDB does not consider STORAGE or COLUMN_FORMAT clauses as valid SQL.
+	// Ditto for MySQL 5.5.
 	if s.d.Flavor() == tengo.FlavorMariaDB {
 		t.Skip("Test not relevant for MariaDB-based image", s.d.Image)
+	} else if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
+		t.Skip("Test not relevant for 5.5-based image", s.d.Image)
 	}
 
 	withClauses := "CREATE TABLE `problems` (\n" +

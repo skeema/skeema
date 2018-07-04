@@ -8,6 +8,9 @@ import (
 )
 
 func (s *SkeemaIntegrationSuite) TestNewDDLStatement(t *testing.T) {
+	major, minor, _ := s.d.Version()
+	is55 := major == 5 && minor == 5
+
 	// Setup: init files and then change the DB so that we have some
 	// differences to generate. We first add a default value to domain col
 	// to later test that quoting rules are working properly for shellouts.
@@ -26,6 +29,10 @@ func (s *SkeemaIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 		"alter-algorithm":        "INPLACE",
 		"alter-lock":             "NONE",
 	})
+	if is55 {
+		delete(fakeFileSource, "alter-algorithm")
+		delete(fakeFileSource, "alter-lock")
+	}
 	cfg := mybase.ParseFakeCLI(t, CommandSuite, "skeema diff ", fakeFileSource)
 	AddGlobalConfigFiles(cfg)
 	dir, err := NewDir(".", cfg)
@@ -52,6 +59,9 @@ func (s *SkeemaIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 		LockClause:      "NONE",
 		AlgorithmClause: "INPLACE",
 	}
+	if is55 {
+		mods = tengo.StatementModifiers{AllowUnsafe: true}
+	}
 	for _, diff := range sd.TableDiffs {
 		ddl := NewDDLStatement(diff, mods, target)
 		if ddl.Err != nil {
@@ -67,6 +77,9 @@ func (s *SkeemaIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 				// no rows, so ddl-wrapper used. verify the statement separately.
 				expected = "/bin/echo ddl-wrapper analytics.rollups ALTER"
 				expectedStmt := "ALTER TABLE `rollups` ALGORITHM=INPLACE, LOCK=NONE, ADD COLUMN `value` bigint(20) DEFAULT NULL"
+				if is55 {
+					expectedStmt = "ALTER TABLE `rollups` ADD COLUMN `value` bigint(20) DEFAULT NULL"
+				}
 				if ddl.stmt != expectedStmt {
 					t.Errorf("Expected statement:\n%s\nActual statement:\n%s\n", expectedStmt, ddl.stmt)
 				}
