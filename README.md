@@ -2,6 +2,7 @@
 
 [![build status](https://img.shields.io/travis/skeema/skeema/master.svg)](http://travis-ci.org/skeema/skeema)
 [![code coverage](https://img.shields.io/coveralls/skeema/skeema.svg)](https://coveralls.io/r/skeema/skeema)
+[![latest release](https://img.shields.io/github/release/skeema/skeema.svg)](https://github.com/skeema/skeema/releases)
 
 Skeema is a tool for managing MySQL tables and schema changes. It provides a CLI tool allowing you to:
 
@@ -15,13 +16,13 @@ Skeema supports a pull-request-based workflow for schema change submission, revi
 
 ## Downloading
 
-Pre-built `skeema` binaries for Linux and macOS will be supplied later in Q2, once a formal release occurs. Stay tuned!
+Pre-built `skeema` binaries for Linux and macOS can be downloaded from the [releases](https://github.com/skeema/skeema/releases) page.
 
 ## Compiling
 
-Requires the [Go programming language toolchain](https://golang.org/dl/), version 1.9 or higher.
+Compiling from scratch requires the [Go programming language toolchain](https://golang.org/dl/), version 1.9 or higher.
 
-To download, build, and install (or upgrade) Skeema, run:
+To download, build from master, and install (or upgrade) Skeema, run:
 
 `go get -u github.com/skeema/skeema`
 
@@ -36,9 +37,17 @@ To download, build, and install (or upgrade) Skeema, run:
 
 ## Status
 
-Skeema is currently in public beta.
+Skeema is generally available, having reached v1 release milestone in July 2018. Prior to that, it was in public beta since October 2016.
 
-The `skeema` binary is supported on macOS and Linux. For now, it cannot be compiled on Windows. On the database side, testing is primarily performed against MySQL 5.6 and 5.7, running on Linux.
+The `skeema` binary is supported on macOS and Linux. For now, it cannot be compiled on Windows.
+
+Tagged releases are tested against the following databases, all running on Linux:
+
+* MySQL 5.5, 5.6, 5.7
+* Percona Server 5.6, 5.7
+* MariaDB 10.1, 10.2, 10.3
+
+Outside of a tagged release, every commit to the master branch is automatically tested against MySQL 5.6 and 5.7.
 
 A few uncommon MySQL features -- such as partitioning, fulltext indexes, spatial types, virtual columns -- are not yet supported. Skeema is able to *create* or *drop* tables using these features, but not *alter* them. The output of `skeema diff` and `skeema push` clearly displays when this is the case. You may still make such alters directly/manually (outside of Skeema), and then update the corresponding CREATE TABLE files via `skeema pull`.
 

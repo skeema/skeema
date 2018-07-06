@@ -9,13 +9,19 @@ import (
 	"github.com/skeema/mybase"
 )
 
-const version = "0.2 (beta)"
 const rootDesc = `Skeema is a MySQL schema management tool. It allows you to export a database
 schema to the filesystem, and apply online schema changes by modifying files.`
 
+// Globals overridden by GoReleaser's ldflags
+var (
+	version = "unknown"
+	commit  = "unknown"
+	date    = "unknown"
+)
+
 // CommandSuite is the root command. It is global so that subcommands can be
 // added to it via init() functions in each subcommand's source file.
-var CommandSuite = mybase.NewCommandSuite("skeema", version, rootDesc)
+var CommandSuite = mybase.NewCommandSuite("skeema", versionString(), rootDesc)
 
 func main() {
 	// Add global options. Sub-commands may override these when needed.
@@ -38,4 +44,11 @@ func main() {
 	}
 
 	Exit(cfg.HandleCommand())
+}
+
+func versionString() string {
+	if commit == "unknown" {
+		return "unknown (unreleased build from source)"
+	}
+	return fmt.Sprintf("%s, commit %s, released %s", version, commit, date)
 }
