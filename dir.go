@@ -103,7 +103,7 @@ func (dir *Dir) Delete() error {
 	return os.RemoveAll(dir.Path)
 }
 
-// HasFile returns true if the specifed filename exists in dir.
+// HasFile returns true if the specified filename exists in dir.
 func (dir *Dir) HasFile(name string) bool {
 	_, err := os.Stat(path.Join(dir.Path, name))
 	return (err == nil)

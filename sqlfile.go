@@ -12,7 +12,7 @@ import (
 )
 
 // Regexp for parsing CREATE TABLE statements. Submatches:
-// [1] is any text preceeding the CREATE TABLE -- we ignore this
+// [1] is any text preceding the CREATE TABLE -- we ignore this
 // [2] is the table name -- note we do not allow whitespace even if backtick-escaped
 // [3] is the table body -- later we scan this for disallowed things
 // [4] is any text after the table body -- we ignore this
