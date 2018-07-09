@@ -2,7 +2,13 @@
 
 ### MySQL version and flavor
 
-Skeema is tested extensively against MySQL 5.6 and 5.7, running on Linux. Percona Server 5.6 and 5.7 should also work fine. Only the InnoDB storage engine is primarily supported; other storage engines are often perfectly functional in Skeema, but it depends on whether any esoteric features of the engine are used.
+Skeema currently supports the following databases:
+
+* MySQL 5.5, 5.6, 5.7
+* Percona Server 5.6, 5.7
+* MariaDB 10.1, 10.2, 10.3
+
+Only the InnoDB storage engine is primarily supported. Other storage engines are often perfectly functional in Skeema, but it depends on whether any esoteric features of the engine are used.
 
 Some MySQL features -- such as partitioned tables, fulltext indexes, and generated/virtual columns -- are not yet supported in Skeema's diff operations. Skeema automatically detects this situation, so there is no risk of generating an incorrect diff. If Skeema does not yet support a table/column feature that you need, please open a GitHub issue so that the work can be prioritized appropriately.
 
