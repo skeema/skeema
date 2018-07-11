@@ -3,6 +3,7 @@ package main
 import (
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/skeema/mybase"
@@ -103,6 +104,7 @@ func TestInstanceDefaultParams(t *testing.T) {
 	}
 
 	assertDefaultParams := func(connectOptions, expected string) {
+		t.Helper()
 		dir := getDir(connectOptions)
 		if parsed, err := url.ParseQuery(expected); err != nil {
 			t.Fatalf("Bad expected value \"%s\": %s", expected, err)
@@ -116,14 +118,14 @@ func TestInstanceDefaultParams(t *testing.T) {
 			t.Errorf("Expected connect-options=\"%s\" to yield default params \"%s\", instead found \"%s\"", connectOptions, expected, actual)
 		}
 	}
-	baseDefaults := "interpolateParams=true&foreign_key_checks=0&timeout=5s&writeTimeout=5s&readTimeout=5s"
+	baseDefaults := "interpolateParams=true&foreign_key_checks=0&timeout=5s&writeTimeout=5s&readTimeout=5s&sql_mode=%27ONLY_FULL_GROUP_BY%2CSTRICT_TRANS_TABLES%2CNO_ZERO_IN_DATE%2CNO_ZERO_DATE%2CERROR_FOR_DIVISION_BY_ZERO%2CNO_ENGINE_SUBSTITUTION%27"
 	expectParams := map[string]string{
 		"":                                          baseDefaults,
 		"foo='bar'":                                 baseDefaults + "&foo=%27bar%27",
 		"bool=true,quotes='yes,no'":                 baseDefaults + "&bool=true&quotes=%27yes,no%27",
 		`escaped=we\'re ok`:                         baseDefaults + "&escaped=we%5C%27re ok",
 		`escquotes='we\'re still quoted',this=that`: baseDefaults + "&escquotes=%27we%5C%27re still quoted%27&this=that",
-		"ok=1,writeTimeout=12ms":                    "interpolateParams=true&foreign_key_checks=0&timeout=5s&writeTimeout=12ms&readTimeout=5s&ok=1",
+		"ok=1,writeTimeout=12ms":                    strings.Replace(baseDefaults, "writeTimeout=5s", "writeTimeout=12ms&ok=1", 1),
 	}
 	for connOpts, expected := range expectParams {
 		assertDefaultParams(connOpts, expected)
@@ -133,6 +135,7 @@ func TestInstanceDefaultParams(t *testing.T) {
 		"totally_benign=1,allowAllFiles=true",
 		"FOREIGN_key_CHECKS='on'",
 		"bad_parse",
+		"lock_wait_timeout=60,sql_mode='STRICT_ALL_TABLES,ANSI,ALLOW_INVALID_DATES',wait_timeout=86400",
 	}
 	for _, connOpts := range expectError {
 		dir := getDir(connOpts)

@@ -326,19 +326,25 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	if err != nil {
 		return "", err
 	}
-
 	v := url.Values{}
 
 	// Set overridable options
 	v.Set("timeout", "5s")
 	v.Set("readTimeout", "5s")
 	v.Set("writeTimeout", "5s")
+	v.Set("sql_mode", "'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'")
 
 	// Set values from connect-options
 	for name, value := range options {
 		if banned[strings.ToLower(name)] {
 			return "", fmt.Errorf("connect-options is not allowed to contain %s", name)
 		}
+		// Special case: never allow ANSI or ANSI_QUOTES in sql_mode, since this alters
+		// how identifiers are escaped in SHOW CREATE TABLES, utterly breaking Skeema
+		if strings.ToLower(name) == "sql_mode" && strings.Contains(strings.ToLower(value), "ansi") {
+			return "", fmt.Errorf("Skeema does not support use of the ANSI_QUOTES sql_mode")
+		}
+
 		v.Set(name, value)
 	}
 
