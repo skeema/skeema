@@ -9,6 +9,11 @@ builds:
     - darwin
   goarch:
     - amd64
+archive:
+  name_template: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}'
+  replacements:
+    darwin: Mac
+    linux: Linux
 snapshot:
   name_template: "{{ .Tag }}-next"
 changelog:
