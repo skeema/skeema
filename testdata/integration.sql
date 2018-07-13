@@ -94,7 +94,10 @@ CREATE TABLE grab_bag (
 	PRIMARY KEY (id, code),
 	UNIQUE KEY name_idx (name),
 	KEY recency (updated_at, created_at),
-	KEY owner_idx (owner_id) COMMENT 'index comment'
+	KEY owner_idx (owner_id) COMMENT 'index comment',
+	CONSTRAINT Ab FOREIGN KEY (id, code) REFERENCES sometable1 (somecol1a, somecol1b),
+	CONSTRAINT _aa FOREIGN KEY (updated_at, created_at) REFERENCES sometable2 (somecol2a, somecol2b),
+	CONSTRAINT aa FOREIGN KEY (name) REFERENCES sometable3 (somecol3)
 ) AUTO_INCREMENT=123;
 
 use testcharcoll
