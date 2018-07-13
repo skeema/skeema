@@ -14,7 +14,7 @@ schema to the filesystem, and apply online schema changes by modifying files.`
 
 // Globals overridden by GoReleaser's ldflags
 var (
-	version = "unknown"
+	version = "1.0.2-dev"
 	commit  = "unknown"
 	date    = "unknown"
 )
@@ -48,7 +48,7 @@ func main() {
 
 func versionString() string {
 	if commit == "unknown" {
-		return "unknown (unreleased build from source)"
+		return fmt.Sprintf("%s (snapshot build from source)", version)
 	}
 	return fmt.Sprintf("%s, commit %s, released %s", version, commit, date)
 }
