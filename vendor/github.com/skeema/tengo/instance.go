@@ -768,7 +768,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		FROM     referential_constraints rc
 		JOIN     key_column_usage kcu ON kcu.constraint_name = rc.constraint_name AND kcu.constraint_schema = rc.constraint_schema
 		WHERE    rc.constraint_schema = ?
-		ORDER BY rc.constraint_name, kcu.ordinal_position`
+		ORDER BY BINARY rc.constraint_name, kcu.ordinal_position`
 	if err := db.Select(&rawForeignKeys, query, schema); err != nil {
 		return nil, fmt.Errorf("Error querying foreign key constraints: %s", err)
 	}

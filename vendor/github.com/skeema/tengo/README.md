@@ -2,7 +2,8 @@
 
 [![build status](https://img.shields.io/travis/skeema/tengo/master.svg)](http://travis-ci.org/skeema/tengo)
 [![code coverage](https://img.shields.io/coveralls/skeema/tengo.svg)](https://coveralls.io/r/skeema/tengo)
-[![godoc](https://img.shields.io/badge/godoc-master-blue.svg)](https://godoc.org/github.com/skeema/tengo)
+[![godoc](https://img.shields.io/badge/godoc-reference-blue.svg)](https://godoc.org/github.com/skeema/tengo)
+[![latest release](https://img.shields.io/github/release/skeema/tengo.svg)](https://github.com/skeema/tengo/releases)
 
 Golang library for MySQL database automation
 
@@ -20,7 +21,17 @@ The `tengo.Instance` struct models a single database instance. It keeps track of
 
 ## Status
 
-This is beta software. The API is subject to change. Backwards-incompatible changes are avoided, but no guarantees are made yet. Documentation and usage examples have not yet been completed.
+This is beta software. The API is subject to change. Backwards-incompatible changes are generally avoided, but no guarantees are made yet. Documentation and usage examples have not yet been completed.
+
+### Supported databases
+
+Tagged releases are tested against the following databases, all running on Linux:
+
+* MySQL 5.5, 5.6, 5.7
+* Percona Server 5.6, 5.7
+* MariaDB 10.1, 10.2, 10.3
+
+Outside of a tagged release, every commit to the master branch is automatically tested against MySQL 5.6 and 5.7.
 
 ### Unsupported in diffs
 
@@ -39,10 +50,6 @@ Go La Tengo **cannot** diff tables containing any of the following MySQL feature
 This list is not necessarily exhaustive. Many of these will be implemented in subsequent releases.
 
 Go La Tengo also does not yet support rename operations, e.g. column renames or table renames.
-
-### Other databases besides MySQL
-
-Go La Tengo currently only aims to support MySQL, MariaDB, and Percona Server. Support for other databases, such as PostgreSQL and SQL Server, may be added in the future if there's sufficient demand. However, this will require a major refactor introducing backwards-incompatible changes.
 
 ## External Dependencies
 
