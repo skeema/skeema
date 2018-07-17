@@ -25,7 +25,7 @@ var reBodyDisallowed = regexp.MustCompile(`(?i)^(as\s+select|select|like|[(]\s*l
 
 // MaxSQLFileSize specifies the largest SQL file that is considered valid;
 // we assume legit CREATE TABLE statements should always be under 16KB.
-const MaxSQLFileSize = 16 * 1024
+const MaxSQLFileSize = 128 * 1024
 
 // IsSQLFile returns true if the supplied os.FileInfo has a .sql extension and
 // is a regular file. It is the caller's responsibility to resolve symlinks
