@@ -27,12 +27,13 @@ type TengoIntegrationSuite struct {
 }
 
 func (s *TengoIntegrationSuite) Setup(backend string) (err error) {
-	s.d, err = CreateDockerizedInstance(backend)
+	name := fmt.Sprintf("tengo-test-%s", strings.Replace(backend, ":", "-", -1))
+	s.d, err = GetOrCreateDockerizedInstance(name, backend)
 	return err
 }
 
 func (s *TengoIntegrationSuite) Teardown(backend string) error {
-	return s.d.Destroy()
+	return s.d.Stop()
 }
 
 func (s *TengoIntegrationSuite) BeforeTest(method string, backend string) error {
