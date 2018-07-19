@@ -375,8 +375,12 @@ func (di *DockerizedInstance) IsNewMariaFormat() bool {
 // it in-place to match the formatting expected for di's flavor and version
 func (di *DockerizedInstance) AdjustTableForFlavor(table *Table) {
 	major, minor, _ := di.Version()
+	adjustTableForFlavor(table, di.Flavor(), major, minor)
+}
+
+func adjustTableForFlavor(table *Table, flavor Flavor, major, minor int) {
 	is55 := major == 5 && minor == 5
-	isMaria102 := di.IsNewMariaFormat()
+	isMaria102 := flavor == FlavorMariaDB && (major > 10 || (major == 10 && minor >= 2))
 	if !isMaria102 && !is55 {
 		return
 	}
@@ -385,7 +389,7 @@ func (di *DockerizedInstance) AdjustTableForFlavor(table *Table) {
 		if isMaria102 {
 			if col.Default == ColumnDefaultForbidden && (strings.HasSuffix(col.TypeInDB, "blob") || strings.HasSuffix(col.TypeInDB, "text")) {
 				col.Default = ColumnDefaultNull
-			} else if col.Default.Quoted && strings.Contains(col.TypeInDB, "int") { // TODO also handle other numerics
+			} else if col.Default.Quoted && strings.Contains(col.TypeInDB, "int") { // TODO also handle other numerics once used in tests
 				col.Default.Quoted = false
 			} else if strings.Contains(col.Default.Value, "CURRENT_TIMESTAMP") {
 				col.Default.Value = strings.ToLower(col.Default.Value)
@@ -413,7 +417,7 @@ func (di *DockerizedInstance) AdjustTableForFlavor(table *Table) {
 			}
 		}
 	}
-	// TODO: fix partitioning style if isMaria102
+	// TODO: once partitioning is supported, fix partitioning style if isMaria102
 
 	table.CreateStatement = table.GeneratedCreateStatement()
 }

@@ -30,6 +30,10 @@ func TestParseVersion(t *testing.T) {
 		"10.1.34-MariaDB-1~jessie":             {10, 1, 34},
 		"10.2.16-MariaDB-10.2.16+maria~jessie": {10, 2, 16},
 		"10.3.7-MariaDB-1:10.3.7+maria~jessie": {10, 3, 7},
+		"invalid":                 {0, 0, 0},
+		"5":                       {0, 0, 0},
+		"5.6.invalid":             {0, 0, 0},
+		"5.7.9300000000000000000": {0, 0, 0},
 	}
 	for input, expected := range cases {
 		actual := ParseVersion(input)

@@ -69,6 +69,61 @@ func (s *TengoIntegrationSuite) GetSchemaAndTable(t *testing.T, schemaName, tabl
 	return schema, table
 }
 
+// TestAdjustTableForFlavor tests the adjustTableForFlavor() method from
+// testing.go; basically this just ensures we are able to manipulate the hard-
+// coded fixture tables to match particular flavors/versions correctly,
+// regardless of whether the test suite is currently being executed against all
+// relevant combinations.
+func TestAdjustTableForFlavor(t *testing.T) {
+	orig := aTable(1)
+
+	table := aTable(1)
+	adjustTableForFlavor(&table, FlavorPercona, 5, 7)
+	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 0 {
+		t.Errorf("Percona 5.7: Expected no diff; instead found %d differences, supported=%t", len(clauses), supported)
+	}
+	adjustTableForFlavor(&table, FlavorMariaDB, 10, 1)
+	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 0 {
+		t.Errorf("MariaDB 10.1: Expected no diff; instead found %d differences, supported=%t", len(clauses), supported)
+	}
+
+	table = aTable(1)
+	adjustTableForFlavor(&table, FlavorMySQL, 5, 5)
+	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 1 {
+		t.Errorf("MySQL 5.5: Expected 1 diff clause; instead found %d differences, supported=%t", len(clauses), supported)
+	}
+	for _, check := range []string{table.Columns[3].TypeInDB, table.Columns[3].OnUpdate, table.Columns[3].Default.Value} {
+		if strings.HasSuffix(check, ")") {
+			t.Error("MySQL 5.5: Expected all traces of fractional timestamp precision to be removed, but still present")
+		}
+	}
+
+	table = aTable(1)
+	adjustTableForFlavor(&table, FlavorMariaDB, 10, 3)
+	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 2 {
+		t.Errorf("MariaDB 10.3: Expected 2 diff clauses; instead found %d differences, supported=%t", len(clauses), supported)
+	}
+	if table.Columns[5].Default.Quoted {
+		t.Error("MariaDB 10.3: Expected int column to not have quoted default, but it still does")
+	}
+	if table.Columns[3].OnUpdate != "current_timestamp(2)" || table.Columns[3].Default.Value != "current_timestamp(2)" {
+		t.Error("MariaDB 10.3: Expected current_timestamp to be lowercased, but it is not")
+	}
+	if table.GeneratedCreateStatement() != table.CreateStatement {
+		t.Error("MariaDB 10.3: Expected function to reset CreateStatement to GeneratedCreateStatement, but it did not")
+	}
+
+	orig2 := supportedTable()
+	table2 := supportedTable()
+	adjustTableForFlavor(&table2, FlavorMariaDB, 10, 2)
+	if table2.GeneratedCreateStatement() == orig2.GeneratedCreateStatement() {
+		t.Errorf("MariaDB 10.2: Expected adjustTableForFlavor to change GeneratedCreateStatement, but it did not")
+	}
+	if table2.Columns[2].Default == ColumnDefaultForbidden {
+		t.Errorf("MariaDB 10.2: Expected text column to now allow a default value, but it is still forbidden")
+	}
+}
+
 func primaryKey(cols ...*Column) *Index {
 	return &Index{
 		Name:       "PRIMARY",
