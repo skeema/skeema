@@ -20,6 +20,21 @@ func TestIntegration(t *testing.T) {
 		fmt.Println("list of Docker images. Example:\n# TENGO_TEST_IMAGES=\"mysql:5.6,mysql:5.7\" go test")
 	}
 	RunSuite(&TengoIntegrationSuite{}, t, images)
+
+	// Provide coverage for additional DockerizedInstance methods at this point,
+	// when we know we're otherwise done with the images
+	t.Run("TestDockerizedInstance", func(t *testing.T) {
+		name := containerName(images[0])
+		di, err := GetDockerizedInstance(name, images[0])
+		if err != nil {
+			t.Errorf("Unable to re-obtain Docker container %s: %s", name, err)
+		}
+		if os.Getenv("CI") == "true" {
+			if err := di.Destroy(); err != nil {
+				t.Errorf("Unable to destroy container %s: %s", name, err)
+			}
+		}
+	})
 }
 
 type TengoIntegrationSuite struct {
@@ -27,8 +42,7 @@ type TengoIntegrationSuite struct {
 }
 
 func (s *TengoIntegrationSuite) Setup(backend string) (err error) {
-	name := fmt.Sprintf("tengo-test-%s", strings.Replace(backend, ":", "-", -1))
-	s.d, err = GetOrCreateDockerizedInstance(name, backend)
+	s.d, err = GetOrCreateDockerizedInstance(containerName(backend), backend)
 	return err
 }
 
@@ -67,6 +81,10 @@ func (s *TengoIntegrationSuite) GetSchemaAndTable(t *testing.T, schemaName, tabl
 		t.Fatalf("Table %s.%s unexpectedly does not exist", schemaName, tableName)
 	}
 	return schema, table
+}
+
+func containerName(backend string) string {
+	return fmt.Sprintf("tengo-test-%s", strings.Replace(backend, ":", "-", -1))
 }
 
 // TestAdjustTableForFlavor tests the adjustTableForFlavor() method from
