@@ -299,7 +299,7 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// did not generate any clauses, this indicates some aspect of the change is
 	// unsupported (even though the two tables are individually supported). This
 	// normally shouldn't happen, but could be possible given differences between
-	// MySQL versions, flavors, storage engines, etc.
+	// MySQL versions, vendors, storage engines, etc.
 	if len(clauses) == 0 && from.CreateStatement != "" && to.CreateStatement != "" {
 		return clauses, false
 	}

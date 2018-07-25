@@ -153,30 +153,23 @@ func (s TengoIntegrationSuite) TestInstanceConnect(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
-	type parsed struct {
-		flavor Flavor
-		major  int
-		minor  int
-	}
-	imageToParsed := map[string]parsed{
-		"mysql:5.5":    {FlavorMySQL, 5, 5},
-		"mysql:5.6":    {FlavorMySQL, 5, 6},
-		"mysql:5.7":    {FlavorMySQL, 5, 7},
-		"mysql:8.0":    {FlavorMySQL, 8, 0},
-		"percona:5.5":  {FlavorPercona, 5, 5},
-		"percona:5.6":  {FlavorPercona, 5, 6},
-		"percona:5.7":  {FlavorPercona, 5, 7},
-		"percona:8.0":  {FlavorPercona, 8, 0},
-		"mariadb:10.1": {FlavorMariaDB, 10, 1},
-		"mariadb:10.2": {FlavorMariaDB, 10, 2},
-		"mariadb:10.3": {FlavorMariaDB, 10, 3},
+	imageToFlavor := map[string]Flavor{
+		"mysql:5.5":    FlavorMySQL55,
+		"mysql:5.6":    FlavorMySQL56,
+		"mysql:5.7":    FlavorMySQL57,
+		"mysql:8.0":    FlavorMySQL80,
+		"percona:5.6":  FlavorPercona56,
+		"percona:5.7":  FlavorPercona57,
+		"mariadb:10.1": FlavorMariaDB101,
+		"mariadb:10.2": FlavorMariaDB102,
+		"mariadb:10.3": FlavorMariaDB103,
 	}
 
-	var expected parsed
-	if result, ok := imageToParsed[s.d.Image]; ok {
+	var expected Flavor
+	if result, ok := imageToFlavor[s.d.Image]; ok {
 		expected = result
 	} else {
-		for image, result := range imageToParsed {
+		for image, result := range imageToFlavor {
 			tokens := strings.SplitN(image, ":", 2)
 			if len(tokens) < 2 {
 				continue
@@ -188,14 +181,14 @@ func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
 			}
 		}
 	}
-	if expected.flavor == FlavorUnknown {
+	if expected == FlavorUnknown {
 		t.Skip("No image map defined for", s.d.Image)
 	}
-	if actualFlavor := s.d.Flavor(); actualFlavor != expected.flavor {
-		t.Errorf("Expected image=%s to yield flavor=%s, instead found %s", s.d.Image, expected.flavor, actualFlavor)
+	if actualFlavor := s.d.Flavor(); actualFlavor != expected {
+		t.Errorf("Expected image=%s to yield flavor=%s, instead found %s", s.d.Image, expected, actualFlavor)
 	}
-	if actualMajor, actualMinor, _ := s.d.Version(); actualMajor != expected.major || actualMinor != expected.minor {
-		t.Errorf("Expected image=%s to yield major=%d minor=%d, instead found major=%d minor=%d", s.d.Image, expected.major, expected.minor, actualMajor, actualMinor)
+	if actualMajor, actualMinor, _ := s.d.Version(); actualMajor != expected.Major || actualMinor != expected.Minor {
+		t.Errorf("Expected image=%s to yield major=%d minor=%d, instead found major=%d minor=%d", s.d.Image, expected.Major, expected.Minor, actualMajor, actualMinor)
 	}
 }
 

@@ -96,17 +96,17 @@ func TestAdjustTableForFlavor(t *testing.T) {
 	orig := aTable(1)
 
 	table := aTable(1)
-	adjustTableForFlavor(&table, FlavorPercona, 5, 7)
+	adjustTableForFlavor(&table, FlavorPercona57)
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 0 {
 		t.Errorf("Percona 5.7: Expected no diff; instead found %d differences, supported=%t", len(clauses), supported)
 	}
-	adjustTableForFlavor(&table, FlavorMariaDB, 10, 1)
+	adjustTableForFlavor(&table, FlavorMariaDB101)
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 0 {
 		t.Errorf("MariaDB 10.1: Expected no diff; instead found %d differences, supported=%t", len(clauses), supported)
 	}
 
 	table = aTable(1)
-	adjustTableForFlavor(&table, FlavorMySQL, 5, 5)
+	adjustTableForFlavor(&table, FlavorMySQL55)
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 1 {
 		t.Errorf("MySQL 5.5: Expected 1 diff clause; instead found %d differences, supported=%t", len(clauses), supported)
 	}
@@ -117,7 +117,7 @@ func TestAdjustTableForFlavor(t *testing.T) {
 	}
 
 	table = aTable(1)
-	adjustTableForFlavor(&table, FlavorMariaDB, 10, 3)
+	adjustTableForFlavor(&table, FlavorMariaDB103)
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 2 {
 		t.Errorf("MariaDB 10.3: Expected 2 diff clauses; instead found %d differences, supported=%t", len(clauses), supported)
 	}
@@ -133,7 +133,7 @@ func TestAdjustTableForFlavor(t *testing.T) {
 
 	orig2 := supportedTable()
 	table2 := supportedTable()
-	adjustTableForFlavor(&table2, FlavorMariaDB, 10, 2)
+	adjustTableForFlavor(&table2, FlavorMariaDB102)
 	if table2.GeneratedCreateStatement() == orig2.GeneratedCreateStatement() {
 		t.Errorf("MariaDB 10.2: Expected adjustTableForFlavor to change GeneratedCreateStatement, but it did not")
 	}

@@ -364,46 +364,37 @@ func (di *DockerizedInstance) SourceSQL(filePath string) (string, error) {
 	return stdoutStr, nil
 }
 
-// IsNewMariaFormat returns true if di is MariaDB 10.2+, which formats default
-// values in a different way in information_schema.
-func (di *DockerizedInstance) IsNewMariaFormat() bool {
-	major, minor, _ := di.Version()
-	return di.Flavor() == FlavorMariaDB && (major > 10 || (major == 10 && minor >= 2))
-}
-
 // AdjustTableForFlavor takes a hard-coded table from a unit test, and modifies
-// it in-place to match the formatting expected for di's flavor and version
+// it in-place to match the formatting expected for di's flavor
 func (di *DockerizedInstance) AdjustTableForFlavor(table *Table) {
-	major, minor, _ := di.Version()
-	adjustTableForFlavor(table, di.Flavor(), major, minor)
+	adjustTableForFlavor(table, di.Flavor())
 }
 
-func adjustTableForFlavor(table *Table, flavor Flavor, major, minor int) {
-	is55 := major == 5 && minor == 5
-	isMaria102 := flavor == FlavorMariaDB && (major > 10 || (major == 10 && minor >= 2))
-	if !isMaria102 && !is55 {
-		return
-	}
-
+func adjustTableForFlavor(table *Table, flavor Flavor) {
 	for _, col := range table.Columns {
-		if isMaria102 {
+		if flavor.AllowBlobDefaults() {
 			if col.Default == ColumnDefaultForbidden && (strings.HasSuffix(col.TypeInDB, "blob") || strings.HasSuffix(col.TypeInDB, "text")) {
 				col.Default = ColumnDefaultNull
-			} else if col.Default.Quoted && strings.Contains(col.TypeInDB, "int") { // TODO also handle other numerics once used in tests
+			}
+		}
+		if flavor.AllowDefaultExpression() {
+			if col.Default.Quoted && strings.Contains(col.TypeInDB, "int") { // TODO also handle other numerics once used in tests
 				col.Default.Quoted = false
-			} else if strings.Contains(col.Default.Value, "CURRENT_TIMESTAMP") {
+			}
+			if strings.Contains(col.Default.Value, "CURRENT_TIMESTAMP") {
 				col.Default.Value = strings.ToLower(col.Default.Value)
 				if !strings.HasSuffix(col.Default.Value, ")") {
 					col.Default.Value += "()"
 				}
 			}
-			if strings.Contains(col.OnUpdate, "CURRENT_TIMESTAMP") {
-				col.OnUpdate = strings.ToLower(col.OnUpdate)
-				if !strings.HasSuffix(col.OnUpdate, ")") {
-					col.OnUpdate += "()"
-				}
+		}
+		if flavor.LowercaseOnUpdate() && strings.Contains(col.OnUpdate, "CURRENT_TIMESTAMP") {
+			col.OnUpdate = strings.ToLower(col.OnUpdate)
+			if !strings.HasSuffix(col.OnUpdate, ")") {
+				col.OnUpdate += "()"
 			}
-		} else if is55 {
+		}
+		if !flavor.FractionalTimestamps() {
 			if strings.HasPrefix(col.TypeInDB, "timestamp(") {
 				col.TypeInDB = "timestamp"
 			} else if strings.HasPrefix(col.TypeInDB, "datetime(") {
@@ -417,7 +408,7 @@ func adjustTableForFlavor(table *Table, flavor Flavor, major, minor int) {
 			}
 		}
 	}
-	// TODO: once partitioning is supported, fix partitioning style if isMaria102
+	// TODO: once partitioning is supported, fix partitioning style depending on flavor
 
 	table.CreateStatement = table.GeneratedCreateStatement()
 }
