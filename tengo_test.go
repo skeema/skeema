@@ -33,6 +33,8 @@ func TestIntegration(t *testing.T) {
 			if err := di.Destroy(); err != nil {
 				t.Errorf("Unable to destroy container %s: %s", name, err)
 			}
+		} else if err := di.Stop(); err != nil {
+			t.Errorf("Unable to stop container %s: %s", name, err)
 		}
 	})
 }
