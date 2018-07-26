@@ -364,55 +364,6 @@ func (di *DockerizedInstance) SourceSQL(filePath string) (string, error) {
 	return stdoutStr, nil
 }
 
-// AdjustTableForFlavor takes a hard-coded table from a unit test, and modifies
-// it in-place to match the formatting expected for di's flavor
-func (di *DockerizedInstance) AdjustTableForFlavor(table *Table) {
-	adjustTableForFlavor(table, di.Flavor())
-}
-
-func adjustTableForFlavor(table *Table, flavor Flavor) {
-	for _, col := range table.Columns {
-		if flavor.AllowBlobDefaults() {
-			if col.Default == ColumnDefaultForbidden && (strings.HasSuffix(col.TypeInDB, "blob") || strings.HasSuffix(col.TypeInDB, "text")) {
-				col.Default = ColumnDefaultNull
-			}
-		}
-		if flavor.AllowDefaultExpression() {
-			if col.Default.Quoted && strings.Contains(col.TypeInDB, "int") { // TODO also handle other numerics once used in tests
-				col.Default.Quoted = false
-			}
-			if strings.Contains(col.Default.Value, "CURRENT_TIMESTAMP") {
-				col.Default.Value = strings.ToLower(col.Default.Value)
-				if !strings.HasSuffix(col.Default.Value, ")") {
-					col.Default.Value += "()"
-				}
-			}
-		}
-		if flavor.LowercaseOnUpdate() && strings.Contains(col.OnUpdate, "CURRENT_TIMESTAMP") {
-			col.OnUpdate = strings.ToLower(col.OnUpdate)
-			if !strings.HasSuffix(col.OnUpdate, ")") {
-				col.OnUpdate += "()"
-			}
-		}
-		if !flavor.FractionalTimestamps() {
-			if strings.HasPrefix(col.TypeInDB, "timestamp(") {
-				col.TypeInDB = "timestamp"
-			} else if strings.HasPrefix(col.TypeInDB, "datetime(") {
-				col.TypeInDB = "datetime"
-			}
-			if strings.Contains(col.Default.Value, "CURRENT_TIMESTAMP(") {
-				col.Default.Value = "CURRENT_TIMESTAMP"
-			}
-			if strings.Contains(col.OnUpdate, "CURRENT_TIMESTAMP(") {
-				col.OnUpdate = "CURRENT_TIMESTAMP"
-			}
-		}
-	}
-	// TODO: once partitioning is supported, fix partitioning style depending on flavor
-
-	table.CreateStatement = table.GeneratedCreateStatement()
-}
-
 type filteredLogger struct {
 	logger *log.Logger
 }

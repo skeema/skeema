@@ -19,7 +19,7 @@ type Index struct {
 
 // Definition returns this index's definition clause, for use as part of a DDL
 // statement.
-func (idx *Index) Definition() string {
+func (idx *Index) Definition(_ Flavor) string {
 	colParts := make([]string, len(idx.Columns))
 	for n := range idx.Columns {
 		if idx.SubParts[n] > 0 {

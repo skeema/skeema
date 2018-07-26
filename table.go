@@ -38,19 +38,19 @@ func (t *Table) DropStatement() string {
 // the output of MySQL's SHOW CREATE TABLE statement. But if t.UnsupportedDDL
 // is true, this means the table uses MySQL features that Tengo does not yet
 // support, and so the output of this method will differ from MySQL.
-func (t *Table) GeneratedCreateStatement() string {
+func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 	defs := make([]string, len(t.Columns), len(t.Columns)+len(t.SecondaryIndexes)+len(t.ForeignKeys)+1)
 	for n, c := range t.Columns {
-		defs[n] = c.Definition(t)
+		defs[n] = c.Definition(flavor, t)
 	}
 	if t.PrimaryKey != nil {
-		defs = append(defs, t.PrimaryKey.Definition())
+		defs = append(defs, t.PrimaryKey.Definition(flavor))
 	}
 	for _, idx := range t.SecondaryIndexes {
-		defs = append(defs, idx.Definition())
+		defs = append(defs, idx.Definition(flavor))
 	}
 	for _, fk := range t.ForeignKeys {
-		defs = append(defs, fk.Definition())
+		defs = append(defs, fk.Definition(flavor))
 	}
 	var autoIncClause string
 	if t.NextAutoIncrement > 1 {

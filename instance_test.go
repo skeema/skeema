@@ -253,14 +253,12 @@ func (s TengoIntegrationSuite) TestInstanceShowCreateTable(t *testing.T) {
 		t.Fatalf("Unable to obtain SHOW CREATE TABLE output: err1=%s, err2=%s", err1, err2)
 	}
 
-	t1expected := aTable(1)
-	s.d.AdjustTableForFlavor(&t1expected)
+	t1expected := aTableForFlavor(s.d.Flavor(), 1)
 	if t1create != t1expected.CreateStatement {
 		t.Errorf("Mismatch for SHOW CREATE TABLE\nActual return from %s:\n%s\n----------\nExpected output: %s", s.d.Image, t1create, t1expected.CreateStatement)
 	}
 
 	t2expected := anotherTable()
-	s.d.AdjustTableForFlavor(&t2expected)
 	if t2create != t2expected.CreateStatement {
 		t.Errorf("Mismatch for SHOW CREATE TABLE\nActual return from %s:\n%s\n----------\nExpected output: %s", s.d.Image, t2create, t2expected.CreateStatement)
 	}
@@ -416,8 +414,7 @@ func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
 func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	// Ensure our unit test fixtures and integration test fixtures match
 	schema, aTableFromDB := s.GetSchemaAndTable(t, "testing", "actor")
-	aTableFromUnit := aTable(1)
-	s.d.AdjustTableForFlavor(&aTableFromUnit)
+	aTableFromUnit := aTableForFlavor(s.d.Flavor(), 1)
 	aTableFromUnit.CreateStatement = "" // Prevent diff from short-circuiting on equivalent CREATEs
 	clauses, supported := aTableFromDB.Diff(&aTableFromUnit)
 	if !supported {
@@ -428,7 +425,6 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	aTableFromDB = s.GetTable(t, "testing", "actor_in_film")
 	aTableFromUnit = anotherTable()
-	s.d.AdjustTableForFlavor(&aTableFromUnit)
 	aTableFromUnit.CreateStatement = "" // Prevent diff from short-circuiting on equivalent CREATEs
 	clauses, supported = aTableFromDB.Diff(&aTableFromUnit)
 	if !supported {

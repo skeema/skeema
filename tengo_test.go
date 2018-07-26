@@ -87,26 +87,22 @@ func containerName(backend string) string {
 	return fmt.Sprintf("tengo-test-%s", strings.Replace(backend, ":", "-", -1))
 }
 
-// TestAdjustTableForFlavor tests the adjustTableForFlavor() method from
-// testing.go; basically this just ensures we are able to manipulate the hard-
-// coded fixture tables to match particular flavors/versions correctly,
-// regardless of whether the test suite is currently being executed against all
-// relevant combinations.
-func TestAdjustTableForFlavor(t *testing.T) {
+// TestUnitTableFlavors confirms that our hard-coded fixture table methods
+// (later on in this file) correctly adjust their output to match the specified
+// flavors.
+func TestUnitTableFlavors(t *testing.T) {
 	orig := aTable(1)
 
-	table := aTable(1)
-	adjustTableForFlavor(&table, FlavorPercona57)
+	table := aTableForFlavor(FlavorPercona57, 1)
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 0 {
 		t.Errorf("Percona 5.7: Expected no diff; instead found %d differences, supported=%t", len(clauses), supported)
 	}
-	adjustTableForFlavor(&table, FlavorMariaDB101)
+	table = aTableForFlavor(FlavorMariaDB101, 1)
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 0 {
 		t.Errorf("MariaDB 10.1: Expected no diff; instead found %d differences, supported=%t", len(clauses), supported)
 	}
 
-	table = aTable(1)
-	adjustTableForFlavor(&table, FlavorMySQL55)
+	table = aTableForFlavor(FlavorMySQL55, 1)
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 1 {
 		t.Errorf("MySQL 5.5: Expected 1 diff clause; instead found %d differences, supported=%t", len(clauses), supported)
 	}
@@ -116,8 +112,7 @@ func TestAdjustTableForFlavor(t *testing.T) {
 		}
 	}
 
-	table = aTable(1)
-	adjustTableForFlavor(&table, FlavorMariaDB103)
+	table = aTableForFlavor(FlavorMariaDB103, 1)
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 2 {
 		t.Errorf("MariaDB 10.3: Expected 2 diff clauses; instead found %d differences, supported=%t", len(clauses), supported)
 	}
@@ -127,18 +122,18 @@ func TestAdjustTableForFlavor(t *testing.T) {
 	if table.Columns[3].OnUpdate != "current_timestamp(2)" || table.Columns[3].Default.Value != "current_timestamp(2)" {
 		t.Error("MariaDB 10.3: Expected current_timestamp to be lowercased, but it is not")
 	}
-	if table.GeneratedCreateStatement() != table.CreateStatement {
+	if table.GeneratedCreateStatement(FlavorMariaDB103) != table.CreateStatement {
 		t.Error("MariaDB 10.3: Expected function to reset CreateStatement to GeneratedCreateStatement, but it did not")
 	}
 
 	orig2 := supportedTable()
-	table2 := supportedTable()
-	adjustTableForFlavor(&table2, FlavorMariaDB102)
-	if table2.GeneratedCreateStatement() == orig2.GeneratedCreateStatement() {
-		t.Errorf("MariaDB 10.2: Expected adjustTableForFlavor to change GeneratedCreateStatement, but it did not")
+	table2 := supportedTableForFlavor(FlavorMariaDB102)
+	if table2.GeneratedCreateStatement(FlavorMariaDB102) == orig2.GeneratedCreateStatement(FlavorUnknown) {
+		t.Errorf("MariaDB 10.2: Expected GeneratedCreateStatement to differ vs FlavorUnknown, but it did not")
 	}
-	if table2.Columns[2].Default == ColumnDefaultForbidden {
-		t.Errorf("MariaDB 10.2: Expected text column to now allow a default value, but it is still forbidden")
+	defaultClause := table2.Columns[2].Default.Clause(FlavorMariaDB102, table2.Columns[2])
+	if !strings.Contains(defaultClause, "DEFAULT NULL") {
+		t.Errorf("MariaDB 10.2: Expected text column to now emit a default value, but it did not")
 	}
 }
 
@@ -153,12 +148,46 @@ func primaryKey(cols ...*Column) *Index {
 }
 
 func aTable(nextAutoInc uint64) Table {
+	return aTableForFlavor(FlavorUnknown, nextAutoInc)
+}
+
+func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
+	lastUpdateCol := &Column{
+		Name:     "last_update",
+		TypeInDB: "timestamp(2)",
+		Default:  ColumnDefaultExpression("CURRENT_TIMESTAMP(2)"),
+		OnUpdate: "CURRENT_TIMESTAMP(2)",
+	}
+	lastUpdateDef := "`last_update` timestamp(2) NOT NULL DEFAULT CURRENT_TIMESTAMP(2) ON UPDATE CURRENT_TIMESTAMP(2)"
+	if !flavor.FractionalTimestamps() {
+		lastUpdateCol.TypeInDB = "timestamp"
+		lastUpdateCol.Default = ColumnDefaultExpression("CURRENT_TIMESTAMP")
+		lastUpdateCol.OnUpdate = "CURRENT_TIMESTAMP"
+		lastUpdateDef = "`last_update` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+	}
+	if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
+		lastUpdateCol.Default.Value = strings.ToLower(lastUpdateCol.Default.Value)
+		lastUpdateCol.OnUpdate = strings.ToLower(lastUpdateCol.OnUpdate)
+		lastUpdateDef = strings.Replace(lastUpdateDef, "CURRENT_TIMESTAMP", "current_timestamp", 2)
+	}
+
+	aliveCol := &Column{
+		Name:     "alive",
+		TypeInDB: "tinyint(1)",
+		Default:  ColumnDefaultValue("1"),
+	}
+	aliveDef := "`alive` tinyint(1) NOT NULL DEFAULT '1'"
+	if flavor.AllowDefaultExpression() {
+		aliveCol.Default = ColumnDefaultExpression("1")
+		aliveDef = "`alive` tinyint(1) NOT NULL DEFAULT 1"
+	}
+
 	columns := []*Column{
 		{
 			Name:          "actor_id",
 			TypeInDB:      "smallint(5) unsigned",
 			AutoIncrement: true,
-			Default:       ColumnDefaultForbidden,
+			Default:       ColumnDefaultNull,
 		},
 		{
 			Name:     "first_name",
@@ -173,23 +202,14 @@ func aTable(nextAutoInc uint64) Table {
 			Default:  ColumnDefaultNull,
 			CharSet:  "utf8",
 		},
-		{
-			Name:     "last_update",
-			TypeInDB: "timestamp(2)",
-			Default:  ColumnDefaultExpression("CURRENT_TIMESTAMP(2)"),
-			OnUpdate: "CURRENT_TIMESTAMP(2)",
-		},
+		lastUpdateCol,
 		{
 			Name:     "ssn",
 			TypeInDB: "char(10)",
 			Default:  ColumnDefaultNull,
 			CharSet:  "utf8",
 		},
-		{
-			Name:     "alive",
-			TypeInDB: "tinyint(1)",
-			Default:  ColumnDefaultValue("1"),
-		},
+		aliveCol,
 		{
 			Name:     "alive_bit",
 			TypeInDB: "bit(1)",
@@ -218,9 +238,9 @@ func aTable(nextAutoInc uint64) Table {
   `+"`"+`actor_id`+"`"+` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
   `+"`"+`first_name`+"`"+` varchar(45) NOT NULL,
   `+"`"+`last_name`+"`"+` varchar(45) DEFAULT NULL,
-  `+"`"+`last_update`+"`"+` timestamp(2) NOT NULL DEFAULT CURRENT_TIMESTAMP(2) ON UPDATE CURRENT_TIMESTAMP(2),
+  `+lastUpdateDef+`,
   `+"`"+`ssn`+"`"+` char(10) NOT NULL,
-  `+"`"+`alive`+"`"+` tinyint(1) NOT NULL DEFAULT '1',
+  `+aliveDef+`,
   `+"`"+`alive_bit`+"`"+` bit(1) NOT NULL DEFAULT b'1',
   PRIMARY KEY (`+"`"+`actor_id`+"`"+`),
   UNIQUE KEY `+"`"+`idx_ssn`+"`"+` (`+"`"+`ssn`+"`"+`),
@@ -239,6 +259,10 @@ func aTable(nextAutoInc uint64) Table {
 }
 
 func anotherTable() Table {
+	return anotherTableForFlavor(FlavorUnknown)
+}
+
+func anotherTableForFlavor(flavor Flavor) Table {
 	columns := []*Column{
 		{
 			Name:     "actor_id",
@@ -287,12 +311,16 @@ func unsupportedTable() Table {
 // Returns the same as unsupportedTable() but without partitioning, so that
 // the table is actually supported.
 func supportedTable() Table {
+	return supportedTableForFlavor(FlavorUnknown)
+}
+
+func supportedTableForFlavor(flavor Flavor) Table {
 	columns := []*Column{
 		{
 			Name:          "id",
 			TypeInDB:      "int(10) unsigned",
 			AutoIncrement: true,
-			Default:       ColumnDefaultForbidden,
+			Default:       ColumnDefaultNull,
 		},
 		{
 			Name:     "customer_id",
@@ -303,7 +331,7 @@ func supportedTable() Table {
 			Name:     "info",
 			Nullable: true,
 			TypeInDB: "text",
-			Default:  ColumnDefaultForbidden,
+			Default:  ColumnDefaultNull,
 		},
 	}
 	stmt := strings.Replace(`CREATE TABLE ~orders~ (
@@ -312,6 +340,10 @@ func supportedTable() Table {
   ~info~ text,
   PRIMARY KEY (~id~,~customer_id~)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1`, "~", "`", -1)
+	if flavor.AllowBlobDefaults() {
+		stmt = strings.Replace(stmt, " text", " text DEFAULT NULL", 1)
+	}
+
 	return Table{
 		Name:              "orders",
 		Engine:            "InnoDB",

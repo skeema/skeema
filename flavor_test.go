@@ -100,3 +100,25 @@ func TestFlavorVendorMinVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestFlavorFractionalTimestamps(t *testing.T) {
+	type testcase struct {
+		receiver Flavor
+		expected bool
+	}
+	cases := []testcase{
+		{FlavorMySQL55, false},
+		{FlavorMySQL56, true},
+		{FlavorMySQL57, true},
+		{FlavorMariaDB101, true},
+		{NewFlavor("percona:5.5"), false},
+		{FlavorPercona56, true},
+		{FlavorUnknown, true},
+	}
+	for _, tc := range cases {
+		actual := tc.receiver.FractionalTimestamps()
+		if actual != tc.expected {
+			t.Errorf("Expected %s.FractionalTimestamps() to return %t, instead found %t", tc.receiver, tc.expected, actual)
+		}
+	}
+}

@@ -624,11 +624,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			AutoIncrement: strings.Contains(rawColumn.Extra, "auto_increment"),
 			Comment:       rawColumn.Comment,
 		}
-		if col.AutoIncrement {
-			col.Default = ColumnDefaultForbidden
-		} else if !flavor.AllowBlobDefaults() && (strings.HasSuffix(col.TypeInDB, "blob") || strings.HasSuffix(col.TypeInDB, "text")) {
-			col.Default = ColumnDefaultForbidden
-		} else if !rawColumn.Default.Valid {
+		if !rawColumn.Default.Valid {
 			col.Default = ColumnDefaultNull
 		} else if flavor.AllowDefaultExpression() {
 			if rawColumn.Default.String[0] == '\'' {
@@ -646,15 +642,11 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			col.Default = ColumnDefaultValue(rawColumn.Default.String)
 		}
 		if strings.HasPrefix(strings.ToLower(rawColumn.Extra), "on update ") {
-			// MariaDB 10.2+ lowercases the value. Previous versions of MariaDB omit
-			// the fractional second precision in information_schema but include it in
-			// SHOW CREATE TABLE.
-			if flavor.LowercaseOnUpdate() {
-				col.OnUpdate = rawColumn.Extra[10:]
-			} else if openParen := strings.IndexByte(rawColumn.Type, '('); flavor.Vendor == VendorMariaDB && openParen > -1 && !strings.Contains(strings.ToLower(rawColumn.Extra), "current_timestamp(") {
-				col.OnUpdate = fmt.Sprintf("%s%s", strings.ToUpper(rawColumn.Extra[10:]), rawColumn.Type[openParen:])
-			} else {
-				col.OnUpdate = strings.ToUpper(rawColumn.Extra[10:])
+			col.OnUpdate = rawColumn.Extra[10:]
+			// Some flavors omit fractional precision from ON UPDATE in
+			// information_schema only, despite it being present everywhere else
+			if openParen := strings.IndexByte(rawColumn.Type, '('); openParen > -1 && !strings.Contains(col.OnUpdate, "(") {
+				col.OnUpdate = fmt.Sprintf("%s%s", col.OnUpdate, rawColumn.Type[openParen:])
 			}
 		}
 		if rawColumn.Collation.Valid { // only text-based column types have a notion of charset and collation
@@ -822,7 +814,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			// comparison, since the value may have changed between our previous
 			// information_schema introspection and our current SHOW CREATE TABLE call!
 			actual, _ := ParseCreateAutoInc(t.CreateStatement)
-			expected, _ := ParseCreateAutoInc(t.GeneratedCreateStatement())
+			expected, _ := ParseCreateAutoInc(t.GeneratedCreateStatement(flavor))
 			if actual != expected {
 				t.UnsupportedDDL = true
 			}

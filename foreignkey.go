@@ -22,7 +22,7 @@ type ForeignKey struct {
 
 // Definition returns this ForeignKey's definition clause, for use as part of a DDL
 // statement.
-func (fk *ForeignKey) Definition() string {
+func (fk *ForeignKey) Definition(_ Flavor) string {
 	colParts := make([]string, len(fk.Columns))
 	for n, col := range fk.Columns {
 		colParts[n] = EscapeIdentifier(col.Name)

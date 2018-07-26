@@ -74,7 +74,8 @@ type Flavor struct {
 	Minor  int
 }
 
-// FlavorUnknown represents a flavor that cannot be parsed
+// FlavorUnknown represents a flavor that cannot be parsed. This is the zero
+// value for Flavor.
 var FlavorUnknown = Flavor{VendorUnknown, 0, 0}
 
 // FlavorMySQL55 represents MySQL 5.5.x
@@ -163,14 +164,12 @@ func (fl Flavor) AllowDefaultExpression() bool {
 	return fl.VendorMinVersion(VendorMariaDB, 10, 2)
 }
 
-// LowercaseOnUpdate returns true if the flavor displays ON UPDATE clauses
-// in lowercase in SHOW CREATE TABLE.
-func (fl Flavor) LowercaseOnUpdate() bool {
-	return fl.VendorMinVersion(VendorMariaDB, 10, 2)
-}
-
 // FractionalTimestamps returns true if the flavor supports fractional
-// seconds in timestamp and datetime values.
+// seconds in timestamp and datetime values. Note that this returns true for
+// FlavorUnknown as a special-case, since all recent flavors do support this.
 func (fl Flavor) FractionalTimestamps() bool {
+	if fl == FlavorUnknown {
+		return true
+	}
 	return fl.Major > 5 || (fl.Major == 5 && fl.Minor > 5)
 }

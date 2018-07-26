@@ -116,7 +116,7 @@ func TestSchemaDiffAddOrDropTable(t *testing.T) {
 
 	// Test impact of statement modifiers on creation of auto-inc table with non-default starting value
 	s2t2.NextAutoIncrement = 5
-	s2t2.CreateStatement = s2t2.GeneratedCreateStatement()
+	s2t2.CreateStatement = s2t2.GeneratedCreateStatement(FlavorUnknown)
 	sd = NewSchemaDiff(&s1, &s2)
 	if len(sd.TableDiffs) != 1 {
 		t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
@@ -236,7 +236,7 @@ func TestSchemaDiffAlterTable(t *testing.T) {
 		TypeInDB: "smallint(5) unsigned",
 		Default:  ColumnDefaultNull,
 	})
-	t2.CreateStatement = t2.GeneratedCreateStatement()
+	t2.CreateStatement = t2.GeneratedCreateStatement(FlavorUnknown)
 	alter, clause := getAlter(&s1, &s2)
 	if addCol, ok := clause.(AddColumn); !ok {
 		t.Errorf("Incorrect type of alter clause returned: expected %T, found %T", addCol, clause)
@@ -311,7 +311,7 @@ func TestSchemaDiffForeignKeys(t *testing.T) {
 	// Dropping multiple FKs and making other changes
 	s2t2.ForeignKeys = []*ForeignKey{}
 	s2t2.Comment = "Hello world"
-	s2t2.CreateStatement = s2t2.GeneratedCreateStatement()
+	s2t2.CreateStatement = s2t2.GeneratedCreateStatement(FlavorUnknown)
 	assertDiffs(&s1, &s2, 0, 0, 1, 3)
 
 	// Adding multiple FKs and making other changes
@@ -329,11 +329,11 @@ func TestSchemaDiffForeignKeys(t *testing.T) {
 			UpdateRule:            "CASCADE",
 		},
 	}
-	s2t1.CreateStatement = s2t1.GeneratedCreateStatement()
+	s2t1.CreateStatement = s2t1.GeneratedCreateStatement(FlavorUnknown)
 	s2t2 = foreignKeyTable()
 	s2t2.ForeignKeys[1].ReferencedColumnNames[1] = "model_code"
 	s2t2.Comment = "Hello world"
-	s2t2.CreateStatement = s2t2.GeneratedCreateStatement()
+	s2t2.CreateStatement = s2t2.GeneratedCreateStatement(FlavorUnknown)
 	assertDiffs(&s1, &s2, 2, 2, 1, 2)
 
 	// Adding and dropping unrelated FKs
@@ -348,14 +348,14 @@ func TestSchemaDiffForeignKeys(t *testing.T) {
 		DeleteRule:            "RESTRICT",
 		UpdateRule:            "CASCADE",
 	}
-	s2t2.CreateStatement = s2t2.GeneratedCreateStatement()
+	s2t2.CreateStatement = s2t2.GeneratedCreateStatement(FlavorUnknown)
 	assertDiffs(&s1, &s2, 1, 1, 1, 1)
 
 	// Renaming an FK: two TableDiffs, but both are blank unless enabling
 	// StatementModifiers.StrictForeignKeyNaming
 	s2t2 = foreignKeyTable()
 	s2t2.ForeignKeys[1].Name = fmt.Sprintf("_%s", s2t2.ForeignKeys[1].Name)
-	s2t2.CreateStatement = s2t2.GeneratedCreateStatement()
+	s2t2.CreateStatement = s2t2.GeneratedCreateStatement(FlavorUnknown)
 	assertDiffs(&s1, &s2, 1, 1, 1, 1)
 	for n, td := range NewSchemaDiff(&s1, &s2).TableDiffs {
 		mods := StatementModifiers{}
@@ -372,7 +372,7 @@ func TestSchemaDiffForeignKeys(t *testing.T) {
 	// Renaming an FK but also changing its definition: never blank statement
 	s2t2.ForeignKeys[1].Columns = s2t2.ForeignKeys[1].Columns[0:1]
 	s2t2.ForeignKeys[1].ReferencedColumnNames = s2t2.ForeignKeys[1].ReferencedColumnNames[0:1]
-	s2t2.CreateStatement = s2t2.GeneratedCreateStatement()
+	s2t2.CreateStatement = s2t2.GeneratedCreateStatement(FlavorUnknown)
 	assertDiffs(&s1, &s2, 1, 1, 1, 1)
 	for n, td := range NewSchemaDiff(&s1, &s2).TableDiffs {
 		actual, _ := td.Statement(StatementModifiers{})
@@ -532,25 +532,25 @@ func TestAlterTableStatementAllowUnsafeMods(t *testing.T) {
 
 	// Removing an index is safe
 	t2.SecondaryIndexes = t2.SecondaryIndexes[0 : len(t2.SecondaryIndexes)-1]
-	t2.CreateStatement = t2.GeneratedCreateStatement()
+	t2.CreateStatement = t2.GeneratedCreateStatement(FlavorUnknown)
 	assertSafe(&s1, &s2)
 
 	// Removing a column is unsafe
 	t2 = aTable(1)
 	t2.Columns = t2.Columns[0 : len(t2.Columns)-1]
-	t2.CreateStatement = t2.GeneratedCreateStatement()
+	t2.CreateStatement = t2.GeneratedCreateStatement(FlavorUnknown)
 	assertUnsafe(&s1, &s2)
 
 	// Changing col type to increase its size is safe
 	t2 = aTable(1)
 	t2.Columns[0].TypeInDB = "int unsigned"
-	t2.CreateStatement = t2.GeneratedCreateStatement()
+	t2.CreateStatement = t2.GeneratedCreateStatement(FlavorUnknown)
 	assertSafe(&s1, &s2)
 
 	// Changing col type to change to signed is unsafe
 	t2 = aTable(1)
 	t2.Columns[0].TypeInDB = "smallint(5)"
-	t2.CreateStatement = t2.GeneratedCreateStatement()
+	t2.CreateStatement = t2.GeneratedCreateStatement(FlavorUnknown)
 	assertUnsafe(&s1, &s2)
 }
 
@@ -563,7 +563,7 @@ func TestAlterTableStatementOnlineMods(t *testing.T) {
 		Default:  ColumnDefaultNull,
 	}
 	to.Columns = append(to.Columns, col)
-	to.CreateStatement = to.GeneratedCreateStatement()
+	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
 	alter := NewAlterTable(&from, &to)
 
 	assertStatement := func(mods StatementModifiers, middle string) {
@@ -606,7 +606,7 @@ func TestIgnoreTableMod(t *testing.T) {
 		Default:  ColumnDefaultNull,
 	}
 	to.Columns = append(to.Columns, col)
-	to.CreateStatement = to.GeneratedCreateStatement()
+	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
 	alter := NewAlterTable(&from, &to)
 	create := NewCreateTable(&from)
 	drop := NewDropTable(&from)
