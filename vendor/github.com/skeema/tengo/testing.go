@@ -102,11 +102,10 @@ type DockerizedInstance struct {
 // CreateDockerizedInstances creates any number of dockerized mysql-server
 // instances, using the specified image string (such as "mysql:5.6"). If no
 // tag is specified in the string (e.g. just "mysql"), the latest tag will be
-// used automatically.
-func CreateDockerizedInstances(image string, count int) ([]*DockerizedInstance, error) {
-	if count < 0 {
-		return nil, errors.New("CreateDockerizedInstances: count cannot be negative")
-	} else if image == "" {
+// used automatically. The number of containers created will correspond to the
+// length of the names arg.
+func CreateDockerizedInstances(names []string, image string) ([]*DockerizedInstance, error) {
+	if image == "" {
 		return nil, errors.New("CreateDockerizedInstances: image cannot be empty string")
 	}
 
@@ -134,9 +133,10 @@ func CreateDockerizedInstances(image string, count int) ([]*DockerizedInstance, 
 	}
 
 	// Create and start containers
-	result := make([]*DockerizedInstance, count)
-	for n := range result {
+	result := make([]*DockerizedInstance, len(names))
+	for n, name := range names {
 		opts := docker.CreateContainerOptions{
+			Name: name,
 			Config: &docker.Config{
 				Image: image,
 				Env:   []string{"MYSQL_ROOT_PASSWORD=fakepw"},
@@ -151,43 +151,85 @@ func CreateDockerizedInstances(image string, count int) ([]*DockerizedInstance, 
 		}
 		if result[n].Container, err = client.CreateContainer(opts); err != nil {
 			return result, err
-		}
-		if err := client.StartContainer(result[n].Container.ID, nil); err != nil {
-			return result, err
-		}
-		if result[n].Container, err = client.InspectContainer(result[n].Container.ID); err != nil {
+		} else if err = result[n].Start(); err != nil {
 			return result, err
 		}
 	}
 
 	// Confirm each containerized mysql is reachable, and create Tengo instances
-	for n := range result {
-		result[n].Instance, err = NewInstance("mysql", result[n].DSN())
-		if err != nil {
+	for _, di := range result {
+		if _, err := di.CanConnect(); err != nil {
 			return result, err
 		}
-		var ok bool
-		var connErr error
-		for attempts := 0; !ok && attempts < 80; attempts++ {
-			time.Sleep(250 * time.Millisecond)
-			ok, connErr = result[n].Instance.CanConnect()
-		}
-		if !ok {
-			return result, connErr
-		}
 	}
-
 	return result, nil
 }
 
 // CreateDockerizedInstance creates a single dockerized mysql-server instance
-// using the supplied image name.
-func CreateDockerizedInstance(image string) (*DockerizedInstance, error) {
-	resultSlice, err := CreateDockerizedInstances(image, 1)
+// using the supplied name and image.
+func CreateDockerizedInstance(name, image string) (*DockerizedInstance, error) {
+	resultSlice, err := CreateDockerizedInstances([]string{name}, image)
 	if len(resultSlice) == 0 {
 		return nil, err
 	}
 	return resultSlice[0], err
+}
+
+// GetDockerizedInstance attempts to find an existing container with the
+// specified name. If a non-blank image string is supplied, and the container
+// exists but has a different image, an error will be returned. Otherwise, if
+// the container is found, it will be started if not already running, and a
+// connection pool will be established. If the container does not exist or
+// cannot be started or connected to, a nil DockerizedInstance and a non-nil
+// error will be returned.
+func GetDockerizedInstance(name, image string) (*DockerizedInstance, error) {
+	client, err := docker.NewClientFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	di := &DockerizedInstance{
+		DockerClient: client,
+	}
+	if di.Container, err = client.InspectContainer(name); err != nil {
+		return nil, err
+	}
+	di.Image = di.Container.Image
+	if strings.HasPrefix(di.Image, "sha256:") {
+		if imageInfo, err := di.DockerClient.InspectImage(di.Image[7:]); err == nil {
+			for _, rt := range imageInfo.RepoTags {
+				if rt == image || image == "" {
+					di.Image = rt
+					break
+				}
+			}
+		}
+	}
+	if image != "" && di.Image != image {
+		return nil, fmt.Errorf("Container %s based on unexpected image: expected %s, found %s", name, image, di.Image)
+	}
+	if err = di.Start(); err != nil {
+		return nil, err
+	}
+	if _, err = di.CanConnect(); err != nil {
+		return nil, err
+	}
+	return di, nil
+}
+
+// GetOrCreateDockerizedInstance attempts to fetch an existing container with
+// the specified name. If it exists and its image matches the supplied image,
+// and there are no errors starting or connecting to the image, it will be
+// returned. If it exists but its image doesn't match, or it cannot be started
+// or connected to, an error will be returned. If no container exists with this
+// name, a new one will attempt to be created.
+func GetOrCreateDockerizedInstance(name, image string) (*DockerizedInstance, error) {
+	di, err := GetDockerizedInstance(name, image)
+	if err == nil {
+		return di, nil
+	} else if _, ok := err.(*docker.NoSuchContainer); ok {
+		return CreateDockerizedInstance(name, image)
+	}
+	return nil, err
 }
 
 // Port returns the actual port number on localhost that maps to the container's
@@ -212,18 +254,57 @@ func (di *DockerizedInstance) String() string {
 	return fmt.Sprintf("DockerizedInstance:%d", di.Port())
 }
 
+// CanConnect sets up a connection pool to the containerized mysql-server,
+// and tests connectivity. It returns an error if a connection cannot be
+// established.
+func (di *DockerizedInstance) CanConnect() (ok bool, err error) {
+	di.Instance, err = NewInstance("mysql", di.DSN())
+	if err != nil {
+		return false, err
+	}
+	for attempts := 0; attempts < 80; attempts++ {
+		if ok, err = di.Instance.CanConnect(); ok {
+			return true, err
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return false, err
+}
+
+// Start starts the corresponding containerized mysql-server. If it is not
+// already running, an error will be returned if it cannot be started. If it is
+// already running, nil will be returned.
+func (di *DockerizedInstance) Start() error {
+	err := di.DockerClient.StartContainer(di.Container.ID, nil)
+	if _, ok := err.(*docker.ContainerAlreadyRunning); err == nil || ok {
+		if di.Container, err = di.DockerClient.InspectContainer(di.Container.ID); err != nil {
+			return nil
+		}
+	}
+	return err
+}
+
+// Stop halts the corresponding containerized mysql-server, but does not
+// destroy the container. The connection pool will be removed. If the container
+// was not already running, nil will be returned.
+func (di *DockerizedInstance) Stop() error {
+	err := di.DockerClient.StopContainer(di.Container.ID, 3)
+	if _, ok := err.(*docker.ContainerNotRunning); !ok && err != nil {
+		return err
+	}
+	di.Instance = nil
+	return nil
+}
+
 // Destroy stops and deletes the corresponding containerized mysql-server.
 func (di *DockerizedInstance) Destroy() error {
-	if di.Container == nil {
-		return nil
-	}
 	opts := docker.RemoveContainerOptions{
 		ID:            di.Container.ID,
 		Force:         true,
 		RemoveVolumes: true,
 	}
 	if err := di.DockerClient.RemoveContainer(opts); err != nil {
-		return fmt.Errorf("Destroy %s: %s", di, err)
+		return err
 	}
 	di.Container = nil
 	di.Instance = nil
@@ -281,60 +362,6 @@ func (di *DockerizedInstance) SourceSQL(filePath string) (string, error) {
 		return stdoutStr, fmt.Errorf("SourceSQL %s: Error sourcing file %s: %s", di, filePath, stderrStr)
 	}
 	return stdoutStr, nil
-}
-
-// IsNewMariaFormat returns true if di is MariaDB 10.2+, which formats default
-// values in a different way in information_schema.
-func (di *DockerizedInstance) IsNewMariaFormat() bool {
-	major, minor, _ := di.Version()
-	return di.Flavor() == FlavorMariaDB && (major > 10 || (major == 10 && minor >= 2))
-}
-
-// AdjustTableForFlavor takes a hard-coded table from a unit test, and modifies
-// it in-place to match the formatting expected for di's flavor and version
-func (di *DockerizedInstance) AdjustTableForFlavor(table *Table) {
-	major, minor, _ := di.Version()
-	is55 := major == 5 && minor == 5
-	isMaria102 := di.IsNewMariaFormat()
-	if !isMaria102 && !is55 {
-		return
-	}
-
-	for _, col := range table.Columns {
-		if isMaria102 {
-			if col.Default == ColumnDefaultForbidden && (strings.HasSuffix(col.TypeInDB, "blob") || strings.HasSuffix(col.TypeInDB, "text")) {
-				col.Default = ColumnDefaultNull
-			} else if col.Default.Quoted && strings.Contains(col.TypeInDB, "int") { // TODO also handle other numerics
-				col.Default.Quoted = false
-			} else if strings.Contains(col.Default.Value, "CURRENT_TIMESTAMP") {
-				col.Default.Value = strings.ToLower(col.Default.Value)
-				if !strings.HasSuffix(col.Default.Value, ")") {
-					col.Default.Value += "()"
-				}
-			}
-			if strings.Contains(col.OnUpdate, "CURRENT_TIMESTAMP") {
-				col.OnUpdate = strings.ToLower(col.OnUpdate)
-				if !strings.HasSuffix(col.OnUpdate, ")") {
-					col.OnUpdate += "()"
-				}
-			}
-		} else if is55 {
-			if strings.HasPrefix(col.TypeInDB, "timestamp(") {
-				col.TypeInDB = "timestamp"
-			} else if strings.HasPrefix(col.TypeInDB, "datetime(") {
-				col.TypeInDB = "datetime"
-			}
-			if strings.Contains(col.Default.Value, "CURRENT_TIMESTAMP(") {
-				col.Default.Value = "CURRENT_TIMESTAMP"
-			}
-			if strings.Contains(col.OnUpdate, "CURRENT_TIMESTAMP(") {
-				col.OnUpdate = "CURRENT_TIMESTAMP"
-			}
-		}
-	}
-	// TODO: fix partitioning style if isMaria102
-
-	table.CreateStatement = table.GeneratedCreateStatement()
 }
 
 type filteredLogger struct {

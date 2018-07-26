@@ -34,7 +34,7 @@ type AddColumn struct {
 }
 
 // Clause returns an ADD COLUMN clause of an ALTER TABLE statement.
-func (ac AddColumn) Clause(_ StatementModifiers) string {
+func (ac AddColumn) Clause(mods StatementModifiers) string {
 	var positionClause string
 	if ac.PositionFirst {
 		// Positioning variables are mutually exclusive
@@ -45,7 +45,7 @@ func (ac AddColumn) Clause(_ StatementModifiers) string {
 	} else if ac.PositionAfter != nil {
 		positionClause = fmt.Sprintf(" AFTER %s", EscapeIdentifier(ac.PositionAfter.Name))
 	}
-	return fmt.Sprintf("ADD COLUMN %s%s", ac.Column.Definition(ac.Table), positionClause)
+	return fmt.Sprintf("ADD COLUMN %s%s", ac.Column.Definition(mods.Flavor, ac.Table), positionClause)
 }
 
 ///// DropColumn ///////////////////////////////////////////////////////////////
@@ -83,7 +83,7 @@ func (ai AddIndex) Clause(mods StatementModifiers) string {
 	if !mods.StrictIndexOrder && ai.reorderOnly {
 		return ""
 	}
-	return fmt.Sprintf("ADD %s", ai.Index.Definition())
+	return fmt.Sprintf("ADD %s", ai.Index.Definition(mods.Flavor))
 }
 
 ///// DropIndex ////////////////////////////////////////////////////////////////
@@ -123,7 +123,7 @@ func (afk AddForeignKey) Clause(mods StatementModifiers) string {
 	if !mods.StrictForeignKeyNaming && afk.renameOnly {
 		return ""
 	}
-	return fmt.Sprintf("ADD %s", afk.ForeignKey.Definition())
+	return fmt.Sprintf("ADD %s", afk.ForeignKey.Definition(mods.Flavor))
 }
 
 ///// DropForeignKey ///////////////////////////////////////////////////////////
@@ -180,7 +180,7 @@ type ModifyColumn struct {
 }
 
 // Clause returns a MODIFY COLUMN clause of an ALTER TABLE statement.
-func (mc ModifyColumn) Clause(_ StatementModifiers) string {
+func (mc ModifyColumn) Clause(mods StatementModifiers) string {
 	var positionClause string
 	if mc.PositionFirst {
 		// Positioning variables are mutually exclusive
@@ -191,7 +191,7 @@ func (mc ModifyColumn) Clause(_ StatementModifiers) string {
 	} else if mc.PositionAfter != nil {
 		positionClause = fmt.Sprintf(" AFTER %s", EscapeIdentifier(mc.PositionAfter.Name))
 	}
-	return fmt.Sprintf("MODIFY COLUMN %s%s", mc.NewColumn.Definition(mc.Table), positionClause)
+	return fmt.Sprintf("MODIFY COLUMN %s%s", mc.NewColumn.Definition(mods.Flavor, mc.Table), positionClause)
 }
 
 // Unsafe returns true if this clause is potentially destructive of data.

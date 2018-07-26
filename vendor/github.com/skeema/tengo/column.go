@@ -2,22 +2,18 @@ package tengo
 
 import (
 	"fmt"
+	"strings"
 )
 
 // ColumnDefault represents the default value for a column.
 type ColumnDefault struct {
-	Null      bool
-	Quoted    bool
-	Value     string
-	Forbidden bool // if true, column does not permit defaults
+	Null   bool
+	Quoted bool
+	Value  string
 }
 
 // ColumnDefaultNull indicates a column has a default value of NULL.
 var ColumnDefaultNull = ColumnDefault{Null: true}
-
-// ColumnDefaultForbidden indicates a column that is not allowed to have a
-// default value.
-var ColumnDefaultForbidden = ColumnDefault{Forbidden: true, Null: true}
 
 // ColumnDefaultValue is a constructor for creating non-NULL,
 // non-CURRENT_TIMESTAMP default values.
@@ -31,23 +27,30 @@ func ColumnDefaultValue(value string) ColumnDefault {
 // ColumnDefaultExpression is a constructor for creating a default value that
 // represents a SQL expression, which won't be wrapped in quotes. Examples
 // include "CURRENT_TIMESTAMP", "CURRENT_TIMESTAMP(N)" where N is a digit for
-// fractional precision, or bit-value literals "b'N'" where N is a value
-// expressed in binary.
+// fractional precision, bit-value literals "b'N'" where N is a value expressed
+// in binary, or arbitrary default expressions which some flavors support.
 func ColumnDefaultExpression(expression string) ColumnDefault {
 	return ColumnDefault{Value: expression}
 }
 
-// Clause returns the DEFAULT clause for use in a DDL statement.
-func (cd ColumnDefault) Clause() string {
-	if cd.Forbidden {
+// Clause returns the DEFAULT clause for use in a DDL statement. If non-blank,
+// it will be prefixed with a space.
+func (cd ColumnDefault) Clause(flavor Flavor, col *Column) string {
+	if col.AutoIncrement {
+		return ""
+	}
+	if !flavor.AllowBlobDefaults() && (strings.HasSuffix(col.TypeInDB, "blob") || strings.HasSuffix(col.TypeInDB, "text")) {
 		return ""
 	}
 	if cd.Null {
-		return "DEFAULT NULL"
+		if !col.Nullable {
+			return ""
+		}
+		return " DEFAULT NULL"
 	} else if cd.Quoted {
-		return fmt.Sprintf("DEFAULT '%s'", EscapeValueForCreateTable(cd.Value))
+		return fmt.Sprintf(" DEFAULT '%s'", EscapeValueForCreateTable(cd.Value))
 	} else {
-		return fmt.Sprintf("DEFAULT %s", cd.Value)
+		return fmt.Sprintf(" DEFAULT %s", cd.Value)
 	}
 }
 
@@ -68,8 +71,8 @@ type Column struct {
 // statement. A table may optionally be supplied, which simply causes CHARACTER
 // SET clause to be omitted if the table and column have the same *collation*
 // (mirroring the specific display logic used by SHOW CREATE TABLE)
-func (c *Column) Definition(table *Table) string {
-	var charSet, collation, nullability, autoIncrement, defaultValue, onUpdate, comment string
+func (c *Column) Definition(flavor Flavor, table *Table) string {
+	var charSet, collation, nullability, autoIncrement, onUpdate, comment string
 	if c.CharSet != "" && (table == nil || c.Collation != table.Collation || c.CharSet != table.CharSet) {
 		// Note that we need to compare both Collation AND CharSet above, since
 		// Collation of "" is used to mean default collation *for the character set*.
@@ -87,9 +90,7 @@ func (c *Column) Definition(table *Table) string {
 	if c.AutoIncrement {
 		autoIncrement = " AUTO_INCREMENT"
 	}
-	if !c.Default.Forbidden && (c.Nullable || !c.Default.Null) {
-		defaultValue = fmt.Sprintf(" %s", c.Default.Clause())
-	}
+	defaultValue := c.Default.Clause(flavor, c)
 	if c.OnUpdate != "" {
 		onUpdate = fmt.Sprintf(" ON UPDATE %s", c.OnUpdate)
 	}

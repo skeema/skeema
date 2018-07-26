@@ -685,7 +685,7 @@ func (s *SkeemaIntegrationSuite) TestDirEdgeCases(t *testing.T) {
 func (s *SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 	// MariaDB does not consider STORAGE or COLUMN_FORMAT clauses as valid SQL.
 	// Ditto for MySQL 5.5.
-	if s.d.Flavor() == tengo.FlavorMariaDB {
+	if s.d.Flavor().Vendor == tengo.VendorMariaDB {
 		t.Skip("Test not relevant for MariaDB-based image", s.d.Image)
 	} else if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
 		t.Skip("Test not relevant for 5.5-based image", s.d.Image)

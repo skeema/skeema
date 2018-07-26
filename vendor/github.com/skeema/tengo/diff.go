@@ -35,6 +35,7 @@ type StatementModifiers struct {
 	IgnoreTable            *regexp.Regexp  // Generate blank DDL if table name matches this regexp
 	StrictIndexOrder       bool            // If true, maintain index order even in cases where there is no functional difference
 	StrictForeignKeyNaming bool            // If true, maintain foreign key names even if no functional difference in definition
+	Flavor                 Flavor          // Adjust generated DDL to match vendor/version. Zero value is FlavorUnknown which makes no adjustments.
 }
 
 // SchemaDiff stores a set of differences between two database schemas.
@@ -384,13 +385,13 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 		if td.To.UnsupportedDDL {
 			return "", &UnsupportedDiffError{
 				Name:                td.To.Name,
-				ExpectedCreateTable: td.To.GeneratedCreateStatement(),
+				ExpectedCreateTable: td.To.GeneratedCreateStatement(mods.Flavor),
 				ActualCreateTable:   td.To.CreateStatement,
 			}
 		} else if td.From.UnsupportedDDL {
 			return "", &UnsupportedDiffError{
 				Name:                td.From.Name,
-				ExpectedCreateTable: td.From.GeneratedCreateStatement(),
+				ExpectedCreateTable: td.From.GeneratedCreateStatement(mods.Flavor),
 				ActualCreateTable:   td.From.CreateStatement,
 			}
 		} else {

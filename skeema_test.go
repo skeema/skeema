@@ -30,10 +30,6 @@ func TestMain(m *testing.M) {
 func TestIntegration(t *testing.T) {
 	images := tengo.SplitEnv("SKEEMA_TEST_IMAGES")
 	if len(images) == 0 {
-		// If SKEEMA_TEST_IMAGES isn't set, but TENGO_TEST_IMAGES is, fall back to that
-		images = tengo.SplitEnv("TENGO_TEST_IMAGES")
-	}
-	if len(images) == 0 {
 		fmt.Println("SKEEMA_TEST_IMAGES env var is not set, so integration tests will be skipped!")
 		fmt.Println("To run integration tests, you may set SKEEMA_TEST_IMAGES to a comma-separated")
 		fmt.Println("list of Docker images. Example:\n# SKEEMA_TEST_IMAGES=\"mysql:5.6,mysql:5.7\" go test")
@@ -54,16 +50,12 @@ func (s *SkeemaIntegrationSuite) Setup(backend string) (err error) {
 	}
 
 	// Spin up a Dockerized database server
-	s.d, err = tengo.CreateDockerizedInstance(backend)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	s.d, err = tengo.GetOrCreateDockerizedInstance(containerName(backend), backend)
+	return err
 }
 
 func (s *SkeemaIntegrationSuite) Teardown(backend string) error {
-	if err := s.d.Destroy(); err != nil {
+	if err := s.d.Stop(); err != nil {
 		return err
 	}
 	if err := os.Chdir(s.repoPath); err != nil {
@@ -177,7 +169,7 @@ func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, d
 	// In MySQL 5.5, DATETIME columns cannot have default or on-update of
 	// CURRENT_TIMESTAMP; only one TIMESTAMP column can have on-update;
 	// CURRENT_TIMESTAMP does not take an arg for specifying sub-second precision
-	if s.d.IsNewMariaFormat() {
+	if s.d.Flavor().VendorMinVersion(tengo.VendorMariaDB, 10, 2) {
 		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mariadb102", 1)
 	} else if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
 		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mysql55", 1)
@@ -386,6 +378,10 @@ func (s *SkeemaIntegrationSuite) dbExec(t *testing.T, schemaName, query string, 
 	if err != nil {
 		t.Fatalf("Error running query on DockerizedInstance.\nSchema: %s\nQuery: %s\nError: %s", schemaName, query, err)
 	}
+}
+
+func containerName(backend string) string {
+	return fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1))
 }
 
 // readFile wraps ioutil.ReadFile, with any errors being fatal to the test.

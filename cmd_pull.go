@@ -97,6 +97,7 @@ func PullHandler(cfg *mybase.Config) error {
 		// execute the generated statement! We just examine its type.
 		mods := tengo.StatementModifiers{
 			AllowUnsafe: true,
+			Flavor:      t.Instance.Flavor(),
 		}
 		// pull command updates next auto-increment value for existing table always
 		// if requested, or only if previously present in file otherwise

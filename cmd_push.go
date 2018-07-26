@@ -198,6 +198,7 @@ func pushWorker(sps *sharedPushState) {
 				sps.setFatalError(NewExitValue(CodeBadConfig, err.Error()))
 				return
 			}
+			mods.Flavor = t.Instance.Flavor()
 
 			// Build DDLStatements for each TableDiff, handling pre-execution errors
 			// accordingly

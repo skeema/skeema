@@ -258,6 +258,7 @@ func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 		StrictIndexOrder:       true, // needed since we must get the SHOW CREATE TABLEs to match
 		StrictForeignKeyNaming: true, // ditto
 		AllowUnsafe:            true, // needed since we're just running against the temp schema
+		Flavor:                 t.Instance.Flavor(),
 	}
 	if major, minor, _ := t.Instance.Version(); major != 5 || minor != 5 {
 		// avoid having MySQL ignore index changes that are simply reordered, but only
