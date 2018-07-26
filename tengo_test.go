@@ -13,11 +13,11 @@ func TestMain(m *testing.M) {
 }
 
 func TestIntegration(t *testing.T) {
-	images := SplitEnv("TENGO_TEST_IMAGES")
+	images := SplitEnv("SKEEMA_TEST_IMAGES")
 	if len(images) == 0 {
-		fmt.Println("TENGO_TEST_IMAGES env var is not set, so integration tests will be skipped!")
-		fmt.Println("To run integration tests, you may set TENGO_TEST_IMAGES to a comma-separated")
-		fmt.Println("list of Docker images. Example:\n# TENGO_TEST_IMAGES=\"mysql:5.6,mysql:5.7\" go test")
+		fmt.Println("SKEEMA_TEST_IMAGES env var is not set, so integration tests will be skipped!")
+		fmt.Println("To run integration tests, you may set SKEEMA_TEST_IMAGES to a comma-separated")
+		fmt.Println("list of Docker images. Example:\n# SKEEMA_TEST_IMAGES=\"mysql:5.6,mysql:5.7\" go test")
 	}
 	RunSuite(&TengoIntegrationSuite{}, t, images)
 
@@ -84,7 +84,7 @@ func (s *TengoIntegrationSuite) GetSchemaAndTable(t *testing.T, schemaName, tabl
 }
 
 func containerName(backend string) string {
-	return fmt.Sprintf("tengo-test-%s", strings.Replace(backend, ":", "-", -1))
+	return fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1))
 }
 
 // TestUnitTableFlavors confirms that our hard-coded fixture table methods

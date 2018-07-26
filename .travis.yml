@@ -10,7 +10,7 @@ notifications:
 
 env:
   global:
-    - TENGO_TEST_IMAGES="mysql:5.6,mysql:5.7"
+    - SKEEMA_TEST_IMAGES="mysql:5.6,mysql:5.7"
 
 before_install:
   - go get golang.org/x/lint/golint
