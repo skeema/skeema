@@ -142,7 +142,11 @@ func CreateDockerizedInstances(names []string, image string) ([]*DockerizedInsta
 				Env:   []string{"MYSQL_ROOT_PASSWORD=fakepw"},
 			},
 			HostConfig: &docker.HostConfig{
-				PublishAllPorts: true,
+				PortBindings: map[docker.Port][]docker.PortBinding{
+					"3306/tcp": {
+						{HostIP: "127.0.0.1"},
+					},
+				},
 			},
 		}
 		result[n] = &DockerizedInstance{
