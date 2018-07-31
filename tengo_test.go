@@ -19,32 +19,23 @@ func TestIntegration(t *testing.T) {
 		fmt.Println("To run integration tests, you may set SKEEMA_TEST_IMAGES to a comma-separated")
 		fmt.Println("list of Docker images. Example:\n# SKEEMA_TEST_IMAGES=\"mysql:5.6,mysql:5.7\" go test")
 	}
-	RunSuite(&TengoIntegrationSuite{}, t, images)
-
-	// Provide coverage for additional DockerizedInstance methods at this point,
-	// when we know we're otherwise done with the images
-	t.Run("TestDockerizedInstance", func(t *testing.T) {
-		name := containerName(images[0])
-		di, err := GetDockerizedInstance(name, images[0])
-		if err != nil {
-			t.Errorf("Unable to re-obtain Docker container %s: %s", name, err)
-		}
-		if os.Getenv("CI") == "true" {
-			if err := di.Destroy(); err != nil {
-				t.Errorf("Unable to destroy container %s: %s", name, err)
-			}
-		} else if err := di.Stop(); err != nil {
-			t.Errorf("Unable to stop container %s: %s", name, err)
-		}
+	manager, err := NewDockerSandboxer(SandboxerOptions{
+		RootPassword: "fakepw",
 	})
+	if err != nil {
+		t.Errorf("Unable to create sandbox manager: %s", err)
+	}
+	suite := &TengoIntegrationSuite{manager: manager}
+	RunSuite(suite, t, images)
 }
 
 type TengoIntegrationSuite struct {
-	d *DockerizedInstance
+	manager *DockerSandboxer
+	d       *DockerizedInstance
 }
 
 func (s *TengoIntegrationSuite) Setup(backend string) (err error) {
-	s.d, err = GetOrCreateDockerizedInstance(containerName(backend), backend)
+	s.d, err = s.manager.GetOrCreateInstance(containerName(backend), backend)
 	return err
 }
 
