@@ -123,6 +123,9 @@ func InitHandler(cfg *mybase.Config) error {
 	if cfg.OnCLI("user") {
 		hostOptionFile.SetOptionValue(environment, "user", cfg.Get("user"))
 	}
+	if flavor := inst.Flavor(); flavor != tengo.FlavorUnknown {
+		hostOptionFile.SetOptionValue(environment, "flavor", flavor.String())
+	}
 	if cfg.OnCLI("ignore-schema") {
 		hostOptionFile.SetOptionValue(environment, "ignore-schema", cfg.Get("ignore-schema"))
 	}

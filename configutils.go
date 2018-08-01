@@ -30,6 +30,7 @@ func AddGlobalOptions(cmd *mybase.Command) {
 	cmd.AddOption(mybase.StringOption("ignore-table", 0, "", "Ignore tables that match regex").Hidden())
 	cmd.AddOption(mybase.StringOption("default-character-set", 0, "", "Schema-level default character set").Hidden())
 	cmd.AddOption(mybase.StringOption("default-collation", 0, "", "Schema-level default collation").Hidden())
+	cmd.AddOption(mybase.StringOption("flavor", 0, "", "Database server expressed in format vendor:major.minor, for use in vendor/version specific syntax").Hidden())
 
 	// Visible global options
 	cmd.AddOption(mybase.StringOption("user", 'u', "root", "Username to connect to database host"))

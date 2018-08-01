@@ -123,18 +123,20 @@ func (s *SkeemaIntegrationSuite) TestAddEnvHandler(t *testing.T) {
 	origFile := getOptionFile(t, "mydb", cfg)
 
 	// valid dir should succeed and add the section to the .skeema file
-	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema add-environment --host my.staging.db.com --dir mydb staging")
+	// Intentionally using a low connection timeout here to avoid delaying the
+	// test with the invalid hostname
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema add-environment --host my.staging.invalid --dir mydb staging --connect-options='timeout=10ms'")
 	file := getOptionFile(t, "mydb", cfg)
-	origFile.SetOptionValue("staging", "host", "my.staging.db.com")
+	origFile.SetOptionValue("staging", "host", "my.staging.invalid")
 	origFile.SetOptionValue("staging", "port", "3306")
 	if !origFile.SameContents(file) {
 		t.Fatalf("File contents of %s do not match expectation", file.Path())
 	}
 
 	// Nonstandard port should work properly; ditto for user option persisting
-	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema add-environment --host my.ci.db.com -P 3307 -ufoobar --dir mydb ci")
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema add-environment --host my.ci.invalid -P 3307 -ufoobar --dir mydb ci  --connect-options='timeout=10ms'")
 	file = getOptionFile(t, "mydb", cfg)
-	origFile.SetOptionValue("ci", "host", "my.ci.db.com")
+	origFile.SetOptionValue("ci", "host", "my.ci.invalid")
 	origFile.SetOptionValue("ci", "port", "3307")
 	origFile.SetOptionValue("ci", "user", "foobar")
 	if !origFile.SameContents(file) {
@@ -163,8 +165,10 @@ func (s *SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 
 	// Revert db back to previous state, and pull again to test the opposite
 	// behaviors: delete dir for new schema, remove charset/collation from .skeema,
-	// etc
+	// etc. Also edit the host .skeema file to remove flavor, to test logic that
+	// adds/updates flavor on pull.
 	s.cleanData(t, "setup.sql")
+	writeFile(t, "mydb/.skeema", strings.Replace(readFile(t, "mydb/.skeema"), "flavor", "#flavor", 1))
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	s.verifyFiles(t, cfg, "../golden/init")
 

@@ -120,7 +120,7 @@ func (dir *Dir) HasOptionFile() bool {
 // .skeema option file in the currently-selected environment section.
 func (dir *Dir) HasHost() bool {
 	optionFile, err := dir.OptionFile()
-	if err != nil || optionFile == nil {
+	if err != nil {
 		return false
 	}
 	_, ok := optionFile.OptionValue("host")
@@ -131,7 +131,7 @@ func (dir *Dir) HasHost() bool {
 // .skeema option file in the currently-selected environment section.
 func (dir *Dir) HasSchema() bool {
 	optionFile, err := dir.OptionFile()
-	if err != nil || optionFile == nil {
+	if err != nil {
 		return false
 	}
 	_, ok := optionFile.OptionValue("schema")
@@ -633,6 +633,8 @@ func (dir *Dir) TargetTemplate(instance *tengo.Instance) Target {
 // the dir's .skeema file, if one exists. The file will be read and parsed; any
 // errors in either process will be returned. The section specified by
 // dir.section will automatically be selected for use in the file if it exists.
+// If there is no option file in this dir, it is considered an error (return is
+// nil File and non-nil error).
 func (dir *Dir) OptionFile() (*mybase.File, error) {
 	f := mybase.NewFile(dir.Path, ".skeema")
 	if err := f.Read(); err != nil {

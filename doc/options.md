@@ -18,6 +18,7 @@
 * [dry-run](#dry-run)
 * [exact-match](#exact-match)
 * [first-only](#first-only)
+* [flavor](#flavor)
 * [foreign-key-checks](#foreign-key-checks)
 * [host](#host)
 * [host-wrapper](#host-wrapper)
@@ -329,6 +330,20 @@ Commands | diff, push
 Ordinarily, for individual directories that map to multiple instances and/or multiple schemas, `skeema diff` and `skeema push` will operate on all mapped instances, and all mapped schemas on those instances. If the [first-only](#first-only) option is used, these commands instead only operate on the first instance and schema per directory.
 
 In a sharded environment, this option can be useful to examine or execute a change only on one shard, before pushing it out on all shards. Alternatively, for more complex control, a similar effect can be achieved by using environment names. For example, you could create an environment called "production-canary" with [host](#host) configured to map to a subset of the instances in the "production" environment.
+
+### flavor
+
+Commands | *all*
+--- | :---
+**Default** | *empty string*
+**Type** | string
+**Restrictions** | Should only appear in a .skeema option file that also contains [host](#host)
+
+This option indicates the database server vendor and version corresponding to the first [host](#host) defined in this directory. The value is formatted as "vendor:major.minor", for example "mysql:5.6", "percona:5.7", or "mariadb:10.1".
+
+This option is automatically populated in host-level .skeema files by `skeema init`, `skeema pull`, and `skeema add-environment` beginning in Skeema v1.0.3. 
+
+Currently, this option is just informational and has no functional effect whatsoever in Skeema v1.0.x. In future releases, it may be used for purposes such as optionally offloading the [temporary schema operations](faq.md#temporary-schema-usage) to a local Docker container; the [flavor](#flavor) value will then be used to ensure the correct Docker image is used.
 
 ### foreign-key-checks
 

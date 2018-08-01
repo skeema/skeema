@@ -43,7 +43,7 @@ func AddEnvHandler(cfg *mybase.Config) error {
 	}
 
 	hostOptionFile, err := dir.OptionFile()
-	if err != nil || hostOptionFile == nil {
+	if err != nil {
 		return NewExitValue(CodeBadInput, "Unable to read .skeema file for %s: %s", dir, err)
 	}
 
@@ -79,6 +79,9 @@ func AddEnvHandler(cfg *mybase.Config) error {
 		hostOptionFile.SetOptionValue(environment, "socket", inst.SocketPath)
 	} else {
 		hostOptionFile.SetOptionValue(environment, "port", strconv.Itoa(inst.Port))
+	}
+	if flavor := inst.Flavor(); flavor != tengo.FlavorUnknown {
+		hostOptionFile.SetOptionValue(environment, "flavor", flavor.String())
 	}
 	if cfg.OnCLI("user") {
 		hostOptionFile.SetOptionValue(environment, "user", cfg.Get("user"))

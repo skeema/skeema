@@ -69,11 +69,8 @@ func PullHandler(cfg *mybase.Config) error {
 			if err != nil {
 				return err
 			}
-			optionFile, err := t.Dir.OptionFile()
-			if err != nil {
+			if optionFile, err := t.Dir.OptionFile(); err != nil {
 				log.Warnf("Unable to update character set and/or collation for %s/.skeema: %s", t.Dir, err)
-			} else if optionFile == nil {
-				log.Warnf("Unable to update character set and/or collation for %s/.skeema: cannot read file", t.Dir)
 			} else {
 				if instCharSet != t.SchemaFromInstance.CharSet {
 					optionFile.SetOptionValue("", "default-character-set", t.SchemaFromInstance.CharSet)
@@ -244,6 +241,25 @@ func findNewSchemas(dir *Dir) error {
 		instance, err := dir.FirstInstance()
 		if err != nil || instance == nil {
 			return err
+		}
+
+		// Update the instance dir's .skeema option file if the instance's current
+		// flavor does not match what's in the file
+		if instFlavor := instance.Flavor(); instFlavor.String() != dir.Config.Get("flavor") {
+			if optionFile, err := dir.OptionFile(); err != nil {
+				log.Warnf("Unable to update flavor in %s/.skeema: %s", dir, err)
+			} else {
+				if instFlavor == tengo.FlavorUnknown {
+					optionFile.UnsetOptionValue(dir.section, "flavor")
+				} else {
+					optionFile.SetOptionValue(dir.section, "flavor", instFlavor.String())
+				}
+				if err := optionFile.Write(true); err != nil {
+					log.Warnf("Unable to update flavor in %s: %s", optionFile.Path(), err)
+				} else {
+					log.Infof("Wrote %s -- updated flavor to %s", optionFile.Path(), instFlavor.String())
+				}
+			}
 		}
 
 		subdirHasSchema := make(map[string]bool)

@@ -213,9 +213,15 @@ func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, d
 					aOptionFile.SetOptionValue(section, "port", forcedValue)
 				}
 			}
+			// Force flavor of a to match the DockerizedInstance's flavor
+			for _, section := range aOptionFile.SectionsWithOption("flavor") {
+				aOptionFile.SetOptionValue(section, "flavor", s.d.Flavor().String())
+			}
 
 			if !aOptionFile.SameContents(bOptionFile) {
 				t.Errorf("File contents do not match between %s and %s", aOptionFile.Path(), bOptionFile.Path())
+				fmt.Println("Expected:\n", readFile(t, aOptionFile.Path()))
+				fmt.Println("Actual:\n", readFile(t, bOptionFile.Path()))
 			}
 		}
 
