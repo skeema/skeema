@@ -214,14 +214,19 @@ func (instance *Instance) Schemas(onlyNames ...string) ([]*Schema, error) {
 	var args []interface{}
 	var query string
 
+	// Note on these queries: MySQL 8.0 changes information_schema column names to
+	// come back from queries in all caps, so we need to explicitly use AS clauses
+	// in order to get them back as lowercase and have sqlx Select() work
 	if len(onlyNames) == 0 {
 		query = `
-			SELECT schema_name, default_character_set_name, default_collation_name
+			SELECT schema_name AS schema_name, default_character_set_name AS default_character_set_name,
+			       default_collation_name AS default_collation_name
 			FROM   schemata
 			WHERE  schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'test', 'sys')`
 	} else {
 		query = `
-			SELECT schema_name, default_character_set_name, default_collation_name
+			SELECT schema_name AS schema_name, default_character_set_name AS default_character_set_name,
+			       default_collation_name AS default_collation_name
 			FROM   schemata
 			WHERE  schema_name IN (?)`
 		query, args, err = sqlx.In(query, onlyNames)
@@ -536,6 +541,10 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	// represented in information_schema in 10.2+.
 	flavor := instance.Flavor()
 
+	// Note on these queries: MySQL 8.0 changes information_schema column names to
+	// come back from queries in all caps, so we need to explicitly use AS clauses
+	// in order to get them back as lowercase and have sqlx Select() work
+
 	// Obtain the tables in the schema
 	var rawTables []struct {
 		Name               string         `db:"table_name"`
@@ -549,9 +558,10 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		CollationIsDefault string         `db:"is_default"`
 	}
 	query := `
-		SELECT t.table_name, t.table_type, t.engine, t.auto_increment, t.table_collation,
-		       UPPER(t.create_options) AS create_options, t.table_comment,
-		       c.character_set_name, c.is_default
+		SELECT t.table_name AS table_name, t.table_type AS table_type, t.engine AS engine,
+		       t.auto_increment AS auto_increment, t.table_collation AS table_collation,
+		       UPPER(t.create_options) AS create_options, t.table_comment AS table_comment,
+		       c.character_set_name AS character_set_name, c.is_default AS is_default
 		FROM   tables t
 		JOIN   collations c ON t.table_collation = c.collation_name
 		WHERE  t.table_schema = ?
@@ -604,9 +614,12 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		CollationIsDefault sql.NullString `db:"is_default"`
 	}
 	query = `
-		SELECT    c.table_name, c.column_name, c.column_type, c.is_nullable, c.column_default,
-		          c.extra, c.column_comment, c.character_set_name, c.collation_name,
-		          co.is_default
+		SELECT    c.table_name AS table_name, c.column_name AS column_name,
+		          c.column_type AS column_type, c.is_nullable AS is_nullable,
+		          c.column_default AS column_default, c.extra AS extra,
+		          c.column_comment AS column_comment,
+		          c.character_set_name AS character_set_name,
+		          c.collation_name AS collation_name, co.is_default AS is_default
 		FROM      columns c
 		LEFT JOIN collations co ON co.collation_name = c.collation_name
 		WHERE     c.table_schema = ?
@@ -682,8 +695,10 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		Comment    sql.NullString `db:"index_comment"`
 	}
 	query = `
-		SELECT   index_name, table_name, non_unique, seq_in_index, column_name,
-		         sub_part, index_comment
+		SELECT   index_name AS index_name, table_name AS table_name,
+		         non_unique AS non_unique, seq_in_index AS seq_in_index,
+		         column_name AS column_name, sub_part AS sub_part,
+		         index_comment AS index_comment
 		FROM     statistics
 		WHERE    table_schema = ?`
 	if err := db.Select(&rawIndexes, query, schema); err != nil {
@@ -753,9 +768,11 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		ColumnLookupKey      string `db:"col_lookup_key"`
 	}
 	query = `
-		SELECT   rc.constraint_name, rc.table_name, rc.update_rule, rc.delete_rule, rc.referenced_table_name,
+		SELECT   rc.constraint_name AS constraint_name, rc.table_name AS table_name,
+		         rc.update_rule AS update_rule, rc.delete_rule AS delete_rule,
+		         rc.referenced_table_name AS referenced_table_name,
 		         IF(rc.constraint_schema=rc.unique_constraint_schema, '', rc.unique_constraint_schema) AS referenced_schema,
-		         kcu.referenced_column_name,
+		         kcu.referenced_column_name AS referenced_column_name,
 		         CONCAT(kcu.constraint_schema, '.', kcu.table_name, '.', kcu.column_name) AS col_lookup_key
 		FROM     referential_constraints rc
 		JOIN     key_column_usage kcu ON kcu.constraint_name = rc.constraint_name AND kcu.constraint_schema = rc.constraint_schema
