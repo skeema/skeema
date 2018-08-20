@@ -35,7 +35,7 @@
 
 [[constraint]]
   name = "github.com/go-sql-driver/mysql"
-  revision = "3287d94d4c6a48a63e16fffaabf27ab20203af2a"
+  revision = "99ff426eb706cffe92ff3d058e168b278cabf7c7"
 
 [[constraint]]
   branch = "master"

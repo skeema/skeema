@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
@@ -112,8 +114,12 @@ func (instance *Instance) buildParamString(params string) string {
 // params should be supplied in format "foo=bar&fizz=buzz" with URL escaping
 // already applied. Do not include a prefix of "?". params will be merged with
 // instance.defaultParams, with params supplied here taking precedence.
+// To avoid problems with unexpected disconnection, the connection pool will
+// automatically have a max conn lifetime of at most 30sec, or less if a lower
+// session-level wait_timeout was set in params or instance.defaultParams.
 func (instance *Instance) Connect(defaultSchema string, params string) (*sqlx.DB, error) {
-	key := fmt.Sprintf("%s?%s", defaultSchema, instance.buildParamString(params))
+	fullParams := instance.buildParamString(params)
+	key := fmt.Sprintf("%s?%s", defaultSchema, fullParams)
 
 	instance.RLock()
 	pool, ok := instance.connectionPool[key]
@@ -128,6 +134,16 @@ func (instance *Instance) Connect(defaultSchema string, params string) (*sqlx.DB
 	if err != nil {
 		return nil, err
 	}
+
+	// Determine max conn lifetime, depending on if wait_timeout is being set explicitly
+	maxLifetime := 30 * time.Second
+	parsedParams, _ := url.ParseQuery(fullParams)
+	if waitTimeout, _ := strconv.Atoi(parsedParams.Get("wait_timeout")); waitTimeout > 1 && waitTimeout <= 30 {
+		maxLifetime = time.Duration(waitTimeout-1) * time.Second
+	} else if waitTimeout == 1 {
+		maxLifetime = 900 * time.Millisecond
+	}
+	db.SetConnMaxLifetime(maxLifetime)
 
 	instance.Lock()
 	defer instance.Unlock()

@@ -144,7 +144,7 @@ func (s TengoIntegrationSuite) TestInstanceConnect(t *testing.T) {
 	}
 
 	// Connecting again with different params should return a different connection pool
-	db4, err := s.d.Connect("information_schema", "foreign_key_checks=0")
+	db4, err := s.d.Connect("information_schema", "foreign_key_checks=0&wait_timeout=20")
 	if err != nil {
 		t.Errorf("Unexpected connection error: %s", err)
 	} else if db4 == db || db4 == db3 {
