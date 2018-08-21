@@ -122,3 +122,73 @@ func TestFlavorFractionalTimestamps(t *testing.T) {
 		}
 	}
 }
+
+func TestFlavorHasDataDictionary(t *testing.T) {
+	type testcase struct {
+		receiver Flavor
+		expected bool
+	}
+	cases := []testcase{
+		{FlavorMySQL55, false},
+		{FlavorMySQL57, false},
+		{FlavorMySQL80, true},
+		{FlavorMariaDB101, false},
+		{NewFlavor("percona:8.0"), true},
+		{FlavorPercona56, false},
+		{FlavorUnknown, false},
+	}
+	for _, tc := range cases {
+		actual := tc.receiver.HasDataDictionary()
+		if actual != tc.expected {
+			t.Errorf("Expected %s.HasDataDictionary() to return %t, instead found %t", tc.receiver, tc.expected, actual)
+		}
+	}
+}
+
+func TestFlavorDefaultUtf8mb4Collation(t *testing.T) {
+	type testcase struct {
+		receiver Flavor
+		expected string
+	}
+	cases := []testcase{
+		{FlavorMySQL55, "utf8mb4_general_ci"},
+		{FlavorMySQL57, "utf8mb4_general_ci"},
+		{FlavorMySQL80, "utf8mb4_0900_ai_ci"},
+		{FlavorMariaDB101, "utf8mb4_general_ci"},
+		{NewFlavor("percona:8.0"), "utf8mb4_0900_ai_ci"},
+		{FlavorPercona56, "utf8mb4_general_ci"},
+		{FlavorUnknown, "utf8mb4_general_ci"},
+	}
+	for _, tc := range cases {
+		actual := tc.receiver.DefaultUtf8mb4Collation()
+		if actual != tc.expected {
+			t.Errorf("Expected %s.DefaultUtf8mb4Collation() to return %s, instead found %s", tc.receiver, tc.expected, actual)
+		}
+	}
+}
+
+func TestFlavorAlwaysShowCollation(t *testing.T) {
+	type testcase struct {
+		receiver Flavor
+		charSet  string
+		expected bool
+	}
+	cases := []testcase{
+		{FlavorMySQL55, "utf8mb4", false},
+		{FlavorMySQL57, "utf8", false},
+		{FlavorMySQL80, "utf8mb4", true},
+		{FlavorMySQL80, "latin1", false},
+		{FlavorMariaDB101, "utf8mb4", false},
+		{FlavorPercona56, "utf8", false},
+		{NewFlavor("percona:8.0"), "utf8mb4", true},
+		{NewFlavor("percona:8.0"), "utf8", false},
+		{FlavorUnknown, "utf8mb4", false},
+	}
+	for _, tc := range cases {
+		actual := tc.receiver.AlwaysShowCollation(tc.charSet)
+		if actual != tc.expected {
+			t.Errorf("Expected %s.AlwaysShowCollation(%s) to return %t, instead found %t", tc.receiver, tc.charSet, tc.expected, actual)
+		}
+	}
+
+}

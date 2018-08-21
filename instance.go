@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -596,7 +597,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			CharSet: rawTable.CharSet,
 			Comment: rawTable.Comment,
 		}
-		if rawTable.CollationIsDefault == "" && rawTable.TableCollation.Valid {
+		if rawTable.TableCollation.Valid && (rawTable.CollationIsDefault == "" || flavor.AlwaysShowCollation(rawTable.CharSet)) {
 			tables[n].Collation = rawTable.TableCollation.String
 		}
 		if rawTable.AutoIncrement.Valid {
@@ -682,6 +683,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			col.CharSet = rawColumn.CharSet.String
 			if rawColumn.CollationIsDefault.String == "" {
 				// SHOW CREATE TABLE only includes col's collation if it differs from col's charset's default collation
+				// TODO: logic far more painful in 8.0
 				col.Collation = rawColumn.Collation.String
 			}
 		}
@@ -842,6 +844,11 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			if t.Engine == "InnoDB" {
 				t.CreateStatement = NormalizeCreateOptions(t.CreateStatement)
 			}
+			// Index order is unpredictable with new MySQL 8 data dictionary, so reorder
+			// indexes based on parsing SHOW CREATE TABLE if needed
+			if flavor.HasDataDictionary() && len(t.SecondaryIndexes) > 1 {
+				fixIndexOrder(t)
+			}
 			// Compare what we expect the create DDL to be, to determine if we support
 			// diffing for the table. Ignore next-auto-increment differences in this
 			// comparison, since the value may have changed between our previous
@@ -861,4 +868,20 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	}
 
 	return tables, nil
+}
+
+var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE )?KEY `(.+)` \\(`")
+
+func fixIndexOrder(t *Table) {
+	byName := t.SecondaryIndexesByName()
+	t.SecondaryIndexes = make([]*Index, len(byName))
+	var cur int
+	for _, line := range strings.Split(t.CreateStatement, "\n") {
+		matches := reIndexLine.FindStringSubmatch(line)
+		if matches == nil {
+			continue
+		}
+		t.SecondaryIndexes[cur] = byName[matches[1]]
+		cur++
+	}
 }

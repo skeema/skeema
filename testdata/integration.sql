@@ -110,7 +110,7 @@ CREATE TABLE col_overrides_aplenty (
 
 CREATE TABLE tbl_overrides (
 	four mediumtext,
-	five varchar(45) CHARACTER SET utf8mb4,
+	five varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
 	six char(10) COLLATE latin1_swedish_ci
 ) DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 

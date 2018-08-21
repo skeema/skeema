@@ -173,3 +173,28 @@ func (fl Flavor) FractionalTimestamps() bool {
 	}
 	return fl.Major > 5 || (fl.Major == 5 && fl.Minor > 5)
 }
+
+// HasDataDictionary returns true if the flavor has a global transactional
+// data dictionary instead of using traditional frm files.
+func (fl Flavor) HasDataDictionary() bool {
+	return fl.VendorMinVersion(VendorMySQL, 8, 0) || fl.VendorMinVersion(VendorPercona, 8, 0)
+}
+
+// DefaultUtf8mb4Collation returns the name of the default collation of the
+// utf8mb4 character set in this flavor.
+func (fl Flavor) DefaultUtf8mb4Collation() string {
+	if fl.VendorMinVersion(VendorMySQL, 8, 0) || fl.VendorMinVersion(VendorPercona, 8, 0) {
+		return "utf8mb4_0900_ai_ci"
+	}
+	return "utf8mb4_general_ci"
+}
+
+// AlwaysShowCollation returns true if this flavor always emits a collation
+// clause for the supplied character set, even if the collation is the default
+// for the character set
+func (fl Flavor) AlwaysShowCollation(charSet string) bool {
+	if charSet == "utf8mb4" {
+		return fl.DefaultUtf8mb4Collation() != "utf8mb4_general_ci"
+	}
+	return false
+}

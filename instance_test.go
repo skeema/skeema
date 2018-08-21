@@ -396,7 +396,7 @@ func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
 
 	// Test no-op conditions
 	assertNoError("testing", "", "", instCharSet, instCollation)
-	assertNoError("testcharset", "utf8mb4", "", "utf8mb4", "utf8mb4_general_ci")
+	assertNoError("testcharset", "utf8mb4", "", "utf8mb4", s.d.Flavor().DefaultUtf8mb4Collation())
 	assertNoError("testcharset", "", "utf8mb4_general_ci", "utf8mb4", "utf8mb4_general_ci")
 	assertNoError("testcharcoll", "utf8mb4", "utf8mb4_unicode_ci", "utf8mb4", "utf8mb4_unicode_ci")
 
@@ -413,8 +413,9 @@ func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
 
 func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	// Ensure our unit test fixtures and integration test fixtures match
+	flavor := s.d.Flavor()
 	schema, aTableFromDB := s.GetSchemaAndTable(t, "testing", "actor")
-	aTableFromUnit := aTableForFlavor(s.d.Flavor(), 1)
+	aTableFromUnit := aTableForFlavor(flavor, 1)
 	aTableFromUnit.CreateStatement = "" // Prevent diff from short-circuiting on equivalent CREATEs
 	clauses, supported := aTableFromDB.Diff(&aTableFromUnit)
 	if !supported {
@@ -437,7 +438,15 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	for _, table := range schema.Tables {
 		shouldBeUnsupported := (table.Name == unsupportedTable().Name)
 		if table.UnsupportedDDL != shouldBeUnsupported {
-			t.Errorf("Table %s: expected UnsupportedDDL==%v, instead found %v", table.Name, shouldBeUnsupported, !shouldBeUnsupported)
+			t.Errorf("Table %s: expected UnsupportedDDL==%v, instead found %v\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", table.Name, shouldBeUnsupported, !shouldBeUnsupported, table.GeneratedCreateStatement(flavor), table.CreateStatement)
 		}
+	}
+
+	// Test index order correction, even if no test image is using new data dict
+	aTableFromDB = s.GetTable(t, "testing", "grab_bag")
+	aTableFromDB.SecondaryIndexes[0], aTableFromDB.SecondaryIndexes[1], aTableFromDB.SecondaryIndexes[2] = aTableFromDB.SecondaryIndexes[2], aTableFromDB.SecondaryIndexes[0], aTableFromDB.SecondaryIndexes[1]
+	fixIndexOrder(aTableFromDB)
+	if aTableFromDB.GeneratedCreateStatement(flavor) != aTableFromDB.CreateStatement {
+		t.Error("fixIndexOrder did not behave as expected")
 	}
 }
