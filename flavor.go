@@ -189,10 +189,10 @@ func (fl Flavor) DefaultUtf8mb4Collation() string {
 	return "utf8mb4_general_ci"
 }
 
-// AlwaysShowCollation returns true if this flavor always emits a collation
+// AlwaysShowTableCollation returns true if this flavor always emits a collation
 // clause for the supplied character set, even if the collation is the default
 // for the character set
-func (fl Flavor) AlwaysShowCollation(charSet string) bool {
+func (fl Flavor) AlwaysShowTableCollation(charSet string) bool {
 	if charSet == "utf8mb4" {
 		return fl.DefaultUtf8mb4Collation() != "utf8mb4_general_ci"
 	}

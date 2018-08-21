@@ -40,12 +40,12 @@ func (fk *ForeignKey) Definition(_ Flavor) string {
 	parentCols := strings.Join(colParts, ", ")
 
 	// MySQL does not output ON DELETE RESTRICT or ON UPDATE RESTRICT in its table create syntax.
-	// Therefore we need to omit these clauses as well if the UpdateRule or DeleteRule == "RESTRICT"
+	// Ditto for equivalent ON DELETE NO ACTION or ON UPDATE NO ACTION.
 	var deleteRule, updateRule string
-	if fk.DeleteRule != "RESTRICT" {
+	if fk.DeleteRule != "RESTRICT" && fk.DeleteRule != "NO ACTION" {
 		deleteRule = fmt.Sprintf(" ON DELETE %s", fk.DeleteRule)
 	}
-	if fk.UpdateRule != "RESTRICT" {
+	if fk.UpdateRule != "RESTRICT" && fk.UpdateRule != "NO ACTION" {
 		updateRule = fmt.Sprintf(" ON UPDATE %s", fk.UpdateRule)
 	}
 

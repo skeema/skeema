@@ -769,14 +769,16 @@ func TestTableAlterChangeAutoIncrement(t *testing.T) {
 }
 
 func TestTableAlterChangeCharSet(t *testing.T) {
-	getTableWithCharSet := func(charSet, collation string) Table {
+	getTableWithCharSet := func(charSet, collation string, collationIsDefault bool) Table {
 		t := aTable(1)
 		t.CharSet = charSet
 		t.Collation = collation
+		t.CollationIsDefault = collationIsDefault
 		t.CreateStatement = t.GeneratedCreateStatement(FlavorUnknown)
 		return t
 	}
 	assertChangeCharSet := func(a, b *Table, expected string) {
+		t.Helper()
 		tableAlters, supported := a.Diff(b)
 		if expected == "" {
 			if len(tableAlters) != 0 || !supported {
@@ -796,21 +798,21 @@ func TestTableAlterChangeCharSet(t *testing.T) {
 		}
 	}
 
-	from := getTableWithCharSet("utf8mb4", "")
-	to := getTableWithCharSet("utf8mb4", "")
+	from := getTableWithCharSet("utf8mb4", "utf8mb4_general_ci", true)
+	to := getTableWithCharSet("utf8mb4", "utf8mb4_general_ci", true)
 	assertChangeCharSet(&from, &to, "")
 
-	to = getTableWithCharSet("utf8mb4", "utf8mb4_swedish_ci")
+	to = getTableWithCharSet("utf8mb4", "utf8mb4_swedish_ci", false)
 	assertChangeCharSet(&from, &to, "DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_swedish_ci")
-	assertChangeCharSet(&to, &from, "DEFAULT CHARACTER SET = utf8mb4")
+	assertChangeCharSet(&to, &from, "DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci")
 
-	to = getTableWithCharSet("latin1", "")
-	assertChangeCharSet(&from, &to, "DEFAULT CHARACTER SET = latin1")
-	assertChangeCharSet(&to, &from, "DEFAULT CHARACTER SET = utf8mb4")
+	to = getTableWithCharSet("latin1", "latin1_swedish_ci", true)
+	assertChangeCharSet(&from, &to, "DEFAULT CHARACTER SET = latin1 COLLATE = latin1_swedish_ci")
+	assertChangeCharSet(&to, &from, "DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci")
 
-	to = getTableWithCharSet("latin1", "latin1_general_ci")
+	to = getTableWithCharSet("latin1", "latin1_general_ci", false)
 	assertChangeCharSet(&from, &to, "DEFAULT CHARACTER SET = latin1 COLLATE = latin1_general_ci")
-	assertChangeCharSet(&to, &from, "DEFAULT CHARACTER SET = utf8mb4")
+	assertChangeCharSet(&to, &from, "DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci")
 }
 
 func TestTableAlterChangeCreateOptions(t *testing.T) {

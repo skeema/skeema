@@ -8,19 +8,20 @@ import (
 
 // Table represents a single database table.
 type Table struct {
-	Name              string
-	Engine            string
-	CharSet           string // Always populated, even if same as database's default
-	Collation         string // Only populated if differs from default collation for character set
-	CreateOptions     string // row_format, stats_persistent, stats_auto_recalc, etc
-	Columns           []*Column
-	PrimaryKey        *Index
-	SecondaryIndexes  []*Index
-	ForeignKeys       []*ForeignKey
-	Comment           string
-	NextAutoIncrement uint64
-	UnsupportedDDL    bool   // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
-	CreateStatement   string // complete SHOW CREATE TABLE obtained from an instance
+	Name               string
+	Engine             string
+	CharSet            string
+	Collation          string
+	CollationIsDefault bool   // true if Collation is default for CharSet
+	CreateOptions      string // row_format, stats_persistent, stats_auto_recalc, etc
+	Columns            []*Column
+	PrimaryKey         *Index
+	SecondaryIndexes   []*Index
+	ForeignKeys        []*ForeignKey
+	Comment            string
+	NextAutoIncrement  uint64
+	UnsupportedDDL     bool   // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
+	CreateStatement    string // complete SHOW CREATE TABLE obtained from an instance
 }
 
 // AlterStatement returns the prefix to a SQL "ALTER TABLE" statement.
@@ -57,7 +58,7 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 		autoIncClause = fmt.Sprintf(" AUTO_INCREMENT=%d", t.NextAutoIncrement)
 	}
 	var collate string
-	if t.Collation != "" {
+	if t.Collation != "" && (!t.CollationIsDefault || flavor.AlwaysShowTableCollation(t.CharSet)) {
 		collate = fmt.Sprintf(" COLLATE=%s", t.Collation)
 	}
 	var createOptions string

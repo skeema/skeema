@@ -421,7 +421,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	if !supported {
 		t.Error("Diff unexpectedly not supported for testing.actor")
 	} else if len(clauses) > 0 {
-		t.Errorf("Diff of testing.actor unexpectedly found %d clauses; expected 0", len(clauses))
+		t.Errorf("Diff of testing.actor unexpectedly found %d clauses; expected 0. Clauses: %+v", len(clauses), clauses)
 	}
 
 	aTableFromDB = s.GetTable(t, "testing", "actor_in_film")

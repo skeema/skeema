@@ -592,13 +592,12 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	tables := make([]*Table, len(rawTables))
 	for n, rawTable := range rawTables {
 		tables[n] = &Table{
-			Name:    rawTable.Name,
-			Engine:  rawTable.Engine.String,
-			CharSet: rawTable.CharSet,
-			Comment: rawTable.Comment,
-		}
-		if rawTable.TableCollation.Valid && (rawTable.CollationIsDefault == "" || flavor.AlwaysShowCollation(rawTable.CharSet)) {
-			tables[n].Collation = rawTable.TableCollation.String
+			Name:               rawTable.Name,
+			Engine:             rawTable.Engine.String,
+			CharSet:            rawTable.CharSet,
+			Collation:          rawTable.TableCollation.String,
+			CollationIsDefault: rawTable.CollationIsDefault != "",
+			Comment:            rawTable.Comment,
 		}
 		if rawTable.AutoIncrement.Valid {
 			tables[n].NextAutoIncrement = uint64(rawTable.AutoIncrement.Int64)
@@ -681,11 +680,8 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		}
 		if rawColumn.Collation.Valid { // only text-based column types have a notion of charset and collation
 			col.CharSet = rawColumn.CharSet.String
-			if rawColumn.CollationIsDefault.String == "" {
-				// SHOW CREATE TABLE only includes col's collation if it differs from col's charset's default collation
-				// TODO: logic far more painful in 8.0
-				col.Collation = rawColumn.Collation.String
-			}
+			col.Collation = rawColumn.Collation.String
+			col.CollationIsDefault = (rawColumn.CollationIsDefault.String != "")
 		}
 		if columnsByTableName[rawColumn.TableName] == nil {
 			columnsByTableName[rawColumn.TableName] = make([]*Column, 0)
@@ -695,7 +691,13 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		columnsByTableAndName[fullNameStr] = col
 	}
 	for n, t := range tables {
+		// Put the columns into the table
 		tables[n].Columns = columnsByTableName[t.Name]
+
+		// Avoid issues from data dictionary weirdly caching a NULL next auto-inc
+		if t.NextAutoIncrement == 0 && t.HasAutoIncrement() {
+			tables[n].NextAutoIncrement = 1
+		}
 	}
 
 	// Obtain the indexes of all tables in the schema. Since multi-column indexes

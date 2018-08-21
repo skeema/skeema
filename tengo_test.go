@@ -183,24 +183,30 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 			Default:       ColumnDefaultNull,
 		},
 		{
-			Name:     "first_name",
-			TypeInDB: "varchar(45)",
-			Default:  ColumnDefaultNull,
-			CharSet:  "utf8",
+			Name:               "first_name",
+			TypeInDB:           "varchar(45)",
+			Default:            ColumnDefaultNull,
+			CharSet:            "utf8",
+			Collation:          "utf8_general_ci",
+			CollationIsDefault: true,
 		},
 		{
-			Name:     "last_name",
-			Nullable: true,
-			TypeInDB: "varchar(45)",
-			Default:  ColumnDefaultNull,
-			CharSet:  "utf8",
+			Name:               "last_name",
+			Nullable:           true,
+			TypeInDB:           "varchar(45)",
+			Default:            ColumnDefaultNull,
+			CharSet:            "utf8",
+			Collation:          "utf8_general_ci",
+			CollationIsDefault: true,
 		},
 		lastUpdateCol,
 		{
-			Name:     "ssn",
-			TypeInDB: "char(10)",
-			Default:  ColumnDefaultNull,
-			CharSet:  "utf8",
+			Name:               "ssn",
+			TypeInDB:           "char(10)",
+			Default:            ColumnDefaultNull,
+			CharSet:            "utf8",
+			Collation:          "utf8_general_ci",
+			CollationIsDefault: true,
 		},
 		aliveCol,
 		{
@@ -240,14 +246,16 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
   KEY `+"`"+`idx_actor_name`+"`"+` (`+"`"+`last_name`+"`"+`(10),`+"`"+`first_name`+"`"+`(1))
 ) ENGINE=InnoDB%s DEFAULT CHARSET=utf8`, autoIncClause)
 	return Table{
-		Name:              "actor",
-		Engine:            "InnoDB",
-		CharSet:           "utf8",
-		Columns:           columns,
-		PrimaryKey:        primaryKey(columns[0]),
-		SecondaryIndexes:  secondaryIndexes,
-		NextAutoIncrement: nextAutoInc,
-		CreateStatement:   stmt,
+		Name:               "actor",
+		Engine:             "InnoDB",
+		CharSet:            "utf8",
+		Collation:          "utf8_general_ci",
+		CollationIsDefault: true,
+		Columns:            columns,
+		PrimaryKey:         primaryKey(columns[0]),
+		SecondaryIndexes:   secondaryIndexes,
+		NextAutoIncrement:  nextAutoInc,
+		CreateStatement:    stmt,
 	}
 }
 
@@ -263,10 +271,12 @@ func anotherTableForFlavor(flavor Flavor) Table {
 			Default:  ColumnDefaultNull,
 		},
 		{
-			Name:     "film_name",
-			TypeInDB: "varchar(60)",
-			Default:  ColumnDefaultNull,
-			CharSet:  "latin1",
+			Name:               "film_name",
+			TypeInDB:           "varchar(60)",
+			Default:            ColumnDefaultNull,
+			CharSet:            "latin1",
+			Collation:          "latin1_swedish_ci",
+			CollationIsDefault: true,
 		},
 	}
 	secondaryIndex := &Index{
@@ -281,13 +291,15 @@ func anotherTableForFlavor(flavor Flavor) Table {
   KEY ` + "`" + `film_name` + "`" + ` (` + "`" + `film_name` + "`" + `)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1`
 	return Table{
-		Name:             "actor_in_film",
-		Engine:           "InnoDB",
-		CharSet:          "latin1",
-		Columns:          columns,
-		PrimaryKey:       primaryKey(columns[0], columns[1]),
-		SecondaryIndexes: []*Index{secondaryIndex},
-		CreateStatement:  stmt,
+		Name:               "actor_in_film",
+		Engine:             "InnoDB",
+		CharSet:            "latin1",
+		Collation:          "latin1_swedish_ci",
+		CollationIsDefault: true,
+		Columns:            columns,
+		PrimaryKey:         primaryKey(columns[0], columns[1]),
+		SecondaryIndexes:   []*Index{secondaryIndex},
+		CreateStatement:    stmt,
 	}
 }
 
@@ -321,10 +333,13 @@ func supportedTableForFlavor(flavor Flavor) Table {
 			Default:  ColumnDefaultNull,
 		},
 		{
-			Name:     "info",
-			Nullable: true,
-			TypeInDB: "text",
-			Default:  ColumnDefaultNull,
+			Name:               "info",
+			Nullable:           true,
+			TypeInDB:           "text",
+			CharSet:            "latin1",
+			Collation:          "latin1_swedish_ci",
+			CollationIsDefault: true,
+			Default:            ColumnDefaultNull,
 		},
 	}
 	stmt := strings.Replace(`CREATE TABLE ~orders~ (
@@ -338,14 +353,16 @@ func supportedTableForFlavor(flavor Flavor) Table {
 	}
 
 	return Table{
-		Name:              "orders",
-		Engine:            "InnoDB",
-		CharSet:           "latin1",
-		Columns:           columns,
-		PrimaryKey:        primaryKey(columns[0:2]...),
-		SecondaryIndexes:  []*Index{},
-		NextAutoIncrement: 1,
-		CreateStatement:   stmt,
+		Name:               "orders",
+		Engine:             "InnoDB",
+		CharSet:            "latin1",
+		Collation:          "latin1_swedish_ci",
+		CollationIsDefault: true,
+		Columns:            columns,
+		PrimaryKey:         primaryKey(columns[0:2]...),
+		SecondaryIndexes:   []*Index{},
+		NextAutoIncrement:  1,
+		CreateStatement:    stmt,
 	}
 }
 
@@ -363,9 +380,12 @@ func foreignKeyTable() Table {
 			Nullable: true,
 		},
 		{
-			Name:     "product_line",
-			TypeInDB: "char(12)",
-			Default:  ColumnDefaultNull,
+			Name:               "product_line",
+			TypeInDB:           "char(12)",
+			CharSet:            "latin1",
+			Collation:          "latin1_swedish_ci",
+			CollationIsDefault: true,
+			Default:            ColumnDefaultNull,
 		},
 		{
 			Name:     "model",
@@ -422,14 +442,16 @@ func foreignKeyTable() Table {
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1`, "~", "`", -1)
 
 	return Table{
-		Name:             "warranties",
-		Engine:           "InnoDB",
-		CharSet:          "latin1",
-		Columns:          columns,
-		PrimaryKey:       primaryKey(columns[0]),
-		SecondaryIndexes: secondaryIndexes,
-		ForeignKeys:      foreignKeys,
-		CreateStatement:  stmt,
+		Name:               "warranties",
+		Engine:             "InnoDB",
+		CharSet:            "latin1",
+		Collation:          "latin1_swedish_ci",
+		CollationIsDefault: true,
+		Columns:            columns,
+		PrimaryKey:         primaryKey(columns[0]),
+		SecondaryIndexes:   secondaryIndexes,
+		ForeignKeys:        foreignKeys,
+		CreateStatement:    stmt,
 	}
 }
 

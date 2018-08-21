@@ -167,7 +167,7 @@ func TestFlavorDefaultUtf8mb4Collation(t *testing.T) {
 	}
 }
 
-func TestFlavorAlwaysShowCollation(t *testing.T) {
+func TestFlavorAlwaysShowTableCollation(t *testing.T) {
 	type testcase struct {
 		receiver Flavor
 		charSet  string
@@ -185,7 +185,7 @@ func TestFlavorAlwaysShowCollation(t *testing.T) {
 		{FlavorUnknown, "utf8mb4", false},
 	}
 	for _, tc := range cases {
-		actual := tc.receiver.AlwaysShowCollation(tc.charSet)
+		actual := tc.receiver.AlwaysShowTableCollation(tc.charSet)
 		if actual != tc.expected {
 			t.Errorf("Expected %s.AlwaysShowCollation(%s) to return %t, instead found %t", tc.receiver, tc.charSet, tc.expected, actual)
 		}
