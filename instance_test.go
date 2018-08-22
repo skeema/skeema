@@ -434,11 +434,20 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		t.Errorf("Diff of testing.actor_in_film unexpectedly found %d clauses; expected 0", len(clauses))
 	}
 
-	// ensure tables are all supported (except where known not to be)
+	// ensure tables in testing schema are all supported (except where known not to be)
 	for _, table := range schema.Tables {
 		shouldBeUnsupported := (table.Name == unsupportedTable().Name)
 		if table.UnsupportedDDL != shouldBeUnsupported {
 			t.Errorf("Table %s: expected UnsupportedDDL==%v, instead found %v\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", table.Name, shouldBeUnsupported, !shouldBeUnsupported, table.GeneratedCreateStatement(flavor), table.CreateStatement)
+		}
+	}
+
+	// ensure character set handling works properly regardless of whether this
+	// flavor has a data dictionary, which changed many SHOW CREATE TABLE behaviors
+	schema = s.GetSchema(t, "testcharcoll")
+	for _, table := range schema.Tables {
+		if table.UnsupportedDDL {
+			t.Errorf("Table %s unexpectedly not supported.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", table.Name, table.GeneratedCreateStatement(flavor), table.CreateStatement)
 		}
 	}
 

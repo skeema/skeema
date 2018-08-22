@@ -114,3 +114,23 @@ CREATE TABLE tbl_overrides (
 	six char(10) COLLATE latin1_swedish_ci
 ) DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 
+# Particularly useful for testing the changes in MySQL 8.0
+CREATE TABLE many_permutations1 (
+	a char(10),
+	b char(10) CHARACTER SET latin1,
+	c char(10) COLLATE latin1_swedish_ci,
+	d char(10) CHARACTER SET latin1 COLLATE latin1_swedish_ci,
+	e char(10) COLLATE latin1_general_ci,
+	f char(10) CHARACTER SET utf8mb4,
+	g char(10) COLLATE utf8mb4_general_ci
+) DEFAULT CHARSET=latin1;
+
+CREATE TABLE many_permutations2 (
+	a char(10),
+	b char(10) CHARACTER SET latin1,
+	c char(10) COLLATE latin1_swedish_ci,
+	d char(10) CHARACTER SET latin1 COLLATE latin1_swedish_ci,
+	e char(10) COLLATE latin1_general_ci,
+	f char(10) CHARACTER SET utf8mb4,
+	g char(10) COLLATE utf8mb4_general_ci
+) DEFAULT CHARSET=latin1 COLLATE latin1_general_ci;
