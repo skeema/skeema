@@ -408,18 +408,7 @@ func (cc *columnsComparison) columnAdds() []TableAlterClause {
 func (cc *columnsComparison) columnModifications() []TableAlterClause {
 	clauses := make([]TableAlterClause, 0)
 
-	// First generate alter clauses for columns that have been modified, but not
-	// re-ordered
-	for n, fromCol := range cc.fromOrderCommonCols {
-		toCol := cc.toOrderCommonCols[n]
-		if fromCol.Name == toCol.Name && !fromCol.Equals(toCol) {
-			clauses = append(clauses, ModifyColumn{
-				Table:     cc.fromTable,
-				OldColumn: fromCol,
-				NewColumn: toCol,
-			})
-		}
-	}
+	moved := make(map[string]bool, len(cc.fromOrderCommonCols))
 
 	// Loop until we have the common columns in the proper order. Identify which
 	// col needs to be moved the furthest, and then move it + generate a
@@ -429,10 +418,9 @@ func (cc *columnsComparison) columnModifications() []TableAlterClause {
 	// added -- we handle adds AFTER moves, and mysql processes the clauses left-
 	// to-right, so the final order will end up correct.
 	//
-	// TODO: this move-largest-jump-first strategy is often optimal, but not
-	// always. A better algorithm could always yield the minimum number of moves:
-	// identify which cols aren't in ascending order (based on "to" position
-	// index), move the one with highest "to" position, repeat until sorted
+	// TODO: this move-largest-jump-first algo is not always optimal, in terms of
+	// generating the minimal number of MODIFY COLUMN clauses. Additionally, we
+	// should prefer moving cols that have other modifications vs those that don't.
 	for !cc.commonColumnsSameOrder() {
 		var greatestMoveFromPos, greatestMoveAmount, greatestMoveAmountAbs int
 		for fromPos, fromCol := range cc.fromOrderCommonCols {
@@ -480,6 +468,7 @@ func (cc *columnsComparison) columnModifications() []TableAlterClause {
 			modify.PositionAfter = cc.toColumnsByName[fromPreviousCol.Name]
 		}
 		clauses = append(clauses, modify)
+		moved[fromCol.Name] = true
 
 		newPos := greatestMoveFromPos + greatestMoveAmount
 		if greatestMoveAmount > 0 {
@@ -502,5 +491,18 @@ func (cc *columnsComparison) columnModifications() []TableAlterClause {
 			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, after...)
 		}
 	}
+
+	// Generate clauses for columns that have been modified, but not re-ordered
+	for n, fromCol := range cc.fromOrderCommonCols {
+		toCol := cc.toOrderCommonCols[n]
+		if !moved[fromCol.Name] && !fromCol.Equals(toCol) {
+			clauses = append(clauses, ModifyColumn{
+				Table:     cc.toTable,
+				OldColumn: fromCol,
+				NewColumn: toCol,
+			})
+		}
+	}
+
 	return clauses
 }

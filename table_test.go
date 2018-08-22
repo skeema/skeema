@@ -667,7 +667,32 @@ func TestTableAlterModifyColumn(t *testing.T) {
 		t.Errorf("Column definition unexpectedly NOT changed: still %s", ta.NewColumn.Definition(FlavorUnknown, nil))
 	}
 
-	// TODO: once the column-move algorithm is optimal, add a test that confirms
+	// Start over; change one column and move another column
+	to = aTable(1)
+	to.Columns[4].TypeInDB = "char(12)"
+	to.Columns = []*Column{to.Columns[0], to.Columns[6], to.Columns[1], to.Columns[2], to.Columns[3], to.Columns[4], to.Columns[5]}
+	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
+	tableAlters, supported = from.Diff(&to)
+	if len(tableAlters) != 2 || !supported {
+		stmt, _ := NewAlterTable(&from, &to).Statement(StatementModifiers{})
+		t.Fatalf("Incorrect number of table alters: expected 2, found %d: %s", len(tableAlters), stmt)
+	}
+	for _, ta := range tableAlters {
+		mc, ok := ta.(ModifyColumn)
+		if !ok {
+			t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", mc, ta)
+		}
+		if mc.PositionAfter != nil {
+			if mc.PositionAfter.Name != to.Columns[0].Name {
+				t.Errorf("Re-ordered column expected to be AFTER %s, instead AFTER %s", to.Columns[0].Name, mc.PositionAfter.Name)
+			}
+			if mc.OldColumn.Definition(FlavorUnknown, nil) != mc.NewColumn.Definition(FlavorUnknown, nil) {
+				t.Error("Expected re-ordered column definition to remain unchanged, but it was modified")
+			}
+		} else if mc.NewColumn.TypeInDB != "char(12)" || mc.PositionAfter != nil || mc.PositionFirst {
+			t.Errorf("Unexpected alter: %s", mc.Clause(StatementModifiers{}))
+		}
+	}
 }
 
 func TestTableAlterChangeStorageEngine(t *testing.T) {
