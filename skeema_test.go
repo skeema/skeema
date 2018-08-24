@@ -224,8 +224,8 @@ func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, d
 
 			if !aOptionFile.SameContents(bOptionFile) {
 				t.Errorf("File contents do not match between %s and %s", aOptionFile.Path(), bOptionFile.Path())
-				fmt.Println("Expected:\n", readFile(t, aOptionFile.Path()))
-				fmt.Println("Actual:\n", readFile(t, bOptionFile.Path()))
+				fmt.Printf("Expected:\n%s\n", readFile(t, aOptionFile.Path()))
+				fmt.Printf("Actual:\n%s\n", readFile(t, bOptionFile.Path()))
 			}
 		}
 

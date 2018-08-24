@@ -64,24 +64,12 @@ func PullHandler(cfg *mybase.Config) error {
 		// Handle changes in schema's default character set and/or collation by
 		// persisting changes to the dir's option file. File operation errors here
 		// are just surfaced as warnings.
-		if diff.SchemaDDL != "" {
-			instCharSet, instCollation, err := t.Instance.DefaultCharSetAndCollation()
-			if err != nil {
-				return err
-			}
+		if diff.SchemaDDL != "" || t.Dir.Config.Get("default-character-set") == "" || t.Dir.Config.Get("default-collation") == "" {
 			if optionFile, err := t.Dir.OptionFile(); err != nil {
 				log.Warnf("Unable to update character set and/or collation for %s/.skeema: %s", t.Dir, err)
 			} else {
-				if instCharSet != t.SchemaFromInstance.CharSet {
-					optionFile.SetOptionValue("", "default-character-set", t.SchemaFromInstance.CharSet)
-				} else {
-					optionFile.UnsetOptionValue("", "default-character-set")
-				}
-				if instCollation != t.SchemaFromInstance.Collation {
-					optionFile.SetOptionValue("", "default-collation", t.SchemaFromInstance.Collation)
-				} else {
-					optionFile.UnsetOptionValue("", "default-collation")
-				}
+				optionFile.SetOptionValue("", "default-character-set", t.SchemaFromInstance.CharSet)
+				optionFile.SetOptionValue("", "default-collation", t.SchemaFromInstance.Collation)
 				if err = optionFile.Write(true); err != nil {
 					log.Warnf("Unable to update character set and/or collation for %s: %s", optionFile.Path(), err)
 				} else {
@@ -291,7 +279,6 @@ func findNewSchemas(dir *Dir) error {
 
 		// Compare dirs to schemas, UNLESS subdirs exist but don't actually map to schemas directly
 		if len(subdirHasSchema) > 0 || len(subdirs) == 0 {
-			var instCharSet, instCollation string
 			schemaNames, err := instance.SchemaNames()
 			if err != nil {
 				return err
@@ -303,15 +290,8 @@ func findNewSchemas(dir *Dir) error {
 					if err != nil {
 						return err
 					}
-					// Lazily fetch instance charset and collation upon first need
-					if instCharSet == "" {
-						instCharSet, instCollation, err = instance.DefaultCharSetAndCollation()
-						if err != nil {
-							return err
-						}
-					}
 					// use same logic from init command
-					if err := PopulateSchemaDir(s, dir, true, instCharSet != s.CharSet, instCollation != s.Collation); err != nil {
+					if err := PopulateSchemaDir(s, dir, true); err != nil {
 						return err
 					}
 				}

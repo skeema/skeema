@@ -164,7 +164,7 @@ func (s *SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	s.verifyFiles(t, cfg, "../golden/pull1")
 
 	// Revert db back to previous state, and pull again to test the opposite
-	// behaviors: delete dir for new schema, remove charset/collation from .skeema,
+	// behaviors: delete dir for new schema, restore charset/collation in .skeema,
 	// etc. Also edit the host .skeema file to remove flavor, to test logic that
 	// adds/updates flavor on pull.
 	s.cleanData(t, "setup.sql")

@@ -261,9 +261,7 @@ Commands | *all*
 **Type** | string
 **Restrictions** | Should only appear in a .skeema option file that also contains [schema](#schema)
 
-This option specifies the default character set to use for a particular schema. Its name and purpose matches the corresponding option in MySQL `db.opt` files. In Skeema, this option is only needed in cases where some schemas have a different default character set than the server-level default.
-
-When `skeema init` or `skeema pull` imports a schema subdirectory for the first time, or when `skeema pull` updates an existing schema subdirectory, the schema's default character set will be compared to the instance's server-level default character set. If they differ, [default-character-set](#default-character-set) will be populated in the subdir's .skeema file automatically. Otherwise, it will be omitted.
+This option specifies the default character set to use for a particular schema. In .skeema files, it is populated automatically by `skeema init` and updated automatically by `skeema pull`.
 
 If a new schema is being created for the first time via `skeema push`, and [default-character-set](#default-character-set) has been set, it will be included as part of the `CREATE DATABASE` statement. If it has not been set, the instance's default server-level character set is used instead.
 
@@ -277,9 +275,7 @@ Commands | *all*
 **Type** | string
 **Restrictions** | Should only appear in a .skeema option file that also contains [schema](#schema)
 
-This option specifies the default collation to use for a particular schema. Its name and purpose matches the corresponding option in MySQL `db.opt` files. In Skeema, this option is only needed in cases where some schemas have a different default collation than the server-level default.
-
-When `skeema init` or `skeema pull` imports a schema subdirectory for the first time, or when `skeema pull` updates an existing schema subdirectory, the schema's default collation will be compared to the instance's server-level default collation. If they differ, [default-collation](#default-collation) will be populated in the subdir's .skeema file automatically. Otherwise, it will be omitted.
+This option specifies the default collation to use for a particular schema. In .skeema files, it is populated automatically by `skeema init` and updated automatically by `skeema pull`.
 
 If a new schema is being created for the first time via `skeema push`, and [default-collation](#default-collation) has been set, it will be included as part of the `CREATE DATABASE` statement. If it has not been set, the instance's default server-level collation is used instead.
 
