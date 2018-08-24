@@ -66,11 +66,15 @@ Commands | diff, push
 --- | :---
 **Default** | *empty string*
 **Type** | enum
-**Restrictions** | Requires one of these values: "INPLACE", "COPY", "DEFAULT", ""
+**Restrictions** | Requires one of these values: "INPLACE", "COPY", "INSTANT", "DEFAULT", ""
 
 Adds an ALGORITHM clause to any generated ALTER TABLE statement, in order to force enabling/disabling MySQL 5.6+ or MariaDB 10.0+ support for online DDL. When used in `skeema push`, executing the statement will fail if any generated ALTER clause does not support the specified algorithm. See the MySQL manual for more information on the effect of this clause.
 
 The explicit value "DEFAULT" is supported, and will add a "ALGORITHM=DEFAULT" clause to all ALTER TABLEs, but this has no real effect vs simply omitting [alter-algorithm](#alter-algorithm) entirely.
+
+MySQL 5.5 does not support the ALGORITHM clause of ALTER TABLE, so use of this option will cause an error in that version.
+
+The INSTANT algorithm was added in MySQL 8.0. Supplying `alter-algorithm=INSTANT` in an older version will cause an error.
 
 If [alter-wrapper](#alter-wrapper) is set to use an external online schema change (OSC) tool such as pt-online-schema-change, [alter-algorithm](#alter-algorithm) should not also be used unless [alter-wrapper-min-size](#alter-wrapper-min-size) is also in-use. This is to prevent sending ALTER statements containing ALGORITHM clauses to the external OSC tool.
 
@@ -85,6 +89,8 @@ Commands | diff, push
 Adds a LOCK clause to any generated ALTER TABLE statement, in order to force enabling/disabling MySQL 5.6+ or MariaDB 10.0+ support for online DDL. When used in `skeema push`, executing the statement will fail if any generated ALTER clause does not support the specified lock method. See the MySQL manual for more information on the effect of this clause.
 
 The explicit value "DEFAULT" is supported, and will add a "LOCK=DEFAULT" clause to all ALTER TABLEs, but this has no real effect vs simply omitting [alter-lock](#alter-lock) entirely.
+
+MySQL 5.5 does not support the LOCK clause of ALTER TABLE, so use of this option will cause an error in that version.
 
 If [alter-wrapper](#alter-wrapper) is set to use an external online schema change tool such as pt-online-schema-change, [alter-lock](#alter-lock) should not be used unless [alter-wrapper-min-size](#alter-wrapper-min-size) is also in-use. This is to prevent sending ALTER statements containing LOCK clauses to the external OSC tool.
 
@@ -178,8 +184,9 @@ The following MySQL variables *cannot* be set by this option, since it would int
 
 * `autocommit` -- cannot be disabled in Skeema
 * `foreign_key_checks` -- see Skeema's own [foreign-key-checks](#foreign_key_checks) option to manipulate this
+* `information_schema_stats_expiry` -- always automatically set to 0 if the [flavor](#flavor) supports this option, to prevent stale data from appearing in information_schema
 
-Aside from these two, any legal MySQL session variable may be set.
+Aside from the above list, any legal MySQL session variable may be set.
 
 This option only affects connections made *directly* by Skeema. If you are using an external tool via [alter-wrapper](#alter-wrapper) or [ddl-wrapper](#ddl-wrapper), you will also need to configure that tool to set options appropriately. Skeema's `{CONNOPTS}` variable can help avoid redundancy here; for example, if configuring pt-online-schema-change, you could include `--set-vars {CONNOPTS}` on the command-line to pass the same configured options dynamically.
 
@@ -343,7 +350,9 @@ This option indicates the database server vendor and version corresponding to th
 
 This option is automatically populated in host-level .skeema files by `skeema init`, `skeema pull`, and `skeema add-environment` beginning in Skeema v1.0.3. 
 
-Currently, this option is just informational and has no functional effect whatsoever in Skeema v1.0.x. In future releases, it may be used for purposes such as optionally offloading the [temporary schema operations](faq.md#temporary-schema-usage) to a local Docker container; the [flavor](#flavor) value will then be used to ensure the correct Docker image is used.
+Currently, this option just controls use of certain session-level variables that are specific to particular vendors and versions. For example, if `flavor: mysql:8.0` is set, Skeema automatically disables the information_schema stat cache (at the session level, i.e. just for Skeema's own connections) to ensure it always sees up-to-date values in information_schema.
+
+In future releases, it may also be used for purposes such as optionally offloading the [temporary schema operations](faq.md#temporary-schema-usage) to a local Docker container; the [flavor](#flavor) value will then be used to ensure the correct Docker image is used.
 
 ### foreign-key-checks
 

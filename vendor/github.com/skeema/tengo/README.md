@@ -27,11 +27,13 @@ This is beta software. The API is subject to change. Backwards-incompatible chan
 
 Tagged releases are tested against the following databases, all running on Linux:
 
-* MySQL 5.5, 5.6, 5.7
+* MySQL 5.5, 5.6, 5.7, 8.0
 * Percona Server 5.6, 5.7
 * MariaDB 10.1, 10.2, 10.3
 
 Outside of a tagged release, every commit to the master branch is automatically tested against MySQL 5.6 and 5.7.
+
+As of August 2018, support for MySQL 8.0 is still quite new and should be considered experimental. Please [file an issue](https://github.com/skeema/tengo/issues/new) if you encounter anything unexpected.
 
 ### Unsupported in diffs
 

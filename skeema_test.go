@@ -177,10 +177,14 @@ func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, d
 	// In MySQL 5.5, DATETIME columns cannot have default or on-update of
 	// CURRENT_TIMESTAMP; only one TIMESTAMP column can have on-update;
 	// CURRENT_TIMESTAMP does not take an arg for specifying sub-second precision
+	// In MySQL 8.0+, partitions are formatted differently; the default character
+	// set is now utf8mb4; the default collation for utf8mb4 has also changed.
 	if s.d.Flavor().VendorMinVersion(tengo.VendorMariaDB, 10, 2) {
 		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mariadb102", 1)
 	} else if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
 		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mysql55", 1)
+	} else if s.d.Flavor().HasDataDictionary() {
+		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mysql80", 1)
 	}
 
 	var compareDirs func(*Dir, *Dir)

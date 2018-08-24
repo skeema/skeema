@@ -95,17 +95,17 @@ func TestInstances(t *testing.T) {
 }
 
 func TestInstanceDefaultParams(t *testing.T) {
-	getDir := func(connectOptions string) *Dir {
+	getDir := func(connectOptions, flavor string) *Dir {
 		return &Dir{
 			Path:    "/tmp/dummydir",
-			Config:  getConfig(map[string]string{"connect-options": connectOptions}),
+			Config:  getConfig(map[string]string{"connect-options": connectOptions, "flavor": flavor}),
 			section: "production",
 		}
 	}
 
-	assertDefaultParams := func(connectOptions, expected string) {
+	assertDefaultParams := func(connectOptions, flavor, expected string) {
 		t.Helper()
-		dir := getDir(connectOptions)
+		dir := getDir(connectOptions, flavor)
 		if parsed, err := url.ParseQuery(expected); err != nil {
 			t.Fatalf("Bad expected value \"%s\": %s", expected, err)
 		} else {
@@ -128,17 +128,22 @@ func TestInstanceDefaultParams(t *testing.T) {
 		"ok=1,writeTimeout=12ms":                    strings.Replace(baseDefaults, "writeTimeout=5s", "writeTimeout=12ms&ok=1", 1),
 	}
 	for connOpts, expected := range expectParams {
-		assertDefaultParams(connOpts, expected)
+		assertDefaultParams(connOpts, "", expected)
 	}
+
+	// Test again with a flavor that has a data dictionary -- should see new stats expiry value being set
+	baseDefaults += "&information_schema_stats_expiry=0"
+	assertDefaultParams("", "mysql:8.0", baseDefaults)
 
 	expectError := []string{
 		"totally_benign=1,allowAllFiles=true",
 		"FOREIGN_key_CHECKS='on'",
 		"bad_parse",
 		"lock_wait_timeout=60,sql_mode='STRICT_ALL_TABLES,ANSI,ALLOW_INVALID_DATES',wait_timeout=86400",
+		"information_schema_stats_expiry=60",
 	}
 	for _, connOpts := range expectError {
-		dir := getDir(connOpts)
+		dir := getDir(connOpts, "")
 		if _, err := dir.InstanceDefaultParams(); err == nil {
 			t.Errorf("Did not get expected error from connect-options=\"%s\"", connOpts)
 		}

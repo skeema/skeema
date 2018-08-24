@@ -8,6 +8,8 @@ Skeema currently supports the following databases:
 * Percona Server 5.6, 5.7
 * MariaDB 10.1, 10.2, 10.3
 
+MySQL 8.0 is not yet fully supported by Skeema. Most functionality should work, but some integration tests still fail, especially involving foreign key usage.
+
 Only the InnoDB storage engine is primarily supported. Other storage engines are often perfectly functional in Skeema, but it depends on whether any esoteric features of the engine are used.
 
 Some MySQL features -- such as partitioned tables, fulltext indexes, and generated/virtual columns -- are not yet supported in Skeema's diff operations. Skeema automatically detects this situation, so there is no risk of generating an incorrect diff. If Skeema does not yet support a table/column feature that you need, please open a GitHub issue so that the work can be prioritized appropriately.
@@ -71,9 +73,7 @@ Many of these will be added in future releases.
 
 #### Completely unsupported
 
-Skeema does not yet support connecting to MySQL using SSL.
-
-Due to protocol-level authentication changes, Skeema cannot interact with MySQL 8.0 yet. This will be fixed in the near future, as the Golang MySQL driver only added support for 8.0 connections very recently.
+At this time, Skeema does not support configuring a specific *client-side* SSL cert or CA when connecting to MySQL.
 
 #### Ignored by Skeema
 

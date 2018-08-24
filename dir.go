@@ -318,8 +318,9 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 		"strict":            true,
 
 		// mysql session options that should not be overridden
-		"autocommit":         true, // always enabled by default in MySQL
-		"foreign_key_checks": true, // always disabled explicitly later in this method
+		"autocommit":                      true, // always enabled by default in MySQL
+		"foreign_key_checks":              true, // always disabled explicitly later in this method
+		"information_schema_stats_expiry": true, // always set for flavors that support it
 	}
 
 	options, err := SplitConnectOptions(dir.Config.Get("connect-options"))
@@ -351,6 +352,11 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	// Set non-overridable options
 	v.Set("interpolateParams", "true")
 	v.Set("foreign_key_checks", "0")
+
+	flavorFromConfig := tengo.NewFlavor(dir.Config.Get("flavor"))
+	if flavorFromConfig.HasDataDictionary() {
+		v.Set("information_schema_stats_expiry", "0")
+	}
 
 	return v.Encode(), nil
 }
@@ -463,7 +469,7 @@ func (dir *Dir) StatementModifiers(forceAllowUnsafe bool) (mods tengo.StatementM
 		mods.StrictIndexOrder = true
 		mods.StrictForeignKeyNaming = true
 	}
-	if mods.AlgorithmClause, err = dir.Config.GetEnum("alter-algorithm", "INPLACE", "COPY", "DEFAULT"); err != nil {
+	if mods.AlgorithmClause, err = dir.Config.GetEnum("alter-algorithm", "INPLACE", "COPY", "INSTANT", "DEFAULT"); err != nil {
 		return
 	}
 	if mods.LockClause, err = dir.Config.GetEnum("alter-lock", "NONE", "SHARED", "EXCLUSIVE", "DEFAULT"); err != nil {

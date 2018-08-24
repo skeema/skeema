@@ -4,8 +4,11 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
@@ -112,8 +115,12 @@ func (instance *Instance) buildParamString(params string) string {
 // params should be supplied in format "foo=bar&fizz=buzz" with URL escaping
 // already applied. Do not include a prefix of "?". params will be merged with
 // instance.defaultParams, with params supplied here taking precedence.
+// To avoid problems with unexpected disconnection, the connection pool will
+// automatically have a max conn lifetime of at most 30sec, or less if a lower
+// session-level wait_timeout was set in params or instance.defaultParams.
 func (instance *Instance) Connect(defaultSchema string, params string) (*sqlx.DB, error) {
-	key := fmt.Sprintf("%s?%s", defaultSchema, instance.buildParamString(params))
+	fullParams := instance.buildParamString(params)
+	key := fmt.Sprintf("%s?%s", defaultSchema, fullParams)
 
 	instance.RLock()
 	pool, ok := instance.connectionPool[key]
@@ -128,6 +135,16 @@ func (instance *Instance) Connect(defaultSchema string, params string) (*sqlx.DB
 	if err != nil {
 		return nil, err
 	}
+
+	// Determine max conn lifetime, depending on if wait_timeout is being set explicitly
+	maxLifetime := 30 * time.Second
+	parsedParams, _ := url.ParseQuery(fullParams)
+	if waitTimeout, _ := strconv.Atoi(parsedParams.Get("wait_timeout")); waitTimeout > 1 && waitTimeout <= 30 {
+		maxLifetime = time.Duration(waitTimeout-1) * time.Second
+	} else if waitTimeout == 1 {
+		maxLifetime = 900 * time.Millisecond
+	}
+	db.SetConnMaxLifetime(maxLifetime)
 
 	instance.Lock()
 	defer instance.Unlock()
@@ -575,13 +592,12 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	tables := make([]*Table, len(rawTables))
 	for n, rawTable := range rawTables {
 		tables[n] = &Table{
-			Name:    rawTable.Name,
-			Engine:  rawTable.Engine.String,
-			CharSet: rawTable.CharSet,
-			Comment: rawTable.Comment,
-		}
-		if rawTable.CollationIsDefault == "" && rawTable.TableCollation.Valid {
-			tables[n].Collation = rawTable.TableCollation.String
+			Name:               rawTable.Name,
+			Engine:             rawTable.Engine.String,
+			CharSet:            rawTable.CharSet,
+			Collation:          rawTable.TableCollation.String,
+			CollationIsDefault: rawTable.CollationIsDefault != "",
+			Comment:            rawTable.Comment,
 		}
 		if rawTable.AutoIncrement.Valid {
 			tables[n].NextAutoIncrement = uint64(rawTable.AutoIncrement.Int64)
@@ -664,10 +680,8 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		}
 		if rawColumn.Collation.Valid { // only text-based column types have a notion of charset and collation
 			col.CharSet = rawColumn.CharSet.String
-			if rawColumn.CollationIsDefault.String == "" {
-				// SHOW CREATE TABLE only includes col's collation if it differs from col's charset's default collation
-				col.Collation = rawColumn.Collation.String
-			}
+			col.Collation = rawColumn.Collation.String
+			col.CollationIsDefault = (rawColumn.CollationIsDefault.String != "")
 		}
 		if columnsByTableName[rawColumn.TableName] == nil {
 			columnsByTableName[rawColumn.TableName] = make([]*Column, 0)
@@ -677,7 +691,13 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		columnsByTableAndName[fullNameStr] = col
 	}
 	for n, t := range tables {
+		// Put the columns into the table
 		tables[n].Columns = columnsByTableName[t.Name]
+
+		// Avoid issues from data dictionary weirdly caching a NULL next auto-inc
+		if t.NextAutoIncrement == 0 && t.HasAutoIncrement() {
+			tables[n].NextAutoIncrement = 1
+		}
 	}
 
 	// Obtain the indexes of all tables in the schema. Since multi-column indexes
@@ -826,6 +846,11 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			if t.Engine == "InnoDB" {
 				t.CreateStatement = NormalizeCreateOptions(t.CreateStatement)
 			}
+			// Index order is unpredictable with new MySQL 8 data dictionary, so reorder
+			// indexes based on parsing SHOW CREATE TABLE if needed
+			if flavor.HasDataDictionary() && len(t.SecondaryIndexes) > 1 {
+				fixIndexOrder(t)
+			}
 			// Compare what we expect the create DDL to be, to determine if we support
 			// diffing for the table. Ignore next-auto-increment differences in this
 			// comparison, since the value may have changed between our previous
@@ -845,4 +870,20 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	}
 
 	return tables, nil
+}
+
+var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE )?KEY `(.+)` \\(`")
+
+func fixIndexOrder(t *Table) {
+	byName := t.SecondaryIndexesByName()
+	t.SecondaryIndexes = make([]*Index, len(byName))
+	var cur int
+	for _, line := range strings.Split(t.CreateStatement, "\n") {
+		matches := reIndexLine.FindStringSubmatch(line)
+		if matches == nil {
+			continue
+		}
+		t.SecondaryIndexes[cur] = byName[matches[1]]
+		cur++
+	}
 }

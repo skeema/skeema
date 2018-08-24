@@ -56,15 +56,16 @@ func (cd ColumnDefault) Clause(flavor Flavor, col *Column) string {
 
 // Column represents a single column of a table.
 type Column struct {
-	Name          string
-	TypeInDB      string
-	Nullable      bool
-	AutoIncrement bool
-	Default       ColumnDefault
-	OnUpdate      string
-	CharSet       string // Only populated if textual type
-	Collation     string // Only populated if textual type and differs from CharSet's default collation
-	Comment       string
+	Name               string
+	TypeInDB           string
+	Nullable           bool
+	AutoIncrement      bool
+	Default            ColumnDefault
+	OnUpdate           string
+	CharSet            string // Only populated if textual type
+	Collation          string // Only populated if textual type
+	CollationIsDefault bool   // Only populated if textual type; indicates default for CharSet
+	Comment            string
 }
 
 // Definition returns this column's definition clause, for use as part of a DDL
@@ -74,16 +75,16 @@ type Column struct {
 func (c *Column) Definition(flavor Flavor, table *Table) string {
 	var charSet, collation, nullability, autoIncrement, onUpdate, comment string
 	if c.CharSet != "" && (table == nil || c.Collation != table.Collation || c.CharSet != table.CharSet) {
-		// Note that we need to compare both Collation AND CharSet above, since
-		// Collation of "" is used to mean default collation *for the character set*.
 		charSet = fmt.Sprintf(" CHARACTER SET %s", c.CharSet)
 	}
-	if c.Collation != "" {
+	// Any flavor: Collations are displayed if not the default for the charset
+	// 8.0 only: Collations are also displayed any time a charset is displayed
+	if c.Collation != "" && (!c.CollationIsDefault || (charSet != "" && flavor.HasDataDictionary())) {
 		collation = fmt.Sprintf(" COLLATE %s", c.Collation)
 	}
 	if !c.Nullable {
 		nullability = " NOT NULL"
-	} else if c.TypeInDB == "timestamp" {
+	} else if strings.HasPrefix(c.TypeInDB, "timestamp") {
 		// Oddly the timestamp type always displays nullability
 		nullability = " NULL"
 	}
