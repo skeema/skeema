@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/VividCortex/mysqlerr"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 )
@@ -479,6 +480,12 @@ func (instance *Instance) AlterSchema(schema, newCharSet, newCollation string) e
 	return nil
 }
 
+type dropRetry string
+
+func (dr dropRetry) Error() string {
+	return fmt.Sprintf("Deadlock encountered trying to drop table %s", dr)
+}
+
 // DropTablesInSchema drops all tables in a schema. If onlyIfEmpty==true,
 // returns an error if any of the tables have any rows.
 func (instance *Instance) DropTablesInSchema(schema string, onlyIfEmpty bool) error {
@@ -526,11 +533,21 @@ func (instance *Instance) DropTablesInSchema(schema string, onlyIfEmpty bool) er
 	for _, name := range names {
 		go func(name string) {
 			_, err := db.Exec(fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(name)))
+			// With the new data dictionary added in MySQL 8.0, attempting to
+			// concurrently drop two tables that have a foreign key constraint between
+			// them can deadlock.
+			if IsDatabaseError(err, mysqlerr.ER_LOCK_DEADLOCK) {
+				err = dropRetry(name)
+			}
 			errOut <- err
 		}(name)
 	}
 	for range names {
-		if err := <-errOut; err != nil {
+		err := <-errOut
+		if dr, ok := err.(dropRetry); ok {
+			_, err = db.Exec(fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(string(dr))))
+		}
+		if err != nil {
 			return err
 		}
 	}

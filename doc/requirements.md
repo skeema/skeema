@@ -4,17 +4,17 @@
 
 Skeema currently supports the following databases:
 
-* MySQL 5.5, 5.6, 5.7
+* MySQL 5.5, 5.6, 5.7, 8.0
 * Percona Server 5.6, 5.7
 * MariaDB 10.1, 10.2, 10.3
-
-MySQL 8.0 is not yet fully supported by Skeema. Most functionality should work, but some integration tests still fail, especially involving foreign key usage.
 
 Only the InnoDB storage engine is primarily supported. Other storage engines are often perfectly functional in Skeema, but it depends on whether any esoteric features of the engine are used.
 
 Some MySQL features -- such as partitioned tables, fulltext indexes, and generated/virtual columns -- are not yet supported in Skeema's diff operations. Skeema automatically detects this situation, so there is no risk of generating an incorrect diff. If Skeema does not yet support a table/column feature that you need, please open a GitHub issue so that the work can be prioritized appropriately.
 
 Skeema is not currently intended for use on multi-master replication topologies, including Galera, InnoDB Cluster, and traditional active-active master-master configurations. It also has not yet been evaluated on Amazon Aurora.
+
+As of August 2018, support for MySQL 8.0 is still quite new and should be considered experimental. Please [file an issue](https://github.com/skeema/skeema/issues/new) if you encounter anything unexpected.
 
 ### Privileges
 

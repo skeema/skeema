@@ -141,7 +141,7 @@ func (fl Flavor) VendorMinVersion(vendor Vendor, major, minor int) bool {
 // Supported returns true if package tengo officially supports this flavor
 func (fl Flavor) Supported() bool {
 	switch fl {
-	case FlavorMySQL55, FlavorMySQL56, FlavorMySQL57:
+	case FlavorMySQL55, FlavorMySQL56, FlavorMySQL57, FlavorMySQL80:
 		return true
 	case FlavorPercona56, FlavorPercona57:
 		return true
