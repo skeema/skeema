@@ -348,9 +348,9 @@ Commands | *all*
 
 This option indicates the database server vendor and version corresponding to the first [host](#host) defined in this directory. The value is formatted as "vendor:major.minor", for example "mysql:5.6", "percona:5.7", or "mariadb:10.1".
 
-This option is automatically populated in host-level .skeema files by `skeema init`, `skeema pull`, and `skeema add-environment` beginning in Skeema v1.0.3. 
+This option is automatically populated in host-level .skeema files by `skeema init`, `skeema pull`, and `skeema add-environment` beginning in Skeema v1.0.3.
 
-Currently, this option just controls use of certain session-level variables that are specific to particular vendors and versions. For example, if `flavor: mysql:8.0` is set, Skeema automatically disables the information_schema stat cache (at the session level, i.e. just for Skeema's own connections) to ensure it always sees up-to-date values in information_schema.
+This option controls use of vendor-and-version-specific DDL formatting, as well as session variables. For example, if `flavor: mysql:8.0` is set, Skeema automatically disables the information_schema stat cache (at the session level, i.e. just for Skeema's own connections) to ensure it always sees up-to-date values in information_schema.
 
 In future releases, it may also be used for purposes such as optionally offloading the [temporary schema operations](faq.md#temporary-schema-usage) to a local Docker container; the [flavor](#flavor) value will then be used to ensure the correct Docker image is used.
 

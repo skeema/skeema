@@ -94,7 +94,6 @@ func PullHandler(cfg *mybase.Config) error {
 		// execute the generated statement! We just examine its type.
 		mods := tengo.StatementModifiers{
 			AllowUnsafe: true,
-			Flavor:      t.Instance.Flavor(),
 		}
 		// pull command updates next auto-increment value for existing table always
 		// if requested, or only if previously present in file otherwise
@@ -106,6 +105,11 @@ func PullHandler(cfg *mybase.Config) error {
 		mods.IgnoreTable, err = t.Dir.Config.GetRegexp("ignore-table")
 		if err != nil {
 			return err
+		}
+		if configFlavor := tengo.NewFlavor(t.Dir.Config.Get("flavor")); configFlavor != tengo.FlavorUnknown {
+			mods.Flavor = configFlavor
+		} else {
+			mods.Flavor = t.Instance.Flavor()
 		}
 
 		// Track which table names have already been seen, to handle cases where the
@@ -244,16 +248,16 @@ func findNewSchemas(dir *Dir) error {
 		}
 
 		// Update the instance dir's .skeema option file if the instance's current
-		// flavor does not match what's in the file
-		if instFlavor := instance.Flavor(); instFlavor.String() != dir.Config.Get("flavor") {
+		// flavor does not match what's in the file. However, leave the value in the
+		// file alone if it's specified and we're unable to detect the instance's
+		// vendor, as this gives operators the ability to manually override an
+		// undetectable flavor.
+		instFlavor := instance.Flavor()
+		if instFlavor.Vendor != tengo.VendorUnknown && instFlavor.String() != dir.Config.Get("flavor") {
 			if optionFile, err := dir.OptionFile(); err != nil {
 				log.Warnf("Unable to update flavor in %s/.skeema: %s", dir, err)
 			} else {
-				if instFlavor == tengo.FlavorUnknown {
-					optionFile.UnsetOptionValue(dir.section, "flavor")
-				} else {
-					optionFile.SetOptionValue(dir.section, "flavor", instFlavor.String())
-				}
+				optionFile.SetOptionValue(dir.section, "flavor", instFlavor.String())
 				if err := optionFile.Write(true); err != nil {
 					log.Warnf("Unable to update flavor in %s: %s", optionFile.Path(), err)
 				} else {

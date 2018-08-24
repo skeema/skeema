@@ -198,7 +198,11 @@ func pushWorker(sps *sharedPushState) {
 				sps.setFatalError(NewExitValue(CodeBadConfig, err.Error()))
 				return
 			}
-			mods.Flavor = t.Instance.Flavor()
+			if configFlavor := tengo.NewFlavor(t.Dir.Config.Get("flavor")); configFlavor != tengo.FlavorUnknown {
+				mods.Flavor = configFlavor
+			} else {
+				mods.Flavor = t.Instance.Flavor()
+			}
 
 			// Build DDLStatements for each TableDiff, handling pre-execution errors
 			// accordingly
