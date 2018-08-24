@@ -360,6 +360,36 @@ func (s TengoIntegrationSuite) TestInstanceDropSchema(t *testing.T) {
 	}
 }
 
+func (s TengoIntegrationSuite) TestInstanceDropTablesDeadlock(t *testing.T) {
+	// With the new data dictionary, attempting to drop 2 tables concurrently can
+	// deadlock if the tables have a foreign key constraint between them. This
+	// deadlock did not occur in prior releases.
+	if !s.d.Flavor().HasDataDictionary() {
+		t.Skip("Test only relevant for flavors that have the new data dictionary")
+	}
+
+	db, err := s.d.Connect("", "foreign_key_checks=0")
+	if err != nil {
+		t.Fatalf("Unable to connect to DockerizedInstance: %s", err)
+	}
+
+	// Add a FK relation, drop all tables in the schema, and then restore the
+	// test database to its previous state. Without the fix in DropTablesInSchema,
+	// this tends to hit a deadlock within just a few loop iterations.
+	for n := 0; n < 10; n++ {
+		_, err = db.Exec("ALTER TABLE testing.actor_in_film ADD CONSTRAINT actor FOREIGN KEY (actor_id) REFERENCES testing.actor (actor_id)")
+		if err != nil {
+			t.Fatalf("Error running query on DockerizedInstance: %s", err)
+		}
+		if err = s.d.DropTablesInSchema("testing", false); err != nil {
+			t.Fatalf("Error dropping tables: %s", err)
+		}
+		if err = s.BeforeTest("", ""); err != nil {
+			t.Fatalf("Error nuking and re-sourcing data: %s", err)
+		}
+	}
+}
+
 func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
 	assertNoError := func(schemaName, newCharSet, newCollation, expectCharSet, expectCollation string) {
 		t.Helper()
