@@ -180,17 +180,19 @@ This option stores a comma-separated list of session variables to set upon conne
 
 Any string-valued variables must have their values wrapped in single-quotes. Take extra care to nest or escape quotes properly in your shell if supplying connect-options on the command-line. For example, `--connect-options="lock_wait_timeout=60,sql_mode='STRICT_ALL_TABLES,ALLOW_INVALID_DATES'"`
 
-The following MySQL variables *cannot* be set by this option, since it would interfere with Skeema's internal operations:
+The following MySQL session variables *cannot* be set by this option, since it would interfere with Skeema's internal operations:
 
 * `autocommit` -- cannot be disabled in Skeema
 * `foreign_key_checks` -- see Skeema's own [foreign-key-checks](#foreign_key_checks) option to manipulate this
 * `information_schema_stats_expiry` -- always automatically set to 0 if the [flavor](#flavor) supports this option, to prevent stale data from appearing in information_schema
+* `default_storage_engine` -- always set to InnoDB for Skeema's sessions
+* `sql_quote_show_create` -- always enabled for Skeema's sessions
 
 Aside from the above list, any legal MySQL session variable may be set.
 
 This option only affects connections made *directly* by Skeema. If you are using an external tool via [alter-wrapper](#alter-wrapper) or [ddl-wrapper](#ddl-wrapper), you will also need to configure that tool to set options appropriately. Skeema's `{CONNOPTS}` variable can help avoid redundancy here; for example, if configuring pt-online-schema-change, you could include `--set-vars {CONNOPTS}` on the command-line to pass the same configured options dynamically.
 
-If you do not override `sql_mode` in [connect-options](#connect-options), Skeema will default to using a session-level value of `'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'`. This provides a consistent strict-mode baseline for Skeema's behavior, regardless of what the server global default is set to.
+If you do not override `sql_mode` in [connect-options](#connect-options), Skeema will default to using a session-level value of `'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'`. This provides a consistent strict-mode baseline for Skeema's behavior, regardless of what the server global default is set to. Similarly, `innodb_strict_mode` is enabled by default for Skeema's sessions, but may be overridden to disable if desired.
 
 In addition to setting MySQL session variables, you may also set any of these special variables which affect client-side behavior at the internal driver/protocol level:
 

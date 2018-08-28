@@ -695,6 +695,14 @@ func (s *SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 		t.Skip("Test not relevant for 5.5-based image", s.d.Image)
 	}
 
+	// By default, Skeema uses innodb_strict_mode=1 in its connections. MySQL 5.6
+	// interprets that option to prevent use of KEY_BLOCK_SIZE in nonsensical ways,
+	// so we must disable it for this test.
+	var connectOpts string
+	if major, minor, _ := s.d.Version(); major == 5 && minor == 6 {
+		connectOpts = " --connect-options=\"innodb_strict_mode=0\""
+	}
+
 	withClauses := "CREATE TABLE `problems` (\n" +
 		"  `name` varchar(30) /*!50606 STORAGE MEMORY */ /*!50606 COLUMN_FORMAT DYNAMIC */ DEFAULT NULL,\n" +
 		"  `num` int(10) unsigned NOT NULL /*!50606 STORAGE DISK */ /*!50606 COLUMN_FORMAT FIXED */,\n" +
@@ -727,18 +735,18 @@ func (s *SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 
 	// lint normalizes files to remove the clauses
 	writeFile(t, "mydb/product/problems.sql", withClauses)
-	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint%s", connectOpts)
 	assertFileNormalized()
 
 	// diff views the clauses as no-ops if present in file but not db, or vice versa
 	s.dbExec(t, "product", "DROP TABLE `problems`")
 	s.dbExec(t, "product", withoutClauses)
 	writeFile(t, "mydb/product/problems.sql", withClauses)
-	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff%s", connectOpts)
 	s.dbExec(t, "product", "DROP TABLE `problems`")
 	s.dbExec(t, "product", withClauses)
 	writeFile(t, "mydb/product/problems.sql", withoutClauses)
-	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff%s", connectOpts)
 
 	// init strips the clauses when it writes files
 	// (current db state: file still has extra clauses from previous)
@@ -752,12 +760,12 @@ func (s *SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 	// validation, in either direction
 	newFileContents := strings.Replace(withoutClauses, "  KEY `idx1`", "  newcol int COLUMN_FORMAT FIXED,\n  KEY `idx1`", 1)
 	writeFile(t, "mydb/product/problems.sql", newFileContents)
-	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push%s", connectOpts)
 	s.dbExec(t, "product", "DROP TABLE `problems`")
 	s.dbExec(t, "product", withoutClauses)
 	s.dbExec(t, "product", "ALTER TABLE `problems` DROP KEY `idx2`")
 	writeFile(t, "mydb/product/problems.sql", withClauses)
-	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push%s", connectOpts)
 }
 
 func (s *SkeemaIntegrationSuite) TestReuseTempSchema(t *testing.T) {

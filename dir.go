@@ -321,6 +321,8 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 		"autocommit":                      true, // always enabled by default in MySQL
 		"foreign_key_checks":              true, // always disabled explicitly later in this method
 		"information_schema_stats_expiry": true, // always set for flavors that support it
+		"default_storage_engine":          true, // always set to InnoDB later in this method
+		"sql_quote_show_create":           true, // always enabled later in this method
 	}
 
 	options, err := SplitConnectOptions(dir.Config.Get("connect-options"))
@@ -334,6 +336,7 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	v.Set("readTimeout", "5s")
 	v.Set("writeTimeout", "5s")
 	v.Set("sql_mode", "'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'")
+	v.Set("innodb_strict_mode", "1")
 
 	// Set values from connect-options
 	for name, value := range options {
@@ -352,6 +355,8 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	// Set non-overridable options
 	v.Set("interpolateParams", "true")
 	v.Set("foreign_key_checks", "0")
+	v.Set("default_storage_engine", "'InnoDB'")
+	v.Set("sql_quote_show_create", "1")
 
 	flavorFromConfig := tengo.NewFlavor(dir.Config.Get("flavor"))
 	if flavorFromConfig.HasDataDictionary() {
