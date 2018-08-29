@@ -94,8 +94,15 @@ func AddGlobalConfigFiles(cfg *mybase.Config) {
 		}
 	}
 
-	// Special handling for password option: supplying it with no value prompts on STDIN
-	if cfg.Get("password") == "" {
+	// Special handling for password option: if not supplied at all, check env
+	// var instead. Or if supplied but with no value (empty string, instead of
+	// its default of "<no password>"), prompt on STDIN like mysql client does.
+	if !cfg.Supplied("password") {
+		if val := os.Getenv("MYSQL_PWD"); val != "" {
+			cfg.CLI.OptionValues["password"] = val
+			cfg.MarkDirty()
+		}
+	} else if cfg.Get("password") == "" {
 		var err error
 		cfg.CLI.OptionValues["password"], err = PromptPassword()
 		if err != nil {

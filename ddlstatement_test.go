@@ -33,7 +33,7 @@ func (s *SkeemaIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 		delete(fakeFileSource, "alter-algorithm")
 		delete(fakeFileSource, "alter-lock")
 	}
-	cfg := mybase.ParseFakeCLI(t, CommandSuite, "skeema diff ", fakeFileSource)
+	cfg := mybase.ParseFakeCLI(t, CommandSuite, "skeema diff", fakeFileSource)
 	AddGlobalConfigFiles(cfg)
 	dir, err := NewDir(".", cfg)
 	if err != nil {

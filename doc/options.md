@@ -485,6 +485,8 @@ Since supplying a value to `password` is optional, if used on the command-line t
 
 Note that `skeema init` intentionally does not persist `password` to a .skeema file. If you would like to store the password, you may manually add it to ~/.my.cnf (recommended) or to a .skeema file (ideally a global one, i.e. *not* part of your schema repo, to keep it out of source control).
 
+As a special case, as an alternative to supplying `password` in an option file or on the command-line, you may supply a password via the `MYSQL_PWD` environment variable. This is supported for compatibility with the standard MySQL client. However, as noted in the MySQL manual, "This method of specifying your MySQL password must be considered *extremely insecure*."
+
 ### port
 
 Commands | *all*

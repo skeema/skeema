@@ -1,6 +1,6 @@
 ## Configuration
 
-Skeema is configured by setting options. These options may be provided to Skeema via the command-line and/or via option files. Future versions may also support environment variables.
+Skeema is configured by setting options. These options may be provided to Skeema via the command-line and/or via option files.
 
 Handling and parsing of options is intentionally designed to be very similar to the MySQL client and server programs.
 
@@ -96,11 +96,18 @@ Most Skeema commands -- including `skeema diff`, `skeema push`, `skeema pull`, a
 
 For example, if you have multiple MySQL pools/clusters, each with multiple schemas, your schema repo layout will be of the format reporoot/hostname/schemaname/*.sql. Each hostname subdir will have a .skeema file defining a different host, and each schemaname subdir will have a .skeema file defining a different schema. If you run `skeema diff` from reporoot, diff'ing will be executed on all hosts and all schemas. But if you run `skeema diff` in some leaf-level schemaname subdir, only that schema (and the host defined by its parent dir) will be diffed.
 
+### Env variables
+
+For compatibility with the standard MySQL client, Skeema supports supplying the [password](options.md#password) option via the `MYSQL_PWD` environment variable. This may be inadvisable for security reasons, though.
+
+No other options have environment variable equivalents at this time.
+
 ### Priority of options set in multiple places
 
 The same option may be set in multiple places. Conflicts are resolved as follows, from lowest priority to highest:
 
 * Option default value
+* Environment variables (`MYSQL_PWD` only)
 * /etc/skeema
 * /usr/local/etc/skeema
 * ~/.my.cnf
