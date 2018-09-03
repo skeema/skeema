@@ -693,6 +693,32 @@ func TestTableAlterModifyColumn(t *testing.T) {
 			t.Errorf("Unexpected alter: %s", mc.Clause(StatementModifiers{}))
 		}
 	}
+
+	// Start over; move 2 columns and verify that each column is only mentioned
+	// once in the generated ALTER
+	to = aTable(1)
+	to.Columns = []*Column{to.Columns[0], to.Columns[1], to.Columns[2], to.Columns[4], to.Columns[6], to.Columns[3], to.Columns[5]}
+	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
+	tableAlters, supported = from.Diff(&to)
+	if !supported {
+		t.Error("Expected diff to be supported, but it was not")
+	} else {
+		stmt, _ := NewAlterTable(&from, &to).Statement(StatementModifiers{})
+		if len(tableAlters) != 2 {
+			t.Errorf("Incorrect number of table alters: expected 2, found %d: %s", len(tableAlters), stmt)
+		}
+		seen := make(map[string]bool, len(to.Columns))
+		for _, ta := range tableAlters {
+			mc, ok := ta.(ModifyColumn)
+			if !ok {
+				t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", mc, ta)
+			}
+			if seen[mc.NewColumn.Name] {
+				t.Fatalf("Column %s illegally referenced in generated ALTER multiple times:\n%s", EscapeIdentifier(mc.NewColumn.Name), stmt)
+			}
+			seen[mc.NewColumn.Name] = true
+		}
+	}
 }
 
 func TestTableAlterChangeStorageEngine(t *testing.T) {
