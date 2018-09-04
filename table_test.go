@@ -89,7 +89,7 @@ func TestTableAlterAddOrDropColumn(t *testing.T) {
 	if ta.Table != &to || ta.Column != newCol {
 		t.Error("Pointers in table alter do not point to expected values")
 	}
-	if ta.PositionFirst || ta.PositionAfter != to.Columns[colCount-3] {
+	if ta.PositionFirst || ta.PositionAfter != to.Columns[colCount-3] || !strings.Contains(ta.Clause(StatementModifiers{}), " AFTER ") {
 		t.Errorf("Expected new column to be after `%s` / first=false, instead found after `%s` / first=%t", to.Columns[colCount-3].Name, ta.PositionAfter.Name, ta.PositionFirst)
 	}
 
@@ -128,7 +128,7 @@ func TestTableAlterAddOrDropColumn(t *testing.T) {
 	if ta.Table != &to || ta.Column != anotherCol {
 		t.Error("Pointers in table alter[0] do not point to expected values")
 	}
-	if !ta.PositionFirst || ta.PositionAfter != nil {
+	if !ta.PositionFirst || ta.PositionAfter != nil || !strings.Contains(ta.Clause(StatementModifiers{}), " FIRST") {
 		t.Errorf("Expected first new column to be after nil / first=true, instead found after %v / first=%t", ta.PositionAfter, ta.PositionFirst)
 	}
 
@@ -561,7 +561,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	if ta.Table != &to || ta.OldColumn != from.Columns[movedColPos] || ta.NewColumn != movedCol {
 		t.Error("Pointers in table alter do not point to expected values")
 	}
-	if !ta.PositionFirst || ta.PositionAfter != nil {
+	if !ta.PositionFirst || ta.PositionAfter != nil || !strings.Contains(ta.Clause(StatementModifiers{}), " FIRST") {
 		t.Errorf("Expected modified column to be after nil / first=true, instead found after %v / first=%t", ta.PositionAfter, ta.PositionFirst)
 	}
 
@@ -717,6 +717,26 @@ func TestTableAlterModifyColumn(t *testing.T) {
 				t.Fatalf("Column %s illegally referenced in generated ALTER multiple times:\n%s", EscapeIdentifier(mc.NewColumn.Name), stmt)
 			}
 			seen[mc.NewColumn.Name] = true
+		}
+	}
+}
+
+func TestTableAlterNoModify(t *testing.T) {
+	// Compare to a table with no common columns, and confirm no MODIFY clauses
+	// present
+	from := aTable(1)
+	to := aTable(1)
+	for n := range to.Columns {
+		to.Columns[n].Name = fmt.Sprintf("xzy%s", to.Columns[n].Name)
+	}
+	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
+	if tableAlters, supported := from.Diff(&to); !supported {
+		t.Error("Expected diff to be supported, but it was not")
+	} else {
+		for _, ta := range tableAlters {
+			if _, ok := ta.(ModifyColumn); ok {
+				t.Errorf("Unexpected ModifyColumn: %+v", ta)
+			}
 		}
 	}
 }
