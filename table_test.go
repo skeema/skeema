@@ -741,6 +741,89 @@ func TestTableAlterNoModify(t *testing.T) {
 	}
 }
 
+// TestTableAlterModifyColumnRandomly performs 20 iterations of semi-random
+// modifications to a table's columns ordering and types, and then confirms
+// that running the ALTER actually has the expected effect. It is commented out
+// because this is overkill for routine testing, but the code can be useful
+// when changing deep parts of the diff logic, especially the column reordering
+// algorithm.
+/*
+func (s TengoIntegrationSuite) TestTableAlterModifyColumnRandomly(t *testing.T) {
+	exec := func(query string) {
+		t.Helper()
+		db, err := s.d.Connect("testing", "")
+		if err != nil {
+			t.Fatalf("Unable to connect to DockerizedInstance: %s", err)
+		}
+		_, err = db.Exec(query)
+		if err != nil {
+			t.Fatalf("Error running query on DockerizedInstance.\nQuery: %s\nError: %s", query, err)
+		}
+	}
+	assertCreate := func(table *Table) {
+		t.Helper()
+		createStatement, err := s.d.ShowCreateTable("testing", table.Name)
+		if err != nil {
+			t.Fatalf("Unexpected query error: %s", err)
+		}
+		if createStatement != table.CreateStatement {
+			t.Errorf("Mismatch between actual and expected CREATE TABLE.\nActual:\n%s\nExpected:\n%s", createStatement, table.CreateStatement)
+		}
+	}
+
+	from := aTableForFlavor(s.d.Flavor(), 1)
+	for n := 0; n < 20; n++ {
+		to := aTableForFlavor(s.d.Flavor(), 1)
+		swaps := rand.Intn(len(to.Columns) + 1)
+		for swap := 0; swap < swaps; swap++ {
+			a := rand.Intn(len(to.Columns))
+			b := rand.Intn(len(to.Columns))
+			to.Columns[a], to.Columns[b] = to.Columns[b], to.Columns[a]
+		}
+		mods := rand.Intn(3)
+		for mod := 0; mod < mods; mod++ {
+			n := rand.Intn(len(to.Columns))
+			col := to.Columns[n]
+			switch col.TypeInDB {
+			case "varchar(45)":
+				col.TypeInDB = "varchar(55)"
+			case "char(10)":
+				col.TypeInDB = "char(12)"
+			case "tinyint(1)", "bit(1)":
+				col.Nullable = true
+			case "smallint(5) unsigned":
+				col.TypeInDB = "int(10) unsigned"
+			}
+		}
+		to.CreateStatement = to.GeneratedCreateStatement(s.d.Flavor())
+
+		exec(fmt.Sprintf("DROP TABLE IF EXISTS %s", from.Name))
+		exec(from.CreateStatement)
+		alter := NewAlterTable(&from, &to)
+		if alter == nil {
+			assertCreate(&to) // assert correct without any change
+		} else if !alter.supported {
+			t.Fatal("Expected diff to be supported, but it was not")
+		} else {
+			stmt, _ := alter.Statement(StatementModifiers{})
+			seen := make(map[string]bool, len(to.Columns))
+			for _, ta := range alter.alterClauses {
+				mc, ok := ta.(ModifyColumn)
+				if !ok {
+					t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", mc, ta)
+				}
+				if seen[mc.NewColumn.Name] {
+					t.Fatalf("Column %s illegally referenced in generated ALTER multiple times:\n%s", EscapeIdentifier(mc.NewColumn.Name), stmt)
+				}
+				seen[mc.NewColumn.Name] = true
+			}
+			exec(stmt)
+			assertCreate(&to)
+		}
+	}
+}
+*/
+
 func TestTableAlterChangeStorageEngine(t *testing.T) {
 	getTableWithEngine := func(engine string) Table {
 		t := aTable(1)
