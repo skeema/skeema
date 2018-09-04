@@ -348,15 +348,6 @@ type columnsComparison struct {
 	toOrderCommonCols   []*Column
 }
 
-func (cc *columnsComparison) commonColumnsSameOrder() bool {
-	for n, fromCol := range cc.fromOrderCommonCols {
-		if fromCol.Name != cc.toOrderCommonCols[n].Name {
-			return false
-		}
-	}
-	return true
-}
-
 func (cc *columnsComparison) columnDrops() []TableAlterClause {
 	clauses := make([]TableAlterClause, 0)
 
@@ -407,102 +398,80 @@ func (cc *columnsComparison) columnAdds() []TableAlterClause {
 
 func (cc *columnsComparison) columnModifications() []TableAlterClause {
 	clauses := make([]TableAlterClause, 0)
+	commonCount := len(cc.fromOrderCommonCols)
+	if commonCount == 0 { // no common cols = no possible MODIFY COLUMN clauses
+		return clauses
+	}
 
-	moved := make(map[string]bool, len(cc.fromOrderCommonCols))
-
-	// Loop until we have the common columns in the proper order. Identify which
-	// col needs to be moved the furthest, and then move it + generate a
-	// corresponding alter clause.
-	//
-	// Moves can be made relative to other common cols, even if new cols are being
-	// added -- we handle adds AFTER moves, and mysql processes the clauses left-
-	// to-right, so the final order will end up correct.
-	//
-	// TODO: this move-largest-jump-first algo is not always optimal, in terms of
-	// generating the minimal number of MODIFY COLUMN clauses. Additionally, we
-	// should prefer moving cols that have other modifications vs those that don't.
-	for !cc.commonColumnsSameOrder() {
-		var greatestMoveFromPos, greatestMoveAmount, greatestMoveAmountAbs int
-		for fromPos, fromCol := range cc.fromOrderCommonCols {
-			if fromCol.Name == cc.toOrderCommonCols[fromPos].Name {
-				continue
+	// Relative to the "to" side, efficiently identify the longest increasing
+	// subsequence in the "from" side, to determine which columns can stay put vs
+	// which ones need to be reordered.
+	// TODO: In cases of ties for longest increasing subsequence, we should prefer
+	// moving cols that have other modifications vs ones that don't, to minimize
+	// the number of MODIFY COLUMN clauses. (No functional difference either way,
+	// though.)
+	fromIndexToPos := make([]int, commonCount)
+	for fromPos, fromCol := range cc.fromOrderCommonCols {
+		for toPos := range cc.toOrderCommonCols {
+			if cc.toOrderCommonCols[toPos].Name == fromCol.Name {
+				fromIndexToPos[fromPos] = toPos
+				break
 			}
-			var toPos int
-			for toPos = range cc.toOrderCommonCols {
-				if cc.toOrderCommonCols[toPos].Name == fromCol.Name {
+		}
+	}
+	candidateLists := make([][]int, 1, commonCount)
+	candidateLists[0] = []int{fromIndexToPos[0]}
+	for i := 1; i < commonCount; i++ {
+		comp := fromIndexToPos[i]
+		if comp < candidateLists[0][0] {
+			candidateLists[0][0] = comp
+		} else if longestList := candidateLists[len(candidateLists)-1]; comp > longestList[len(longestList)-1] {
+			newList := make([]int, len(longestList)+1)
+			copy(newList, longestList)
+			newList[len(longestList)] = comp
+			candidateLists = append(candidateLists, newList)
+		} else {
+			for j := len(candidateLists) - 2; j >= 0; j-- {
+				if thisList, nextList := candidateLists[j], candidateLists[j+1]; comp > thisList[len(thisList)-1] {
+					copy(nextList, thisList)
+					nextList[len(nextList)-1] = comp
 					break
 				}
+				if j == 0 { // should break before getting here
+					panic(fmt.Errorf("Column reorder assertion failed! i=%d, comp=%d, candidateLists=%v", i, comp, candidateLists))
+				}
 			}
-			var moveAmount, moveAmountAbs int
-			if toPos > fromPos {
-				moveAmount, moveAmountAbs = toPos-fromPos, toPos-fromPos
-			} else {
-				moveAmount, moveAmountAbs = toPos-fromPos, fromPos-toPos
-			}
-			if moveAmountAbs > greatestMoveAmountAbs {
-				greatestMoveAmount, greatestMoveAmountAbs = moveAmount, moveAmountAbs
-				greatestMoveFromPos = fromPos
-			}
-		}
-		fromCol := cc.fromOrderCommonCols[greatestMoveFromPos]
-		toCol := cc.toOrderCommonCols[greatestMoveFromPos+greatestMoveAmount]
-		modify := ModifyColumn{
-			Table:     cc.toTable,
-			OldColumn: fromCol,
-			NewColumn: toCol,
-		}
-		if greatestMoveFromPos+greatestMoveAmount == 0 {
-			modify.PositionFirst = true
-		} else {
-			// We need to figure out which column we're putting this column after. This
-			// needs to point to a column in toTable, BUT the position will be relative
-			// to that column's old position in fromTable.
-			prevColIndex := greatestMoveFromPos + greatestMoveAmount
-			if greatestMoveAmount < 0 {
-				// If moving backwards, we need to look one more column before.
-				// We don't need to do this if moving forwards, since everything effectively
-				// shifts down by 1 inherently due to the target col moving forwards.
-				prevColIndex--
-			}
-			fromPreviousCol := cc.fromOrderCommonCols[prevColIndex]
-			modify.PositionAfter = cc.toColumnsByName[fromPreviousCol.Name]
-		}
-		clauses = append(clauses, modify)
-		moved[fromCol.Name] = true
-
-		newPos := greatestMoveFromPos + greatestMoveAmount
-		if greatestMoveAmount > 0 {
-			before := cc.fromOrderCommonCols[0:greatestMoveFromPos]
-			between := cc.fromOrderCommonCols[greatestMoveFromPos+1 : newPos+1]
-			after := cc.fromOrderCommonCols[newPos+1:]
-			cc.fromOrderCommonCols = make([]*Column, 0, len(cc.fromOrderCommonCols))
-			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, before...)
-			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, between...)
-			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, fromCol)
-			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, after...)
-		} else {
-			before := cc.fromOrderCommonCols[0:newPos]
-			between := cc.fromOrderCommonCols[newPos:greatestMoveFromPos]
-			after := cc.fromOrderCommonCols[greatestMoveFromPos+1:]
-			cc.fromOrderCommonCols = make([]*Column, 0, len(cc.fromOrderCommonCols))
-			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, before...)
-			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, fromCol)
-			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, between...)
-			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, after...)
 		}
 	}
-
-	// Generate clauses for columns that have been modified, but not re-ordered
-	for n, fromCol := range cc.fromOrderCommonCols {
-		toCol := cc.toOrderCommonCols[n]
-		if !moved[fromCol.Name] && !fromCol.Equals(toCol) {
-			clauses = append(clauses, ModifyColumn{
-				Table:     cc.toTable,
-				OldColumn: fromCol,
-				NewColumn: toCol,
-			})
-		}
+	stayPut := make([]bool, commonCount)
+	for _, toPos := range candidateLists[len(candidateLists)-1] {
+		stayPut[toPos] = true
 	}
 
+	// For each common column (relative to the "to" order), emit a MODIFY COLUMN
+	// clause if the col stayed put but otherwise changed, OR if it was reordered.
+	for toPos, toCol := range cc.toOrderCommonCols {
+		fromCol := cc.fromColumnsByName[toCol.Name]
+		if stayPut[toPos] {
+			if !fromCol.Equals(toCol) {
+				clauses = append(clauses, ModifyColumn{
+					Table:     cc.toTable,
+					OldColumn: fromCol,
+					NewColumn: toCol,
+				})
+			}
+		} else {
+			modify := ModifyColumn{
+				Table:         cc.toTable,
+				OldColumn:     fromCol,
+				NewColumn:     toCol,
+				PositionFirst: toPos == 0,
+			}
+			if toPos > 0 {
+				modify.PositionAfter = cc.toOrderCommonCols[toPos-1]
+			}
+			clauses = append(clauses, modify)
+		}
+	}
 	return clauses
 }

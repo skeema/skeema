@@ -301,7 +301,7 @@ func (t *Target) verifyDiff(diff *tengo.SchemaDiff) (err error) {
 		}
 		for _, stmt := range v.Alters {
 			if _, err := db.Exec(stmt); err != nil {
-				return err
+				return fmt.Errorf("verifyDiff: %s (returned from executing DDL in temporary schema: %s)", err, stmt)
 			}
 		}
 		expected, _ := tengo.ParseCreateAutoInc(v.To.CreateStatement)
