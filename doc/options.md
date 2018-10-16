@@ -414,8 +414,8 @@ The command's STDOUT will be split on a consistent delimiter (newline, tab, comm
 * hostname:port
 * ipv4
 * ipv4:port
-* [ipv6]
-* [ipv6]:port
+* \[ipv6\]
+* \[ipv6\]:port
 
 If ports are omitted, the [port](#port) option is used instead, which defaults to MySQL's standard port 3306.
 
