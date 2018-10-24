@@ -155,8 +155,11 @@ func (instance *Instance) Connect(defaultSchema string, params string) (*sqlx.DB
 
 // CanConnect verifies that the Instance can be connected to
 func (instance *Instance) CanConnect() (bool, error) {
+	// To ensure we're initializing a new conn pool below, delete the pool that
+	// has no default database and only default connection params
 	instance.Lock()
-	delete(instance.connectionPool, "?") // ensure we're initializing a new conn pool for schemalass, paramless use
+	key := fmt.Sprintf("?%s", instance.buildParamString(""))
+	delete(instance.connectionPool, key)
 	instance.Unlock()
 
 	_, err := instance.Connect("", "")

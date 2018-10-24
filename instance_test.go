@@ -2,6 +2,7 @@ package tengo
 
 import (
 	"database/sql"
+	"fmt"
 	"net/url"
 	"reflect"
 	"strings"
@@ -149,6 +150,35 @@ func (s TengoIntegrationSuite) TestInstanceConnect(t *testing.T) {
 		t.Errorf("Unexpected connection error: %s", err)
 	} else if db4 == db || db4 == db3 {
 		t.Error("Expected different DB pool to be returned from Connect with different params; instead was same")
+	}
+}
+
+func (s TengoIntegrationSuite) TestInstanceCanConnect(t *testing.T) {
+	// Force a connection that has defaultParams
+	dsn := fmt.Sprintf("%s?wait_timeout=5&timeout=1s", s.d.DSN())
+	inst, err := NewInstance("mysql", dsn)
+	if err != nil {
+		t.Fatalf("Unexpected error from NewInstance: %s", err)
+	}
+
+	if ok, err := inst.CanConnect(); !ok || err != nil {
+		t.Fatalf("Unexpected return from CanConnect(): %t / %s", ok, err)
+	}
+
+	// Stop the DockerizedInstance and confirm CanConnect result matches
+	// expectation
+	if err := s.d.Stop(); err != nil {
+		t.Fatalf("Failed to Stop instance: %s", err)
+	}
+	ok, connErr := inst.CanConnect()
+	if err := s.d.Start(); err != nil {
+		t.Fatalf("Failed to re-Start() instance: %s", err)
+	}
+	if err := s.d.TryConnect(); err != nil {
+		t.Fatalf("Failed to reconnect after restarting instance: %s", err)
+	}
+	if ok || connErr == nil {
+		t.Errorf("Unexpected return from CanConnect(): %t / %s", ok, connErr)
 	}
 }
 
