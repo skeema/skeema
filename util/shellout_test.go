@@ -1,8 +1,7 @@
-package main
+package util
 
 import (
 	"reflect"
-	"strings"
 	"testing"
 )
 
@@ -54,59 +53,51 @@ func TestRunCaptureSplit(t *testing.T) {
 }
 
 func TestNewInterpolatedShellOut(t *testing.T) {
-	getDir := func(path string, pairs ...string) *Dir {
-		optValues := make(map[string]string)
-		for _, pair := range pairs {
-			tokens := strings.SplitN(pair, "=", 2)
-			optValues[tokens[0]] = tokens[1]
-		}
-		return &Dir{
-			Path:    path,
-			Config:  getConfig(optValues), // see dir_test.go
-			section: "production",
-		}
+	variables := map[string]string{
+		"HOST":     "ahost",
+		"SCHEMA":   "aschema",
+		"USER":     "someone",
+		"PASSWORD": "",
+		"PORT":     "3306",
+		"CONNOPTS": "sql_mode='STRICT_ALL_TABLES,ALLOW_INVALID_DATES'",
+		"DIRNAME":  "someschema",
+		"DIRPATH":  "/var/schemas/somehost/someschema",
 	}
-	dir := getDir("/var/schemas/somehost/someschema", "host=ahost", "schema=aschema", "user=someone", "password=", "port=3306", `connect-options=sql_mode='STRICT_ALL_TABLES,ALLOW_INVALID_DATES'`)
-	assertShellOut := func(command, expected string, extraPairs ...string) {
-		extra := make(map[string]string)
-		for _, pair := range extraPairs {
-			tokens := strings.SplitN(pair, "=", 2)
-			extra[tokens[0]] = tokens[1]
-		}
-		s, err := NewInterpolatedShellOut(command, dir, extra)
+	assertShellOut := func(command, expected, expectedForDisplay string) {
+		t.Helper()
+		s, err := NewInterpolatedShellOut(command, variables)
 		if err != nil {
 			t.Errorf("Unexpected error from NewInterpolatedShellOut on %s: %s", command, err)
 		} else if s.Command != expected {
 			t.Errorf("Expected NewInterpolatedShellOut to return ShellOut.Command of %s, instead found %s", expected, s.Command)
+		} else if s.PrintableCommand != expectedForDisplay {
+			t.Errorf("Expected NewInterpolatedShellOut to return ShellOut.PrintableCommand of %s, instead found %s", expectedForDisplay, s.PrintableCommand)
+		}
+		if s.PrintableCommand == "" && s.String() != s.Command {
+			t.Error("Expected a blank PrintableCommand to cause String() to use regular Command, but it did not")
+		} else if s.PrintableCommand != "" && s.String() != s.PrintableCommand {
+			t.Error("Expected a non-blank PrintableCommand to override String(), but it did not")
 		}
 	}
-	assertShellOut("/bin/echo {HOST} {SCHEMA} {user} {PASSWORD} {DirName} {DIRPATH}", "/bin/echo ahost aschema someone  someschema /var/schemas/somehost/someschema")
-	assertShellOut("/bin/echo {HOST} {SOMETHING}", "/bin/echo 'overridden value' new_value", "host=overridden value", "something=new_value")
-	assertShellOut("/bin/echo {connopts}", `/bin/echo 'sql_mode='"'"'STRICT_ALL_TABLES,ALLOW_INVALID_DATES'"'"''`)
+	assertShellOut("/bin/echo {HOST} {SCHEMA} {user} {PASSWORD} {DirName} {DIRPATH}", "/bin/echo ahost aschema someone  someschema /var/schemas/somehost/someschema", "")
+	assertShellOut("/bin/echo {connopts}", `/bin/echo 'sql_mode='"'"'STRICT_ALL_TABLES,ALLOW_INVALID_DATES'"'"''`, "")
 
-	dir = getDir("/var/schemas/somehost/someschema", "host=ahost", "schema=aschema", "user=someone", "password=SuPeRsEcReT", "port=3306", "connect-options=")
-	assertShellOutHidePW := func(command, expected, expectedOutput string) {
-		s, err := NewInterpolatedShellOut(command, dir, nil)
-		if err != nil {
-			t.Errorf("Unexpected error from NewInterpolatedShellOut on %s: %s", command, err)
-		} else {
-			if s.Command != expected {
-				t.Errorf("Expected NewInterpolatedShellOut to return ShellOut.Command of %s, instead found %s", expected, s.Command)
-			}
-			if s.String() != expectedOutput {
-				t.Errorf("Expected NewInterpolatedShellOut to return ShellOut.PrintableCommand of %s, instead found %s", expectedOutput, s.String())
-			}
+	variables["PASSWORD"] = "SuPeRsEcReT"
+	assertShellOut("mysql -h {HOST} -u {USER} -p{PASSWORD} -P {PORT} {SCHEMA}", "mysql -h ahost -u someone -pSuPeRsEcReT -P 3306 aschema", "")
+	assertShellOut("mysql -h {HOST} -u {USER} -p{PASSWORDX} -P {PORT} {SCHEMA}", "mysql -h ahost -u someone -pSuPeRsEcReT -P 3306 aschema", "mysql -h ahost -u someone -pXXXXX -P 3306 aschema")
+
+	assertShellOutError := func(command, expected string) {
+		t.Helper()
+		s, err := NewInterpolatedShellOut(command, variables)
+		if err == nil {
+			t.Error("Expected NewInterpolatedShellOut to return an error when invalid variable used, but it did not")
+		} else if s == nil || s.Command != expected {
+			t.Errorf("Unexpected result from NewInterpolatedShellOut when an invalid variable was present: %+v", s)
 		}
 	}
-	assertShellOutHidePW("mysql -h {HOST} -u {USER} -p{PASSWORDX} -P {PORT} {SCHEMA}", "mysql -h ahost -u someone -pSuPeRsEcReT -P 3306 aschema", "mysql -h ahost -u someone -pXXXXXXXXXXX -P 3306 aschema")
-	assertShellOutHidePW("mysql -h {HOST} -u {USER} -p{PASSWORD} -P {PORT} {SCHEMA}", "mysql -h ahost -u someone -pSuPeRsEcReT -P 3306 aschema", "mysql -h ahost -u someone -pSuPeRsEcReT -P 3306 aschema")
-
-	s, err := NewInterpolatedShellOut("/bin/echo {HOST} {iNvAlId} {SCHEMA}", dir, nil)
-	if err == nil {
-		t.Error("Expected NewInterpolatedShellOut to return an error when invalid variable used, but it did not")
-	} else if s == nil || s.Command != "/bin/echo ahost {INVALID} aschema" {
-		t.Errorf("Unexpected result from NewInterpolatedShellOut when an invalid variable was present: %+v", s)
-	}
+	assertShellOutError("/bin/echo {HOST} {iNvAlId} {SCHEMA}", "/bin/echo ahost {INVALID} aschema")
+	assertShellOutError("/bin/echo {HOST} {INVALIDX} {SCHEMA}", "/bin/echo ahost {INVALIDX} aschema")
+	assertShellOutError("/bin/echo {HOST} {X} {SCHEMA}", "/bin/echo ahost {X} aschema")
 }
 
 func TestEscapeVarValue(t *testing.T) {

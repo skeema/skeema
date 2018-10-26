@@ -1,8 +1,8 @@
 # mybase
 
 [![build status](https://img.shields.io/travis/skeema/mybase/master.svg)](http://travis-ci.org/skeema/mybase)
-[![godoc](https://img.shields.io/badge/godoc-master-blue.svg)](https://godoc.org/github.com/skeema/mybase)
-
+[![godoc](https://img.shields.io/badge/godoc-reference-blue.svg)](https://godoc.org/github.com/skeema/mybase)
+[![latest release](https://img.shields.io/github/release/skeema/mybase.svg)](https://github.com/skeema/mybase/releases)
 
 A light-weight Golang framework for building command-line applications, with MySQL-like option handling
 
@@ -35,7 +35,7 @@ MySQL is a trademark of Oracle Corp.
 
 ## Status
 
-mybase should be considered beta software. The API is stable, but documentation and generic examples still need to be written. For now, see the [Skeema codebase](http://github.com/skeema/skeema) for a canonical example using all features of mybase.
+mybase has reached v1 and now has a stable API with backwards-compatibility guarantee. However, documentation, generic examples, and more thorough test coverage still need to be written. For now, see the [Skeema codebase](http://github.com/skeema/skeema) for a canonical example using all features of mybase.
 
 ### Future development
 

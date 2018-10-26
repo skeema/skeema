@@ -33,13 +33,14 @@ differences were found, or 2+ if an error occurred.`
 func DiffHandler(cfg *mybase.Config) error {
 	// We just delegate to PushHandler, forcing dry-run to be enabled
 	cfg.CLI.OptionValues["dry-run"] = "1"
+	cfg.MarkDirty()
 	return PushHandler(cfg)
 }
 
 // clonePushOptionsToDiff copies options from `skeema push` into `skeema diff`
 func clonePushOptionsToDiff() {
-	// Logic relies on init() having been called in both push.go AND diff.go, so we
-	// call it from both places, but only one will succeed
+	// Logic relies on init() having been called in both cmd_push.go AND
+	// cmd_diff.go, so we call it from both places, but only one will succeed
 	diff, ok1 := CommandSuite.SubCommands["diff"]
 	push, ok2 := CommandSuite.SubCommands["push"]
 	if !ok1 || !ok2 {

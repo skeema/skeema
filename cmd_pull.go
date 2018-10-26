@@ -1,11 +1,17 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
+	"path"
+	"regexp"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/fs"
+	"github.com/skeema/skeema/workspace"
 	"github.com/skeema/tengo"
 )
 
@@ -32,187 +38,15 @@ top of the file. If no environment name is supplied, the default is
 
 // PullHandler is the handler method for `skeema pull`
 func PullHandler(cfg *mybase.Config) error {
-	AddGlobalConfigFiles(cfg)
-	dir, err := NewDir(".", cfg)
+	dir, err := fs.ParseDir(".", cfg)
 	if err != nil {
 		return err
 	}
 
 	var errCount int
-
-	for _, t := range dir.Targets() {
-		if t.Err != nil {
-			log.Errorf("Skipping %s:", t.Dir)
-			log.Errorf("    %s\n", t.Err)
-			errCount++
-			continue
-		}
-
-		log.Infof("Updating %s to reflect %s %s", t.Dir, t.Instance, t.SchemaFromDir.Name)
-
-		// If schema doesn't exist on instance, remove the corresponding dir
-		if t.SchemaFromInstance == nil {
-			if err := t.Dir.Delete(); err != nil {
-				return fmt.Errorf("Unable to delete directory %s: %s", t.Dir, err)
-			}
-			log.Infof("Deleted directory %s -- schema no longer exists\n", t.Dir)
-			continue
-		}
-
-		diff := tengo.NewSchemaDiff(t.SchemaFromDir, t.SchemaFromInstance)
-
-		// Handle changes in schema's default character set and/or collation by
-		// persisting changes to the dir's option file. File operation errors here
-		// are just surfaced as warnings.
-		if diff.SchemaDDL != "" || t.Dir.Config.Get("default-character-set") == "" || t.Dir.Config.Get("default-collation") == "" {
-			if optionFile, err := t.Dir.OptionFile(); err != nil {
-				log.Warnf("Unable to update character set and/or collation for %s/.skeema: %s", t.Dir, err)
-			} else {
-				optionFile.SetOptionValue("", "default-character-set", t.SchemaFromInstance.CharSet)
-				optionFile.SetOptionValue("", "default-collation", t.SchemaFromInstance.Collation)
-				if err = optionFile.Write(true); err != nil {
-					log.Warnf("Unable to update character set and/or collation for %s: %s", optionFile.Path(), err)
-				} else {
-					log.Infof("Wrote %s -- updated schema-level default-character-set and default-collation", optionFile.Path())
-				}
-			}
-		}
-
-		// We're permissive of unsafe operations here since we don't ever actually
-		// execute the generated statement! We just examine its type.
-		mods := tengo.StatementModifiers{
-			AllowUnsafe: true,
-		}
-		// pull command updates next auto-increment value for existing table always
-		// if requested, or only if previously present in file otherwise
-		if t.Dir.Config.GetBool("include-auto-inc") {
-			mods.NextAutoInc = tengo.NextAutoIncAlways
-		} else {
-			mods.NextAutoInc = tengo.NextAutoIncIfAlready
-		}
-		mods.IgnoreTable, err = t.Dir.Config.GetRegexp("ignore-table")
-		if err != nil {
-			return err
-		}
-		if configFlavor := tengo.NewFlavor(t.Dir.Config.Get("flavor")); configFlavor != tengo.FlavorUnknown {
-			mods.Flavor = configFlavor
-		} else {
-			mods.Flavor = t.Instance.Flavor()
-		}
-
-		// Track which table names have already been seen, to handle cases where the
-		// same table shows up in two different TableDiffs. This can happen because
-		// Tengo avoids generating single ALTERs that both drop and add foreign keys
-		// in the same statement.
-		alreadySeen := make(map[string]bool)
-
-		for _, td := range diff.TableDiffs {
-			if td.To != nil && alreadySeen[td.To.Name] {
-				continue
-			}
-
-			stmt, stmtErr := td.Statement(mods)
-			// Errors are fatal, except for UnsupportedDiffError which we can safely
-			// ignore (since pull doesn't actually run ALTERs; it just needs to know
-			// which tables were altered)
-			if stmtErr != nil && !tengo.IsUnsupportedDiff(stmtErr) {
-				return stmtErr
-			}
-			// skip if mods caused the diff to be a no-op; if it's an ALTER, treat it
-			// as an unchanged table so that --normalize logic still runs
-			if stmt == "" && stmtErr == nil {
-				if td.Type == tengo.TableDiffAlter {
-					diff.SameTables = append(diff.SameTables, td.To)
-				}
-				continue
-			}
-
-			// For DROP TABLE, we're deleting corresponding table file; vs other
-			// types we're updating/rewriting the file.
-			if td.Type == tengo.TableDiffDrop {
-				sf := SQLFile{
-					Dir:      t.Dir,
-					FileName: fmt.Sprintf("%s.sql", td.From.Name),
-				}
-				if err := sf.Delete(); err != nil {
-					return fmt.Errorf("Unable to delete %s: %s", sf.Path(), err)
-				}
-				log.Infof("Deleted %s -- table no longer exists", sf.Path())
-				continue
-			}
-
-			var reason string
-			sf := SQLFile{
-				Dir:      t.Dir,
-				FileName: fmt.Sprintf("%s.sql", td.To.Name),
-				Contents: stmt,
-			}
-
-			// For ALTER TABLE, we don't care about the ALTER statement, but we do
-			// need to get the corresponding CREATE TABLE and process auto-inc properly
-			if td.Type == tengo.TableDiffAlter {
-				sf.Contents = td.To.CreateStatement
-				if td.To.HasAutoIncrement() && !t.Dir.Config.GetBool("include-auto-inc") && td.From.NextAutoIncrement <= 1 {
-					sf.Contents, _ = tengo.ParseCreateAutoInc(sf.Contents)
-				}
-				reason = "updated file to reflect table alterations"
-				if tengo.IsUnsupportedDiff(stmtErr) {
-					log.Warnf("Table %s uses unsupported features", td.To.Name)
-					DebugLogUnsupportedDiff(stmtErr.(*tengo.UnsupportedDiffError))
-				}
-			} else if _, hadErr := t.SQLFileErrors[sf.Path()]; hadErr {
-				// SQL files with syntax errors will result in TableDiffCreate since the
-				// temp schema will be missing the table
-				reason = "updated file to replace invalid SQL"
-			} else {
-				reason = "new table"
-			}
-
-			length, err := sf.Write()
-			if err != nil {
-				return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
-			}
-			log.Infof("Wrote %s (%d bytes) -- %s", sf.Path(), length, reason)
-			alreadySeen[td.To.Name] = true
-		}
-
-		if dir.Config.GetBool("normalize") {
-			for _, table := range diff.SameTables {
-				if mods.IgnoreTable != nil && mods.IgnoreTable.MatchString(table.Name) {
-					continue
-				}
-				sf := SQLFile{
-					Dir:      t.Dir,
-					FileName: fmt.Sprintf("%s.sql", table.Name),
-				}
-				if _, err := sf.Read(); err != nil {
-					return err
-				}
-				for _, warning := range sf.Warnings {
-					log.Debug(warning)
-				}
-				newContents := table.CreateStatement
-				if table.HasAutoIncrement() && !t.Dir.Config.GetBool("include-auto-inc") && t.SchemaFromDir.Table(table.Name).NextAutoIncrement <= 1 {
-					newContents, _ = tengo.ParseCreateAutoInc(newContents)
-				}
-				if sf.Contents != newContents {
-					sf.Contents = newContents
-					var length int
-					if length, err = sf.Write(); err != nil {
-						return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
-					}
-					log.Infof("Wrote %s (%d bytes) -- updated file to normalize format", sf.Path(), length)
-				}
-			}
-		}
-
-		os.Stderr.WriteString("\n")
-	}
-
-	if err := findNewSchemas(dir); err != nil {
+	if _, err = pullWalker(dir, &errCount, 5); err != nil {
 		return err
 	}
-
 	if errCount == 0 {
 		return nil
 	}
@@ -223,90 +57,288 @@ func PullHandler(cfg *mybase.Config) error {
 	return NewExitValue(CodePartialError, "Skipped %d operation%s due to error%s", errCount, plural, plural)
 }
 
-func findNewSchemas(dir *Dir) error {
-	subdirs, err := dir.Subdirs()
-	if err != nil {
-		return err
+// pullWalker processes dir, and recursively calls itself on any subdirs. An
+// error is only returned if something fatal occurs; otherwise, *errCount is
+// incremented if some operation is skipped but it isn't fatal.
+func pullWalker(dir *fs.Dir, errCount *int, maxDepth int) (handledSchemaNames []string, err error) {
+	var instance *tengo.Instance
+	if dir.Config.Changed("host") {
+		instance, err = dir.FirstInstance()
+		if err != nil {
+			*errCount++
+			return nil, nil
+		}
 	}
 
-	if dir.HasHost() && !dir.HasSchema() {
-		instance, err := dir.FirstInstance()
-		if err != nil || instance == nil {
-			return err
-		}
-
-		// Update the instance dir's .skeema option file if the instance's current
-		// flavor does not match what's in the file. However, leave the value in the
-		// file alone if it's specified and we're unable to detect the instance's
-		// vendor, as this gives operators the ability to manually override an
-		// undetectable flavor.
-		instFlavor := instance.Flavor()
-		if instFlavor.Vendor != tengo.VendorUnknown && instFlavor.String() != dir.Config.Get("flavor") {
-			if optionFile, err := dir.OptionFile(); err != nil {
-				log.Warnf("Unable to update flavor in %s/.skeema: %s", dir, err)
-			} else {
-				optionFile.SetOptionValue(dir.section, "flavor", instFlavor.String())
-				if err := optionFile.Write(true); err != nil {
-					log.Warnf("Unable to update flavor in %s: %s", optionFile.Path(), err)
-				} else {
-					log.Infof("Wrote %s -- updated flavor to %s", optionFile.Path(), instFlavor.String())
-				}
-			}
-		}
-
-		subdirHasSchema := make(map[string]bool)
-		for _, subdir := range subdirs {
-			// We only want to evaluate subdirs that explicitly define the schema option
-			// in that subdir's .skeema file, vs inheriting it from a parent dir.
-			if !subdir.HasSchema() {
+	if instance != nil && dir.HasSchema() {
+		for _, idealSchema := range dir.IdealSchemas {
+			// TODO: support pull for case where multiple explicitly-named schemas per
+			// dir. For example, ability to convert a multi-schema single-file mysqldump
+			// into Skeema's usual multi-dir layout.
+			if idealSchema.Name != "" {
+				handledSchemaNames = append(handledSchemaNames, idealSchema.Name)
+				log.Warnf("Ignoring schema %s from directory %s -- multiple schemas per dir not supported yet", idealSchema.Name, dir)
 				continue
 			}
 
-			// If a subdir's schema is set to "*", it maps to all schemas on the
-			// instance, so no sense in trying to detect "new" schemas
-			if subdir.Config.Get("schema") == "*" {
-				return nil
+			var schemaNames []string
+			if schemaNames, err = dir.SchemaNames(instance); err != nil {
+				return nil, fmt.Errorf("%s: Unable to fetch schema names mapped by this dir: %s", dir, err)
 			}
-
-			schemaNames, err := subdir.SchemaNames(instance)
-			if err != nil {
-				return err
+			if len(schemaNames) == 0 {
+				log.Warnf("Ignoring directory %s -- did not map to any schema names\n", dir)
+				continue
 			}
-			for _, name := range schemaNames {
-				subdirHasSchema[name] = true
+			handledSchemaNames = append(handledSchemaNames, schemaNames...)
+			instSchema, err := instance.Schema(schemaNames[0])
+			if err == sql.ErrNoRows {
+				log.Infof("Deleted directory %s -- schema %s no longer exists\n", dir, handledSchemaNames[0])
+				// Explicitly return here to prevent later attempt at subdir traversal
+				return nil, dir.Delete()
+			} else if err != nil {
+				return nil, fmt.Errorf("%s: Unable to fetch schema %s from %s: %s", dir, handledSchemaNames[0], instance, err)
 			}
-		}
-
-		// Compare dirs to schemas, UNLESS subdirs exist but don't actually map to schemas directly
-		if len(subdirHasSchema) > 0 || len(subdirs) == 0 {
-			schemaNames, err := instance.SchemaNames()
-			if err != nil {
-				return err
+			if err = pullSchemaDir(dir, instance, instSchema, idealSchema); err != nil {
+				return nil, err
 			}
-			for _, name := range schemaNames {
-				// If no existing subdir maps to the schema, we need to create and populate new dir
-				if !subdirHasSchema[name] {
-					s, err := instance.Schema(name)
-					if err != nil {
-						return err
-					}
-					// use same logic from init command
-					if err := PopulateSchemaDir(s, dir, true); err != nil {
-						return err
-					}
-				}
-			}
-
-			// If we did a schema-to-subdir comparison, no need to continue recursion
-			// even if there are additional levels of subdirs
-			return nil
 		}
 	}
 
-	for _, subdir := range subdirs {
-		if subdir.BaseName()[0] != '.' {
-			err := findNewSchemas(subdir)
+	if subdirs, badCount, err := dir.Subdirs(); err != nil {
+		log.Errorf("Cannot list subdirs of %s: %s", dir, err)
+		*errCount++
+	} else if len(subdirs) > 0 && maxDepth <= 0 {
+		log.Warnf("Not walking subdirs of %s: max depth reached", dir)
+		*errCount += len(subdirs)
+	} else {
+		*errCount += badCount
+		allSubSchemaNames := make([]string, 0)
+		for _, sub := range subdirs {
+			subSchemaNames, walkErr := pullWalker(sub, errCount, maxDepth-1)
+			if walkErr != nil {
+				return nil, walkErr
+			}
+			allSubSchemaNames = append(allSubSchemaNames, subSchemaNames...)
+		}
+		if instance != nil && !dir.Config.Changed("schema") {
+			updateFlavor(dir, instance)
+			return nil, findNewSchemas(dir, instance, allSubSchemaNames)
+		}
+	}
+	return handledSchemaNames, nil
+}
+
+// pullSchemaDir performs appropriate pull logic on a dir that maps to one or
+// more schemas. Typically these are leaf dirs.
+func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Schema, idealSchema *fs.IdealSchema) error {
+	log.Infof("Updating %s to reflect %s %s", dir, instance, instSchema.Name)
+
+	ignoreTable, err := dir.Config.GetRegexp("ignore-table")
+	if err != nil {
+		return NewExitValue(CodeBadConfig, err.Error())
+	}
+
+	// When --skip-normalize is in use, we only want to update tables with actual
+	// functional modifications, NOT just cosmetic/formatting differences. To make
+	// this distinction, we need to actually execute the *.sql files in a
+	// Workspace and run a diff against it.
+	var haveAlters map[string]bool
+	if !dir.Config.GetBool("normalize") {
+		mods := statementModifiersForPull(dir.Config, instance, ignoreTable)
+		opts := workspaceOptionsForPull(dir.Config, instance)
+		if haveAlters, err = alteredTablesForPull(instSchema, idealSchema, opts, mods); err != nil {
+			return err
+		}
+	}
+
+	// Handle changes in schema's default character set and/or collation by
+	// persisting changes to the dir's option file.
+	if dir.Config.Get("default-character-set") != instSchema.CharSet || dir.Config.Get("default-collation") != instSchema.Collation {
+		dir.OptionFile.SetOptionValue("", "default-character-set", instSchema.CharSet)
+		dir.OptionFile.SetOptionValue("", "default-collation", instSchema.Collation)
+		if err := dir.OptionFile.Write(true); err != nil {
+			return fmt.Errorf("Unable to update character set and collation for %s: %s", dir.OptionFile.Path(), err)
+		}
+		log.Infof("Wrote %s -- updated schema-level default-character-set and default-collation", dir.OptionFile.Path())
+	}
+
+	// Iterate through the tables that have create statements in the filesystem,
+	// and compare to instSchema. Track which files need rewrites.
+	filesToRewrite := make(map[*fs.TokenizedSQLFile]bool)
+	instTablesByName := instSchema.TablesByName()
+	for name, stmt := range idealSchema.CreateTables {
+		if ignoreTable != nil && ignoreTable.MatchString(name) {
+			continue
+		}
+		if instTable, stillExists := instTablesByName[name]; stillExists {
+			if !dir.Config.GetBool("normalize") && !haveAlters[name] {
+				continue
+			}
+			_, fsAutoInc := tengo.ParseCreateAutoInc(stmt.Text)
+			instCreate := instTable.CreateStatement
+			if instTable.HasAutoIncrement() && !dir.Config.GetBool("include-auto-inc") && fsAutoInc <= 1 {
+				instCreate, _ = tengo.ParseCreateAutoInc(instCreate)
+			}
+			fsCreate, fsDelimiter := stmt.SplitTextBody()
+			if instCreate != fsCreate {
+				stmt.Text = fmt.Sprintf("%s%s", instCreate, fsDelimiter)
+				filesToRewrite[stmt.FromFile] = true
+			}
+		} else {
+			filesToRewrite[stmt.FromFile] = true
+			stmt.Remove()
+		}
+	}
+
+	// Do the appropriate rewrites of files tracked above
+	for file := range filesToRewrite {
+		if bytesWritten, err := file.Rewrite(); err != nil {
+			return err
+		} else if bytesWritten == 0 {
+			log.Infof("Deleted %s -- table no longer exists", file)
+		} else {
+			log.Infof("Wrote %s (%d bytes) -- updated table definition", file, bytesWritten)
+		}
+	}
+
+	// Tables that exist in instSchema, but have no corresponding create statement:
+	// write new files, or append if filename already taken
+	for name, instTable := range instTablesByName {
+		if _, ok := idealSchema.CreateTables[name]; !ok {
+			if ignoreTable != nil && ignoreTable.MatchString(name) {
+				continue
+			}
+			filePath := path.Join(dir.Path, fmt.Sprintf("%s.sql", name))
+			contents := instTable.CreateStatement
+			if instTable.HasAutoIncrement() && !dir.Config.GetBool("include-auto-inc") {
+				contents, _ = tengo.ParseCreateAutoInc(contents)
+			}
+			contents = fmt.Sprintf("%s;\n", contents)
+			if bytesWritten, wasNew, err := fs.AppendToFile(filePath, contents); err != nil {
+				return err
+			} else if wasNew {
+				log.Infof("Wrote %s (%d bytes) -- new table", filePath, bytesWritten)
+			} else {
+				log.Infof("Wrote %s (%d bytes) -- appended new table", filePath, bytesWritten)
+			}
+		}
+	}
+
+	os.Stderr.WriteString("\n")
+	return nil
+}
+
+func statementModifiersForPull(config *mybase.Config, instance *tengo.Instance, ignoreTable *regexp.Regexp) tengo.StatementModifiers {
+	// We're permissive of unsafe operations here since we don't ever actually
+	// execute the generated statement! We just examine its type.
+	mods := tengo.StatementModifiers{
+		AllowUnsafe: true,
+	}
+	// pull command updates next auto-increment value for existing table always
+	// if requested, or only if previously present in file otherwise
+	if config.GetBool("include-auto-inc") {
+		mods.NextAutoInc = tengo.NextAutoIncAlways
+	} else {
+		mods.NextAutoInc = tengo.NextAutoIncIfAlready
+	}
+	mods.IgnoreTable = ignoreTable
+	if configFlavor := tengo.NewFlavor(config.Get("flavor")); configFlavor != tengo.FlavorUnknown {
+		mods.Flavor = configFlavor
+	} else {
+		mods.Flavor = instance.Flavor()
+	}
+	return mods
+}
+
+func workspaceOptionsForPull(config *mybase.Config, instance *tengo.Instance) workspace.Options {
+	return workspace.Options{
+		Type:                workspace.TypeTempSchema,
+		Instance:            instance,
+		SchemaName:          config.Get("temp-schema"),
+		KeepSchema:          config.GetBool("reuse-temp-schema"),
+		DefaultCharacterSet: config.Get("default-character-set"),
+		DefaultCollation:    config.Get("default-collation"),
+		LockWaitTimeout:     30 * time.Second,
+	}
+}
+
+// alteredTablesForPull returns a map whose keys are names of tables that have
+// had alterations made in instSchema that aren't reflected in the corresponding
+// SQLFile in dir. This also includes tables whose SQLFile Statement has a
+// SQL syntax error. The return value does not include tables whose differences
+// are cosmetic / formatting-related, or are otherwise ignored by mods.
+func alteredTablesForPull(instSchema *tengo.Schema, idealSchema *fs.IdealSchema, opts workspace.Options, mods tengo.StatementModifiers) (map[string]bool, error) {
+	fsSchema, tableErrors, err := workspace.MaterializeIdealSchema(idealSchema, opts)
+	if err != nil {
+		return nil, fmt.Errorf("Error introspecting filesystem version of schema %s: %s", instSchema.Name, err)
+	}
+
+	// Run a diff, and create a map to look up which tables have alters
+	diff := tengo.NewSchemaDiff(fsSchema, instSchema)
+	haveAlters := make(map[string]bool)
+	for _, td := range diff.FilteredTableDiffs(tengo.TableDiffAlter) {
+		tdStatement, tdStatementErr := td.Statement(mods)
+		// Errors are fatal, except for UnsupportedDiffError which we can safely
+		// ignore (since pull doesn't actually run ALTERs; it just needs to know
+		// which tables were altered)
+		if tdStatementErr != nil && !tengo.IsUnsupportedDiff(tdStatementErr) {
+			return nil, tdStatementErr
+		}
+		// mods may cause the diff to be a no-op; only treat it as a valid alter
+		// if this isn't the case
+		if tdStatement != "" {
+			haveAlters[td.To.Name] = true
+		}
+	}
+
+	// Treat tables with syntax errors as altered if they exist in instSchema,
+	// since clearly the version in instSchema is different and valid
+	for _, tableError := range tableErrors {
+		if instSchema.HasTable(tableError.TableName) {
+			haveAlters[tableError.TableName] = true
+		}
+	}
+
+	return haveAlters, nil
+}
+
+// updateFlavor updates the dir's .skeema option file if the instance's current
+// flavor does not match what's in the file. However, it leaves the value in the
+// file alone if it's specified and we're unable to detect the instance's
+// vendor, as this gives operators the ability to manually override an
+// undetectable flavor.
+func updateFlavor(dir *fs.Dir, instance *tengo.Instance) {
+	instFlavor := instance.Flavor()
+	if instFlavor.Vendor == tengo.VendorUnknown || instFlavor.String() == dir.Config.Get("flavor") {
+		return
+	}
+	dir.OptionFile.SetOptionValue(dir.Config.Get("environment"), "flavor", instFlavor.String())
+	if err := dir.OptionFile.Write(true); err != nil {
+		log.Warnf("Unable to update flavor in %s: %s", dir.OptionFile.Path(), err)
+	} else {
+		log.Infof("Wrote %s -- updated flavor to %s", dir.OptionFile.Path(), instFlavor.String())
+	}
+}
+
+func findNewSchemas(dir *fs.Dir, instance *tengo.Instance, seenNames []string) error {
+	subdirHasSchema := make(map[string]bool)
+	for _, name := range seenNames {
+		subdirHasSchema[name] = true
+	}
+
+	schemaNames, err := instance.SchemaNames()
+	if err != nil {
+		return err
+	}
+	for _, name := range schemaNames {
+		// If no existing subdir maps to the schema, we need to create and populate new dir
+		if !subdirHasSchema[name] {
+			s, err := instance.Schema(name)
 			if err != nil {
+				return err
+			}
+			// use same logic from init command
+			if err := PopulateSchemaDir(s, dir, true); err != nil {
 				return err
 			}
 		}

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"os"
 	"strconv"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/fs"
 	"github.com/skeema/tengo"
 )
 
@@ -29,32 +31,32 @@ socket path.`
 
 // AddEnvHandler is the handler method for `skeema add-environment`
 func AddEnvHandler(cfg *mybase.Config) error {
-	AddGlobalConfigFiles(cfg)
+	dirPath := cfg.Get("dir")
+	fi, err := os.Stat(dirPath)
+	if err == nil && !fi.IsDir() {
+		return NewExitValue(CodeBadConfig, "--dir=%s already exists but is not a directory", dirPath)
+	} else if os.IsNotExist(err) {
+		return NewExitValue(CodeBadConfig, "In add-environment, --dir must refer to a directory that already exists")
+	} else if err != nil {
+		return err
+	}
 
-	dir, err := NewDir(cfg.Get("dir"), cfg)
+	dir, err := fs.ParseDir(dirPath, cfg)
 	if err != nil {
 		return err
 	}
-	if !dir.Exists() {
-		return NewExitValue(CodeBadConfig, "In add-environment, --dir must refer to a directory that already exists")
-	}
-	if !dir.HasOptionFile() {
+	if dir.OptionFile == nil {
 		return NewExitValue(CodeBadConfig, "Dir %s does not have an existing .skeema file! Can only use `skeema add-environment` on a dir previously created by `skeema init`", dir)
-	}
-
-	hostOptionFile, err := dir.OptionFile()
-	if err != nil {
-		return NewExitValue(CodeBadInput, "Unable to read .skeema file for %s: %s", dir, err)
 	}
 
 	environment := cfg.Get("environment")
 	if environment == "" || strings.ContainsAny(environment, "[]\n\r") {
 		return NewExitValue(CodeBadConfig, "Environment name \"%s\" is invalid", environment)
 	}
-	if hostOptionFile.HasSection(environment) {
-		return NewExitValue(CodeBadConfig, "Environment name \"%s\" already defined in %s", environment, hostOptionFile.Path())
+	if dir.OptionFile.HasSection(environment) {
+		return NewExitValue(CodeBadConfig, "Environment name \"%s\" already defined in %s", environment, dir.OptionFile.Path())
 	}
-	if !hostOptionFile.SomeSectionHasOption("host") {
+	if !dir.OptionFile.SomeSectionHasOption("host") {
 		return NewExitValue(CodeBadConfig, "This command should be run against a --dir whose .skeema file already defines a host for another environment")
 	}
 
@@ -74,25 +76,24 @@ func AddEnvHandler(cfg *mybase.Config) error {
 		inst = instances[0]
 	}
 
-	hostOptionFile.SetOptionValue(environment, "host", inst.Host)
+	dir.OptionFile.SetOptionValue(environment, "host", inst.Host)
 	if inst.Host == "localhost" && inst.SocketPath != "" {
-		hostOptionFile.SetOptionValue(environment, "socket", inst.SocketPath)
+		dir.OptionFile.SetOptionValue(environment, "socket", inst.SocketPath)
 	} else {
-		hostOptionFile.SetOptionValue(environment, "port", strconv.Itoa(inst.Port))
+		dir.OptionFile.SetOptionValue(environment, "port", strconv.Itoa(inst.Port))
 	}
 	if flavor := inst.Flavor(); flavor != tengo.FlavorUnknown {
-		hostOptionFile.SetOptionValue(environment, "flavor", flavor.String())
+		dir.OptionFile.SetOptionValue(environment, "flavor", flavor.String())
 	}
 	if cfg.OnCLI("user") {
-		hostOptionFile.SetOptionValue(environment, "user", cfg.Get("user"))
+		dir.OptionFile.SetOptionValue(environment, "user", cfg.Get("user"))
 	}
 
 	// Write the option file
-	if err := hostOptionFile.Write(true); err != nil {
+	if err := dir.OptionFile.Write(true); err != nil {
 		return err
 	}
-	dir.Config.MarkDirty()
 
-	log.Infof("Added environment [%s] to %s", environment, hostOptionFile.Path())
+	log.Infof("Added environment [%s] to %s", environment, dir.OptionFile.Path())
 	return nil
 }

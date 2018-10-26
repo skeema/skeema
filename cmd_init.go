@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/fs"
 	"github.com/skeema/tengo"
 )
 
@@ -42,8 +44,6 @@ section of the file.`
 
 // InitHandler is the handler method for `skeema init`
 func InitHandler(cfg *mybase.Config) error {
-	AddGlobalConfigFiles(cfg)
-
 	// Ordinarily, we use a dir structure of: host_dir/schema_name/*.sql
 	// However, if --schema option used, we're only importing one schema and the
 	// schema_name level is skipped.
@@ -54,7 +54,6 @@ func InitHandler(cfg *mybase.Config) error {
 	if !cfg.OnCLI("host") {
 		return NewExitValue(CodeBadConfig, "Option --host must be supplied on the command-line")
 	}
-
 	if !cfg.Changed("dir") { // default for dir is to base it on the hostname
 		port := cfg.GetIntOrDefault("port")
 		if port > 0 && cfg.Changed("port") {
@@ -63,19 +62,14 @@ func InitHandler(cfg *mybase.Config) error {
 			hostDirName = cfg.Get("host")
 		}
 	}
-	hostDir, err := NewDir(hostDirName, cfg)
+
+	wasNewDir, err := preparePath(hostDirName, cfg)
+	if err != nil {
+		return NewExitValue(CodeBadConfig, err.Error())
+	}
+	hostDir, err := fs.ParseDir(hostDirName, cfg)
 	if err != nil {
 		return err
-	}
-	wasNewDir, err := hostDir.CreateIfMissing()
-	if err != nil {
-		return NewExitValue(CodeCantCreate, "Unable to use specified dir: %s", err)
-	}
-	if hostDir.HasOptionFile() {
-		return NewExitValue(CodeBadConfig, "Cannot use dir %s: already has .skeema file", hostDir.Path)
-	}
-	if hostDir.Config.Changed("schema") && !hostDir.Config.OnCLI("schema") {
-		return NewExitValue(CodeBadConfig, "Cannot use dir %s: a parent dir already defines a schema", hostDir.Path)
 	}
 
 	// Validate connection-related options (host, port, socket, user, password) by
@@ -135,7 +129,7 @@ func InitHandler(cfg *mybase.Config) error {
 	}
 
 	// Write the option file
-	if err := hostDir.CreateOptionFile(hostOptionFile); err != nil {
+	if err := createOptionFile(hostDir.Path, hostOptionFile); err != nil {
 		return NewExitValue(CodeCantCreate, err.Error())
 	}
 
@@ -161,26 +155,30 @@ func InitHandler(cfg *mybase.Config) error {
 
 // PopulateSchemaDir writes out *.sql files for all tables in the specified
 // schema. If makeSubdir==true, a subdir with name matching the schema name
-// will be created, and a .skeem option file will be created. Otherwise, the
+// will be created, and a .skeema option file will be created. Otherwise, the
 // *.sql files will be put in parentDir, and it will be the caller's
 // responsibility to ensure its .skeema option file exists and maps to the
 // correct schema name.
-func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
+func PopulateSchemaDir(s *tengo.Schema, parentDir *fs.Dir, makeSubdir bool) error {
 	// Ignore any attempt to populate a dir for the temp schema
 	if s.Name == parentDir.Config.Get("temp-schema") {
 		return nil
 	}
 
 	if ignoreSchema, err := parentDir.Config.GetRegexp("ignore-schema"); err != nil {
-		return err
+		return NewExitValue(CodeBadConfig, err.Error())
 	} else if ignoreSchema != nil && ignoreSchema.MatchString(s.Name) {
 		log.Warnf("Skipping schema %s because of ignore-schema='%s'", s.Name, ignoreSchema)
 		return nil
 	}
 
-	var schemaDir *Dir
-	var err error
+	var subPath string
 	if makeSubdir {
+		subPath = path.Join(parentDir.Path, s.Name)
+		if _, err := preparePath(subPath, parentDir.Config); err != nil {
+			return err
+		}
+
 		// Put a .skeema file with the schema name in it. This is placed outside of
 		// any named section/environment since the default assumption is that schema
 		// names match between environments.
@@ -188,22 +186,17 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 		optionFile.SetOptionValue("", "schema", s.Name)
 		optionFile.SetOptionValue("", "default-character-set", s.CharSet)
 		optionFile.SetOptionValue("", "default-collation", s.Collation)
-		if schemaDir, err = parentDir.CreateSubdir(s.Name, optionFile); err != nil {
-			return NewExitValue(CodeCantCreate, "Unable to use directory %s for schema %s: %s", path.Join(parentDir.Path, s.Name), s.Name, err)
+		if err := createOptionFile(subPath, optionFile); err != nil {
+			return NewExitValue(CodeCantCreate, "Unable to use directory %s for schema %s: %s", subPath, s.Name, err)
 		}
 	} else {
-		schemaDir = parentDir
-		if sqlfiles, err := schemaDir.SQLFiles(); err != nil {
-			return fmt.Errorf("Unable to list files in %s: %s", schemaDir.Path, err)
-		} else if len(sqlfiles) > 0 {
-			return fmt.Errorf("%s already contains *.sql files; cannot proceed", schemaDir.Path)
-		}
+		subPath = parentDir.Path
 	}
 
-	log.Infof("Populating %s", schemaDir.Path)
+	log.Infof("Populating %s", subPath)
 	ignoreTable, err := parentDir.Config.GetRegexp("ignore-table")
 	if err != nil {
-		return err
+		return NewExitValue(CodeBadConfig, err.Error())
 	}
 	for _, t := range s.Tables {
 		if ignoreTable != nil && ignoreTable.MatchString(t.Name) {
@@ -214,21 +207,74 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *Dir, makeSubdir bool) error {
 
 		// Special handling for auto-increment tables: strip next-auto-inc value,
 		// unless user specifically wants to keep it in .sql file
-		if t.HasAutoIncrement() && !schemaDir.Config.GetBool("include-auto-inc") {
+		if t.HasAutoIncrement() && !parentDir.Config.GetBool("include-auto-inc") {
 			createStmt, _ = tengo.ParseCreateAutoInc(createStmt)
 		}
 
-		sf := SQLFile{
-			Dir:      schemaDir,
+		sf := fs.SQLFile{
+			Dir:      subPath,
 			FileName: fmt.Sprintf("%s.sql", t.Name),
-			Contents: createStmt,
 		}
-		var length int
-		if length, err = sf.Write(); err != nil {
+		createStmt = fmt.Sprintf("%s;\n", createStmt)
+		if err = sf.Create(createStmt); err != nil {
 			return NewExitValue(CodeCantCreate, "Unable to write to %s: %s", sf.Path(), err)
 		}
-		log.Infof("Wrote %s (%d bytes)", sf.Path(), length)
+		log.Infof("Wrote %s (%d bytes)", sf.Path(), len(createStmt))
 	}
 	os.Stderr.WriteString("\n")
 	return nil
+}
+
+func preparePath(dirPath string, globalConfig *mybase.Config) (created bool, err error) {
+	fi, err := os.Stat(dirPath)
+	if err == nil && !fi.IsDir() {
+		return false, fmt.Errorf("Path %s already exists but is not a directory", dirPath)
+	} else if os.IsNotExist(err) {
+		// Create the dir
+		err = os.MkdirAll(dirPath, 0777)
+		if err != nil {
+			return false, fmt.Errorf("Unable to create directory %s: %s", dirPath, err)
+		}
+		created = true
+	} else if err != nil {
+		// stat error, other than doesn't-exist
+		return false, err
+	}
+
+	// Existing dir: confirm it doesn't already have .skeema or *.sql files
+	if !created {
+		fileInfos, err := ioutil.ReadDir(dirPath)
+		if err != nil {
+			return false, err
+		}
+		for _, fi := range fileInfos {
+			if fi.Name() == ".skeema" {
+				return false, fmt.Errorf("Cannot use dir %s: already has .skeema file", dirPath)
+			} else if strings.HasSuffix(fi.Name(), ".sql") {
+				return false, fmt.Errorf("Cannot use dir %s: Already contains some *.sql files", dirPath)
+			}
+		}
+	}
+
+	// Confirm no ancestor of dirPath defines a schema already
+	parentFiles, err := fs.ParentOptionFiles(dirPath, globalConfig)
+	if err != nil {
+		return false, err
+	}
+	for _, f := range parentFiles {
+		if f.SomeSectionHasOption("schema") {
+			return false, fmt.Errorf("Cannot use dir %s: parent option file %s defines schema option", dirPath, f)
+		}
+	}
+
+	return false, nil
+}
+
+func createOptionFile(dirPath string, file *mybase.File) error {
+	file.Dir = dirPath
+	err := file.Write(false)
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("Unable to write to %s: %s", file.Path(), err)
 }

@@ -20,6 +20,19 @@ func (source SimpleSource) OptionValue(optionName string) (string, bool) {
 	return val, ok
 }
 
+// SimpleConfig returns a stub config based on a single map of key->value string
+// pairs. All keys in the map will automatically be considered valid options.
+func SimpleConfig(values map[string]string) *Config {
+	cmd := NewCommand("test", "1.0", "this is for testing", nil)
+	for key := range values {
+		cmd.AddOption(StringOption(key, 0, "", key))
+	}
+	cli := &CommandLine{
+		Command: cmd,
+	}
+	return NewConfig(cli, SimpleSource(values))
+}
+
 // ParseFakeCLI splits a single command-line string into a slice of arg
 // token strings, and then calls ParseCLI using those args. It understands
 // simple quoting and escaping rules, but does not attempt to replicate more

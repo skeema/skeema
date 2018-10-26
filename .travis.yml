@@ -24,13 +24,10 @@ before_install:
   - go get github.com/mattn/goveralls
 
 script:
-  - go test -v -coverprofile=coverage.out -covermode=count
-  - go vet
-  - test -z "$(gofmt -s -d *.go 2>&1)"
-  - golint -set_exit_status
-
-after_script:
-  - goveralls -coverprofile=coverage.out -service=travis-ci
+  - $GOPATH/bin/goveralls -v -service=travis-ci
+  - go vet ./...
+  - test -z "$(gofmt -s -d {.,fs,workspace,util}/*.go 2>&1)"
+  - go list -f '{{.Dir}}' ./... | xargs golint -set_exit_status
 
 deploy:
 - provider: script

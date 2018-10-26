@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
-	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/fs"
+	"github.com/skeema/skeema/workspace"
 )
 
 func init() {
@@ -36,83 +38,112 @@ file had SQL syntax errors or some other error occurred.`
 
 // LintHandler is the handler method for `skeema lint`
 func LintHandler(cfg *mybase.Config) error {
-	AddGlobalConfigFiles(cfg)
-	dir, err := NewDir(".", cfg)
+	dir, err := fs.ParseDir(".", cfg)
 	if err != nil {
 		return err
 	}
 
-	var errCount, sqlErrCount, reformatCount int
-	for _, t := range dir.Targets() {
-		if t.Err != nil {
-			log.Errorf("Skipping %s:", t.Dir)
-			log.Errorf("    %s\n", t.Err)
-			errCount++
-			continue
-		}
+	lc := &lintCounters{}
+	if err = lintWalker(dir, lc, 5); err != nil {
+		return err
+	}
+	return lc.exitValue()
+}
 
-		if ignoreSchema, err := t.Dir.Config.GetRegexp("ignore-schema"); err != nil {
-			return err
-		} else if ignoreSchema != nil && ignoreSchema.MatchString(t.SchemaFromDir.Name) {
-			log.Warnf("Skipping schema %s because of ignore-schema='%s'", t.SchemaFromDir.Name, ignoreSchema)
-			continue
-		}
+type lintCounters struct {
+	errCount      int
+	sqlErrCount   int
+	reformatCount int
+}
 
-		log.Infof("Linting %s", t.Dir)
+func (lc *lintCounters) exitValue() error {
+	var plural string
+	if lc.errCount > 1 || (lc.errCount == 0 && lc.sqlErrCount > 1) {
+		plural = "s"
+	}
+	switch {
+	case lc.errCount > 0:
+		return NewExitValue(CodeFatalError, "Skipped %d operation%s due to error%s", lc.errCount, plural, plural)
+	case lc.sqlErrCount > 0:
+		return NewExitValue(CodeFatalError, "Found syntax error%s in %d SQL file%s", plural, lc.sqlErrCount, plural)
+	case lc.reformatCount > 0:
+		return NewExitValue(CodeDifferencesFound, "")
+	}
+	return nil
+}
 
-		ignoreTable, err := t.Dir.Config.GetRegexp("ignore-table")
+func lintWalker(dir *fs.Dir, lc *lintCounters, maxDepth int) error {
+	log.Infof("Linting %s", dir)
+	if len(dir.IgnoredStatements) > 0 {
+		log.Warnf("Ignoring %d non-CREATE TABLE statements found in this directory's *.sql files", len(dir.IgnoredStatements))
+	}
+
+	ignoreTable, err := dir.Config.GetRegexp("ignore-table")
+	if err != nil {
+		return NewExitValue(CodeBadConfig, err.Error())
+	}
+
+	inst, err := dir.FirstInstance()
+	if err != nil {
+		return err
+	}
+	opts := workspace.Options{
+		Type:                workspace.TypeTempSchema,
+		Instance:            inst,
+		SchemaName:          dir.Config.Get("temp-schema"),
+		KeepSchema:          dir.Config.GetBool("reuse-temp-schema"),
+		DefaultCharacterSet: dir.Config.Get("default-character-set"),
+		DefaultCollation:    dir.Config.Get("default-collation"),
+		LockWaitTimeout:     30 * time.Second,
+	}
+
+	for _, idealSchema := range dir.IdealSchemas {
+		schema, tableErrors, err := workspace.MaterializeIdealSchema(idealSchema, opts)
 		if err != nil {
-			return err
+			log.Warnf("Skipping schema %s in %s due to error: %s", idealSchema.Name, dir.Path, err)
+			lc.errCount++
+			continue
 		}
-
-		for _, sf := range t.SQLFileErrors {
-			assumedTableName := strings.TrimSuffix(sf.FileName, ".sql")
-			if ignoreTable == nil || !ignoreTable.MatchString(assumedTableName) {
-				log.Error(sf.Error)
-				sqlErrCount++
-			}
-		}
-
-		for _, table := range t.SchemaFromDir.Tables {
-			if ignoreTable != nil && ignoreTable.MatchString(table.Name) {
-				log.Warnf("Skipping table %s because ignore-table='%s'", table.Name, ignoreTable)
+		for _, tableErr := range tableErrors {
+			if ignoreTable != nil && ignoreTable.MatchString(tableErr.TableName) {
+				log.Debugf("Skipping table %s because ignore-table='%s'", tableErr.TableName, ignoreTable)
 				continue
 			}
-			sf := SQLFile{
-				Dir:      t.Dir,
-				FileName: fmt.Sprintf("%s.sql", table.Name),
+			log.Errorf("%s: %s", idealSchema.CreateTables[tableErr.TableName].Location(), tableErr.Err)
+			lc.sqlErrCount++
+		}
+		for _, table := range schema.Tables {
+			if ignoreTable != nil && ignoreTable.MatchString(table.Name) {
+				log.Debugf("Skipping table %s because ignore-table='%s'", table.Name, ignoreTable)
+				continue
 			}
-			if _, err := sf.Read(); err != nil {
-				return err
-			}
-			for _, warning := range sf.Warnings {
-				log.Debug(warning)
-			}
-			if table.CreateStatement != sf.Contents {
-				sf.Contents = table.CreateStatement
-				var length int
-				if length, err = sf.Write(); err != nil {
-					return fmt.Errorf("Unable to write to %s: %s", sf.Path(), err)
+			body, suffix := idealSchema.CreateTables[table.Name].SplitTextBody()
+			if table.CreateStatement != body {
+				idealSchema.CreateTables[table.Name].Text = fmt.Sprintf("%s%s", table.CreateStatement, suffix)
+				length, err := idealSchema.CreateTables[table.Name].FromFile.Rewrite()
+				if err != nil {
+					return fmt.Errorf("Unable to write to %s: %s", idealSchema.CreateTables[table.Name].File, err)
 				}
-				log.Infof("Wrote %s (%d bytes) -- updated file to normalize format", sf.Path(), length)
-				reformatCount++
+				log.Infof("Wrote %s (%d bytes) -- updated file to normalize format", idealSchema.CreateTables[table.Name].File, length)
+				lc.reformatCount++
 			}
 		}
 		os.Stderr.WriteString("\n")
 	}
 
-	var plural string
-	if errCount > 1 || (errCount == 0 && sqlErrCount > 1) {
-		plural = "s"
+	if subdirs, badCount, err := dir.Subdirs(); err != nil {
+		log.Errorf("Cannot list subdirs of %s: %s", dir, err)
+		lc.errCount++
+	} else if len(subdirs) > 0 && maxDepth <= 0 {
+		log.Warnf("Not walking subdirs of %s: max depth reached", dir)
+		lc.errCount += len(subdirs)
+	} else {
+		lc.errCount += badCount
+		for _, sub := range subdirs {
+			if walkErr := lintWalker(sub, lc, maxDepth-1); walkErr != nil {
+				return walkErr
+			}
+		}
 	}
-	switch {
-	case errCount > 0:
-		return NewExitValue(CodeFatalError, "Skipped %d operation%s due to error%s", errCount, plural, plural)
-	case sqlErrCount > 0:
-		return NewExitValue(CodeFatalError, "Found syntax error%s in %d SQL file%s", plural, sqlErrCount, plural)
-	case reformatCount > 0:
-		return NewExitValue(CodeDifferencesFound, "")
-	default:
-		return nil
-	}
+	return nil
 }

@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"errors"
@@ -14,9 +14,6 @@ import (
 	"github.com/skeema/mybase"
 	"golang.org/x/crypto/ssh/terminal"
 )
-
-// This file contains misc functions relating to configuration or option
-// handling.
 
 // AddGlobalOptions adds Skeema global options to the supplied mybase.Command.
 // Typically cmd should be the top-level Command / Command Suite.
@@ -43,54 +40,62 @@ func AddGlobalOptions(cmd *mybase.Command) {
 }
 
 // AddGlobalConfigFiles takes the mybase.Config generated from the CLI and adds
-// global option files as sources. It also handles special processing for a few
-// options. Generally, subcommand handlers should call AddGlobalConfigFiles at
-// the top of the method.
+// global option files as sources.
 func AddGlobalConfigFiles(cfg *mybase.Config) {
-	// Most logic in this method needs to be skipped for tests. Otherwise, if the
-	// user running the test happens to have a ~/.my.cnf, ~/.skeema, /etc/skeema,
-	// or so forth, it would get picked up by the test.
-	if !cfg.IsTest {
-		globalFilePaths := []string{"/etc/skeema", "/usr/local/etc/skeema"}
+	globalFilePaths := make([]string, 0, 4)
+
+	// Avoid using "real" global paths in test logic. Otherwise, if the user
+	// running the test happens to have a ~/.my.cnf, ~/.skeema, /etc/skeema, it
+	// it would affect the test logic.
+	if cfg.IsTest {
+		globalFilePaths = append(globalFilePaths, "fake-etc/skeema", "fake-home/.my.cnf")
+	} else {
+		globalFilePaths = append(globalFilePaths, "/etc/skeema", "/usr/local/etc/skeema")
 		home := filepath.Clean(os.Getenv("HOME"))
 		if home != "" {
 			globalFilePaths = append(globalFilePaths, path.Join(home, ".my.cnf"), path.Join(home, ".skeema"))
 		}
-		for _, path := range globalFilePaths {
-			f := mybase.NewFile(path)
-			if !f.Exists() {
-				continue
-			}
-			if err := f.Read(); err != nil {
-				log.Warnf("Ignoring global option file %s due to read error: %s", f.Path(), err)
-				continue
-			}
-			if strings.HasSuffix(path, ".my.cnf") {
-				f.IgnoreUnknownOptions = true
-			}
-			if err := f.Parse(cfg); err != nil {
-				log.Warnf("Ignoring global option file %s due to parse error: %s", f.Path(), err)
-				continue
-			}
-			if strings.HasSuffix(path, ".my.cnf") {
-				_ = f.UseSection("skeema", "client", "mysql") // safe to ignore error (doesn't matter if section doesn't exist)
-			} else {
-				_ = f.UseSection(cfg.Get("environment")) // safe to ignore error (doesn't matter if section doesn't exist)
-			}
-
-			cfg.AddSource(f)
-		}
 	}
 
+	for _, path := range globalFilePaths {
+		f := mybase.NewFile(path)
+		if !f.Exists() {
+			continue
+		}
+		if err := f.Read(); err != nil {
+			log.Warnf("Ignoring global option file %s due to read error: %s", f.Path(), err)
+			continue
+		}
+		if strings.HasSuffix(path, ".my.cnf") {
+			f.IgnoreUnknownOptions = true
+		}
+		if err := f.Parse(cfg); err != nil {
+			log.Warnf("Ignoring global option file %s due to parse error: %s", f.Path(), err)
+			continue
+		}
+		if strings.HasSuffix(path, ".my.cnf") {
+			_ = f.UseSection("skeema", "client", "mysql") // safe to ignore error (doesn't matter if section doesn't exist)
+		} else {
+			_ = f.UseSection(cfg.Get("environment")) // safe to ignore error (doesn't matter if section doesn't exist)
+		}
+
+		cfg.AddSource(f)
+	}
+}
+
+// ProcessSpecialGlobalOptions performs special handling of global options with
+// unusual semantics -- handling restricted placement of host and schema;
+// obtaining a password from MYSQL_PWD or STDIN; enable debug logging.
+func ProcessSpecialGlobalOptions(cfg *mybase.Config) error {
 	// The host and schema options are special -- most commands only expect
 	// to find them when recursively crawling directory configs. So if these
 	// options have been set globally (via CLI or a global config file), and
 	// the current subcommand hasn't explicitly overridden these options (as
-	// init and add-environment do), silently ignore the value.
+	// init and add-environment do), return an error.
+	cmdSuite := cfg.CLI.Command.Root()
 	for _, name := range []string{"host", "schema"} {
-		if cfg.Changed(name) && cfg.FindOption(name) == CommandSuite.Options()[name] {
-			cfg.CLI.OptionValues[name] = ""
-			cfg.MarkDirty()
+		if cfg.Changed(name) && cfg.FindOption(name) == cmdSuite.Options()[name] {
+			return fmt.Errorf("Option %s cannot be set via %s for this command", name, cfg.Source(name))
 		}
 	}
 
@@ -105,16 +110,18 @@ func AddGlobalConfigFiles(cfg *mybase.Config) {
 	} else if cfg.Get("password") == "" {
 		var err error
 		cfg.CLI.OptionValues["password"], err = PromptPassword()
-		if err != nil {
-			Exit(NewExitValue(CodeNoInput, err.Error()))
-		}
 		cfg.MarkDirty()
 		fmt.Println()
+		if err != nil {
+			return err
+		}
 	}
 
 	if cfg.GetBool("debug") {
 		log.SetLevel(log.DebugLevel)
 	}
+
+	return nil
 }
 
 // PromptPassword reads a password from STDIN without echoing the typed

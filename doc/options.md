@@ -422,7 +422,7 @@ If ports are omitted, the [port](#port) option is used instead, which defaults t
 The external command should only return addresses of master instances, never replicas.
 
 ### ignore-schema
-Commands | *all*
+Commands | init, pull
 --- | :---
 **Default** | *empty string*
 **Type** | regular expression
@@ -433,6 +433,10 @@ Ordinarily, Skeema only ignores system schemas: information_schema, performance_
 The value of this option must be a valid regex, and should not be wrapped in delimiters. See the [option types](config.md#option-types) documentation for an example, and information on how to do case-insensitive matching.
 
 When supplied on the command-line to `skeema init`, the value will be persisted into the auto-generated .skeema option file, so that subsequent commands continue to ignore the corresponding schema names.
+
+This option primarily only affects the initial creation of a schema directory by `skeema init` or `skeema pull`. Once a schema directory is *already present*, it will be used by other commands, regardless of [ignore-schema](#ignore-schema).
+
+Aside from the impact on schema directory creation, the only other impact of this option on other commands is to exclude specific schemas from directories configured using [schema=*](#schema), a somewhat rare sharding use-case.
 
 ### ignore-table
 Commands | *all*
@@ -548,7 +552,7 @@ Most users will just use the first option, a single schema name.
 
 The ability to specify multiple schema names is useful in sharded environments with multi-tenancy: each database instance contains several schemas, and they all have the same set of tables, and therefore each schema change needs to be applied to multiple schemas on an instance.
 
-Setting `schema=*` is a special value meaning "all non-system schemas on the database instance". This is the easiest choice for a multi-tenant sharded environment, where all non-system schemas have the exact same set of tables. The ignored system schemas include `information_schema`, `performance_schema`, `mysql`, `sys`, and `test`.
+Setting `schema=*` is a special value meaning "all non-system schemas on the database instance". This is the easiest choice for a multi-tenant sharded environment, where all non-system schemas have the exact same set of tables. The ignored system schemas include `information_schema`, `performance_schema`, `mysql`, `sys`, and `test`. Additional schemas may be ignored by using the [ignore-schema](#ignore-schema) option.
 
 Some sharded environments need more flexibility -- for example, where some schemas represent shards with common sets of tables but other schemas do not. In this case, set [schema](#schema) to a backtick-wrapped external command shellout. This permits the directory to be mapped to one or more schema names dynamically, based on the output of any arbitrary script or binary, such as a service discovery client. The command line may contain special variables, which Skeema will dynamically replace with appropriate values. See [options with variable interpolation](config.md#options-with-variable-interpolation) for more information. The following variables are supported for this option:
 

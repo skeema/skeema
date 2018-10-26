@@ -72,6 +72,10 @@ func (f *File) Path() string {
 	return path.Join(f.Dir, f.Name)
 }
 
+func (f *File) String() string {
+	return f.Path()
+}
+
 // Write writes out the file's contents to disk. If overwrite=false and the
 // file already exists, an error will be returned.
 // Note that if overwrite=true and the file already exists, any comments
@@ -168,7 +172,7 @@ func (f *File) Parse(cfg *Config) error {
 		case lineTypeKeyOnly, lineTypeKeyValue:
 			opt := cfg.FindOption(parsedLine.key)
 			if opt == nil {
-				if parsedLine.isLoose || f.IgnoreUnknownOptions {
+				if parsedLine.isLoose || f.IgnoreUnknownOptions || cfg.LooseFileOptions {
 					continue
 				} else {
 					return OptionNotDefinedError{parsedLine.key, fmt.Sprintf("%s line %d", f.Path(), lineNumber)}
