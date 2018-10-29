@@ -138,10 +138,18 @@ func (instance *Instance) Connect(defaultSchema string, params string) (*sqlx.DB
 		return nil, err
 	}
 
-	// Determine max conn lifetime, depending on if wait_timeout is being set explicitly
+	// Determine max conn lifetime, ensuring it is less than wait_timeout. If
+	// wait_timeout wasn't supplied explicitly in params, query it from the server.
+	// Then set conn lifetime to a value less than wait_timeout, but no less than
+	// 900ms and no more than 30s.
 	maxLifetime := 30 * time.Second
 	parsedParams, _ := url.ParseQuery(fullParams)
-	if waitTimeout, _ := strconv.Atoi(parsedParams.Get("wait_timeout")); waitTimeout > 1 && waitTimeout <= 30 {
+	waitTimeout, _ := strconv.Atoi(parsedParams.Get("wait_timeout"))
+	if waitTimeout == 0 {
+		// Ignoring errors here, since this will keep maxLifetime at 30s sane default
+		db.QueryRow("SELECT @@wait_timeout").Scan(&waitTimeout)
+	}
+	if waitTimeout > 1 && waitTimeout <= 30 {
 		maxLifetime = time.Duration(waitTimeout-1) * time.Second
 	} else if waitTimeout == 1 {
 		maxLifetime = 900 * time.Millisecond
