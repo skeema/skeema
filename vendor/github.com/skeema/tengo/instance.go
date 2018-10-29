@@ -26,7 +26,7 @@ type Instance struct {
 	Port           int
 	SocketPath     string
 	defaultParams  map[string]string
-	connectionPool map[string]*sqlx.DB // key is in format "schema?params" or just "schema" if no params
+	connectionPool map[string]*sqlx.DB // key is in format "schema?params"
 	*sync.RWMutex                      // protects connectionPool for concurrent operations
 	flavor         Flavor
 	version        [3]int
@@ -180,6 +180,18 @@ func (instance *Instance) CanConnect() (bool, error) {
 	}
 
 	return err == nil, err
+}
+
+// CloseAll closes all of instance's connection pools. This can be useful for
+// graceful shutdown, to avoid aborted-connection counters/logging in some
+// versions of MySQL.
+func (instance *Instance) CloseAll() {
+	instance.Lock()
+	for key, db := range instance.connectionPool {
+		db.Close()
+		delete(instance.connectionPool, key)
+	}
+	instance.Unlock()
 }
 
 // Flavor returns this instance's flavor value, representing the database

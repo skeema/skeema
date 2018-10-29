@@ -43,30 +43,31 @@ func PullHandler(cfg *mybase.Config) error {
 		return err
 	}
 
-	var errCount int
-	if _, err = pullWalker(dir, &errCount, 5); err != nil {
+	var skipCount int
+	if _, skipCount, err = pullWalker(dir, 5); err != nil {
 		return err
 	}
-	if errCount == 0 {
+	if skipCount == 0 {
 		return nil
 	}
 	var plural string
-	if errCount > 1 {
+	if skipCount > 1 {
 		plural = "s"
 	}
-	return NewExitValue(CodePartialError, "Skipped %d operation%s due to error%s", errCount, plural, plural)
+	return NewExitValue(CodePartialError, "Skipped %d operation%s due to error%s", skipCount, plural, plural)
 }
 
 // pullWalker processes dir, and recursively calls itself on any subdirs. An
-// error is only returned if something fatal occurs; otherwise, *errCount is
-// incremented if some operation is skipped but it isn't fatal.
-func pullWalker(dir *fs.Dir, errCount *int, maxDepth int) (handledSchemaNames []string, err error) {
+// error is only returned if something fatal occurs. skipCount reflects the
+// number of non-fatal failed operations that were skipped for dir and its
+// subdirectories.
+func pullWalker(dir *fs.Dir, maxDepth int) (handledSchemaNames []string, skipCount int, err error) {
 	var instance *tengo.Instance
 	if dir.Config.Changed("host") {
 		instance, err = dir.FirstInstance()
 		if err != nil {
-			*errCount++
-			return nil, nil
+			log.Warnf("Skipping %s: %s", dir, err)
+			return nil, 1, nil
 		}
 	}
 
@@ -83,7 +84,7 @@ func pullWalker(dir *fs.Dir, errCount *int, maxDepth int) (handledSchemaNames []
 
 			var schemaNames []string
 			if schemaNames, err = dir.SchemaNames(instance); err != nil {
-				return nil, fmt.Errorf("%s: Unable to fetch schema names mapped by this dir: %s", dir, err)
+				return nil, skipCount, fmt.Errorf("%s: Unable to fetch schema names mapped by this dir: %s", dir, err)
 			}
 			if len(schemaNames) == 0 {
 				log.Warnf("Ignoring directory %s -- did not map to any schema names\n", dir)
@@ -94,38 +95,39 @@ func pullWalker(dir *fs.Dir, errCount *int, maxDepth int) (handledSchemaNames []
 			if err == sql.ErrNoRows {
 				log.Infof("Deleted directory %s -- schema %s no longer exists\n", dir, handledSchemaNames[0])
 				// Explicitly return here to prevent later attempt at subdir traversal
-				return nil, dir.Delete()
+				return nil, skipCount, dir.Delete()
 			} else if err != nil {
-				return nil, fmt.Errorf("%s: Unable to fetch schema %s from %s: %s", dir, handledSchemaNames[0], instance, err)
+				return nil, skipCount, fmt.Errorf("%s: Unable to fetch schema %s from %s: %s", dir, handledSchemaNames[0], instance, err)
 			}
 			if err = pullSchemaDir(dir, instance, instSchema, idealSchema); err != nil {
-				return nil, err
+				return nil, skipCount, err
 			}
 		}
 	}
 
 	if subdirs, badCount, err := dir.Subdirs(); err != nil {
 		log.Errorf("Cannot list subdirs of %s: %s", dir, err)
-		*errCount++
+		skipCount++
 	} else if len(subdirs) > 0 && maxDepth <= 0 {
 		log.Warnf("Not walking subdirs of %s: max depth reached", dir)
-		*errCount += len(subdirs)
+		skipCount += len(subdirs)
 	} else {
-		*errCount += badCount
+		skipCount += badCount
 		allSubSchemaNames := make([]string, 0)
 		for _, sub := range subdirs {
-			subSchemaNames, walkErr := pullWalker(sub, errCount, maxDepth-1)
+			subSchemaNames, subSkipCount, walkErr := pullWalker(sub, maxDepth-1)
+			skipCount += subSkipCount
 			if walkErr != nil {
-				return nil, walkErr
+				return nil, skipCount, walkErr
 			}
 			allSubSchemaNames = append(allSubSchemaNames, subSchemaNames...)
 		}
 		if instance != nil && !dir.Config.Changed("schema") {
 			updateFlavor(dir, instance)
-			return nil, findNewSchemas(dir, instance, allSubSchemaNames)
+			return nil, skipCount, findNewSchemas(dir, instance, allSubSchemaNames)
 		}
 	}
-	return handledSchemaNames, nil
+	return handledSchemaNames, skipCount, nil
 }
 
 // pullSchemaDir performs appropriate pull logic on a dir that maps to one or

@@ -47,6 +47,7 @@ func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<-
 			if diff.SchemaDDL != "" {
 				printer.syncPrintf(t.Instance, "", "%s;\n", diff.SchemaDDL)
 				targetStmtCount++
+				result.Differences = true
 				if !dryRun {
 					var schemaDDLErr error
 					if strings.HasPrefix(diff.SchemaDDL, "CREATE DATABASE") && t.SchemaFromInstance == nil {

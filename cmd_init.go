@@ -129,8 +129,8 @@ func InitHandler(cfg *mybase.Config) error {
 	}
 
 	// Write the option file
-	if err := createOptionFile(hostDir.Path, hostOptionFile); err != nil {
-		return NewExitValue(CodeCantCreate, err.Error())
+	if err := hostOptionFile.Write(false); err != nil {
+		return NewExitValue(CodeCantCreate, "Unable to use directory %s: Unable to write to %s: %s", hostDir.Path, hostOptionFile.Path(), err)
 	}
 
 	verb := "Using"
@@ -182,12 +182,12 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *fs.Dir, makeSubdir bool) erro
 		// Put a .skeema file with the schema name in it. This is placed outside of
 		// any named section/environment since the default assumption is that schema
 		// names match between environments.
-		optionFile := mybase.NewFile(".skeema")
+		optionFile := mybase.NewFile(subPath, ".skeema")
 		optionFile.SetOptionValue("", "schema", s.Name)
 		optionFile.SetOptionValue("", "default-character-set", s.CharSet)
 		optionFile.SetOptionValue("", "default-collation", s.Collation)
-		if err := createOptionFile(subPath, optionFile); err != nil {
-			return NewExitValue(CodeCantCreate, "Unable to use directory %s for schema %s: %s", subPath, s.Name, err)
+		if err := optionFile.Write(false); err != nil {
+			return NewExitValue(CodeCantCreate, "Unable to use directory %s for schema %s: Unable to write to %s: %s", subPath, s.Name, optionFile.Path(), err)
 		}
 	} else {
 		subPath = parentDir.Path
@@ -268,13 +268,4 @@ func preparePath(dirPath string, globalConfig *mybase.Config) (created bool, err
 	}
 
 	return false, nil
-}
-
-func createOptionFile(dirPath string, file *mybase.File) error {
-	file.Dir = dirPath
-	err := file.Write(false)
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("Unable to write to %s: %s", file.Path(), err)
 }

@@ -177,14 +177,12 @@ func targetsForIdealSchema(idealSchema *fs.IdealSchema, dir *fs.Dir, instances [
 }
 
 // TargetGroupChanForDir returns a channel for obtaining TargetGroups for this
-// dir and its subdirs, and a pointer to an int that will contain the count of
-// skipped directories once the channel is closed.
-func TargetGroupChanForDir(dir *fs.Dir) (<-chan TargetGroup, *int) {
+// dir and its subdirs, and count of directories that were skipped due to non-
+// fatal errors.
+func TargetGroupChanForDir(dir *fs.Dir) (<-chan TargetGroup, int) {
+	targets, skipCount := TargetsForDir(dir, 5)
 	groups := make(chan TargetGroup)
-	var skipCount int
 	go func() {
-		var targets []*Target
-		targets, skipCount = TargetsForDir(dir, 5)
 		byInst := make(map[string]TargetGroup)
 		for _, t := range targets {
 			key := t.Instance.String()
@@ -195,5 +193,5 @@ func TargetGroupChanForDir(dir *fs.Dir) (<-chan TargetGroup, *int) {
 		}
 		close(groups)
 	}()
-	return groups, &skipCount
+	return groups, skipCount
 }

@@ -54,7 +54,7 @@ func PushHandler(cfg *mybase.Config) error {
 	briefMode := dir.Config.GetBool("dry-run") && dir.Config.GetBool("brief")
 	printer := applier.NewPrinter(briefMode)
 	g, ctx := errgroup.WithContext(context.Background())
-	tgchan, skipCountPtr := applier.TargetGroupChanForDir(dir)
+	tgchan, skipCount := applier.TargetGroupChanForDir(dir)
 	results := make(chan applier.Result)
 
 	workerCount, err := dir.Config.GetInt("concurrent-instances")
@@ -85,7 +85,7 @@ func PushHandler(cfg *mybase.Config) error {
 		return err
 	}
 	sum := applier.SumResults(allResults)
-	sum.SkipCount += *skipCountPtr
+	sum.SkipCount += skipCount
 
 	if sum.SkipCount+sum.UnsupportedCount == 0 {
 		if dir.Config.GetBool("dry-run") && sum.Differences {

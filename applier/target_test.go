@@ -187,7 +187,10 @@ func (s ApplierIntegrationSuite) TestTargetGroupChanForDir(t *testing.T) {
 	// Parent dir maps to 2 instances, and schema dir maps to 2 schemas, so expect
 	// 4 targets split into 2 groups (by instance)
 	dir := getDir(t, "../testdata/applier/multi", "")
-	tgchan, skipCountPtr := TargetGroupChanForDir(dir)
+	tgchan, skipCount := TargetGroupChanForDir(dir)
+	if skipCount != 0 {
+		t.Errorf("Expected skip count of 0, instead found %d", skipCount)
+	}
 	seen := make(map[string]bool, 2)
 	for tg := range tgchan {
 		if len(tg) != 2 || tg[0].Instance != tg[1].Instance {
@@ -203,16 +206,16 @@ func (s ApplierIntegrationSuite) TestTargetGroupChanForDir(t *testing.T) {
 	if len(seen) != 2 {
 		t.Errorf("Expected to see 2 target groups, instead found %d", len(seen))
 	}
-	if *skipCountPtr != 0 {
-		t.Errorf("Expected skip count of 0, instead found %d", *skipCountPtr)
-	}
 
 	// SQL syntax error in testdata/applier/sqlerror/one/bad.sql should cause one/
 	// dir to be skipped entirely for both hosts, so skipCount of 2. But other
 	// dir two/ has no errors and should successfully yield 2 targets (1 per host,
 	// and put into different targetgroups)
 	dir = getDir(t, "../testdata/applier/sqlerror", "")
-	tgchan, skipCountPtr = TargetGroupChanForDir(dir)
+	tgchan, skipCount = TargetGroupChanForDir(dir)
+	if skipCount != 2 {
+		t.Errorf("Expected skip count of 2, instead found %d", skipCount)
+	}
 	seen = make(map[string]bool, 2)
 	for tg := range tgchan {
 		if len(tg) != 1 {
@@ -227,9 +230,6 @@ func (s ApplierIntegrationSuite) TestTargetGroupChanForDir(t *testing.T) {
 	}
 	if len(seen) != 2 {
 		t.Errorf("Expected to see 2 target groups, instead found %d", len(seen))
-	}
-	if *skipCountPtr != 2 {
-		t.Errorf("Expected skip count of 2, instead found %d", *skipCountPtr)
 	}
 }
 

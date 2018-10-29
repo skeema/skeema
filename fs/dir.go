@@ -306,8 +306,8 @@ func (dir *Dir) SchemaNames(instance *tengo.Instance) ([]string, error) {
 }
 
 // HasSchema returns true if this dir maps to at least one schema, either by
-// stating a "schema" option in the dir's config, and/or by having *.sql files
-// that explicitly mention a schema name
+// stating a "schema" option in the dir's config for the current environment,
+// and/or by having *.sql files that explicitly mention a schema name.
 func (dir *Dir) HasSchema() bool {
 	if dir.Config.Changed("schema") {
 		return true

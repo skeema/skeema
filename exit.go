@@ -5,6 +5,7 @@ import (
 	"os"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/skeema/skeema/util"
 )
 
 // ExitValue represents an exit code for an operation. It satisfies the Error
@@ -76,5 +77,10 @@ func Exit(err error) {
 		}
 		log.Debugf("Exit code %d", exitCode)
 	}
+
+	// Gracefully close all connection pools, to avoid aborted connection counter/
+	// logging in some versions of MySQL
+	util.CloseCachedConnectionPools()
+
 	os.Exit(exitCode)
 }
