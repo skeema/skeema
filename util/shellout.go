@@ -1,11 +1,10 @@
-package main
+package util
 
 import (
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
 	"regexp"
 	"strings"
 )
@@ -103,64 +102,31 @@ func NewShellOut(command, printableCommand string) *ShellOut {
 
 // NewInterpolatedShellOut takes a shell command-line containing variables of
 // format {VARNAME}, and performs substitution on them based on the supplied
-// directory and its configuration, as well as any additional values provided
-// in the extra map.
+// map of variable names to values.
 //
-// The following variables are supplied as-is from the dir's configuration:
-//   {USER}, {PASSWORD}, {SCHEMA}, {HOST}, {PORT}
+// Variable names should be supplied in all-caps in the variables map. Inside
+// of command, they are case-insensitive. If any unknown variable is contained
+// in the command string, a non-nil error will be returned and the unknown
+// variable will not be interpolated.
 //
-// These additional variables are always set; see function source code:
-//   {PASSWORDX}, {ENVIRONMENT}, {DIRNAME}, {DIRPATH}, {CONNOPTS}
-//
-// Vars are case-insensitive, but all-caps is recommended for visual reasons.
-// If any unknown variable is contained in the command string, a non-nil error
-// will be returned and the unknown variable will not be interpolated.
-func NewInterpolatedShellOut(command string, dir *Dir, extra map[string]string) (*ShellOut, error) {
+// As a special case, any variable name may appear with an X suffix. This will
+// still be replaced as normal in the generated ShellOut.Command, but will
+// appear as all X's in ShellOut.PrintableCommand. For example, if the command
+// string contains "{PASSWORDX}" and variables has a key "PASSWORD", it will be
+// replaced in a manner that obfuscates the actual password in PrintableCommand.
+func NewInterpolatedShellOut(command string, variables map[string]string) (*ShellOut, error) {
 	var err error
-	values := make(map[string]string, 7+len(extra))
-
-	asis := []string{"user", "password", "schema", "host", "port"}
-	for _, name := range asis {
-		value := dir.Config.Get(strings.ToLower(name))
-		raw := dir.Config.GetRaw(strings.ToLower(name))
-		// any value containing shell exec will itself need be run thru
-		// NewInterpolatedShellOut at some point, so not available for interpolation
-		// here, to avoid recursive shellouts. They can still be supplied via the
-		// extra map instead; that's handled later.
-		if value == raw || raw[0] != '`' {
-			values[strings.ToUpper(name)] = value
-		}
-	}
-
-	// PASSWORDX works like PASSWORD, but is hidden when the command-line is printed
-	values["PASSWORDX"] = values["PASSWORD"]
-
-	// If the command has an "environment" positional arg, add its value as-is too
-	if _, hasEnvironment := dir.Config.CLI.Command.OptionValue("environment"); hasEnvironment {
-		values["ENVIRONMENT"] = dir.Config.Get("environment")
-	}
-
-	// DIRNAME and DIRPATH reflect the dir being evaluated
-	values["DIRNAME"] = path.Base(dir.Path)
-	values["DIRPATH"] = dir.Path
-
-	// CONNOPTS is connect-options with driver-specific options removed
-	if values["CONNOPTS"], err = RealConnectOptions(dir.Config.Get("connect-options")); err != nil {
-		return nil, err
-	}
-
-	// Add in extras *after*, to allow them to override previous vars if desired
-	for name, val := range extra {
-		values[strings.ToUpper(name)] = val
-	}
-
-	var suppressPassword bool
+	var forDisplay bool
 	replacer := func(input string) string {
 		input = strings.ToUpper(input[1 : len(input)-1])
-		if value, ok := values[input]; ok {
-			if input == "PASSWORDX" && suppressPassword {
-				return strings.Repeat("X", len(value))
+		value, ok := variables[input]
+		if !ok && input[len(input)-1] == 'X' {
+			value, ok = variables[input[:len(input)-1]]
+			if ok && forDisplay {
+				return "XXXXX"
 			}
+		}
+		if ok {
 			return escapeVarValue(value)
 		}
 		err = fmt.Errorf("Unknown variable {%s}", input)
@@ -168,10 +134,10 @@ func NewInterpolatedShellOut(command string, dir *Dir, extra map[string]string) 
 	}
 
 	result := varPlaceholder.ReplaceAllStringFunc(command, replacer)
-	if strings.Contains(strings.ToUpper(command), "{PASSWORDX}") {
-		suppressPassword = true
-		resultWithoutPassword := varPlaceholder.ReplaceAllStringFunc(command, replacer)
-		return NewShellOut(result, resultWithoutPassword), err
+	if strings.Contains(strings.ToUpper(command), "X}") {
+		forDisplay = true
+		resultForDisplay := varPlaceholder.ReplaceAllStringFunc(command, replacer)
+		return NewShellOut(result, resultForDisplay), err
 	}
 	return NewShellOut(result, ""), err
 }

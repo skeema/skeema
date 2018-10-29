@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"fmt"
@@ -33,4 +33,12 @@ func NewInstance(driver, dsn string) (*tengo.Instance, error) {
 	}
 	instanceCache.instanceMap[key] = instance
 	return instance, nil
+}
+
+// CloseCachedConnectionPools closes all connection pools in all cached
+// Instances that were created via NewInstance.
+func CloseCachedConnectionPools() {
+	for _, inst := range instanceCache.instanceMap {
+		inst.CloseAll()
+	}
 }

@@ -214,6 +214,16 @@ func (cmd *Command) Usage() {
 	}
 }
 
+// Root returns the top-level ancestor of this cmd -- that is, it climbs the
+// parent hierarchy until it finds a command with a nil ParentCommand
+func (cmd *Command) Root() *Command {
+	result := cmd
+	for result.ParentCommand != nil {
+		result = result.ParentCommand
+	}
+	return result
+}
+
 func (cmd *Command) minArgs() int {
 	// If we hit an optional arg at slice position n, this means there
 	// were n required args prior to the optional arg.
@@ -264,10 +274,7 @@ func helpHandler(cfg *Config) error {
 }
 
 func versionHandler(cfg *Config) error {
-	cmd := cfg.CLI.Command
-	for cmd.ParentCommand != nil {
-		cmd = cmd.ParentCommand
-	}
+	cmd := cfg.CLI.Command.Root()
 	version := cmd.Summary
 	if version == "" {
 		version = "not specified"

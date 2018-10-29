@@ -143,16 +143,16 @@
   version = "v1.0.5"
 
 [[projects]]
-  branch = "master"
   name = "github.com/skeema/mybase"
   packages = ["."]
-  revision = "59feabaee6bd70326153fa395ff06ee43a4f15dd"
+  revision = "42195b2b649420199dfa70e383c9646b11a1467f"
+  version = "v1.0.2"
 
 [[projects]]
+  branch = "master"
   name = "github.com/skeema/tengo"
   packages = ["."]
-  revision = "a41ba075709a8ef43d7276a115a906c3f43ab2cd"
-  version = "v0.8.6"
+  revision = "43fee38eac82c8a682df9c76783a7d77e4e07e63"
 
 [[projects]]
   branch = "master"
@@ -164,6 +164,12 @@
   name = "golang.org/x/net"
   packages = ["context"]
   revision = "7dcfb8076726a3fdd9353b6b8a1f1b6be6811bd6"
+
+[[projects]]
+  branch = "master"
+  name = "golang.org/x/sync"
+  packages = ["errgroup"]
+  revision = "1d60e4601c6fd243af51cc01ddf169918a5407ca"
 
 [[projects]]
   branch = "master"
@@ -183,6 +189,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "f0a78f235b13dd3be8c6329e0121009287bc97c335633aef432a3cf1b2542fd6"
+  inputs-digest = "3cc74b935e74a7b83b6c2050e1343f5dea8dda2e14786dfaddb88d1b9036efb0"
   solver-name = "gps-cdcl"
   solver-version = 1

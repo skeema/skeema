@@ -7,6 +7,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/util"
 )
 
 const rootDesc = `Skeema is a MySQL schema management tool. It allows you to export a database
@@ -25,7 +26,7 @@ var CommandSuite = mybase.NewCommandSuite("skeema", versionString(), rootDesc)
 
 func main() {
 	// Add global options. Sub-commands may override these when needed.
-	AddGlobalOptions(CommandSuite)
+	util.AddGlobalOptions(CommandSuite)
 
 	var cfg *mybase.Config
 
@@ -40,6 +41,11 @@ func main() {
 
 	cfg, err := mybase.ParseCLI(CommandSuite, os.Args)
 	if err != nil {
+		Exit(NewExitValue(CodeBadConfig, err.Error()))
+	}
+
+	util.AddGlobalConfigFiles(cfg)
+	if err := util.ProcessSpecialGlobalOptions(cfg); err != nil {
 		Exit(NewExitValue(CodeBadConfig, err.Error()))
 	}
 

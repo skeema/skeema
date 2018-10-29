@@ -4,15 +4,15 @@ import (
 	"errors"
 	"fmt"
 	log "github.com/sirupsen/logrus"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/pmezard/go-difflib/difflib"
 	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/fs"
+	"github.com/skeema/skeema/util"
 	"github.com/skeema/tengo"
 )
 
@@ -22,7 +22,7 @@ func TestMain(m *testing.M) {
 	tengo.UseFilteredDriverLogger()
 
 	// Add global options to the global command suite, just like in main()
-	AddGlobalOptions(CommandSuite)
+	util.AddGlobalOptions(CommandSuite)
 
 	os.Exit(m.Run())
 }
@@ -69,7 +69,7 @@ func (s *SkeemaIntegrationSuite) Teardown(backend string) error {
 	if err := os.Chdir(s.repoPath); err != nil {
 		return err
 	}
-	if err := os.RemoveAll(s.workspace()); err != nil {
+	if err := os.RemoveAll(s.scratchPath()); err != nil {
 		return err
 	}
 	return nil
@@ -84,16 +84,16 @@ func (s *SkeemaIntegrationSuite) BeforeTest(method string, backend string) error
 		return err
 	}
 
-	// Create or recreate workspace dir
-	if _, err := os.Stat(s.workspace()); err == nil { // dir exists
-		if err := os.RemoveAll(s.workspace()); err != nil {
+	// Create or recreate scratch dir
+	if _, err := os.Stat(s.scratchPath()); err == nil { // dir exists
+		if err := os.RemoveAll(s.scratchPath()); err != nil {
 			return err
 		}
 	}
-	if err := os.MkdirAll(s.workspace(), 0777); err != nil {
+	if err := os.MkdirAll(s.scratchPath(), 0777); err != nil {
 		return err
 	}
-	if err := os.Chdir(s.workspace()); err != nil {
+	if err := os.Chdir(s.scratchPath()); err != nil {
 		return err
 	}
 
@@ -107,30 +107,36 @@ func (s *SkeemaIntegrationSuite) testdata(joins ...string) string {
 	return filepath.Join(parts...)
 }
 
-// workspace returns the workspace directory for tests to write temporary files
+// scratchPath returns the scratch directory for tests to write temporary files
 // to.
-func (s *SkeemaIntegrationSuite) workspace() string {
-	return s.testdata(".tmpworkspace")
+func (s *SkeemaIntegrationSuite) scratchPath() string {
+	return s.testdata(".scratch")
 }
 
 // handleCommand executes the supplied Skeema command-line, and confirms its exit
 // code matches the expected value.
-// pwd can specify a relative path (based off of testdata/.tmpworkspace) to
+// pwd can specify a relative path (based off of testdata/.scratch) to
 // execute the command from the designated subdirectory. Afterwards, the pwd
-// will be restored to testdata/.tmpworkspace regardless.
+// will be restored to testdata/.scratch regardless.
 func (s *SkeemaIntegrationSuite) handleCommand(t *testing.T, expectedExitCode int, pwd, commandLine string, a ...interface{}) *mybase.Config {
 	t.Helper()
 
-	path := filepath.Join(s.workspace(), pwd)
+	path := filepath.Join(s.scratchPath(), pwd)
 	if err := os.Chdir(path); err != nil {
 		t.Fatalf("Unable to cd to %s: %s", path, err)
 	}
 
 	fullCommandLine := fmt.Sprintf(commandLine, a...)
-	fmt.Fprintf(os.Stderr, "\x1b[37;1m%s$\x1b[0m %s\n", filepath.Join("testdata", ".tmpworkspace", pwd), fullCommandLine)
+	fmt.Fprintf(os.Stderr, "\x1b[37;1m%s$\x1b[0m %s\n", filepath.Join("testdata", ".scratch", pwd), fullCommandLine)
 	fakeFileSource := mybase.SimpleSource(map[string]string{"password": s.d.Instance.Password})
 	cfg := mybase.ParseFakeCLI(t, CommandSuite, fullCommandLine, fakeFileSource)
-	err := cfg.HandleCommand()
+	util.AddGlobalConfigFiles(cfg)
+	err := util.ProcessSpecialGlobalOptions(cfg)
+	if err != nil {
+		err = NewExitValue(CodeBadConfig, err.Error())
+	} else {
+		err = cfg.HandleCommand()
+	}
 
 	actualExitCode := ExitCode(err)
 	var msg string
@@ -155,15 +161,15 @@ func (s *SkeemaIntegrationSuite) handleCommand(t *testing.T, expectedExitCode in
 	}
 
 	if pwd != "" && pwd != "." {
-		if err := os.Chdir(s.workspace()); err != nil {
-			t.Fatalf("Unable to cd to %s: %s", s.workspace(), err)
+		if err := os.Chdir(s.scratchPath()); err != nil {
+			t.Fatalf("Unable to cd to %s: %s", s.scratchPath(), err)
 		}
 	}
 	fmt.Fprintf(os.Stderr, "\n")
 	return cfg
 }
 
-// verifyFiles compares the files in testdata/.tmpworkspace to the files in the
+// verifyFiles compares the files in testdata/.scratch to the files in the
 // specified dir, and fails the test if any differences are found.
 func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, dirExpectedBase string) {
 	t.Helper()
@@ -187,90 +193,76 @@ func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, d
 		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mysql80", 1)
 	}
 
-	var compareDirs func(*Dir, *Dir)
-	compareDirs = func(a, b *Dir) {
+	var compareDirs func(*fs.Dir, *fs.Dir)
+	compareDirs = func(a, b *fs.Dir) {
 		t.Helper()
 
 		// Compare .skeema option files
-		if a.HasOptionFile() != b.HasOptionFile() {
+		if (a.OptionFile == nil && b.OptionFile != nil) || (a.OptionFile != nil && b.OptionFile == nil) {
 			t.Errorf("Presence of option files does not match between %s and %s", a, b)
 		}
-		if a.HasOptionFile() {
-			aOptionFile, err := a.OptionFile()
-			if err != nil {
-				t.Fatalf(err.Error())
-			}
-			bOptionFile, err := b.OptionFile()
-			if err != nil {
-				t.Fatalf(err.Error())
-			}
+		if a.OptionFile != nil {
 			// Force port number of a to equal port number in b, since b will use whatever
 			// dynamic port was allocated to the Dockerized database instance
-			aSectionsWithPort := aOptionFile.SectionsWithOption("port")
-			bSectionsWithPort := bOptionFile.SectionsWithOption("port")
+			aSectionsWithPort := a.OptionFile.SectionsWithOption("port")
+			bSectionsWithPort := b.OptionFile.SectionsWithOption("port")
 			if !reflect.DeepEqual(aSectionsWithPort, bSectionsWithPort) {
-				t.Errorf("Sections with port option do not match between %s and %s", aOptionFile.Path(), bOptionFile.Path())
+				t.Errorf("Sections with port option do not match between %s and %s", a.OptionFile.Path(), b.OptionFile.Path())
 			} else {
 				for _, section := range bSectionsWithPort {
-					bOptionFile.UseSection(section)
-					forcedValue, _ := bOptionFile.OptionValue("port")
-					aOptionFile.SetOptionValue(section, "port", forcedValue)
+					b.OptionFile.UseSection(section)
+					forcedValue, _ := b.OptionFile.OptionValue("port")
+					a.OptionFile.SetOptionValue(section, "port", forcedValue)
 				}
 			}
 			// Force flavor of a to match the DockerizedInstance's flavor
-			for _, section := range aOptionFile.SectionsWithOption("flavor") {
-				aOptionFile.SetOptionValue(section, "flavor", s.d.Flavor().String())
+			for _, section := range a.OptionFile.SectionsWithOption("flavor") {
+				a.OptionFile.SetOptionValue(section, "flavor", s.d.Flavor().String())
 			}
 
-			if !aOptionFile.SameContents(bOptionFile) {
-				t.Errorf("File contents do not match between %s and %s", aOptionFile.Path(), bOptionFile.Path())
-				fmt.Printf("Expected:\n%s\n", readFile(t, aOptionFile.Path()))
-				fmt.Printf("Actual:\n%s\n", readFile(t, bOptionFile.Path()))
+			if !a.OptionFile.SameContents(b.OptionFile) {
+				t.Errorf("File contents do not match between %s and %s", a.OptionFile.Path(), b.OptionFile.Path())
+				fmt.Printf("Expected:\n%s\n", fs.ReadTestFile(t, a.OptionFile.Path()))
+				fmt.Printf("Actual:\n%s\n", fs.ReadTestFile(t, b.OptionFile.Path()))
 			}
 		}
 
 		// Compare *.sql files
-		aSQLFiles, err := a.SQLFiles()
-		if err != nil {
-			t.Fatalf("Unable to obtain *.sql from %s: %s", a, err)
-		}
-		bSQLFiles, err := b.SQLFiles()
-		if err != nil {
-			t.Fatalf("Unable to obtain *.sql from %s: %s", b, err)
-		}
-		if len(aSQLFiles) != len(bSQLFiles) {
+		if len(a.SQLFiles) != len(b.SQLFiles) {
 			t.Errorf("Differing count of *.sql files between %s and %s", a, b)
 		} else {
-			for n := range aSQLFiles {
-				if aSQLFiles[n].FileName != bSQLFiles[n].FileName || aSQLFiles[n].Contents != bSQLFiles[n].Contents {
-					diff := difflib.UnifiedDiff{
-						A:        difflib.SplitLines(aSQLFiles[n].Contents),
-						B:        difflib.SplitLines(bSQLFiles[n].Contents),
-						FromFile: aSQLFiles[n].Path(),
-						ToFile:   bSQLFiles[n].Path(),
-						Context:  0,
+			for n := range a.SQLFiles {
+				if a.SQLFiles[n].FileName != b.SQLFiles[n].FileName {
+					t.Errorf("Differing file name at position[%d]: %s vs %s", n, a.SQLFiles[n].FileName, b.SQLFiles[n].FileName)
+				}
+			}
+		}
+
+		// Compare parsed CREATE TABLEs
+		if len(a.IdealSchemas) != len(b.IdealSchemas) {
+			t.Errorf("Mismatch between count of parsed ideal schemas: %s=%d vs %s=%d", a, len(a.IdealSchemas), b, len(b.IdealSchemas))
+		} else if len(a.IdealSchemas) > 0 {
+			aCreates, bCreates := a.IdealSchemas[0].CreateTables, b.IdealSchemas[0].CreateTables
+			if len(aCreates) != len(bCreates) {
+				t.Errorf("Mismatch in CREATE TABLE count: %s=%d, %s=%d", a, len(aCreates), b, len(bCreates))
+			} else {
+				for name, aStmt := range aCreates {
+					bStmt := bCreates[name]
+					if aStmt.Text != bStmt.Text {
+						t.Errorf("Mismatch for table %s:\n%s:\n%s\n\n%s:\n%s\n", name, aStmt.Location(), aStmt.Text, bStmt.Location(), bStmt.Text)
 					}
-					diffText, err := difflib.GetUnifiedDiffString(diff)
-					if err == nil {
-						for _, line := range strings.Split(diffText, "\n") {
-							if len(line) > 0 {
-								t.Log(line)
-							}
-						}
-					}
-					t.Errorf("Difference found in %s vs %s", aSQLFiles[n].Path(), bSQLFiles[n].Path())
 				}
 			}
 		}
 
 		// Compare subdirs and walk them
-		aSubdirs, err := a.Subdirs()
-		if err != nil {
-			t.Fatalf("Unable to list subdirs of %s: %s", a, err)
+		aSubdirs, badSubdirCount, err := a.Subdirs()
+		if err != nil || badSubdirCount > 0 {
+			t.Fatalf("Unable to list subdirs of %s: %s (bad subdir count %d)", a, err, badSubdirCount)
 		}
-		bSubdirs, err := b.Subdirs()
-		if err != nil {
-			t.Fatalf("Unable to list subdirs of %s: %s", b, err)
+		bSubdirs, badSubdirCount, err := b.Subdirs()
+		if err != nil || badSubdirCount > 0 {
+			t.Fatalf("Unable to list subdirs of %s: %s (bad subdir count %d)", b, err, badSubdirCount)
 		}
 		if len(aSubdirs) != len(bSubdirs) {
 			t.Errorf("Differing count of subdirs between %s and %s", a, b)
@@ -285,13 +277,13 @@ func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, d
 		}
 	}
 
-	expected, err := NewDir(dirExpectedBase, cfg)
+	expected, err := fs.ParseDir(dirExpectedBase, cfg)
 	if err != nil {
-		t.Fatalf("NewDir(%s) returned %s", dirExpectedBase, err)
+		t.Fatalf("ParseDir(%s) returned %s", dirExpectedBase, err)
 	}
-	actual, err := NewDir(s.workspace(), cfg)
+	actual, err := fs.ParseDir(s.scratchPath(), cfg)
 	if err != nil {
-		t.Fatalf("NewDir(%s) returned %s", s.workspace(), err)
+		t.Fatalf("ParseDir(%s) returned %s", s.scratchPath(), err)
 	}
 	compareDirs(expected, actual)
 }
@@ -402,52 +394,13 @@ func containerName(backend string) string {
 	return fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1))
 }
 
-// readFile wraps ioutil.ReadFile, with any errors being fatal to the test.
-func readFile(t *testing.T, filename string) string {
-	t.Helper()
-	contents, err := ioutil.ReadFile(filename)
-	if err != nil {
-		t.Fatalf("Unable to read %s: %s", filename, err)
-	}
-	return string(contents)
-}
-
-// writeFile wraps ioutil.WriteFile, with any errors being fatal to the test.
-func writeFile(t *testing.T, filename, contents string) {
-	t.Helper()
-	dirPath := filepath.Dir(filename)
-	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
-		err = os.MkdirAll(dirPath, 0777)
-		if err != nil {
-			t.Fatalf("Unable to create directory %s: %s", dirPath, err)
-		}
-	}
-
-	err := ioutil.WriteFile(filename, []byte(contents), 0777)
-	if err != nil {
-		t.Fatalf("Unable to write %s: %s", filename, err)
-	}
-}
-
-// makeDir wraps os.MkdirAll, with any errors being fatal to the test.
-func makeDir(t *testing.T, path string) {
-	t.Helper()
-	if err := os.MkdirAll(path, 0777); err != nil {
-		t.Fatalf("Unable to create dir: %s", err)
-	}
-}
-
 // getOptionFile returns a mybase.File representing the .skeema file in the
 // specified directory
 func getOptionFile(t *testing.T, basePath string, baseConfig *mybase.Config) *mybase.File {
 	t.Helper()
-	dir, err := NewDir(basePath, baseConfig)
+	dir, err := fs.ParseDir(basePath, baseConfig)
 	if err != nil {
 		t.Fatalf("Unable to obtain directory %s: %s", basePath, err)
 	}
-	file, err := dir.OptionFile()
-	if err != nil {
-		t.Fatalf("Unable to obtain %s/.skeema: %s", basePath, err)
-	}
-	return file
+	return dir.OptionFile
 }

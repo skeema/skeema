@@ -1,6 +1,7 @@
 package tengo
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net/url"
@@ -25,7 +26,7 @@ type Instance struct {
 	Port           int
 	SocketPath     string
 	defaultParams  map[string]string
-	connectionPool map[string]*sqlx.DB // key is in format "schema?params" or just "schema" if no params
+	connectionPool map[string]*sqlx.DB // key is in format "schema?params"
 	*sync.RWMutex                      // protects connectionPool for concurrent operations
 	flavor         Flavor
 	version        [3]int
@@ -155,12 +156,42 @@ func (instance *Instance) Connect(defaultSchema string, params string) (*sqlx.DB
 
 // CanConnect verifies that the Instance can be connected to
 func (instance *Instance) CanConnect() (bool, error) {
+	var err error
 	instance.Lock()
-	delete(instance.connectionPool, "?") // ensure we're initializing a new conn pool for schemalass, paramless use
-	instance.Unlock()
 
-	_, err := instance.Connect("", "")
+	// To ensure we're initializing a new connection, if a conn pool already exists
+	// with the setup we want (no default db, only defaultParams for args), force
+	// it to close idle connections and then make an explicit Conn. Otherwise, go
+	// through Instance.Connect, which also verifies connectivity by making a new
+	// pool.
+	key := fmt.Sprintf("?%s", instance.buildParamString(""))
+	if db, ok := instance.connectionPool[key]; ok {
+		db.SetMaxIdleConns(0)
+		var conn *sql.Conn
+		conn, err = db.Conn(context.Background())
+		if conn != nil {
+			conn.Close()
+		}
+		db.SetMaxIdleConns(2) // default in database/sql, current as of Go 1.11
+		instance.Unlock()
+	} else {
+		instance.Unlock()
+		_, err = instance.Connect("", "")
+	}
+
 	return err == nil, err
+}
+
+// CloseAll closes all of instance's connection pools. This can be useful for
+// graceful shutdown, to avoid aborted-connection counters/logging in some
+// versions of MySQL.
+func (instance *Instance) CloseAll() {
+	instance.Lock()
+	for key, db := range instance.connectionPool {
+		db.Close()
+		delete(instance.connectionPool, key)
+	}
+	instance.Unlock()
 }
 
 // Flavor returns this instance's flavor value, representing the database

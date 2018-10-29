@@ -1,4 +1,4 @@
-package main
+package fs
 
 import (
 	"net/url"
@@ -7,41 +7,93 @@ import (
 	"testing"
 
 	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/util"
 	"github.com/skeema/tengo"
 )
 
-type dummySource map[string]string
+func TestParseDir(t *testing.T) {
+	dir := getDir(t, "../testdata/golden/init/mydb/product")
+	if dir.Config.Get("default-collation") != "latin1_swedish_ci" {
+		t.Errorf("dir.Config not working as expected; default-collation is %s", dir.Config.Get("default-collation"))
+	}
+	if dir.Config.Get("host") != "127.0.0.1" {
+		t.Errorf("dir.Config not working as expected; host is %s", dir.Config.Get("host"))
+	}
+	if len(dir.IgnoredStatements) > 0 {
+		t.Errorf("Expected 0 IgnoredStatements, instead found %d", len(dir.IgnoredStatements))
+	}
+	if len(dir.IdealSchemas) != 1 {
+		t.Fatalf("Expected 1 IdealSchema; instead found %d", len(dir.IdealSchemas))
+	}
+	idealSchema := dir.IdealSchemas[0]
+	if idealSchema.CharSet != "latin1" || idealSchema.Collation != "latin1_swedish_ci" {
+		t.Error("IdealSchema not correctly populated with charset/collation from .skeema file")
+	}
+	expectTableNames := []string{"comments", "posts", "subscriptions", "users"}
+	if len(idealSchema.CreateTables) != len(expectTableNames) {
+		t.Errorf("Unexpected table count: found %d, expected %d", len(idealSchema.CreateTables), len(expectTableNames))
+	} else {
+		for _, name := range expectTableNames {
+			if _, ok := idealSchema.CreateTables[name]; !ok {
+				t.Errorf("Did not find key %s in IdealSchema", name)
+			}
+		}
+	}
 
-func (source dummySource) OptionValue(optionName string) (string, bool) {
-	val, ok := source[optionName]
-	return val, ok
+	// Confirm error cases: nonexistent dir; non-dir file; dir with *.sql files
+	// creating same table multiple times
+	for _, dirPath := range []string{"../bestdata", "../testdata/setup.sql", "../testdata"} {
+		dir, err := ParseDir(dirPath, getValidConfig(t))
+		if dir != nil || err == nil {
+			t.Errorf("Expected ParseDir to return nil dir and non-nil error, but dir=%v err=%v", dir, err)
+		}
+	}
+
+	// Undefined options should cause an error
+	cmd := mybase.NewCommand("fstest", "", "", nil)
+	cmd.AddArg("environment", "production", false)
+	cfg := mybase.ParseFakeCLI(t, cmd, "fstest")
+	if _, err := ParseDir("../testdata/golden/init/mydb/product", cfg); err == nil {
+		t.Error("Expected error from ParseWorkingDir(), but instead err is nil")
+	}
 }
 
-// getConfig returns a stub config based on a single map of key->value string
-// pairs. All keys in the map will automatically be considered valid options.
-func getConfig(values map[string]string) *mybase.Config {
-	cmd := mybase.NewCommand("test", "1.0", "this is for testing", nil)
-	for key := range values {
-		cmd.AddOption(mybase.StringOption(key, 0, "", key))
+func TestDirBaseName(t *testing.T) {
+	dir := getDir(t, "../testdata/golden/init/mydb/product")
+	if bn := dir.BaseName(); bn != "product" {
+		t.Errorf("Unexpected base name: %s", bn)
 	}
-	cli := &mybase.CommandLine{
-		Command: cmd,
-	}
-	return mybase.NewConfig(cli, dummySource(values))
 }
 
-func TestInstances(t *testing.T) {
+func TestDirSubdirs(t *testing.T) {
+	dir := getDir(t, "../testdata/golden/init/mydb")
+	subs, badCount, err := dir.Subdirs()
+	if err != nil || badCount > 0 {
+		t.Fatalf("Unexpected error from Subdirs(): %s", err)
+	}
+	if len(subs) < 2 {
+		t.Errorf("Unexpectedly low subdir count returned: found %d, expected at least 2", len(subs))
+	}
+
+	dir = getDir(t, ".")
+	subs, badCount, err = dir.Subdirs()
+	if len(subs) != 0 || err != nil || badCount > 0 {
+		t.Errorf("Unexpected return from Subdirs(): %d subs, err=%s", len(subs), err)
+	}
+}
+
+func TestDirInstances(t *testing.T) {
 	assertInstances := func(optionValues map[string]string, expectError bool, expectedInstances ...string) []*tengo.Instance {
 		cmd := mybase.NewCommand("test", "1.0", "this is for testing", nil)
-		AddGlobalOptions(cmd)
+		cmd.AddArg("environment", "production", false)
+		util.AddGlobalOptions(cmd)
 		cli := &mybase.CommandLine{
 			Command: cmd,
 		}
-		cfg := mybase.NewConfig(cli, dummySource(optionValues))
+		cfg := mybase.NewConfig(cli, mybase.SimpleSource(optionValues))
 		dir := &Dir{
-			Path:    "/tmp/dummydir",
-			Config:  cfg,
-			section: "production",
+			Path:   "/tmp/dummydir",
+			Config: cfg,
 		}
 		instances, err := dir.Instances()
 		if expectError && err == nil {
@@ -94,12 +146,11 @@ func TestInstances(t *testing.T) {
 	assertInstances(map[string]string{"host-wrapper": "/bin/echo -n", "host": "ignored"}, false)
 }
 
-func TestInstanceDefaultParams(t *testing.T) {
+func TestDirInstanceDefaultParams(t *testing.T) {
 	getDir := func(connectOptions, flavor string) *Dir {
 		return &Dir{
-			Path:    "/tmp/dummydir",
-			Config:  getConfig(map[string]string{"connect-options": connectOptions, "flavor": flavor}),
-			section: "production",
+			Path:   "/tmp/dummydir",
+			Config: mybase.SimpleConfig(map[string]string{"connect-options": connectOptions, "flavor": flavor}),
 		}
 	}
 
@@ -148,4 +199,25 @@ func TestInstanceDefaultParams(t *testing.T) {
 			t.Errorf("Did not get expected error from connect-options=\"%s\"", connOpts)
 		}
 	}
+}
+
+func getValidConfig(t *testing.T) *mybase.Config {
+	cmd := mybase.NewCommand("fstest", "", "", nil)
+	cmd.AddOption(mybase.StringOption("schema", 0, "", "Database schema name").Hidden())
+	cmd.AddOption(mybase.StringOption("default-character-set", 0, "", "Schema-level default character set").Hidden())
+	cmd.AddOption(mybase.StringOption("default-collation", 0, "", "Schema-level default collation").Hidden())
+	cmd.AddOption(mybase.StringOption("host", 0, "", "Database hostname or IP address").Hidden())
+	cmd.AddOption(mybase.StringOption("port", 0, "3306", "Port to use for database host").Hidden())
+	cmd.AddOption(mybase.StringOption("flavor", 0, "", "Database server expressed in format vendor:major.minor, for use in vendor/version specific syntax").Hidden())
+	cmd.AddArg("environment", "production", false)
+	return mybase.ParseFakeCLI(t, cmd, "fstest")
+}
+
+func getDir(t *testing.T, dirPath string) *Dir {
+	t.Helper()
+	dir, err := ParseDir(dirPath, getValidConfig(t))
+	if err != nil {
+		t.Fatalf("Unexpected error parsing dir %s: %s", dirPath, err)
+	}
+	return dir
 }

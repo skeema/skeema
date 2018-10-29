@@ -89,6 +89,12 @@ func (cli *CommandLine) parseShortArgs(arg string, args *[]string, shortOptionIn
 	return nil
 }
 
+func (cli *CommandLine) String() string {
+	// Don't reveal the actual command-line value, since it may contain something
+	// sensitive (even though it shouldn't!)
+	return "command line"
+}
+
 // ParseCLI parses the command-line to generate a CommandLine, which
 // stores which (sub)command was used, named option values, and positional arg
 // values. The CommandLine will then be wrapped in a Config for returning.

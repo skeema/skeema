@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/skeema/tengo"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -56,14 +55,4 @@ func (f *customFormatter) Format(entry *log.Entry) ([]byte, error) {
 
 	fmt.Fprintf(b, "%s %s %s\n", entry.Time.Format("2006-01-02 15:04:05"), levelText, entry.Message)
 	return b.Bytes(), nil
-}
-
-// DebugLogUnsupportedDiff logs (at Debug level) the reason why a table is
-// unsupported for diff/alter operations.
-func DebugLogUnsupportedDiff(err *tengo.UnsupportedDiffError) {
-	for _, line := range strings.Split(err.ExtendedError(), "\n") {
-		if len(line) > 0 {
-			log.Debug(line)
-		}
-	}
 }
