@@ -182,6 +182,32 @@ func (s TengoIntegrationSuite) TestInstanceCanConnect(t *testing.T) {
 	}
 }
 
+func (s TengoIntegrationSuite) TestInstanceCloseAll(t *testing.T) {
+	makePool := func(defaultSchema, params string) {
+		t.Helper()
+		db, err := s.d.Connect(defaultSchema, params)
+		if err != nil {
+			t.Fatalf("Unexpected connection error: %s", err)
+		} else if db == nil {
+			t.Fatal("db is unexpectedly nil")
+		}
+	}
+	assertPoolCount := func(expected int) {
+		t.Helper()
+		if actual := len(s.d.Instance.connectionPool); actual != expected {
+			t.Errorf("Expected instance to have %d connection pools; instead found %d", expected, actual)
+		}
+	}
+
+	makePool("", "")
+	makePool("information_schema", "")
+	assertPoolCount(2)
+	s.d.CloseAll()
+	assertPoolCount(0)
+	makePool("", "")
+	assertPoolCount(1)
+}
+
 func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
 	imageToFlavor := map[string]Flavor{
 		"mysql:5.5":    FlavorMySQL55,
