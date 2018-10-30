@@ -1,7 +1,6 @@
 package workspace
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 
@@ -13,10 +12,10 @@ import (
 // database instance. The schema is cleaned up when done interacting with the
 // workspace.
 type TempSchema struct {
-	schemaName string
-	keepSchema bool
-	inst       *tengo.Instance
-	lockTx     *sql.Tx
+	schemaName  string
+	keepSchema  bool
+	inst        *tengo.Instance
+	releaseLock releaseFunc
 }
 
 // NewTempSchema creates a temporary schema on the supplied instance and returns
@@ -32,13 +31,13 @@ func NewTempSchema(opts Options) (ws Workspace, err error) {
 	}
 
 	lockName := fmt.Sprintf("skeema.%s", ts.schemaName)
-	if ts.lockTx, err = getLock(ts.inst, lockName, opts.LockWaitTimeout); err != nil {
+	if ts.releaseLock, err = getLock(ts.inst, lockName, opts.LockWaitTimeout); err != nil {
 		return nil, fmt.Errorf("Unable to lock temporary schema on %s: %s", ts.inst, err)
 	}
 	// If NewTempSchema errors, don't continue to hold the lock
 	defer func() {
 		if err != nil {
-			releaseLock(ts.lockTx, lockName)
+			ts.releaseLock()
 		}
 	}()
 
@@ -75,18 +74,20 @@ func (ts *TempSchema) IntrospectSchema() (*tengo.Schema, error) {
 // tables have any rows in the temp schema, the cleanup aborts and an error is
 // returned.
 func (ts *TempSchema) Cleanup() error {
+	if ts.releaseLock == nil {
+		return errors.New("Cleanup() called multiple times on same TempSchema")
+	}
+	defer func() {
+		ts.releaseLock()
+		ts.releaseLock = nil
+	}()
+
 	if ts.keepSchema {
 		if err := ts.inst.DropTablesInSchema(ts.schemaName, true); err != nil {
 			return fmt.Errorf("Cannot drop tables in temporary schema on %s: %s", ts.inst, err)
 		}
-	} else {
-		if err := ts.inst.DropSchema(ts.schemaName, true); err != nil {
-			return fmt.Errorf("Cannot drop temporary schema on %s: %s", ts.inst, err)
-		}
+	} else if err := ts.inst.DropSchema(ts.schemaName, true); err != nil {
+		return fmt.Errorf("Cannot drop temporary schema on %s: %s", ts.inst, err)
 	}
-
-	lockName := fmt.Sprintf("skeema.%s", ts.schemaName)
-	err := releaseLock(ts.lockTx, lockName)
-	ts.lockTx = nil
-	return err
+	return nil
 }

@@ -1,13 +1,14 @@
 package workspace
 
 import (
-	"database/sql"
+	"context"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/tengo"
 )
@@ -15,8 +16,17 @@ import (
 // Workspace represents a "scratch space" for DDL operations and schema
 // introspection.
 type Workspace interface {
+	// ConnectionPool returns a *sqlx.DB representing a connection pool for
+	// interacting with the workspace. The pool should already be using the
+	// correct default database for interacting with the workspace schema.
 	ConnectionPool(params string) (*sqlx.DB, error)
+
+	// IntrospectSchema returns a *tengo.Schema representing the current state
+	// of the workspace schema.
 	IntrospectSchema() (*tengo.Schema, error)
+
+	// Cleanup cleans up the workspace, leaving it in a state where it could be
+	// re-used/re-initialized as needed. Repeated calls to Cleanup() may error.
 	Cleanup() error
 }
 
@@ -116,7 +126,9 @@ func statementsToSchemaWithErrs(statements []string, opts Options, concurrency i
 		return
 	}
 	defer func() {
-		err = ws.Cleanup()
+		if cleanupErr := ws.Cleanup(); err == nil {
+			err = cleanupErr
+		}
 	}()
 
 	db, err := ws.ConnectionPool("")
@@ -158,36 +170,56 @@ func execStatement(db *sqlx.DB, stmt string) error {
 	return nil
 }
 
-func getLock(instance *tengo.Instance, lockName string, maxWait time.Duration) (*sql.Tx, error) {
+// releaseFunc is a function to release a lock obtained by getLock
+type releaseFunc func()
+
+func getLock(instance *tengo.Instance, lockName string, maxWait time.Duration) (releaseFunc, error) {
 	db, err := instance.Connect("", "")
 	if err != nil {
 		return nil, err
 	}
-	// TODO: move to using a Conn instead of Tx
-	lockTx, err := db.Begin()
+	lockConn, err := db.Conn(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	var getLockResult int
 
+	done := make(chan struct{})
+	release := func() {
+		close(done)
+	}
+	connMaintainer := func() {
+		var result int
+		defer lockConn.Close()
+		for {
+			select {
+			case <-done:
+				err := lockConn.QueryRowContext(context.Background(), "SELECT RELEASE_LOCK(?)", lockName).Scan(&result)
+				if err != nil || result != 1 {
+					log.Warnf("%s: Failed to release lock, or lock released early due to connection being dropped: %s [%d]", instance, err, result)
+				}
+				return
+			case <-time.After(750 * time.Millisecond):
+				err := lockConn.QueryRowContext(context.Background(), "SELECT 1").Scan(&result)
+				if err != nil {
+					log.Warnf("%s: Lock released early due to connection being dropped: %s", instance, err)
+					return
+				}
+			}
+		}
+	}
+
+	var getLockResult int
 	start := time.Now()
 	for time.Since(start) < maxWait {
 		// Only using a timeout of 1 sec on each query to avoid potential issues with
 		// query killers, spurious slow query logging, etc
-		err := lockTx.QueryRow("SELECT GET_LOCK(?, 1)", lockName).Scan(&getLockResult)
+		err := lockConn.QueryRowContext(context.Background(), "SELECT GET_LOCK(?, 1)", lockName).Scan(&getLockResult)
 		if err == nil && getLockResult == 1 {
-			return lockTx, nil
+			// Launch a goroutine to keep the connection active, and release the lock
+			// once the ReleaseFunc is called
+			go connMaintainer()
+			return release, nil
 		}
 	}
 	return nil, errors.New("Unable to acquire lock")
-
-}
-
-func releaseLock(lockTx *sql.Tx, lockName string) error {
-	var releaseLockResult int
-	err := lockTx.QueryRow("SELECT RELEASE_LOCK(?)", lockName).Scan(&releaseLockResult)
-	if err != nil || releaseLockResult != 1 {
-		return errors.New("Failed to release lock, or connection holding lock already dropped")
-	}
-	return lockTx.Rollback()
 }

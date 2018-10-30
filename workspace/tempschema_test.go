@@ -23,7 +23,6 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 	if _, err := NewTempSchema(opts); err == nil {
 		t.Fatal("Expected error from already-locked NewTempSchema, instead err is nil")
 	}
-
 	ts := ws.(*TempSchema)
 	if ts.inst != s.d.Instance {
 		t.Error("Expected inst to be same instance as dockerized instance, but it was not")
@@ -34,11 +33,17 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 	if err := ws.Cleanup(); err != nil {
 		t.Errorf("Unexpected error from cleanup: %s", err)
 	}
+	if err := ws.Cleanup(); err == nil {
+		t.Error("Expected repeated calls to Cleanup() to error, but err was nil")
+	}
 	if has, err := ts.inst.HasSchema(opts.SchemaName); !has || err != nil {
 		t.Fatalf("Schema did not persist despite KeepSchema: has=%t err=%s", has, err)
 	}
 
 	// Cleanup should fail if a table has rows
+	if ws, err = NewTempSchema(opts); err != nil {
+		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
+	}
 	if _, err := s.d.SourceSQL("../testdata/tempschema1.sql"); err != nil {
 		t.Fatalf("Unexpected SourceSQL error: %s", err)
 	}
@@ -58,11 +63,11 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 	}
 
 	// Coverage for KeepSchema = false
+	opts.KeepSchema = false
 	db, _ := s.d.Connect("_skeema_tmp", "")
 	if _, err := db.Exec("DELETE FROM bar"); err != nil {
 		t.Fatalf("Unexpected error in test setup: %s", err)
 	}
-	opts.KeepSchema = false
 	if ws, err = NewTempSchema(opts); err != nil {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
 	}
@@ -71,6 +76,15 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 	}
 	if err := ws.Cleanup(); err == nil {
 		t.Error("Expected cleanup error since a table had rows, but err was nil")
+	}
+	if _, err := db.Exec("DELETE FROM bar"); err != nil {
+		t.Fatalf("Unexpected error in test setup: %s", err)
+	}
+	if ws, err = NewTempSchema(opts); err != nil {
+		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
+	}
+	if _, err := s.d.SourceSQL("../testdata/tempschema1.sql"); err != nil {
+		t.Fatalf("Unexpected SourceSQL error: %s", err)
 	}
 	if _, err := db.Exec("DELETE FROM bar"); err != nil {
 		t.Fatalf("Unexpected error in test setup: %s", err)
@@ -84,7 +98,6 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 	}
 
 	// Supplying a nil Instance should error
-	opts.SchemaName = "_skeema_tmp"
 	opts.Instance = nil
 	if _, err = NewTempSchema(opts); err == nil {
 		t.Fatal("Expected non-nil error from NewTempSchema, but return was nil")
