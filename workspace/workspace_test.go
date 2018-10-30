@@ -44,7 +44,11 @@ type WorkspaceIntegrationSuite struct {
 }
 
 func (s WorkspaceIntegrationSuite) TestMaterializeIdealSchema(t *testing.T) {
-	dir := s.getParsedDir(t, "../testdata/golden/init/mydb/product", "")
+	dirPath := "../testdata/golden/init/mydb/product"
+	if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
+		dirPath = strings.Replace(dirPath, "golden", "golden-mysql55", 1)
+	}
+	dir := s.getParsedDir(t, dirPath, "")
 	opts := s.getOptionsForDir(dir)
 	schema, tableErrors, err := MaterializeIdealSchema(dir.IdealSchemas[0], opts)
 	if err != nil {
