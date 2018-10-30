@@ -68,6 +68,21 @@ func (cfg *Config) AddSource(source OptionValuer) {
 // HandleCommand executes the CommandHandler callback associated with the
 // Command that was parsed on the CommandLine.
 func (cfg *Config) HandleCommand() error {
+	// Handle --help if supplied as an option instead of as a subcommand
+	// (Note that format "command help [<subcommand>]" is already parsed properly into help command)
+	if forCommandName, helpWanted := cfg.CLI.OptionValues["help"]; helpWanted {
+		// command --help displays help for command
+		// vs
+		// command --help <subcommand> displays help for subcommand
+		cfg.CLI.ArgValues = []string{forCommandName}
+		return helpHandler(cfg)
+	}
+
+	// Handle --version if supplied as an option instead of as a subcommand
+	if cfg.CLI.OptionValues["version"] == "1" {
+		return versionHandler(cfg)
+	}
+
 	return cfg.CLI.Command.Handler(cfg)
 }
 

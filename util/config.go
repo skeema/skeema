@@ -75,7 +75,7 @@ func AddGlobalConfigFiles(cfg *mybase.Config) {
 		}
 		if strings.HasSuffix(path, ".my.cnf") {
 			_ = f.UseSection("skeema", "client", "mysql") // safe to ignore error (doesn't matter if section doesn't exist)
-		} else {
+		} else if cfg.CLI.Command.HasArg("environment") { // avoid panic on command without environment arg, such as help command!
 			_ = f.UseSection(cfg.Get("environment")) // safe to ignore error (doesn't matter if section doesn't exist)
 		}
 

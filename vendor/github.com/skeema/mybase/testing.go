@@ -38,6 +38,7 @@ func SimpleConfig(values map[string]string) *Config {
 // simple quoting and escaping rules, but does not attempt to replicate more
 // advanced bash tokenization, wildcards, etc.
 func ParseFakeCLI(t *testing.T, cmd *Command, commandLine string, sources ...OptionValuer) *Config {
+	t.Helper()
 	args := tokenizeCommandLine(t, commandLine)
 	cfg, err := ParseCLI(cmd, args)
 	if err != nil {

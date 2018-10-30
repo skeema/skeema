@@ -224,6 +224,16 @@ func (cmd *Command) Root() *Command {
 	return result
 }
 
+// HasArg returns true if cmd has a named arg called name.
+func (cmd *Command) HasArg(name string) bool {
+	for _, arg := range cmd.args {
+		if arg.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 func (cmd *Command) minArgs() int {
 	// If we hit an optional arg at slice position n, this means there
 	// were n required args prior to the optional arg.

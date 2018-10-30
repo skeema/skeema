@@ -398,6 +398,19 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 	s.assertExists(t, "bonus", "table2", "")
 }
 
+func (s SkeemaIntegrationSuite) TestHelpHandler(t *testing.T) {
+	// Simple tests just to confirm the commands don't error
+	fs.WriteTestFile(t, "fake-etc/skeema", "# hello world")
+	s.handleCommand(t, CodeSuccess, ".", "skeema")
+	s.handleCommand(t, CodeSuccess, ".", "skeema help")
+	s.handleCommand(t, CodeSuccess, ".", "skeema --help")
+	s.handleCommand(t, CodeSuccess, ".", "skeema --help=add-environment")
+	s.handleCommand(t, CodeSuccess, ".", "skeema help add-environment")
+	s.handleCommand(t, CodeSuccess, ".", "skeema add-environment --help")
+	s.handleCommand(t, CodeFatalError, ".", "skeema help doesntexist")
+	s.handleCommand(t, CodeFatalError, ".", "skeema --help=doesntexist")
+}
+
 func (s SkeemaIntegrationSuite) TestIndexOrdering(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
 
