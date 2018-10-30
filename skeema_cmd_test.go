@@ -49,7 +49,7 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	// among other things, changes the default charset and collation for the
 	// schema in question.
 	s.sourceSQL(t, "push1.sql")
-	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema init --dir combined -h %s -P %d --schema product", s.d.Instance.Host, s.d.Instance.Port)
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema init --dir combined -h %s -P %d --schema product ", s.d.Instance.Host, s.d.Instance.Port)
 	dir, err := fs.ParseDir("combined", cfg)
 	if err != nil {
 		t.Fatalf("Unexpected error from ParseDir: %s", err)
@@ -68,14 +68,24 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 		t.Errorf("Expected %s to have *.sql files, but it does not", dir)
 	}
 
-	// Test successful init without a --dir
+	// Test successful init without a --dir. Also test persistence of --connect-options.
 	expectDir := fmt.Sprintf("%s:%d", s.d.Instance.Host, s.d.Instance.Port)
 	if _, err = os.Stat(expectDir); err == nil {
 		t.Fatalf("Expected dir %s to not exist yet, but it does", expectDir)
 	}
-	s.handleCommand(t, CodeSuccess, ".", "skeema init -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
-	if _, err = os.Stat(expectDir); err != nil {
-		t.Fatalf("Expected dir %s to exist now, but it does not", expectDir)
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema init -h %s -P %d --connect-options='wait_timeout=3'", s.d.Instance.Host, s.d.Instance.Port)
+	if dir, err = fs.ParseDir(expectDir, cfg); err != nil {
+		t.Fatalf("Unexpected error from ParseDir: %s", err)
+	}
+	for _, option := range []string{"host", "port", "connect-options"} {
+		if _, setsOption := dir.OptionFile.OptionValue(option); !setsOption {
+			t.Errorf("Expected host-level .skeema to contain %s, but it does not", option)
+		}
+	}
+	for _, option := range []string{"schema", "default-character-set", "default-collation"} {
+		if _, setsOption := dir.OptionFile.OptionValue(option); setsOption {
+			t.Errorf("Expected host-level .skeema to NOT contain %s, but it does", option)
+		}
 	}
 
 	// init should fail if a parent dir has an invalid .skeema file
@@ -127,6 +137,7 @@ func (s SkeemaIntegrationSuite) TestAddEnvHandler(t *testing.T) {
 	file := getOptionFile(t, "mydb", cfg)
 	origFile.SetOptionValue("staging", "host", "my.staging.invalid")
 	origFile.SetOptionValue("staging", "port", "3306")
+	origFile.SetOptionValue("staging", "connect-options", "timeout=10ms")
 	if !origFile.SameContents(file) {
 		t.Fatalf("File contents of %s do not match expectation", file.Path())
 	}
@@ -137,6 +148,7 @@ func (s SkeemaIntegrationSuite) TestAddEnvHandler(t *testing.T) {
 	origFile.SetOptionValue("ci", "host", "my.ci.invalid")
 	origFile.SetOptionValue("ci", "port", "3307")
 	origFile.SetOptionValue("ci", "user", "foobar")
+	origFile.SetOptionValue("ci", "connect-options", "timeout=10ms")
 	if !origFile.SameContents(file) {
 		t.Fatalf("File contents of %s do not match expectation", file.Path())
 	}
@@ -146,6 +158,19 @@ func (s SkeemaIntegrationSuite) TestAddEnvHandler(t *testing.T) {
 	file = getOptionFile(t, "mydb", cfg)
 	origFile.SetOptionValue("development", "host", "localhost")
 	origFile.SetOptionValue("development", "socket", "/var/lib/mysql/mysql.sock")
+	if !origFile.SameContents(file) {
+		t.Fatalf("File contents of %s do not match expectation", file.Path())
+	}
+
+	// valid instance should work properly and even populate flavor. Also confirm
+	// persistence of ignore-schema and ignore-table.
+	cfg = s.handleCommand(t, CodeSuccess, "mydb", "skeema add-environment --ignore-schema='^test' --ignore-table='^_' --host %s:%d cloud", s.d.Instance.Host, s.d.Instance.Port)
+	file = getOptionFile(t, "mydb", cfg)
+	origFile.SetOptionValue("cloud", "host", s.d.Instance.Host)
+	origFile.SetOptionValue("cloud", "port", fmt.Sprintf("%d", s.d.Instance.Port))
+	origFile.SetOptionValue("cloud", "ignore-schema", "^test")
+	origFile.SetOptionValue("cloud", "ignore-table", "^_")
+	origFile.SetOptionValue("cloud", "flavor", s.d.Flavor().String())
 	if !origFile.SameContents(file) {
 		t.Fatalf("File contents of %s do not match expectation", file.Path())
 	}

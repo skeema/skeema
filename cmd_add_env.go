@@ -85,8 +85,10 @@ func AddEnvHandler(cfg *mybase.Config) error {
 	if flavor := inst.Flavor(); flavor != tengo.FlavorUnknown {
 		dir.OptionFile.SetOptionValue(environment, "flavor", flavor.String())
 	}
-	if cfg.OnCLI("user") {
-		dir.OptionFile.SetOptionValue(environment, "user", cfg.Get("user"))
+	for _, persistOpt := range []string{"user", "ignore-schema", "ignore-table", "connect-options"} {
+		if cfg.OnCLI(persistOpt) {
+			dir.OptionFile.SetOptionValue(environment, persistOpt, cfg.Get(persistOpt))
+		}
 	}
 
 	// Write the option file

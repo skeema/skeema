@@ -108,17 +108,13 @@ func InitHandler(cfg *mybase.Config) error {
 	} else {
 		hostOptionFile.SetOptionValue(environment, "port", strconv.Itoa(inst.Port))
 	}
-	if cfg.OnCLI("user") {
-		hostOptionFile.SetOptionValue(environment, "user", cfg.Get("user"))
-	}
 	if flavor := inst.Flavor(); flavor != tengo.FlavorUnknown {
 		hostOptionFile.SetOptionValue(environment, "flavor", flavor.String())
 	}
-	if cfg.OnCLI("ignore-schema") {
-		hostOptionFile.SetOptionValue(environment, "ignore-schema", cfg.Get("ignore-schema"))
-	}
-	if cfg.OnCLI("ignore-table") {
-		hostOptionFile.SetOptionValue(environment, "ignore-table", cfg.Get("ignore-table"))
+	for _, persistOpt := range []string{"user", "ignore-schema", "ignore-table", "connect-options"} {
+		if cfg.OnCLI(persistOpt) {
+			hostOptionFile.SetOptionValue(environment, persistOpt, cfg.Get(persistOpt))
+		}
 	}
 	if !separateSchemaSubdir {
 		// schema name is placed outside of any named section/environment since the
