@@ -10,30 +10,29 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 		Type:                TypeTempSchema,
 		Instance:            s.d.Instance,
 		SchemaName:          "_skeema_tmp",
-		KeepSchema:          true,
+		CleanupAction:       CleanupActionNone,
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
 		LockWaitTimeout:     100 * time.Millisecond,
 	}
 
-	ws, err := NewTempSchema(opts)
+	ts, err := NewTempSchema(opts)
 	if err != nil {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
 	}
 	if _, err := NewTempSchema(opts); err == nil {
 		t.Fatal("Expected error from already-locked NewTempSchema, instead err is nil")
 	}
-	ts := ws.(*TempSchema)
 	if ts.inst != s.d.Instance {
 		t.Error("Expected inst to be same instance as dockerized instance, but it was not")
 	}
 	if has, err := ts.inst.HasSchema(opts.SchemaName); !has || err != nil {
 		t.Errorf("Instance does not have expected schema: has=%t err=%s", has, err)
 	}
-	if err := ws.Cleanup(); err != nil {
+	if err := ts.Cleanup(); err != nil {
 		t.Errorf("Unexpected error from cleanup: %s", err)
 	}
-	if err := ws.Cleanup(); err == nil {
+	if err := ts.Cleanup(); err == nil {
 		t.Error("Expected repeated calls to Cleanup() to error, but err was nil")
 	}
 	if has, err := ts.inst.HasSchema(opts.SchemaName); !has || err != nil {
@@ -41,13 +40,13 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 	}
 
 	// Cleanup should fail if a table has rows
-	if ws, err = NewTempSchema(opts); err != nil {
+	if ts, err = NewTempSchema(opts); err != nil {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
 	}
 	if _, err := s.d.SourceSQL("../testdata/tempschema1.sql"); err != nil {
 		t.Fatalf("Unexpected SourceSQL error: %s", err)
 	}
-	if err := ws.Cleanup(); err == nil {
+	if err := ts.Cleanup(); err == nil {
 		t.Error("Expected cleanup error since a table had rows, but err was nil")
 	}
 
@@ -62,25 +61,25 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 		t.Error("Expected table bar to still exist, but it does not")
 	}
 
-	// Coverage for KeepSchema = false
-	opts.KeepSchema = false
+	// Coverage for CleanupAction = CleanupActionDrop
+	opts.CleanupAction = CleanupActionDrop
 	db, _ := s.d.Connect("_skeema_tmp", "")
 	if _, err := db.Exec("DELETE FROM bar"); err != nil {
 		t.Fatalf("Unexpected error in test setup: %s", err)
 	}
-	if ws, err = NewTempSchema(opts); err != nil {
+	if ts, err = NewTempSchema(opts); err != nil {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
 	}
 	if _, err := s.d.SourceSQL("../testdata/tempschema1.sql"); err != nil {
 		t.Fatalf("Unexpected SourceSQL error: %s", err)
 	}
-	if err := ws.Cleanup(); err == nil {
+	if err := ts.Cleanup(); err == nil {
 		t.Error("Expected cleanup error since a table had rows, but err was nil")
 	}
 	if _, err := db.Exec("DELETE FROM bar"); err != nil {
 		t.Fatalf("Unexpected error in test setup: %s", err)
 	}
-	if ws, err = NewTempSchema(opts); err != nil {
+	if ts, err = NewTempSchema(opts); err != nil {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
 	}
 	if _, err := s.d.SourceSQL("../testdata/tempschema1.sql"); err != nil {
@@ -89,10 +88,9 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 	if _, err := db.Exec("DELETE FROM bar"); err != nil {
 		t.Fatalf("Unexpected error in test setup: %s", err)
 	}
-	if err := ws.Cleanup(); err != nil {
+	if err := ts.Cleanup(); err != nil {
 		t.Errorf("Unexpected error from cleanup: %s", err)
 	}
-	ts = ws.(*TempSchema)
 	if has, err := ts.inst.HasSchema(opts.SchemaName); has || err != nil {
 		t.Fatalf("Schema persisted even without KeepSchema: has=%t err=%s", has, err)
 	}

@@ -19,14 +19,14 @@ type TempSchema struct {
 }
 
 // NewTempSchema creates a temporary schema on the supplied instance and returns
-// it as a Workspace.
-func NewTempSchema(opts Options) (ws Workspace, err error) {
+// it.
+func NewTempSchema(opts Options) (ts *TempSchema, err error) {
 	if opts.Instance == nil {
 		return nil, errors.New("No instance defined in options")
 	}
-	ts := &TempSchema{
+	ts = &TempSchema{
 		schemaName: opts.SchemaName,
-		keepSchema: opts.KeepSchema,
+		keepSchema: opts.CleanupAction == CleanupActionNone,
 		inst:       opts.Instance,
 	}
 
@@ -38,6 +38,7 @@ func NewTempSchema(opts Options) (ws Workspace, err error) {
 	defer func() {
 		if err != nil {
 			ts.releaseLock()
+			ts = nil
 		}
 	}()
 
@@ -47,12 +48,12 @@ func NewTempSchema(opts Options) (ws Workspace, err error) {
 		// Attempt to drop any tables already present in tempSchema, but fail if
 		// any of them actually have 1 or more rows
 		if err := ts.inst.DropTablesInSchema(ts.schemaName, true); err != nil {
-			return nil, fmt.Errorf("Cannot drop existing temp schema tables on %s: %s", ts.inst, err)
+			return ts, fmt.Errorf("Cannot drop existing temp schema tables on %s: %s", ts.inst, err)
 		}
 	} else {
 		_, err = ts.inst.CreateSchema(ts.schemaName, opts.DefaultCharacterSet, opts.DefaultCollation)
 		if err != nil {
-			return nil, fmt.Errorf("Cannot create temporary schema on %s: %s", ts.inst, err)
+			return ts, fmt.Errorf("Cannot create temporary schema on %s: %s", ts.inst, err)
 		}
 	}
 	return ts, nil

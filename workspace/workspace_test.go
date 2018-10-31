@@ -140,11 +140,15 @@ func (s *WorkspaceIntegrationSuite) BeforeTest(method string, backend string) er
 }
 
 func (s *WorkspaceIntegrationSuite) getOptionsForDir(dir *fs.Dir) Options {
+	cleanupAction := CleanupActionDrop
+	if dir.Config.GetBool("reuse-temp-schema") {
+		cleanupAction = CleanupActionNone
+	}
 	return Options{
 		Type:                TypeTempSchema,
 		Instance:            s.d.Instance,
 		SchemaName:          dir.Config.Get("temp-schema"),
-		KeepSchema:          dir.Config.GetBool("reuse-temp-schema"),
+		CleanupAction:       cleanupAction,
 		DefaultCharacterSet: dir.Config.Get("default-character-set"),
 		DefaultCollation:    dir.Config.Get("default-collation"),
 		LockWaitTimeout:     100 * time.Millisecond,

@@ -1,3 +1,8 @@
+// Package workspace provides functions for interacting with a temporary MySQL
+// schema. It manages creating a schema on a desired location (either an
+// existing MySQL instance, or a dynamically-controlled Docker instance),
+// running SQL DDL or DML, introspecting the resulting schema, and cleaning
+// up the schema when it is no longer needed.
 package workspace
 
 import (
@@ -30,25 +35,46 @@ type Workspace interface {
 	Cleanup() error
 }
 
-// Type represents a type of workspace provider to use.
+// Type represents a kind of workspace to use.
 type Type int
 
 // Constants enumerating different types of workspaces
 const (
-	TypeTempSchema  Type = iota
-	TypeLocalDocker      // not implemented yet
+	TypeTempSchema Type = iota
+	TypeLocalDocker
+)
+
+// CleanupAction represents how to clean up a workspace.
+type CleanupAction int
+
+// Constants enumerating different cleanup actions
+const (
+	// CleanupActionNone means to perform no special cleanup
+	CleanupActionNone CleanupAction = iota
+
+	// CleanupActionDrop means to drop the schema. Only used with TypeTempSchema.
+	CleanupActionDrop
+
+	// CleanupActionStop means to stop the MySQL instance container. Only used with
+	// TypeLocalDocker.
+	CleanupActionStop
+
+	// CleanupActionDestroy means to destroy the MySQL instance container. Only
+	// used with TypeLocalDocker.
+	CleanupActionDestroy
 )
 
 // Options represent different parameters controlling the workspace that is
 // used. Some options are specific to a Type.
 type Options struct {
 	Type                Type
+	CleanupAction       CleanupAction
 	Instance            *tengo.Instance // only TypeTempSchema
 	Flavor              tengo.Flavor    // only TypeLocalDocker
 	SchemaName          string
-	KeepSchema          bool // only TypeTempSchema
 	DefaultCharacterSet string
 	DefaultCollation    string
+	RootPassword        string // only TypeLocalDocker
 	LockWaitTimeout     time.Duration
 }
 
@@ -113,15 +139,42 @@ func StatementsToSchema(statements []string, opts Options) (*tengo.Schema, error
 	return schema, nil
 }
 
-func statementsToSchemaWithErrs(statements []string, opts Options, concurrency int) (schema *tengo.Schema, stmtErrors []error, err error) {
-	var ws Workspace
-
+// New returns a pointer to a ready-to-use Workspace, using the configuration
+// specified in opts.
+func New(opts Options) (Workspace, error) {
 	switch opts.Type {
 	case TypeTempSchema:
-		ws, err = NewTempSchema(opts)
-	default:
-		ws, err = nil, fmt.Errorf("Unsupported workspace type %v", opts.Type)
+		return NewTempSchema(opts)
+	case TypeLocalDocker:
+		return NewLocalDocker(opts)
 	}
+	return nil, fmt.Errorf("Unsupported workspace type %v", opts.Type)
+}
+
+var shutdownFuncs []func()
+
+// Shutdown performs any necessary cleanup operations prior to the program
+// exiting. For example, if containers need to be stopped or destroyed, it is
+// most efficient to do so at program exit, rather than needlessly doing so
+// for each workspace invocation.
+// It is recommended that programs importing this package call Shutdown as a
+// deferred function in main().
+func Shutdown() {
+	for _, f := range shutdownFuncs {
+		f()
+	}
+}
+
+// RegisterShutdownFunc registers a function to be executed by Shutdown.
+// Structs satisfying the Workspace interface may optionally use this function
+// to
+func RegisterShutdownFunc(f func()) {
+	shutdownFuncs = append(shutdownFuncs, f)
+}
+
+func statementsToSchemaWithErrs(statements []string, opts Options, concurrency int) (schema *tengo.Schema, stmtErrors []error, err error) {
+	var ws Workspace
+	ws, err = New(opts)
 	if err != nil {
 		return
 	}
