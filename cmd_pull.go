@@ -32,6 +32,7 @@ top of the file. If no environment name is supplied, the default is
 	cmd := mybase.NewCommand("pull", summary, desc, PullHandler)
 	cmd.AddOption(mybase.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in new table files, and update in existing files"))
 	cmd.AddOption(mybase.BoolOption("normalize", 0, true, "Reformat *.sql files to match SHOW CREATE TABLE"))
+	cmd.AddOption(mybase.BoolOption("new-schemas", 0, true, "Detect any new schemas and populate new dirs for them"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
@@ -323,6 +324,9 @@ func updateFlavor(dir *fs.Dir, instance *tengo.Instance) {
 }
 
 func findNewSchemas(dir *fs.Dir, instance *tengo.Instance, seenNames []string) error {
+	if !dir.Config.GetBool("new-schemas") {
+		return nil
+	}
 	subdirHasSchema := make(map[string]bool)
 	for _, name := range seenNames {
 		subdirHasSchema[name] = true

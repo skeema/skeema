@@ -25,6 +25,7 @@
 * [ignore-schema](#ignore-schema)
 * [ignore-table](#ignore-table)
 * [include-auto-inc](#include-auto-inc)
+* [new-schemas](#new-schemas)
 * [normalize](#normalize)
 * [password](#password)
 * [port](#port)
@@ -464,6 +465,18 @@ In `skeema init`, a false value omits AUTO_INCREMENT=X clauses in all table defi
 In `skeema pull`, a false value omits AUTO_INCREMENT=X clauses in any *newly-written* table files (tables were created outside of Skeema, which are now getting a \*.sql file written for the first time). Modified tables *that already had AUTO_INCREMENT=X clauses*, where X > 1, will have their AUTO_INCREMENT values updated; otherwise the clause will continue to be omitted in any file that previously omitted it. Meanwhile a true value causes all table files to now have AUTO_INCREMENT=X clauses.
 
 Only set this to true if you intentionally need to track auto_increment values in all tables. If only a few tables require nonstandard auto_increment, simply include the value manually in the CREATE TABLE statement in the *.sql file. Subsequent calls to `skeema pull` won't strip it, even if `include-auto-inc` is false.
+
+### new-schemas
+
+Commands | pull
+--- | :---
+**Default** | true
+**Type** | boolean
+**Restrictions** | none
+
+If true, `skeema pull` will look for schemas (databases) that exist on the instance, but have no filesystem representation yet. It will then create and populate new directories for these schemas. If false, this step is skipped, and new schemas will not be pulled into the filesystem.
+
+When using a workflow that involves running `skeema pull development` regularly, it may be useful to disable this option. For example, if the development environment tends to contain various extra schemas for testing purposes, set `skip-new-schemas` in a global or top-level .skeema file's `[development]` section to avoid storing these testing schemas in the filesystem.
 
 ### normalize
 

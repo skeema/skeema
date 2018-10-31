@@ -219,6 +219,17 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	if !strings.Contains(contents, "# random comment") {
 		t.Error("Expected mydb/product/posts.sql to retain its extraneous comment, but it was removed")
 	}
+
+	// Test behavior with --skip-new-schemas: new schema should not have a dir in
+	// fs, but changes to existing schemas should still be made
+	s.sourceSQL(t, "pull1.sql")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-new-schemas")
+	if _, err := os.Stat("mydb/archives"); !os.IsNotExist(err) {
+		t.Errorf("Expected os.Stat to return IsNotExist error for mydb/archives; instead err=%v", err)
+	}
+	if _, err := os.Stat("mydb/analytics/widget_counts.sql"); err != nil {
+		t.Errorf("Expected os.Stat to return nil error for mydb/analytics/widget_counts.sql; instead err=%v", err)
+	}
 }
 
 func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
