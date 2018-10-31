@@ -35,8 +35,10 @@ func AddGlobalOptions(cmd *mybase.Command) {
 	cmd.AddOption(mybase.StringOption("host-wrapper", 'H', "", "External bin to shell out to for host lookup; see manual for template vars"))
 	cmd.AddOption(mybase.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema for intermediate operations, created and dropped each run unless --reuse-temp-schema"))
 	cmd.AddOption(mybase.StringOption("connect-options", 'o', "", "Comma-separated session options to set upon connecting to each database instance"))
+	cmd.AddOption(mybase.StringOption("docker-cleanup", 0, "none", `With --docker, specifies show to clean up containers (valid values: "NONE", "STOP", "DESTROY")`))
 	cmd.AddOption(mybase.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done"))
 	cmd.AddOption(mybase.BoolOption("debug", 0, false, "Enable debug logging"))
+	cmd.AddOption(mybase.BoolOption("docker", 0, false, "Use a local Docker container for all intermediate operations"))
 }
 
 // AddGlobalConfigFiles takes the mybase.Config generated from the CLI and adds
