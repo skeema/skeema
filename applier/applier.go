@@ -103,10 +103,9 @@ func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<-
 					DebugLogUnsupportedDiff(unsupportedErr)
 					continue
 				} else if err != nil {
-					result.SkipCount++
-					log.Errorf(err.Error())
 					skipped := len(diff.TableDiffs) - i
 					result.SkipCount += skipped
+					log.Errorf(err.Error())
 					if skipped > 1 {
 						log.Warnf("Skipping %d remaining operations for %s %s due to previous error", skipped-1, t.Instance, schemaName)
 					}
