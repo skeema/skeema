@@ -19,9 +19,7 @@ func TestIntegration(t *testing.T) {
 		fmt.Println("To run integration tests, you may set SKEEMA_TEST_IMAGES to a comma-separated")
 		fmt.Println("list of Docker images. Example:\n# SKEEMA_TEST_IMAGES=\"mysql:5.6,mysql:5.7\" go test")
 	}
-	manager, err := NewDockerSandboxer(SandboxerOptions{
-		RootPassword: "fakepw",
-	})
+	manager, err := NewDockerClient(DockerClientOptions{})
 	if err != nil {
 		t.Errorf("Unable to create sandbox manager: %s", err)
 	}
@@ -30,12 +28,17 @@ func TestIntegration(t *testing.T) {
 }
 
 type TengoIntegrationSuite struct {
-	manager *DockerSandboxer
+	manager *DockerClient
 	d       *DockerizedInstance
 }
 
 func (s *TengoIntegrationSuite) Setup(backend string) (err error) {
-	s.d, err = s.manager.GetOrCreateInstance(containerName(backend), backend)
+	opts := DockerizedInstanceOptions{
+		Name:         fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1)),
+		Image:        backend,
+		RootPassword: "fakepw",
+	}
+	s.d, err = s.manager.GetOrCreateInstance(opts)
 	return err
 }
 
@@ -74,10 +77,6 @@ func (s *TengoIntegrationSuite) GetSchemaAndTable(t *testing.T, schemaName, tabl
 		t.Fatalf("Table %s.%s unexpectedly does not exist", schemaName, tableName)
 	}
 	return schema, table
-}
-
-func containerName(backend string) string {
-	return fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1))
 }
 
 // TestUnitTableFlavors confirms that our hard-coded fixture table methods

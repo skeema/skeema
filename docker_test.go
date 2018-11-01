@@ -15,14 +15,17 @@ func TestDocker(t *testing.T) {
 	if os.Getenv("CI") == "" || os.Getenv("CI") == "0" || os.Getenv("CI") == "false" || len(images) < 2 {
 		t.Skip("Skipping Docker sandbox meta-testing. To run, set env CI and at least 2 SKEEMA_TEST_IMAGES.")
 	}
-	ds, err := NewDockerSandboxer(SandboxerOptions{
-		RootPassword: "fakepw",
-	})
+	dc, err := NewDockerClient(DockerClientOptions{})
 	if err != nil {
 		t.Errorf("Unable to create sandbox manager: %s", err)
 	}
 
-	if _, err := ds.GetInstance("tengo-docker-meta-test", images[0]); err != nil {
+	opts := DockerizedInstanceOptions{
+		Name:         "tengo-docker-meta-test",
+		Image:        images[0],
+		RootPassword: "fakepw",
+	}
+	if _, err := dc.GetInstance(opts); err != nil {
 		if nosuchErr, ok := err.(*docker.NoSuchContainer); !ok {
 			t.Errorf("Expected to get error %T, instead got %T %s", nosuchErr, err, err)
 		}
@@ -30,23 +33,25 @@ func TestDocker(t *testing.T) {
 		t.Fatal("Expected tengo-docker-meta-test container to not exist, but it does; leftover from a previous crashed run? Please clean up manually!")
 	}
 
-	if _, err := ds.CreateInstance("", ""); err == nil {
+	if _, err := dc.CreateInstance(DockerizedInstanceOptions{}); err == nil {
 		t.Errorf("Expected to get error creating instance with blank image, but did not")
 	}
-	if _, err := ds.CreateInstance("", "jgiejgioerjgeoi"); err == nil {
+	if _, err := dc.CreateInstance(DockerizedInstanceOptions{Image: "jgiejgioerjgeoi"}); err == nil {
 		t.Errorf("Expected to get error with nonsense image name, but did not")
 	}
 
-	di, err := ds.GetOrCreateInstance("tengo-docker-meta-test", images[0])
+	di, err := dc.GetOrCreateInstance(opts)
 	if err != nil {
 		t.Fatalf("Unexpected error from GetOrCreateInstance: %s", err)
 	}
-	if _, err := ds.CreateInstance("tengo-docker-meta-test", images[0]); err == nil {
+	if _, err := dc.CreateInstance(opts); err == nil {
 		t.Error("Expected to get an error attempting to create another container with duplicate name, but did not")
 	}
-	if _, err := ds.GetInstance("tengo-docker-meta-test", images[1]); err == nil {
+	opts.Image = images[1]
+	if _, err := dc.GetInstance(opts); err == nil {
 		t.Error("Expected to get an error attempting to fetch container with different image, but did not")
 	}
+	opts.Image = images[0]
 
 	// Confirm no errors from redundant start/stop
 	if err := di.Start(); err != nil {
@@ -66,9 +71,14 @@ func TestDocker(t *testing.T) {
 	}
 
 	// GetOrCreate should yield a Get (since already exists) and should re-start
-	// the container
-	if di, err = ds.GetOrCreateInstance("tengo-docker-meta-test", images[0]); err != nil {
+	// the container. Omitting image should be ok (proving this is a Get) but
+	// instance image should still be populated correctly
+	opts.Image = ""
+	if di, err = dc.GetOrCreateInstance(opts); err != nil {
 		t.Fatalf("Unexpected error from GetOrCreateInstance: %s", err)
+	}
+	if di.Image != images[0] {
+		t.Errorf("Expected instance image to be %s, instead found %s", images[0], di.Image)
 	}
 
 	if _, err := di.SourceSQL("testdata/integration.sql"); err != nil {
@@ -87,7 +97,7 @@ func TestDocker(t *testing.T) {
 	if err := di.Destroy(); err != nil {
 		t.Errorf("Unexpected error from redundant Destroy: %s", err)
 	}
-	if _, err = ds.GetInstance("tengo-docker-meta-test", images[0]); err != nil {
+	if _, err = dc.GetInstance(opts); err != nil {
 		if nosuchErr, ok := err.(*docker.NoSuchContainer); !ok {
 			t.Errorf("Expected to get error %T, instead got %T %s", nosuchErr, err, err)
 		}
