@@ -140,19 +140,29 @@ func (s *WorkspaceIntegrationSuite) BeforeTest(method string, backend string) er
 }
 
 func (s *WorkspaceIntegrationSuite) getOptionsForDir(dir *fs.Dir) Options {
-	cleanupAction := CleanupActionDrop
-	if dir.Config.GetBool("reuse-temp-schema") {
-		cleanupAction = CleanupActionNone
-	}
-	return Options{
-		Type:                TypeTempSchema,
-		Instance:            s.d.Instance,
+	opts := Options{
+		CleanupAction:       CleanupActionNone,
 		SchemaName:          dir.Config.Get("temp-schema"),
-		CleanupAction:       cleanupAction,
 		DefaultCharacterSet: dir.Config.Get("default-character-set"),
 		DefaultCollation:    dir.Config.Get("default-collation"),
 		LockWaitTimeout:     100 * time.Millisecond,
 	}
+	if dir.Config.GetBool("docker") {
+		opts.Type = TypeLocalDocker
+		opts.Flavor = tengo.NewFlavor(dir.Config.Get("flavor"))
+		if cleanup, _ := dir.Config.GetEnum("docker-cleanup", "NONE", "STOP", "DESTROY"); cleanup == "STOP" {
+			opts.CleanupAction = CleanupActionStop
+		} else if cleanup == "DESTROY" {
+			opts.CleanupAction = CleanupActionDestroy
+		}
+	} else {
+		opts.Type = TypeTempSchema
+		if !dir.Config.GetBool("reuse-temp-schema") {
+			opts.CleanupAction = CleanupActionDrop
+		}
+		opts.Instance = s.d.Instance
+	}
+	return opts
 }
 
 func (s *WorkspaceIntegrationSuite) getParsedDir(t *testing.T, dirPath, cliFlags string) *fs.Dir {

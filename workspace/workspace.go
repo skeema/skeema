@@ -163,6 +163,7 @@ func Shutdown() {
 	for _, f := range shutdownFuncs {
 		f()
 	}
+	shutdownFuncs = []func(){}
 }
 
 // RegisterShutdownFunc registers a function to be executed by Shutdown.

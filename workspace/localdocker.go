@@ -110,8 +110,8 @@ func (ld *LocalDocker) Cleanup() error {
 		ld.releaseLock = nil
 	}()
 
-	if err := ld.d.DropTablesInSchema(ld.schemaName, true); err != nil {
-		return fmt.Errorf("Cannot drop tables in temporary schema on %s: %s", ld.d.Instance, err)
+	if err := ld.d.DropSchema(ld.schemaName, true); err != nil {
+		return fmt.Errorf("Cannot drop temporary schema on %s: %s", ld.d.Instance, err)
 	}
 	return nil
 }
@@ -126,6 +126,9 @@ func getSandboxer(opts Options) (*tengo.DockerSandboxer, error) {
 		RootPassword: opts.RootPassword,
 	}
 	var err error
+	if managers == nil {
+		managers = make(map[string]*tengo.DockerSandboxer)
+	}
 	managers[opts.RootPassword], err = tengo.NewDockerSandboxer(sandboxerOptions)
 	return managers[opts.RootPassword], err
 }

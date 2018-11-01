@@ -8,14 +8,13 @@ import (
 func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 	opts := Options{
 		Type:                TypeTempSchema,
+		CleanupAction:       CleanupActionNone,
 		Instance:            s.d.Instance,
 		SchemaName:          "_skeema_tmp",
-		CleanupAction:       CleanupActionNone,
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
 		LockWaitTimeout:     100 * time.Millisecond,
 	}
-
 	ts, err := NewTempSchema(opts)
 	if err != nil {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
