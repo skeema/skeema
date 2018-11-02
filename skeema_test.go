@@ -34,9 +34,7 @@ func TestIntegration(t *testing.T) {
 		fmt.Println("To run integration tests, you may set SKEEMA_TEST_IMAGES to a comma-separated")
 		fmt.Println("list of Docker images. Example:\n# SKEEMA_TEST_IMAGES=\"mysql:5.6,mysql:5.7\" go test")
 	}
-	manager, err := tengo.NewDockerSandboxer(tengo.SandboxerOptions{
-		RootPassword: "fakepw",
-	})
+	manager, err := tengo.NewDockerClient(tengo.DockerClientOptions{})
 	if err != nil {
 		t.Errorf("Unable to create sandbox manager: %s", err)
 	}
@@ -45,7 +43,7 @@ func TestIntegration(t *testing.T) {
 }
 
 type SkeemaIntegrationSuite struct {
-	manager  *tengo.DockerSandboxer
+	manager  *tengo.DockerClient
 	d        *tengo.DockerizedInstance
 	repoPath string
 }
@@ -58,7 +56,11 @@ func (s *SkeemaIntegrationSuite) Setup(backend string) (err error) {
 	}
 
 	// Spin up a Dockerized database server
-	s.d, err = s.manager.GetOrCreateInstance(containerName(backend), backend)
+	s.d, err = s.manager.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
+		Name:         fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1)),
+		Image:        backend,
+		RootPassword: "fakepw",
+	})
 	return err
 }
 
@@ -388,10 +390,6 @@ func (s *SkeemaIntegrationSuite) dbExec(t *testing.T, schemaName, query string, 
 	if err != nil {
 		t.Fatalf("Error running query on DockerizedInstance.\nSchema: %s\nQuery: %s\nError: %s", schemaName, query, err)
 	}
-}
-
-func containerName(backend string) string {
-	return fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1))
 }
 
 // getOptionFile returns a mybase.File representing the .skeema file in the

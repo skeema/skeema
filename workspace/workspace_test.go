@@ -28,9 +28,7 @@ func TestIntegration(t *testing.T) {
 		fmt.Println("To run integration tests, you may set SKEEMA_TEST_IMAGES to a comma-separated")
 		fmt.Println("list of Docker images. Example:\n# SKEEMA_TEST_IMAGES=\"mysql:5.6,mysql:5.7\" go test")
 	}
-	manager, err := tengo.NewDockerSandboxer(tengo.SandboxerOptions{
-		RootPassword: "fakepw",
-	})
+	manager, err := tengo.NewDockerClient(tengo.DockerClientOptions{})
 	if err != nil {
 		t.Errorf("Unable to create sandbox manager: %s", err)
 	}
@@ -39,7 +37,7 @@ func TestIntegration(t *testing.T) {
 }
 
 type WorkspaceIntegrationSuite struct {
-	manager *tengo.DockerSandboxer
+	manager *tengo.DockerClient
 	d       *tengo.DockerizedInstance
 }
 
@@ -125,7 +123,11 @@ func (s WorkspaceIntegrationSuite) TestStatementsToSchema(t *testing.T) {
 }
 
 func (s *WorkspaceIntegrationSuite) Setup(backend string) (err error) {
-	s.d, err = s.manager.GetOrCreateInstance(containerName(backend), backend)
+	s.d, err = s.manager.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
+		Name:         fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1)),
+		Image:        backend,
+		RootPassword: "fakepw",
+	})
 	return err
 }
 
@@ -162,8 +164,4 @@ func (s *WorkspaceIntegrationSuite) getParsedDir(t *testing.T, dirPath, cliFlags
 		t.Fatalf("Unexpectedly cannot parse working dir: %s", err)
 	}
 	return dir
-}
-
-func containerName(backend string) string {
-	return fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1))
 }

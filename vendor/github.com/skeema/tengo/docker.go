@@ -12,41 +12,51 @@ import (
 	docker "github.com/fsouza/go-dockerclient"
 )
 
-// SandboxerOptions specifies options when instantiating a sandboxer.
-type SandboxerOptions struct {
-	RootPassword string
+// DockerClientOptions specifies options when instantiating a Docker client.
+// No options are currently supported, but this may change in the future.
+type DockerClientOptions struct{}
+
+// DockerClient manages lifecycle of local Docker containers for sandbox
+// database instances. It wraps and hides the implementation of a specific
+// Docker client implementation. (This package currently uses
+// github.com/fsouza/go-dockerclient, but may later switch to the official
+// Docker Golang client.)
+type DockerClient struct {
+	client  *docker.Client
+	Options DockerClientOptions
 }
 
-// DockerSandboxer manages lifecycle of local Docker containers for sandbox
-// database instances.
-type DockerSandboxer struct {
-	*docker.Client
-	Options SandboxerOptions
-}
-
-// NewDockerSandboxer is a constructor for DockerSandboxer
-func NewDockerSandboxer(opts SandboxerOptions) (*DockerSandboxer, error) {
-	var ds *DockerSandboxer
+// NewDockerClient is a constructor for DockerClient
+func NewDockerClient(opts DockerClientOptions) (*DockerClient, error) {
+	var dc *DockerClient
 	client, err := docker.NewClientFromEnv()
 	if err == nil {
-		ds = &DockerSandboxer{
-			Client:  client,
+		dc = &DockerClient{
+			client:  client,
 			Options: opts,
 		}
 	}
-	return ds, err
+	return dc, err
+}
+
+// DockerizedInstanceOptions specifies options for creating or finding a
+// sandboxed database instance inside a Docker container.
+type DockerizedInstanceOptions struct {
+	Name         string
+	Image        string
+	RootPassword string
 }
 
 // CreateInstance attempts to create a Docker container with the supplied name
 // (any arbitrary name, or blank to assign random) and image (such as
 // "mysql:5.6", or just "mysql" to indicate latest). A connection pool will be
 // established for the instance.
-func (ds DockerSandboxer) CreateInstance(name, image string) (*DockerizedInstance, error) {
-	if image == "" {
+func (dc *DockerClient) CreateInstance(opts DockerizedInstanceOptions) (*DockerizedInstance, error) {
+	if opts.Image == "" {
 		return nil, errors.New("CreateInstance: image cannot be empty string")
 	}
 
-	tokens := strings.SplitN(image, ":", 2)
+	tokens := strings.SplitN(opts.Image, ":", 2)
 	repository := tokens[0]
 	tag := "latest"
 	if len(tokens) > 1 {
@@ -54,22 +64,28 @@ func (ds DockerSandboxer) CreateInstance(name, image string) (*DockerizedInstanc
 	}
 
 	// Pull image from remote if missing
-	if _, err := ds.InspectImage(image); err != nil {
+	if _, err := dc.client.InspectImage(opts.Image); err != nil {
 		opts := docker.PullImageOptions{
 			Repository: repository,
 			Tag:        tag,
 		}
-		if err := ds.PullImage(opts, docker.AuthConfiguration{}); err != nil {
+		if err := dc.client.PullImage(opts, docker.AuthConfiguration{}); err != nil {
 			return nil, err
 		}
 	}
 
 	// Create and start container
-	opts := docker.CreateContainerOptions{
-		Name: name,
+	var env []string
+	if opts.RootPassword == "" {
+		env = append(env, "MYSQL_ALLOW_EMPTY_PASSWORD=1")
+	} else {
+		env = append(env, fmt.Sprintf("MYSQL_ROOT_PASSWORD=%s", opts.RootPassword))
+	}
+	ccopts := docker.CreateContainerOptions{
+		Name: opts.Name,
 		Config: &docker.Config{
-			Image: image,
-			Env:   []string{fmt.Sprintf("MYSQL_ROOT_PASSWORD=%s", ds.Options.RootPassword)},
+			Image: opts.Image,
+			Env:   env,
 		},
 		HostConfig: &docker.HostConfig{
 			PortBindings: map[docker.Port][]docker.PortBinding{
@@ -80,11 +96,11 @@ func (ds DockerSandboxer) CreateInstance(name, image string) (*DockerizedInstanc
 		},
 	}
 	di := &DockerizedInstance{
-		Image:   image,
-		Manager: ds,
+		DockerizedInstanceOptions: opts,
+		Manager:                   dc,
 	}
 	var err error
-	if di.Container, err = ds.CreateContainer(opts); err != nil {
+	if di.container, err = dc.client.CreateContainer(ccopts); err != nil {
 		return nil, err
 	} else if err = di.Start(); err != nil {
 		return di, err
@@ -97,34 +113,37 @@ func (ds DockerSandboxer) CreateInstance(name, image string) (*DockerizedInstanc
 	return di, nil
 }
 
-// GetInstance attempts to find an existing container with name equal to the
-// name arg. If a non-blank image string is supplied, and the container
+// GetInstance attempts to find an existing container with name equal to
+// opts.Name. If a non-blank opts.Image is supplied, and the container
 // exists but has a different image, an error will be returned. Otherwise, if
 // the container is found, it will be started if not already running, and a
 // connection pool will be established. If the container does not exist or
 // cannot be started or connected to, a nil *DockerizedInstance and a non-nil
 // error will be returned.
-func (ds DockerSandboxer) GetInstance(name, image string) (*DockerizedInstance, error) {
+func (dc *DockerClient) GetInstance(opts DockerizedInstanceOptions) (*DockerizedInstance, error) {
 	var err error
 	di := &DockerizedInstance{
-		Manager: ds,
+		Manager:                   dc,
+		DockerizedInstanceOptions: opts,
 	}
-	if di.Container, err = ds.InspectContainer(name); err != nil {
+	if di.container, err = dc.client.InspectContainer(opts.Name); err != nil {
 		return nil, err
 	}
-	di.Image = di.Container.Image
-	if strings.HasPrefix(di.Image, "sha256:") {
-		if imageInfo, err := di.Manager.InspectImage(di.Image[7:]); err == nil {
+	actualImage := di.container.Image
+	if strings.HasPrefix(actualImage, "sha256:") {
+		if imageInfo, err := dc.client.InspectImage(actualImage[7:]); err == nil {
 			for _, rt := range imageInfo.RepoTags {
-				if rt == image || image == "" {
-					di.Image = rt
+				if rt == opts.Image || opts.Image == "" {
+					actualImage = rt
 					break
 				}
 			}
 		}
 	}
-	if image != "" && di.Image != image {
-		return nil, fmt.Errorf("Container %s based on unexpected image: expected %s, found %s", name, image, di.Image)
+	if opts.Image == "" {
+		di.Image = actualImage
+	} else if actualImage != opts.Image {
+		return nil, fmt.Errorf("Container %s based on unexpected image: expected %s, found %s", opts.Name, opts.Image, actualImage)
 	}
 	if err = di.Start(); err != nil {
 		return nil, err
@@ -136,17 +155,17 @@ func (ds DockerSandboxer) GetInstance(name, image string) (*DockerizedInstance, 
 }
 
 // GetOrCreateInstance attempts to fetch an existing Docker container with name
-// equal to the name arg. If it exists and its image matches the supplied image,
-// and there are no errors starting or connecting to the instance, it will be
-// returned. If it exists but its image doesn't match, or it cannot be started
-// or connected to, an error will be returned. If no container exists with this
-// name, a new one will attempt to be created.
-func (ds DockerSandboxer) GetOrCreateInstance(name, image string) (*DockerizedInstance, error) {
-	di, err := ds.GetInstance(name, image)
+// equal to opts.Name. If it exists and its image matches opts.Image, and there
+// are no errors starting or connecting to the instance, it will be returned. If
+// it exists but its image doesn't match, or it cannot be started or connected
+// to, an error will be returned. If no container exists with this name, a new
+// one will attempt to be created.
+func (dc *DockerClient) GetOrCreateInstance(opts DockerizedInstanceOptions) (*DockerizedInstance, error) {
+	di, err := dc.GetInstance(opts)
 	if err == nil {
 		return di, nil
 	} else if _, ok := err.(*docker.NoSuchContainer); ok {
-		return ds.CreateInstance(name, image)
+		return dc.CreateInstance(opts)
 	}
 	return nil, err
 }
@@ -155,18 +174,18 @@ func (ds DockerSandboxer) GetOrCreateInstance(name, image string) (*DockerizedIn
 // container.
 type DockerizedInstance struct {
 	*Instance
-	Manager   DockerSandboxer
-	Container *docker.Container
-	Image     string
+	DockerizedInstanceOptions
+	Manager   *DockerClient
+	container *docker.Container
 }
 
 // Start starts the corresponding containerized mysql-server. If it is not
 // already running, an error will be returned if it cannot be started. If it is
 // already running, nil will be returned.
 func (di *DockerizedInstance) Start() error {
-	err := di.Manager.StartContainer(di.Container.ID, nil)
+	err := di.Manager.client.StartContainer(di.container.ID, nil)
 	if _, ok := err.(*docker.ContainerAlreadyRunning); err == nil || ok {
-		di.Container, err = di.Manager.InspectContainer(di.Container.ID)
+		di.container, err = di.Manager.client.InspectContainer(di.container.ID)
 	}
 	return err
 }
@@ -175,7 +194,7 @@ func (di *DockerizedInstance) Start() error {
 // destroy the container. The connection pool will be removed. If the container
 // was not already running, nil will be returned.
 func (di *DockerizedInstance) Stop() error {
-	err := di.Manager.StopContainer(di.Container.ID, 3)
+	err := di.Manager.client.StopContainer(di.container.ID, 3)
 	if _, ok := err.(*docker.ContainerNotRunning); !ok && err != nil {
 		return err
 	}
@@ -184,12 +203,12 @@ func (di *DockerizedInstance) Stop() error {
 
 // Destroy stops and deletes the corresponding containerized mysql-server.
 func (di *DockerizedInstance) Destroy() error {
-	opts := docker.RemoveContainerOptions{
-		ID:            di.Container.ID,
+	rcopts := docker.RemoveContainerOptions{
+		ID:            di.container.ID,
 		Force:         true,
 		RemoveVolumes: true,
 	}
-	err := di.Manager.RemoveContainer(opts)
+	err := di.Manager.client.RemoveContainer(rcopts)
 	if _, ok := err.(*docker.NoSuchContainer); ok {
 		err = nil
 	}
@@ -218,7 +237,7 @@ func (di *DockerizedInstance) TryConnect() (err error) {
 // internal port 3306.
 func (di *DockerizedInstance) Port() int {
 	portAndProto := docker.Port("3306/tcp")
-	portBindings, ok := di.Container.NetworkSettings.Ports[portAndProto]
+	portBindings, ok := di.container.NetworkSettings.Ports[portAndProto]
 	if !ok || len(portBindings) == 0 {
 		return 0
 	}
@@ -229,7 +248,7 @@ func (di *DockerizedInstance) Port() int {
 // DSN returns a github.com/go-sql-driver/mysql formatted DSN corresponding
 // to its containerized mysql-server instance.
 func (di *DockerizedInstance) DSN() string {
-	return fmt.Sprintf("root:%s@tcp(127.0.0.1:%d)/", di.Manager.Options.RootPassword, di.Port())
+	return fmt.Sprintf("root:%s@tcp(127.0.0.1:%d)/", di.RootPassword, di.Port())
 }
 
 func (di *DockerizedInstance) String() string {
@@ -261,24 +280,24 @@ func (di *DockerizedInstance) SourceSQL(filePath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("SourceSQL %s: Unable to open setup file %s: %s", di, filePath, err)
 	}
-	opts := docker.CreateExecOptions{
+	ceopts := docker.CreateExecOptions{
 		AttachStdout: true,
 		AttachStderr: true,
 		AttachStdin:  true,
-		Cmd:          []string{"mysql", "-tvvv", fmt.Sprintf("-p%s", di.Manager.Options.RootPassword)},
-		Container:    di.Container.ID,
+		Cmd:          []string{"mysql", "-tvvv", fmt.Sprintf("-p%s", di.RootPassword)},
+		Container:    di.container.ID,
 	}
-	exec, err := di.Manager.CreateExec(opts)
+	exec, err := di.Manager.client.CreateExec(ceopts)
 	if err != nil {
 		return "", err
 	}
 	var stdout, stderr bytes.Buffer
-	startOpts := docker.StartExecOptions{
+	seopts := docker.StartExecOptions{
 		OutputStream: &stdout,
 		ErrorStream:  &stderr,
 		InputStream:  f,
 	}
-	if err = di.Manager.StartExec(exec.ID, startOpts); err != nil {
+	if err = di.Manager.client.StartExec(exec.ID, seopts); err != nil {
 		return "", err
 	}
 	stdoutStr := stdout.String()
