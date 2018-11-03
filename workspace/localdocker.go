@@ -19,7 +19,8 @@ type LocalDocker struct {
 	releaseLock releaseFunc
 }
 
-var seenContainerNames map[string]bool
+var dockerClient *tengo.DockerClient
+var seenContainerNames = map[string]bool{}
 
 // NewLocalDocker finds or creates a containerized MySQL instance, creates a
 // temporary schema on it, and returns it.
@@ -28,17 +29,21 @@ func NewLocalDocker(opts Options) (ld *LocalDocker, err error) {
 		return nil, fmt.Errorf("NewLocalDocker: unsupported flavor %s", opts.Flavor)
 	}
 
-	var sandboxer *tengo.DockerSandboxer
-	if sandboxer, err = getSandboxer(opts); err != nil {
-		return
+	if dockerClient == nil {
+		if dockerClient, err = tengo.NewDockerClient(tengo.DockerClientOptions{}); err != nil {
+			return
+		}
 	}
-
 	ld = &LocalDocker{
 		schemaName: opts.SchemaName,
 	}
 	image := opts.Flavor.String()
 	containerName := fmt.Sprintf("skeema-%s", strings.Replace(image, ":", "-", -1))
-	ld.d, err = sandboxer.GetOrCreateInstance(containerName, image)
+	ld.d, err = dockerClient.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
+		Name:         containerName,
+		Image:        image,
+		RootPassword: opts.RootPassword,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -51,6 +56,7 @@ func NewLocalDocker(opts Options) (ld *LocalDocker, err error) {
 	defer func() {
 		if err != nil {
 			ld.releaseLock()
+			ld = nil
 		}
 	}()
 
@@ -58,27 +64,29 @@ func NewLocalDocker(opts Options) (ld *LocalDocker, err error) {
 		if opts.CleanupAction == CleanupActionStop {
 			RegisterShutdownFunc(func() {
 				ld.d.Stop()
+				delete(seenContainerNames, containerName)
 			})
 		} else if opts.CleanupAction == CleanupActionDestroy {
 			RegisterShutdownFunc(func() {
 				ld.d.Destroy()
+				delete(seenContainerNames, containerName)
 			})
 		}
 		seenContainerNames[containerName] = true
 	}
 
 	if has, err := ld.d.HasSchema(ld.schemaName); err != nil {
-		return nil, fmt.Errorf("Unable to check for existence of temp schema on %s: %s", ld.d.Instance, err)
+		return ld, fmt.Errorf("Unable to check for existence of temp schema on %s: %s", ld.d.Instance, err)
 	} else if has {
 		// Attempt to drop any tables already present in schema, but fail if any
 		// of them actually have 1 or more rows
 		if err := ld.d.DropTablesInSchema(ld.schemaName, true); err != nil {
-			return nil, fmt.Errorf("Cannot drop existing temporary schema tables on %s: %s", ld.d.Instance, err)
+			return ld, fmt.Errorf("Cannot drop existing temporary schema tables on %s: %s", ld.d.Instance, err)
 		}
 	} else {
 		_, err = ld.d.CreateSchema(ld.schemaName, opts.DefaultCharacterSet, opts.DefaultCollation)
 		if err != nil {
-			return nil, fmt.Errorf("Cannot create temporary schema on %s: %s", ld.d.Instance, err)
+			return ld, fmt.Errorf("Cannot create temporary schema on %s: %s", ld.d.Instance, err)
 		}
 	}
 	return ld, nil
@@ -114,21 +122,4 @@ func (ld *LocalDocker) Cleanup() error {
 		return fmt.Errorf("Cannot drop temporary schema on %s: %s", ld.d.Instance, err)
 	}
 	return nil
-}
-
-var managers map[string]*tengo.DockerSandboxer
-
-func getSandboxer(opts Options) (*tengo.DockerSandboxer, error) {
-	if manager, ok := managers[opts.RootPassword]; ok {
-		return manager, nil
-	}
-	sandboxerOptions := tengo.SandboxerOptions{
-		RootPassword: opts.RootPassword,
-	}
-	var err error
-	if managers == nil {
-		managers = make(map[string]*tengo.DockerSandboxer)
-	}
-	managers[opts.RootPassword], err = tengo.NewDockerSandboxer(sandboxerOptions)
-	return managers[opts.RootPassword], err
 }

@@ -89,12 +89,15 @@ func lintWalker(dir *fs.Dir, lc *lintCounters, maxDepth int) error {
 	}
 	opts := workspace.Options{
 		Type:                workspace.TypeTempSchema,
+		CleanupAction:       workspace.CleanupActionDrop,
 		Instance:            inst,
 		SchemaName:          dir.Config.Get("temp-schema"),
-		KeepSchema:          dir.Config.GetBool("reuse-temp-schema"),
 		DefaultCharacterSet: dir.Config.Get("default-character-set"),
 		DefaultCollation:    dir.Config.Get("default-collation"),
 		LockWaitTimeout:     30 * time.Second,
+	}
+	if dir.Config.GetBool("reuse-temp-schema") {
+		opts.CleanupAction = workspace.CleanupActionNone
 	}
 
 	for _, idealSchema := range dir.IdealSchemas {

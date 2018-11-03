@@ -117,12 +117,15 @@ func targetsForIdealSchema(idealSchema *fs.IdealSchema, dir *fs.Dir, instances [
 	// workspace
 	opts := workspace.Options{
 		Type:                workspace.TypeTempSchema,
+		CleanupAction:       workspace.CleanupActionDrop,
 		Instance:            instances[0],
 		SchemaName:          dir.Config.Get("temp-schema"),
-		KeepSchema:          dir.Config.GetBool("reuse-temp-schema"),
 		DefaultCharacterSet: dir.Config.Get("default-character-set"),
 		DefaultCollation:    dir.Config.Get("default-collation"),
 		LockWaitTimeout:     30 * time.Second,
+	}
+	if dir.Config.GetBool("reuse-temp-schema") {
+		opts.CleanupAction = workspace.CleanupActionNone
 	}
 	fsSchema, tableErrors, err := workspace.MaterializeIdealSchema(idealSchema, opts)
 	if err != nil {

@@ -56,12 +56,15 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 
 	opts := workspace.Options{
 		Type:                workspace.TypeTempSchema,
+		CleanupAction:       workspace.CleanupActionDrop,
 		Instance:            t.Instance,
 		SchemaName:          t.Dir.Config.Get("temp-schema"),
-		KeepSchema:          t.Dir.Config.GetBool("reuse-temp-schema"),
 		DefaultCharacterSet: t.Dir.Config.Get("default-character-set"),
 		DefaultCollation:    t.Dir.Config.Get("default-collation"),
 		LockWaitTimeout:     30 * time.Second,
+	}
+	if t.Dir.Config.GetBool("reuse-temp-schema") {
+		opts.CleanupAction = workspace.CleanupActionNone
 	}
 	wsSchema, err := workspace.StatementsToSchema(statements, opts)
 	if err != nil {

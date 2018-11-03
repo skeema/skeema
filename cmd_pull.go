@@ -254,15 +254,19 @@ func statementModifiersForPull(config *mybase.Config, instance *tengo.Instance, 
 }
 
 func workspaceOptionsForPull(config *mybase.Config, instance *tengo.Instance) workspace.Options {
-	return workspace.Options{
+	opts := workspace.Options{
 		Type:                workspace.TypeTempSchema,
+		CleanupAction:       workspace.CleanupActionDrop,
 		Instance:            instance,
 		SchemaName:          config.Get("temp-schema"),
-		KeepSchema:          config.GetBool("reuse-temp-schema"),
 		DefaultCharacterSet: config.Get("default-character-set"),
 		DefaultCollation:    config.Get("default-collation"),
 		LockWaitTimeout:     30 * time.Second,
 	}
+	if config.GetBool("reuse-temp-schema") {
+		opts.CleanupAction = workspace.CleanupActionNone
+	}
+	return opts
 }
 
 // alteredTablesForPull returns a map whose keys are names of tables that have

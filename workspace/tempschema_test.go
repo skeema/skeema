@@ -35,7 +35,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 		t.Error("Expected repeated calls to Cleanup() to error, but err was nil")
 	}
 	if has, err := ts.inst.HasSchema(opts.SchemaName); !has || err != nil {
-		t.Fatalf("Schema did not persist despite KeepSchema: has=%t err=%s", has, err)
+		t.Fatalf("Schema did not persist despite CleanupActionNone: has=%t err=%s", has, err)
 	}
 
 	// Cleanup should fail if a table has rows
@@ -91,7 +91,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 		t.Errorf("Unexpected error from cleanup: %s", err)
 	}
 	if has, err := ts.inst.HasSchema(opts.SchemaName); has || err != nil {
-		t.Fatalf("Schema persisted even without KeepSchema: has=%t err=%s", has, err)
+		t.Fatalf("Schema persisted despite CleanupActionDrop: has=%t err=%s", has, err)
 	}
 
 	// Supplying a nil Instance should error
