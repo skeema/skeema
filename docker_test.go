@@ -23,7 +23,7 @@ func TestDocker(t *testing.T) {
 	opts := DockerizedInstanceOptions{
 		Name:         "tengo-docker-meta-test",
 		Image:        images[0],
-		RootPassword: "fakepw",
+		RootPassword: "",
 	}
 	if _, err := dc.GetInstance(opts); err != nil {
 		if nosuchErr, ok := err.(*docker.NoSuchContainer); !ok {

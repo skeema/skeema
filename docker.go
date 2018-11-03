@@ -248,7 +248,11 @@ func (di *DockerizedInstance) Port() int {
 // DSN returns a github.com/go-sql-driver/mysql formatted DSN corresponding
 // to its containerized mysql-server instance.
 func (di *DockerizedInstance) DSN() string {
-	return fmt.Sprintf("root:%s@tcp(127.0.0.1:%d)/", di.RootPassword, di.Port())
+	var pass string
+	if di.RootPassword != "" {
+		pass = fmt.Sprintf(":%s", di.RootPassword)
+	}
+	return fmt.Sprintf("root%s@tcp(127.0.0.1:%d)/", pass, di.Port())
 }
 
 func (di *DockerizedInstance) String() string {
@@ -280,11 +284,15 @@ func (di *DockerizedInstance) SourceSQL(filePath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("SourceSQL %s: Unable to open setup file %s: %s", di, filePath, err)
 	}
+	cmd := []string{"mysql", "-tvvv"}
+	if di.RootPassword != "" {
+		cmd = append(cmd, fmt.Sprintf("-p%s", di.RootPassword))
+	}
 	ceopts := docker.CreateExecOptions{
 		AttachStdout: true,
 		AttachStderr: true,
 		AttachStdin:  true,
-		Cmd:          []string{"mysql", "-tvvv", fmt.Sprintf("-p%s", di.RootPassword)},
+		Cmd:          cmd,
 		Container:    di.container.ID,
 	}
 	exec, err := di.Manager.client.CreateExec(ceopts)
