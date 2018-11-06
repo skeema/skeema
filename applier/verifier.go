@@ -39,9 +39,9 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 		mods.AlgorithmClause = "COPY"
 	}
 
-	// Gather CREATE and ALTER for modified tables, and put into an IdealSchema,
+	// Gather CREATE and ALTER for modified tables, and put into a LogicalSchema,
 	// which we then materialize into a real schema using a workspace
-	idealSchema := &fs.IdealSchema{
+	logicalSchema := &fs.LogicalSchema{
 		CharSet:      t.Dir.Config.Get("default-character-set"),
 		Collation:    t.Dir.Config.Get("default-collation"),
 		CreateTables: make(map[string]*fs.Statement),
@@ -52,12 +52,12 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 		stmt, err := td.Statement(mods)
 		if stmt != "" && err == nil {
 			expected[td.From.Name] = td.To
-			idealSchema.CreateTables[td.From.Name] = &fs.Statement{
+			logicalSchema.CreateTables[td.From.Name] = &fs.Statement{
 				Type:      fs.StatementTypeCreateTable,
 				Text:      td.From.CreateStatement,
 				TableName: td.From.Name,
 			}
-			idealSchema.AlterTables = append(idealSchema.AlterTables, &fs.Statement{
+			logicalSchema.AlterTables = append(logicalSchema.AlterTables, &fs.Statement{
 				Type:      fs.StatementTypeAlterTable,
 				Text:      stmt,
 				TableName: td.From.Name,
@@ -75,7 +75,7 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 	if t.Dir.Config.GetBool("reuse-temp-schema") {
 		opts.CleanupAction = workspace.CleanupActionNone
 	}
-	wsSchema, statementErrors, err := workspace.MaterializeIdealSchema(idealSchema, opts)
+	wsSchema, statementErrors, err := workspace.ExecLogicalSchema(logicalSchema, opts)
 	if err == nil && len(statementErrors) > 0 {
 		err = statementErrors[0]
 	}

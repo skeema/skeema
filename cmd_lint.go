@@ -98,10 +98,10 @@ func lintWalker(dir *fs.Dir, lc *lintCounters, maxDepth int) error {
 		opts.CleanupAction = workspace.CleanupActionNone
 	}
 
-	for _, idealSchema := range dir.IdealSchemas {
-		schema, statementErrors, err := workspace.MaterializeIdealSchema(idealSchema, opts)
+	for _, logicalSchema := range dir.LogicalSchemas {
+		schema, statementErrors, err := workspace.ExecLogicalSchema(logicalSchema, opts)
 		if err != nil {
-			log.Warnf("Skipping schema %s in %s due to error: %s", idealSchema.Name, dir.Path, err)
+			log.Warnf("Skipping schema %s in %s due to error: %s", logicalSchema.Name, dir.Path, err)
 			lc.errCount++
 			continue
 		}
@@ -118,14 +118,14 @@ func lintWalker(dir *fs.Dir, lc *lintCounters, maxDepth int) error {
 				log.Debugf("Skipping table %s because ignore-table='%s'", table.Name, ignoreTable)
 				continue
 			}
-			body, suffix := idealSchema.CreateTables[table.Name].SplitTextBody()
+			body, suffix := logicalSchema.CreateTables[table.Name].SplitTextBody()
 			if table.CreateStatement != body {
-				idealSchema.CreateTables[table.Name].Text = fmt.Sprintf("%s%s", table.CreateStatement, suffix)
-				length, err := idealSchema.CreateTables[table.Name].FromFile.Rewrite()
+				logicalSchema.CreateTables[table.Name].Text = fmt.Sprintf("%s%s", table.CreateStatement, suffix)
+				length, err := logicalSchema.CreateTables[table.Name].FromFile.Rewrite()
 				if err != nil {
-					return fmt.Errorf("Unable to write to %s: %s", idealSchema.CreateTables[table.Name].File, err)
+					return fmt.Errorf("Unable to write to %s: %s", logicalSchema.CreateTables[table.Name].File, err)
 				}
-				log.Infof("Wrote %s (%d bytes) -- updated file to normalize format", idealSchema.CreateTables[table.Name].File, length)
+				log.Infof("Wrote %s (%d bytes) -- updated file to normalize format", logicalSchema.CreateTables[table.Name].File, length)
 				lc.reformatCount++
 			}
 		}

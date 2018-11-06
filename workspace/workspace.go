@@ -131,18 +131,18 @@ func (se *StatementError) String() string {
 	return se.Error()
 }
 
-// MaterializeIdealSchema converts an IdealSchema to a tengo.Schema. It obtains
-// a Workspace, executes the creation DDL contained in an IdealSchema there,
+// ExecLogicalSchema converts a LogicalSchema to a tengo.Schema. It obtains
+// a Workspace, executes the creation DDL contained in a LogicalSchema there,
 // introspects it into a *tengo.Schema, cleans up the Workspace, and then
 // returns the introspected schema. SQL errors (e.g. tables that could not be
 // created) are non-fatal, and are returned in the second return value. The
 // third return value represents fatal errors only.
-func MaterializeIdealSchema(idealSchema *fs.IdealSchema, opts Options) (schema *tengo.Schema, statementErrors []*StatementError, fatalErr error) {
-	if idealSchema.CharSet != "" {
-		opts.DefaultCharacterSet = idealSchema.CharSet
+func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (schema *tengo.Schema, statementErrors []*StatementError, fatalErr error) {
+	if logicalSchema.CharSet != "" {
+		opts.DefaultCharacterSet = logicalSchema.CharSet
 	}
-	if idealSchema.Collation != "" {
-		opts.DefaultCollation = idealSchema.Collation
+	if logicalSchema.Collation != "" {
+		opts.DefaultCollation = logicalSchema.Collation
 	}
 	var ws Workspace
 	ws, fatalErr = New(opts)
@@ -165,12 +165,12 @@ func MaterializeIdealSchema(idealSchema *fs.IdealSchema, opts Options) (schema *
 	defer db.SetMaxOpenConns(0)
 	db.SetMaxOpenConns(10)
 	results := make(chan *StatementError)
-	for _, statement := range idealSchema.CreateTables {
+	for _, statement := range logicalSchema.CreateTables {
 		go func(statement *fs.Statement) {
 			results <- execStatement(db, statement)
 		}(statement)
 	}
-	for range idealSchema.CreateTables {
+	for range logicalSchema.CreateTables {
 		if result := <-results; result != nil {
 			statementErrors = append(statementErrors, result)
 		}
@@ -179,7 +179,7 @@ func MaterializeIdealSchema(idealSchema *fs.IdealSchema, opts Options) (schema *
 
 	// Run ALTER TABLEs sequentially, since foreign key manipulations don't play
 	// nice with concurrency.
-	for _, statement := range idealSchema.AlterTables {
+	for _, statement := range logicalSchema.AlterTables {
 		if err := execStatement(db, statement); err != nil {
 			statementErrors = append(statementErrors, err)
 		}

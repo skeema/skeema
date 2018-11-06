@@ -37,10 +37,10 @@ func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int)
 		var instances []*tengo.Instance
 		instances, skipCount = instancesForDir(dir)
 
-		// For each IdealSchema, obtain a *tengo.Schema representation and then create
-		// a Target for each instance x schema combination
-		for _, idealSchema := range dir.IdealSchemas {
-			thisTargets, thisSkipCount := targetsForIdealSchema(idealSchema, dir, instances)
+		// For each LogicalSchema, obtain a *tengo.Schema representation and then
+		// create a Target for each instance x schema combination
+		for _, logicalSchema := range dir.LogicalSchemas {
+			thisTargets, thisSkipCount := targetsForLogicalSchema(logicalSchema, dir, instances)
 			targets = append(targets, thisTargets...)
 			skipCount += thisSkipCount
 		}
@@ -107,7 +107,7 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 	return
 }
 
-func targetsForIdealSchema(idealSchema *fs.IdealSchema, dir *fs.Dir, instances []*tengo.Instance) (targets []*Target, skipCount int) {
+func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, instances []*tengo.Instance) (targets []*Target, skipCount int) {
 	// If dir mapped to no instances, it generates no targets
 	if len(instances) == 0 {
 		return
@@ -125,7 +125,7 @@ func targetsForIdealSchema(idealSchema *fs.IdealSchema, dir *fs.Dir, instances [
 	if dir.Config.GetBool("reuse-temp-schema") {
 		opts.CleanupAction = workspace.CleanupActionNone
 	}
-	fsSchema, statementErrors, err := workspace.MaterializeIdealSchema(idealSchema, opts)
+	fsSchema, statementErrors, err := workspace.ExecLogicalSchema(logicalSchema, opts)
 	if err != nil {
 		log.Warnf("Skipping %s: %s\n", dir, err)
 		return nil, len(instances)
@@ -145,7 +145,7 @@ func targetsForIdealSchema(idealSchema *fs.IdealSchema, dir *fs.Dir, instances [
 	// Create a Target for each instance x schema combination
 	for _, inst := range instances {
 		var schemaNames []string
-		if idealSchema.Name == "" { // blank means use the schema option from dir config
+		if logicalSchema.Name == "" { // blank means use the schema option from dir config
 			schemaNames, err = dir.SchemaNames(inst)
 			if err != nil {
 				log.Warnf("Skipping %s for %s: %s", inst, dir, err)
@@ -156,7 +156,7 @@ func targetsForIdealSchema(idealSchema *fs.IdealSchema, dir *fs.Dir, instances [
 				schemaNames = schemaNames[0:1]
 			}
 		} else {
-			schemaNames = []string{idealSchema.Name}
+			schemaNames = []string{logicalSchema.Name}
 		}
 		schemasByName, err := inst.SchemasByName(schemaNames...)
 		if err != nil {

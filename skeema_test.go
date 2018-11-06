@@ -241,10 +241,10 @@ func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, d
 		}
 
 		// Compare parsed CREATE TABLEs
-		if len(a.IdealSchemas) != len(b.IdealSchemas) {
-			t.Errorf("Mismatch between count of parsed ideal schemas: %s=%d vs %s=%d", a, len(a.IdealSchemas), b, len(b.IdealSchemas))
-		} else if len(a.IdealSchemas) > 0 {
-			aCreates, bCreates := a.IdealSchemas[0].CreateTables, b.IdealSchemas[0].CreateTables
+		if len(a.LogicalSchemas) != len(b.LogicalSchemas) {
+			t.Errorf("Mismatch between count of parsed logical schemas: %s=%d vs %s=%d", a, len(a.LogicalSchemas), b, len(b.LogicalSchemas))
+		} else if len(a.LogicalSchemas) > 0 {
+			aCreates, bCreates := a.LogicalSchemas[0].CreateTables, b.LogicalSchemas[0].CreateTables
 			if len(aCreates) != len(bCreates) {
 				t.Errorf("Mismatch in CREATE TABLE count: %s=%d, %s=%d", a, len(aCreates), b, len(bCreates))
 			} else {

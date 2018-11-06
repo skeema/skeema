@@ -22,20 +22,20 @@ func TestParseDir(t *testing.T) {
 	if len(dir.IgnoredStatements) > 0 {
 		t.Errorf("Expected 0 IgnoredStatements, instead found %d", len(dir.IgnoredStatements))
 	}
-	if len(dir.IdealSchemas) != 1 {
-		t.Fatalf("Expected 1 IdealSchema; instead found %d", len(dir.IdealSchemas))
+	if len(dir.LogicalSchemas) != 1 {
+		t.Fatalf("Expected 1 LogicalSchema; instead found %d", len(dir.LogicalSchemas))
 	}
-	idealSchema := dir.IdealSchemas[0]
-	if idealSchema.CharSet != "latin1" || idealSchema.Collation != "latin1_swedish_ci" {
-		t.Error("IdealSchema not correctly populated with charset/collation from .skeema file")
+	logicalSchema := dir.LogicalSchemas[0]
+	if logicalSchema.CharSet != "latin1" || logicalSchema.Collation != "latin1_swedish_ci" {
+		t.Error("LogicalSchema not correctly populated with charset/collation from .skeema file")
 	}
 	expectTableNames := []string{"comments", "posts", "subscriptions", "users"}
-	if len(idealSchema.CreateTables) != len(expectTableNames) {
-		t.Errorf("Unexpected table count: found %d, expected %d", len(idealSchema.CreateTables), len(expectTableNames))
+	if len(logicalSchema.CreateTables) != len(expectTableNames) {
+		t.Errorf("Unexpected table count: found %d, expected %d", len(logicalSchema.CreateTables), len(expectTableNames))
 	} else {
 		for _, name := range expectTableNames {
-			if _, ok := idealSchema.CreateTables[name]; !ok {
-				t.Errorf("Did not find key %s in IdealSchema", name)
+			if _, ok := logicalSchema.CreateTables[name]; !ok {
+				t.Errorf("Did not find key %s in LogicalSchema", name)
 			}
 		}
 	}

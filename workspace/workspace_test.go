@@ -41,7 +41,7 @@ type WorkspaceIntegrationSuite struct {
 	d       *tengo.DockerizedInstance
 }
 
-func (s WorkspaceIntegrationSuite) TestMaterializeIdealSchema(t *testing.T) {
+func (s WorkspaceIntegrationSuite) TestExecLogicalSchema(t *testing.T) {
 	// Test with just valid CREATE TABLEs
 	dirPath := "../testdata/golden/init/mydb/product"
 	if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
@@ -49,9 +49,9 @@ func (s WorkspaceIntegrationSuite) TestMaterializeIdealSchema(t *testing.T) {
 	}
 	dir := s.getParsedDir(t, dirPath, "")
 	opts := s.getOptionsForDir(dir)
-	schema, tableErrors, err := MaterializeIdealSchema(dir.IdealSchemas[0], opts)
+	schema, tableErrors, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 	if err != nil {
-		t.Fatalf("Unexpected error from MaterializeIdealSchema: %s", err)
+		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
 	}
 	if len(tableErrors) > 0 {
 		t.Errorf("Expected no TableErrors, instead found %d", len(tableErrors))
@@ -62,12 +62,12 @@ func (s WorkspaceIntegrationSuite) TestMaterializeIdealSchema(t *testing.T) {
 
 	// Test with a valid ALTER involved
 	oldUserColumnCount := len(schema.Table("users").Columns)
-	dir.IdealSchemas[0].AlterTables = []*fs.Statement{
+	dir.LogicalSchemas[0].AlterTables = []*fs.Statement{
 		{Type: fs.StatementTypeAlterTable, TableName: "users", Text: "ALTER TABLE users ADD COLUMN foo int"},
 	}
-	schema, tableErrors, err = MaterializeIdealSchema(dir.IdealSchemas[0], opts)
+	schema, tableErrors, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 	if err != nil {
-		t.Fatalf("Unexpected error from MaterializeIdealSchema: %s", err)
+		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
 	}
 	if len(tableErrors) > 0 {
 		t.Errorf("Expected no TableErrors, instead found %d", len(tableErrors))
@@ -77,28 +77,28 @@ func (s WorkspaceIntegrationSuite) TestMaterializeIdealSchema(t *testing.T) {
 	}
 
 	// Test with invalid ALTER (valid syntax but nonexistent table)
-	dir.IdealSchemas[0].AlterTables[0].Text = "ALTER TABLE nopenopenope ADD COLUMN foo int"
-	schema, tableErrors, err = MaterializeIdealSchema(dir.IdealSchemas[0], opts)
+	dir.LogicalSchemas[0].AlterTables[0].Text = "ALTER TABLE nopenopenope ADD COLUMN foo int"
+	schema, tableErrors, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 	if err != nil {
-		t.Fatalf("Unexpected error from MaterializeIdealSchema: %s", err)
+		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
 	}
 	if len(tableErrors) == 1 {
-		if tableErrors[0].Statement != dir.IdealSchemas[0].AlterTables[0] {
+		if tableErrors[0].Statement != dir.LogicalSchemas[0].AlterTables[0] {
 			t.Error("Unexpected Statement pointed to by StatementError")
-		} else if !strings.Contains(tableErrors[0].String(), dir.IdealSchemas[0].AlterTables[0].Text) {
+		} else if !strings.Contains(tableErrors[0].String(), dir.LogicalSchemas[0].AlterTables[0].Text) {
 			t.Error("StatementError did not contain full SQL of erroring statement")
 		}
 	} else {
 		t.Errorf("Expected one TableError, instead found %d", len(tableErrors))
 	}
-	dir.IdealSchemas[0].AlterTables = []*fs.Statement{}
+	dir.LogicalSchemas[0].AlterTables = []*fs.Statement{}
 
 	// Introduce an intentional syntax error
-	stmt := dir.IdealSchemas[0].CreateTables["posts"]
+	stmt := dir.LogicalSchemas[0].CreateTables["posts"]
 	stmt.Text = strings.Replace(stmt.Text, "PRIMARY KEY", "PIRMRAY YEK", 1)
-	schema, tableErrors, err = MaterializeIdealSchema(dir.IdealSchemas[0], opts)
+	schema, tableErrors, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 	if err != nil {
-		t.Fatalf("Unexpected error from MaterializeIdealSchema: %s", err)
+		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
 	}
 	if len(schema.Tables) < 3 {
 		t.Errorf("Expected at least 3 tables, but instead found %d", len(schema.Tables))
@@ -117,7 +117,7 @@ func (s WorkspaceIntegrationSuite) TestMaterializeIdealSchema(t *testing.T) {
 
 	// Test handling of fatal error
 	opts.Type = Type(999)
-	if _, _, err := MaterializeIdealSchema(dir.IdealSchemas[0], opts); err == nil {
+	if _, _, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts); err == nil {
 		t.Error("Expected error from invalid options.Type, but instead err is nil")
 	}
 }

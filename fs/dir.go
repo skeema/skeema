@@ -24,16 +24,16 @@ type Dir struct {
 	Config            *mybase.Config
 	OptionFile        *mybase.File
 	SQLFiles          []SQLFile
-	IdealSchemas      []*IdealSchema // for now, always 0 or 1 elements; 2+ in same dir to be supported in future
-	IgnoredStatements []*Statement   // statements with unknown type / not supported by this package
+	LogicalSchemas    []*LogicalSchema // for now, always 0 or 1 elements; 2+ in same dir to be supported in future
+	IgnoredStatements []*Statement     // statements with unknown type / not supported by this package
 }
 
-// IdealSchema represents a set of statements from *.sql files in a directory
+// LogicalSchema represents a set of statements from *.sql files in a directory
 // that all operated on the same schema. Note that Name is often blank, which
 // means "all SQL statements in this dir that don't have an explicit USE
-// statement before them". This "nameless" IdealSchema is mapped to schema
+// statement before them". This "nameless" LogicalSchema is mapped to schema
 // names based on the "schema" option in the dir's OptionFile.
-type IdealSchema struct {
+type LogicalSchema struct {
 	Name         string
 	CharSet      string
 	Collation    string
@@ -313,8 +313,8 @@ func (dir *Dir) HasSchema() bool {
 	if dir.Config.Changed("schema") {
 		return true
 	}
-	for _, idealSchema := range dir.IdealSchemas {
-		if idealSchema.Name != "" {
+	for _, logicalSchema := range dir.LogicalSchemas {
+		if logicalSchema.Name != "" {
 			return true
 		}
 	}
@@ -390,7 +390,7 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 // parseContents reads the .skeema and *.sql files in the dir, populating
 // fields of dir accordingly. This method modifies dir in-place.
 func (dir *Dir) parseContents() error {
-	idealSchemasByName := make(map[string]*IdealSchema)
+	logicalSchemasByName := make(map[string]*LogicalSchema)
 
 	// Parse the option file, if one exists
 	if has, err := dir.HasFile(".skeema"); err != nil {
@@ -413,34 +413,34 @@ func (dir *Dir) parseContents() error {
 			return err
 		}
 		for _, stmt := range tokenizedFile.Statements {
-			if _, ok := idealSchemasByName[stmt.DefaultDatabase]; !ok {
-				idealSchemasByName[stmt.DefaultDatabase] = &IdealSchema{
+			if _, ok := logicalSchemasByName[stmt.DefaultDatabase]; !ok {
+				logicalSchemasByName[stmt.DefaultDatabase] = &LogicalSchema{
 					CreateTables: make(map[string]*Statement),
 				}
 			}
 			switch stmt.Type {
 			case StatementTypeCreateTable:
-				if foundStmt, ok := idealSchemasByName[stmt.DefaultDatabase].CreateTables[stmt.TableName]; ok {
+				if foundStmt, ok := logicalSchemasByName[stmt.DefaultDatabase].CreateTables[stmt.TableName]; ok {
 					return fmt.Errorf("Table `%s` found multiple times in %s: %s line %d and %s line %d", stmt.TableName, dir, foundStmt.File, foundStmt.LineNo, stmt.File, stmt.LineNo)
 				}
-				idealSchemasByName[stmt.DefaultDatabase].CreateTables[stmt.TableName] = stmt
+				logicalSchemasByName[stmt.DefaultDatabase].CreateTables[stmt.TableName] = stmt
 			case StatementTypeUnknown:
 				dir.IgnoredStatements = append(dir.IgnoredStatements, stmt)
 			}
 		}
 	}
 
-	dir.IdealSchemas = make([]*IdealSchema, 0, len(idealSchemasByName))
-	for name, is := range idealSchemasByName {
+	dir.LogicalSchemas = make([]*LogicalSchema, 0, len(logicalSchemasByName))
+	for name, ls := range logicalSchemasByName {
 		// Blank-named entry added to front of list in conditional below
 		if name != "" {
-			dir.IdealSchemas = append(dir.IdealSchemas, is)
+			dir.LogicalSchemas = append(dir.LogicalSchemas, ls)
 		}
 	}
-	if is, ok := idealSchemasByName[""]; ok {
-		is.CharSet = dir.Config.Get("default-character-set")
-		is.Collation = dir.Config.Get("default-collation")
-		dir.IdealSchemas = append([]*IdealSchema{is}, dir.IdealSchemas...)
+	if ls, ok := logicalSchemasByName[""]; ok {
+		ls.CharSet = dir.Config.Get("default-character-set")
+		ls.Collation = dir.Config.Get("default-collation")
+		dir.LogicalSchemas = append([]*LogicalSchema{ls}, dir.LogicalSchemas...)
 	}
 	return nil
 }

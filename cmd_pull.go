@@ -73,13 +73,13 @@ func pullWalker(dir *fs.Dir, maxDepth int) (handledSchemaNames []string, skipCou
 	}
 
 	if instance != nil && dir.HasSchema() {
-		for _, idealSchema := range dir.IdealSchemas {
+		for _, logicalSchema := range dir.LogicalSchemas {
 			// TODO: support pull for case where multiple explicitly-named schemas per
 			// dir. For example, ability to convert a multi-schema single-file mysqldump
 			// into Skeema's usual multi-dir layout.
-			if idealSchema.Name != "" {
-				handledSchemaNames = append(handledSchemaNames, idealSchema.Name)
-				log.Warnf("Ignoring schema %s from directory %s -- multiple schemas per dir not supported yet", idealSchema.Name, dir)
+			if logicalSchema.Name != "" {
+				handledSchemaNames = append(handledSchemaNames, logicalSchema.Name)
+				log.Warnf("Ignoring schema %s from directory %s -- multiple schemas per dir not supported yet", logicalSchema.Name, dir)
 				continue
 			}
 
@@ -100,7 +100,7 @@ func pullWalker(dir *fs.Dir, maxDepth int) (handledSchemaNames []string, skipCou
 			} else if err != nil {
 				return nil, skipCount, fmt.Errorf("%s: Unable to fetch schema %s from %s: %s", dir, handledSchemaNames[0], instance, err)
 			}
-			if err = pullSchemaDir(dir, instance, instSchema, idealSchema); err != nil {
+			if err = pullSchemaDir(dir, instance, instSchema, logicalSchema); err != nil {
 				return nil, skipCount, err
 			}
 		}
@@ -133,7 +133,7 @@ func pullWalker(dir *fs.Dir, maxDepth int) (handledSchemaNames []string, skipCou
 
 // pullSchemaDir performs appropriate pull logic on a dir that maps to one or
 // more schemas. Typically these are leaf dirs.
-func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Schema, idealSchema *fs.IdealSchema) error {
+func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Schema, logicalSchema *fs.LogicalSchema) error {
 	log.Infof("Updating %s to reflect %s %s", dir, instance, instSchema.Name)
 
 	ignoreTable, err := dir.Config.GetRegexp("ignore-table")
@@ -149,7 +149,7 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Sche
 	if !dir.Config.GetBool("normalize") {
 		mods := statementModifiersForPull(dir.Config, instance, ignoreTable)
 		opts := workspaceOptionsForPull(dir.Config, instance)
-		if haveAlters, err = alteredTablesForPull(instSchema, idealSchema, opts, mods); err != nil {
+		if haveAlters, err = alteredTablesForPull(instSchema, logicalSchema, opts, mods); err != nil {
 			return err
 		}
 	}
@@ -169,7 +169,7 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Sche
 	// and compare to instSchema. Track which files need rewrites.
 	filesToRewrite := make(map[*fs.TokenizedSQLFile]bool)
 	instTablesByName := instSchema.TablesByName()
-	for name, stmt := range idealSchema.CreateTables {
+	for name, stmt := range logicalSchema.CreateTables {
 		if ignoreTable != nil && ignoreTable.MatchString(name) {
 			continue
 		}
@@ -207,7 +207,7 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Sche
 	// Tables that exist in instSchema, but have no corresponding create statement:
 	// write new files, or append if filename already taken
 	for name, instTable := range instTablesByName {
-		if _, ok := idealSchema.CreateTables[name]; !ok {
+		if _, ok := logicalSchema.CreateTables[name]; !ok {
 			if ignoreTable != nil && ignoreTable.MatchString(name) {
 				continue
 			}
@@ -272,8 +272,8 @@ func workspaceOptionsForPull(config *mybase.Config, instance *tengo.Instance) wo
 // SQLFile in dir. This also includes tables whose SQLFile Statement has a
 // SQL syntax error. The return value does not include tables whose differences
 // are cosmetic / formatting-related, or are otherwise ignored by mods.
-func alteredTablesForPull(instSchema *tengo.Schema, idealSchema *fs.IdealSchema, opts workspace.Options, mods tengo.StatementModifiers) (map[string]bool, error) {
-	fsSchema, statementErrors, err := workspace.MaterializeIdealSchema(idealSchema, opts)
+func alteredTablesForPull(instSchema *tengo.Schema, logicalSchema *fs.LogicalSchema, opts workspace.Options, mods tengo.StatementModifiers) (map[string]bool, error) {
+	fsSchema, statementErrors, err := workspace.ExecLogicalSchema(logicalSchema, opts)
 	if err != nil {
 		return nil, fmt.Errorf("Error introspecting filesystem version of schema %s: %s", instSchema.Name, err)
 	}
