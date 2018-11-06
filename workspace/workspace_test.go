@@ -59,6 +59,37 @@ func (s WorkspaceIntegrationSuite) TestMaterializeIdealSchema(t *testing.T) {
 		t.Errorf("Expected at least 4 tables, but instead found %d", len(schema.Tables))
 	}
 
+	// Test with a valid ALTER involved
+	oldUserColumnCount := len(schema.Table("users").Columns)
+	dir.IdealSchemas[0].AlterTables = []*fs.Statement{
+		{Type: fs.StatementTypeAlterTable, TableName: "users", Text: "ALTER TABLE users ADD COLUMN foo int"},
+	}
+	schema, tableErrors, err = MaterializeIdealSchema(dir.IdealSchemas[0], opts)
+	if err != nil {
+		t.Fatalf("Unexpected error from MaterializeIdealSchema: %s", err)
+	}
+	if len(tableErrors) > 0 {
+		t.Errorf("Expected no TableErrors, instead found %d", len(tableErrors))
+	}
+	if expected := oldUserColumnCount + 1; len(schema.Table("users").Columns) != expected {
+		t.Errorf("Expected table users to now have %d columns, instead found %d", expected, len(schema.Table("users").Columns))
+	}
+
+	// Test with invalid ALTER (valid syntax but nonexistent table)
+	dir.IdealSchemas[0].AlterTables[0].Text = "ALTER TABLE nopenopenope ADD COLUMN foo int"
+	schema, tableErrors, err = MaterializeIdealSchema(dir.IdealSchemas[0], opts)
+	if err != nil {
+		t.Fatalf("Unexpected error from MaterializeIdealSchema: %s", err)
+	}
+	if len(tableErrors) == 1 {
+		if tableErrors[0].Statement != dir.IdealSchemas[0].AlterTables[0] {
+			t.Error("Unexpected Statement pointed to by StatementError")
+		}
+	} else {
+		t.Errorf("Expected one TableError, instead found %d", len(tableErrors))
+	}
+	dir.IdealSchemas[0].AlterTables = []*fs.Statement{}
+
 	// Introduce an intentional syntax error
 	stmt := dir.IdealSchemas[0].CreateTables["posts"]
 	stmt.Text = strings.Replace(stmt.Text, "PRIMARY KEY", "PIRMRAY YEK", 1)
@@ -83,42 +114,6 @@ func (s WorkspaceIntegrationSuite) TestMaterializeIdealSchema(t *testing.T) {
 	opts.Type = Type(999)
 	if _, _, err := MaterializeIdealSchema(dir.IdealSchemas[0], opts); err == nil {
 		t.Error("Expected error from invalid options.Type, but instead err is nil")
-	}
-}
-
-func (s WorkspaceIntegrationSuite) TestStatementsToSchema(t *testing.T) {
-	dir := s.getParsedDir(t, "../testdata/golden/init/mydb/product", "")
-	opts := s.getOptionsForDir(dir)
-	statements := []string{"CREATE TABLE foo (id int)", "RENAME TABLE foo TO bar"}
-	schema, err := StatementsToSchema(statements, opts)
-	if err != nil {
-		t.Fatalf("Unexpected error from StatementsToSchema(): %s", err)
-	}
-	if len(schema.Tables) != 1 || schema.Tables[0].Name != "bar" {
-		t.Errorf("Unexpected schema result: len(schema.Tables)=%d, schema.Tables[0].Name=%s", len(schema.Tables), schema.Tables[0].Name)
-	}
-
-	// Confirm that a fresh workspace is used each time
-	statements = []string{"CREATE TABLE bar (id bigint unsigned)"}
-	schema, err = StatementsToSchema(statements, opts)
-	if err != nil {
-		t.Fatalf("Unexpected error from StatementsToSchema(): %s", err)
-	}
-	if len(schema.Tables) != 1 || schema.Tables[0].Name != "bar" {
-		t.Errorf("Unexpected schema result: len(schema.Tables)=%d, schema.Tables[0].Name=%s", len(schema.Tables), schema.Tables[0].Name)
-	}
-
-	// Confirm that errors are returned as expected
-	statements = []string{"CREATE TABLE foo (id int)", "CREATE TABLE foo (id int)"}
-	schema, err = StatementsToSchema(statements, opts)
-	if err == nil || schema != nil {
-		t.Error("Expected non-nil error and nil schema, but results did not match expectation")
-	}
-	statements = []string{"CREATE TABLE bar (id bigint unsigned)"}
-	opts.Type = Type(999)
-	schema, err = StatementsToSchema(statements, opts)
-	if err == nil || schema != nil {
-		t.Error("Expected non-nil error and nil schema, but results did not match expectation")
 	}
 }
 

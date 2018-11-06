@@ -38,6 +38,7 @@ type IdealSchema struct {
 	CharSet      string
 	Collation    string
 	CreateTables map[string]*Statement // keyed by table name
+	AlterTables  []*Statement          // alterations that are run separately from CreateTables, afterwards
 }
 
 // ParseDir parses the specified directory, including all *.sql files in it,

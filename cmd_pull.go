@@ -255,13 +255,11 @@ func statementModifiersForPull(config *mybase.Config, instance *tengo.Instance, 
 
 func workspaceOptionsForPull(config *mybase.Config, instance *tengo.Instance) workspace.Options {
 	opts := workspace.Options{
-		Type:                workspace.TypeTempSchema,
-		CleanupAction:       workspace.CleanupActionDrop,
-		Instance:            instance,
-		SchemaName:          config.Get("temp-schema"),
-		DefaultCharacterSet: config.Get("default-character-set"),
-		DefaultCollation:    config.Get("default-collation"),
-		LockWaitTimeout:     30 * time.Second,
+		Type:            workspace.TypeTempSchema,
+		CleanupAction:   workspace.CleanupActionDrop,
+		Instance:        instance,
+		SchemaName:      config.Get("temp-schema"),
+		LockWaitTimeout: 30 * time.Second,
 	}
 	if config.GetBool("reuse-temp-schema") {
 		opts.CleanupAction = workspace.CleanupActionNone
@@ -275,7 +273,7 @@ func workspaceOptionsForPull(config *mybase.Config, instance *tengo.Instance) wo
 // SQL syntax error. The return value does not include tables whose differences
 // are cosmetic / formatting-related, or are otherwise ignored by mods.
 func alteredTablesForPull(instSchema *tengo.Schema, idealSchema *fs.IdealSchema, opts workspace.Options, mods tengo.StatementModifiers) (map[string]bool, error) {
-	fsSchema, tableErrors, err := workspace.MaterializeIdealSchema(idealSchema, opts)
+	fsSchema, statementErrors, err := workspace.MaterializeIdealSchema(idealSchema, opts)
 	if err != nil {
 		return nil, fmt.Errorf("Error introspecting filesystem version of schema %s: %s", instSchema.Name, err)
 	}
@@ -300,9 +298,9 @@ func alteredTablesForPull(instSchema *tengo.Schema, idealSchema *fs.IdealSchema,
 
 	// Treat tables with syntax errors as altered if they exist in instSchema,
 	// since clearly the version in instSchema is different and valid
-	for _, tableError := range tableErrors {
-		if instSchema.HasTable(tableError.TableName) {
-			haveAlters[tableError.TableName] = true
+	for _, statementError := range statementErrors {
+		if instSchema.HasTable(statementError.TableName) {
+			haveAlters[statementError.TableName] = true
 		}
 	}
 

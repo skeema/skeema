@@ -22,6 +22,7 @@ const (
 	StatementTypeNoop                  // entirely whitespace and/or comments
 	StatementTypeUse
 	StatementTypeCreateTable
+	StatementTypeAlterTable
 	// Other types will be added once they are supported by the package
 )
 
@@ -35,7 +36,7 @@ type Statement struct {
 	Text            string
 	DefaultDatabase string // only populated if a StatementTypeUse was encountered
 	Type            StatementType
-	TableName       string // only populated if Type == StatementTypeCreateTable
+	TableName       string // only populated for Types relating to Tables
 	FromFile        *TokenizedSQLFile
 }
 

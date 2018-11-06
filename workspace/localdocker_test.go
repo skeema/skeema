@@ -73,9 +73,8 @@ func (s WorkspaceIntegrationSuite) TestLocalDocker(t *testing.T) {
 		t.Fatalf("Unexpected error from NewLocalDocker(): %s", err)
 	}
 	containerName := ld.d.Name
-	if err := ld.Cleanup(); err != nil {
-		t.Errorf("Unexpected error from cleanup: %s", err)
-	}
+	// Intentionally don't call Cleanup; subsequent tests should still succeed
+	// since lock will inherently be released when container is stopped!
 	Shutdown()
 	if ok, err := ld.d.CanConnect(); ok || err == nil {
 		t.Error("Expected container to be stopped, but CanConnect returned true")

@@ -116,28 +116,25 @@ func targetsForIdealSchema(idealSchema *fs.IdealSchema, dir *fs.Dir, instances [
 	// Obtain a *tengo.Schema representation of the dir's *.sql files from a
 	// workspace
 	opts := workspace.Options{
-		Type:                workspace.TypeTempSchema,
-		CleanupAction:       workspace.CleanupActionDrop,
-		Instance:            instances[0],
-		SchemaName:          dir.Config.Get("temp-schema"),
-		DefaultCharacterSet: dir.Config.Get("default-character-set"),
-		DefaultCollation:    dir.Config.Get("default-collation"),
-		LockWaitTimeout:     30 * time.Second,
+		Type:            workspace.TypeTempSchema,
+		CleanupAction:   workspace.CleanupActionDrop,
+		Instance:        instances[0],
+		SchemaName:      dir.Config.Get("temp-schema"),
+		LockWaitTimeout: 30 * time.Second,
 	}
 	if dir.Config.GetBool("reuse-temp-schema") {
 		opts.CleanupAction = workspace.CleanupActionNone
 	}
-	fsSchema, tableErrors, err := workspace.MaterializeIdealSchema(idealSchema, opts)
+	fsSchema, statementErrors, err := workspace.MaterializeIdealSchema(idealSchema, opts)
 	if err != nil {
 		log.Warnf("Skipping %s: %s\n", dir, err)
 		return nil, len(instances)
 	}
-	for _, tableError := range tableErrors {
-		stmt := idealSchema.CreateTables[tableError.TableName]
-		log.Errorf("%s: %s", stmt.Location(), tableError.Err)
+	for _, stmtErr := range statementErrors {
+		log.Errorf("%s: %s", stmtErr.Location(), stmtErr.Err)
 	}
-	if len(tableErrors) > 0 {
-		log.Warnf("Skipping %s due to %d SQL errors", dir, len(tableErrors))
+	if len(statementErrors) > 0 {
+		log.Warnf("Skipping %s due to %d SQL errors", dir, len(statementErrors))
 		return nil, len(instances)
 	}
 

@@ -88,31 +88,29 @@ func lintWalker(dir *fs.Dir, lc *lintCounters, maxDepth int) error {
 		return err
 	}
 	opts := workspace.Options{
-		Type:                workspace.TypeTempSchema,
-		CleanupAction:       workspace.CleanupActionDrop,
-		Instance:            inst,
-		SchemaName:          dir.Config.Get("temp-schema"),
-		DefaultCharacterSet: dir.Config.Get("default-character-set"),
-		DefaultCollation:    dir.Config.Get("default-collation"),
-		LockWaitTimeout:     30 * time.Second,
+		Type:            workspace.TypeTempSchema,
+		CleanupAction:   workspace.CleanupActionDrop,
+		Instance:        inst,
+		SchemaName:      dir.Config.Get("temp-schema"),
+		LockWaitTimeout: 30 * time.Second,
 	}
 	if dir.Config.GetBool("reuse-temp-schema") {
 		opts.CleanupAction = workspace.CleanupActionNone
 	}
 
 	for _, idealSchema := range dir.IdealSchemas {
-		schema, tableErrors, err := workspace.MaterializeIdealSchema(idealSchema, opts)
+		schema, statementErrors, err := workspace.MaterializeIdealSchema(idealSchema, opts)
 		if err != nil {
 			log.Warnf("Skipping schema %s in %s due to error: %s", idealSchema.Name, dir.Path, err)
 			lc.errCount++
 			continue
 		}
-		for _, tableErr := range tableErrors {
-			if ignoreTable != nil && ignoreTable.MatchString(tableErr.TableName) {
-				log.Debugf("Skipping table %s because ignore-table='%s'", tableErr.TableName, ignoreTable)
+		for _, stmtErr := range statementErrors {
+			if ignoreTable != nil && ignoreTable.MatchString(stmtErr.TableName) {
+				log.Debugf("Skipping table %s because ignore-table='%s'", stmtErr.TableName, ignoreTable)
 				continue
 			}
-			log.Errorf("%s: %s", idealSchema.CreateTables[tableErr.TableName].Location(), tableErr.Err)
+			log.Errorf("%s: %s", stmtErr.Location(), stmtErr.Err)
 			lc.sqlErrCount++
 		}
 		for _, table := range schema.Tables {
