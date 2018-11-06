@@ -42,6 +42,7 @@ type WorkspaceIntegrationSuite struct {
 }
 
 func (s WorkspaceIntegrationSuite) TestMaterializeIdealSchema(t *testing.T) {
+	// Test with just valid CREATE TABLEs
 	dirPath := "../testdata/golden/init/mydb/product"
 	if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
 		dirPath = strings.Replace(dirPath, "golden", "golden-mysql55", 1)
@@ -84,6 +85,8 @@ func (s WorkspaceIntegrationSuite) TestMaterializeIdealSchema(t *testing.T) {
 	if len(tableErrors) == 1 {
 		if tableErrors[0].Statement != dir.IdealSchemas[0].AlterTables[0] {
 			t.Error("Unexpected Statement pointed to by StatementError")
+		} else if !strings.Contains(tableErrors[0].String(), dir.IdealSchemas[0].AlterTables[0].Text) {
+			t.Error("StatementError did not contain full SQL of erroring statement")
 		}
 	} else {
 		t.Errorf("Expected one TableError, instead found %d", len(tableErrors))
@@ -104,6 +107,8 @@ func (s WorkspaceIntegrationSuite) TestMaterializeIdealSchema(t *testing.T) {
 		t.Errorf("Expected 1 TableError, instead found %d", len(tableErrors))
 	} else if tableErrors[0].TableName != "posts" {
 		t.Errorf("Expected 1 TableError for table `posts`; instead found it is for table `%s`", tableErrors[0].TableName)
+	} else if !strings.HasPrefix(tableErrors[0].Error(), stmt.Location()) {
+		t.Error("StatementError did not contain the location of the invalid statement")
 	}
 	err = tableErrors[0] // compile-time check of satisfying interface
 	if errorText := err.Error(); errorText == "" {

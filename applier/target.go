@@ -131,10 +131,14 @@ func targetsForIdealSchema(idealSchema *fs.IdealSchema, dir *fs.Dir, instances [
 		return nil, len(instances)
 	}
 	for _, stmtErr := range statementErrors {
-		log.Errorf("%s: %s", stmtErr.Location(), stmtErr.Err)
+		log.Error(stmtErr.Error())
 	}
 	if len(statementErrors) > 0 {
-		log.Warnf("Skipping %s due to %d SQL errors", dir, len(statementErrors))
+		noun := "errors"
+		if len(statementErrors) == 1 {
+			noun = "error"
+		}
+		log.Warnf("Skipping %s due to %d SQL %s", dir, len(statementErrors), noun)
 		return nil, len(instances)
 	}
 

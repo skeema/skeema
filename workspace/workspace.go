@@ -120,7 +120,15 @@ type StatementError struct {
 
 // Error satisfies the builtin error interface.
 func (se *StatementError) Error() string {
-	return se.Err.Error()
+	loc := se.Location()
+	if loc == "" {
+		return fmt.Sprintf("%s [Full SQL: %s]", se.Err.Error(), se.Text)
+	}
+	return fmt.Sprintf("%s: %s", loc, se.Err.Error())
+}
+
+func (se *StatementError) String() string {
+	return se.Error()
 }
 
 // MaterializeIdealSchema converts an IdealSchema to a tengo.Schema. It obtains

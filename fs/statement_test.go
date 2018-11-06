@@ -19,6 +19,12 @@ func TestStatementLocation(t *testing.T) {
 	if stmt.Location() != "unknown:123:45" {
 		t.Errorf("Location() returned unexpected result: %s", stmt.Location())
 	}
+
+	// Test blank return if no location-related fields
+	stmt = Statement{}
+	if stmt.Location() != "" {
+		t.Errorf("Location() returned unexpected result: %s", stmt.Location())
+	}
 }
 
 func TestStatementSplitTextBody(t *testing.T) {

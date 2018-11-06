@@ -76,13 +76,14 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 		opts.CleanupAction = workspace.CleanupActionNone
 	}
 	wsSchema, statementErrors, err := workspace.MaterializeIdealSchema(idealSchema, opts)
-	if err != nil {
-		return err
-	} else if len(statementErrors) > 0 {
-		return statementErrors[0]
+	if err == nil && len(statementErrors) > 0 {
+		err = statementErrors[0]
 	}
-	actualTables := wsSchema.TablesByName()
+	if err != nil {
+		return fmt.Errorf("Diff verification failure: %s", err.Error())
+	}
 
+	actualTables := wsSchema.TablesByName()
 	for name, toTable := range expected {
 		expectCreate, _ := tengo.ParseCreateAutoInc(toTable.CreateStatement)
 		actualCreate, _ := tengo.ParseCreateAutoInc(actualTables[name].CreateStatement)

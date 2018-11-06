@@ -110,7 +110,7 @@ func lintWalker(dir *fs.Dir, lc *lintCounters, maxDepth int) error {
 				log.Debugf("Skipping table %s because ignore-table='%s'", stmtErr.TableName, ignoreTable)
 				continue
 			}
-			log.Errorf("%s: %s", stmtErr.Location(), stmtErr.Err)
+			log.Error(stmtErr.Error())
 			lc.sqlErrCount++
 		}
 		for _, table := range schema.Tables {

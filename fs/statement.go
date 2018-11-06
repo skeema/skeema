@@ -43,11 +43,13 @@ type Statement struct {
 // Location returns the file, line number, and character number where the
 // statement was obtained from
 func (stmt *Statement) Location() string {
-	file := stmt.File
-	if file == "" {
-		file = "unknown"
+	if stmt.File == "" && stmt.LineNo == 0 && stmt.CharNo == 0 {
+		return ""
 	}
-	return fmt.Sprintf("%s:%d:%d", file, stmt.LineNo, stmt.CharNo)
+	if stmt.File == "" {
+		return fmt.Sprintf("unknown:%d:%d", stmt.LineNo, stmt.CharNo)
+	}
+	return fmt.Sprintf("%s:%d:%d", stmt.File, stmt.LineNo, stmt.CharNo)
 }
 
 var reSplitTextBody = regexp.MustCompile(`(\s*;?\s*)$`)
