@@ -7,8 +7,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/go-sql-driver/mysql"
 )
 
 // This file contains public functions and structs designed to make integration
@@ -83,28 +81,4 @@ func SplitEnv(key string) []string {
 		return []string{}
 	}
 	return strings.Split(value, ",")
-}
-
-type filteredLogger struct {
-	logger *log.Logger
-}
-
-func (fl filteredLogger) Print(v ...interface{}) {
-	if len(v) > 0 {
-		if err, ok := v[0].(error); ok && err.Error() == "unexpected EOF" {
-			return
-		}
-	}
-	fl.logger.Print(v...)
-}
-
-// UseFilteredDriverLogger overrides the mysql driver's logger to avoid excessive
-// messages. Currently this just suppresses the driver's "unexpected EOF"
-// output, which occurs when an initial connection is refused or a connection
-// drops early.
-func UseFilteredDriverLogger() {
-	fl := filteredLogger{
-		logger: log.New(os.Stderr, "[mysql] ", log.Ldate|log.Ltime|log.Lshortfile),
-	}
-	mysql.SetLogger(fl)
 }
