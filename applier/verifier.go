@@ -2,7 +2,6 @@ package applier
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/skeema/workspace"
@@ -65,15 +64,9 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 		}
 	}
 
-	opts := workspace.Options{
-		Type:            workspace.TypeTempSchema,
-		CleanupAction:   workspace.CleanupActionDrop,
-		Instance:        t.Instance,
-		SchemaName:      t.Dir.Config.Get("temp-schema"),
-		LockWaitTimeout: 30 * time.Second,
-	}
-	if t.Dir.Config.GetBool("reuse-temp-schema") {
-		opts.CleanupAction = workspace.CleanupActionNone
+	opts, err := workspace.OptionsForDir(t.Dir, t.Instance)
+	if err != nil {
+		return err
 	}
 	wsSchema, statementErrors, err := workspace.ExecLogicalSchema(logicalSchema, opts)
 	if err == nil && len(statementErrors) > 0 {

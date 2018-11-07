@@ -6,7 +6,6 @@ import (
 	"os"
 	"path"
 	"regexp"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
@@ -148,7 +147,10 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Sche
 	var haveAlters map[string]bool
 	if !dir.Config.GetBool("normalize") {
 		mods := statementModifiersForPull(dir.Config, instance, ignoreTable)
-		opts := workspaceOptionsForPull(dir.Config, instance)
+		opts, err := workspace.OptionsForDir(dir, instance)
+		if err != nil {
+			return NewExitValue(CodeBadConfig, err.Error())
+		}
 		if haveAlters, err = alteredTablesForPull(instSchema, logicalSchema, opts, mods); err != nil {
 			return err
 		}
@@ -251,20 +253,6 @@ func statementModifiersForPull(config *mybase.Config, instance *tengo.Instance, 
 		mods.Flavor = instance.Flavor()
 	}
 	return mods
-}
-
-func workspaceOptionsForPull(config *mybase.Config, instance *tengo.Instance) workspace.Options {
-	opts := workspace.Options{
-		Type:            workspace.TypeTempSchema,
-		CleanupAction:   workspace.CleanupActionDrop,
-		Instance:        instance,
-		SchemaName:      config.Get("temp-schema"),
-		LockWaitTimeout: 30 * time.Second,
-	}
-	if config.GetBool("reuse-temp-schema") {
-		opts.CleanupAction = workspace.CleanupActionNone
-	}
-	return opts
 }
 
 // alteredTablesForPull returns a map whose keys are names of tables that have

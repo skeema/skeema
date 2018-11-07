@@ -33,6 +33,7 @@ func NewLocalDocker(opts Options) (ld *LocalDocker, err error) {
 		if dockerClient, err = tengo.NewDockerClient(tengo.DockerClientOptions{}); err != nil {
 			return
 		}
+		tengo.UseFilteredDriverLogger()
 	}
 	ld = &LocalDocker{
 		schemaName: opts.SchemaName,

@@ -48,7 +48,11 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchema(t *testing.T) {
 		dirPath = strings.Replace(dirPath, "golden", "golden-mysql55", 1)
 	}
 	dir := s.getParsedDir(t, dirPath, "")
-	opts := s.getOptionsForDir(dir)
+	opts, err := OptionsForDir(dir, s.d.Instance)
+	if err != nil {
+		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
+	}
+	opts.LockWaitTimeout = 100 * time.Millisecond
 	schema, tableErrors, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 	if err != nil {
 		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
@@ -122,6 +126,60 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchema(t *testing.T) {
 	}
 }
 
+func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
+	getOpts := func(cliFlags string) Options {
+		t.Helper()
+		dir := s.getParsedDir(t, "../testdata/golden/init/mydb/product", cliFlags)
+		opts, err := OptionsForDir(dir, s.d.Instance)
+		if err != nil {
+			t.Fatalf("Unexpected error from OptionsForDir: %s", err)
+		}
+		return opts
+	}
+	assertOptsError := func(cliFlags string) {
+		t.Helper()
+		dir := s.getParsedDir(t, "../testdata/golden/init/mydb/product", cliFlags)
+		if _, err := OptionsForDir(dir, s.d.Instance); err == nil {
+			t.Errorf("Expected non-nil error from OptionsForDir with CLI flags %s, but err was nil", cliFlags)
+		}
+	}
+
+	// Test error conditions
+	assertOptsError("--workspace=invalid")
+	assertOptsError("--workspace=docker --docker-cleanup=invalid")
+
+	// Test default configuration, which should use temp-schema with drop cleanup
+	if opts := getOpts(""); opts.Type != TypeTempSchema || opts.CleanupAction != CleanupActionDrop {
+		t.Errorf("Unexpected type %v returned", opts.Type)
+	}
+
+	// Test temp-schema with some non-default options
+	opts := getOpts("--workspace=temp-schema --temp-schema=override --reuse-temp-schema")
+	if opts.Type != TypeTempSchema || opts.CleanupAction != CleanupActionNone || opts.SchemaName != "override" {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	}
+
+	// Test docker with defaults, which should have no cleanup action, and match
+	// flavor of suite's DockerizedInstance
+	opts = getOpts("--workspace=docker")
+	if opts.Type != TypeLocalDocker || opts.CleanupAction != CleanupActionNone || opts.Flavor != s.d.Flavor() {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	}
+
+	// Test docker with other cleanup actions
+	if opts = getOpts("--workspace=docker --docker-cleanup=STOP"); opts.CleanupAction != CleanupActionStop {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	}
+	if opts = getOpts("--workspace=docker --docker-cleanup=destroy"); opts.CleanupAction != CleanupActionDestroy {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	}
+
+	// Test docker with specific flavor
+	if opts = getOpts("--workspace=docker --flavor=mysql:5.5"); opts.Flavor.String() != "mysql:5.5" {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	}
+}
+
 func (s *WorkspaceIntegrationSuite) Setup(backend string) (err error) {
 	s.d, err = s.manager.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
 		Name:         fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1)),
@@ -137,32 +195,6 @@ func (s *WorkspaceIntegrationSuite) Teardown(backend string) error {
 
 func (s *WorkspaceIntegrationSuite) BeforeTest(method string, backend string) error {
 	return s.d.NukeData()
-}
-
-func (s *WorkspaceIntegrationSuite) getOptionsForDir(dir *fs.Dir) Options {
-	opts := Options{
-		CleanupAction:       CleanupActionNone,
-		SchemaName:          dir.Config.Get("temp-schema"),
-		DefaultCharacterSet: dir.Config.Get("default-character-set"),
-		DefaultCollation:    dir.Config.Get("default-collation"),
-		LockWaitTimeout:     100 * time.Millisecond,
-	}
-	if dir.Config.GetBool("docker") {
-		opts.Type = TypeLocalDocker
-		opts.Flavor = tengo.NewFlavor(dir.Config.Get("flavor"))
-		if cleanup, _ := dir.Config.GetEnum("docker-cleanup", "NONE", "STOP", "DESTROY"); cleanup == "STOP" {
-			opts.CleanupAction = CleanupActionStop
-		} else if cleanup == "DESTROY" {
-			opts.CleanupAction = CleanupActionDestroy
-		}
-	} else {
-		opts.Type = TypeTempSchema
-		if !dir.Config.GetBool("reuse-temp-schema") {
-			opts.CleanupAction = CleanupActionDrop
-		}
-		opts.Instance = s.d.Instance
-	}
-	return opts
 }
 
 func (s *WorkspaceIntegrationSuite) getParsedDir(t *testing.T, dirPath, cliFlags string) *fs.Dir {

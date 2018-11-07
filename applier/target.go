@@ -1,8 +1,6 @@
 package applier
 
 import (
-	"time"
-
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/skeema/workspace"
@@ -115,15 +113,10 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 
 	// Obtain a *tengo.Schema representation of the dir's *.sql files from a
 	// workspace
-	opts := workspace.Options{
-		Type:            workspace.TypeTempSchema,
-		CleanupAction:   workspace.CleanupActionDrop,
-		Instance:        instances[0],
-		SchemaName:      dir.Config.Get("temp-schema"),
-		LockWaitTimeout: 30 * time.Second,
-	}
-	if dir.Config.GetBool("reuse-temp-schema") {
-		opts.CleanupAction = workspace.CleanupActionNone
+	opts, err := workspace.OptionsForDir(dir, instances[0])
+	if err != nil {
+		log.Warnf("Skipping %s: %s\n", dir, err)
+		return nil, len(instances)
 	}
 	fsSchema, statementErrors, err := workspace.ExecLogicalSchema(logicalSchema, opts)
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/util"
+	"github.com/skeema/skeema/workspace"
 )
 
 const rootDesc = `Skeema is a MySQL schema management tool. It allows you to export a database
@@ -15,7 +16,7 @@ schema to the filesystem, and apply online schema changes by modifying files.`
 
 // Globals overridden by GoReleaser's ldflags
 var (
-	version = "1.0.6-dev"
+	version = "1.1.0-dev"
 	commit  = "unknown"
 	date    = "unknown"
 )
@@ -49,7 +50,9 @@ func main() {
 		Exit(NewExitValue(CodeBadConfig, err.Error()))
 	}
 
-	Exit(cfg.HandleCommand())
+	err = cfg.HandleCommand()
+	workspace.Shutdown()
+	Exit(err)
 }
 
 func versionString() string {

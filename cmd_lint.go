@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
@@ -87,15 +86,9 @@ func lintWalker(dir *fs.Dir, lc *lintCounters, maxDepth int) error {
 	if err != nil {
 		return err
 	}
-	opts := workspace.Options{
-		Type:            workspace.TypeTempSchema,
-		CleanupAction:   workspace.CleanupActionDrop,
-		Instance:        inst,
-		SchemaName:      dir.Config.Get("temp-schema"),
-		LockWaitTimeout: 30 * time.Second,
-	}
-	if dir.Config.GetBool("reuse-temp-schema") {
-		opts.CleanupAction = workspace.CleanupActionNone
+	opts, err := workspace.OptionsForDir(dir, inst)
+	if err != nil {
+		return NewExitValue(CodeBadConfig, err.Error())
 	}
 
 	for _, logicalSchema := range dir.LogicalSchemas {

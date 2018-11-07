@@ -89,6 +89,45 @@ func New(opts Options) (Workspace, error) {
 	return nil, fmt.Errorf("Unsupported workspace type %v", opts.Type)
 }
 
+// OptionsForDir returns Options based on the configuration in an fs.Dir.
+// A non-nil instance should be supplied, unless the caller already knows the
+// workspace won't be temp-schema based.
+// This method relies on option definitions from util.AddGlobalOptions(),
+// including "workspace", "temp-schema", "flavor", "docker-cleanup", and
+// "reuse-temp-schema".
+func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
+	requestedType, err := dir.Config.GetEnum("workspace", "temp-schema", "docker")
+	if err != nil {
+		return Options{}, err
+	}
+	opts := Options{
+		CleanupAction:   CleanupActionNone,
+		SchemaName:      dir.Config.Get("temp-schema"),
+		LockWaitTimeout: 30 * time.Second,
+	}
+	if requestedType == "docker" {
+		opts.Type = TypeLocalDocker
+		opts.Flavor = tengo.NewFlavor(dir.Config.Get("flavor"))
+		if opts.Flavor == tengo.FlavorUnknown && instance != nil {
+			opts.Flavor = instance.Flavor()
+		}
+		if cleanup, err := dir.Config.GetEnum("docker-cleanup", "none", "stop", "destroy"); err != nil {
+			return Options{}, err
+		} else if cleanup == "stop" {
+			opts.CleanupAction = CleanupActionStop
+		} else if cleanup == "destroy" {
+			opts.CleanupAction = CleanupActionDestroy
+		}
+	} else {
+		opts.Type = TypeTempSchema
+		opts.Instance = instance
+		if !dir.Config.GetBool("reuse-temp-schema") {
+			opts.CleanupAction = CleanupActionDrop
+		}
+	}
+	return opts, nil
+}
+
 var shutdownFuncs []func()
 
 // Shutdown performs any necessary cleanup operations prior to the program
