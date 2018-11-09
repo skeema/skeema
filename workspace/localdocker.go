@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
+	log "github.com/sirupsen/logrus"
 	"github.com/skeema/tengo"
 )
 
@@ -40,6 +41,9 @@ func NewLocalDocker(opts Options) (ld *LocalDocker, err error) {
 	}
 	image := opts.Flavor.String()
 	containerName := fmt.Sprintf("skeema-%s", strings.Replace(image, ":", "-", -1))
+	if !seenContainerNames[containerName] {
+		log.Infof("Using container %s (image=%s) for workspace operations", containerName, image)
+	}
 	ld.d, err = dockerClient.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
 		Name:         containerName,
 		Image:        image,
@@ -61,20 +65,26 @@ func NewLocalDocker(opts Options) (ld *LocalDocker, err error) {
 		}
 	}()
 
-	if opts.CleanupAction != CleanupActionNone && !seenContainerNames[containerName] {
+	if !seenContainerNames[containerName] {
 		if opts.CleanupAction == CleanupActionStop {
 			RegisterShutdownFunc(func() {
+				log.Infof("Stopping container %s", containerName)
 				ld.d.Stop()
 				delete(seenContainerNames, containerName)
 			})
 		} else if opts.CleanupAction == CleanupActionDestroy {
 			RegisterShutdownFunc(func() {
+				log.Infof("Destroying container %s", containerName)
 				ld.d.Destroy()
 				delete(seenContainerNames, containerName)
 			})
+		} else {
+			RegisterShutdownFunc(func() {
+				delete(seenContainerNames, containerName)
+			})
 		}
-		seenContainerNames[containerName] = true
 	}
+	seenContainerNames[containerName] = true
 
 	if has, err := ld.d.HasSchema(ld.schemaName); err != nil {
 		return ld, fmt.Errorf("Unable to check for existence of temp schema on %s: %s", ld.d.Instance, err)
