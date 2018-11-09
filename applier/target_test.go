@@ -63,6 +63,13 @@ func (s ApplierIntegrationSuite) TestTargetsForDirSimple(t *testing.T) {
 		t.Fatalf("Unexpected result from TargetsForDir: %+v, %d", targets, skipCount)
 	}
 
+	// Test with invalid workspace option: should return 0 targets, 2 skipped
+	dir = getDir(t, "../testdata/applier/simple", "--workspace=invalid-option")
+	targets, skipCount = TargetsForDir(dir, 1)
+	if len(targets) != 0 || skipCount != 2 {
+		t.Fatalf("Unexpected result from TargetsForDir: %+v, %d", targets, skipCount)
+	}
+
 	// Test with sufficient maxDepth, but empty instance list: expect 0 targets, 0 skipped
 	setupHostList(t)
 	targets, skipCount = TargetsForDir(dir, 1)

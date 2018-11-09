@@ -22,6 +22,7 @@ const (
 	StatementTypeNoop                  // entirely whitespace and/or comments
 	StatementTypeUse
 	StatementTypeCreateTable
+	StatementTypeAlterTable
 	// Other types will be added once they are supported by the package
 )
 
@@ -35,18 +36,20 @@ type Statement struct {
 	Text            string
 	DefaultDatabase string // only populated if a StatementTypeUse was encountered
 	Type            StatementType
-	TableName       string // only populated if Type == StatementTypeCreateTable
+	TableName       string // only populated for Types relating to Tables
 	FromFile        *TokenizedSQLFile
 }
 
 // Location returns the file, line number, and character number where the
 // statement was obtained from
 func (stmt *Statement) Location() string {
-	file := stmt.File
-	if file == "" {
-		file = "unknown"
+	if stmt.File == "" && stmt.LineNo == 0 && stmt.CharNo == 0 {
+		return ""
 	}
-	return fmt.Sprintf("%s:%d:%d", file, stmt.LineNo, stmt.CharNo)
+	if stmt.File == "" {
+		return fmt.Sprintf("unknown:%d:%d", stmt.LineNo, stmt.CharNo)
+	}
+	return fmt.Sprintf("%s:%d:%d", stmt.File, stmt.LineNo, stmt.CharNo)
 }
 
 var reSplitTextBody = regexp.MustCompile(`(\s*;?\s*)$`)

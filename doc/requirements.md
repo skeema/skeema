@@ -10,7 +10,7 @@ Skeema currently supports the following databases:
 
 Only the InnoDB storage engine is primarily supported. Other storage engines are often perfectly functional in Skeema, but it depends on whether any esoteric features of the engine are used.
 
-Some MySQL features -- such as partitioned tables, fulltext indexes, and generated/virtual columns -- are not yet supported in Skeema's diff operations. Skeema automatically detects this situation, so there is no risk of generating an incorrect diff. If Skeema does not yet support a table/column feature that you need, please open a GitHub issue so that the work can be prioritized appropriately.
+Some MySQL features -- such as partitioned tables, fulltext indexes, and generated/virtual columns -- are not yet supported in Skeema's diff operations. Skeema automatically detects this situation, so there is no risk of generating an incorrect diff. If Skeema does not yet support a table/column feature that you need, please [open a GitHub issue](https://github.com/skeema/skeema/issues/new) so that the work can be prioritized appropriately.
 
 Skeema is not currently intended for use on multi-master replication topologies, including Galera, InnoDB Cluster, and traditional active-active master-master configurations. It also has not yet been evaluated on Amazon Aurora.
 
@@ -20,11 +20,9 @@ As of August 2018, support for MySQL 8.0 is still quite new and should be consid
 
 The easiest way to run Skeema is with a user having SUPER privileges in MySQL. However, this isn't always practical or possible.
 
-#### Temporary schema usage
+#### Workspace usage
 
-As [described in the FAQ](faq.md#temporary-schema-usage), most Skeema commands need to perform operations in a temporary schema that by default is created, used, and then dropped for each command invocation. The temporary schema name is `_skeema_tmp` by default, but this may be changed via the [temp-schema option](options.md#temp-schema). 
-
-The MySQL user used by Skeema will need these privileges for the temporary schema:
+As [described in the FAQ](faq.md#no-reliance-on-sql-parsing), most Skeema commands need to perform operations in a temporary "workspace" schema that is created, used, and then dropped for each command invocation. With default settings, the temporary schema is located on each database being interacted with, and will be [named](options.md#temp-schema) `_skeema_tmp`. The MySQL user used by Skeema will need these privileges for the temporary schema:
 
 * `CREATE` -- to create the temporary schema, and create tables in it
 * `DROP` -- to drop tables in the temporary schema, as well as the temporary schema itself when no longer in use
@@ -32,18 +30,19 @@ The MySQL user used by Skeema will need these privileges for the temporary schem
 * `ALTER` -- to verify that generated DDL is correct
 * `INDEX` -- to verify that generated DDL is correct with respect to manipulating indexes
 
-You can prevent Skeema from dropping the temporary schema entirely after each run via the [reuse-temp-schema option](options.md#reuse-temp-schema). In this case, Skeema will still leave the temporary schema empty (tableless) after each run, but won't drop the schema itself, nor need to recreate it on the next run. However, this doesn't remove the need for CREATE or DROP privileges on the temporary schema itself, as these privileges are still needed to create or drop tables in the schema.
+Alternatively, you can configure Skeema to use a workspace on a local ephemeral Docker instance via the [workspace=docker option](options.md#workspace). This removes the need for privileges for the temporary schema on your live databases. Skeema automatically manages the lifecycle of containerized databases.
 
 #### Your application's schemas
 
-In order for all functionality in Skeema to work, it needs the following privileges in your application schemas (i.e., all databases aside from system schemas and the temporary schema):
+In order for all functionality in Skeema to work, it needs the following privileges in your application schemas (i.e., all databases aside from system schemas and the workspace schema):
 
+* `SELECT` -- in order to see tables and confirm whether or not they are empty
 * `CREATE` -- in order for `skeema push` to execute CREATE TABLE statements
 * `DROP` -- in order for `skeema push --allow-unsafe` to execute DROP TABLE statements; omit this privilege on application schemas if you do not plan to ever drop tables via Skeema
 * `ALTER` -- in order for `skeema push` to execute ALTER TABLE statements
 * `INDEX` -- in order for `skeema push` to execute ALTER TABLE statements that manipulate indexes
 
-When first testing out Skeema, it is fine to omit these privileges if you do not plan on using `skeema push` initially. However, Skeema still needs *some* privilege to see each application schema (either `SELECT` on each database, or the global `SHOW DATABASES` privilege).
+When first testing out Skeema, it is fine to omit the latter four privileges if you do not plan on using `skeema push` initially. However, Skeema still needs the `SELECT` privilege on each database that it will operate on.
 
 If using the [alter-wrapper option](options.md#alter-wrapper) to execute a third-party online schema change tool, you will likely need to provide additional privileges as required by the tool; or you may configure the third-party tool to connect to the database using a different user than Skeema does.
 
@@ -81,7 +80,7 @@ The following features are completely ignored by Skeema. Their presence in a sch
 
 * views
 * triggers
-* stored procedures
+* stored procedures and functions
 
 #### Unsupported for ALTERs
 
@@ -106,4 +105,4 @@ Currently, Skeema will interpret attempts to rename as DROP-then-ADD operations.
 
 Note that for empty tables as a special-case, a rename is technically equivalent to a DROP-then-ADD anyway. In Skeema, if you configure [safe-below-size=1](options.md#safe-below-size), the tool will permit this operation on tables with 0 rows. This is completely safe, and can aid in rapid development.
 
-For tables with data, the work-around to handle renames is to do the appropriate `ALTER TABLE` manually (outside of Skeema) on all relevant databases. You can update your schema repo afterwards by running `skeema pull`.
+For tables with data, the work-around to handle renames is to run the appropriate `ALTER TABLE` manually (outside of Skeema) on all relevant databases. You can update your schema repo afterwards by running `skeema pull`.

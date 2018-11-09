@@ -1,8 +1,6 @@
 package applier
 
 import (
-	"time"
-
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/skeema/workspace"
@@ -37,10 +35,10 @@ func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int)
 		var instances []*tengo.Instance
 		instances, skipCount = instancesForDir(dir)
 
-		// For each IdealSchema, obtain a *tengo.Schema representation and then create
-		// a Target for each instance x schema combination
-		for _, idealSchema := range dir.IdealSchemas {
-			thisTargets, thisSkipCount := targetsForIdealSchema(idealSchema, dir, instances)
+		// For each LogicalSchema, obtain a *tengo.Schema representation and then
+		// create a Target for each instance x schema combination
+		for _, logicalSchema := range dir.LogicalSchemas {
+			thisTargets, thisSkipCount := targetsForLogicalSchema(logicalSchema, dir, instances)
 			targets = append(targets, thisTargets...)
 			skipCount += thisSkipCount
 		}
@@ -107,7 +105,7 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 	return
 }
 
-func targetsForIdealSchema(idealSchema *fs.IdealSchema, dir *fs.Dir, instances []*tengo.Instance) (targets []*Target, skipCount int) {
+func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, instances []*tengo.Instance) (targets []*Target, skipCount int) {
 	// If dir mapped to no instances, it generates no targets
 	if len(instances) == 0 {
 		return
@@ -115,33 +113,32 @@ func targetsForIdealSchema(idealSchema *fs.IdealSchema, dir *fs.Dir, instances [
 
 	// Obtain a *tengo.Schema representation of the dir's *.sql files from a
 	// workspace
-	opts := workspace.Options{
-		Type:                workspace.TypeTempSchema,
-		Instance:            instances[0],
-		SchemaName:          dir.Config.Get("temp-schema"),
-		KeepSchema:          dir.Config.GetBool("reuse-temp-schema"),
-		DefaultCharacterSet: dir.Config.Get("default-character-set"),
-		DefaultCollation:    dir.Config.Get("default-collation"),
-		LockWaitTimeout:     30 * time.Second,
-	}
-	fsSchema, tableErrors, err := workspace.MaterializeIdealSchema(idealSchema, opts)
+	opts, err := workspace.OptionsForDir(dir, instances[0])
 	if err != nil {
 		log.Warnf("Skipping %s: %s\n", dir, err)
 		return nil, len(instances)
 	}
-	for _, tableError := range tableErrors {
-		stmt := idealSchema.CreateTables[tableError.TableName]
-		log.Errorf("%s: %s", stmt.Location(), tableError.Err)
+	fsSchema, statementErrors, err := workspace.ExecLogicalSchema(logicalSchema, opts)
+	if err != nil {
+		log.Warnf("Skipping %s: %s\n", dir, err)
+		return nil, len(instances)
 	}
-	if len(tableErrors) > 0 {
-		log.Warnf("Skipping %s due to %d SQL errors", dir, len(tableErrors))
+	for _, stmtErr := range statementErrors {
+		log.Error(stmtErr.Error())
+	}
+	if len(statementErrors) > 0 {
+		noun := "errors"
+		if len(statementErrors) == 1 {
+			noun = "error"
+		}
+		log.Warnf("Skipping %s due to %d SQL %s", dir, len(statementErrors), noun)
 		return nil, len(instances)
 	}
 
 	// Create a Target for each instance x schema combination
 	for _, inst := range instances {
 		var schemaNames []string
-		if idealSchema.Name == "" { // blank means use the schema option from dir config
+		if logicalSchema.Name == "" { // blank means use the schema option from dir config
 			schemaNames, err = dir.SchemaNames(inst)
 			if err != nil {
 				log.Warnf("Skipping %s for %s: %s", inst, dir, err)
@@ -152,7 +149,7 @@ func targetsForIdealSchema(idealSchema *fs.IdealSchema, dir *fs.Dir, instances [
 				schemaNames = schemaNames[0:1]
 			}
 		} else {
-			schemaNames = []string{idealSchema.Name}
+			schemaNames = []string{logicalSchema.Name}
 		}
 		schemasByName, err := inst.SchemasByName(schemaNames...)
 		if err != nil {

@@ -1,10 +1,14 @@
+// Package workspace provides functions for interacting with a temporary MySQL
+// schema. It manages creating a schema on a desired location (either an
+// existing MySQL instance, or a dynamically-controlled Docker instance),
+// running SQL DDL or DML, introspecting the resulting schema, and cleaning
+// up the schema when it is no longer needed.
 package workspace
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -30,144 +34,213 @@ type Workspace interface {
 	Cleanup() error
 }
 
-// Type represents a type of workspace provider to use.
+// Type represents a kind of workspace to use.
 type Type int
 
 // Constants enumerating different types of workspaces
 const (
-	TypeTempSchema  Type = iota
-	TypeLocalDocker      // not implemented yet
+	TypeTempSchema Type = iota
+	TypeLocalDocker
+)
+
+// CleanupAction represents how to clean up a workspace.
+type CleanupAction int
+
+// Constants enumerating different cleanup actions
+const (
+	// CleanupActionNone means to perform no special cleanup
+	CleanupActionNone CleanupAction = iota
+
+	// CleanupActionDrop means to drop the schema. Only used with TypeTempSchema.
+	CleanupActionDrop
+
+	// CleanupActionStop means to stop the MySQL instance container. Only used with
+	// TypeLocalDocker.
+	CleanupActionStop
+
+	// CleanupActionDestroy means to destroy the MySQL instance container. Only
+	// used with TypeLocalDocker.
+	CleanupActionDestroy
 )
 
 // Options represent different parameters controlling the workspace that is
 // used. Some options are specific to a Type.
 type Options struct {
 	Type                Type
+	CleanupAction       CleanupAction
 	Instance            *tengo.Instance // only TypeTempSchema
 	Flavor              tengo.Flavor    // only TypeLocalDocker
 	SchemaName          string
-	KeepSchema          bool // only TypeTempSchema
 	DefaultCharacterSet string
 	DefaultCollation    string
+	RootPassword        string // only TypeLocalDocker
 	LockWaitTimeout     time.Duration
 }
 
-// TableError represents a problem that occurred when attempting to create a
-// table in a workspace.
-type TableError struct {
-	TableName string
-	Err       error
+// New returns a pointer to a ready-to-use Workspace, using the configuration
+// specified in opts.
+func New(opts Options) (Workspace, error) {
+	switch opts.Type {
+	case TypeTempSchema:
+		return NewTempSchema(opts)
+	case TypeLocalDocker:
+		return NewLocalDocker(opts)
+	}
+	return nil, fmt.Errorf("Unsupported workspace type %v", opts.Type)
+}
+
+// OptionsForDir returns Options based on the configuration in an fs.Dir.
+// A non-nil instance should be supplied, unless the caller already knows the
+// workspace won't be temp-schema based.
+// This method relies on option definitions from util.AddGlobalOptions(),
+// including "workspace", "temp-schema", "flavor", "docker-cleanup", and
+// "reuse-temp-schema".
+func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
+	requestedType, err := dir.Config.GetEnum("workspace", "temp-schema", "docker")
+	if err != nil {
+		return Options{}, err
+	}
+	opts := Options{
+		CleanupAction:   CleanupActionNone,
+		SchemaName:      dir.Config.Get("temp-schema"),
+		LockWaitTimeout: 30 * time.Second,
+	}
+	if requestedType == "docker" {
+		opts.Type = TypeLocalDocker
+		opts.Flavor = tengo.NewFlavor(dir.Config.Get("flavor"))
+		if opts.Flavor == tengo.FlavorUnknown && instance != nil {
+			opts.Flavor = instance.Flavor()
+		}
+		if cleanup, err := dir.Config.GetEnum("docker-cleanup", "none", "stop", "destroy"); err != nil {
+			return Options{}, err
+		} else if cleanup == "stop" {
+			opts.CleanupAction = CleanupActionStop
+		} else if cleanup == "destroy" {
+			opts.CleanupAction = CleanupActionDestroy
+		}
+	} else {
+		opts.Type = TypeTempSchema
+		opts.Instance = instance
+		if !dir.Config.GetBool("reuse-temp-schema") {
+			opts.CleanupAction = CleanupActionDrop
+		}
+	}
+	return opts, nil
+}
+
+var shutdownFuncs []func()
+
+// Shutdown performs any necessary cleanup operations prior to the program
+// exiting. For example, if containers need to be stopped or destroyed, it is
+// most efficient to do so at program exit, rather than needlessly doing so
+// for each workspace invocation.
+// It is recommended that programs importing this package call Shutdown as a
+// deferred function in main().
+func Shutdown() {
+	for _, f := range shutdownFuncs {
+		f()
+	}
+	shutdownFuncs = []func(){}
+}
+
+// RegisterShutdownFunc registers a function to be executed by Shutdown.
+// Structs satisfying the Workspace interface may optionally use this function
+// to
+func RegisterShutdownFunc(f func()) {
+	shutdownFuncs = append(shutdownFuncs, f)
+}
+
+// StatementError represents a problem that occurred when executing a specific
+// fs.Statement in a Workspace.
+type StatementError struct {
+	*fs.Statement
+	Err error
 }
 
 // Error satisfies the builtin error interface.
-func (te TableError) Error() string {
-	return te.Err.Error()
+func (se *StatementError) Error() string {
+	loc := se.Location()
+	if loc == "" {
+		return fmt.Sprintf("%s [Full SQL: %s]", se.Err.Error(), se.Text)
+	}
+	return fmt.Sprintf("%s: %s", loc, se.Err.Error())
 }
 
-// MaterializeIdealSchema converts an IdealSchema to a tengo.Schema. It obtains
-// a Workspace, executes the creation DDL contained in an IdealSchema there,
+func (se *StatementError) String() string {
+	return se.Error()
+}
+
+// ExecLogicalSchema converts a LogicalSchema to a tengo.Schema. It obtains
+// a Workspace, executes the creation DDL contained in a LogicalSchema there,
 // introspects it into a *tengo.Schema, cleans up the Workspace, and then
-// returns the introspected schema. SQL errors (tables that could not be
+// returns the introspected schema. SQL errors (e.g. tables that could not be
 // created) are non-fatal, and are returned in the second return value. The
 // third return value represents fatal errors only.
-func MaterializeIdealSchema(idealSchema *fs.IdealSchema, opts Options) (schema *tengo.Schema, tableErrors []TableError, fatalErr error) {
-	statements := make([]string, 0, len(idealSchema.CreateTables))
-	tableNames := make([]string, 0, len(idealSchema.CreateTables))
-	for name, stmt := range idealSchema.CreateTables {
-		tableNames = append(tableNames, name)
-		statements = append(statements, stmt.Text)
+func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (schema *tengo.Schema, statementErrors []*StatementError, fatalErr error) {
+	if logicalSchema.CharSet != "" {
+		opts.DefaultCharacterSet = logicalSchema.CharSet
 	}
-
-	var stmtErrors []error
-	schema, stmtErrors, fatalErr = statementsToSchemaWithErrs(statements, opts, 10)
+	if logicalSchema.Collation != "" {
+		opts.DefaultCollation = logicalSchema.Collation
+	}
+	var ws Workspace
+	ws, fatalErr = New(opts)
 	if fatalErr != nil {
 		return
 	}
-	schema.Name = idealSchema.Name
-	for n, err := range stmtErrors {
-		if err != nil {
-			tableErrors = append(tableErrors, TableError{
-				TableName: tableNames[n],
-				Err:       err,
-			})
-		}
-	}
-	return
-}
-
-// StatementsToSchema serially executes the supplied statements in a temporary
-// workspace, and then returns the introspected schema. Errors are not tracked
-// on a per-statement basis; the returned error value will be nil only if all
-// statements succeeded. If multiple statements returned an error, the return
-// value here will be from the first such erroring statement.
-func StatementsToSchema(statements []string, opts Options) (*tengo.Schema, error) {
-	schema, stmtErrors, err := statementsToSchemaWithErrs(statements, opts, 1)
-	if err != nil {
-		return nil, err
-	}
-	for _, err := range stmtErrors {
-		if err != nil {
-			return nil, err
-		}
-	}
-	return schema, nil
-}
-
-func statementsToSchemaWithErrs(statements []string, opts Options, concurrency int) (schema *tengo.Schema, stmtErrors []error, err error) {
-	var ws Workspace
-
-	switch opts.Type {
-	case TypeTempSchema:
-		ws, err = NewTempSchema(opts)
-	default:
-		ws, err = nil, fmt.Errorf("Unsupported workspace type %v", opts.Type)
-	}
-	if err != nil {
-		return
-	}
 	defer func() {
-		if cleanupErr := ws.Cleanup(); err == nil {
-			err = cleanupErr
+		if cleanupErr := ws.Cleanup(); fatalErr == nil {
+			fatalErr = cleanupErr
 		}
 	}()
-
 	db, err := ws.ConnectionPool("")
 	if err != nil {
-		err = fmt.Errorf("Cannot connect to workspace: %s", err)
+		fatalErr = fmt.Errorf("Cannot connect to workspace: %s", err)
 		return
 	}
 
-	stmtErrors = make([]error, len(statements))
-	if concurrency <= 1 {
-		for n, stmt := range statements {
-			stmtErrors[n] = execStatement(db, stmt)
+	// Run all CREATE TABLEs in parallel. Temporarily limit max open conns as a
+	// simple means of limiting concurrency
+	defer db.SetMaxOpenConns(0)
+	db.SetMaxOpenConns(10)
+	results := make(chan *StatementError)
+	for _, statement := range logicalSchema.CreateTables {
+		go func(statement *fs.Statement) {
+			results <- execStatement(db, statement)
+		}(statement)
+	}
+	for range logicalSchema.CreateTables {
+		if result := <-results; result != nil {
+			statementErrors = append(statementErrors, result)
 		}
-	} else {
-		defer db.SetMaxOpenConns(0)
-		db.SetMaxOpenConns(concurrency)
-		var wg sync.WaitGroup
-		for n, stmt := range statements {
-			wg.Add(1)
-			go func(n int, stmt string) {
-				defer wg.Done()
-				stmtErrors[n] = execStatement(db, stmt)
-			}(n, stmt)
+	}
+	close(results)
+
+	// Run ALTER TABLEs sequentially, since foreign key manipulations don't play
+	// nice with concurrency.
+	for _, statement := range logicalSchema.AlterTables {
+		if err := execStatement(db, statement); err != nil {
+			statementErrors = append(statementErrors, err)
 		}
-		wg.Wait()
 	}
 
-	schema, err = ws.IntrospectSchema()
+	schema, fatalErr = ws.IntrospectSchema()
 	return
 }
 
-func execStatement(db *sqlx.DB, stmt string) error {
-	_, err := db.Exec(stmt)
-	if tengo.IsSyntaxError(err) {
-		return fmt.Errorf("SQL syntax error: %s", err)
-	} else if err != nil {
-		return fmt.Errorf("Error executing DDL: %s", err)
+func execStatement(db *sqlx.DB, statement *fs.Statement) (stmtErr *StatementError) {
+	_, err := db.Exec(statement.Text)
+	if err == nil {
+		return nil
 	}
-	return nil
+	stmtErr = &StatementError{
+		Statement: statement,
+		Err:       fmt.Errorf("Error executing DDL: %s", err),
+	}
+	if tengo.IsSyntaxError(err) {
+		stmtErr.Err = fmt.Errorf("SQL syntax error: %s", err)
+	}
+	return stmtErr
 }
 
 // releaseFunc is a function to release a lock obtained by getLock

@@ -355,11 +355,20 @@ func (cfg *Config) GetIntOrDefault(name string) int {
 func (cfg *Config) GetEnum(name string, allowedValues ...string) (string, error) {
 	value := strings.ToLower(cfg.Get(name))
 	defaultValue, _ := cfg.CLI.Command.OptionValue(name)
-	allowedValues = append(allowedValues, defaultValue)
+	var seenDefaultInAllowed bool
 	for _, allowedVal := range allowedValues {
 		if value == strings.ToLower(allowedVal) {
 			return allowedVal, nil
 		}
+		if strings.ToLower(allowedVal) == strings.ToLower(defaultValue) {
+			seenDefaultInAllowed = true
+		}
+	}
+	if !seenDefaultInAllowed {
+		if value == strings.ToLower(defaultValue) {
+			return defaultValue, nil
+		}
+		allowedValues = append(allowedValues, defaultValue)
 	}
 	for n := range allowedValues {
 		allowedValues[n] = fmt.Sprintf(`"%s"`, allowedValues[n])

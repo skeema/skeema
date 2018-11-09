@@ -1,5 +1,7 @@
 ## Options reference
 
+This document is a reference, describing all options supported by Skeema. To learn *how* to use options in general, please see [config.md](config.md).
+
 ### Index
 
 * [allow-unsafe](#allow-unsafe)
@@ -15,6 +17,7 @@
 * [default-character-set](#default-character-set)
 * [default-collation](#default-collation)
 * [dir](#dir)
+* [docker-cleanup](#docker-cleanup)
 * [dry-run](#dry-run)
 * [exact-match](#exact-match)
 * [first-only](#first-only)
@@ -36,6 +39,7 @@
 * [temp-schema](#temp-schema)
 * [user](#user)
 * [verify](#verify)
+* [workspace](#workspace)
 
 ---
 
@@ -296,6 +300,24 @@ For `skeema init`, specifies what directory to populate with table files (or, if
 
 For `skeema add-environment`, specifies which directory's .skeema file to add the environment to. The directory must already exist (having been created by a prior call to `skeema init`), and must already contain a .skeema file, but the new environment name must not already be defined in that file. If unspecified, the default dir for `skeema add-environment` is the current directory, ".".
 
+### docker-cleanup
+
+Commands | diff, push, pull, lint
+--- | :---
+**Default** | "NONE"
+**Type** | enum
+**Restrictions** | Requires one of these values: "NONE", "STOP", "DESTROY"
+
+When using [workspace=docker](#workspace), the [docker-cleanup](#docker-cleanup) option controls cleanup behavior of dynamically-managed Docker containers right before Skeema exits.
+
+With the default value of "NONE", no cleanup occurs, meaning that any dynamically-managed container(s) are left in the running state. This allows subsequent Skeema invocations to perform well, since no time is wasted recreating or restarting local database containers. However, the running containers may consume some resources on your local machine.
+
+With a value of "STOP", containers are stopped, but not destroyed completely. Subsequent invocations of Skeema will need to restart the containers, which can take a few seconds, but is still faster than completely recreating the containers from scratch. The stopped containers won't consume CPU or memory on your local machine, but may consume disk space.
+
+With a value of "DESTROY", containers are deleted upon Skeema shutdown. Each invocation of Skeema will need to recreate the containers, which can take 10-20 seconds. This option avoids most resource consumption on your local machine.
+
+Regardless of the option used here, you may need to periodically perform [prune operations in Docker itself](https://docs.docker.com/engine/reference/commandline/system_prune/) to completely avoid any storage impact.
+
 ### dry-run
 
 Commands | push
@@ -351,7 +373,7 @@ This option is automatically populated in host-level .skeema files by `skeema in
 
 This option controls use of vendor-and-version-specific DDL formatting, as well as session variables. For example, if `flavor: mysql:8.0` is set, Skeema automatically disables the information_schema stat cache (at the session level, i.e. just for Skeema's own connections) to ensure it always sees up-to-date values in information_schema.
 
-In future releases, it may also be used for purposes such as optionally offloading the [temporary schema operations](faq.md#temporary-schema-usage) to a local Docker container; the [flavor](#flavor) value will then be used to ensure the correct Docker image is used.
+With [workspace=docker](#workspace), the [flavor](#flavor) value controls what Docker image is used for workspace containers.
 
 ### foreign-key-checks
 
@@ -516,15 +538,17 @@ Specifies a nonstandard port to use when connecting to MySQL via TCP/IP.
 
 ### reuse-temp-schema
 
-Commands | *all*
+Commands | diff, push, pull, lint
 --- | :---
 **Default** | false
 **Type** | boolean
 **Restrictions** | none
 
-If false, each Skeema operation will create a temporary schema, perform some DDL operations in it (including creating empty versions of tables), drop those tables, and then drop the temporary schema. If true, the step to drop the temporary schema is skipped, and then subsequent operations will re-use the existing schema.
+When using the default of [workspace=temp-schema](#workspace), this option controls how to clean up temporary workspace schemas. See [the FAQ](faq.md#no-reliance-on-sql-parsing) for background on temporary workspace schemas.
 
-This option most likely does not impact the list of privileges required for Skeema's user, since CREATE and DROP privileges will still be needed on the temporary schema to create or drop tables within the schema.
+If false, the temporary workspace schema is dropped once it is no longer needed. If true, the schema will be kept in place, but will be emptied of tables.
+
+This option has no effect with other values of the [workspace](#workspace) option, such as [workspace=docker](#workspace).
 
 ### safe-below-size
 
@@ -582,7 +606,7 @@ Some sharded environments need more flexibility -- for example, where some schem
 
 Commands | *all*
 --- | :---
-**Default** | /tmp/mysql.sock
+**Default** | "/tmp/mysql.sock"
 **Type** | string
 **Restrictions** | none
 
@@ -590,13 +614,13 @@ When the [host option](#host) is "localhost", this option specifies the path to 
 
 ### temp-schema
 
-Commands | *all*
+Commands | diff, push, pull, lint
 --- | :---
-**Default** | _skeema_tmp
+**Default** | "_skeema_tmp"
 **Type** | string
 **Restrictions** | none
 
-Specifies the name of the temporary schema used for Skeema operations. See [the FAQ](faq.md#temporary-schema-usage) for more information on how this schema is used.
+Specifies the name of the temporary schema used for Skeema workspace operations. See [the FAQ](faq.md#no-reliance-on-sql-parsing) for more information on how this schema is used.
 
 If using a non-default value for this option, it should not ever point at a schema containing real application data. Skeema will automatically detect this and abort in this situation, but may first drop any *empty* tables that it found in the schema.
 
@@ -621,3 +645,34 @@ Commands | diff, push
 Controls whether generated `ALTER TABLE` statements are automatically verified for correctness. If true, each generated ALTER will be tested in the temporary schema. See [the FAQ](faq.md#auto-generated-ddl-is-verified-for-correctness) for more information.
 
 It is recommended that this option be left at its default of true, but if desired you can disable verification for performance reasons.
+
+### workspace
+
+Commands | diff, push, pull, lint
+--- | :---
+**Default** | "TEMP-SCHEMA"
+**Type** | enum
+**Restrictions** | Requires one of these values: "TEMP-SCHEMA", "DOCKER"
+
+This option controls where workspace schemas are created. See [the FAQ](faq.md#no-reliance-on-sql-parsing) for background on the purpose of workspace schemas. The following commands use workspaces in order to introspect the tables contained in each directory's *.sql files:
+
+* `skeema diff`
+* `skeema push`
+* `skeema lint`
+* `skeema pull` (only if [skip-normalize](#normalize) is used)
+
+With the default value of [workspace=temp-schema](#workspace), a temporary schema is created on each MySQL instance that Skeema interacts with. The schema name is configured by the [temp-schema](#temp-schema) option. When the schema is no longer needed, it is dropped, unless the [reuse-temp-schema](#reuse-temp-schema) option is enabled.
+
+With [workspace=docker](#workspace), a Docker container on localhost is used for the workspace instead. This can be advantageous for two reasons:
+
+1. Performance: If the machine you're running Skeema from is in a different region/datacenter than your database, interacting with a container on localhost will avoid the network latency penalty, especially when your schemas contain a large number of tables.
+2. Security: If you want to avoid giving Skeema extensive privileges, or otherwise want to avoid creating and dropping the temporary schema on live databases.
+
+The containers have the following properties:
+
+* The container image will be based on the [flavor](#flavor) option specified for the corresponding database instance, to ensure the workspace behavior matches that of the live database. For example, when interacting with a live database running Percona Server 5.7 ([flavor=percona:5.7](#flavor)), the local container will use image "percona:5.7" from DockerHub.
+* The container name follows a template based on the image. In the previous example, the container will be called "skeema-percona-5.7".
+* The containerized MySQL instance will only listen on the localhost loopback interface, to ensure that external machines cannot communicate with it. 
+* The containerized MySQL instance will have an empty root password.
+
+Skeema dynamically manages containers as needed: if a container with a specific image is required, but does not currently exist, it will be created on-the-fly. This may take 10-20 seconds upon first use of [workspace=docker](#workspace). By default, the containers remain running after Skeema exits (avoiding the performance hit of subsequent invocations), but this behavior is configurable using the [docker-cleanup](#docker-cleanup) option.

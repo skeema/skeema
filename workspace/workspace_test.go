@@ -41,16 +41,21 @@ type WorkspaceIntegrationSuite struct {
 	d       *tengo.DockerizedInstance
 }
 
-func (s WorkspaceIntegrationSuite) TestMaterializeIdealSchema(t *testing.T) {
+func (s WorkspaceIntegrationSuite) TestExecLogicalSchema(t *testing.T) {
+	// Test with just valid CREATE TABLEs
 	dirPath := "../testdata/golden/init/mydb/product"
 	if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
 		dirPath = strings.Replace(dirPath, "golden", "golden-mysql55", 1)
 	}
 	dir := s.getParsedDir(t, dirPath, "")
-	opts := s.getOptionsForDir(dir)
-	schema, tableErrors, err := MaterializeIdealSchema(dir.IdealSchemas[0], opts)
+	opts, err := OptionsForDir(dir, s.d.Instance)
 	if err != nil {
-		t.Fatalf("Unexpected error from MaterializeIdealSchema: %s", err)
+		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
+	}
+	opts.LockWaitTimeout = 100 * time.Millisecond
+	schema, tableErrors, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts)
+	if err != nil {
+		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
 	}
 	if len(tableErrors) > 0 {
 		t.Errorf("Expected no TableErrors, instead found %d", len(tableErrors))
@@ -59,12 +64,45 @@ func (s WorkspaceIntegrationSuite) TestMaterializeIdealSchema(t *testing.T) {
 		t.Errorf("Expected at least 4 tables, but instead found %d", len(schema.Tables))
 	}
 
-	// Introduce an intentional syntax error
-	stmt := dir.IdealSchemas[0].CreateTables["posts"]
-	stmt.Text = strings.Replace(stmt.Text, "PRIMARY KEY", "PIRMRAY YEK", 1)
-	schema, tableErrors, err = MaterializeIdealSchema(dir.IdealSchemas[0], opts)
+	// Test with a valid ALTER involved
+	oldUserColumnCount := len(schema.Table("users").Columns)
+	dir.LogicalSchemas[0].AlterTables = []*fs.Statement{
+		{Type: fs.StatementTypeAlterTable, TableName: "users", Text: "ALTER TABLE users ADD COLUMN foo int"},
+	}
+	schema, tableErrors, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 	if err != nil {
-		t.Fatalf("Unexpected error from MaterializeIdealSchema: %s", err)
+		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
+	}
+	if len(tableErrors) > 0 {
+		t.Errorf("Expected no TableErrors, instead found %d", len(tableErrors))
+	}
+	if expected := oldUserColumnCount + 1; len(schema.Table("users").Columns) != expected {
+		t.Errorf("Expected table users to now have %d columns, instead found %d", expected, len(schema.Table("users").Columns))
+	}
+
+	// Test with invalid ALTER (valid syntax but nonexistent table)
+	dir.LogicalSchemas[0].AlterTables[0].Text = "ALTER TABLE nopenopenope ADD COLUMN foo int"
+	schema, tableErrors, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
+	if err != nil {
+		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
+	}
+	if len(tableErrors) == 1 {
+		if tableErrors[0].Statement != dir.LogicalSchemas[0].AlterTables[0] {
+			t.Error("Unexpected Statement pointed to by StatementError")
+		} else if !strings.Contains(tableErrors[0].String(), dir.LogicalSchemas[0].AlterTables[0].Text) {
+			t.Error("StatementError did not contain full SQL of erroring statement")
+		}
+	} else {
+		t.Errorf("Expected one TableError, instead found %d", len(tableErrors))
+	}
+	dir.LogicalSchemas[0].AlterTables = []*fs.Statement{}
+
+	// Introduce an intentional syntax error
+	stmt := dir.LogicalSchemas[0].CreateTables["posts"]
+	stmt.Text = strings.Replace(stmt.Text, "PRIMARY KEY", "PIRMRAY YEK", 1)
+	schema, tableErrors, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
+	if err != nil {
+		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
 	}
 	if len(schema.Tables) < 3 {
 		t.Errorf("Expected at least 3 tables, but instead found %d", len(schema.Tables))
@@ -73,6 +111,8 @@ func (s WorkspaceIntegrationSuite) TestMaterializeIdealSchema(t *testing.T) {
 		t.Errorf("Expected 1 TableError, instead found %d", len(tableErrors))
 	} else if tableErrors[0].TableName != "posts" {
 		t.Errorf("Expected 1 TableError for table `posts`; instead found it is for table `%s`", tableErrors[0].TableName)
+	} else if !strings.HasPrefix(tableErrors[0].Error(), stmt.Location()) {
+		t.Error("StatementError did not contain the location of the invalid statement")
 	}
 	err = tableErrors[0] // compile-time check of satisfying interface
 	if errorText := err.Error(); errorText == "" {
@@ -81,44 +121,62 @@ func (s WorkspaceIntegrationSuite) TestMaterializeIdealSchema(t *testing.T) {
 
 	// Test handling of fatal error
 	opts.Type = Type(999)
-	if _, _, err := MaterializeIdealSchema(dir.IdealSchemas[0], opts); err == nil {
+	if _, _, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts); err == nil {
 		t.Error("Expected error from invalid options.Type, but instead err is nil")
 	}
 }
 
-func (s WorkspaceIntegrationSuite) TestStatementsToSchema(t *testing.T) {
-	dir := s.getParsedDir(t, "../testdata/golden/init/mydb/product", "")
-	opts := s.getOptionsForDir(dir)
-	statements := []string{"CREATE TABLE foo (id int)", "RENAME TABLE foo TO bar"}
-	schema, err := StatementsToSchema(statements, opts)
-	if err != nil {
-		t.Fatalf("Unexpected error from StatementsToSchema(): %s", err)
+func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
+	getOpts := func(cliFlags string) Options {
+		t.Helper()
+		dir := s.getParsedDir(t, "../testdata/golden/init/mydb/product", cliFlags)
+		opts, err := OptionsForDir(dir, s.d.Instance)
+		if err != nil {
+			t.Fatalf("Unexpected error from OptionsForDir: %s", err)
+		}
+		return opts
 	}
-	if len(schema.Tables) != 1 || schema.Tables[0].Name != "bar" {
-		t.Errorf("Unexpected schema result: len(schema.Tables)=%d, schema.Tables[0].Name=%s", len(schema.Tables), schema.Tables[0].Name)
-	}
-
-	// Confirm that a fresh workspace is used each time
-	statements = []string{"CREATE TABLE bar (id bigint unsigned)"}
-	schema, err = StatementsToSchema(statements, opts)
-	if err != nil {
-		t.Fatalf("Unexpected error from StatementsToSchema(): %s", err)
-	}
-	if len(schema.Tables) != 1 || schema.Tables[0].Name != "bar" {
-		t.Errorf("Unexpected schema result: len(schema.Tables)=%d, schema.Tables[0].Name=%s", len(schema.Tables), schema.Tables[0].Name)
+	assertOptsError := func(cliFlags string) {
+		t.Helper()
+		dir := s.getParsedDir(t, "../testdata/golden/init/mydb/product", cliFlags)
+		if _, err := OptionsForDir(dir, s.d.Instance); err == nil {
+			t.Errorf("Expected non-nil error from OptionsForDir with CLI flags %s, but err was nil", cliFlags)
+		}
 	}
 
-	// Confirm that errors are returned as expected
-	statements = []string{"CREATE TABLE foo (id int)", "CREATE TABLE foo (id int)"}
-	schema, err = StatementsToSchema(statements, opts)
-	if err == nil || schema != nil {
-		t.Error("Expected non-nil error and nil schema, but results did not match expectation")
+	// Test error conditions
+	assertOptsError("--workspace=invalid")
+	assertOptsError("--workspace=docker --docker-cleanup=invalid")
+
+	// Test default configuration, which should use temp-schema with drop cleanup
+	if opts := getOpts(""); opts.Type != TypeTempSchema || opts.CleanupAction != CleanupActionDrop {
+		t.Errorf("Unexpected type %v returned", opts.Type)
 	}
-	statements = []string{"CREATE TABLE bar (id bigint unsigned)"}
-	opts.Type = Type(999)
-	schema, err = StatementsToSchema(statements, opts)
-	if err == nil || schema != nil {
-		t.Error("Expected non-nil error and nil schema, but results did not match expectation")
+
+	// Test temp-schema with some non-default options
+	opts := getOpts("--workspace=temp-schema --temp-schema=override --reuse-temp-schema")
+	if opts.Type != TypeTempSchema || opts.CleanupAction != CleanupActionNone || opts.SchemaName != "override" {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	}
+
+	// Test docker with defaults, which should have no cleanup action, and match
+	// flavor of suite's DockerizedInstance
+	opts = getOpts("--workspace=docker")
+	if opts.Type != TypeLocalDocker || opts.CleanupAction != CleanupActionNone || opts.Flavor != s.d.Flavor() {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	}
+
+	// Test docker with other cleanup actions
+	if opts = getOpts("--workspace=docker --docker-cleanup=STOP"); opts.CleanupAction != CleanupActionStop {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	}
+	if opts = getOpts("--workspace=docker --docker-cleanup=destroy"); opts.CleanupAction != CleanupActionDestroy {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	}
+
+	// Test docker with specific flavor
+	if opts = getOpts("--workspace=docker --flavor=mysql:5.5"); opts.Flavor.String() != "mysql:5.5" {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
 	}
 }
 
@@ -137,18 +195,6 @@ func (s *WorkspaceIntegrationSuite) Teardown(backend string) error {
 
 func (s *WorkspaceIntegrationSuite) BeforeTest(method string, backend string) error {
 	return s.d.NukeData()
-}
-
-func (s *WorkspaceIntegrationSuite) getOptionsForDir(dir *fs.Dir) Options {
-	return Options{
-		Type:                TypeTempSchema,
-		Instance:            s.d.Instance,
-		SchemaName:          dir.Config.Get("temp-schema"),
-		KeepSchema:          dir.Config.GetBool("reuse-temp-schema"),
-		DefaultCharacterSet: dir.Config.Get("default-character-set"),
-		DefaultCollation:    dir.Config.Get("default-collation"),
-		LockWaitTimeout:     100 * time.Millisecond,
-	}
 }
 
 func (s *WorkspaceIntegrationSuite) getParsedDir(t *testing.T, dirPath, cliFlags string) *fs.Dir {

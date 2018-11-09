@@ -2,8 +2,8 @@ package applier
 
 import (
 	"fmt"
-	"time"
 
+	"github.com/skeema/skeema/fs"
 	"github.com/skeema/skeema/workspace"
 	"github.com/skeema/tengo"
 )
@@ -38,37 +38,45 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 		mods.AlgorithmClause = "COPY"
 	}
 
-	// Gather CREATE and ALTER for modified tables
-	statements := make([]string, 0)
+	// Gather CREATE and ALTER for modified tables, and put into a LogicalSchema,
+	// which we then materialize into a real schema using a workspace
+	logicalSchema := &fs.LogicalSchema{
+		CharSet:      t.Dir.Config.Get("default-character-set"),
+		Collation:    t.Dir.Config.Get("default-collation"),
+		CreateTables: make(map[string]*fs.Statement),
+		AlterTables:  make([]*fs.Statement, 0),
+	}
 	expected := make(map[string]*tengo.Table)
 	for _, td := range diff.FilteredTableDiffs(tengo.TableDiffAlter) {
 		stmt, err := td.Statement(mods)
 		if stmt != "" && err == nil {
-			// Some tables may have multiple ALTERs in the same diff
-			if _, already := expected[td.From.Name]; already {
-				statements = append(statements, stmt)
-			} else {
-				expected[td.From.Name] = td.To
-				statements = append(statements, td.From.CreateStatement, stmt)
+			expected[td.From.Name] = td.To
+			logicalSchema.CreateTables[td.From.Name] = &fs.Statement{
+				Type:      fs.StatementTypeCreateTable,
+				Text:      td.From.CreateStatement,
+				TableName: td.From.Name,
 			}
+			logicalSchema.AlterTables = append(logicalSchema.AlterTables, &fs.Statement{
+				Type:      fs.StatementTypeAlterTable,
+				Text:      stmt,
+				TableName: td.From.Name,
+			})
 		}
 	}
 
-	opts := workspace.Options{
-		Type:                workspace.TypeTempSchema,
-		Instance:            t.Instance,
-		SchemaName:          t.Dir.Config.Get("temp-schema"),
-		KeepSchema:          t.Dir.Config.GetBool("reuse-temp-schema"),
-		DefaultCharacterSet: t.Dir.Config.Get("default-character-set"),
-		DefaultCollation:    t.Dir.Config.Get("default-collation"),
-		LockWaitTimeout:     30 * time.Second,
-	}
-	wsSchema, err := workspace.StatementsToSchema(statements, opts)
+	opts, err := workspace.OptionsForDir(t.Dir, t.Instance)
 	if err != nil {
 		return err
 	}
-	actualTables := wsSchema.TablesByName()
+	wsSchema, statementErrors, err := workspace.ExecLogicalSchema(logicalSchema, opts)
+	if err == nil && len(statementErrors) > 0 {
+		err = statementErrors[0]
+	}
+	if err != nil {
+		return fmt.Errorf("Diff verification failure: %s", err.Error())
+	}
 
+	actualTables := wsSchema.TablesByName()
 	for name, toTable := range expected {
 		expectCreate, _ := tengo.ParseCreateAutoInc(toTable.CreateStatement)
 		actualCreate, _ := tengo.ParseCreateAutoInc(actualTables[name].CreateStatement)

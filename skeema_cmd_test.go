@@ -239,6 +239,9 @@ func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
 	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema lint")
 	s.verifyFiles(t, cfg, "../golden/init")
 
+	// Invalid options should error with CodeBadConfig
+	s.handleCommand(t, CodeBadConfig, ".", "skeema lint --workspace=doesnt-exist")
+
 	// Alter a few files in a way that is still valid SQL, but doesn't match
 	// the database's native format. Lint should rewrite these files and then
 	// return exit code CodeDifferencesFound.
@@ -809,6 +812,9 @@ func (s SkeemaIntegrationSuite) TestReuseTempSchema(t *testing.T) {
 		s.assertExists(t, "verytemp", "", "")
 		s.verifyFiles(t, cfg, "../golden/init")
 	}
+
+	// Invalid workspace option should error
+	s.handleCommand(t, CodeBadConfig, ".", "skeema pull --workspace=doesnt-exist --skip-normalize --reuse-temp-schema --temp-schema=verytemp")
 }
 
 func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
