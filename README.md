@@ -4,13 +4,13 @@
 [![code coverage](https://img.shields.io/coveralls/skeema/skeema.svg)](https://coveralls.io/r/skeema/skeema)
 [![latest release](https://img.shields.io/github/release/skeema/skeema.svg)](https://github.com/skeema/skeema/releases)
 
-Skeema is a tool for managing MySQL tables and schema changes. It provides a CLI tool allowing you to:
+Skeema is a tool for managing MySQL tables and schema changes in a declarative fashion using pure SQL. It provides a CLI tool allowing you to:
 
 * Export CREATE TABLE statements to the filesystem, for tracking in a repo (git, hg, svn, etc)
 * Diff changes in the schema repo against live DBs to automatically generate DDL
-* Manage multiple environments (dev, staging, prod) and keep them in sync with ease
+* Manage multiple environments (e.g. dev, staging, prod) and keep them in sync with ease
 * Configure use of online schema change tools, such as pt-online-schema-change, for performing ALTERs
-* Convert non-online migrations from Rails, Django, etc into online schema changes in production
+* Convert non-online migrations from frameworks like Rails or Django into online schema changes in production
 
 Skeema supports a pull-request-based workflow for schema change submission, review, and execution. This permits your team to manage schema changes in exactly the same way as you manage code changes.
 
@@ -37,7 +37,7 @@ To download, build from master, and install (or upgrade) Skeema, run:
 
 ## Status
 
-Skeema is generally available, having reached v1 release milestone in July 2018. Prior to that, it was in public beta since October 2016.
+Skeema is generally available, having reached the v1 release milestone in July 2018. Prior to that, it was in public beta since October 2016.
 
 The `skeema` binary is supported on macOS and Linux. For now, it cannot be compiled on Windows.
 

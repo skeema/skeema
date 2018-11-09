@@ -1,5 +1,7 @@
 ## Configuration
 
+**This document describes *how* to configure Skeema with options, in general. To view a reference guide of all specific options that exist, please see [options.md](options.md) instead.**
+
 Skeema is configured by setting options. These options may be provided to Skeema via the command-line and/or via option files.
 
 Handling and parsing of options is intentionally designed to be very similar to the MySQL client and server programs.
@@ -14,7 +16,7 @@ Non-boolean options require a value. For example, you cannot provide --host on t
 
 **String** options may be set to any string of 0 or more characters.
 
-**Enum** options behave like string options, except the set of allowed values is restricted. The option reference lists what values are permitted in each case.
+**Enum** options behave like string options, except the set of allowed values is restricted. The option reference lists what values are permitted in each case. Values are case-insensitive.
 
 **Regular expression** options are used for string-matching. The value should be supplied *without* any surrounding delimiter; for example, use `--ignore-schema='^test.*'`, **NOT** `--ignore-schema='/^test.*/'`. To make a match be case-insensitive, put `(?i)` at the beginning of the regex. For example, `--ignore-schema='(?i)^test.*'` will match "TESTING", "Test", "test", etc.
 

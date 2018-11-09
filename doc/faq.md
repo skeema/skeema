@@ -23,15 +23,9 @@ A future version will include an agent/daemon that can integrate with sites like
 
 Schema changes can be scary. Skeema includes a number of safety mechanisms to help ensure correct operation.
 
-#### Only `skeema push` manipulates real schemas
+#### Extensive automated testing suite
 
-Aside from the temporary schema operations described below, only one command modifies real schemas and tables: `skeema push`. All other commands are essentially read-only when it comes to interacting with live tables.
-
-#### Temporary schema usage
-
-Most Skeema commands need to perform intermediate operations in a scratch space -- for example, to run CREATE TABLE statements in the *.sql files, so that the corresponding information_schema representation may be inspected. By default, Skeema creates, uses, and then drops a database called `_skeema_tmp`. (The schema name and dropping behavior may be configured via the [temp-schema](options.md#temp-schema) and [reuse-temp-schema](options.md#reuse-temp-schema) options.)
-
-When operating on the temporary database, Skeema refuses to drop a table if it contains any rows, and likewise refuses to drop the database if any tables contain any rows. This prevents disaster if someone accidentally points [temp-schema](options.md#temp-schema) at a real schema, or accidentally starts storing real data in the temporary schema.
+Skeema has an extensive suite of unit, integration, and end-to-end functional tests; its libraries/subpackages do as well. This suite includes automated testing against a Dockerized database instance of multiple versions and vendors of MySQL.
 
 #### Destructive operations are prevented by default
 
@@ -45,23 +39,29 @@ The following operations are considered unsafe:
 * Altering a table to change the character set of an existing column
 * Altering a table to change its storage engine
 
-Note that `skeema diff` also provides the [allow-unsafe option](options.md#allow-unsafe), even though `skeema diff` never actually modifies tables regardless. This option is present so that `skeema diff` can serve as a safe dry-run that exactly matches the logic for `skeema push`. If not explicitly allowed, `skeema diff` will display unsafe operations as commented-out DDL.
+Note that `skeema diff` also has the same safety logic as `skeema push`, even though `skeema diff` never actually modifies tables. This behavior exists so that `skeema diff` can serve as a safe dry-run that exactly matches the logic for `skeema push`. If unsafe operations are not explicitly allowed, `skeema diff` will display unsafe operations as commented-out DDL.
 
 You may also configure Skeema to always permit unsafe operations on tables below a certain size (in bytes), or always permit unsafe operations on tables that have no rows. See the [safe-below-size option](options.md#safe-below-size).
 
-#### Auto-generated DDL is verified for correctness
-
-Skeema is a declarative tool: users declare what the table *should* look like (via CREATE TABLE files), and the tool generates the corresponding ALTER TABLE in `skeema diff` (outputted but not run) and `skeema push` (actually executed). When generating these statements, Skeema *automatically verifies their correctness* by testing them in the temporary schema. This confirms that running the generated DDL against an empty copy of the old (live) table definition correctly yields the expected new (from filesystem/repo) table definition. If verification fails, Skeema aborts.
-
-When performing a large diff or push that affects dozens or hundreds of tables, this verification behavior may slow things down. You may skip verification for speed reasons via the [skip-verify option](options.md#verify), but this is not recommended.
-
 #### Detection of unsupported table features
 
-If a table uses a feature not supported by Skeema or its [Go La Tengo](https://github.com/skeema/tengo) automation library, such as partioning, Skeema will refuse to generate ALTERs for the table. These cases are detected by comparing the output of `SHOW CREATE TABLE` to what Skeema thinks the generated CREATE TABLE should be, and flagging any discrepancies as tables that aren't supported for diffing or altering. This is noted in the output, and does not block execution of other schema changes. When in doubt, always check `skeema diff` as a safe dry-run prior to using `skeema push`.
+If a table uses a feature not supported by Skeema, such as partitioning, Skeema will refuse to generate ALTERs for the table. These cases are detected by comparing the output of `SHOW CREATE TABLE` to what Skeema thinks the generated CREATE TABLE should be, and flagging any discrepancies as tables that aren't supported for diffing or altering. This is noted in the output, and does not block execution of other schema changes. When in doubt, always check `skeema diff` as a safe dry-run prior to using `skeema push`.
 
-#### Extensive automated testing suite
+#### No reliance on SQL parsing
 
-Skeema has an extensive suite of unit, integration, and functional tests; its library Tengo does as well. This suite includes testing against a Dockerized database instance of multiple versions of MySQL.
+Skeema's behavior does not rely on parsing SQL DDL, as this can be too brittle across various MySQL versions and vendors, which have subtle differences in features and functionality. Instead, Skeema uses metadata reported directly from the database to introspect schemas, using `information_schema` as well as various `SHOW` commands.
+
+In order to accurately introspect the schemas represented in your filesystem's *.sql files, Skeema actually runs the files' `CREATE TABLE` statements in a temporary location, called a **workspace**. By default, Skeema creates, uses, and then drops a database called `_skeema_tmp` on each database it interacts with. (This behavior is configurable; a [different schema name](options.md#temp-schema) can be used, and/or a [local Docker container](options.md#workspace) can be used instead of each live database).
+
+When operating on a workspace, Skeema halts immediately if any workspace table is detected to be non-empty (contains any rows). This prevents disaster if someone accidentally misconfigures Skeema's workspace-related options.
+
+#### Only `skeema push` manipulates real schemas
+
+Aside from the workspace operations described above, only one command modifies schemas and tables: `skeema push`. All other commands are read-only in terms of interactions with live tables.
+
+#### Auto-generated DDL is verified for correctness
+
+Skeema is a declarative tool: users declare what the table *should* look like (via CREATE TABLE files), and the tool generates the corresponding ALTER TABLE in `skeema diff` (outputted but not run) and `skeema push` (actually executed). When generating these statements, Skeema *automatically verifies their correctness* by testing them in a workspace. This confirms that running the generated DDL against an empty copy of the old (live) table definition correctly yields the expected new (from filesystem/repo) table definition. If verification fails, Skeema aborts with an error.
 
 #### Pedigree
 
