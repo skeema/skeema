@@ -50,7 +50,7 @@ CREATE TABLE warranties (
   UNIQUE KEY product (product_line,model),
   KEY customer (customer_id),
   CONSTRAINT customer_fk FOREIGN KEY (customer_id) REFERENCES purchasing.customers (id),
-  CONSTRAINT product_fk FOREIGN KEY (product_line, model) REFERENCES products (line, model)
+  CONSTRAINT product FOREIGN KEY (product_line, model) REFERENCES products (line, model)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 CREATE TABLE has_rows (
