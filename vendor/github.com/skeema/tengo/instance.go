@@ -640,7 +640,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		WHERE  t.table_schema = ?
 		AND    t.table_type = 'BASE TABLE'`
 	if err := db.Select(&rawTables, query, schema); err != nil {
-		return nil, fmt.Errorf("Error querying information_schema.tables: %s", err)
+		return nil, fmt.Errorf("Error querying information_schema.tables for schema %s: %s", schema, err)
 	}
 	if len(rawTables) == 0 {
 		return []*Table{}, nil
@@ -697,7 +697,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		WHERE     c.table_schema = ?
 		ORDER BY  c.table_name, c.ordinal_position`
 	if err := db.Select(&rawColumns, query, schema); err != nil {
-		return nil, fmt.Errorf("Error querying information_schema.columns: %s", err)
+		return nil, fmt.Errorf("Error querying information_schema.columns for schema %s: %s", schema, err)
 	}
 	columnsByTableName := make(map[string][]*Column)
 	columnsByTableAndName := make(map[string]*Column)
@@ -778,7 +778,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		FROM     statistics
 		WHERE    table_schema = ?`
 	if err := db.Select(&rawIndexes, query, schema); err != nil {
-		return nil, fmt.Errorf("Error querying information_schema.statistics: %s", err)
+		return nil, fmt.Errorf("Error querying information_schema.statistics for schema %s: %s", schema, err)
 	}
 	primaryKeyByTableName := make(map[string]*Index)
 	secondaryIndexesByTableName := make(map[string][]*Index)
@@ -851,11 +851,13 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		         kcu.referenced_column_name AS referenced_column_name,
 		         CONCAT(kcu.constraint_schema, '.', kcu.table_name, '.', kcu.column_name) AS col_lookup_key
 		FROM     referential_constraints rc
-		JOIN     key_column_usage kcu ON kcu.constraint_name = rc.constraint_name AND kcu.constraint_schema = rc.constraint_schema
+		JOIN     key_column_usage kcu ON kcu.constraint_name = rc.constraint_name AND
+		                                 kcu.constraint_schema = rc.constraint_schema AND
+		                                 kcu.referenced_column_name IS NOT NULL
 		WHERE    rc.constraint_schema = ?
 		ORDER BY BINARY rc.constraint_name, kcu.ordinal_position`
 	if err := db.Select(&rawForeignKeys, query, schema); err != nil {
-		return nil, fmt.Errorf("Error querying foreign key constraints: %s", err)
+		return nil, fmt.Errorf("Error querying foreign key constraints for schema %s: %s", schema, err)
 	}
 	foreignKeysByTableName := make(map[string][]*ForeignKey)
 	foreignKeysByName := make(map[string]*ForeignKey)
@@ -896,7 +898,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		go func(t *Table) {
 			var err error
 			if t.CreateStatement, err = showCreateTable(db, t.Name); err != nil {
-				errOut <- fmt.Errorf("Error executing SHOW CREATE TABLE: %s", err)
+				errOut <- fmt.Errorf("Error executing SHOW CREATE TABLE for %s.%s: %s", EscapeIdentifier(schema), EscapeIdentifier(t.Name), err)
 				return
 			}
 			if t.Engine == "InnoDB" {
