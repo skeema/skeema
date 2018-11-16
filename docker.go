@@ -44,9 +44,10 @@ func NewDockerClient(opts DockerClientOptions) (*DockerClient, error) {
 // DockerizedInstanceOptions specifies options for creating or finding a
 // sandboxed database instance inside a Docker container.
 type DockerizedInstanceOptions struct {
-	Name         string
-	Image        string
-	RootPassword string
+	Name              string
+	Image             string
+	RootPassword      string
+	DefaultConnParams string
 }
 
 // CreateInstance attempts to create a Docker container with the supplied name
@@ -254,7 +255,7 @@ func (di *DockerizedInstance) DSN() string {
 	if di.RootPassword != "" {
 		pass = fmt.Sprintf(":%s", di.RootPassword)
 	}
-	return fmt.Sprintf("root%s@tcp(127.0.0.1:%d)/", pass, di.Port())
+	return fmt.Sprintf("root%s@tcp(127.0.0.1:%d)/?%s", pass, di.Port(), di.DefaultConnParams)
 }
 
 func (di *DockerizedInstance) String() string {
