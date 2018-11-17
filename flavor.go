@@ -198,3 +198,11 @@ func (fl Flavor) AlwaysShowTableCollation(charSet string) bool {
 	}
 	return false
 }
+
+// HasInnoFileFormat returns true if the innodb_file_format variable exists in
+// the flavor, false otherwise.
+func (fl Flavor) HasInnoFileFormat() bool {
+	return !(fl.VendorMinVersion(VendorMySQL, 8, 0) ||
+		fl.VendorMinVersion(VendorPercona, 8, 0) ||
+		fl.VendorMinVersion(VendorMariaDB, 10, 3))
+}

@@ -194,3 +194,41 @@ func TestFlavorAlwaysShowTableCollation(t *testing.T) {
 	}
 
 }
+
+func TestFlavorHasInnoFileFormat(t *testing.T) {
+	type testcase struct {
+		receiver Flavor
+		expected bool
+	}
+	cases := []testcase{
+		{FlavorMySQL55, true},
+		{FlavorMySQL57, true},
+		{FlavorMySQL80, false},
+		{FlavorMariaDB102, true},
+		{FlavorMariaDB103, false},
+		{FlavorPercona57, true},
+		{NewFlavor("percona:8.0"), false},
+		{FlavorUnknown, true},
+	}
+	for _, tc := range cases {
+		actual := tc.receiver.HasInnoFileFormat()
+		if actual != tc.expected {
+			t.Errorf("Expected %s.HasInnoFileFormat() to return %t, instead found %t", tc.receiver, tc.expected, actual)
+		}
+	}
+}
+
+func (s TengoIntegrationSuite) TestFlavorHasInnoFileFormat(t *testing.T) {
+	flavor := s.d.Flavor()
+	db, err := s.d.Connect("", "")
+	if err != nil {
+		t.Fatalf("Unexpected error from Connect: %s", err)
+	}
+	var innoFileFormat string
+	err = db.QueryRow("SELECT @@global.innodb_file_format").Scan(&innoFileFormat)
+	expected := flavor.HasInnoFileFormat()
+	actual := (err == nil)
+	if expected != actual {
+		t.Errorf("Flavor %s expected existence of innodb_file_format is %t, instead found %t", flavor, expected, actual)
+	}
+}
