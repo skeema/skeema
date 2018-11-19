@@ -232,3 +232,50 @@ func (s TengoIntegrationSuite) TestFlavorHasInnoFileFormat(t *testing.T) {
 		t.Errorf("Flavor %s expected existence of innodb_file_format is %t, instead found %t", flavor, expected, actual)
 	}
 }
+
+func TestInnoRowFormatReqs(t *testing.T) {
+	type testcase struct {
+		receiver           Flavor
+		format             string
+		expectFilePerTable bool
+		expectBarracuda    bool
+	}
+	cases := []testcase{
+		{FlavorMySQL55, "DYNAMIC", true, true},
+		{FlavorMySQL56, "DYNAMIC", true, true},
+		{FlavorMySQL57, "DYNAMIC", false, false},
+		{FlavorMySQL57, "COMPRESSED", true, true},
+		{FlavorMySQL57, "COMPACT", false, false},
+		{FlavorMySQL80, "DYNAMIC", false, false},
+		{FlavorMySQL80, "COMPRESSED", true, false},
+		{FlavorPercona56, "COMPRESSED", true, true},
+		{FlavorPercona57, "DYNAMIC", false, false},
+		{FlavorMariaDB101, "DYNAMIC", false, false},
+		{FlavorMariaDB101, "REDUNDANT", false, false},
+		{FlavorMariaDB102, "DYNAMIC", false, true},
+		{FlavorMariaDB102, "COMPRESSED", true, true},
+		{FlavorMariaDB103, "DYNAMIC", false, false},
+		{FlavorMariaDB103, "COMPRESSED", true, false},
+		{NewFlavor("mariadb:5.5"), "DYNAMIC", true, true},
+		{FlavorUnknown, "DYNAMIC", true, true},
+		{FlavorUnknown, "COMPRESSED", true, true},
+		{FlavorUnknown, "COMPACT", false, false},
+	}
+	for _, tc := range cases {
+		actualFilePerTable, actualBarracuda := tc.receiver.InnoRowFormatReqs(tc.format)
+		if actualFilePerTable != tc.expectFilePerTable || actualBarracuda != tc.expectBarracuda {
+			t.Errorf("Expected %s.InnoRowFormatReqs(%s) to return %t,%t; instead found %t,%t", tc.receiver, tc.format, tc.expectFilePerTable, tc.expectBarracuda, actualFilePerTable, actualBarracuda)
+		}
+	}
+
+	var didPanic bool
+	defer func() {
+		if recover() != nil {
+			didPanic = true
+		}
+	}()
+	FlavorMySQL80.InnoRowFormatReqs("SUPER-DUPER-FORMAT")
+	if !didPanic {
+		t.Errorf("Expected InnoRowFormatReqs to panic on invalid format, but it did not")
+	}
+}
