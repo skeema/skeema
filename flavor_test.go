@@ -1,6 +1,7 @@
 package tengo
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -278,4 +279,57 @@ func TestInnoRowFormatReqs(t *testing.T) {
 	if !didPanic {
 		t.Errorf("Expected InnoRowFormatReqs to panic on invalid format, but it did not")
 	}
+}
+
+func (s TengoIntegrationSuite) TestInnoRowFormatReqs(t *testing.T) {
+	// Connect using innodb_strict_mode, which causes CREATE TABLE to fail if the
+	// ROW_FORMAT clause isn't allowed with current settings
+	db, err := s.d.Connect("testing", "innodb_strict_mode=1")
+	if err != nil {
+		t.Fatalf("Unexpected error from connect: %s", err)
+	}
+
+	exec := func(statement string) {
+		t.Helper()
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatalf("Unexpected error from Exec: %s", err)
+		}
+	}
+	assertCanExec := func(expected bool, rowFormat string) {
+		t.Helper()
+		_, err := db.Exec(fmt.Sprintf("CREATE TABLE reqtest (id int unsigned) ROW_FORMAT=%s", rowFormat))
+		result := err == nil
+		if result != expected {
+			t.Errorf("assertCanExec failed: Expected %t, found %t", expected, result)
+		}
+		if result {
+			if _, err = db.Exec("DROP TABLE reqtest"); err != nil {
+				t.Fatalf("Unexpected error from Exec: %s", err)
+			}
+		}
+	}
+
+	// Confirm the flavor's actual requirements match InnoRowFormatReqs:
+	// Try creating table with each format under combinations of
+	// innodb_file_per_table and innodb_file_format, and confirm ability to create
+	// the table (under strict mode) matches expectation from return value of
+	// InnoRowFormatReqs.
+	for _, format := range []string{"DYNAMIC", "COMPRESSED"} {
+		needFPT, needBarracuda := s.d.Flavor().InnoRowFormatReqs(format)
+
+		exec("SET GLOBAL innodb_file_per_table=0")
+		db.Exec("SET GLOBAL innodb_file_format=Antelope") // ignore errors, var may not exist
+		assertCanExec(!needFPT && !needBarracuda, format)
+
+		exec("SET GLOBAL innodb_file_per_table=1")
+		assertCanExec(!needBarracuda, format)
+
+		exec("SET GLOBAL innodb_file_per_table=0")
+		db.Exec("SET GLOBAL innodb_file_format=Barracuda") // ignore errors, var may not exist
+		assertCanExec(!needFPT, format)
+	}
+
+	// Clean up globals
+	exec("SET GLOBAL innodb_file_per_table=DEFAULT")
+	db.Exec("SET GLOBAL innodb_file_format=DEFAULT") // ignore errors, var may not exist
 }

@@ -25,7 +25,7 @@ func TestTableGeneratedCreateStatement(t *testing.T) {
 	}
 }
 
-func TestClusteredIndexKey(t *testing.T) {
+func TestTableClusteredIndexKey(t *testing.T) {
 	table := aTable(1)
 	if table.ClusteredIndexKey() == nil || table.ClusteredIndexKey() != table.PrimaryKey {
 		t.Error("ClusteredIndexKey() did not return primary key when it was supposed to")
@@ -60,6 +60,30 @@ func TestClusteredIndexKey(t *testing.T) {
 	table.Columns[2].Nullable = false
 	if table.ClusteredIndexKey() != table.SecondaryIndexes[0] {
 		t.Errorf("Expected ClusteredIndexKey() to return %+v, instead found %+v", table.SecondaryIndexes[0], table.ClusteredIndexKey())
+	}
+}
+
+func TestTableRowFormatClause(t *testing.T) {
+	assertRowFormatClause := func(createOptions, expectRowFormat string) {
+		t.Helper()
+		table := aTable(1)
+		table.CreateOptions = createOptions
+		if actual := table.RowFormatClause(); actual != expectRowFormat {
+			t.Errorf("Unexpected result from RowFormatClause() with CreateOptions=%s: expected %s, found %s", createOptions, expectRowFormat, actual)
+		}
+	}
+	cases := map[string]string{
+		"":                                     "",
+		"FOO=BAR":                              "",
+		"ROW_FORMAT=DYNAMIC":                   "DYNAMIC",
+		"ROW_FORMAT=COMPRESSED":                "COMPRESSED",
+		"ROW_FORMAT=COMPACT FOO=BAR":           "COMPACT",
+		"FOO=BAR ROW_FORMAT=REDUNDANT BIP=BAP": "REDUNDANT",
+		"KEY_BLOCK_SIZE=8":                     "COMPRESSED",
+		"ROW_FORMAT=DYNAMIC KEY_BLOCK_SIZE=8":  "DYNAMIC",
+	}
+	for createOptions, expectRowFormat := range cases {
+		assertRowFormatClause(createOptions, expectRowFormat)
 	}
 }
 

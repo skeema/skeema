@@ -3,6 +3,7 @@ package tengo
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -146,6 +147,26 @@ Outer:
 		}
 	}
 	return nil
+}
+
+// RowFormatClause returns the table's ROW_FORMAT clause, if one was explicitly
+// specified in the table's creation options. If no ROW_FORMAT clause was
+// specified, but a KEY_BLOCK_SIZE is, "COMPRESSED" will be returned since MySQL
+// applies this automatically. If no ROW_FORMAT or KEY_BLOCK_SIZE was specified,
+// a blank string is returned.
+// This method does not query an instance to determine if the table's actual
+// ROW_FORMAT differs from what was requested in creation options; nor does it
+// query the default row format if none was specified.
+func (t *Table) RowFormatClause() string {
+	re := regexp.MustCompile(`ROW_FORMAT=(\w+)`)
+	matches := re.FindStringSubmatch(t.CreateOptions)
+	if matches != nil {
+		return matches[1]
+	}
+	if strings.Contains(t.CreateOptions, "KEY_BLOCK_SIZE") {
+		return "COMPRESSED"
+	}
+	return ""
 }
 
 // Diff returns a set of differences between this table and another table.

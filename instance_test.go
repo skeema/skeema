@@ -545,3 +545,57 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		t.Error("fixIndexOrder did not behave as expected")
 	}
 }
+
+func (s TengoIntegrationSuite) TestInstanceStrictModeCompliant(t *testing.T) {
+	assertCompliance := func(expected bool) {
+		t.Helper()
+		schemas, err := s.d.Schemas()
+		if err != nil {
+			t.Fatalf("Unexpected error from Schemas: %s", err)
+		}
+		compliant, err := s.d.StrictModeCompliant(schemas)
+		if err != nil {
+			t.Fatalf("Unexpected error from StrictModeCompliant: %s", err)
+		}
+		if compliant != expected {
+			t.Errorf("Unexpected result from StrictModeCompliant: found %t", compliant)
+		}
+	}
+	db, err := s.d.Connect("testing", "innodb_strict_mode=0&sql_mode=%27NO_ENGINE_SUBSTITUTION%27")
+	if err != nil {
+		t.Fatalf("Unexpected error from connect: %s", err)
+	}
+	exec := func(statement string) {
+		t.Helper()
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatalf("Unexpected error from Exec: %s", err)
+		}
+	}
+
+	// Default setup in integration.sql is expected to be compliant, except in 5.5
+	// due to use of zero default dates there only
+	major, minor, _ := s.d.Version()
+	expect := (major != 5 || minor != 5)
+	assertCompliance(expect)
+
+	if expect {
+		// A table with a zero-date default should break compliance
+		exec("CREATE TABLE has_zero_date (day date NOT NULL DEFAULT '0000-00-00')")
+		assertCompliance(false)
+		exec("DROP TABLE has_zero_date")
+	} else {
+		// 5.5 should become compliant if we drop the table with a zero-date default
+		exec("DROP TABLE grab_bag")
+		assertCompliance(true)
+	}
+
+	// Create tables with ROW_FORMAT=COMPRESSED. This should break compliance in
+	// MySQL/Percona 5.5-5.6 and MariaDB 10.1, due to their default globals.
+	exec("CREATE TABLE comprtest1 (name varchar(30)) ROW_FORMAT=COMPRESSED")
+	exec("CREATE TABLE comprtest2 (name varchar(30)) ROW_FORMAT=COMPRESSED")
+	expect = true
+	if (major == 5 && minor <= 6) || s.d.Flavor() == FlavorMariaDB101 {
+		expect = false
+	}
+	assertCompliance(expect)
+}

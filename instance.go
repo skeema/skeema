@@ -604,6 +604,60 @@ func (instance *Instance) DefaultCharSetAndCollation() (serverCharSet, serverCol
 	return
 }
 
+// StrictModeCompliant returns true if all tables in the supplied schemas,
+// if re-created on instance, would comply with innodb_strict_mode and a
+// sql_mode including STRICT_TRANS_TABLES,NO_ZERO_DATE.
+// This method does not currently detect invalid-but-nonzero dates in default
+// values, although it may in the future.
+func (instance *Instance) StrictModeCompliant(schemas []*Schema) (bool, error) {
+	var hasFilePerTable, hasBarracuda, alreadyPopulated bool
+	getFormatVars := func() (fpt, barracuda bool, err error) {
+		if alreadyPopulated {
+			return hasFilePerTable, hasBarracuda, nil
+		}
+		db, err := instance.Connect("", "")
+		if err != nil {
+			return false, false, err
+		}
+		var ifpt, iff string
+		if instance.Flavor().HasInnoFileFormat() {
+			err = db.QueryRow("SELECT @@global.innodb_file_per_table, @@global.innodb_file_format").Scan(&ifpt, &iff)
+			hasBarracuda = (strings.ToLower(iff) == "barracuda")
+		} else {
+			err = db.QueryRow("SELECT @@global.innodb_file_per_table").Scan(&ifpt)
+			hasBarracuda = true
+		}
+		hasFilePerTable = (ifpt == "1")
+		alreadyPopulated = (err == nil)
+		return hasFilePerTable, hasBarracuda, err
+	}
+
+	for _, s := range schemas {
+		for _, t := range s.Tables {
+			for _, c := range t.Columns {
+				if strings.HasPrefix(c.TypeInDB, "timestamp") || strings.HasPrefix(c.TypeInDB, "date") {
+					if strings.HasPrefix(c.Default.Value, "0000-00-00") {
+						return false, nil
+					}
+				}
+			}
+			if format := t.RowFormatClause(); format != "" {
+				needFilePerTable, needBarracuda := instance.Flavor().InnoRowFormatReqs(format)
+				if needFilePerTable || needBarracuda {
+					haveFilePerTable, haveBarracuda, err := getFormatVars()
+					if err != nil {
+						return false, err
+					}
+					if (needFilePerTable && !haveFilePerTable) || (needBarracuda && !haveBarracuda) {
+						return false, nil
+					}
+				}
+			}
+		}
+	}
+	return true, nil
+}
+
 func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	db, err := instance.Connect("information_schema", "")
 	if err != nil {
