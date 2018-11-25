@@ -15,6 +15,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDocker(t *testing.T) {
 		SchemaName:          "_skeema_tmp",
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
+		DefaultConnParams:   "wait_timeout=123",
 		RootPassword:        "",
 		LockWaitTimeout:     100 * time.Millisecond,
 	}
@@ -50,8 +51,15 @@ func (s WorkspaceIntegrationSuite) TestLocalDocker(t *testing.T) {
 	if schema, err := ws.IntrospectSchema(); err != nil || schema.Name != opts.SchemaName || len(schema.Tables) > 0 {
 		t.Errorf("Unexpected result from IntrospectSchema(): %+v / %v", schema, err)
 	}
-	if _, err := ws.ConnectionPool(""); err != nil {
+	db, err := ws.ConnectionPool("")
+	if err != nil {
 		t.Errorf("Unexpected error from ConnectionPool(): %s", err)
+	}
+	var waitTimeout int
+	if err := db.QueryRow("SELECT @@wait_timeout").Scan(&waitTimeout); err != nil {
+		t.Fatalf("Unexpected error querying wait_timeout: %s", err)
+	} else if waitTimeout != 123 {
+		t.Errorf("DefaultConnParams not working as expected; wait_timeout is %d", waitTimeout)
 	}
 	if err := ws.Cleanup(); err != nil {
 		t.Errorf("Unexpected error from cleanup: %s", err)

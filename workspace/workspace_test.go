@@ -147,6 +147,7 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	// Test error conditions
 	assertOptsError("--workspace=invalid")
 	assertOptsError("--workspace=docker --docker-cleanup=invalid")
+	assertOptsError("--workspace=docker --connect-options='autocommit=0'")
 
 	// Test default configuration, which should use temp-schema with drop cleanup
 	if opts := getOpts(""); opts.Type != TypeTempSchema || opts.CleanupAction != CleanupActionDrop {

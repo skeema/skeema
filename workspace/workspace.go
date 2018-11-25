@@ -73,6 +73,7 @@ type Options struct {
 	SchemaName          string
 	DefaultCharacterSet string
 	DefaultCollation    string
+	DefaultConnParams   string // only TypeLocalDocker
 	RootPassword        string // only TypeLocalDocker
 	LockWaitTimeout     time.Duration
 }
@@ -118,12 +119,17 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 		} else if cleanup == "destroy" {
 			opts.CleanupAction = CleanupActionDestroy
 		}
+		if opts.DefaultConnParams, err = dir.InstanceDefaultParams(); err != nil {
+			return Options{}, err
+		}
 	} else {
 		opts.Type = TypeTempSchema
 		opts.Instance = instance
 		if !dir.Config.GetBool("reuse-temp-schema") {
 			opts.CleanupAction = CleanupActionDrop
 		}
+		// Note: no support for opts.DefaultConnParams for temp-schema because the
+		// supplied instance already has default params
 	}
 	return opts, nil
 }

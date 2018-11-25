@@ -198,3 +198,41 @@ func (fl Flavor) AlwaysShowTableCollation(charSet string) bool {
 	}
 	return false
 }
+
+// HasInnoFileFormat returns true if the innodb_file_format variable exists in
+// the flavor, false otherwise.
+func (fl Flavor) HasInnoFileFormat() bool {
+	return !(fl.VendorMinVersion(VendorMySQL, 8, 0) ||
+		fl.VendorMinVersion(VendorPercona, 8, 0) ||
+		fl.VendorMinVersion(VendorMariaDB, 10, 3))
+}
+
+// InnoRowFormatReqs returns information on the flavor's requirements for
+// using the supplied row_format in InnoDB. If the first return value is true,
+// the flavor requires innodb_file_per_table=1. If the second return value is
+// true, the flavor requires innodb_file_format=Barracuda.
+// The format arg must be one of "DYNAMIC", "COMPRESSED", "COMPACT", or
+// "REDUNDANT" (case-insensitive), otherwise this method panics...
+func (fl Flavor) InnoRowFormatReqs(format string) (filePerTable, barracudaFormat bool) {
+	switch strings.ToUpper(format) {
+	case "DYNAMIC":
+		// DYNAMIC is always OK in MySQL/Percona 5.7+, and MariaDB 10.1 or 10.3+.
+		// Oddly, MariaDB 10.2 is more picky and requires Barracuda.
+		if fl.VendorMinVersion(VendorMySQL, 5, 7) || fl.VendorMinVersion(VendorPercona, 5, 7) {
+			return false, false
+		} else if fl == FlavorMariaDB101 || fl.VendorMinVersion(VendorMariaDB, 10, 3) {
+			return false, false
+		} else if fl == FlavorMariaDB102 {
+			return false, true
+		}
+		return true, true
+	case "COMPRESSED":
+		// COMPRESSED always requires file_per_table, and it requires Barracuda in
+		// any flavor that still has the innodb_file_format variable.
+		return true, fl.HasInnoFileFormat()
+	case "COMPACT", "REDUNDANT":
+		return false, false
+	}
+	// Panic on unexpected input, since this may be programmer error / a typo
+	panic(fmt.Errorf("Unknown row_format %s is not supported", format))
+}

@@ -45,9 +45,10 @@ func NewLocalDocker(opts Options) (ld *LocalDocker, err error) {
 		log.Infof("Using container %s (image=%s) for workspace operations", containerName, image)
 	}
 	ld.d, err = dockerClient.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
-		Name:         containerName,
-		Image:        image,
-		RootPassword: opts.RootPassword,
+		Name:              containerName,
+		Image:             image,
+		RootPassword:      opts.RootPassword,
+		DefaultConnParams: opts.DefaultConnParams,
 	})
 	if err != nil {
 		return nil, err
