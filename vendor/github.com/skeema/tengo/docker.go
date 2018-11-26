@@ -197,7 +197,7 @@ func (di *DockerizedInstance) Start() error {
 // destroy the container. The connection pool will be removed. If the container
 // was not already running, nil will be returned.
 func (di *DockerizedInstance) Stop() error {
-	err := di.Manager.client.StopContainer(di.container.ID, 3)
+	err := di.Manager.client.StopContainer(di.container.ID, 10)
 	if _, ok := err.(*docker.ContainerNotRunning); !ok && err != nil {
 		return err
 	}
@@ -287,7 +287,7 @@ func (di *DockerizedInstance) SourceSQL(filePath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("SourceSQL %s: Unable to open setup file %s: %s", di, filePath, err)
 	}
-	cmd := []string{"mysql", "-tvvv"}
+	cmd := []string{"mysql", "-tvvv", "-u", "root"}
 	if di.RootPassword != "" {
 		cmd = append(cmd, fmt.Sprintf("-p%s", di.RootPassword))
 	}
