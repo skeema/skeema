@@ -124,6 +124,17 @@ func InitHandler(cfg *mybase.Config) error {
 		hostOptionFile.SetOptionValue("", "default-collation", schemas[0].Collation)
 	}
 
+	// By default, Skeema normally connects using strict sql_mode as well as
+	// innodb_strict_mode=1; see InstanceDefaultParams() in fs/dir.go. If existing
+	// tables aren't recreatable with those settings though, disable them.
+	var nonStrictWarning string
+	if !cfg.OnCLI("connect-options") {
+		if compliant, err := inst.StrictModeCompliant(schemas); err == nil && !compliant {
+			nonStrictWarning = fmt.Sprintf("Detected some tables are incompatible with strict-mode; setting relaxed connect-options in %s\n", hostOptionFile)
+			hostOptionFile.SetOptionValue(environment, "connect-options", "innodb_strict_mode=0,sql_mode='ONLY_FULL_GROUP_BY,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'")
+		}
+	}
+
 	// Write the option file
 	if err := hostOptionFile.Write(false); err != nil {
 		return NewExitValue(CodeCantCreate, "Unable to use directory %s: Unable to write to %s: %s", hostDir.Path, hostOptionFile.Path(), err)
@@ -137,7 +148,13 @@ func InitHandler(cfg *mybase.Config) error {
 	if !separateSchemaSubdir {
 		suffix = "; skipping schema-level subdirs"
 	}
-	log.Infof("%s host dir %s for %s%s\n", verb, hostDir.Path, inst, suffix)
+	if nonStrictWarning == "" {
+		suffix += "\n"
+	}
+	log.Infof("%s host dir %s for %s%s", verb, hostDir.Path, inst, suffix)
+	if nonStrictWarning != "" {
+		log.Warn(nonStrictWarning)
+	}
 
 	// Iterate over the schemas. For each one, create a dir with .skeema and *.sql files
 	for _, s := range schemas {

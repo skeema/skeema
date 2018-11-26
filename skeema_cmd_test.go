@@ -88,6 +88,17 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 		}
 	}
 
+	// Test successful init on a schema that isn't strict-mode compliant
+	s.dbExecWithParams(t, "product", "sql_mode=%27NO_ENGINE_SUBSTITUTION%27", "ALTER TABLE posts MODIFY COLUMN created_at datetime NOT NULL DEFAULT '0000-00-00 00:00:00'")
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema init -h %s -P %d --dir nonstrict", s.d.Instance.Host, s.d.Instance.Port)
+	if dir, err = fs.ParseDir("nonstrict", cfg); err != nil {
+		t.Fatalf("Unexpected error from ParseDir: %s", err)
+	}
+	value, _ := dir.OptionFile.OptionValue("connect-options")
+	if !strings.Contains(value, "innodb_strict_mode=0") {
+		t.Errorf("Expected non-strict-compliant schema to use relaxed connect-options; instead found connect-options=%s", value)
+	}
+
 	// init should fail if a parent dir has an invalid .skeema file
 	fs.MakeTestDirectory(t, "hasbadoptions")
 	fs.WriteTestFile(t, "hasbadoptions/.skeema", "invalid file will not parse")

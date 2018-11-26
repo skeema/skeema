@@ -382,7 +382,15 @@ func (s *SkeemaIntegrationSuite) cleanData(t *testing.T, sourceAfter ...string) 
 // something goes wrong, it is fatal to the current test.
 func (s *SkeemaIntegrationSuite) dbExec(t *testing.T, schemaName, query string, args ...interface{}) {
 	t.Helper()
-	db, err := s.d.Connect(schemaName, "")
+	s.dbExecWithParams(t, schemaName, "", query, args...)
+}
+
+// dbExecWithOptions run the specified SQL DML or DDL in the specified schema,
+// using the supplied URI-encoded session variables. If something goes wrong,
+// it is fatal to the current test.
+func (s *SkeemaIntegrationSuite) dbExecWithParams(t *testing.T, schemaName, params, query string, args ...interface{}) {
+	t.Helper()
+	db, err := s.d.Connect(schemaName, params)
 	if err != nil {
 		t.Fatalf("Unable to connect to DockerizedInstance: %s", err)
 	}
