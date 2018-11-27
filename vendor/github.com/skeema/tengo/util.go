@@ -23,10 +23,17 @@ func EscapeIdentifier(input string) string {
 // CREATE TABLE would display it. Examples include default values, table
 // comments, column comments, index comments.
 func EscapeValueForCreateTable(input string) string {
-	escaped := strings.Replace(input, "\\", "\\\\", -1)
-	escaped = strings.Replace(escaped, "\000", "\\0", -1)
-	escaped = strings.Replace(escaped, "'", "''", -1)
-	return escaped
+	replacements := []struct{ old, new string }{
+		{"\\", "\\\\"},
+		{"\000", "\\0"},
+		{"'", "''"},
+		{"\n", "\\n"},
+		{"\r", "\\r"},
+	}
+	for _, operation := range replacements {
+		input = strings.Replace(input, operation.old, operation.new, -1)
+	}
+	return input
 }
 
 // SplitHostOptionalPort takes an address string containing a hostname, ipv4
