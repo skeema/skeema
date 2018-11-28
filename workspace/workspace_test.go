@@ -181,6 +181,49 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	}
 }
 
+// TestPrefab confirms that ExecLogicalSchema still functions properly with a
+// pre-supplied workspace. This provides a way of using Workspace providers from
+// other packages with ExecLogicalSchema.
+func (s WorkspaceIntegrationSuite) TestPrefab(t *testing.T) {
+	dirPath := "../testdata/golden/init/mydb/product"
+	if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
+		dirPath = strings.Replace(dirPath, "golden", "golden-mysql55", 1)
+	}
+	dir := s.getParsedDir(t, dirPath, "")
+	opts, err := OptionsForDir(dir, s.d.Instance)
+	if err != nil {
+		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
+	}
+	opts.LockWaitTimeout = 100 * time.Millisecond
+
+	ws, err := New(opts)
+	if err != nil {
+		t.Fatalf("Unexpected error from New: %s", err)
+	}
+
+	// Confirm the schema exists after the call to New
+	if _, err := ws.IntrospectSchema(); err != nil {
+		t.Errorf("Expected IntrospectSchema returned unexpected error %s", err)
+	}
+
+	schema, tableErrors, err := ExecLogicalSchema(dir.LogicalSchemas[0], Options{Type: TypePrefab, PrefabWorkspace: ws})
+	if err != nil {
+		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
+	}
+	if len(tableErrors) > 0 {
+		t.Errorf("Expected no TableErrors, instead found %d", len(tableErrors))
+	}
+	if len(schema.Tables) < 4 {
+		t.Errorf("Expected at least 4 tables, but instead found %d", len(schema.Tables))
+	}
+
+	// Confirm that Cleanup still ran, removing the schema, causing
+	// IntrospectSchema to now fail
+	if _, err := ws.IntrospectSchema(); err == nil {
+		t.Error("Expected IntrospectSchema to return an error, but it did not")
+	}
+}
+
 func (s *WorkspaceIntegrationSuite) Setup(backend string) (err error) {
 	s.d, err = s.manager.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
 		Name:         fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1)),

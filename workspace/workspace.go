@@ -39,8 +39,9 @@ type Type int
 
 // Constants enumerating different types of workspaces
 const (
-	TypeTempSchema Type = iota
-	TypeLocalDocker
+	TypeTempSchema  Type = iota // A temporary schema on a real pre-supplied Instance
+	TypeLocalDocker             // A schema on an ephemeral Docker container on localhost
+	TypePrefab                  // A pre-supplied Workspace, possibly from another package
 )
 
 // CleanupAction represents how to clean up a workspace.
@@ -73,8 +74,9 @@ type Options struct {
 	SchemaName          string
 	DefaultCharacterSet string
 	DefaultCollation    string
-	DefaultConnParams   string // only TypeLocalDocker
-	RootPassword        string // only TypeLocalDocker
+	DefaultConnParams   string    // only TypeLocalDocker
+	RootPassword        string    // only TypeLocalDocker
+	PrefabWorkspace     Workspace // only TypePrefab
 	LockWaitTimeout     time.Duration
 }
 
@@ -86,6 +88,8 @@ func New(opts Options) (Workspace, error) {
 		return NewTempSchema(opts)
 	case TypeLocalDocker:
 		return NewLocalDocker(opts)
+	case TypePrefab:
+		return opts.PrefabWorkspace, nil
 	}
 	return nil, fmt.Errorf("Unsupported workspace type %v", opts.Type)
 }
