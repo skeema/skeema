@@ -459,19 +459,16 @@ func ParentOptionFiles(dirPath string, baseConfig *mybase.Config) ([]*mybase.Fil
 	if err != nil {
 		return nil, err
 	}
+	cleaned = strings.TrimRight(cleaned, "/") // Prevent strings.Split from spitting out 2 blank strings for root dir
 
 	components := strings.Split(cleaned, string(os.PathSeparator))
-	// we know the first character will be a /, so discard the first split result
-	// which we know will be an empty string; and discard the last one since the
-	// working dir's .skeema file gets handled by Dir.parseContents() to save as
-	// dir.OptionFile.
-	components = components[1 : len(components)-1]
-	files := make([]*mybase.File, 0, len(components))
+	files := make([]*mybase.File, 0, len(components)-1)
 
 	// Examine parent dirs, going up one level at a time, stopping early if we
 	// hit either the user's home directory or a directory containing a .git subdir.
 	home := filepath.Clean(os.Getenv("HOME"))
-	for n := len(components) - 1; n >= 0; n-- {
+	var atRepoRoot bool
+	for n := len(components) - 1; n >= 0 && !atRepoRoot; n-- {
 		curPath := "/" + path.Join(components[0:n+1]...)
 		if curPath == home {
 			// We already read ~/.skeema as a global file
@@ -484,8 +481,11 @@ func ParentOptionFiles(dirPath string, baseConfig *mybase.Config) ([]*mybase.Fil
 		}
 		for _, fi := range fileInfos {
 			if fi.Name() == ".git" {
-				n = -1 // stop outer loop early, after done with this dir
-			} else if fi.Name() == ".skeema" {
+				atRepoRoot = true
+			} else if fi.Name() == ".skeema" && n < len(components)-1 {
+				// The second part of the above conditional ensures we ignore dirPath's own
+				// .skeema file, since that is handled in Dir.parseContents() to save as
+				// dir.OptionFile.
 				f, err := parseOptionFile(curPath, baseConfig)
 				if err != nil {
 					return nil, err
