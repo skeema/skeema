@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
@@ -11,17 +12,21 @@ import (
 )
 
 // LocalDocker is a Workspace created inside of a Docker container on localhost.
-// The schema is dropped when done interacting with the workspace, but the
-// container may optionally remain running, be stopped, or be destroyed
-// entirely.
+// The schema is dropped when done interacting with the workspace in Cleanup(),
+// but the container remains running. The container may optionally be stopped
+// or destroyed via Shutdown().
 type LocalDocker struct {
-	schemaName  string
-	d           *tengo.DockerizedInstance
-	releaseLock releaseFunc
+	schemaName    string
+	d             *tengo.DockerizedInstance
+	releaseLock   releaseFunc
+	cleanupAction CleanupAction
 }
 
-var dockerClient *tengo.DockerClient
-var seenContainerNames = map[string]bool{}
+var cstore struct {
+	dockerClient *tengo.DockerClient
+	containers   map[string]*LocalDocker
+	sync.Mutex
+}
 
 // NewLocalDocker finds or creates a containerized MySQL instance, creates a
 // temporary schema on it, and returns it.
@@ -30,22 +35,29 @@ func NewLocalDocker(opts Options) (ld *LocalDocker, err error) {
 		return nil, fmt.Errorf("NewLocalDocker: unsupported flavor %s", opts.Flavor)
 	}
 
-	if dockerClient == nil {
-		if dockerClient, err = tengo.NewDockerClient(tengo.DockerClientOptions{}); err != nil {
+	cstore.Lock()
+	defer cstore.Unlock()
+	if cstore.dockerClient == nil {
+		if cstore.dockerClient, err = tengo.NewDockerClient(tengo.DockerClientOptions{}); err != nil {
 			return
 		}
+		cstore.containers = make(map[string]*LocalDocker)
 		tengo.UseFilteredDriverLogger()
 	}
+
 	ld = &LocalDocker{
-		schemaName: opts.SchemaName,
+		schemaName:    opts.SchemaName,
+		cleanupAction: opts.CleanupAction,
 	}
 	image := opts.Flavor.String()
-	containerName := fmt.Sprintf("skeema-%s", strings.Replace(image, ":", "-", -1))
-	if !seenContainerNames[containerName] {
-		log.Infof("Using container %s (image=%s) for workspace operations", containerName, image)
+	if opts.ContainerName == "" {
+		opts.ContainerName = fmt.Sprintf("skeema-%s", strings.Replace(image, ":", "-", -1))
 	}
-	ld.d, err = dockerClient.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
-		Name:              containerName,
+	if cstore.containers[opts.ContainerName] == nil {
+		log.Infof("Using container %s (image=%s) for workspace operations", opts.ContainerName, image)
+	}
+	ld.d, err = cstore.dockerClient.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
+		Name:              opts.ContainerName,
 		Image:             image,
 		RootPassword:      opts.RootPassword,
 		DefaultConnParams: opts.DefaultConnParams,
@@ -66,26 +78,10 @@ func NewLocalDocker(opts Options) (ld *LocalDocker, err error) {
 		}
 	}()
 
-	if !seenContainerNames[containerName] {
-		if opts.CleanupAction == CleanupActionStop {
-			RegisterShutdownFunc(func() {
-				log.Infof("Stopping container %s", containerName)
-				ld.d.Stop()
-				delete(seenContainerNames, containerName)
-			})
-		} else if opts.CleanupAction == CleanupActionDestroy {
-			RegisterShutdownFunc(func() {
-				log.Infof("Destroying container %s", containerName)
-				ld.d.Destroy()
-				delete(seenContainerNames, containerName)
-			})
-		} else {
-			RegisterShutdownFunc(func() {
-				delete(seenContainerNames, containerName)
-			})
-		}
+	if cstore.containers[opts.ContainerName] == nil {
+		cstore.containers[opts.ContainerName] = ld
+		RegisterShutdownFunc(ld.shutdown)
 	}
-	seenContainerNames[containerName] = true
 
 	if has, err := ld.d.HasSchema(ld.schemaName); err != nil {
 		return ld, fmt.Errorf("Unable to check for existence of temp schema on %s: %s", ld.d.Instance, err)
@@ -134,4 +130,28 @@ func (ld *LocalDocker) Cleanup() error {
 		return fmt.Errorf("Cannot drop temporary schema on %s: %s", ld.d.Instance, err)
 	}
 	return nil
+}
+
+// shutdown handles shutdown logic for a specific LocalDocker instance. A single
+// string arg may optionally be supplied as a container name prefix: if the
+// container name does not begin with the prefix, no shutdown occurs.
+func (ld *LocalDocker) shutdown(args ...interface{}) bool {
+	if len(args) > 0 {
+		if prefix, ok := args[0].(string); !ok || !strings.HasPrefix(ld.d.Name, prefix) {
+			return false
+		}
+	}
+
+	cstore.Lock()
+	defer cstore.Unlock()
+
+	if ld.cleanupAction == CleanupActionStop {
+		log.Infof("Stopping container %s", ld.d.Name)
+		ld.d.Stop()
+	} else if ld.cleanupAction == CleanupActionDestroy {
+		log.Infof("Destroying container %s", ld.d.Name)
+		ld.d.Destroy()
+	}
+	delete(cstore.containers, ld.d.Name)
+	return true
 }

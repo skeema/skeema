@@ -91,7 +91,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDocker(t *testing.T) {
 	lookupOpts := tengo.DockerizedInstanceOptions{
 		Name: containerName,
 	}
-	if _, err := dockerClient.GetInstance(lookupOpts); err != nil {
+	if _, err := cstore.dockerClient.GetInstance(lookupOpts); err != nil {
 		t.Errorf("Unable to re-fetch container %s by name: %s", containerName, err)
 	}
 
@@ -107,11 +107,15 @@ func (s WorkspaceIntegrationSuite) TestLocalDocker(t *testing.T) {
 	if err := ld.Cleanup(); err == nil {
 		t.Error("Expected cleanup error since a table had rows, but err was nil")
 	}
-	Shutdown()
+	Shutdown("no-match") // intentionally should have no effect, container name doesn't match supplied prefix
+	if ok, err := ld.d.CanConnect(); !ok || err != nil {
+		t.Errorf("Expected container to still be running, but CanConnect returned %t / %v", ok, err)
+	}
+	Shutdown("skeema-") // should match
 	if ok, err := ld.d.CanConnect(); ok || err == nil {
 		t.Error("Expected container to be destroyed, but CanConnect returned true")
 	}
-	if _, err := dockerClient.GetInstance(lookupOpts); err == nil {
+	if _, err := cstore.dockerClient.GetInstance(lookupOpts); err == nil {
 		t.Errorf("Expected container %s to be destroyed, but able re-fetch container by name without error", containerName)
 	}
 }

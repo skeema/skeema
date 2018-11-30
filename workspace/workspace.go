@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -47,20 +48,22 @@ const (
 // CleanupAction represents how to clean up a workspace.
 type CleanupAction int
 
-// Constants enumerating different cleanup actions
+// Constants enumerating different cleanup actions. These may affect the
+// behavior of Workspace.Cleanup() and/or Shutdown().
 const (
 	// CleanupActionNone means to perform no special cleanup
 	CleanupActionNone CleanupAction = iota
 
-	// CleanupActionDrop means to drop the schema. Only used with TypeTempSchema.
+	// CleanupActionDrop means to drop the schema in Workspace.Cleanup(). Only
+	// used with TypeTempSchema.
 	CleanupActionDrop
 
-	// CleanupActionStop means to stop the MySQL instance container. Only used with
-	// TypeLocalDocker.
+	// CleanupActionStop means to stop the MySQL instance container in Shutdown().
+	// Only used with TypeLocalDocker.
 	CleanupActionStop
 
-	// CleanupActionDestroy means to destroy the MySQL instance container. Only
-	// used with TypeLocalDocker.
+	// CleanupActionDestroy means to destroy the MySQL instance container in
+	// Shutdown(). Only used with TypeLocalDocker.
 	CleanupActionDestroy
 )
 
@@ -71,6 +74,7 @@ type Options struct {
 	CleanupAction       CleanupAction
 	Instance            *tengo.Instance // only TypeTempSchema
 	Flavor              tengo.Flavor    // only TypeLocalDocker
+	ContainerName       string          // only TypeLocalDocker
 	SchemaName          string
 	DefaultCharacterSet string
 	DefaultCollation    string
@@ -116,6 +120,7 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 		if opts.Flavor == tengo.FlavorUnknown && instance != nil {
 			opts.Flavor = instance.Flavor()
 		}
+		opts.ContainerName = fmt.Sprintf("skeema-%s", strings.Replace(opts.Flavor.String(), ":", "-", -1))
 		if cleanup, err := dir.Config.GetEnum("docker-cleanup", "none", "stop", "destroy"); err != nil {
 			return Options{}, err
 		} else if cleanup == "stop" {
@@ -138,7 +143,15 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 	return opts, nil
 }
 
-var shutdownFuncs []func()
+// ShutdownFunc is a function that manages final cleanup of a Workspace upon
+// completion of a request or process. It may optionally use args, passed
+// through by Shutdown(), to determine whether or not a Workspace needs to be
+// cleaned up. It should return true if cleanup occurred (meaning that the
+// ShutdownFunc should be de-registered from future calls to Shutdown()), or
+// false otherwise.
+type ShutdownFunc func(...interface{}) bool
+
+var shutdownFuncs []ShutdownFunc
 
 // Shutdown performs any necessary cleanup operations prior to the program
 // exiting. For example, if containers need to be stopped or destroyed, it is
@@ -146,17 +159,21 @@ var shutdownFuncs []func()
 // for each workspace invocation.
 // It is recommended that programs importing this package call Shutdown as a
 // deferred function in main().
-func Shutdown() {
+func Shutdown(args ...interface{}) {
+	retainedFuncs := make([]ShutdownFunc, 0, len(shutdownFuncs))
 	for _, f := range shutdownFuncs {
-		f()
+		if deregister := f(args...); !deregister {
+			retainedFuncs = append(retainedFuncs, f)
+		}
 	}
-	shutdownFuncs = []func(){}
+	shutdownFuncs = retainedFuncs
 }
 
 // RegisterShutdownFunc registers a function to be executed by Shutdown.
 // Structs satisfying the Workspace interface may optionally use this function
-// to
-func RegisterShutdownFunc(f func()) {
+// to track actions to perform at shutdown time, such as stopping or destroying
+// containers.
+func RegisterShutdownFunc(f ShutdownFunc) {
 	shutdownFuncs = append(shutdownFuncs, f)
 }
 
