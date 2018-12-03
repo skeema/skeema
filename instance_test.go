@@ -541,7 +541,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	aTableFromDB = s.GetTable(t, "testing", "grab_bag")
 	aTableFromDB.SecondaryIndexes[0], aTableFromDB.SecondaryIndexes[1], aTableFromDB.SecondaryIndexes[2] = aTableFromDB.SecondaryIndexes[2], aTableFromDB.SecondaryIndexes[0], aTableFromDB.SecondaryIndexes[1]
 	fixIndexOrder(aTableFromDB)
-	if aTableFromDB.GeneratedCreateStatement(flavor) != aTableFromDB.CreateStatement {
+	if aTableFromDB.GeneratedCreateStatement(flavor) != aTableFromDB.CreateStatement && !aTableFromDB.UnsupportedDDL {
 		t.Error("fixIndexOrder did not behave as expected")
 	}
 }

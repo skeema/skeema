@@ -424,10 +424,14 @@ func foreignKeyTable() Table {
 			ReferencedTableName:   "products",
 			ReferencedColumnNames: []string{"line", "model"},
 			DeleteRule:            "CASCADE",
-			UpdateRule:            "CASCADE",
+			UpdateRule:            "NO ACTION",
 		},
 	}
 
+	// warning: haven't created Flavor-specific versions of this unit test fixture
+	// table yet because the need hasn't come up, but there are actual flavor-
+	// specific differences with FKs. In particular, MySQL 8+ squashes NO ACTION
+	// clauses from SHOW CREATE TABLE.
 	stmt := strings.Replace(`CREATE TABLE ~warranties~ (
   ~id~ int(10) unsigned NOT NULL,
   ~customer_id~ int(10) unsigned DEFAULT NULL,
@@ -436,8 +440,8 @@ func foreignKeyTable() Table {
   PRIMARY KEY (~id~),
   UNIQUE KEY ~product~ (~product_line~,~model~),
   KEY ~customer~ (~customer_id~),
-  CONSTRAINT ~customer_fk~ FOREIGN KEY (~customer_id~) REFERENCES ~purchasing~.~customers~ (~id~),
-  CONSTRAINT ~product_fk~ FOREIGN KEY (~product_line~, ~model~) REFERENCES ~products~ (~line~, ~model~)
+  CONSTRAINT ~customer_fk~ FOREIGN KEY (~customer_id~) REFERENCES ~purchasing~.~customers~ (~id~) ON DELETE SET NULL,
+  CONSTRAINT ~product_fk~ FOREIGN KEY (~product_line~, ~model~) REFERENCES ~products~ (~line~, ~model~) ON DELETE CASCADE ON UPDATE NO ACTION
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1`, "~", "`", -1)
 
 	return Table{
