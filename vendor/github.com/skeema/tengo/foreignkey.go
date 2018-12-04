@@ -22,7 +22,7 @@ type ForeignKey struct {
 
 // Definition returns this ForeignKey's definition clause, for use as part of a DDL
 // statement.
-func (fk *ForeignKey) Definition(_ Flavor) string {
+func (fk *ForeignKey) Definition(flavor Flavor) string {
 	colParts := make([]string, len(fk.Columns))
 	for n, col := range fk.Columns {
 		colParts[n] = EscapeIdentifier(col.Name)
@@ -39,13 +39,14 @@ func (fk *ForeignKey) Definition(_ Flavor) string {
 	}
 	parentCols := strings.Join(colParts, ", ")
 
-	// MySQL does not output ON DELETE RESTRICT or ON UPDATE RESTRICT in its table create syntax.
-	// Ditto for equivalent ON DELETE NO ACTION or ON UPDATE NO ACTION.
+	// MySQL does not output ON DELETE RESTRICT or ON UPDATE RESTRICT in its table
+	// create syntax. Ditto for the completely-equivalent ON DELETE NO ACTION or ON
+	// UPDATE NO ACTION in MySQL 8+, but other flavors still display them.
 	var deleteRule, updateRule string
-	if fk.DeleteRule != "RESTRICT" && fk.DeleteRule != "NO ACTION" {
+	if fk.DeleteRule != "RESTRICT" && (fk.DeleteRule != "NO ACTION" || !flavor.HasDataDictionary()) {
 		deleteRule = fmt.Sprintf(" ON DELETE %s", fk.DeleteRule)
 	}
-	if fk.UpdateRule != "RESTRICT" && fk.UpdateRule != "NO ACTION" {
+	if fk.UpdateRule != "RESTRICT" && (fk.UpdateRule != "NO ACTION" || !flavor.HasDataDictionary()) {
 		updateRule = fmt.Sprintf(" ON UPDATE %s", fk.UpdateRule)
 	}
 
