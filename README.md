@@ -49,6 +49,17 @@ Tagged releases are tested against the following databases, all running on Linux
 
 Outside of a tagged release, every commit to the master branch is automatically tested against MySQL 5.6 and 5.7.
 
+## Unsupported features:
+
+* stored procedures, triggers
+* views
+* users, grants, roles
+* seed data (initia DB data)
+
+No immediate plans for stored procedures, triggers, or views yet. But it's definitely possible in the future, or possible via third-party pull requests, or sponsored development. These features should fit in well with Skeema's declarative approach; ditto with users/grants/roles, and possibly also seed data.
+
+* partitioning, fulltext indexes, spatial types, virtual columns
+
 A few uncommon MySQL features -- such as partitioning, fulltext indexes, spatial types, virtual columns -- are not yet supported. Skeema is able to *create* or *drop* tables using these features, but not *alter* them. The output of `skeema diff` and `skeema push` clearly displays when this is the case. You may still make such alters directly/manually (outside of Skeema), and then update the corresponding CREATE TABLE files via `skeema pull`.
 
 ## Credits
