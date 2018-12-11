@@ -209,8 +209,9 @@ func (mc ModifyColumn) Unsafe() bool {
 		return false
 	}
 
-	// Changing signedness is unsafe
-	if (strings.Contains(oldType, "unsigned") && !strings.Contains(newType, "unsigned")) || (!strings.Contains(oldType, "unsigned") && strings.Contains(newType, "unsigned")) {
+	// signed -> unsigned is always unsafe
+	// (The opposite is checked later specifically for the integer types)
+	if !strings.Contains(oldType, "unsigned") && strings.Contains(newType, "unsigned") {
 		return true
 	}
 
@@ -243,9 +244,9 @@ func (mc ModifyColumn) Unsafe() bool {
 		return (newPrecision < oldPrecision || newScale < oldScale)
 	}
 
-	// varchar(x) -> varchar(y) or varbinary(x) -> varbinary(y) unsafe if y < x
-	if bothSamePrefix("varchar", "varbinary") {
-		re := regexp.MustCompile(`^var(?:char|binary)\((\d+)\)`)
+	// bit(x) -> bit(y) unsafe if y < x
+	if bothSamePrefix("bit") {
+		re := regexp.MustCompile(`^bit\((\d+)\)`)
 		oldMatches := re.FindStringSubmatch(oldType)
 		newMatches := re.FindStringSubmatch(newType)
 		if oldMatches == nil || newMatches == nil {
@@ -280,6 +281,7 @@ func (mc ModifyColumn) Unsafe() bool {
 	// double(x,y) -> double or float(x,y) -> float IS safe (no parens = hardware max used)
 	// double(a,b) -> double(x,y) or float(a,b) -> float(x,y) unsafe if x < a or y < b
 	// Converting from float to double may be safe (same rules as above), but double to float always unsafe
+	// No extra check for unsigned->signed needed; although float/double support these, they don't affect max values
 	if bothSamePrefix("float", "double") || (strings.HasPrefix(oldType, "float") && strings.HasPrefix(newType, "double")) {
 		if !strings.ContainsRune(newType, '(') { // no parens = max allowed for type
 			return false
@@ -299,33 +301,82 @@ func (mc ModifyColumn) Unsafe() bool {
 		return (newPrecision < oldPrecision || newScale < oldScale)
 	}
 
-	// int, blob, text type families: unsafe if reducing to a smaller-storage type
-	isSafeSizeChange := func(ranking []string) bool {
-		oldRank := -1
-		newRank := -1
-		for n, typeName := range ranking {
-			if strings.HasPrefix(oldType, typeName) {
-				oldRank = n
-			}
-			if strings.HasPrefix(newType, typeName) {
-				newRank = n
-			}
+	// ints: unsafe if reducing to a smaller-storage type. Also unsafe if switching
+	// from unsigned to signed and not increasing to a larger storage type.
+	intRank := []string{"NOT AN INT", "tinyint", "smallint", "mediumint", "int", "bigint"}
+	var oldRank, newRank int
+	for n := 1; n < len(intRank); n++ {
+		if strings.HasPrefix(oldType, intRank[n]) {
+			oldRank = n
 		}
-		if oldRank == -1 || newRank == -1 {
-			return false
+		if strings.HasPrefix(newType, intRank[n]) {
+			newRank = n
 		}
-		return newRank >= oldRank
 	}
-	intRank := []string{"tinyint", "smallint", "mediumint", "int", "bigint"}
-	blobRank := []string{"tinyblob", "blob", "mediumblob", "longblob"}
-	textRank := []string{"tinytext", "text", "mediumtext", "longtext"}
-	if isSafeSizeChange(intRank) || isSafeSizeChange(blobRank) || isSafeSizeChange(textRank) {
-		return false
+	if oldRank > 0 && newRank > 0 {
+		if strings.Contains(oldType, "unsigned") && !strings.Contains(newType, "unsigned") {
+			return oldRank >= newRank
+		}
+		return oldRank > newRank
 	}
 
-	// All other changes considered unsafe. This includes more radical column type
-	// changes. Also includes anything involving fixed-width types, in which length
-	// increases have padding implications.
+	// Conversions between string types (char, varchar, *text): unsafe if
+	// new size < old size
+	isStringType := func(typ string) (bool, uint64) {
+		textMap := map[string]uint64{
+			"tinytext":   255,
+			"text":       65535,
+			"mediumtext": 16777215,
+			"longtext":   4294967295,
+		}
+		if textLen, ok := textMap[typ]; ok {
+			return true, textLen
+		}
+		re := regexp.MustCompile(`^(?:varchar|char)\((\d+)\)`)
+		matches := re.FindStringSubmatch(typ)
+		if matches == nil {
+			return false, 0
+		}
+		size, err := strconv.ParseUint(matches[1], 10, 64)
+		return err == nil, size
+	}
+	oldString, oldStringSize := isStringType(oldType)
+	newString, newStringSize := isStringType(newType)
+	if oldString && newString {
+		return newStringSize < oldStringSize
+	}
+
+	// Conversions between variable-length binary types (varbinary, *blob):
+	// unsafe if new size < old size
+	// Note: This logic intentionally does not handle fixed-length binary(x)
+	// conversions. Any changes with binary(x), even to binary(y) with y>x, are
+	// treated as unsafe. The right-zero-padding behavior of binary type means any
+	// size change effectively modifies the stored values.
+	isVarBinType := func(typ string) (bool, uint64) {
+		blobMap := map[string]uint64{
+			"tinyblob":   255,
+			"blob":       65535,
+			"mediumblob": 16777215,
+			"longblob":   4294967295,
+		}
+		if blobLen, ok := blobMap[typ]; ok {
+			return true, blobLen
+		}
+		re := regexp.MustCompile(`^varbinary\((\d+)\)`)
+		matches := re.FindStringSubmatch(typ)
+		if matches == nil {
+			return false, 0
+		}
+		size, err := strconv.ParseUint(matches[1], 10, 64)
+		return err == nil, size
+	}
+	oldVarBin, oldVarBinSize := isVarBinType(oldType)
+	newVarBin, newVarBinSize := isVarBinType(newType)
+	if oldVarBin && newVarBin {
+		return newVarBinSize < oldVarBinSize
+	}
+
+	// All other changes considered unsafe.
 	return true
 }
 
