@@ -10,11 +10,8 @@ import (
 func TestSchemaDiffEmpty(t *testing.T) {
 	assertEmptyDiff := func(a, b *Schema) {
 		sd := a.Diff(b)
-		if len(sd.TableDiffs) != 0 {
-			t.Errorf("Expected no table diffs, instead found %d", len(sd.TableDiffs))
-		}
-		if sd.SchemaDDL != "" {
-			t.Errorf("Expected no SchemaDDL, instead found %s", sd.SchemaDDL)
+		if diffs := sd.ObjectDiffs(); len(diffs) != 0 {
+			t.Errorf("Expected no object diffs, instead found %d", len(diffs))
 		}
 		if sd.String() != "" {
 			t.Errorf("Expected empty String(), instead found %s", sd.String())
@@ -31,13 +28,38 @@ func TestSchemaDiffEmpty(t *testing.T) {
 	assertEmptyDiff(&s1, &s2)
 	assertEmptyDiff(&s2, &s1)
 	assertEmptyDiff(nil, nil)
+
+	var dd *DatabaseDiff
+	if dd.DiffType() != DiffTypeNone {
+		t.Errorf("expected nil DatabaseDiff to be DiffTypeNone; instead found %s", dd.DiffType())
+	}
+	if dd.ObjectName() != "" {
+		t.Errorf("Unexpected object name: %s", dd.ObjectName())
+	}
 }
 
-func TestSchemaDiffSchemaDDL(t *testing.T) {
+func TestSchemaDiffDatabaseDiff(t *testing.T) {
 	assertDiffSchemaDDL := func(a, b *Schema, expectedSchemaDDL string) {
 		sd := NewSchemaDiff(a, b)
-		if sd.SchemaDDL != expectedSchemaDDL {
-			t.Errorf("For a=%s/%s and b=%s/%s, expected SchemaDDL=\"%s\", instead found \"%s\"", a.CharSet, a.Collation, b.CharSet, b.Collation, expectedSchemaDDL, sd.SchemaDDL)
+		dd := sd.DatabaseDiff()
+		schemaDDL, _ := dd.Statement(StatementModifiers{})
+		if schemaDDL != expectedSchemaDDL {
+			t.Errorf("For a=%s/%s and b=%s/%s, expected SchemaDDL=\"%s\", instead found \"%s\"", a.CharSet, a.Collation, b.CharSet, b.Collation, expectedSchemaDDL, schemaDDL)
+		}
+		if expectedSchemaDDL != "" {
+			diffs := sd.ObjectDiffs()
+			if actualObjType := diffs[0].ObjectType(); actualObjType != "database" {
+				t.Errorf("Unexpected object type for diff[0]: %s", actualObjType)
+			}
+			var expectName string
+			if a != nil {
+				expectName = a.Name
+			} else {
+				expectName = b.Name
+			}
+			if actualName := diffs[0].ObjectName(); actualName != expectName {
+				t.Errorf("Unexpected object name for diff[0]: %s", actualName)
+			}
 		}
 	}
 
@@ -83,10 +105,10 @@ func TestSchemaDiffAddOrDropTable(t *testing.T) {
 		t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
 	}
 	td := sd.TableDiffs[0]
-	if td.Type != TableDiffCreate || td.TypeString() != "CREATE" || td.Type.String() != "CREATE" {
-		t.Fatalf("Incorrect type of table diff returned: expected %s, found %s", TableDiffCreate, td.TypeString())
+	if td.Type != DiffTypeCreate || td.TypeString() != "CREATE" || td.Type.String() != "CREATE" {
+		t.Fatalf("Incorrect type of table diff returned: expected %s, found %s", DiffTypeCreate, td.TypeString())
 	}
-	if td.To != &s2t2 {
+	if td.To != &s2t2 || td.ObjectName() != s2t2.Name {
 		t.Error("Pointer in table diff does not point to expected value")
 	}
 
@@ -96,10 +118,10 @@ func TestSchemaDiffAddOrDropTable(t *testing.T) {
 		t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
 	}
 	td2 := sd.TableDiffs[0]
-	if td2.Type != TableDiffDrop || td2.TypeString() != "DROP" || td2.Type.String() != "DROP" {
-		t.Fatalf("Incorrect type of table diff returned: expected %s, found %s", TableDiffDrop, td2.TypeString())
+	if td2.Type != DiffTypeDrop || td2.TypeString() != "DROP" || td2.Type.String() != "DROP" {
+		t.Fatalf("Incorrect type of table diff returned: expected %s, found %s", DiffTypeDrop, td2.TypeString())
 	}
-	if td2.From != &s2t2 {
+	if td2.From != &s2t2 || td2.ObjectName() != s2t2.Name {
 		t.Error("Pointer in table diff does not point to expected value")
 	}
 	if sd.String() != fmt.Sprintf("DROP TABLE %s;\n", EscapeIdentifier(s2t2.Name)) {
@@ -147,8 +169,8 @@ func TestSchemaDiffAddOrDropTable(t *testing.T) {
 		t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
 	}
 	td = sd.TableDiffs[0]
-	if td.Type != TableDiffCreate {
-		t.Fatalf("Incorrect type of table diff returned: expected %s, found %s", TableDiffCreate, td.TypeString())
+	if td.Type != DiffTypeCreate {
+		t.Fatalf("Incorrect type of table diff returned: expected %s, found %s", DiffTypeCreate, td.TypeString())
 	}
 	if td.To != &ust {
 		t.Error("Pointer in table diff does not point to expected value")
@@ -158,8 +180,8 @@ func TestSchemaDiffAddOrDropTable(t *testing.T) {
 		t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
 	}
 	td2 = sd.TableDiffs[0]
-	if td2.Type != TableDiffDrop {
-		t.Fatalf("Incorrect type of table diff returned: expected %s, found %s", TableDiffDrop, td2.TypeString())
+	if td2.Type != DiffTypeDrop {
+		t.Fatalf("Incorrect type of table diff returned: expected %s, found %s", DiffTypeDrop, td2.TypeString())
 	}
 	if td2.From != &ust {
 		t.Error("Pointer in table diff does not point to expected value")
@@ -178,8 +200,8 @@ func TestSchemaDiffAlterTable(t *testing.T) {
 			t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
 		}
 		td := sd.TableDiffs[0]
-		if td.Type != TableDiffAlter || td.TypeString() != "ALTER" || td.Type.String() != "ALTER" {
-			t.Fatalf("Incorrect type of table diff returned: expected %s, found %s", TableDiffAlter, td.TypeString())
+		if td.Type != DiffTypeAlter || td.TypeString() != "ALTER" || td.Type.String() != "ALTER" {
+			t.Fatalf("Incorrect type of table diff returned: expected %s, found %s", DiffTypeAlter, td.TypeString())
 		}
 		mods := StatementModifiers{NextAutoInc: nextAutoInc}
 		if stmt, err := sd.TableDiffs[0].Statement(mods); err != nil {
@@ -217,8 +239,8 @@ func TestSchemaDiffAlterTable(t *testing.T) {
 		if len(sd.TableDiffs) != 1 {
 			t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
 		}
-		if sd.TableDiffs[0].Type != TableDiffAlter {
-			t.Fatalf("Incorrect type of table diff returned: expected %s, found %s", TableDiffAlter, sd.TableDiffs[0].TypeString())
+		if sd.TableDiffs[0].Type != DiffTypeAlter {
+			t.Fatalf("Incorrect type of table diff returned: expected %s, found %s", DiffTypeAlter, sd.TableDiffs[0].TypeString())
 		}
 		if len(sd.TableDiffs[0].alterClauses) != 1 {
 			t.Fatalf("Wrong number of alter clauses: expected 1, found %d", len(sd.TableDiffs[0].alterClauses))
@@ -392,7 +414,7 @@ func TestSchemaDiffFilteredTableDiffs(t *testing.T) {
 	s2t3 := unsupportedTable() // still works for add/drop despite being unsupported
 	s2 := aSchema("s2", &s2t1, &s2t2, &s2t3)
 
-	assertFiltered := func(sd *SchemaDiff, expectLen int, types ...TableDiffType) {
+	assertFiltered := func(sd *SchemaDiff, expectLen int, types ...DiffType) {
 		t.Helper()
 		diffs := sd.FilteredTableDiffs(types...)
 		if len(diffs) != expectLen {
@@ -416,18 +438,18 @@ func TestSchemaDiffFilteredTableDiffs(t *testing.T) {
 	if len(sd.SameTables) != 1 || sd.SameTables[0].Name != s1t1.Name {
 		t.Errorf("Unexpected result for sd.SameTables: %v", sd.SameTables)
 	}
-	assertFiltered(sd, 1, TableDiffCreate)
-	assertFiltered(sd, 1, TableDiffAlter)
-	assertFiltered(sd, 0, TableDiffDrop)
-	assertFiltered(sd, 1, TableDiffCreate, TableDiffDrop)
-	assertFiltered(sd, 2, TableDiffCreate, TableDiffAlter)
+	assertFiltered(sd, 1, DiffTypeCreate)
+	assertFiltered(sd, 1, DiffTypeAlter)
+	assertFiltered(sd, 0, DiffTypeDrop)
+	assertFiltered(sd, 1, DiffTypeCreate, DiffTypeDrop)
+	assertFiltered(sd, 2, DiffTypeCreate, DiffTypeAlter)
 
 	sd = NewSchemaDiff(&s2, &s1)
-	assertFiltered(sd, 0, TableDiffCreate)
-	assertFiltered(sd, 1, TableDiffAlter)
-	assertFiltered(sd, 1, TableDiffDrop)
-	assertFiltered(sd, 1, TableDiffCreate, TableDiffDrop)
-	assertFiltered(sd, 2, TableDiffDrop, TableDiffAlter)
+	assertFiltered(sd, 0, DiffTypeCreate)
+	assertFiltered(sd, 1, DiffTypeAlter)
+	assertFiltered(sd, 1, DiffTypeDrop)
+	assertFiltered(sd, 1, DiffTypeCreate, DiffTypeDrop)
+	assertFiltered(sd, 2, DiffTypeDrop, DiffTypeAlter)
 }
 
 func TestTableDiffUnsupportedAlter(t *testing.T) {
@@ -451,8 +473,8 @@ func TestTableDiffUnsupportedAlter(t *testing.T) {
 		// table was on the "to" or "from" side, the message should show what part
 		// of the unsupported table triggered the issue.
 		extended := err.(*UnsupportedDiffError).ExtendedError()
-		expected := `--- Expected
-+++ MySQL-actual
+		expected := `--- Expected CREATE
++++ MySQL-actual SHOW CREATE
 @@ -6 +6,4 @@
 -) ENGINE=InnoDB DEFAULT CHARSET=latin1
 +) ENGINE=InnoDB DEFAULT CHARSET=latin1 ROW_FORMAT=REDUNDANT
@@ -508,8 +530,8 @@ func TestAlterTableStatementAllowUnsafeMods(t *testing.T) {
 		if len(sd.TableDiffs) != 1 {
 			t.Fatalf("Incorrect number of table diffs: expected 1, found %d", len(sd.TableDiffs))
 		}
-		if sd.TableDiffs[0].Type != TableDiffAlter {
-			t.Fatalf("Incorrect type of table diff returned: expected %s, found %s", TableDiffAlter, sd.TableDiffs[0].TypeString())
+		if sd.TableDiffs[0].Type != DiffTypeAlter {
+			t.Fatalf("Incorrect type of table diff returned: expected %s, found %s", DiffTypeAlter, sd.TableDiffs[0].TypeString())
 		}
 		return sd.TableDiffs[0]
 	}
@@ -633,4 +655,20 @@ func TestIgnoreTableMod(t *testing.T) {
 	assertStatement("", "testing", true)
 	assertStatement("^hello", "testing", true)
 	assertStatement("^test", "testing", false)
+}
+
+func TestNilTableDiff(t *testing.T) {
+	var td *TableDiff
+	if td.ObjectType() != "table" {
+		t.Errorf("Unexpected object type: %s", td.ObjectType())
+	}
+	if td.ObjectName() != "" {
+		t.Errorf("Unexpected object name: %s", td.ObjectName())
+	}
+	if td.TypeString() != "" {
+		t.Errorf("Expected nil TableDiff to return empty TypeString; instead found %s", td.TypeString())
+	}
+	if stmt, err := td.Statement(StatementModifiers{}); stmt != "" || err != nil {
+		t.Errorf("Unexpected return from Statement: %s / %v", stmt, err)
+	}
 }
