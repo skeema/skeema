@@ -269,7 +269,7 @@ func alteredTablesForPull(instSchema *tengo.Schema, logicalSchema *fs.LogicalSch
 	// Run a diff, and create a map to look up which tables have alters
 	diff := tengo.NewSchemaDiff(fsSchema, instSchema)
 	haveAlters := make(map[string]bool)
-	for _, td := range diff.FilteredTableDiffs(tengo.TableDiffAlter) {
+	for _, td := range diff.FilteredTableDiffs(tengo.DiffTypeAlter) {
 		tdStatement, tdStatementErr := td.Statement(mods)
 		// Errors are fatal, except for UnsupportedDiffError which we can safely
 		// ignore (since pull doesn't actually run ALTERs; it just needs to know

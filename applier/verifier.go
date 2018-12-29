@@ -47,7 +47,7 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 		AlterTables:  make([]*fs.Statement, 0),
 	}
 	expected := make(map[string]*tengo.Table)
-	for _, td := range diff.FilteredTableDiffs(tengo.TableDiffAlter) {
+	for _, td := range diff.FilteredTableDiffs(tengo.DiffTypeAlter) {
 		stmt, err := td.Statement(mods)
 		if stmt != "" && err == nil {
 			expected[td.From.Name] = td.To

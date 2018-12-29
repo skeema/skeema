@@ -29,14 +29,13 @@ func NewPrinter(briefMode bool) *Printer {
 	}
 }
 
-// syncPrintf prevents interleaving of STDOUT output from multiple workers.
-// It also adds instance and schema lines before output if the previous STDOUT
-// was for a different instance or schema.
+// printDDL outputs DDLStatement values to STDOUT in a way that prevents
+// interleaving of output from multiple workers.
 // TODO: buffer output from external commands and also prevent interleaving there
-func (p *Printer) syncPrintf(instance *tengo.Instance, schemaName string, format string, a ...interface{}) {
+func (p *Printer) printDDL(ddl *DDLStatement) {
 	p.Lock()
 	defer p.Unlock()
-	instString := instance.String()
+	instString := ddl.instance.String()
 
 	// Support diff --brief, which only outputs instances that have differences,
 	// rather than outputting the actual differences
@@ -47,13 +46,15 @@ func (p *Printer) syncPrintf(instance *tengo.Instance, schemaName string, format
 		}
 		return
 	}
-	if instString != p.lastStdoutInstance || schemaName != p.lastStdoutSchema {
+
+	if instString != p.lastStdoutInstance {
 		fmt.Printf("-- instance: %s\n", instString)
-		if schemaName != "" {
-			fmt.Printf("USE %s;\n", tengo.EscapeIdentifier(schemaName))
-		}
 		p.lastStdoutInstance = instString
-		p.lastStdoutSchema = schemaName
+		p.lastStdoutSchema = ""
 	}
-	fmt.Printf(format, a...)
+	if ddl.schemaName != p.lastStdoutSchema && ddl.schemaName != "" {
+		fmt.Printf("USE %s;\n", tengo.EscapeIdentifier(ddl.schemaName))
+		p.lastStdoutSchema = ddl.schemaName
+	}
+	fmt.Printf("%s\n", ddl.String())
 }

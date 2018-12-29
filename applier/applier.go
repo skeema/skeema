@@ -4,7 +4,6 @@ package applier
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -44,31 +43,6 @@ func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<-
 			diff := tengo.NewSchemaDiff(t.SchemaFromInstance, t.SchemaFromDir)
 			var targetStmtCount int
 
-			if diff.SchemaDDL != "" {
-				printer.syncPrintf(t.Instance, "", "%s;\n", diff.SchemaDDL)
-				targetStmtCount++
-				result.Differences = true
-				if !dryRun {
-					var schemaDDLErr error
-					if strings.HasPrefix(diff.SchemaDDL, "CREATE DATABASE") && t.SchemaFromInstance == nil {
-						_, schemaDDLErr = t.Instance.CreateSchema(schemaName, t.SchemaFromDir.CharSet, t.SchemaFromDir.Collation)
-					} else if strings.HasPrefix(diff.SchemaDDL, "ALTER DATABASE") {
-						schemaDDLErr = t.Instance.AlterSchema(t.SchemaFromInstance.Name, t.SchemaFromDir.CharSet, t.SchemaFromDir.Collation)
-					} else {
-						return fmt.Errorf("Refusing to run unexpectedly-generated schema-level DDL: %s", diff.SchemaDDL)
-					}
-					if schemaDDLErr != nil {
-						log.Errorf("Error running DDL on %s %s: %s", t.Instance, schemaName, schemaDDLErr)
-						skipped := len(diff.TableDiffs) + 1
-						result.SkipCount += skipped
-						if skipped > 1 {
-							log.Warnf("Skipping %d remaining operations for %s %s due to previous error", skipped-1, t.Instance, schemaName)
-						}
-						continue
-					}
-				}
-			}
-
 			if t.Dir.Config.GetBool("verify") && len(diff.TableDiffs) > 0 && !brief {
 				if err := VerifyDiff(diff, t); err != nil {
 					return err
@@ -86,52 +60,46 @@ func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<-
 				mods.Flavor = t.Instance.Flavor()
 			}
 
-			// Build DDLStatements for each TableDiff, handling pre-execution errors
+			// Build DDLStatements for each ObjectDiff, handling pre-execution errors
 			// accordingly
-			ddls := make([]*DDLStatement, 0, len(diff.TableDiffs))
-			for i, tableDiff := range diff.TableDiffs {
-				ddl, err := NewDDLStatement(tableDiff, mods, t)
+			objDiffs := diff.ObjectDiffs()
+			ddls := make([]*DDLStatement, 0, len(objDiffs))
+			for _, objDiff := range objDiffs {
+				ddl, err := NewDDLStatement(objDiff, mods, t)
 				if ddl == nil && err == nil {
 					continue // Skip entirely if mods made the statement a noop
 				}
 				targetStmtCount++
 				result.Differences = true
-
-				if unsupportedErr, ok := err.(*tengo.UnsupportedDiffError); ok {
+				if err == nil {
+					ddls = append(ddls, ddl)
+				} else if unsupportedErr, ok := err.(*tengo.UnsupportedDiffError); ok {
 					result.UnsupportedCount++
-					log.Warnf("Skipping table %s: unable to generate ALTER TABLE due to use of unsupported features. Use --debug for more information.", unsupportedErr.Name)
+					log.Warnf("Skipping %s %s: unable to generate DDL due to use of unsupported features. Use --debug for more information.", unsupportedErr.ObjectType, unsupportedErr.Name)
 					DebugLogUnsupportedDiff(unsupportedErr)
-					continue
-				} else if err != nil {
-					skipped := len(diff.TableDiffs) - i
-					result.SkipCount += skipped
+				} else {
+					result.SkipCount += len(objDiffs)
 					log.Errorf(err.Error())
-					if skipped > 1 {
-						log.Warnf("Skipping %d remaining operations for %s %s due to previous error", skipped-1, t.Instance, schemaName)
+					if len(objDiffs) > 1 {
+						log.Warnf("Skipping %d additional operations for %s %s due to previous error", len(objDiffs)-1, t.Instance, schemaName)
 					}
 					continue TargetsInGroup
 				}
-
-				if dryRun {
-					printer.syncPrintf(t.Instance, schemaName, "%s\n", ddl.String())
-				} else {
-					// IMPORTANT: only append to ddls if NOT dry-run. Do not move this out of
-					// this conditional!
-					ddls = append(ddls, ddl)
-				}
 			}
 
-			// Execute DDL. (ddls will be empty if dryRun, due to conditional above)
+			// Print DDL; if not dry-run, execute it
 			for i, ddl := range ddls {
-				printer.syncPrintf(t.Instance, schemaName, "%s\n", ddl.String())
-				if err := ddl.Execute(); err != nil {
-					log.Errorf("Error running DDL on %s %s: %s", t.Instance, schemaName, err)
-					skipped := len(ddls) - i
-					result.SkipCount += skipped
-					if skipped > 1 {
-						log.Warnf("Skipping %d remaining operations for %s %s due to previous error", skipped-1, t.Instance, schemaName)
+				printer.printDDL(ddl)
+				if !dryRun {
+					if err := ddl.Execute(); err != nil {
+						log.Errorf("Error running DDL on %s %s: %s", t.Instance, schemaName, err)
+						skipped := len(ddls) - i
+						result.SkipCount += skipped
+						if skipped > 1 {
+							log.Warnf("Skipping %d remaining operations for %s %s due to previous error", skipped-1, t.Instance, schemaName)
+						}
+						break
 					}
-					break
 				}
 			}
 
@@ -190,7 +158,7 @@ func StatementModifiersForDir(dir *fs.Dir) (mods tengo.StatementModifiers, err e
 	return
 }
 
-// DebugLogUnsupportedDiff logs (at Debug level) the reason why a table is
+// DebugLogUnsupportedDiff logs (at Debug level) the reason why an object is
 // unsupported for diff/alter operations.
 func DebugLogUnsupportedDiff(err *tengo.UnsupportedDiffError) {
 	for _, line := range strings.Split(err.ExtendedError(), "\n") {

@@ -375,17 +375,12 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 	s.assertExists(t, "product", "posts", "featured")                // product DDL skipped due to unsafe stmt
 	s.assertExists(t, "bonus", "placeholder", "")                    // not affected by push (never drops schemas)
 
-	// One exception to the "skip whole schema upon unsafe stmt" rule is schema-
-	// level DDL, which is executed separately as a special case
+	// The "skip whole schema upon unsafe stmt" rule also affects schema-level DDL
 	if product, err := s.d.Schema("product"); err != nil || product == nil {
 		t.Fatalf("Unexpected error obtaining schema: %s", err)
 	} else {
-		serverCharSet, serverCollation, err := s.d.DefaultCharSetAndCollation()
-		if err != nil {
-			t.Fatalf("Unable to obtain server default charset and collation: %s", err)
-		}
-		if serverCharSet != product.CharSet || serverCollation != product.Collation {
-			t.Errorf("Expected schema should have charset/collation=%s/%s, instead found %s/%s", serverCharSet, serverCollation, product.CharSet, product.Collation)
+		if product.CharSet != "utf8" || product.Collation != "utf8_swedish_ci" {
+			t.Errorf("Expected schema should have charset/collation=utf8/utf8_swedish_ci from push1.sql, instead found %s/%s", product.CharSet, product.Collation)
 		}
 	}
 
@@ -407,6 +402,17 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 	s.assertMissing(t, "product", "posts", "featured")
 	s.assertExists(t, "product", "users", "credits")
 	s.assertExists(t, "bonus", "placeholder", "")
+	if product, err := s.d.Schema("product"); err != nil || product == nil {
+		t.Fatalf("Unexpected error obtaining schema: %s", err)
+	} else {
+		serverCharSet, serverCollation, err := s.d.DefaultCharSetAndCollation()
+		if err != nil {
+			t.Fatalf("Unable to obtain server default charset and collation: %s", err)
+		}
+		if serverCharSet != product.CharSet || serverCollation != product.Collation {
+			t.Errorf("Expected schema should have charset/collation=%s/%s, instead found %s/%s", serverCharSet, serverCollation, product.CharSet, product.Collation)
+		}
+	}
 
 	// invalid SQL prevents push from working in an entire dir, but not in a
 	// dir for a different schema

@@ -8,4 +8,5 @@ DROP TABLE activity;
 ALTER TABLE rollups DROP COLUMN value;
 ALTER TABLE pageviews DROP COLUMN domain;
 INSERT INTO pageviews (url, start_ts, end_ts) VALUES ("foo.html", 123, 456);
+ALTER DATABASE analytics CHARACTER SET utf8 COLLATE utf8_bin;
 

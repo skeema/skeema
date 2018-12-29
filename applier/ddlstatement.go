@@ -28,20 +28,26 @@ type DDLStatement struct {
 // an error constructing the statement (mods disallowing destructive DDL,
 // invalid variable interpolation in --alter-wrapper, etc), the DDLStatement
 // pointer will be nil, and a non-nil error will be returned.
-func NewDDLStatement(diff *tengo.TableDiff, mods tengo.StatementModifiers, target *Target) (ddl *DDLStatement, err error) {
+func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, target *Target) (ddl *DDLStatement, err error) {
 	ddl = &DDLStatement{
 		instance:   target.Instance,
 		schemaName: target.SchemaFromDir.Name,
 	}
 
-	// Obtain table name, and possibly its current size (only if we actually need it)
-	var tableName string
+	var isTable bool
 	var tableSize int64
-	if diff.Type == tengo.TableDiffCreate { // current size is inherently 0 for CREATE
-		tableName = diff.To.Name
-	} else { // ALTER or DROP
-		tableName = diff.From.Name
-		if anyOptChanged(target, "safe-below-size", "alter-wrapper-min-size") || wrapperUsesSize(target, "alter-wrapper", "ddl-wrapper") {
+
+	switch diff := diff.(type) {
+	case *tengo.DatabaseDiff:
+		// Don't run database-level DDL in a schema; not even possible for CREATE
+		// DATABASE anyway
+		ddl.schemaName = ""
+
+	case *tengo.TableDiff:
+		isTable = true
+		// Obtain table size only if actually needed
+		needSize := anyOptChanged(target, "safe-below-size", "alter-wrapper-min-size") || wrapperUsesSize(target, "alter-wrapper", "ddl-wrapper")
+		if diff.DiffType() != tengo.DiffTypeCreate && needSize {
 			if tableSize, err = ddl.getTableSize(target, diff.From); err != nil {
 				return nil, err
 			}
@@ -54,14 +60,14 @@ func NewDDLStatement(diff *tengo.TableDiff, mods tengo.StatementModifiers, targe
 	if err != nil {
 		return nil, err
 	}
-	if tableSize < int64(safeBelowSize) {
+	if isTable && tableSize < int64(safeBelowSize) {
 		mods.AllowUnsafe = true
-		log.Debugf("Allowing unsafe operations for table %s: size=%d < safe-below-size=%d", tableName, tableSize, safeBelowSize)
+		log.Debugf("Allowing unsafe operations for table %s: size=%d < safe-below-size=%d", diff.ObjectName(), tableSize, safeBelowSize)
 	}
 
 	// Options may indicate some/all DDL gets executed by shelling out to another program.
 	wrapper := target.Dir.Config.Get("ddl-wrapper")
-	if diff.Type == tengo.TableDiffAlter && target.Dir.Config.Changed("alter-wrapper") {
+	if isTable && diff.DiffType() == tengo.DiffTypeAlter && target.Dir.Config.Changed("alter-wrapper") {
 		minSize, err := target.Dir.Config.GetBytes("alter-wrapper-min-size")
 		if err != nil {
 			return nil, err
@@ -75,7 +81,7 @@ func NewDDLStatement(diff *tengo.TableDiff, mods tengo.StatementModifiers, targe
 			// external OSC tool for large tables, without risk of ALGORITHM or LOCK
 			// clauses breaking expectations of the OSC tool.
 			if minSize > 0 {
-				log.Debugf("Using alter-wrapper for table %s: size=%d >= alter-wrapper-min-size=%d", tableName, tableSize, minSize)
+				log.Debugf("Using alter-wrapper for table %s: size=%d >= alter-wrapper-min-size=%d", diff.ObjectName(), tableSize, minSize)
 				if mods.AlgorithmClause != "" || mods.LockClause != "" {
 					log.Debug("Ignoring --alter-algorithm and --alter-lock for generating DDL for alter-wrapper")
 					mods.AlgorithmClause = ""
@@ -83,7 +89,7 @@ func NewDDLStatement(diff *tengo.TableDiff, mods tengo.StatementModifiers, targe
 				}
 			}
 		} else {
-			log.Debugf("Skipping alter-wrapper for table %s: size=%d < alter-wrapper-min-size=%d", tableName, tableSize, minSize)
+			log.Debugf("Skipping alter-wrapper for table %s: size=%d < alter-wrapper-min-size=%d", diff.ObjectName(), tableSize, minSize)
 		}
 	}
 
@@ -100,7 +106,7 @@ func NewDDLStatement(diff *tengo.TableDiff, mods tengo.StatementModifiers, targe
 	}
 
 	// If adding foreign key constraints, use foreign_key_checks=1 if requested
-	if wrapper == "" && diff.Type == tengo.TableDiffAlter &&
+	if wrapper == "" && isTable && diff.DiffType() == tengo.DiffTypeAlter &&
 		strings.Contains(ddl.stmt, "ADD CONSTRAINT") &&
 		strings.Contains(ddl.stmt, "FOREIGN KEY") &&
 		target.Dir.Config.GetBool("foreign-key-checks") {
@@ -109,8 +115,7 @@ func NewDDLStatement(diff *tengo.TableDiff, mods tengo.StatementModifiers, targe
 
 	// Apply wrapper if relevant
 	if wrapper != "" {
-		var clauses, socket, port, connOpts string
-		clauses, _ = diff.Clauses(mods)
+		var socket, port, connOpts string
 		if ddl.instance.SocketPath != "" {
 			socket = ddl.instance.SocketPath
 		} else {
@@ -128,14 +133,22 @@ func NewDDLStatement(diff *tengo.TableDiff, mods tengo.StatementModifiers, targe
 			"PASSWORD":    target.Dir.Config.Get("password"),
 			"ENVIRONMENT": target.Dir.Config.Get("environment"),
 			"DDL":         ddl.stmt,
-			"TABLE":       tableName,
+			"CLAUSES":     "", // filled in below only for tables
+			"NAME":        diff.ObjectName(),
+			"TABLE":       "", // filled in below only for tables
 			"SIZE":        strconv.FormatInt(tableSize, 10),
-			"CLAUSES":     clauses,
-			"TYPE":        diff.TypeString(),
+			"TYPE":        diff.DiffType().String(),
+			"CLASS":       strings.ToUpper(diff.ObjectType()),
 			"CONNOPTS":    connOpts,
 			"DIRNAME":     target.Dir.BaseName(),
 			"DIRPATH":     target.Dir.Path,
 		}
+		if isTable {
+			td := diff.(*tengo.TableDiff)
+			variables["CLAUSES"], _ = td.Clauses(mods)
+			variables["TABLE"] = variables["NAME"]
+		}
+
 		if ddl.shellOut, err = util.NewInterpolatedShellOut(wrapper, variables); err != nil {
 			errorText := fmt.Sprintf("A fatal error occurred with pre-processing a DDL statement: %s.", err)
 			return nil, errors.New(errorText)

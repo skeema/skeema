@@ -107,7 +107,7 @@ Commands | diff, push
 **Type** | string
 **Restrictions** | none
 
-This option causes Skeema to shell out to an external process for running ALTER TABLE statements via `skeema push`. The output of `skeema diff` will also display what command-line would be executed, but it won't actually be run.
+This option causes Skeema to shell out to an external process, such as `pt-online-schema-change`, for running ALTER TABLE statements via `skeema push`. The output of `skeema diff` will also display what command-line would be executed, but it won't actually be run.
 
 This command supports use of special variables. Skeema will dynamically replace these with an appropriate value when building the final command-line. See [options with variable interpolation](config.md#options-with-variable-interpolation) for more information. The following variables are supported by `alter-wrapper`:
 
@@ -119,15 +119,19 @@ This command supports use of special variables. Skeema will dynamically replace 
 * `{PASSWORDX}` -- Behaves like {PASSWORD} when the command-line is executed, but only displays X's whenever the command-line is displayed on STDOUT
 * `{ENVIRONMENT}` -- environment name from the first positional arg on Skeema's command-line, or "production" if none specified
 * `{DDL}` -- Full `ALTER TABLE` statement, including all clauses
-* `{TABLE}` -- table name that this ALTER TABLE targets
+* `{NAME}` -- table name that this ALTER TABLE targets
+* `{TABLE}` -- table name that this ALTER TABLE targets (identical to {NAME})
 * `{SIZE}` -- size of table that this ALTER TABLE targets, in bytes. For tables with no rows, this will be 0, regardless of actual size of the empty table on disk.
 * `{CLAUSES}` -- Body of the ALTER TABLE statement, i.e. everything *after* `ALTER TABLE <name> `. This is what pt-online-schema-change's --alter option expects.
 * `{TYPE}` -- always the word "ALTER" in all caps.
+* `{CLASS}` -- always the word "TABLE" in all caps.
 * `{CONNOPTS}` -- Session variables passed through from the [connect-options](#connect-options) option
 * `{DIRNAME}` -- The base name (last path element) of the directory being processed.
 * `{DIRPATH}` -- The full (absolute) path of the directory being processed.
 
 This option can be used for integration with an online schema change tool, logging system, CI workflow, or any other tool (or combination of tools via a custom script) that you wish. An example `alter-wrapper` for executing `pt-online-schema-change` is included [in the FAQ](faq.md#how-do-i-configure-skeema-to-use-online-schema-change-tools).
+
+This option does not affect `CREATE TABLE` or `DROP TABLE` statements; nor does it affect non-table DDL such as `CREATE DATABASE` or `ALTER DATABASE`. To execute *all* DDL (regardless of operation type or object class) through an external script, see [ddl-wrapper](#ddl-wrapper).
 
 ### alter-wrapper-min-size
 
@@ -218,28 +222,30 @@ Commands | diff, push
 **Type** | string
 **Restrictions** | none
 
-This option works exactly like [alter-wrapper](#alter-wrapper), except that it applies to all DDL statements regardless of type -- not just ALTER TABLE statements. This is intended for use in situations where all DDL statements, regardless of type, are sent through a common script or system for execution.
+This option works exactly like [alter-wrapper](#alter-wrapper), except that it applies to all DDL statements regardless of operation type (ALTER, DROP, CREATE) or object class (TABLE, DATABASE, etc) -- not just ALTER TABLE statements. This is intended for use in situations where all DDL statements need to be sent through a common script or system for execution.
 
-If *both* of [alter-wrapper](#alter-wrapper) and [ddl-wrapper](#ddl-wrapper) are set, then [alter-wrapper](#alter-wrapper) will be applied to ALTER TABLE statements, and [ddl-wrapper](#ddl-wrapper) will be applied only to CREATE TABLE and DROP TABLE statements.
+If *both* of [alter-wrapper](#alter-wrapper) and [ddl-wrapper](#ddl-wrapper) are set, then [alter-wrapper](#alter-wrapper) will be applied to ALTER TABLE statements, and [ddl-wrapper](#ddl-wrapper) will be applied to all other DDL.
 
-If only [ddl-wrapper](#ddl-wrapper) is set, then it will be applied to ALTER TABLE, CREATE TABLE, and DROP TABLE statements.
+If only [ddl-wrapper](#ddl-wrapper) is set, then it will be applied to all DDL.
 
-For even more fine-grained control, such as different behavior for CREATE vs DROP, set [ddl-wrapper](#ddl-wrapper) to a custom script which performs a different action based on `{TYPE}`.
+For even more fine-grained control, such as different behavior for CREATE vs DROP, set [ddl-wrapper](#ddl-wrapper) to a custom script which performs a different action based on `{TYPE}` and/or `{CLASS}`.
 
 This command supports use of special variables. Skeema will dynamically replace these with an appropriate value when building the final command-line. See [options with variable interpolation](config.md#options-with-variable-interpolation) for more information. The following variables are supported by `ddl-wrapper`:
 
 * `{HOST}` -- hostname (or IP) that this DDL statement targets
 * `{PORT}` -- port number for the host that this DDL statement targets
-* `{SCHEMA}` -- schema name containing the table that this DDL statement targets
+* `{SCHEMA}` -- default database name (schema name) that the DDL statement should be executed in. Blank if {CLASS} is DATABASE.
 * `{USER}` -- MySQL username defined by the [user](#user) option either via command-line or option file
 * `{PASSWORD}` -- MySQL password defined by the [password](#password) option either via command-line or option file
 * `{PASSWORDX}` -- Behaves like {PASSWORD} when the command-line is executed, but only displays X's whenever the command-line is displayed on STDOUT
 * `{ENVIRONMENT}` -- environment name from the first positional arg on Skeema's command-line, or "production" if none specified
 * `{DDL}` -- Full DDL statement, including all clauses
-* `{TABLE}` -- table name that this DDL statement targets
-* `{SIZE}` -- size of table that this DDL statement targets, in bytes. For tables with no rows, this will be 0, regardless of actual size of the empty table on disk. It will also be 0 for CREATE TABLE statements.
-* `{CLAUSES}` -- Body of the DDL statement, i.e. everything *after* `ALTER TABLE <name> ` or `CREATE TABLE <name> `. This is blank for `DROP TABLE` statements.
-* `{TYPE}` -- the word "CREATE", "DROP", or "ALTER" in all caps.
+* `{NAME}` -- object name that this DDL statement targets
+* `{TABLE}` -- if the object is a table, identical to {NAME}; blank for non-tables
+* `{SIZE}` -- size of table that this DDL statement targets, in bytes. For tables with no rows, this will be 0, regardless of actual size of the empty table on disk. It will also be 0 for CREATE TABLE statements. It will be 0 if {CLASS} isn't TABLE.
+* `{CLAUSES}` -- Body of the DDL statement, i.e. everything *after* `ALTER TABLE <name> ` or `CREATE TABLE <name> `. This is blank for `DROP TABLE` statements, and blank if {CLASS} isn't TABLE.
+* `{TYPE}` -- the operation type: the word "CREATE", "DROP", or "ALTER" in all caps.
+* `{CLASS}` -- the object class: the word "TABLE" or "DATABASE" in all caps. Other object classes (e.g. "VIEW") may be supported in the future.
 * `{CONNOPTS}` -- Session variables passed through from the [connect-options](#connect-options) option
 * `{DIRNAME}` -- The base name (last path element) of the directory being processed.
 * `{DIRPATH}` -- The full (absolute) path of the directory being processed.
