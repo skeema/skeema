@@ -8,6 +8,7 @@ import (
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/skeema/workspace"
+	"github.com/skeema/tengo"
 )
 
 func init() {
@@ -82,19 +83,42 @@ func lintWalker(dir *fs.Dir, lc *lintCounters, maxDepth int) error {
 		return NewExitValue(CodeBadConfig, err.Error())
 	}
 
-	inst, err := dir.FirstInstance()
-	if err != nil {
-		return err
+	// Connect to first defined instance, unless configured to use local Docker
+	var inst *tengo.Instance
+	if wsType, _ := dir.Config.GetEnum("workspace", "temp-schema", "docker"); wsType != "docker" || !dir.Config.Changed("flavor") {
+		if inst, err = dir.FirstInstance(); err != nil {
+			return err
+		}
 	}
+
 	opts, err := workspace.OptionsForDir(dir, inst)
 	if err != nil {
 		return NewExitValue(CodeBadConfig, err.Error())
 	}
 
 	for _, logicalSchema := range dir.LogicalSchemas {
+		// ignore-schema is handled relatively simplistically here: skip dir entirely
+		// if any literal schema name matches the pattern, but don't bother
+		// interpretting schema=`shellout` or schema=*, which require an instance.
+		ignoreSchema, err := dir.Config.GetRegexp("ignore-schema")
+		if err != nil {
+			return NewExitValue(CodeBadConfig, err.Error())
+		} else if ignoreSchema != nil {
+			var foundIgnoredName bool
+			for _, schemaName := range dir.Config.GetSlice("schema", ',', true) {
+				if ignoreSchema.MatchString(schemaName) {
+					foundIgnoredName = true
+				}
+			}
+			if foundIgnoredName {
+				log.Warnf("Skipping schema in %s because ignore-schema='%s'", dir.Path, ignoreSchema)
+				break
+			}
+		}
+
 		schema, statementErrors, err := workspace.ExecLogicalSchema(logicalSchema, opts)
 		if err != nil {
-			log.Warnf("Skipping schema %s in %s due to error: %s", logicalSchema.Name, dir.Path, err)
+			log.Errorf("Skipping schema in %s due to error: %s", dir.Path, err)
 			lc.errCount++
 			continue
 		}

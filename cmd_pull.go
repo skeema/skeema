@@ -87,7 +87,7 @@ func pullWalker(dir *fs.Dir, maxDepth int) (handledSchemaNames []string, skipCou
 				return nil, skipCount, fmt.Errorf("%s: Unable to fetch schema names mapped by this dir: %s", dir, err)
 			}
 			if len(schemaNames) == 0 {
-				log.Warnf("Ignoring directory %s -- did not map to any schema names\n", dir)
+				log.Warnf("Ignoring directory %s -- did not map to any schema names for environment \"%s\"\n", dir, dir.Config.Get("environment"))
 				continue
 			}
 			handledSchemaNames = append(handledSchemaNames, schemaNames...)

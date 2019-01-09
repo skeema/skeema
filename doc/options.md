@@ -463,9 +463,7 @@ The value of this option must be a valid regex, and should not be wrapped in del
 
 When supplied on the command-line to `skeema init`, the value will be persisted into the auto-generated .skeema option file, so that subsequent commands continue to ignore the corresponding schema names.
 
-This option primarily only affects the initial creation of a schema directory by `skeema init` or `skeema pull`. Once a schema directory is *already present*, it will be used by other commands, regardless of [ignore-schema](#ignore-schema).
-
-Aside from the impact on schema directory creation, the only other impact of this option on other commands is to exclude specific schemas from directories configured using [schema=*](#schema), a somewhat rare sharding use-case.
+Once configured, this option affects all Skeema commands, effectively acting as a filter against the [schema](#schema) option. The documentation for the [schema](#schema) option describes some potential sharding use-cases.
 
 ### ignore-table
 Commands | *all*
@@ -607,6 +605,8 @@ Some sharded environments need more flexibility -- for example, where some schem
 * `{ENVIRONMENT}` -- environment name from the first positional arg on Skeema's command-line, or "production" if none specified
 * `{DIRNAME}` -- The base name (last path element) of the directory being processed. May be useful as a key in a service discovery lookup.
 * `{DIRPATH}` -- The full (absolute) path of the directory being processed.
+
+Regardless of which form of the [schema](#schema) option is used, the [ignore-schema](#ignore-schema) option is applied as a regex "filter" against it, potentially removing some of the listed schema names based on the configuration.
 
 ### socket
 

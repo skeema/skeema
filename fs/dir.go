@@ -246,9 +246,11 @@ func (dir *Dir) FirstInstance() (*tengo.Instance, error) {
 
 // SchemaNames interprets the value of the dir's "schema" option, returning one
 // or more schema names that the statements in dir's *.sql files will be applied
-// to, in cases where no schema name is explicitly specified.
+// to, in cases where no schema name is explicitly specified in SQL statements.
+// If the ignore-schema option is set, it will filter out matching results from
+// the returned slice.
 // An instance must be supplied since the value may be instance-specific.
-func (dir *Dir) SchemaNames(instance *tengo.Instance) ([]string, error) {
+func (dir *Dir) SchemaNames(instance *tengo.Instance) (names []string, err error) {
 	// If no schema defined in this dir (meaning this dir's .skeema, as well as
 	// parent dirs' .skeema, global option files, or command-line) for the current
 	// environment, then nothing to do
@@ -269,41 +271,42 @@ func (dir *Dir) SchemaNames(instance *tengo.Instance) ([]string, error) {
 			"DIRPATH":     dir.Path,
 		}
 		shellOut, err := util.NewInterpolatedShellOut(schemaValue, variables)
+		if err == nil {
+			names, err = shellOut.RunCaptureSplit()
+		}
 		if err != nil {
 			return nil, err
 		}
-		return shellOut.RunCaptureSplit()
-	}
-
-	if strings.ContainsAny(schemaValue, ",") {
-		return dir.Config.GetSlice("schema", ',', true), nil
-	}
-
-	if schemaValue == "*" {
+	} else if schemaValue == "*" {
 		// This automatically already filters out information_schema, performance_schema, sys, test, mysql
-		schemaNames, err := instance.SchemaNames()
-		if err != nil {
+		if names, err = instance.SchemaNames(); err != nil {
 			return nil, err
-		}
-		// Remove ignored schemas
-		if ignoreSchema, err := dir.Config.GetRegexp("ignore-schema"); err != nil {
-			return nil, err
-		} else if ignoreSchema != nil {
-			keepNames := make([]string, 0, len(schemaNames))
-			for _, name := range schemaNames {
-				if !ignoreSchema.MatchString(name) {
-					keepNames = append(keepNames, name)
-				}
-			}
-			schemaNames = keepNames
 		}
 		// Schema name list must be sorted so that TargetsForDir with
-		// firstOnly==true consistently grabs the alphabetically first schema
-		sort.Strings(schemaNames)
-		return schemaNames, nil
+		// firstOnly==true consistently grabs the alphabetically first schema. (Only
+		// relevant here since in all other cases, we use the order specified by the
+		// user in config.)
+		sort.Strings(names)
+	} else {
+		names = dir.Config.GetSlice("schema", ',', true)
 	}
 
-	return []string{schemaValue}, nil
+	// Remove ignored schemas
+	if ignoreSchema, err := dir.Config.GetRegexp("ignore-schema"); err != nil {
+		return nil, err
+	} else if ignoreSchema != nil {
+		keepNames := make([]string, 0, len(names))
+		for _, name := range names {
+			if ignoreSchema.MatchString(name) {
+				log.Debugf("Skipping schema %s because ignore-schema='%s'", name, ignoreSchema)
+			} else {
+				keepNames = append(keepNames, name)
+			}
+		}
+		names = keepNames
+	}
+
+	return names, nil
 }
 
 // HasSchema returns true if this dir maps to at least one schema, either by

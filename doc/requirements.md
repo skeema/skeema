@@ -14,8 +14,6 @@ Some MySQL features -- such as partitioned tables, fulltext indexes, and generat
 
 Skeema is not currently intended for use on multi-master replication topologies, including Galera, InnoDB Cluster, and traditional active-active master-master configurations. It also has not yet been evaluated on Amazon Aurora.
 
-As of August 2018, support for MySQL 8.0 is still quite new and should be considered experimental. Please [file an issue](https://github.com/skeema/skeema/issues/new) if you encounter anything unexpected.
-
 ### Privileges
 
 The easiest way to run Skeema is with a user having SUPER privileges in MySQL. However, this isn't always practical or possible.

@@ -181,7 +181,7 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *fs.Dir, makeSubdir bool) erro
 	if ignoreSchema, err := parentDir.Config.GetRegexp("ignore-schema"); err != nil {
 		return NewExitValue(CodeBadConfig, err.Error())
 	} else if ignoreSchema != nil && ignoreSchema.MatchString(s.Name) {
-		log.Warnf("Skipping schema %s because of ignore-schema='%s'", s.Name, ignoreSchema)
+		log.Debugf("Skipping schema %s because ignore-schema='%s'", s.Name, ignoreSchema)
 		return nil
 	}
 

@@ -63,7 +63,7 @@ Additional [contributions](https://github.com/skeema/skeema/graphs/contributors)
 
 ## License
 
-**Copyright 2018 Skeema LLC**
+**Copyright 2019 Skeema LLC**
 
 ```text
 Licensed under the Apache License, Version 2.0 (the "License");

@@ -667,9 +667,15 @@ func (s SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
 	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d --ignore-schema='^archives$' --ignore-table='^_'", s.d.Instance.Host, s.d.Instance.Port)
 	s.verifyFiles(t, cfg, "../golden/ignore")
 
-	// pull: nothing should be updated due to ignore options
+	// pull: nothing should be updated due to ignore options. Ditto even if we add
+	// a dir with schema name corresponding to ignored schema.
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	s.verifyFiles(t, cfg, "../golden/ignore")
+	fs.WriteTestFile(t, "mydb/archives/.skeema", "schema=archives")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	if _, err := os.Stat("mydb/archives/foo.sql"); err == nil {
+		t.Error("ignore-options not affecting `skeema pull` as expected")
+	}
 
 	// diff/push: no differences. This should still be the case even if we add a
 	// file corresponding to an ignored table, with a different definition than
@@ -677,6 +683,7 @@ func (s SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 	fs.WriteTestFile(t, "mydb/product/_widgets.sql", "CREATE TABLE _widgets (id int) ENGINE=InnoDB;\n")
 	fs.WriteTestFile(t, "mydb/analytics/_newtable.sql", "CREATE TABLE _newtable (id int) ENGINE=InnoDB;\n")
+	fs.WriteTestFile(t, "mydb/archives/bar.sql", "CREATE TABLE bar (id int) ENGINE=InnoDB;\n")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
 	// pull should also ignore that file corresponding to an ignored table
@@ -693,16 +700,21 @@ func (s SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
 	contents := fs.ReadTestFile(t, "mydb/analytics/_trending.sql")
 	newContents := strings.Replace(contents, "`", "", -1)
 	fs.WriteTestFile(t, "mydb/analytics/_trending.sql", newContents)
-	fs.WriteTestFile(t, "mydb/analytics/_hmm.sql", "lolololol no valid sql here")
+	fs.WriteTestFile(t, "mydb/analytics/_hmm.sql", "CREATE TABLE _hmm uhoh this is not valid;\n")
+	fs.WriteTestFile(t, "mydb/archives/bar.sql", "CREATE TABLE bar uhoh this is not valid;\n")
 	s.handleCommand(t, CodeSuccess, ".", "skeema lint")
 	if fs.ReadTestFile(t, "mydb/analytics/_trending.sql") != newContents {
 		t.Error("Expected `skeema lint` to ignore mydb/analytics/_trending.sql, but it did not")
 	}
 
-	// pull, lint, init: invalid regexes should error
+	// push, pull, lint, init: invalid regexes should error. Error is CodeBadConfig
+	// except for cases of invalid ignore-schema being hit in fs.Dir.SchemaNames().
 	s.handleCommand(t, CodeBadConfig, ".", "skeema lint --ignore-table='+'")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema lint --ignore-schema='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema pull --ignore-table='+'")
-	s.handleCommand(t, CodeBadConfig, ".", "skeema pull --ignore-schema='+'")
+	s.handleCommand(t, CodeFatalError, ".", "skeema pull --ignore-schema='+'")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema push --ignore-table='+'")
+	s.handleCommand(t, CodeFatalError, ".", "skeema push --ignore-schema='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir badre1 -h %s -P %d --ignore-schema='+'", s.d.Instance.Host, s.d.Instance.Port)
 	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir badre2 -h %s -P %d --ignore-table='+'", s.d.Instance.Host, s.d.Instance.Port)
 }
@@ -839,16 +851,16 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 
 	// Make product dir now map to 3 schemas: product, product2, product3
 	contents := fs.ReadTestFile(t, "mydb/product/.skeema")
-	contents = strings.Replace(contents, "schema=product", "schema=product,product2,product3", 1)
+	contents = strings.Replace(contents, "schema=product", "schema=product,product2,product3,product4", 1)
 	fs.WriteTestFile(t, "mydb/product/.skeema", contents)
 
-	// push should now create product2 and product3
-	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	// push that ignores 4$ should now create product2 and product3
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --ignore-schema=4$")
 	s.assertExists(t, "product2", "", "")
 	s.assertExists(t, "product3", "posts", "")
 
 	// diff should be clear after
-	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff --ignore-schema=4$")
 
 	// pull should not create separate dirs for the new schemas or mess with
 	// the .skeema file
@@ -868,7 +880,7 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 	// product schema or to the unsharded analytics schema
 	s.dbExec(t, "product", "ALTER TABLE comments ADD COLUMN `approved` tinyint(1) unsigned NOT NULL")
 	s.dbExec(t, "analytics", "ALTER TABLE activity ADD COLUMN `rolled_up` tinyint(1) unsigned NOT NULL")
-	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull --ignore-schema=4$")
 	sfContents := fs.ReadTestFile(t, "mydb/product/comments.sql")
 	if !strings.Contains(sfContents, "`approved` tinyint(1) unsigned") {
 		t.Error("Pull did not update mydb/product/comments.sql as expected")
@@ -880,20 +892,20 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 
 	// push should re-apply the changes to the other 2 product shards; diff
 	// should be clean after
-	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --ignore-schema=4$")
 	s.assertExists(t, "product2", "comments", "approved")
 	s.assertExists(t, "product3", "comments", "approved")
-	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff --ignore-schema=4$")
 
 	// schema shellouts should also work properly. First get rid of product schema
 	// manually (since push won't ever drop a db) and then push should create
 	// product1 as a new schema.
-	contents = strings.Replace(contents, "schema=product,product2,product3", "schema=`/usr/bin/printf 'product1 product2 product3'`", 1)
+	contents = strings.Replace(contents, "schema=product,product2,product3,product4", "schema=`/usr/bin/printf 'product1 product2 product3 product4'`", 1)
 	fs.WriteTestFile(t, "mydb/product/.skeema", contents)
 	s.dbExec(t, "", "DROP DATABASE product")
-	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --ignore-schema=4$")
 	s.assertExists(t, "product1", "posts", "")
-	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff --ignore-schema=4$")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	assertDirMissing("mydb/product1") // dir is still called mydb/product
 	assertDirMissing("mydb/product2")
@@ -907,7 +919,7 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 	if err := os.RemoveAll("mydb/analytics"); err != nil {
 		t.Fatalf("Unable to delete mydb/analytics/: %s", err)
 	}
-	contents = strings.Replace(contents, "schema=`/usr/bin/printf 'product1 product2 product3'`", "schema=*", 1)
+	contents = strings.Replace(contents, "schema=`/usr/bin/printf 'product1 product2 product3 product4'`", "schema=*", 1)
 	fs.WriteTestFile(t, "mydb/product/.skeema", contents)
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
 	s.assertExists(t, "product1", "posts", "")
@@ -927,10 +939,8 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
 	// Test combination of ignore-schema and schema=*
-	contents = strings.Replace(contents, "schema=*", "schema=*\nignore-schema=2$", 1)
-	fs.WriteTestFile(t, "mydb/product/.skeema", contents)
 	fs.WriteTestFile(t, "mydb/product/foo2.sql", "CREATE TABLE `foo2` (id int);\n")
-	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --ignore-schema=2$")
 	s.assertExists(t, "product1", "foo2", "")
 	s.assertMissing(t, "product2", "foo2", "")
 	s.assertExists(t, "product3", "foo2", "")
