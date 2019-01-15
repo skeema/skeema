@@ -5,7 +5,7 @@
 Skeema currently supports the following databases:
 
 * MySQL 5.5, 5.6, 5.7, 8.0
-* Percona Server 5.6, 5.7
+* Percona Server 5.5, 5.6, 5.7, 8.0
 * MariaDB 10.1, 10.2, 10.3
 
 Only the InnoDB storage engine is primarily supported. Other storage engines are often perfectly functional in Skeema, but it depends on whether any esoteric features of the engine are used.
