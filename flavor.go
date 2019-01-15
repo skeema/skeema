@@ -87,14 +87,20 @@ var FlavorMySQL56 = Flavor{VendorMySQL, 5, 6}
 // FlavorMySQL57 represents MySQL 5.7.x
 var FlavorMySQL57 = Flavor{VendorMySQL, 5, 7}
 
-// FlavorMySQL80 represents MySQL 8.0.x (note: not yet supported by this package!)
+// FlavorMySQL80 represents MySQL 8.0.x
 var FlavorMySQL80 = Flavor{VendorMySQL, 8, 0}
+
+// FlavorPercona55 represents Percona Server 5.5.x
+var FlavorPercona55 = Flavor{VendorPercona, 5, 5}
 
 // FlavorPercona56 represents Percona Server 5.6.x
 var FlavorPercona56 = Flavor{VendorPercona, 5, 6}
 
 // FlavorPercona57 represents Percona Server 5.7.x
 var FlavorPercona57 = Flavor{VendorPercona, 5, 7}
+
+// FlavorPercona80 represents Percona Server 8.0.x
+var FlavorPercona80 = Flavor{VendorPercona, 8, 0}
 
 // FlavorMariaDB101 represents MariaDB 10.1.x
 var FlavorMariaDB101 = Flavor{VendorMariaDB, 10, 1}
@@ -143,7 +149,7 @@ func (fl Flavor) Supported() bool {
 	switch fl {
 	case FlavorMySQL55, FlavorMySQL56, FlavorMySQL57, FlavorMySQL80:
 		return true
-	case FlavorPercona56, FlavorPercona57:
+	case FlavorPercona55, FlavorPercona56, FlavorPercona57, FlavorPercona80:
 		return true
 	case FlavorMariaDB101, FlavorMariaDB102, FlavorMariaDB103:
 		return true
