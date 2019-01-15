@@ -873,12 +873,11 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		}
 		for len(index.Columns) < int(rawIndex.SeqInIndex) {
 			index.Columns = append(index.Columns, new(Column))
+			index.SubParts = append(index.SubParts, 0)
 		}
 		index.Columns[rawIndex.SeqInIndex-1] = col
 		if rawIndex.SubPart.Valid {
-			index.SubParts = append(index.SubParts, uint16(rawIndex.SubPart.Int64))
-		} else {
-			index.SubParts = append(index.SubParts, 0)
+			index.SubParts[rawIndex.SeqInIndex-1] = uint16(rawIndex.SubPart.Int64)
 		}
 	}
 	for _, t := range tables {
