@@ -1,4 +1,4 @@
-![Skeema](http://static.tumblr.com/04a9b08bd737ea4f932a75df3c1267ca/ztrnmrz/X7Voozjhb/tumblr_static_sya4y7g0auoso8c4w4ggc8ok_2048_v2.png)
+[![Skeema](https://www.skeema.io/img/logo.png)](https://www.skeema.io)
 
 [![build status](https://img.shields.io/travis/skeema/skeema/master.svg)](http://travis-ci.org/skeema/skeema)
 [![code coverage](https://img.shields.io/coveralls/skeema/skeema.svg)](https://coveralls.io/r/skeema/skeema)
