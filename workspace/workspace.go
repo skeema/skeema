@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -152,6 +153,7 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 type ShutdownFunc func(...interface{}) bool
 
 var shutdownFuncs []ShutdownFunc
+var shutdownFuncMutex sync.Mutex
 
 // Shutdown performs any necessary cleanup operations prior to the program
 // exiting. For example, if containers need to be stopped or destroyed, it is
@@ -160,6 +162,8 @@ var shutdownFuncs []ShutdownFunc
 // It is recommended that programs importing this package call Shutdown as a
 // deferred function in main().
 func Shutdown(args ...interface{}) {
+	shutdownFuncMutex.Lock()
+	defer shutdownFuncMutex.Unlock()
 	retainedFuncs := make([]ShutdownFunc, 0, len(shutdownFuncs))
 	for _, f := range shutdownFuncs {
 		if deregister := f(args...); !deregister {
@@ -174,6 +178,8 @@ func Shutdown(args ...interface{}) {
 // to track actions to perform at shutdown time, such as stopping or destroying
 // containers.
 func RegisterShutdownFunc(f ShutdownFunc) {
+	shutdownFuncMutex.Lock()
+	defer shutdownFuncMutex.Unlock()
 	shutdownFuncs = append(shutdownFuncs, f)
 }
 
