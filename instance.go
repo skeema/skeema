@@ -303,6 +303,9 @@ func (instance *Instance) Schemas(onlyNames ...string) ([]*Schema, error) {
 		if schemas[n].Tables, err = instance.querySchemaTables(rawSchema.Name); err != nil {
 			return nil, err
 		}
+		if schemas[n].Routines, err = instance.querySchemaRoutines(rawSchema.Name); err != nil {
+			return nil, err
+		}
 	}
 	return schemas, nil
 }
@@ -983,4 +986,165 @@ func fixIndexOrder(t *Table) {
 		t.SecondaryIndexes[cur] = byName[matches[1]]
 		cur++
 	}
+}
+
+func (instance *Instance) querySchemaRoutines(schema string) ([]*Routine, error) {
+	db, err := instance.Connect("information_schema", "")
+	if err != nil {
+		return nil, err
+	}
+
+	// Note on this query: MySQL 8.0 changes information_schema column names to
+	// come back from queries in all caps, so we need to explicitly use AS clauses
+	// in order to get them back as lowercase and have sqlx Select() work
+	// Obtain the routines in the schema
+	var rawRoutines []struct {
+		Name              string         `db:"routine_name"`
+		Type              string         `db:"routine_type"`
+		Body              sql.NullString `db:"routine_definition"`
+		IsDeterministic   string         `db:"is_deterministic"`
+		SQLDataAccess     string         `db:"sql_data_access"`
+		SecurityType      string         `db:"security_type"`
+		SQLMode           string         `db:"sql_mode"`
+		Comment           string         `db:"routine_comment"`
+		Definer           string         `db:"definer"`
+		DatabaseCollation string         `db:"database_collation"`
+	}
+	query := `
+		SELECT r.routine_name AS routine_name, UPPER(r.routine_type) AS routine_type,
+		       r.routine_definition AS routine_definition,
+		       UPPER(r.is_deterministic) AS is_deterministic,
+		       UPPER(r.sql_data_access) AS sql_data_access,
+		       UPPER(r.security_type) AS security_type,
+		       r.sql_mode AS sql_mode, r.routine_comment AS routine_comment,
+		       r.definer AS definer, r.database_collation AS database_collation
+		FROM   routines r
+		WHERE  r.routine_schema = ?`
+	if err := db.Select(&rawRoutines, query, schema); err != nil {
+		return nil, fmt.Errorf("Error querying information_schema.routines for schema %s: %s", schema, err)
+	}
+	if len(rawRoutines) == 0 {
+		return []*Routine{}, nil
+	}
+	routines := make([]*Routine, len(rawRoutines))
+	dict := make(map[ObjectKey]*Routine, len(rawRoutines))
+	for n, rawRoutine := range rawRoutines {
+		routines[n] = &Routine{
+			Name:              rawRoutine.Name,
+			Type:              ObjectType(strings.ToLower(rawRoutine.Type)),
+			Body:              rawRoutine.Body.String, // This contains incorrect formatting conversions; overwritten later
+			Definer:           rawRoutine.Definer,
+			DatabaseCollation: rawRoutine.DatabaseCollation,
+			Comment:           rawRoutine.Comment,
+			Deterministic:     rawRoutine.IsDeterministic == "YES",
+			SQLDataAccess:     rawRoutine.SQLDataAccess,
+			SecurityType:      rawRoutine.SecurityType,
+			SQLMode:           rawRoutine.SQLMode,
+		}
+		if routines[n].Type != ObjectTypeProc && routines[n].Type != ObjectTypeFunc {
+			return nil, fmt.Errorf("Unsupported routine type %s found in %s.%s", rawRoutine.Type, schema, rawRoutine.Name)
+		}
+		key := ObjectKey{Type: routines[n].Type, Name: routines[n].Name}
+		dict[key] = routines[n]
+	}
+
+	// Obtain param string, return type string, and full create statement:
+	// We can't rely only on information_schema, since it doesn't have the param
+	// string formatted in the same way as the original CREATE, nor does
+	// routines.body handle strings/charsets correctly for re-runnable SQL.
+	// In flavors without the new data dictionary, we first try querying mysql.proc
+	// to bulk-fetch sufficient info to rebuild the CREATE without needing to run
+	// a SHOW CREATE per routine.
+	// If mysql.proc doesn't exist or that query fails, we then run a SHOW CREATE
+	// per routine, using multiple goroutines for performance reasons.
+	db, err = instance.Connect(schema, "")
+	if err != nil {
+		return nil, err
+	}
+	if !instance.Flavor().HasDataDictionary() {
+		var rawRoutineMeta []struct {
+			Name      string `db:"name"`
+			Type      string `db:"type"`
+			Body      string `db:"body"`
+			ParamList string `db:"param_list"`
+			Returns   string `db:"returns"`
+		}
+		query := `
+			SELECT name, type, body, param_list, returns
+			FROM   mysql.proc
+			WHERE  db = ?`
+		// Errors here are non-fatal. No need to even check; slice will be empty which is fine
+		db.Select(&rawRoutineMeta, query, schema)
+		for _, meta := range rawRoutineMeta {
+			key := ObjectKey{Type: ObjectType(strings.ToLower(meta.Type)), Name: meta.Name}
+			if routine, ok := dict[key]; ok {
+				routine.ParamString = meta.ParamList
+				routine.ReturnDataType = meta.Returns
+				routine.Body = meta.Body
+				routine.CreateStatement = routine.Definition(instance.Flavor())
+			}
+		}
+	}
+	defer db.SetMaxOpenConns(0)
+	db.SetMaxOpenConns(10)
+	var g errgroup.Group
+	for _, r := range routines {
+		if r.CreateStatement != "" {
+			continue // already hydrated from mysql.proc query above
+		}
+		r := r
+		g.Go(func() (err error) {
+			if r.CreateStatement, err = showCreateRoutine(db, r.Name, r.Type); err != nil {
+				return fmt.Errorf("Error executing SHOW CREATE %s for %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), err)
+			}
+			var returnsClause string
+			if r.Type == ObjectTypeFunc {
+				returnsClause = " RETURNS ([^\n]+)"
+			}
+			reTemplate := fmt.Sprintf("^CREATE[^\n]* %s %s\\(([^\n]*)\\)%s\n", r.Type.Caps(), EscapeIdentifier(r.Name), returnsClause)
+			var reCreateRoutine = regexp.MustCompile(reTemplate)
+			matches := reCreateRoutine.FindStringSubmatch(r.CreateStatement)
+			if matches == nil {
+				return fmt.Errorf("Failed to parse %s", r.CreateStatement)
+			}
+			r.ParamString = matches[1]
+			if r.Type == ObjectTypeFunc {
+				r.ReturnDataType = matches[2]
+			}
+			// Attempt to replace r.Body with one that doesn't have character conversion problems
+			if header := r.head(instance.Flavor()); strings.HasPrefix(r.CreateStatement, header) {
+				r.Body = r.CreateStatement[len(header):]
+			}
+			return nil
+		})
+	}
+	return routines, g.Wait()
+}
+
+func showCreateRoutine(db *sqlx.DB, routine string, ot ObjectType) (create string, err error) {
+	query := fmt.Sprintf("SHOW CREATE %s %s", ot.Caps(), EscapeIdentifier(routine))
+	if ot == ObjectTypeProc {
+		var createRows []struct {
+			CreateStatement sql.NullString `db:"Create Procedure"`
+		}
+		err = db.Select(&createRows, query)
+		if (err == nil && len(createRows) != 1) || IsDatabaseError(err, mysqlerr.ER_SP_DOES_NOT_EXIST) {
+			err = sql.ErrNoRows
+		} else if err == nil {
+			create = createRows[0].CreateStatement.String
+		}
+	} else if ot == ObjectTypeFunc {
+		var createRows []struct {
+			CreateStatement sql.NullString `db:"Create Function"`
+		}
+		err = db.Select(&createRows, query)
+		if (err == nil && len(createRows) != 1) || IsDatabaseError(err, mysqlerr.ER_SP_DOES_NOT_EXIST) {
+			err = sql.ErrNoRows
+		} else if err == nil {
+			create = createRows[0].CreateStatement.String
+		}
+	} else {
+		err = fmt.Errorf("Object type %s is not a routine", ot)
+	}
+	return
 }

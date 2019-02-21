@@ -537,10 +537,16 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		switch key.Type {
 		case ObjectTypeTable:
 			ok = strings.HasPrefix(create, "CREATE TABLE")
+		case ObjectTypeProc, ObjectTypeFunc:
+			ok = strings.HasPrefix(create, "CREATE DEFINER")
 		}
 		if !ok {
 			t.Errorf("Unexpected or incorrect key %s found in schema object definitions --> %s", key, create)
 		}
+	}
+
+	if dict[ObjectKey{Type: ObjectTypeFunc, Name: "func1"}] == "" || dict[ObjectKey{Type: ObjectTypeProc, Name: "func1"}] != "" {
+		t.Error("ObjectDefinitions map not populated as expected")
 	}
 
 	// ensure character set handling works properly regardless of whether this
@@ -560,6 +566,81 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		t.Error("fixIndexOrder did not behave as expected")
 	}
 
+}
+
+func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
+	schema := s.GetSchema(t, "testing")
+	db, err := s.d.Connect("testing", "")
+	if err != nil {
+		t.Fatalf("Unexpected error from Connect: %s", err)
+	}
+	var sqlMode string
+	if err = db.QueryRow("SELECT @@sql_mode").Scan(&sqlMode); err != nil {
+		t.Fatalf("Unexpected error from Scan: %s", err)
+	}
+
+	procsByName := schema.ProceduresByName()
+	actualProc1 := procsByName["proc1"]
+	if actualProc1 == nil || len(procsByName) != 1 {
+		t.Fatal("Unexpected result from ProceduresByName()")
+	}
+	expectProc1 := aProc(schema.Collation, sqlMode)
+	if !expectProc1.Equals(actualProc1) {
+		t.Errorf("Actual proc did not equal expected.\nACTUAL: %+v\nEXPECTED: %+v\n", actualProc1, &expectProc1)
+	}
+
+	funcsByName := schema.FunctionsByName()
+	actualFunc1 := funcsByName["func1"]
+	if actualFunc1 == nil || len(funcsByName) != 2 {
+		t.Fatal("Unexpected result from FunctionsByName()")
+	}
+	expectFunc1 := aFunc(schema.Collation, sqlMode)
+	if !expectFunc1.Equals(actualFunc1) {
+		t.Errorf("Actual func did not equal expected.\nACTUAL: %+v\nEXPECTED: %+v\n", actualFunc1, &expectFunc1)
+	}
+	if actualFunc1.Equals(actualProc1) {
+		t.Error("Equals not behaving as expected, proc1 and func1 should not be equal")
+	}
+
+	// If this flavor supports using mysql.proc to bulk-fetch routines, confirm
+	// the result is identical to using the individual SHOW CREATE queries
+	if !s.d.Flavor().HasDataDictionary() {
+		fastResults, err := s.d.querySchemaRoutines("testing")
+		if err != nil {
+			t.Fatalf("Unexpected error from querySchemaRoutines: %s", err)
+		}
+		oldFlavor := s.d.Flavor()
+		s.d.flavor = FlavorMySQL80 // hacky, but ok for testing...
+		slowResults, err := s.d.querySchemaRoutines("testing")
+		s.d.flavor = oldFlavor
+		if err != nil {
+			t.Fatalf("Unexpected error from querySchemaRoutines: %s", err)
+		}
+		for n, r := range fastResults {
+			if !r.Equals(slowResults[n]) {
+				t.Errorf("Routine[%d] mismatch\nFast path value: %+v\nSlow path value: %+v\n", n, r, slowResults[n])
+			}
+		}
+	}
+
+	// Coverage for various nil cases and error conditions
+	schema = nil
+	if procCount := len(schema.ProceduresByName()); procCount != 0 {
+		t.Errorf("nil schema unexpectedly contains %d procedures by name", procCount)
+	}
+	var r *Routine
+	if actualFunc1.Equals(r) || !r.Equals(r) {
+		t.Error("Equals not behaving as expected")
+	}
+	if _, err = showCreateRoutine(db, actualProc1.Name, ObjectTypeFunc); err != sql.ErrNoRows {
+		t.Errorf("Unexpected error return from showCreateRoutine: expected sql.ErrNoRows, found %s", err)
+	}
+	if _, err = showCreateRoutine(db, actualFunc1.Name, ObjectTypeProc); err != sql.ErrNoRows {
+		t.Errorf("Unexpected error return from showCreateRoutine: expected sql.ErrNoRows, found %s", err)
+	}
+	if _, err = showCreateRoutine(db, actualFunc1.Name, ObjectTypeTable); err == nil {
+		t.Error("Expected non-nil error return from showCreateRoutine with invalid type, instead found nil")
+	}
 }
 
 func (s TengoIntegrationSuite) TestInstanceStrictModeCompliant(t *testing.T) {

@@ -101,6 +101,25 @@ CREATE TABLE grab_bag (
 	CONSTRAINT aa FOREIGN KEY (name) REFERENCES sometable3 (somecol3)
 ) AUTO_INCREMENT=123;
 
+# Routine definitions here are intentionally formatted oddly. The DB remembers
+# formatting in some places but not others.
+# Keep this in sync with tengo_test.go's aProc()
+delimiter //
+CREATE PROCEDURE proc1(IN name varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin, INOUT iterations int(10) unsigned, OUT pct decimal(5, 2))
+  READS SQL DATA   SQL SECURITY  INVOKER
+  BEGIN
+  SELECT @iterations + 1, 98.76 INTO iterations, pct;
+  END //
+delimiter ;
+
+# Keep this in sync with tengo_test.go's aFunc()
+CREATE FUNCTION func1(mult float(10,2))
+returns float deterministic NO SQL COMMENT 'hello world' return mult * 2.0;
+
+CREATE FUNCTION func2(num int, name varchar(30))
+returns varchar(30) deterministic
+return REPEAT(CONCAT('it''s ', name, '! '), num);
+
 use testcharcoll
 
 CREATE TABLE col_overrides_aplenty (

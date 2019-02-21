@@ -478,3 +478,43 @@ func aSchema(name string, tables ...*Table) Schema {
 	}
 	return s
 }
+
+func aProc(dbCollation, sqlMode string) Routine {
+	r := Routine{
+		Name: "proc1",
+		Type: ObjectTypeProc,
+		Body: `BEGIN
+  SELECT @iterations + 1, 98.76 INTO iterations, pct;
+  END`,
+		ParamString:       "IN name varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin, INOUT iterations int(10) unsigned, OUT pct decimal(5, 2)",
+		ReturnDataType:    "",
+		Definer:           "root@localhost",
+		DatabaseCollation: dbCollation,
+		Comment:           "",
+		Deterministic:     false,
+		SQLDataAccess:     "READS SQL DATA",
+		SecurityType:      "INVOKER",
+		SQLMode:           sqlMode,
+	}
+	r.CreateStatement = r.Definition(FlavorUnknown)
+	return r
+}
+
+func aFunc(dbCollation, sqlMode string) Routine {
+	r := Routine{
+		Name:              "func1",
+		Type:              ObjectTypeFunc,
+		Body:              "return mult * 2.0",
+		ParamString:       "mult float(10,2)",
+		ReturnDataType:    "float",
+		Definer:           "root@localhost",
+		DatabaseCollation: dbCollation,
+		Comment:           "hello world",
+		Deterministic:     true,
+		SQLDataAccess:     "NO SQL",
+		SecurityType:      "DEFINER",
+		SQLMode:           sqlMode,
+	}
+	r.CreateStatement = r.Definition(FlavorUnknown)
+	return r
+}
