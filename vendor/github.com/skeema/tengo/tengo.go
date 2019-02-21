@@ -17,6 +17,8 @@ type ObjectType string
 const (
 	ObjectTypeDatabase ObjectType = "database"
 	ObjectTypeTable    ObjectType = "table"
+	ObjectTypeProc     ObjectType = "procedure"
+	ObjectTypeFunc     ObjectType = "function"
 )
 
 // Caps returns the object type as an uppercase string.

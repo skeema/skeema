@@ -116,6 +116,48 @@ func TestSQLFileTokenize(t *testing.T) {
 	if _, err := sf2.Tokenize(); err == nil {
 		t.Error("Expected to get an error about nonexistent file, but err was nil")
 	}
+
+	// Test handling of files that just contain a single routine definition, but
+	// without using the DELIMITER command
+	nd1 := SQLFile{
+		Dir:      "../testdata",
+		FileName: "nodelimiter1.sql",
+	}
+	if tokenizedFile, err := nd1.Tokenize(); err != nil {
+		t.Errorf("Unexpected error parsing nodelimiter1.sql: %s", err)
+	} else {
+		if len(tokenizedFile.Statements) == 2 {
+			if tokenizedFile.Statements[0].Type != StatementTypeNoop || tokenizedFile.Statements[1].Type != StatementTypeCreate {
+				t.Error("Correct count of statements found, but incorrect types parsed")
+			}
+		} else {
+			t.Errorf("Expected file to contain 2 statements, instead found %d", len(tokenizedFile.Statements))
+		}
+	}
+
+	// Now try parsing a file that contains a multi-line routine (but no DELIMITER
+	// command) followed by another CREATE, and confirm the parsing is "incorrect"
+	// in the expected way
+	nd2 := SQLFile{
+		Dir:      "../testdata",
+		FileName: "nodelimiter2.sql",
+	}
+	if tokenizedFile, err := nd2.Tokenize(); err != nil {
+		t.Errorf("Unexpected error parsing nodelimiter1.sql: %s", err)
+	} else {
+		if len(tokenizedFile.Statements) != 8 {
+			t.Errorf("Expected file to contain 8 statements, instead found %d", len(tokenizedFile.Statements))
+		}
+		var seenUnknown bool
+		for _, stmt := range tokenizedFile.Statements {
+			if stmt.Type == StatementTypeUnknown {
+				seenUnknown = true
+			}
+		}
+		if !seenUnknown {
+			t.Error("Expected to find a statement that could not be parsed, but did not")
+		}
+	}
 }
 
 func TestTokenizedSQLFileRewrite(t *testing.T) {
@@ -174,14 +216,22 @@ func expectedStatements(filePath string) []*Statement {
 		{File: filePath, LineNo: 6, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "users", Text: "CREATE #fun interruption\nTABLE `users` (\n  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,\n  `na``me` varchar(30) NOT NULL DEFAULT 'it\\'s complicated \"escapes''',\n  `credits` decimal(9,2) DEFAULT '10.00', -- end of line; \" comment\n  `last_modified` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, # another end-of-line comment;\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `name` (`name`)\n) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n"},
 		{File: filePath, LineNo: 15, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "          "},
 		{File: filePath, LineNo: 15, CharNo: 11, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "posts with spaces", Text: "CREATE TABLE `posts with spaces` (\n  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,\n  `user_id` bigint(20) unsigned NOT NULL,\n  `body` varchar(50) DEFAULT '/* lol\\'',\n  `created_at` datetime /*!50601 DEFAULT CURRENT_TIMESTAMP*/,\n  `edited_at` datetime /*!50601 DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP*/,\n  PRIMARY KEY (`id`),\n  KEY `user_created` (`user_id`,`created_at`)\n) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n"},
-		{File: filePath, LineNo: 24, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n\n\n\t"},
-		{File: filePath, LineNo: 27, CharNo: 2, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "delimiter    \"💩💩💩\"\n"},
-		{File: filePath, LineNo: 28, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "uhoh", Text: "CREATE TABLE uhoh (ummm varchar(20) default 'ok 💩💩💩 cool')💩💩💩\n"},
-		{File: filePath, LineNo: 29, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "delimiter ;\n"},
-		{File: filePath, LineNo: 30, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n"},
-		{File: filePath, LineNo: 31, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "use /*wtf*/`analytics`;"},
-		{File: filePath, LineNo: 31, CharNo: 24, DefaultDatabase: "analytics", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "comments", Text: "CREATE TABLE  if  NOT    eXiStS     `comments` (\n  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,\n  `post_id` bigint(20) unsigned NOT NULL,\n  `user_id` bigint(20) unsigned NOT NULL,\n  `created_at` datetime DEFAULT NULL,\n  `body` text,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n"},
-		{File: filePath, LineNo: 39, CharNo: 1, DefaultDatabase: "analytics", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "subscriptions", Text: "CREATE TABLE subscriptions (id int unsigned not null primary key)"},
+		{File: filePath, LineNo: 24, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n\n\n"},
+		{File: filePath, LineNo: 27, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeFunc, ObjectName: "funcnodefiner", Text: "create function funcnodefiner() RETURNS varchar(30) RETURN \"hello\";\n"},
+		{File: filePath, LineNo: 28, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeFunc, ObjectName: "funccuruserparens", Text: "CREATE DEFINER = CURRENT_USER() FUNCTION funccuruserparens() RETURNS int RETURN 42;\n"},
+		{File: filePath, LineNo: 29, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeProc, ObjectName: "proccurusernoparens", Text: "CREATE DEFINER=CURRENT_USER PROCEDURE proccurusernoparens() # this is a comment!\n\tSELECT 1;\n"},
+		{File: filePath, LineNo: 31, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeFunc, ObjectName: "funcdefquote2", ObjectQualifier: "analytics", Text: "create definer=foo@'localhost' /*lol*/ FUNCTION analytics.funcdefquote2() RETURNS int RETURN 42;\n"},
+		{File: filePath, LineNo: 32, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeProc, ObjectName: "procdefquote1", Text: "create DEFINER = 'foo'@localhost PROCEDURE `procdefquote1`() SELECT 42;\n"},
+		{File: filePath, LineNo: 33, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\t"},
+		{File: filePath, LineNo: 33, CharNo: 2, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "delimiter    \"💩💩💩\"\n"},
+		{File: filePath, LineNo: 34, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "uhoh", Text: "CREATE TABLE uhoh (ummm varchar(20) default 'ok 💩💩💩 cool')💩💩💩\n"},
+		{File: filePath, LineNo: 35, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "DELIMITER //\n"},
+		{File: filePath, LineNo: 36, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeProc, ObjectName: "whatever", Text: "CREATE PROCEDURE whatever(name varchar(10))\nBEGIN\n\tDECLARE v1 INT;\n\tSET v1=loops;\n\tWHILE v1 > 0 DO\n\t\tINSERT INTO users (name) values ('\\xF0\\x9D\\x8C\\x86');\n\t\tSET v1 = v1 - (2 / 2); /* testing // testing */\n\tEND WHILE;\nEND\n//\n"},
+		{File: filePath, LineNo: 46, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "delimiter ;\n"},
+		{File: filePath, LineNo: 47, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n"},
+		{File: filePath, LineNo: 48, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "use /*wtf*/`analytics`;"},
+		{File: filePath, LineNo: 48, CharNo: 24, DefaultDatabase: "analytics", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "comments", Text: "CREATE TABLE  if  NOT    eXiStS     `comments` (\n  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,\n  `post_id` bigint(20) unsigned NOT NULL,\n  `user_id` bigint(20) unsigned NOT NULL,\n  `created_at` datetime DEFAULT NULL,\n  `body` text,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n"},
+		{File: filePath, LineNo: 56, CharNo: 1, DefaultDatabase: "analytics", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "subscriptions", Text: "CREATE TABLE subscriptions (id int unsigned not null primary key)"},
 	}
 }
 

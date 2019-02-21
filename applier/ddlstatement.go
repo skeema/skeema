@@ -111,6 +111,13 @@ func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, targe
 		ddl.connectParams = "foreign_key_checks=1"
 	}
 
+	// If creating a routine, use the server's global sql_mode instead of Skeema's
+	// normal built-in override
+	if wrapper == "" && (otype == tengo.ObjectTypeProc || otype == tengo.ObjectTypeFunc) &&
+		diff.DiffType() == tengo.DiffTypeCreate {
+		ddl.connectParams = "sql_mode=@@GLOBAL.sql_mode"
+	}
+
 	// Apply wrapper if relevant
 	if wrapper != "" {
 		var socket, port, connOpts string

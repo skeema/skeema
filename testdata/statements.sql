@@ -24,8 +24,25 @@ TABLE `users` (
 
 
 
+create function funcnodefiner() RETURNS varchar(30) RETURN "hello";
+CREATE DEFINER = CURRENT_USER() FUNCTION funccuruserparens() RETURNS int RETURN 42;
+CREATE DEFINER=CURRENT_USER PROCEDURE proccurusernoparens() # this is a comment!
+	SELECT 1;
+create definer=foo@'localhost' /*lol*/ FUNCTION analytics.funcdefquote2() RETURNS int RETURN 42;
+create DEFINER = 'foo'@localhost PROCEDURE `procdefquote1`() SELECT 42;
 	delimiter    "💩💩💩"
 CREATE TABLE uhoh (ummm varchar(20) default 'ok 💩💩💩 cool')💩💩💩
+DELIMITER //
+CREATE PROCEDURE whatever(name varchar(10))
+BEGIN
+	DECLARE v1 INT;
+	SET v1=loops;
+	WHILE v1 > 0 DO
+		INSERT INTO users (name) values ('\xF0\x9D\x8C\x86');
+		SET v1 = v1 - (2 / 2); /* testing // testing */
+	END WHILE;
+END
+//
 delimiter ;
 
 use /*wtf*/`analytics`;CREATE TABLE  if  NOT    eXiStS     `comments` (

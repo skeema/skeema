@@ -346,6 +346,14 @@ func (ls *lineState) parseStatement() {
 			ls.stmt.Type = StatementTypeCreate
 			ls.stmt.ObjectType = tengo.ObjectTypeTable
 			ls.stmt.ObjectQualifier, ls.stmt.ObjectName = sqlStmt.CreateTable.Name.schemaAndTable()
+		} else if sqlStmt.CreateProc != nil {
+			ls.stmt.Type = StatementTypeCreate
+			ls.stmt.ObjectType = tengo.ObjectTypeProc
+			ls.stmt.ObjectQualifier, ls.stmt.ObjectName = sqlStmt.CreateProc.Name.schemaAndTable()
+		} else if sqlStmt.CreateFunc != nil {
+			ls.stmt.Type = StatementTypeCreate
+			ls.stmt.ObjectType = tengo.ObjectTypeFunc
+			ls.stmt.ObjectQualifier, ls.stmt.ObjectName = sqlStmt.CreateFunc.Name.schemaAndTable()
 		}
 	}
 }
@@ -399,6 +407,8 @@ var (
 // sqlStatement is the top-level struct for the name parser.
 type sqlStatement struct {
 	CreateTable      *createTable      `parser:"@@"`
+	CreateProc       *createProc       `parser:"| @@"`
+	CreateFunc       *createFunc       `parser:"| @@"`
 	UseCommand       *useCommand       `parser:"| @@"`
 	DelimiterCommand *delimiterCommand `parser:"| @@"`
 }
@@ -426,10 +436,31 @@ type body struct {
 	Contents string `parser:"(Word | String | Number | Operator)*"`
 }
 
+// definer represents a user who is the definer of a routine or view.
+type definer struct {
+	User string `parser:"((@String | @Word) '@'"`
+	Host string `parser:"(@String | @Word))"`
+	Func string `parser:"| ('CURRENT_USER' ('(' ')')?)"`
+}
+
 // createTable represents a CREATE TABLE statement.
 type createTable struct {
 	Name objectName `parser:"'CREATE' 'TABLE' ('IF' 'NOT' 'EXISTS')? @@"`
 	Body body       `parser:"@@"`
+}
+
+// createProc represents a CREATE PROCEDURE statement.
+type createProc struct {
+	Definer *definer   `parser:"'CREATE' ('DEFINER' '=' @@)?"`
+	Name    objectName `parser:"'PROCEDURE' @@"`
+	Body    body       `parser:"@@"`
+}
+
+// createFunc represents a CREATE FUNCTION statement.
+type createFunc struct {
+	Definer *definer   `parser:"'CREATE' ('DEFINER' '=' @@)?"`
+	Name    objectName `parser:"'FUNCTION' @@"`
+	Body    body       `parser:"@@"`
 }
 
 // useCommand represents a USE command.

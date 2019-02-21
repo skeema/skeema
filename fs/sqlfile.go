@@ -5,7 +5,10 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"regexp"
 	"strings"
+
+	"github.com/skeema/tengo"
 )
 
 // SQLFile represents a file containing zero or more SQL statements.
@@ -69,6 +72,40 @@ func (sf SQLFile) Tokenize() (*TokenizedSQLFile, error) {
 		return nil, err
 	}
 
+	// As a special case, if a file contains a single routine but no DELIMITER
+	// command, re-parse it as a single statement. This avoids user error from
+	// lack of DELIMITER usage in a multi-statement routine.
+	tryReparse := true
+	var seenRoutine, unknownAfterRoutine bool
+	for _, stmt := range statements {
+		switch stmt.Type {
+		case StatementTypeNoop:
+			// nothing to do for StatementTypeNoop, just excluding it from the default case
+		case StatementTypeCreate:
+			if !seenRoutine &&
+				(stmt.ObjectType == tengo.ObjectTypeProc || stmt.ObjectType == tengo.ObjectTypeFunc) &&
+				strings.Contains(strings.ToLower(stmt.Text), "begin") {
+				seenRoutine = true
+			} else {
+				tryReparse = false
+			}
+		case StatementTypeUnknown:
+			if seenRoutine {
+				unknownAfterRoutine = true
+			}
+		default:
+			tryReparse = false
+		}
+		if !tryReparse {
+			break
+		}
+	}
+	if seenRoutine && unknownAfterRoutine && tryReparse {
+		tokenizer := newStatementTokenizer(sf.Path(), "\000")
+		if statements2, err := tokenizer.statements(); err == nil {
+			statements = statements2
+		}
+	}
 	return NewTokenizedSQLFile(sf, statements), nil
 }
 
@@ -142,7 +179,15 @@ func AppendToFile(filePath, contents string) (bytesWritten int, created bool, er
 	return len(newContents), false, ioutil.WriteFile(filePath, []byte(newContents), 0666)
 }
 
+var reIsMultiStatement = regexp.MustCompile(`(?is)begin.*;.*end`)
+
 // AddDelimiter takes the supplied string and appends a delimiter to the end.
+// If the supplied string is a multi-statement routine, delimiter commands will
+// be prepended and appended to the string appropriately.
+// TODO devise a way to avoid using special delimiter for single-routine files
 func AddDelimiter(stmt string) string {
+	if reIsMultiStatement.MatchString(stmt) {
+		return fmt.Sprintf("DELIMITER //\n%s//\nDELIMITER ;\n", stmt)
+	}
 	return fmt.Sprintf("%s;\n", stmt)
 }

@@ -87,6 +87,7 @@ The following operations are considered unsafe:
 * Altering a table to modify an existing column in a way that potentially causes data loss, length truncation, or reduction in precision
 * Altering a table to modify the character set of an existing column
 * Altering a table to change its storage engine
+* Dropping a stored procedure or function (even if just to [re-create it with a modified definition](requirements.md#edge-cases-for-routines))
 
 If [allow-unsafe](#allow-unsafe) is set to true, these operations are fully permitted, for all tables. It is not recommended to enable this setting in an option file, especially in the production environment. It is safer to require users to supply it manually on the command-line on an as-needed basis, to serve as a confirmation step for unsafe operations.
 
@@ -230,6 +231,8 @@ This option only affects connections made *directly* by Skeema. If you are using
 
 If you do not override `sql_mode` in [connect-options](#connect-options), Skeema will default to using a session-level value of `'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'`. This provides a consistent strict-mode baseline for Skeema's behavior, regardless of what the server global default is set to. Similarly, `innodb_strict_mode` is enabled by default for Skeema's sessions, but may be overridden to disable if desired. Note that `skeema init` will automatically set a non-strict [connect-options](#connect-options) in `.skeema` if at least one existing table is incompatible with strict settings (e.g., use of a zero-date default, or an unsupported ROW_FORMAT).
 
+As a special-case, whenever Skeema creates stored procedures or functions, the server's default global `sql_mode` will be used, regardless of any override here. This is necessary because MySQL persists the creation-time `sql_mode` into the routine metadata, and Skeema assumes the server's global default is the preferred value.
+
 In addition to setting MySQL session variables, you may also set any of these special variables which affect client-side behavior at the internal driver/protocol level:
 
 * `charset=string` -- Character set used for client-server interaction
@@ -272,7 +275,7 @@ This command supports use of special variables. Skeema will dynamically replace 
 * `{SIZE}` -- size of table that this DDL statement targets, in bytes. For tables with no rows, this will be 0, regardless of actual size of the empty table on disk. It will also be 0 for CREATE TABLE statements. It will be 0 if {CLASS} isn't TABLE.
 * `{CLAUSES}` -- Body of the DDL statement, i.e. everything *after* `ALTER TABLE <name> ` or `CREATE TABLE <name> `. This is blank for `DROP TABLE` statements, and blank if {CLASS} isn't TABLE.
 * `{TYPE}` -- the operation type: the word "CREATE", "DROP", or "ALTER" in all caps.
-* `{CLASS}` -- the object class: the word "TABLE" or "DATABASE" in all caps. Other object classes (e.g. "VIEW") may be supported in the future.
+* `{CLASS}` -- the object class: the word "TABLE", "DATABASE", "PROCEDURE", or "FUNCTION" in all caps. Additional object classes (e.g. "VIEW") may be supported in the future.
 * `{CONNOPTS}` -- Session variables passed through from the [connect-options](#connect-options) option
 * `{DIRNAME}` -- The base name (last path element) of the directory being processed.
 * `{DIRPATH}` -- The full (absolute) path of the directory being processed.
@@ -525,6 +528,8 @@ Many external tools such as gh-ost and pt-online-schema-change will create tempo
 
 When supplied on the command-line to `skeema init`, the value will be persisted into the auto-generated .skeema option file, so that subsequent commands continue to ignore the corresponding table names.
 
+If a future version of Skeema adds support for views, this option will apply to views as well, since they share a namespace with tables. However, this option does not affect any other object types, such as stored procedures or functions.
+
 ### include-auto-inc
 
 Commands | init, pull
@@ -618,6 +623,8 @@ The size comparison is a strict less-than. This means that with the default valu
 To only allow unsafe operations on *empty* tables (ones without any rows), set [safe-below-size](#safe-below-size) to 1. Skeema always treats empty tables as size 0 bytes as a special-case.
 
 This option is intended to permit rapid development when altering a new table before it's in use, or dropping a table that was never in use. The intended pattern is to set [safe-below-size](#safe-below-size) in a global option file, potentially to a higher value in the development environment and a lower value in the production environment. This way, whenever unsafe operations are to be run on a larger table, the user must supply [--allow-unsafe](#allow-unsafe) *manually on the command-line* when appropriate to confirm the action.
+
+This option does not apply to other object types besides tables, such as stored procedures or functions, as they have no notion of "size".
 
 ### schema
 
