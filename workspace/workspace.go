@@ -194,7 +194,7 @@ type StatementError struct {
 func (se *StatementError) Error() string {
 	loc := se.Location()
 	if loc == "" {
-		return fmt.Sprintf("%s [Full SQL: %s]", se.Err.Error(), se.Text)
+		return fmt.Sprintf("%s [Full SQL: %s]", se.Err.Error(), se.Body())
 	}
 	return fmt.Sprintf("%s: %s", loc, se.Err.Error())
 }
@@ -226,32 +226,33 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (schema *t
 			fatalErr = cleanupErr
 		}
 	}()
+
 	db, err := ws.ConnectionPool("")
 	if err != nil {
 		fatalErr = fmt.Errorf("Cannot connect to workspace: %s", err)
 		return
 	}
 
-	// Run all CREATE TABLEs in parallel. Temporarily limit max open conns as a
-	// simple means of limiting concurrency
+	// Run all CREATEs in parallel. Temporarily limit max open conns as a simple
+	// means of limiting concurrency.
 	defer db.SetMaxOpenConns(0)
 	db.SetMaxOpenConns(10)
 	results := make(chan *StatementError)
-	for _, statement := range logicalSchema.CreateTables {
+	for _, stmt := range logicalSchema.Creates {
 		go func(statement *fs.Statement) {
 			results <- execStatement(db, statement)
-		}(statement)
+		}(stmt)
 	}
-	for range logicalSchema.CreateTables {
+	for range logicalSchema.Creates {
 		if result := <-results; result != nil {
 			statementErrors = append(statementErrors, result)
 		}
 	}
 	close(results)
 
-	// Run ALTER TABLEs sequentially, since foreign key manipulations don't play
+	// Run ALTERs sequentially, since foreign key manipulations don't play
 	// nice with concurrency.
-	for _, statement := range logicalSchema.AlterTables {
+	for _, statement := range logicalSchema.Alters {
 		if err := execStatement(db, statement); err != nil {
 			statementErrors = append(statementErrors, err)
 		}
@@ -262,7 +263,7 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (schema *t
 }
 
 func execStatement(db *sqlx.DB, statement *fs.Statement) (stmtErr *StatementError) {
-	_, err := db.Exec(statement.Text)
+	_, err := db.Exec(statement.Body())
 	if err == nil {
 		return nil
 	}

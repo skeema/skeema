@@ -137,6 +137,7 @@ func (s *SkeemaIntegrationSuite) handleCommand(t *testing.T, expectedExitCode in
 	if err != nil {
 		err = NewExitValue(CodeBadConfig, err.Error())
 	} else {
+		util.CloseCachedConnectionPools() // ensure no previous session state bleeds through
 		err = cfg.HandleCommand()
 	}
 
@@ -240,18 +241,18 @@ func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, d
 			}
 		}
 
-		// Compare parsed CREATE TABLEs
+		// Compare parsed CREATEs
 		if len(a.LogicalSchemas) != len(b.LogicalSchemas) {
 			t.Errorf("Mismatch between count of parsed logical schemas: %s=%d vs %s=%d", a, len(a.LogicalSchemas), b, len(b.LogicalSchemas))
 		} else if len(a.LogicalSchemas) > 0 {
-			aCreates, bCreates := a.LogicalSchemas[0].CreateTables, b.LogicalSchemas[0].CreateTables
+			aCreates, bCreates := a.LogicalSchemas[0].Creates, b.LogicalSchemas[0].Creates
 			if len(aCreates) != len(bCreates) {
-				t.Errorf("Mismatch in CREATE TABLE count: %s=%d, %s=%d", a, len(aCreates), b, len(bCreates))
+				t.Errorf("Mismatch in CREATE count: %s=%d, %s=%d", a, len(aCreates), b, len(bCreates))
 			} else {
-				for name, aStmt := range aCreates {
-					bStmt := bCreates[name]
+				for key, aStmt := range aCreates {
+					bStmt := bCreates[key]
 					if aStmt.Text != bStmt.Text {
-						t.Errorf("Mismatch for table %s:\n%s:\n%s\n\n%s:\n%s\n", name, aStmt.Location(), aStmt.Text, bStmt.Location(), bStmt.Text)
+						t.Errorf("Mismatch for %s:\n%s:\n%s\n\n%s:\n%s\n", key, aStmt.Location(), aStmt.Text, bStmt.Location(), bStmt.Text)
 					}
 				}
 			}
@@ -303,9 +304,9 @@ func (s *SkeemaIntegrationSuite) reinitAndVerifyFiles(t *testing.T, extraInitOpt
 	s.verifyFiles(t, cfg, comparePath)
 }
 
-func (s *SkeemaIntegrationSuite) assertExists(t *testing.T, schema, table, column string) {
+func (s *SkeemaIntegrationSuite) assertTableExists(t *testing.T, schema, table, column string) {
 	t.Helper()
-	exists, phrase, err := s.objectExists(schema, table, column)
+	exists, phrase, err := s.objectExists(schema, tengo.ObjectTypeTable, table, column)
 	if err != nil {
 		t.Fatalf("Unexpected error checking existence of %s: %s", phrase, err)
 	}
@@ -314,9 +315,9 @@ func (s *SkeemaIntegrationSuite) assertExists(t *testing.T, schema, table, colum
 	}
 }
 
-func (s *SkeemaIntegrationSuite) assertMissing(t *testing.T, schema, table, column string) {
+func (s *SkeemaIntegrationSuite) assertTableMissing(t *testing.T, schema, table, column string) {
 	t.Helper()
-	exists, phrase, err := s.objectExists(schema, table, column)
+	exists, phrase, err := s.objectExists(schema, tengo.ObjectTypeTable, table, column)
 	if err != nil {
 		t.Fatalf("Unexpected error checking existence of %s: %s", phrase, err)
 	}
@@ -325,31 +326,31 @@ func (s *SkeemaIntegrationSuite) assertMissing(t *testing.T, schema, table, colu
 	}
 }
 
-func (s *SkeemaIntegrationSuite) objectExists(schemaName, tableName, columnName string) (exists bool, phrase string, err error) {
-	if schemaName == "" || (tableName == "" && columnName != "") {
+func (s *SkeemaIntegrationSuite) objectExists(schemaName string, objectType tengo.ObjectType, objectName, columnName string) (exists bool, phrase string, err error) {
+	if schemaName == "" || (objectName == "" && columnName != "") || (objectType != tengo.ObjectTypeTable && columnName != "") {
 		panic(errors.New("Invalid parameter combination"))
 	}
-	if tableName == "" && columnName == "" {
+	if objectName == "" && columnName == "" {
 		phrase = fmt.Sprintf("schema %s", schemaName)
 		has, err := s.d.HasSchema(schemaName)
 		return has, phrase, err
 	} else if columnName == "" {
-		phrase = fmt.Sprintf("table %s.%s", schemaName, tableName)
+		phrase = fmt.Sprintf("%s %s.%s", objectType, schemaName, objectName)
 	} else {
-		phrase = fmt.Sprintf("column %s.%s.%s", schemaName, tableName, columnName)
+		phrase = fmt.Sprintf("column %s.%s.%s", schemaName, objectName, columnName)
 	}
 
 	schema, err := s.d.Schema(schemaName)
 	if err != nil {
 		return false, phrase, fmt.Errorf("Unable to obtain %s: %s", phrase, err)
 	}
-	table := schema.Table(tableName)
 	if columnName == "" {
-		return table != nil, phrase, err
-	} else if err != nil {
-		return false, phrase, fmt.Errorf("Unable to obtain %s: %s", phrase, err)
+		dict := schema.ObjectDefinitions()
+		key := tengo.ObjectKey{Type: objectType, Name: objectName}
+		_, ok := dict[key]
+		return ok, phrase, nil
 	}
-
+	table := schema.Table(objectName)
 	columns := table.ColumnsByName()
 	_, exists = columns[columnName]
 	return exists, phrase, nil

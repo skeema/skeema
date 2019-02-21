@@ -30,7 +30,7 @@ top of the file. If no environment name is supplied, the default is
 
 	cmd := mybase.NewCommand("pull", summary, desc, PullHandler)
 	cmd.AddOption(mybase.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in new table files, and update in existing files"))
-	cmd.AddOption(mybase.BoolOption("normalize", 0, true, "Reformat *.sql files to match SHOW CREATE TABLE"))
+	cmd.AddOption(mybase.BoolOption("normalize", 0, true, "Reformat SQL statements to match canonical SHOW CREATE"))
 	cmd.AddOption(mybase.BoolOption("new-schemas", 0, true, "Detect any new schemas and populate new dirs for them"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
@@ -140,18 +140,18 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Sche
 		return NewExitValue(CodeBadConfig, err.Error())
 	}
 
-	// When --skip-normalize is in use, we only want to update tables with actual
-	// functional modifications, NOT just cosmetic/formatting differences. To make
-	// this distinction, we need to actually execute the *.sql files in a
+	// When --skip-normalize is in use, we only want to update objects that have
+	// actual functional modifications, NOT just cosmetic/formatting differences.
+	// To make this distinction, we need to actually execute the *.sql files in a
 	// Workspace and run a diff against it.
-	var haveAlters map[string]bool
+	var inDiff map[tengo.ObjectKey]bool
 	if !dir.Config.GetBool("normalize") {
 		mods := statementModifiersForPull(dir.Config, instance, ignoreTable)
 		opts, err := workspace.OptionsForDir(dir, instance)
 		if err != nil {
 			return NewExitValue(CodeBadConfig, err.Error())
 		}
-		if haveAlters, err = alteredTablesForPull(instSchema, logicalSchema, opts, mods); err != nil {
+		if inDiff, err = objectsInDiff(instSchema, logicalSchema, opts, mods); err != nil {
 			return err
 		}
 	}
@@ -167,21 +167,20 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Sche
 		log.Infof("Wrote %s -- updated schema-level default-character-set and default-collation", dir.OptionFile.Path())
 	}
 
-	// Iterate through the tables that have create statements in the filesystem,
+	// Iterate through the objects that have create statements in the filesystem,
 	// and compare to instSchema. Track which files need rewrites.
 	filesToRewrite := make(map[*fs.TokenizedSQLFile]bool)
-	instTablesByName := instSchema.TablesByName()
-	for name, stmt := range logicalSchema.CreateTables {
-		if ignoreTable != nil && ignoreTable.MatchString(name) {
+	instDict := instSchema.ObjectDefinitions()
+	for key, stmt := range logicalSchema.Creates {
+		if key.Type == tengo.ObjectTypeTable && ignoreTable != nil && ignoreTable.MatchString(key.Name) {
 			continue
 		}
-		if instTable, stillExists := instTablesByName[name]; stillExists {
-			if !dir.Config.GetBool("normalize") && !haveAlters[name] {
+		if instCreate, stillExists := instDict[key]; stillExists {
+			if !dir.Config.GetBool("normalize") && !inDiff[key] {
 				continue
 			}
 			_, fsAutoInc := tengo.ParseCreateAutoInc(stmt.Text)
-			instCreate := instTable.CreateStatement
-			if instTable.HasAutoIncrement() && !dir.Config.GetBool("include-auto-inc") && fsAutoInc <= 1 {
+			if key.Type == tengo.ObjectTypeTable && !dir.Config.GetBool("include-auto-inc") && fsAutoInc <= 1 {
 				instCreate, _ = tengo.ParseCreateAutoInc(instCreate)
 			}
 			fsCreate, fsDelimiter := stmt.SplitTextBody()
@@ -200,31 +199,31 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Sche
 		if bytesWritten, err := file.Rewrite(); err != nil {
 			return err
 		} else if bytesWritten == 0 {
-			log.Infof("Deleted %s -- table no longer exists", file)
+			log.Infof("Deleted %s -- no longer exists", file)
 		} else {
-			log.Infof("Wrote %s (%d bytes) -- updated table definition", file, bytesWritten)
+			log.Infof("Wrote %s (%d bytes) -- updated definition", file, bytesWritten)
 		}
 	}
 
-	// Tables that exist in instSchema, but have no corresponding create statement:
-	// write new files, or append if filename already taken
-	for name, instTable := range instTablesByName {
-		if _, ok := logicalSchema.CreateTables[name]; !ok {
-			if ignoreTable != nil && ignoreTable.MatchString(name) {
+	// Objects that exist in instSchema, but have no corresponding create statement
+	// in fs: write new files, or append if filename already taken
+	for key, instCreate := range instDict {
+		if logicalSchema.Creates[key] == nil {
+			if key.Type == tengo.ObjectTypeTable && ignoreTable != nil && ignoreTable.MatchString(key.Name) {
 				continue
 			}
-			filePath := path.Join(dir.Path, fmt.Sprintf("%s.sql", name))
-			contents := instTable.CreateStatement
-			if instTable.HasAutoIncrement() && !dir.Config.GetBool("include-auto-inc") {
+			filePath := path.Join(dir.Path, fmt.Sprintf("%s.sql", key.Name))
+			contents := instCreate
+			if key.Type == tengo.ObjectTypeTable && !dir.Config.GetBool("include-auto-inc") {
 				contents, _ = tengo.ParseCreateAutoInc(contents)
 			}
-			contents = fmt.Sprintf("%s;\n", contents)
+			contents = fs.AddDelimiter(contents)
 			if bytesWritten, wasNew, err := fs.AppendToFile(filePath, contents); err != nil {
 				return err
 			} else if wasNew {
-				log.Infof("Wrote %s (%d bytes) -- new table", filePath, bytesWritten)
+				log.Infof("Wrote %s (%d bytes) -- new %s", filePath, bytesWritten, key.Type)
 			} else {
-				log.Infof("Wrote %s (%d bytes) -- appended new table", filePath, bytesWritten)
+				log.Infof("Wrote %s (%d bytes) -- appended new %s", filePath, bytesWritten, key.Type)
 			}
 		}
 	}
@@ -255,44 +254,43 @@ func statementModifiersForPull(config *mybase.Config, instance *tengo.Instance, 
 	return mods
 }
 
-// alteredTablesForPull returns a map whose keys are names of tables that have
-// had alterations made in instSchema that aren't reflected in the corresponding
-// SQLFile in dir. This also includes tables whose SQLFile Statement has a
-// SQL syntax error. The return value does not include tables whose differences
-// are cosmetic / formatting-related, or are otherwise ignored by mods.
-func alteredTablesForPull(instSchema *tengo.Schema, logicalSchema *fs.LogicalSchema, opts workspace.Options, mods tengo.StatementModifiers) (map[string]bool, error) {
+// objectsInDiff returns a map whose keys are tengo.ObjectKeys of objects that
+// have modifications in instSchema that aren't reflected in their filesystem
+// representation yet. This also includes objects whose filesystem Statement has
+// a SQL syntax error. The return value does not include tables whose
+// differences are cosmetic / formatting-related, or are otherwise ignored by
+// mods.
+func objectsInDiff(instSchema *tengo.Schema, logicalSchema *fs.LogicalSchema, opts workspace.Options, mods tengo.StatementModifiers) (map[tengo.ObjectKey]bool, error) {
 	fsSchema, statementErrors, err := workspace.ExecLogicalSchema(logicalSchema, opts)
 	if err != nil {
 		return nil, fmt.Errorf("Error introspecting filesystem version of schema %s: %s", instSchema.Name, err)
 	}
 
-	// Run a diff, and create a map to look up which tables have alters
+	// Run a diff, and create a map to track objects in the diff
 	diff := tengo.NewSchemaDiff(fsSchema, instSchema)
-	haveAlters := make(map[string]bool)
-	for _, td := range diff.FilteredTableDiffs(tengo.DiffTypeAlter) {
-		tdStatement, tdStatementErr := td.Statement(mods)
+	inDiff := make(map[tengo.ObjectKey]bool)
+	for _, od := range diff.ObjectDiffs() {
+		odStatement, odStatementErr := od.Statement(mods)
 		// Errors are fatal, except for UnsupportedDiffError which we can safely
 		// ignore (since pull doesn't actually run ALTERs; it just needs to know
-		// which tables were altered)
-		if tdStatementErr != nil && !tengo.IsUnsupportedDiff(tdStatementErr) {
-			return nil, tdStatementErr
+		// what was altered)
+		if odStatementErr != nil && !tengo.IsUnsupportedDiff(odStatementErr) {
+			return nil, odStatementErr
 		}
-		// mods may cause the diff to be a no-op; only treat it as a valid alter
-		// if this isn't the case
-		if tdStatement != "" {
-			haveAlters[td.To.Name] = true
+		// mods may cause the diff to be a no-op; only include it in result if this
+		// isn't the case
+		if odStatement != "" {
+			inDiff[od.ObjectKey()] = true
 		}
 	}
 
-	// Treat tables with syntax errors as altered if they exist in instSchema,
-	// since clearly the version in instSchema is different and valid
+	// Treat objects with syntax errors as modified, since it isn't possible for
+	// the filesystem definition to match the live definition in this case.
 	for _, statementError := range statementErrors {
-		if instSchema.HasTable(statementError.TableName) {
-			haveAlters[statementError.TableName] = true
-		}
+		inDiff[statementError.ObjectKey()] = true
 	}
 
-	return haveAlters, nil
+	return inDiff, nil
 }
 
 // updateFlavor updates the dir's .skeema option file if the instance's current

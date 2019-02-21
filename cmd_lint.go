@@ -75,7 +75,7 @@ func (lc *lintCounters) exitValue() error {
 func lintWalker(dir *fs.Dir, lc *lintCounters, maxDepth int) error {
 	log.Infof("Linting %s", dir)
 	if len(dir.IgnoredStatements) > 0 {
-		log.Warnf("Ignoring %d non-CREATE TABLE statements found in this directory's *.sql files", len(dir.IgnoredStatements))
+		log.Warnf("Ignoring %d unsupported or unparseable statements found in this directory's *.sql files", len(dir.IgnoredStatements))
 	}
 
 	ignoreTable, err := dir.Config.GetRegexp("ignore-table")
@@ -116,33 +116,43 @@ func lintWalker(dir *fs.Dir, lc *lintCounters, maxDepth int) error {
 			}
 		}
 
+		// Convert the logical schema from the filesystem into a real schema, using a
+		// workspace
 		schema, statementErrors, err := workspace.ExecLogicalSchema(logicalSchema, opts)
 		if err != nil {
 			log.Errorf("Skipping schema in %s due to error: %s", dir.Path, err)
 			lc.errCount++
 			continue
 		}
+
+		// Log and count each errored statement, unless the statement was a CREATE
+		// TABLE and the table name matches ignore-table
 		for _, stmtErr := range statementErrors {
-			if ignoreTable != nil && ignoreTable.MatchString(stmtErr.TableName) {
-				log.Debugf("Skipping table %s because ignore-table='%s'", stmtErr.TableName, ignoreTable)
+			if stmtErr.ObjectType == tengo.ObjectTypeTable && ignoreTable != nil && ignoreTable.MatchString(stmtErr.ObjectName) {
+				log.Debugf("Skipping %s because ignore-table='%s'", stmtErr.ObjectKey(), ignoreTable)
 				continue
 			}
 			log.Error(stmtErr.Error())
 			lc.sqlErrCount++
 		}
-		for _, table := range schema.Tables {
-			if ignoreTable != nil && ignoreTable.MatchString(table.Name) {
-				log.Debugf("Skipping table %s because ignore-table='%s'", table.Name, ignoreTable)
+
+		// Compare each canonical CREATE in the real schema to each CREATE statement
+		// from the filesystem. In cases where they differ, rewrite the file using
+		// the canonical version from the DB.
+		for key, instCreateText := range schema.ObjectDefinitions() {
+			if key.Type == tengo.ObjectTypeTable && ignoreTable != nil && ignoreTable.MatchString(key.Name) {
+				log.Debugf("Skipping %s because ignore-table='%s'", key, ignoreTable)
 				continue
 			}
-			body, suffix := logicalSchema.CreateTables[table.Name].SplitTextBody()
-			if table.CreateStatement != body {
-				logicalSchema.CreateTables[table.Name].Text = fmt.Sprintf("%s%s", table.CreateStatement, suffix)
-				length, err := logicalSchema.CreateTables[table.Name].FromFile.Rewrite()
+			fsStmt := logicalSchema.Creates[key]
+			fsBody, fsSuffix := fsStmt.SplitTextBody()
+			if instCreateText != fsBody {
+				fsStmt.Text = fmt.Sprintf("%s%s", instCreateText, fsSuffix)
+				length, err := fsStmt.FromFile.Rewrite()
 				if err != nil {
-					return fmt.Errorf("Unable to write to %s: %s", logicalSchema.CreateTables[table.Name].File, err)
+					return fmt.Errorf("Unable to write to %s: %s", fsStmt.File, err)
 				}
-				log.Infof("Wrote %s (%d bytes) -- updated file to normalize format", logicalSchema.CreateTables[table.Name].File, length)
+				log.Infof("Wrote %s (%d bytes) -- updated file to normalize format", fsStmt.File, length)
 				lc.reformatCount++
 			}
 		}

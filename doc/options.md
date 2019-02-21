@@ -512,7 +512,7 @@ Commands | pull
 **Type** | boolean
 **Restrictions** | none
 
-If true, `skeema pull` will normalize the format of all *.sql files to match the format shown in MySQL's `SHOW CREATE TABLE`, just like if `skeema lint` was called afterwards. If false, this step is skipped.
+If true, `skeema pull` will normalize the format of all *.sql files to match the canonical format shown in MySQL's `SHOW CREATE`, just like if `skeema lint` was called afterwards. If false, this step is skipped.
 
 ### password
 

@@ -41,25 +41,27 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 	// Gather CREATE and ALTER for modified tables, and put into a LogicalSchema,
 	// which we then materialize into a real schema using a workspace
 	logicalSchema := &fs.LogicalSchema{
-		CharSet:      t.Dir.Config.Get("default-character-set"),
-		Collation:    t.Dir.Config.Get("default-collation"),
-		CreateTables: make(map[string]*fs.Statement),
-		AlterTables:  make([]*fs.Statement, 0),
+		CharSet:   t.Dir.Config.Get("default-character-set"),
+		Collation: t.Dir.Config.Get("default-collation"),
+		Creates:   make(map[tengo.ObjectKey]*fs.Statement),
+		Alters:    make([]*fs.Statement, 0),
 	}
 	expected := make(map[string]*tengo.Table)
 	for _, td := range diff.FilteredTableDiffs(tengo.DiffTypeAlter) {
 		stmt, err := td.Statement(mods)
 		if stmt != "" && err == nil {
 			expected[td.From.Name] = td.To
-			logicalSchema.CreateTables[td.From.Name] = &fs.Statement{
-				Type:      fs.StatementTypeCreateTable,
-				Text:      td.From.CreateStatement,
-				TableName: td.From.Name,
-			}
-			logicalSchema.AlterTables = append(logicalSchema.AlterTables, &fs.Statement{
-				Type:      fs.StatementTypeAlterTable,
-				Text:      stmt,
-				TableName: td.From.Name,
+			logicalSchema.AddStatement(&fs.Statement{
+				Type:       fs.StatementTypeCreate,
+				Text:       td.From.CreateStatement,
+				ObjectType: tengo.ObjectTypeTable,
+				ObjectName: td.From.Name,
+			})
+			logicalSchema.AddStatement(&fs.Statement{
+				Type:       fs.StatementTypeAlter,
+				Text:       stmt,
+				ObjectType: tengo.ObjectTypeTable,
+				ObjectName: td.From.Name,
 			})
 		}
 	}

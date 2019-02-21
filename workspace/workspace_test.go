@@ -53,12 +53,12 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchema(t *testing.T) {
 		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
 	}
 	opts.LockWaitTimeout = 100 * time.Millisecond
-	schema, tableErrors, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts)
+	schema, stmtErrors, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 	if err != nil {
 		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
 	}
-	if len(tableErrors) > 0 {
-		t.Errorf("Expected no TableErrors, instead found %d", len(tableErrors))
+	if len(stmtErrors) > 0 {
+		t.Errorf("Expected no StatementErrors, instead found %d", len(stmtErrors))
 	}
 	if len(schema.Tables) < 4 {
 		t.Errorf("Expected at least 4 tables, but instead found %d", len(schema.Tables))
@@ -66,55 +66,59 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchema(t *testing.T) {
 
 	// Test with a valid ALTER involved
 	oldUserColumnCount := len(schema.Table("users").Columns)
-	dir.LogicalSchemas[0].AlterTables = []*fs.Statement{
-		{Type: fs.StatementTypeAlterTable, TableName: "users", Text: "ALTER TABLE users ADD COLUMN foo int"},
-	}
-	schema, tableErrors, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
+	dir.LogicalSchemas[0].AddStatement(&fs.Statement{
+		Type:       fs.StatementTypeAlter,
+		ObjectType: tengo.ObjectTypeTable,
+		ObjectName: "users",
+		Text:       "ALTER TABLE users ADD COLUMN foo int",
+	})
+	schema, stmtErrors, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 	if err != nil {
 		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
 	}
-	if len(tableErrors) > 0 {
-		t.Errorf("Expected no TableErrors, instead found %d", len(tableErrors))
+	if len(stmtErrors) > 0 {
+		t.Errorf("Expected no StatementErrors, instead found %d", len(stmtErrors))
 	}
 	if expected := oldUserColumnCount + 1; len(schema.Table("users").Columns) != expected {
 		t.Errorf("Expected table users to now have %d columns, instead found %d", expected, len(schema.Table("users").Columns))
 	}
 
 	// Test with invalid ALTER (valid syntax but nonexistent table)
-	dir.LogicalSchemas[0].AlterTables[0].Text = "ALTER TABLE nopenopenope ADD COLUMN foo int"
-	schema, tableErrors, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
+	dir.LogicalSchemas[0].Alters[0].Text = "ALTER TABLE nopenopenope ADD COLUMN foo int"
+	schema, stmtErrors, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 	if err != nil {
 		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
 	}
-	if len(tableErrors) == 1 {
-		if tableErrors[0].Statement != dir.LogicalSchemas[0].AlterTables[0] {
+	if len(stmtErrors) == 1 {
+		if stmtErrors[0].Statement != dir.LogicalSchemas[0].Alters[0] {
 			t.Error("Unexpected Statement pointed to by StatementError")
-		} else if !strings.Contains(tableErrors[0].String(), dir.LogicalSchemas[0].AlterTables[0].Text) {
+		} else if !strings.Contains(stmtErrors[0].String(), dir.LogicalSchemas[0].Alters[0].Text) {
 			t.Error("StatementError did not contain full SQL of erroring statement")
 		}
 	} else {
-		t.Errorf("Expected one TableError, instead found %d", len(tableErrors))
+		t.Errorf("Expected one StatementError, instead found %d", len(stmtErrors))
 	}
-	dir.LogicalSchemas[0].AlterTables = []*fs.Statement{}
+	dir.LogicalSchemas[0].Alters = []*fs.Statement{}
 
 	// Introduce an intentional syntax error
-	stmt := dir.LogicalSchemas[0].CreateTables["posts"]
+	key := tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: "posts"}
+	stmt := dir.LogicalSchemas[0].Creates[key]
 	stmt.Text = strings.Replace(stmt.Text, "PRIMARY KEY", "PIRMRAY YEK", 1)
-	schema, tableErrors, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
+	schema, stmtErrors, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 	if err != nil {
 		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
 	}
 	if len(schema.Tables) < 3 {
 		t.Errorf("Expected at least 3 tables, but instead found %d", len(schema.Tables))
 	}
-	if len(tableErrors) != 1 {
-		t.Errorf("Expected 1 TableError, instead found %d", len(tableErrors))
-	} else if tableErrors[0].TableName != "posts" {
-		t.Errorf("Expected 1 TableError for table `posts`; instead found it is for table `%s`", tableErrors[0].TableName)
-	} else if !strings.HasPrefix(tableErrors[0].Error(), stmt.Location()) {
+	if len(stmtErrors) != 1 {
+		t.Errorf("Expected 1 StatementError, instead found %d", len(stmtErrors))
+	} else if stmtErrors[0].ObjectName != "posts" {
+		t.Errorf("Expected 1 StatementError for table `posts`; instead found it is for table `%s`", stmtErrors[0].ObjectName)
+	} else if !strings.HasPrefix(stmtErrors[0].Error(), stmt.Location()) {
 		t.Error("StatementError did not contain the location of the invalid statement")
 	}
-	err = tableErrors[0] // compile-time check of satisfying interface
+	err = stmtErrors[0] // compile-time check of satisfying interface
 	if errorText := err.Error(); errorText == "" {
 		t.Error("Unexpectedly found blank error text")
 	}
@@ -206,12 +210,12 @@ func (s WorkspaceIntegrationSuite) TestPrefab(t *testing.T) {
 		t.Errorf("Expected IntrospectSchema returned unexpected error %s", err)
 	}
 
-	schema, tableErrors, err := ExecLogicalSchema(dir.LogicalSchemas[0], Options{Type: TypePrefab, PrefabWorkspace: ws})
+	schema, stmtErrors, err := ExecLogicalSchema(dir.LogicalSchemas[0], Options{Type: TypePrefab, PrefabWorkspace: ws})
 	if err != nil {
 		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
 	}
-	if len(tableErrors) > 0 {
-		t.Errorf("Expected no TableErrors, instead found %d", len(tableErrors))
+	if len(stmtErrors) > 0 {
+		t.Errorf("Expected no StatementErrors, instead found %d", len(stmtErrors))
 	}
 	if len(schema.Tables) < 4 {
 		t.Errorf("Expected at least 4 tables, but instead found %d", len(schema.Tables))

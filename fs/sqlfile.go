@@ -63,16 +63,12 @@ func (sf SQLFile) Delete() error {
 // whitespace, since any comments and/or whitespace between SQL statements gets
 // split into separate Statement values.
 func (sf SQLFile) Tokenize() (*TokenizedSQLFile, error) {
-	file, err := os.Open(sf.Path())
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	tokenizer := newStatementTokenizer(file, sf.Path())
+	tokenizer := newStatementTokenizer(sf.Path(), ";")
 	statements, err := tokenizer.statements()
 	if err != nil {
 		return nil, err
 	}
+
 	return NewTokenizedSQLFile(sf, statements), nil
 }
 
@@ -144,4 +140,9 @@ func AppendToFile(filePath, contents string) (bytesWritten int, created bool, er
 	}
 	newContents := fmt.Sprintf("%s%s%s", string(byteContents), whitespace, contents)
 	return len(newContents), false, ioutil.WriteFile(filePath, []byte(newContents), 0666)
+}
+
+// AddDelimiter takes the supplied string and appends a delimiter to the end.
+func AddDelimiter(stmt string) string {
+	return fmt.Sprintf("%s;\n", stmt)
 }

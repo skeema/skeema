@@ -22,6 +22,12 @@ TABLE `users` (
   KEY `user_created` (`user_id`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
+
+
+	delimiter    "💩💩💩"
+CREATE TABLE uhoh (ummm varchar(20) default 'ok 💩💩💩 cool')💩💩💩
+delimiter ;
+
 use /*wtf*/`analytics`;CREATE TABLE  if  NOT    eXiStS     `comments` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `post_id` bigint(20) unsigned NOT NULL,
@@ -30,7 +36,4 @@ use /*wtf*/`analytics`;CREATE TABLE  if  NOT    eXiStS     `comments` (
   `body` text,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-
-
-
 CREATE TABLE subscriptions (id int unsigned not null primary key)

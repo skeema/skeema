@@ -34,11 +34,29 @@ type Dir struct {
 // statement before them". This "nameless" LogicalSchema is mapped to schema
 // names based on the "schema" option in the dir's OptionFile.
 type LogicalSchema struct {
-	Name         string
-	CharSet      string
-	Collation    string
-	CreateTables map[string]*Statement // keyed by table name
-	AlterTables  []*Statement          // alterations that are run separately from CreateTables, afterwards
+	Name      string
+	CharSet   string
+	Collation string
+	Creates   map[tengo.ObjectKey]*Statement
+	Alters    []*Statement // Alterations that are run after the Creates
+}
+
+// AddStatement adds the supplied statement into the appropriate data structure
+// within the receiver. This is useful when assembling a new logical schema.
+// An error will be returned if a duplicate CREATE object name/type pair is
+// added, or if the type of statement is not supported.
+func (logicalSchema *LogicalSchema) AddStatement(stmt *Statement) error {
+	if stmt.Type == StatementTypeCreate {
+		if _, already := logicalSchema.Creates[stmt.ObjectKey()]; already {
+			return fmt.Errorf("Duplicate CREATE for %s", stmt.ObjectKey())
+		}
+		logicalSchema.Creates[stmt.ObjectKey()] = stmt
+		return nil
+	} else if stmt.Type == StatementTypeAlter {
+		logicalSchema.Alters = append(logicalSchema.Alters, stmt)
+		return nil
+	}
+	return fmt.Errorf("AddStatement: unsupported statement type %d in %+v", stmt.Type, stmt)
 }
 
 // ParseDir parses the specified directory, including all *.sql files in it,
@@ -416,18 +434,19 @@ func (dir *Dir) parseContents() error {
 			return err
 		}
 		for _, stmt := range tokenizedFile.Statements {
-			if _, ok := logicalSchemasByName[stmt.DefaultDatabase]; !ok {
-				logicalSchemasByName[stmt.DefaultDatabase] = &LogicalSchema{
-					CreateTables: make(map[string]*Statement),
+			if _, ok := logicalSchemasByName[stmt.Schema()]; !ok {
+				logicalSchemasByName[stmt.Schema()] = &LogicalSchema{
+					Creates: make(map[tengo.ObjectKey]*Statement),
 				}
 			}
-			switch stmt.Type {
-			case StatementTypeCreateTable:
-				if foundStmt, ok := logicalSchemasByName[stmt.DefaultDatabase].CreateTables[stmt.TableName]; ok {
-					return fmt.Errorf("Table `%s` found multiple times in %s: %s line %d and %s line %d", stmt.TableName, dir, foundStmt.File, foundStmt.LineNo, stmt.File, stmt.LineNo)
+			if stmt.Type == StatementTypeCreate {
+				if err := logicalSchemasByName[stmt.Schema()].AddStatement(stmt); err != nil {
+					foundStmt := logicalSchemasByName[stmt.Schema()].Creates[stmt.ObjectKey()]
+					return fmt.Errorf("%s %s found multiple times in %s: %s line %d and %s line %d", stmt.ObjectType, tengo.EscapeIdentifier(stmt.ObjectName), dir, foundStmt.File, foundStmt.LineNo, stmt.File, stmt.LineNo)
 				}
-				logicalSchemasByName[stmt.DefaultDatabase].CreateTables[stmt.TableName] = stmt
-			case StatementTypeUnknown:
+			} else if stmt.Type == StatementTypeAlter {
+				logicalSchemasByName[stmt.Schema()].AddStatement(stmt)
+			} else if stmt.Type == StatementTypeUnknown {
 				dir.IgnoredStatements = append(dir.IgnoredStatements, stmt)
 			}
 		}

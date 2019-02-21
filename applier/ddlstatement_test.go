@@ -143,7 +143,7 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 		if ddl.shellOut.Command != expected {
 			t.Errorf("Expected shellout:\n%s\nActual shellout:\n%s\n", expected, ddl.shellOut.Command)
 		}
-		if expectedString := fmt.Sprintf("\\! %s", expected); ddl.String() != expectedString {
+		if expectedString := fmt.Sprintf("\\! %s\n", expected); ddl.String() != expectedString {
 			t.Errorf("Expected String():\n%s\nActual String():\n%s\n", expectedString, ddl.String())
 		}
 	}

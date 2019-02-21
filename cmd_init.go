@@ -211,29 +211,24 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *fs.Dir, makeSubdir bool) erro
 	if err != nil {
 		return NewExitValue(CodeBadConfig, err.Error())
 	}
-	for _, t := range s.Tables {
-		if ignoreTable != nil && ignoreTable.MatchString(t.Name) {
-			log.Warnf("Skipping table %s because ignore-table matched %s", t.Name, ignoreTable)
+
+	for key, createStmt := range s.ObjectDefinitions() {
+		if key.Type == tengo.ObjectTypeTable && ignoreTable != nil && ignoreTable.MatchString(key.Name) {
+			log.Warnf("Skipping %s because ignore-table matched %s", key, ignoreTable)
 			continue
 		}
-		createStmt := t.CreateStatement
-
-		// Special handling for auto-increment tables: strip next-auto-inc value,
-		// unless user specifically wants to keep it in .sql file
-		if t.HasAutoIncrement() && !parentDir.Config.GetBool("include-auto-inc") {
+		if key.Type == tengo.ObjectTypeTable && !parentDir.Config.GetBool("include-auto-inc") {
 			createStmt, _ = tengo.ParseCreateAutoInc(createStmt)
 		}
-
-		sf := fs.SQLFile{
-			Dir:      subPath,
-			FileName: fmt.Sprintf("%s.sql", t.Name),
+		createStmt = fs.AddDelimiter(createStmt)
+		filePath := path.Join(subPath, fmt.Sprintf("%s.sql", key.Name))
+		var bytesWritten int
+		if bytesWritten, _, err = fs.AppendToFile(filePath, createStmt); err != nil {
+			return NewExitValue(CodeCantCreate, "Unable to write to %s: %s", filePath, err)
 		}
-		createStmt = fmt.Sprintf("%s;\n", createStmt)
-		if err = sf.Create(createStmt); err != nil {
-			return NewExitValue(CodeCantCreate, "Unable to write to %s: %s", sf.Path(), err)
-		}
-		log.Infof("Wrote %s (%d bytes)", sf.Path(), len(createStmt))
+		log.Infof("Wrote %s (%d bytes)", filePath, bytesWritten)
 	}
+
 	os.Stderr.WriteString("\n")
 	return nil
 }

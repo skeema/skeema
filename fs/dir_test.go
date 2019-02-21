@@ -30,12 +30,13 @@ func TestParseDir(t *testing.T) {
 		t.Error("LogicalSchema not correctly populated with charset/collation from .skeema file")
 	}
 	expectTableNames := []string{"comments", "posts", "subscriptions", "users"}
-	if len(logicalSchema.CreateTables) != len(expectTableNames) {
-		t.Errorf("Unexpected table count: found %d, expected %d", len(logicalSchema.CreateTables), len(expectTableNames))
+	if len(logicalSchema.Creates) != len(expectTableNames) {
+		t.Errorf("Unexpected object count: found %d, expected %d", len(logicalSchema.Creates), len(expectTableNames))
 	} else {
 		for _, name := range expectTableNames {
-			if _, ok := logicalSchema.CreateTables[name]; !ok {
-				t.Errorf("Did not find key %s in LogicalSchema", name)
+			key := tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: name}
+			if logicalSchema.Creates[key] == nil {
+				t.Errorf("Did not find Create for table %s in LogicalSchema", name)
 			}
 		}
 	}

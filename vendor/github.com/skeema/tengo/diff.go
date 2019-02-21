@@ -1,6 +1,3 @@
-// Package tengo (Go La Tengo) is a database automation library. In its current
-// form, its functionality is focused on MySQL schema introspection and
-// diff'ing. Future releases will add more general-purpose automation features.
 package tengo
 
 import (
@@ -42,8 +39,7 @@ func (dt DiffType) String() string {
 // two objects.
 type ObjectDiff interface {
 	DiffType() DiffType
-	ObjectType() string
-	ObjectName() string
+	ObjectKey() ObjectKey
 	Statement(StatementModifiers) (string, error)
 }
 
@@ -82,7 +78,6 @@ type SchemaDiff struct {
 	FromSchema *Schema
 	ToSchema   *Schema
 	TableDiffs []*TableDiff // a set of statements that, if run, would turn tables in FromSchema into ToSchema
-	SameTables []*Table     // slice of tables that were identical between schemas
 }
 
 // NewSchemaDiff computes the set of differences between two database schemas.
@@ -90,47 +85,41 @@ func NewSchemaDiff(from, to *Schema) *SchemaDiff {
 	result := &SchemaDiff{
 		FromSchema: from,
 		ToSchema:   to,
-		TableDiffs: make([]*TableDiff, 0),
-		SameTables: make([]*Table, 0),
 	}
 
 	if from == nil && to == nil {
 		return result
 	}
 
-	fromTablesByName := from.TablesByName()
-	toTablesByName := to.TablesByName()
+	result.TableDiffs = compareTables(from, to)
+	return result
+}
 
-	if to != nil {
-		for n := range to.Tables {
-			newTable := to.Tables[n]
-			if _, existedBefore := fromTablesByName[newTable.Name]; !existedBefore {
-				result.TableDiffs = append(result.TableDiffs, NewCreateTable(newTable))
+func compareTables(from, to *Schema) []*TableDiff {
+	var tableDiffs, addFKAlters []*TableDiff
+	fromByName := from.TablesByName()
+	toByName := to.TablesByName()
+
+	for name, fromTable := range fromByName {
+		toTable, stillExists := toByName[name]
+		if !stillExists {
+			tableDiffs = append(tableDiffs, NewDropTable(fromTable))
+			continue
+		}
+		td := NewAlterTable(fromTable, toTable)
+		if td != nil {
+			otherAlter, addFKAlter := td.SplitAddForeignKeys()
+			if otherAlter != nil {
+				tableDiffs = append(tableDiffs, otherAlter)
+			}
+			if addFKAlter != nil {
+				addFKAlters = append(addFKAlters, addFKAlter)
 			}
 		}
 	}
-
-	addFKAlters := make([]*TableDiff, 0)
-	if from != nil {
-		for n := range from.Tables {
-			origTable := from.Tables[n]
-			newTable, stillExists := toTablesByName[origTable.Name]
-			if stillExists {
-				td := NewAlterTable(origTable, newTable)
-				if td == nil { // tables are the same
-					result.SameTables = append(result.SameTables, newTable)
-				} else {
-					otherAlter, addFKAlter := td.SplitAddForeignKeys()
-					if otherAlter != nil {
-						result.TableDiffs = append(result.TableDiffs, otherAlter)
-					}
-					if addFKAlter != nil {
-						addFKAlters = append(addFKAlters, addFKAlter)
-					}
-				}
-			} else {
-				result.TableDiffs = append(result.TableDiffs, NewDropTable(origTable))
-			}
+	for name, toTable := range toByName {
+		if _, alreadyExists := fromByName[name]; !alreadyExists {
+			tableDiffs = append(tableDiffs, NewCreateTable(toTable))
 		}
 	}
 
@@ -138,9 +127,8 @@ func NewSchemaDiff(from, to *Schema) *SchemaDiff {
 	// on tables, columns, or indexes that are being newly created earlier in the
 	// diff. (This is not a comprehensive solution yet though, since FKs can refer
 	// to other schemas, and NewSchemaDiff only operates within one schema.)
-	result.TableDiffs = append(result.TableDiffs, addFKAlters...)
-
-	return result
+	tableDiffs = append(tableDiffs, addFKAlters...)
+	return tableDiffs
 }
 
 // DatabaseDiff returns an object representing database-level DDL (CREATE
@@ -155,9 +143,9 @@ func (sd *SchemaDiff) DatabaseDiff() *DatabaseDiff {
 }
 
 // ObjectDiffs returns a slice of all ObjectDiffs in the SchemaDiff. The results
-// results are returned in a sorted order, such that the diffs' Statements are
-// legal. For example, if a CREATE DATABASE is present, it will occur in the
-// slice prior to any table-level DDL in that schema.
+// are returned in a sorted order, such that the diffs' Statements are legal.
+// For example, if a CREATE DATABASE is present, it will occur in the slice
+// prior to any table-level DDL in that schema.
 func (sd *SchemaDiff) ObjectDiffs() []ObjectDiff {
 	result := make([]ObjectDiff, 0)
 	dd := sd.DatabaseDiff()
@@ -171,6 +159,10 @@ func (sd *SchemaDiff) ObjectDiffs() []ObjectDiff {
 }
 
 // String returns the set of differences between two schemas as a single string.
+// In building this string representation, note that no statement modifiers are
+// applied, and any errors from Statement() are ignored. This means the returned
+// string may contain destructive statements, and should only be used for
+// display purposes, not for DDL execution.
 func (sd *SchemaDiff) String() string {
 	allDiffs := sd.ObjectDiffs()
 	diffStatements := make([]string, len(allDiffs))
@@ -204,22 +196,21 @@ type DatabaseDiff struct {
 	To   *Schema
 }
 
-// ObjectType returns the type of the object being diff'ed, which is always
-// "database" for a DatabaseDiff
-func (dd *DatabaseDiff) ObjectType() string {
-	return "database"
-}
-
-// ObjectName returns the name of the object. This will be the From side schema,
-// unless it is nil (CREATE DATABASE), in which case the To side database name
-// is returned.
-func (dd *DatabaseDiff) ObjectName() string {
+// ObjectKey returns a value representing the type and name of the schema being
+// diff'ed. The type is always ObjectTypeDatabase. The name will be the From
+// side schema, unless it is nil (CREATE DATABASE), in which case the To side
+// schema name is returned.
+func (dd *DatabaseDiff) ObjectKey() ObjectKey {
+	key := ObjectKey{Type: ObjectTypeDatabase}
 	if dd == nil || (dd.From == nil && dd.To == nil) {
-		return ""
-	} else if dd.From == nil {
-		return dd.To.Name
+		return key
 	}
-	return dd.From.Name
+	if dd.From == nil {
+		key.Name = dd.To.Name
+	} else {
+		key.Name = dd.From.Name
+	}
+	return key
 }
 
 // DiffType returns the type of diff operation.
@@ -271,23 +262,21 @@ type TableDiff struct {
 	supported    bool
 }
 
-// ObjectType returns the type of the object being diff'ed, which is always
-// "table" for a TableDiff
-func (td *TableDiff) ObjectType() string {
-	return "table"
-}
-
-// ObjectName returns the name of the object. This will be the From side table
-// name, unless the diffType is DiffTypeCreate, in which case it will be the To
-// side table name.
-func (td *TableDiff) ObjectName() string {
+// ObjectKey returns a value representing the type and name of the table being
+// diff'ed. The type is always ObjectTypeTable. The name will be the From side
+// table, unless the diffType is DiffTypeCreate, in which case the To side
+// table name is used.
+func (td *TableDiff) ObjectKey() ObjectKey {
+	key := ObjectKey{Type: ObjectTypeTable}
 	if td == nil {
-		return ""
+		return key
 	}
 	if td.Type == DiffTypeCreate {
-		return td.To.Name
+		key.Name = td.To.Name
+	} else {
+		key.Name = td.From.Name
 	}
-	return td.From.Name
+	return key
 }
 
 // DiffType returns the type of diff operation.
@@ -334,11 +323,6 @@ func NewDropTable(table *Table) *TableDiff {
 		From:      table,
 		supported: true,
 	}
-}
-
-// TypeString returns the type of table diff as a string.
-func (td *TableDiff) TypeString() string {
-	return td.DiffType().String()
 }
 
 // SplitAddForeignKeys looks through a TableDiff's alterClauses and pulls out
@@ -424,7 +408,7 @@ func (td *TableDiff) Statement(mods StatementModifiers) (string, error) {
 			}
 		}
 		return stmt, err
-	default: // TableDiffRename not supported yet
+	default: // DiffTypeRename not supported yet
 		panic(fmt.Errorf("Unsupported diff type %d", td.Type))
 	}
 }
@@ -447,7 +431,7 @@ func (td *TableDiff) Clauses(mods StatementModifiers) (string, error) {
 		return strings.Replace(stmt, prefix, "", 1), err
 	case DiffTypeDrop:
 		return "", err
-	default: // TableDiffRename not supported yet
+	default: // DiffTypeRename not supported yet
 		panic(fmt.Errorf("Unsupported diff type %d", td.Type))
 	}
 }
@@ -456,22 +440,19 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 	if !td.supported {
 		if td.To.UnsupportedDDL {
 			return "", &UnsupportedDiffError{
-				Name:           td.To.Name,
-				ObjectType:     td.ObjectType(),
+				ObjectKey:      td.ObjectKey(),
 				ExpectedCreate: td.To.GeneratedCreateStatement(mods.Flavor),
 				ActualCreate:   td.To.CreateStatement,
 			}
 		} else if td.From.UnsupportedDDL {
 			return "", &UnsupportedDiffError{
-				Name:           td.From.Name,
-				ObjectType:     td.ObjectType(),
+				ObjectKey:      td.ObjectKey(),
 				ExpectedCreate: td.From.GeneratedCreateStatement(mods.Flavor),
 				ActualCreate:   td.From.CreateStatement,
 			}
 		} else {
 			return "", &UnsupportedDiffError{
-				Name:           td.From.Name,
-				ObjectType:     td.ObjectType(),
+				ObjectKey:      td.ObjectKey(),
 				ExpectedCreate: td.From.CreateStatement,
 				ActualCreate:   td.To.CreateStatement,
 			}
@@ -544,15 +525,14 @@ func IsForbiddenDiff(err error) bool {
 // UnsupportedDiffError can be returned by ObjectDiff.Statement if Tengo is
 // unable to transform the object due to use of unsupported features.
 type UnsupportedDiffError struct {
-	Name           string
-	ObjectType     string
+	ObjectKey      ObjectKey
 	ExpectedCreate string
 	ActualCreate   string
 }
 
 // Error satisfies the builtin error interface.
 func (e *UnsupportedDiffError) Error() string {
-	return fmt.Sprintf("%s %s uses unsupported features and cannot be diff'ed", e.ObjectType, e.Name)
+	return fmt.Sprintf("%s uses unsupported features and cannot be diff'ed", e.ObjectKey)
 }
 
 // ExtendedError returns a string with more information about why the diff is

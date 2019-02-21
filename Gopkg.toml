@@ -45,6 +45,10 @@
   branch = "master"
   name = "golang.org/x/sync"
 
+[[constraint]]
+  branch = "master"
+  name = "github.com/alecthomas/participle"
+
 [prune]
   go-tests = true
   unused-packages = true

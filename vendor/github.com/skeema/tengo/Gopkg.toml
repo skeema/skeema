@@ -45,6 +45,10 @@
   name = "github.com/pmezard/go-difflib"
   version = "1.0.0"
 
+[[constraint]]
+  branch = "master"
+  name = "golang.org/x/sync"
+
 [prune]
   go-tests = true
   unused-packages = true

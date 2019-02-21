@@ -29,6 +29,15 @@
   revision = "6c6b55f8796f578c870b7e19bafb16103bc40095"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/alecthomas/participle"
+  packages = [
+    ".",
+    "lexer"
+  ]
+  revision = "bf8340a459bd383e5eb7d44a9a1b3af23b6cf8cd"
+
+[[projects]]
   name = "github.com/containerd/continuity"
   packages = ["pathdriver"]
   revision = "d8fb8589b0e8e85b8c8bbaa8840226d0dfeb7371"
@@ -149,10 +158,10 @@
   version = "v1.0.4"
 
 [[projects]]
+  branch = "master"
   name = "github.com/skeema/tengo"
   packages = ["."]
-  revision = "73070660239c56af6ca84980e7c79b71b517fcee"
-  version = "v0.8.13"
+  revision = "5bedfdb68552f4eabc290c0550f9ad1da9414932"
 
 [[projects]]
   branch = "master"
@@ -189,6 +198,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "3cc74b935e74a7b83b6c2050e1343f5dea8dda2e14786dfaddb88d1b9036efb0"
+  inputs-digest = "f219f656309d37caedd501f0fa4be71e51e6c78654174be224f93096325ae586"
   solver-name = "gps-cdcl"
   solver-version = 1

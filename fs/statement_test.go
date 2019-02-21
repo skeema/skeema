@@ -27,6 +27,27 @@ func TestStatementLocation(t *testing.T) {
 	}
 }
 
+func TestStatementSchema(t *testing.T) {
+	statements := []*Statement{
+		{DefaultDatabase: "", ObjectQualifier: ""},
+		{DefaultDatabase: "foo", ObjectQualifier: ""},
+		{DefaultDatabase: "", ObjectQualifier: "bar"},
+		{DefaultDatabase: "foo", ObjectQualifier: "bar"},
+	}
+	expectSchema := []string{
+		"",
+		"foo",
+		"bar",
+		"bar",
+	}
+	for n, stmt := range statements {
+		expect, actual := expectSchema[n], stmt.Schema()
+		if expect != actual {
+			t.Errorf("Unexpected Schema(): expected %s, found %s", expect, actual)
+		}
+	}
+}
+
 func TestStatementSplitTextBody(t *testing.T) {
 	cases := map[string][]string{
 		"":    {"", ""},
@@ -37,10 +58,33 @@ func TestStatementSplitTextBody(t *testing.T) {
 		"USE some_db\n\n":                     {"USE some_db", "\n\n"},
 	}
 	for input, expected := range cases {
-		stmt := &Statement{Text: input}
+		stmt := &Statement{Text: input, delimiter: ";"}
 		actualBody, actualSuffix := stmt.SplitTextBody()
 		if actualBody != expected[0] || actualSuffix != expected[1] {
 			t.Errorf("SplitTextBody on %s: Expected %#v,%#v; found %#v,%#v", input, expected[0], expected[1], actualBody, actualSuffix)
+		}
+		if stmt.Body() != actualBody {
+			t.Errorf("Body on %s returned different result than first returned value of SplitTextBody", input)
+		}
+	}
+}
+
+func TestStripAnyQuote(t *testing.T) {
+	cases := map[string]string{
+		"":                "",
+		"'":               "'",
+		"''":              "",
+		`"x"`:             "x",
+		"'nope\"":         "'nope\"",
+		"nope''nopen":     "nope''nopen",
+		"'he''s here'":    "he's here",
+		"'she\\'s here'":  "she's here",
+		`"nope''s nope"`:  "nope''s nope",
+		"`nope\\`s nope`": "nope\\`s nope",
+	}
+	for input, expected := range cases {
+		if actual := stripAnyQuote(input); actual != expected {
+			t.Errorf("stripAnyQuote on %s: Expected %s, found %s", input, expected, actual)
 		}
 	}
 }

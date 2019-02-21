@@ -370,10 +370,10 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 	// but not on filesystem, but push should never drop schemas)
 	s.handleCommand(t, CodeFatalError, "", "skeema push")            // CodeFatalError due to unsafe changes not being allowed
 	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff") // analytics dir was pushed fine tho
-	s.assertExists(t, "analytics", "pageviews", "")                  // re-created by push
-	s.assertMissing(t, "product", "users", "credits")                // product DDL skipped due to unsafe stmt
-	s.assertExists(t, "product", "posts", "featured")                // product DDL skipped due to unsafe stmt
-	s.assertExists(t, "bonus", "placeholder", "")                    // not affected by push (never drops schemas)
+	s.assertTableExists(t, "analytics", "pageviews", "")             // re-created by push
+	s.assertTableMissing(t, "product", "users", "credits")           // product DDL skipped due to unsafe stmt
+	s.assertTableExists(t, "product", "posts", "featured")           // product DDL skipped due to unsafe stmt
+	s.assertTableExists(t, "bonus", "placeholder", "")               // not affected by push (never drops schemas)
 
 	// The "skip whole schema upon unsafe stmt" rule also affects schema-level DDL
 	if product, err := s.d.Schema("product"); err != nil || product == nil {
@@ -391,17 +391,17 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 		t.Fatalf("Unexpected error removing a file: %s", err)
 	}
 	s.handleCommand(t, CodeFatalError, "mydb/analytics", "skeema push --safe-below-size=1")
-	s.assertExists(t, "analytics", "rollups", "")
+	s.assertTableExists(t, "analytics", "rollups", "")
 	s.dbExec(t, "analytics", "DELETE FROM rollups")
 	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema push --safe-below-size=1")
-	s.assertMissing(t, "analytics", "rollups", "")
+	s.assertTableMissing(t, "analytics", "rollups", "")
 
 	// push from base dir, with --allow-unsafe, will permit the changes to product
 	// schema to proceed
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
-	s.assertMissing(t, "product", "posts", "featured")
-	s.assertExists(t, "product", "users", "credits")
-	s.assertExists(t, "bonus", "placeholder", "")
+	s.assertTableMissing(t, "product", "posts", "featured")
+	s.assertTableExists(t, "product", "users", "credits")
+	s.assertTableExists(t, "bonus", "placeholder", "")
 	if product, err := s.d.Schema("product"); err != nil || product == nil {
 		t.Fatalf("Unexpected error obtaining schema: %s", err)
 	} else {
@@ -424,9 +424,9 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 	fs.WriteTestFile(t, "mydb/bonus/placeholder.sql", "CREATE TABLE placeholder (id int unsigned NOT NULL, PRIMARY KEY (id)) ENGINE=InnoDB")
 	fs.WriteTestFile(t, "mydb/bonus/table2.sql", "CREATE TABLE table2 (name varchar(20) NOT NULL, PRIMARY KEY (name))")
 	s.handleCommand(t, CodeFatalError, ".", "skeema push")
-	s.assertMissing(t, "product", "comments", "foo")
-	s.assertMissing(t, "product", "users", "foo")
-	s.assertExists(t, "bonus", "table2", "")
+	s.assertTableMissing(t, "product", "comments", "foo")
+	s.assertTableMissing(t, "product", "users", "foo")
+	s.assertTableExists(t, "bonus", "table2", "")
 }
 
 func (s SkeemaIntegrationSuite) TestHelpHandler(t *testing.T) {
@@ -648,16 +648,16 @@ func (s SkeemaIntegrationSuite) TestUnsupportedAlter(t *testing.T) {
 
 	// diff/push still ok if *creating* or *dropping* unsupported table
 	s.dbExec(t, "product", "DROP TABLE subscriptions")
-	s.assertMissing(t, "product", "subscriptions", "")
+	s.assertTableMissing(t, "product", "subscriptions", "")
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
-	s.assertExists(t, "product", "subscriptions", "")
+	s.assertTableExists(t, "product", "subscriptions", "")
 	if err := os.Remove("mydb/product/subscriptions.sql"); err != nil {
 		t.Fatalf("Unexpected error removing a file: %s", err)
 	}
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
-	s.assertMissing(t, "product", "subscriptions", "")
+	s.assertTableMissing(t, "product", "subscriptions", "")
 }
 
 func (s SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
@@ -838,7 +838,7 @@ func (s SkeemaIntegrationSuite) TestReuseTempSchema(t *testing.T) {
 	for n := 0; n < 2; n++ {
 		// Need --skip-normalize in order for pull to use temp schema
 		cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-normalize --reuse-temp-schema --temp-schema=verytemp")
-		s.assertExists(t, "verytemp", "", "")
+		s.assertTableExists(t, "verytemp", "", "")
 		s.verifyFiles(t, cfg, "../golden/init")
 	}
 
@@ -856,8 +856,8 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 
 	// push that ignores 4$ should now create product2 and product3
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --ignore-schema=4$")
-	s.assertExists(t, "product2", "", "")
-	s.assertExists(t, "product3", "posts", "")
+	s.assertTableExists(t, "product2", "", "")
+	s.assertTableExists(t, "product3", "posts", "")
 
 	// diff should be clear after
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff --ignore-schema=4$")
@@ -893,8 +893,8 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 	// push should re-apply the changes to the other 2 product shards; diff
 	// should be clean after
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --ignore-schema=4$")
-	s.assertExists(t, "product2", "comments", "approved")
-	s.assertExists(t, "product3", "comments", "approved")
+	s.assertTableExists(t, "product2", "comments", "approved")
+	s.assertTableExists(t, "product3", "comments", "approved")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff --ignore-schema=4$")
 
 	// schema shellouts should also work properly. First get rid of product schema
@@ -904,7 +904,7 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 	fs.WriteTestFile(t, "mydb/product/.skeema", contents)
 	s.dbExec(t, "", "DROP DATABASE product")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --ignore-schema=4$")
-	s.assertExists(t, "product1", "posts", "")
+	s.assertTableExists(t, "product1", "posts", "")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff --ignore-schema=4$")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	assertDirMissing("mydb/product1") // dir is still called mydb/product
@@ -922,9 +922,9 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 	contents = strings.Replace(contents, "schema=`/usr/bin/printf 'product1 product2 product3 product4'`", "schema=*", 1)
 	fs.WriteTestFile(t, "mydb/product/.skeema", contents)
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
-	s.assertExists(t, "product1", "posts", "")
-	s.assertExists(t, "analytics", "posts", "")
-	s.assertMissing(t, "analytics", "pageviews", "")
+	s.assertTableExists(t, "product1", "posts", "")
+	s.assertTableExists(t, "analytics", "posts", "")
+	s.assertTableMissing(t, "analytics", "pageviews", "")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
 	// Since analytics is the first alphabetically, it is now the prototype
@@ -934,14 +934,14 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 	fs.ReadTestFile(t, "mydb/product/foo.sql")                   // just confirming it exists
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff") // since 3 schemas missing foo
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
-	s.assertExists(t, "product1", "foo", "")
-	s.assertExists(t, "product2", "foo", "")
+	s.assertTableExists(t, "product1", "foo", "")
+	s.assertTableExists(t, "product2", "foo", "")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
 	// Test combination of ignore-schema and schema=*
 	fs.WriteTestFile(t, "mydb/product/foo2.sql", "CREATE TABLE `foo2` (id int);\n")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --ignore-schema=2$")
-	s.assertExists(t, "product1", "foo2", "")
-	s.assertMissing(t, "product2", "foo2", "")
-	s.assertExists(t, "product3", "foo2", "")
+	s.assertTableExists(t, "product1", "foo2", "")
+	s.assertTableMissing(t, "product2", "foo2", "")
+	s.assertTableExists(t, "product3", "foo2", "")
 }

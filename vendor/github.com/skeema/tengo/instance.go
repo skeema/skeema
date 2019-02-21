@@ -14,6 +14,7 @@ import (
 	"github.com/VividCortex/mysqlerr"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
+	"golang.org/x/sync/errgroup"
 )
 
 // Instance represents a single database server running on a specific host or address.
@@ -294,15 +295,13 @@ func (instance *Instance) Schemas(onlyNames ...string) ([]*Schema, error) {
 
 	schemas := make([]*Schema, len(rawSchemas))
 	for n, rawSchema := range rawSchemas {
-		tables, err := instance.querySchemaTables(rawSchema.Name)
-		if err != nil {
-			return nil, err
-		}
 		schemas[n] = &Schema{
 			Name:      rawSchema.Name,
 			CharSet:   rawSchema.CharSet,
 			Collation: rawSchema.Collation,
-			Tables:    tables,
+		}
+		if schemas[n].Tables, err = instance.querySchemaTables(rawSchema.Name); err != nil {
+			return nil, err
 		}
 	}
 	return schemas, nil
@@ -519,12 +518,6 @@ func (instance *Instance) AlterSchema(schema, newCharSet, newCollation string) e
 	return nil
 }
 
-type dropRetry string
-
-func (dr dropRetry) Error() string {
-	return fmt.Sprintf("Deadlock encountered trying to drop table %s", dr)
-}
-
 // DropTablesInSchema drops all tables in a schema. If onlyIfEmpty==true,
 // returns an error if any of the tables have any rows.
 func (instance *Instance) DropTablesInSchema(schema string, onlyIfEmpty bool) error {
@@ -547,50 +540,50 @@ func (instance *Instance) DropTablesInSchema(schema string, onlyIfEmpty bool) er
 		return nil
 	}
 
-	errOut := make(chan error, len(names))
+	var g errgroup.Group
 	defer db.SetMaxOpenConns(0)
 
 	if onlyIfEmpty {
 		db.SetMaxOpenConns(15)
 		for _, name := range names {
-			go func(name string) {
+			name := name
+			g.Go(func() error {
 				hasRows, err := tableHasRows(db, name)
 				if err == nil && hasRows {
 					err = fmt.Errorf("DropTablesInSchema: table %s.%s has at least one row", EscapeIdentifier(schema), EscapeIdentifier(name))
 				}
-				errOut <- err
-			}(name)
-		}
-		for range names {
-			if err := <-errOut; err != nil {
 				return err
-			}
+			})
+		}
+		if err := g.Wait(); err != nil {
+			return err
 		}
 	}
 
 	db.SetMaxOpenConns(10)
+	retries := make(chan string, len(names))
 	for _, name := range names {
-		go func(name string) {
+		name := name
+		g.Go(func() error {
 			_, err := db.Exec(fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(name)))
 			// With the new data dictionary added in MySQL 8.0, attempting to
 			// concurrently drop two tables that have a foreign key constraint between
 			// them can deadlock.
 			if IsDatabaseError(err, mysqlerr.ER_LOCK_DEADLOCK) {
-				err = dropRetry(name)
+				retries <- name
+				err = nil
 			}
-			errOut <- err
-		}(name)
+			return err
+		})
 	}
-	for range names {
-		err := <-errOut
-		if dr, ok := err.(dropRetry); ok {
-			_, err = db.Exec(fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(string(dr))))
-		}
-		if err != nil {
+	err = g.Wait()
+	close(retries)
+	for name := range retries {
+		if _, err := db.Exec(fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(name))); err != nil {
 			return err
 		}
 	}
-	return nil
+	return err
 }
 
 // DefaultCharSetAndCollation returns the instance's default character set and
@@ -946,13 +939,12 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	}
 	defer db.SetMaxOpenConns(0)
 	db.SetMaxOpenConns(10)
-	errOut := make(chan error, len(tables))
+	var g errgroup.Group
 	for _, t := range tables {
-		go func(t *Table) {
-			var err error
+		t := t
+		g.Go(func() (err error) {
 			if t.CreateStatement, err = showCreateTable(db, t.Name); err != nil {
-				errOut <- fmt.Errorf("Error executing SHOW CREATE TABLE for %s.%s: %s", EscapeIdentifier(schema), EscapeIdentifier(t.Name), err)
-				return
+				return fmt.Errorf("Error executing SHOW CREATE TABLE for %s.%s: %s", EscapeIdentifier(schema), EscapeIdentifier(t.Name), err)
 			}
 			if t.Engine == "InnoDB" {
 				t.CreateStatement = NormalizeCreateOptions(t.CreateStatement)
@@ -971,16 +963,10 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			if actual != expected {
 				t.UnsupportedDDL = true
 			}
-			errOut <- nil
-		}(t)
+			return nil
+		})
 	}
-	for range tables {
-		if err := <-errOut; err != nil {
-			return nil, err
-		}
-	}
-
-	return tables, nil
+	return tables, g.Wait()
 }
 
 var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE )?KEY `(.+)` \\(`")

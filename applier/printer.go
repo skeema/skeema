@@ -56,5 +56,5 @@ func (p *Printer) printDDL(ddl *DDLStatement) {
 		fmt.Printf("USE %s;\n", tengo.EscapeIdentifier(ddl.schemaName))
 		p.lastStdoutSchema = ddl.schemaName
 	}
-	fmt.Printf("%s\n", ddl.String())
+	fmt.Print(ddl.String())
 }

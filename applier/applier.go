@@ -75,7 +75,7 @@ func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<-
 					ddls = append(ddls, ddl)
 				} else if unsupportedErr, ok := err.(*tengo.UnsupportedDiffError); ok {
 					result.UnsupportedCount++
-					log.Warnf("Skipping %s %s: unable to generate DDL due to use of unsupported features. Use --debug for more information.", unsupportedErr.ObjectType, unsupportedErr.Name)
+					log.Warnf("Skipping %s: unable to generate DDL due to use of unsupported features. Use --debug for more information.", unsupportedErr.ObjectKey)
 					DebugLogUnsupportedDiff(unsupportedErr)
 				} else {
 					result.SkipCount += len(objDiffs)
