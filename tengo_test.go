@@ -79,6 +79,14 @@ func (s *TengoIntegrationSuite) GetSchemaAndTable(t *testing.T, schemaName, tabl
 	return schema, table
 }
 
+// TestObjectKeyString confirms behavior of ObjectKey.String()
+func TestObjectKeyString(t *testing.T) {
+	key := ObjectKey{Type: ObjectTypeTable, Name: "weird`test"}
+	if keyStr := key.String(); keyStr != "table `weird``test`" {
+		t.Errorf("Unexpected result from ObjectKey.String(): %s", keyStr)
+	}
+}
+
 // TestUnitTableFlavors confirms that our hard-coded fixture table methods
 // (later on in this file) correctly adjust their output to match the specified
 // flavors.

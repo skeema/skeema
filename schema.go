@@ -12,7 +12,7 @@ type Schema struct {
 	Tables    []*Table
 }
 
-// TablesByName returns a mapping of table names to Table struct values, for
+// TablesByName returns a mapping of table names to Table struct pointers, for
 // all tables in the schema.
 func (s *Schema) TablesByName() map[string]*Table {
 	if s == nil {
@@ -40,6 +40,19 @@ func (s *Schema) Table(name string) *Table {
 		}
 	}
 	return nil
+}
+
+// ObjectDefinitions returns a mapping of ObjectKey (type+name) to an SQL string
+// containing the corresponding CREATE statement, for all supported object types
+// in the schema.
+// Note that the returned map does NOT include an entry for the schema itself.
+func (s *Schema) ObjectDefinitions() map[ObjectKey]string {
+	dict := make(map[ObjectKey]string)
+	for name, table := range s.TablesByName() {
+		key := ObjectKey{Type: ObjectTypeTable, Name: name}
+		dict[key] = table.CreateStatement
+	}
+	return dict
 }
 
 // Diff returns the set of differences between this schema and another schema.

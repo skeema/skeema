@@ -1,4 +1,5 @@
 SET foreign_key_checks=0;
+SET sql_log_bin=0;
 CREATE DATABASE testing;
 CREATE DATABASE testcollate DEFAULT COLLATE latin1_bin;
 CREATE DATABASE testcharset DEFAULT CHARACTER SET utf8mb4;
