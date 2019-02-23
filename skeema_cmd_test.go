@@ -829,7 +829,7 @@ func (s SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 
 	// lint normalizes files to remove the clauses
 	fs.WriteTestFile(t, "mydb/product/problems.sql", withClauses)
-	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint%s", connectOpts)
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint%s --errors=''", connectOpts)
 	assertFileNormalized()
 
 	// diff views the clauses as no-ops if present in file but not db, or vice versa

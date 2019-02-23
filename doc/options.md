@@ -4,6 +4,9 @@ This document is a reference, describing all options supported by Skeema. To lea
 
 ### Index
 
+
+* [allow-charset](#allow-charset)
+* [allow-engine](#allow-engine)
 * [allow-unsafe](#allow-unsafe)
 * [alter-algorithm](#alter-algorithm)
 * [alter-lock](#alter-lock)
@@ -19,6 +22,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [dir](#dir)
 * [docker-cleanup](#docker-cleanup)
 * [dry-run](#dry-run)
+* [errors](#errors)
 * [exact-match](#exact-match)
 * [first-only](#first-only)
 * [flavor](#flavor)
@@ -39,9 +43,32 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [temp-schema](#temp-schema)
 * [user](#user)
 * [verify](#verify)
+* [warnings](#warnings)
 * [workspace](#workspace)
 
 ---
+
+### allow-charset
+
+Commands | lint
+--- | :---
+**Default** | "latin1,utf8mb4"
+**Type** | string
+**Restrictions** | To specify multiple values, use a comma-separated list
+
+This option specifies which character sets are permitted by Skeema's linter. This option only has an effect if either the [errors](#errors) or [warnings](#warnings) options includes "bad-charset". If so, an error or warning (as appropriate) will be emitted for any table using a character set not included in this list.
+
+This option checks column character sets as well as table default character sets. It does not currently check any other object type besides tables.
+
+### allow-engine
+
+Commands | lint
+--- | :---
+**Default** | "innodb"
+**Type** | string
+**Restrictions** | To specify multiple values, use a comma-separated list
+
+This option specifies which storage engines are permitted by Skeema's linter. This option only has an effect if either the [errors](#errors) or [warnings](#warnings) options includes "bad-engine". If so, an error or warning (as appropriate) will be emitted for any table using a storage engine not included in this list.
 
 ### allow-unsafe
 
@@ -333,6 +360,28 @@ Commands | push
 **Restrictions** | Should only appear on command-line
 
 Running `skeema push --dry-run` is exactly equivalent to running `skeema diff`: the DDL will be generated and printed, but not executed. The same code path is used in both cases. The *only* difference is that `skeema diff` has its own help/usage text, but otherwise the command logic is the same as `skeema push --dry-run`.
+
+### errors
+
+Commands | lint
+--- | :---
+**Default** | *empty string*
+**Type** | string
+**Restrictions** | To specify multiple values, use a comma-separated list
+
+This option specifies which problems are treated as *fatal errors* by Skeema's linter. The exit code of `skeema lint` will be 2 (or more) if any errors were emitted.
+
+The value of this option can include any of these problem names as values:
+
+* `bad-charset`: Flag tables using character sets not specified in [allow-charset](#allow-charset)
+* `bad-engine`: Flag tables using storage engines not specified in [allow-engine](#allow-engine)
+* `no-pk`: Flag tables that do not have an explicit PRIMARY KEY
+
+By default, the value of [errors](#errors) is an empty string, meaning that none of the above problems are treated as fatal errors.
+
+Regardless of the value of this option, invalid SQL is always treated as a fatal error.
+
+Currently, in Skeema v1.2, this option only affects `skeema lint`. In future versions of Skeema, this option will also affect `skeema diff` and `skeema push`, which will automatically lint any new or changed objects. If any errors are triggered, the push will not be executed for the current directory.
 
 ### exact-match
 
@@ -634,7 +683,7 @@ If using a non-default value for this option, it should not ever point at a sche
 
 Commands | *all*
 --- | :---
-**Default** | root
+**Default** | "root"
 **Type** | string
 **Restrictions** | none
 
@@ -651,6 +700,22 @@ Commands | diff, push
 Controls whether generated `ALTER TABLE` statements are automatically verified for correctness. If true, each generated ALTER will be tested in the temporary schema. See [the FAQ](faq.md#auto-generated-ddl-is-verified-for-correctness) for more information.
 
 It is recommended that this option be left at its default of true, but if desired you can disable verification for performance reasons.
+
+### warnings
+
+Commands | lint
+--- | :---
+**Default** | "bad-charset,bad-engine,no-pk"
+**Type** | string
+**Restrictions** | To specify multiple values, use a comma-separated list
+
+This option specifies which problems are treated as *warnings* by Skeema's linter. Warnings are displayed, but are not considered fatal. The exit code of `skeema lint` will be non-zero if any warnings were emitted.
+
+See the [errors](#errors) option for valid values (problem names). You may specify zero or more of those values.
+
+If the same problem name is listed in both [errors](#errors) and [warnings](#warnings), the former takes precedence, meaning the problem is treated as an error and not as a warning.
+
+Currently, in Skeema v1.2, this option only affects `skeema lint`. In future versions of Skeema, this option will also affect `skeema diff` and `skeema push`, which will automatically lint any new or changed objects. If any warnings are triggered, they will be displayed and tallied, but they will not block the push process.
 
 ### workspace
 
