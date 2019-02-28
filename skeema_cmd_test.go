@@ -210,7 +210,9 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	// nonstandard formatting of their CREATE TABLE should be normalized, even if
 	// there was an ignored auto-increment change. Files with extraneous text
 	// before/after the CREATE TABLE should remain as-is, regardless of whether
-	// there were other changes triggering a file rewrite.
+	// there were other changes triggering a file rewrite. Files containing
+	// commands plus a table that doesn't exist should be deleted, instead of
+	// leaving a file with lingering commands.
 	contents := fs.ReadTestFile(t, "mydb/analytics/activity.sql")
 	fs.WriteTestFile(t, "mydb/analytics/activity.sql", strings.Replace(contents, "DEFAULT", "DEFALUT", 1))
 	s.dbExec(t, "product", "INSERT INTO comments (post_id, user_id) VALUES (555, 777)")
@@ -218,6 +220,7 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	fs.WriteTestFile(t, "mydb/product/comments.sql", strings.Replace(contents, "`", "", -1))
 	contents = fs.ReadTestFile(t, "mydb/product/posts.sql")
 	fs.WriteTestFile(t, "mydb/product/posts.sql", fmt.Sprintf("# random comment\n%s", contents))
+	fs.WriteTestFile(t, "mydb/product/noexist.sql", "DELIMITER //\nCREATE TABLE noexist (id int)//\nDELIMITER ;\n")
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --debug")
 	s.verifyFiles(t, cfg, "../golden/init")
 	contents = fs.ReadTestFile(t, "mydb/product/posts.sql")

@@ -102,13 +102,13 @@ func NewTokenizedSQLFile(sf SQLFile, statements []*Statement) *TokenizedSQLFile 
 }
 
 // Rewrite rewrites the SQLFile with the current statements, returning the
-// number of bytes written. If the file's statements now only consist of noop
-// (comments and whitespace) statements, the file will be deleted instead, and
-// a length of 0 will be returned.
+// number of bytes written. If the file's statements now only consist of
+// comments, whitespace, and commands (e.g. USE, DELIMITER) then the file will
+// be deleted instead, and a length of 0 will be returned.
 func (tsf *TokenizedSQLFile) Rewrite() (int, error) {
 	var keepFile bool
 	for _, stmt := range tsf.Statements {
-		if stmt.Type != StatementTypeNoop {
+		if stmt.Type != StatementTypeNoop && stmt.Type != StatementTypeCommand {
 			keepFile = true
 			break
 		}

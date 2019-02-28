@@ -119,6 +119,7 @@ func TestSQLFileTokenize(t *testing.T) {
 }
 
 func TestTokenizedSQLFileRewrite(t *testing.T) {
+	// Use Rewrite() to write file statements2.sql with same contents as statements.sql
 	contents := ReadTestFile(t, "../testdata/statements.sql")
 	sf2 := SQLFile{
 		Dir:      "../testdata",
@@ -139,7 +140,26 @@ func TestTokenizedSQLFileRewrite(t *testing.T) {
 	if contents2 != contents {
 		t.Error("File contents differ from expectation")
 	}
-	sf2.Delete()
+	if tokenizedFile, err = sf2.Tokenize(); err != nil {
+		t.Fatalf("Unexpected error from Tokenize(): %s", err)
+	}
+
+	// Remove everything except commands and whitespace/comments. Rewrite should
+	// now delete the file.
+	for n := len(tokenizedFile.Statements) - 1; n >= 0; n-- {
+		stmt := tokenizedFile.Statements[n]
+		if stmt.Type != StatementTypeNoop && stmt.Type != StatementTypeCommand {
+			stmt.Remove()
+		}
+	}
+	bytesWritten, err = tokenizedFile.Rewrite()
+	if bytesWritten != 0 || err != nil {
+		t.Errorf("Unexpected return values from Rewrite: %d / %v", bytesWritten, err)
+	}
+	if exists, err := sf2.Exists(); exists || err != nil {
+		t.Errorf("Unexpected return values from Exists: %t / %v", exists, err)
+		sf2.Delete()
+	}
 }
 
 // expectedStatements returns the expected contents of ../testdata/statements.sql
