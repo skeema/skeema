@@ -328,11 +328,18 @@ func (dir *Dir) SchemaNames(instance *tengo.Instance) (names []string, err error
 }
 
 // HasSchema returns true if this dir maps to at least one schema, either by
-// stating a "schema" option in the dir's config for the current environment,
-// and/or by having *.sql files that explicitly mention a schema name.
+// stating a "schema" option in this dir's option file for the current
+// environment, and/or by having *.sql files that explicitly mention a schema
+// name.
 func (dir *Dir) HasSchema() bool {
-	if dir.Config.Changed("schema") {
-		return true
+	// We intentionally only return true if *this dir's option file* sets a schema,
+	// rather than using dir.Config.Changed("schema") which would also consider
+	// parent dirs. This way, users can store arbitrary things in subdirs without
+	// Skeema interpreting them incorrectly.
+	if dir.OptionFile != nil {
+		if val, _ := dir.OptionFile.OptionValue("schema"); val != "" {
+			return true
+		}
 	}
 	for _, logicalSchema := range dir.LogicalSchemas {
 		if logicalSchema.Name != "" {
@@ -449,6 +456,15 @@ func (dir *Dir) parseContents() error {
 			} else if stmt.Type == StatementTypeUnknown {
 				dir.IgnoredStatements = append(dir.IgnoredStatements, stmt)
 			}
+		}
+	}
+
+	// If there are no *.sql files, but .skeema defines a schema name, create an
+	// empty LogicalSchema. This permits `skeema pull` to work properly on a
+	// formerly-empty schema, for example.
+	if len(logicalSchemasByName) == 0 && dir.HasSchema() {
+		logicalSchemasByName[""] = &LogicalSchema{
+			Creates: make(map[tengo.ObjectKey]*Statement),
 		}
 	}
 

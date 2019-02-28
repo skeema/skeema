@@ -745,6 +745,35 @@ func (s SkeemaIntegrationSuite) TestDirEdgeCases(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 	s.handleCommand(t, CodeSuccess, ".", "skeema lint")
+
+	// Extra subdirs with .skeema files and *.sql files don't inherit "schema"
+	// option value from parent dir, and are ignored by diff/push/pull as long
+	// as they don't specify a schema value directly. lint still works since its
+	// execution model does not require a schema to be defined.
+	fs.WriteTestFile(t, "mydb/product/subdir/.skeema", "# nothing relevant here\n")
+	fs.WriteTestFile(t, "mydb/product/subdir/hello.sql", "CREATE TABLE hello (id int);\n")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint") // should rewrite hello.sql
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// Dirs with no *.sql files, but have a schema defined in .skeema, should
+	// be interpreted as a logical schema without any objects
+	s.dbExec(t, "", "CREATE DATABASE otherdb")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	if contents := fs.ReadTestFile(t, "mydb/otherdb/.skeema"); contents == "" {
+		t.Error("Unexpectedly found no contents in mydb/otherdb/.skeema")
+	}
+	s.dbExec(t, "otherdb", "CREATE TABLE othertable (id int)")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	if contents := fs.ReadTestFile(t, "mydb/otherdb/othertable.sql"); contents == "" {
+		t.Error("Unexpectedly found no contents in mydb/otherdb/othertable.sql")
+	}
+	fs.RemoveTestFile(t, "mydb/otherdb/othertable.sql")
+	s.handleCommand(t, CodeFatalError, ".", "skeema diff")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
 }
 
 // This test covers usage of clauses that have no effect in InnoDB, but are still
