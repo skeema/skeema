@@ -101,6 +101,21 @@ func (dir *Dir) BaseName() string {
 	return path.Base(dir.Path)
 }
 
+// RelPath attempts to return the directory path relative to the current working
+// directory. If this is not possible to determine, dir.Path will be returned
+// as-is.
+func (dir *Dir) RelPath() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return dir.Path
+	}
+	rel, err := filepath.Rel(wd, dir.Path)
+	if err != nil {
+		return dir.Path
+	}
+	return rel
+}
+
 // Delete unlinks the directory and all files within.
 func (dir *Dir) Delete() error {
 	return os.RemoveAll(dir.Path)

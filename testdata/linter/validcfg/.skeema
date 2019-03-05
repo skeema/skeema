@@ -1,0 +1,14 @@
+# It's ok to specify same problem under both errors and warnings.
+# errors will take precedence, regardless of order in config file.
+errors=no-pk
+warnings=no-pk,bad-charset,bad-engine
+
+allow-charset=utf8mb4
+allow-engine=innodb, myisam
+
+ignore-schema=^metadata$
+ignore-table=^_
+
+schema=whatever
+default-character-set=latin1
+default-collation=latin1_swedish_ci
