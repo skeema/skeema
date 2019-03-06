@@ -36,7 +36,7 @@ func AddGlobalOptions(cmd *mybase.Command) {
 	cmd.AddOption(mybase.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema for intermediate operations, created and dropped each run unless --reuse-temp-schema"))
 	cmd.AddOption(mybase.StringOption("connect-options", 'o', "", "Comma-separated session options to set upon connecting to each database instance"))
 	cmd.AddOption(mybase.StringOption("workspace", 'w', "TEMP-SCHEMA", `Specifies where to run intermediate operations (valid values: "TEMP-SCHEMA", "DOCKER")`))
-	cmd.AddOption(mybase.StringOption("docker-cleanup", 0, "NONE", `With --workspace=docker, specifies show to clean up containers (valid values: "NONE", "STOP", "DESTROY")`))
+	cmd.AddOption(mybase.StringOption("docker-cleanup", 0, "NONE", `With --workspace=docker, specifies how to clean up containers (valid values: "NONE", "STOP", "DESTROY")`))
 	cmd.AddOption(mybase.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done"))
 	cmd.AddOption(mybase.BoolOption("debug", 0, false, "Enable debug logging"))
 }
