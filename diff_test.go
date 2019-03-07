@@ -448,14 +448,16 @@ func TestSchemaDiffRoutines(t *testing.T) {
 	}
 
 	// Test impact of statement modifiers (allowing/forbidding drop) on previous drop
-	if stmt, err := rd.Statement(StatementModifiers{AllowUnsafe: false}); !IsForbiddenDiff(err) {
+	if stmt, err := rd.Statement(StatementModifiers{AllowUnsafe: false}); stmt == "" || !IsForbiddenDiff(err) {
 		t.Errorf("Modifier AllowUnsafe=false not working; expected forbidden diff error for %s, instead err=%v", stmt, err)
 	}
-	if stmt, err := rd.Statement(StatementModifiers{AllowUnsafe: true}); err != nil {
+	if stmt, err := rd.Statement(StatementModifiers{AllowUnsafe: true}); stmt == "" || err != nil {
 		t.Errorf("Modifier AllowUnsafe=true not working; error (%s) returned for %s", err, stmt)
 	}
 
-	// Test alter, which currently always is handled by a drop and re-add
+	// Test alter, which currently always is handled by a drop and re-add.
+	// Since this is a creation-time metadata change, also test statement modifier
+	// affecting whether or not those changes are suppressed.
 	s1r2 := aProc("utf8mb4_general_ci", "")
 	s1.Routines = append(s1.Routines, &s1r2)
 	sd = NewSchemaDiff(&s2, &s1)
@@ -475,6 +477,20 @@ func TestSchemaDiffRoutines(t *testing.T) {
 	}
 	if rd.To != &s1r2 || rd.ObjectKey().Name != s1r2.Name {
 		t.Error("Pointer in diff does not point to expected value")
+	}
+	mods := StatementModifiers{AllowUnsafe: true}
+	for _, od := range sd.ObjectDiffs() {
+		stmt, err := od.Statement(mods)
+		if stmt != "" || err != nil {
+			t.Errorf("Unexpected return from Statement: %s / %v", stmt, err)
+		}
+	}
+	mods.CompareMetadata = true
+	for n, od := range sd.ObjectDiffs() {
+		stmt, err := od.Statement(mods)
+		if stmt == "" || err != nil || (n == 0 && !strings.HasPrefix(stmt, "# ")) {
+			t.Errorf("Unexpected return from Statement: %s / %v", stmt, err)
+		}
 	}
 
 	// Confirm that procs and funcs with same name are handled properly

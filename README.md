@@ -69,6 +69,8 @@ Additional [contributions](https://github.com/skeema/tengo/graphs/contributors) 
 * [@efixler](https://github.com/efixler)
 * [@chrisjpalmer](https://github.com/chrisjpalmer)
 
+Support for stored procedures and functions generously sponsored by [Psyonix](https://psyonix.com).
+
 ## License
 
 **Copyright 2019 Skeema LLC**
