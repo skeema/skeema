@@ -1019,13 +1019,15 @@ END`
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-normalize")
 	s.verifyFiles(t, cfg, "../golden/routines")
 
-	// Confirm changing the db's collation counts as a diff for routines,
-	// even though the routine text is unaffected
+	// Confirm changing the db's collation counts as a diff for routines if (and
+	// only if) --compare-metadata is used
 	s.dbExec(t, "", "ALTER DATABASE product DEFAULT COLLATE = latin1_general_ci")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
-	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
-	s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	s.handleCommand(t, CodeFatalError, ".", "skeema diff --compare-metadata")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --compare-metadata --allow-unsafe")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --compare-metadata --allow-unsafe")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff --compare-metadata")
 	s.d.CloseAll() // avoid mysql bug where ALTER DATABASE doesn't affect existing sessions
 
 	// Add a file creating another routine. Push it and confirm the routine is

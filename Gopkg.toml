@@ -34,7 +34,7 @@
   name = "github.com/skeema/mybase"
 
 [[constraint]]
-  branch = "routines-rebased" # TEMPORARY OVERRIDE
+  branch = "master"
   name = "github.com/skeema/tengo"
 
 [[constraint]]

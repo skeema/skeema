@@ -67,6 +67,7 @@ type StatementModifiers struct {
 	IgnoreTable            *regexp.Regexp  // Generate blank DDL if table name matches this regexp
 	StrictIndexOrder       bool            // If true, maintain index order even in cases where there is no functional difference
 	StrictForeignKeyNaming bool            // If true, maintain foreign key names even if no functional difference in definition
+	CompareMetadata        bool            // If true, compare creation-time sql_mode and db collation for funcs, procs (and eventually events, triggers)
 	Flavor                 Flavor          // Adjust generated DDL to match vendor/version. Zero value is FlavorUnknown which makes no adjustments.
 }
 
@@ -140,10 +141,20 @@ func compareRoutines(from, to *Schema) (routineDiffs []*RoutineDiff) {
 			if !stillExists {
 				routineDiffs = append(routineDiffs, &RoutineDiff{From: fromRoutine})
 			} else if !fromRoutine.Equals(toRoutine) {
+				// Determine if only the creation-time metadata (db collation, sql_mode)
+				// has changed, and flag the diffs if so. This type of change requires
+				// StatementModifiers to execute, since its appearance is counterintuitive
+				// (since otherwise it looks like a routine is being dropped and recreated
+				// with the exact same statement)
+				metadataOnly := fromRoutine.CreateStatement == toRoutine.CreateStatement
+
 				// TODO: Currently this handles all changes to existing routines via DROP-
-				// then-ADD, but some metadata-only changes could use ALTER FUNCTION / ALTER
-				// PROCEDURE instead.
-				routineDiffs = append(routineDiffs, &RoutineDiff{From: fromRoutine}, &RoutineDiff{To: toRoutine})
+				// then-ADD, but characteristic-only changes could use ALTER FUNCTION /
+				// ALTER PROCEDURE instead.
+				routineDiffs = append(routineDiffs,
+					&RoutineDiff{From: fromRoutine, ForMetadata: metadataOnly},
+					&RoutineDiff{To: toRoutine, ForMetadata: metadataOnly},
+				)
 			}
 		}
 		for name, toRoutine := range toByName {
@@ -218,8 +229,9 @@ func (sd *SchemaDiff) FilteredTableDiffs(onlyTypes ...DiffType) []*TableDiff {
 
 ///// DatabaseDiff /////////////////////////////////////////////////////////////
 
-// DatabaseDiff represents differences of schema metadata: existence of the
-// schema; default character set; default collation.
+// DatabaseDiff represents differences of schema characteristics (default
+// character set or default collation), or a difference in the existence of the
+// the schema.
 type DatabaseDiff struct {
 	From *Schema
 	To   *Schema
@@ -533,8 +545,9 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 
 // RoutineDiff represents a difference between two routines.
 type RoutineDiff struct {
-	From *Routine
-	To   *Routine
+	From        *Routine
+	To          *Routine
+	ForMetadata bool // if true, routine is being replaced only to update creation-time metadata
 }
 
 // ObjectKey returns a value representing the type and name of the routine being
@@ -568,20 +581,32 @@ func (rd *RoutineDiff) DiffType() DiffType {
 // still be returned as-is, but the error will be non-nil. Be sure not to
 // ignore the error value of this method.
 func (rd *RoutineDiff) Statement(mods StatementModifiers) (string, error) {
+	// If we're replacing a routine only because its creation-time sql_mode or
+	// db collation has changed, only proceed if mods indicate we should. (This
+	// type of replacement is effectively opt-in because it is counter-intuitive
+	// and obscure.)
+	if rd != nil && rd.ForMetadata && !mods.CompareMetadata {
+		return "", nil
+	}
 	switch rd.DiffType() {
 	case DiffTypeNone:
 		return "", nil
 	case DiffTypeCreate:
 		return rd.To.CreateStatement, nil
 	case DiffTypeDrop:
+		var comment string
+		if rd.ForMetadata {
+			comment = fmt.Sprintf("# Dropping and re-creating %s to update metadata\n", rd.ObjectKey())
+		}
+		stmt := fmt.Sprintf("%s%s", comment, rd.From.DropStatement())
 		var err error
 		if !mods.AllowUnsafe {
 			err = &ForbiddenDiffError{
 				Reason:    fmt.Sprintf("DROP %s not permitted", rd.From.Type.Caps()),
-				Statement: rd.From.DropStatement(),
+				Statement: stmt,
 			}
 		}
-		return rd.From.DropStatement(), err
+		return stmt, err
 	default: // DiffTypeAlter and DiffTypeRename not supported yet
 		return "", fmt.Errorf("Unsupported diff type %d", rd.DiffType())
 	}

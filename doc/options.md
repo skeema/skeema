@@ -13,6 +13,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [alter-wrapper](#alter-wrapper)
 * [alter-wrapper-min-size](#alter-wrapper-min-size)
 * [brief](#brief)
+* [compare-metadata](#compare-metadata)
 * [concurrent-instances](#concurrent-instances)
 * [connect-options](#connect-options)
 * [ddl-wrapper](#ddl-wrapper)
@@ -192,6 +193,27 @@ Ordinarily, `skeema diff` outputs DDL statements to STDOUT. With [brief](#brief)
 Only the STDOUT portion of `skeema diff`'s output is affected by this option; logging output to STDERR still occurs as normal. To filter that out, use shell redirection as usual; for example, `skeema diff 2>/dev/null` will eliminate the STDERR logging. However, take care to examine the process's exit code (`$?`) in this case, to avoid missing error conditions. See `skeema diff --help` to interpret the exit code values.
 
 Since its purpose is to just see which instances contain schema differences, enabling the [brief](#brief) option always automatically disables the [verify](#verify) option and enables the [allow-unsafe](#allow-unsafe) option.
+
+### compare-metadata
+
+Commands | diff, push
+--- | :---
+**Default** | false
+**Type** | boolean
+**Restrictions** | none
+
+In MySQL and MariaDB, whenever a procedure, function, trigger, or event is created, two pieces of environmental metadata are automatically stored and associated with the object: the session sql_mode in effect at the time, and the default collation of the database containing the object. This metadata affects execution of the stored program in subtle ways, and even if the global sql_mode or database default collation changes at a later time, existing objects are not updated automatically by the database server itself. The [compare-metadata](#compare-metadata) option controls whether or not Skeema should include this metadata in its diff logic.
+
+By default, `skeema diff` and `skeema push` ignore this creation-time metadata when comparing objects, because it exists outside of the SQL CREATE statement entirely.
+
+Enabling the [compare-metadata](#compare-metadata) option will cause `skeema diff` and `skeema push` to include two extra comparisons for relevant object types:
+
+* Compare the object's original creation-time sql_mode to the current global sql_mode
+* Compare the object's original creation-time db_collation to its database's current default collation
+
+If any differences are found in those comparisons, the generated SQL DDL will include statements to drop and recreate the object. This output can be somewhat counter-intuitive, however, since the relevant change is outside of the SQL statement itself.
+
+Currently, this option only affects stored procedures and functions, as Skeema does not yet support triggers or events. If support for triggers and/or events is added in a future version, this option will affect them as well.
 
 ### concurrent-instances
 
