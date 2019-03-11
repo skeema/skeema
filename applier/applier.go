@@ -142,6 +142,7 @@ func StatementModifiersForDir(dir *fs.Dir) (mods tengo.StatementModifiers, err e
 	mods.NextAutoInc = tengo.NextAutoIncIfIncreased
 	forceAllowUnsafe := dir.Config.GetBool("brief") && dir.Config.GetBool("dry-run")
 	mods.AllowUnsafe = forceAllowUnsafe || dir.Config.GetBool("allow-unsafe")
+	mods.CompareMetadata = dir.Config.GetBool("compare-metadata")
 	if dir.Config.GetBool("exact-match") {
 		mods.StrictIndexOrder = true
 		mods.StrictForeignKeyNaming = true

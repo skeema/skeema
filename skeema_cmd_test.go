@@ -977,3 +977,130 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 	s.assertTableMissing(t, "product2", "foo2", "")
 	s.assertTableExists(t, "product3", "foo2", "")
 }
+
+func (s SkeemaIntegrationSuite) TestRoutines(t *testing.T) {
+	origCreate := `CREATE definer=root@localhost FUNCTION routine1(a int, b int)
+RETURNS int
+DETERMINISTIC
+BEGIN
+	return a * b;
+END`
+	create := origCreate
+	s.dbExec(t, "product", create)
+
+	// Confirm init works properly with one function present
+	s.reinitAndVerifyFiles(t, "", "../golden/routines")
+
+	// diff, pull, lint should all be no-ops at this point
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	s.verifyFiles(t, cfg, "../golden/routines")
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema lint")
+	s.verifyFiles(t, cfg, "../golden/routines")
+
+	// Modify the db representation of the routine; diff/push should work, but only
+	// with --allow-unsafe (and not with --safe-below-size)
+	s.dbExec(t, "product", "DROP FUNCTION routine1")
+	create = strings.Replace(create, "a * b", "b * a", 1)
+	if create == origCreate {
+		t.Fatal("Test setup incorrect")
+	}
+	s.dbExec(t, "product", create)
+	s.handleCommand(t, CodeFatalError, ".", "skeema diff")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
+	s.handleCommand(t, CodeFatalError, ".", "skeema push --safe-below-size=10000")
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
+	s.verifyFiles(t, cfg, "../golden/routines")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// Delete that file and do a pull; file should be back, even with
+	// --skip-normalize
+	fs.RemoveTestFile(t, "mydb/product/routine1.sql")
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-normalize")
+	s.verifyFiles(t, cfg, "../golden/routines")
+
+	// Confirm changing the db's collation counts as a diff for routines if (and
+	// only if) --compare-metadata is used
+	s.dbExec(t, "", "ALTER DATABASE product DEFAULT COLLATE = latin1_general_ci")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	s.handleCommand(t, CodeFatalError, ".", "skeema diff --compare-metadata")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --compare-metadata --allow-unsafe")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --compare-metadata --allow-unsafe")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff --compare-metadata")
+	s.d.CloseAll() // avoid mysql bug where ALTER DATABASE doesn't affect existing sessions
+
+	// Add a file creating another routine. Push it and confirm the routine is
+	// using the sql_mode of the server.
+	origContents := "CREATE FUNCTION routine2() returns varchar(30) DETERMINISTIC return 'abc''def';\n"
+	fs.WriteTestFile(t, "mydb/product/routine2.sql", origContents)
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	schema, err := s.d.Schema("product")
+	if err != nil || schema == nil {
+		t.Fatal("Unexpected error obtaining product schema")
+	}
+	funcs := schema.FunctionsByName()
+	if r2, ok := funcs["routine2"]; !ok {
+		t.Fatal("Unable to locate routine2")
+	} else {
+		var serverSQLMode string
+		db, _ := s.d.Connect("", "")
+		if err := db.QueryRow("SELECT @@global.sql_mode").Scan(&serverSQLMode); err != nil {
+			t.Fatalf("Unexpected error querying sql_mode: %s", err)
+		}
+		if r2.SQLMode != serverSQLMode {
+			t.Errorf("Expected routine2 to have sql_mode %s, instead found %s", serverSQLMode, r2.SQLMode)
+		}
+	}
+
+	// Lint that new file; confirm new formatting matches expectation.
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint")
+	normalizedContents := `CREATE DEFINER=~root~@~%~ FUNCTION ~routine2~() RETURNS varchar(30) CHARSET latin1 COLLATE latin1_general_ci
+    DETERMINISTIC
+return 'abc''def';
+`
+	normalizedContents = strings.Replace(normalizedContents, "~", "`", -1)
+	if contents := fs.ReadTestFile(t, "mydb/product/routine2.sql"); contents != normalizedContents {
+		t.Errorf("Unexpected contents after linting; found:\n%s", contents)
+	}
+
+	// Restore old formatting and test pull, with and without --normalize
+	fs.WriteTestFile(t, "mydb/product/routine2.sql", origContents)
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-normalize")
+	if contents := fs.ReadTestFile(t, "mydb/product/routine2.sql"); contents != origContents {
+		t.Errorf("Expected contents unchanged from pull with --skip-normalize; instead found:\n%s", contents)
+	}
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	if contents := fs.ReadTestFile(t, "mydb/product/routine2.sql"); contents != normalizedContents {
+		t.Errorf("Expected contents to be normalized from pull with --normalize; instead found:\n%s", contents)
+	}
+
+	// Add a *procedure* called routine2. pull should place this in same file as
+	// the function with same name.
+	r2dupe := `CREATE PROCEDURE routine2(a int, b int)
+BEGIN
+	SELECT a;
+	SELECT b;
+END`
+	s.dbExec(t, "product", r2dupe)
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	normalizedContents += "DELIMITER //\nCREATE DEFINER=`root`@`%` PROCEDURE `routine2`(a int, b int)\nBEGIN\n\tSELECT a;\n\tSELECT b;\nEND//\nDELIMITER ;\n"
+	if contents := fs.ReadTestFile(t, "mydb/product/routine2.sql"); contents != normalizedContents {
+		t.Errorf("Unexpected contents after pull; expected:\n%s\nfound:\n%s", normalizedContents, contents)
+	}
+
+	// diff and lint should both be no-ops
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	s.handleCommand(t, CodeSuccess, ".", "skeema lint")
+
+	// Drop the *function* routine2 and do a push. This should properly recreate
+	// the dropped func.
+	s.dbExec(t, "product", "DROP FUNCTION routine2")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	for _, otype := range []tengo.ObjectType{tengo.ObjectTypeFunc, tengo.ObjectTypeProc} {
+		exists, phrase, err := s.objectExists("product", otype, "routine2", "")
+		if !exists || err != nil {
+			t.Errorf("Expected %s to exist, instead found %t, err=%v", phrase, exists, err)
+		}
+	}
+}

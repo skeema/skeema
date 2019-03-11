@@ -13,6 +13,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [alter-wrapper](#alter-wrapper)
 * [alter-wrapper-min-size](#alter-wrapper-min-size)
 * [brief](#brief)
+* [compare-metadata](#compare-metadata)
 * [concurrent-instances](#concurrent-instances)
 * [connect-options](#connect-options)
 * [ddl-wrapper](#ddl-wrapper)
@@ -87,6 +88,7 @@ The following operations are considered unsafe:
 * Altering a table to modify an existing column in a way that potentially causes data loss, length truncation, or reduction in precision
 * Altering a table to modify the character set of an existing column
 * Altering a table to change its storage engine
+* Dropping a stored procedure or function (even if just to [re-create it with a modified definition](requirements.md#edge-cases-for-routines))
 
 If [allow-unsafe](#allow-unsafe) is set to true, these operations are fully permitted, for all tables. It is not recommended to enable this setting in an option file, especially in the production environment. It is safer to require users to supply it manually on the command-line on an as-needed basis, to serve as a confirmation step for unsafe operations.
 
@@ -192,6 +194,27 @@ Only the STDOUT portion of `skeema diff`'s output is affected by this option; lo
 
 Since its purpose is to just see which instances contain schema differences, enabling the [brief](#brief) option always automatically disables the [verify](#verify) option and enables the [allow-unsafe](#allow-unsafe) option.
 
+### compare-metadata
+
+Commands | diff, push
+--- | :---
+**Default** | false
+**Type** | boolean
+**Restrictions** | none
+
+In MySQL and MariaDB, whenever a procedure, function, trigger, or event is created, two pieces of environmental metadata are automatically stored and associated with the object: the session sql_mode in effect at the time, and the default collation of the database containing the object. This metadata affects execution of the stored program in subtle ways, and even if the global sql_mode or database default collation changes at a later time, existing objects are not updated automatically by the database server itself. The [compare-metadata](#compare-metadata) option controls whether or not Skeema should include this metadata in its diff logic.
+
+By default, `skeema diff` and `skeema push` ignore this creation-time metadata when comparing objects, because it exists outside of the SQL CREATE statement entirely.
+
+Enabling the [compare-metadata](#compare-metadata) option will cause `skeema diff` and `skeema push` to include two extra comparisons for relevant object types:
+
+* Compare the object's original creation-time sql_mode to the current global sql_mode
+* Compare the object's original creation-time db_collation to its database's current default collation
+
+If any differences are found in those comparisons, the generated SQL DDL will include statements to drop and recreate the object. This output can be somewhat counter-intuitive, however, since the relevant change is outside of the SQL statement itself.
+
+Currently, this option only affects stored procedures and functions, as Skeema does not yet support triggers or events. If support for triggers and/or events is added in a future version, this option will affect them as well.
+
 ### concurrent-instances
 
 Commands | diff, push
@@ -229,6 +252,8 @@ Aside from the above list, any legal MySQL session variable may be set.
 This option only affects connections made *directly* by Skeema. If you are using an external tool via [alter-wrapper](#alter-wrapper) or [ddl-wrapper](#ddl-wrapper), you will also need to configure that tool to set options appropriately. Skeema's `{CONNOPTS}` variable can help avoid redundancy here; for example, if configuring pt-online-schema-change, you could include `--set-vars {CONNOPTS}` on the command-line to pass the same configured options dynamically.
 
 If you do not override `sql_mode` in [connect-options](#connect-options), Skeema will default to using a session-level value of `'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'`. This provides a consistent strict-mode baseline for Skeema's behavior, regardless of what the server global default is set to. Similarly, `innodb_strict_mode` is enabled by default for Skeema's sessions, but may be overridden to disable if desired. Note that `skeema init` will automatically set a non-strict [connect-options](#connect-options) in `.skeema` if at least one existing table is incompatible with strict settings (e.g., use of a zero-date default, or an unsupported ROW_FORMAT).
+
+As a special-case, whenever Skeema creates stored procedures or functions, the server's default global `sql_mode` will be used, regardless of any override here. This is necessary because MySQL persists the creation-time `sql_mode` into the routine metadata, and Skeema assumes the server's global default is the preferred value.
 
 In addition to setting MySQL session variables, you may also set any of these special variables which affect client-side behavior at the internal driver/protocol level:
 
@@ -272,7 +297,7 @@ This command supports use of special variables. Skeema will dynamically replace 
 * `{SIZE}` -- size of table that this DDL statement targets, in bytes. For tables with no rows, this will be 0, regardless of actual size of the empty table on disk. It will also be 0 for CREATE TABLE statements. It will be 0 if {CLASS} isn't TABLE.
 * `{CLAUSES}` -- Body of the DDL statement, i.e. everything *after* `ALTER TABLE <name> ` or `CREATE TABLE <name> `. This is blank for `DROP TABLE` statements, and blank if {CLASS} isn't TABLE.
 * `{TYPE}` -- the operation type: the word "CREATE", "DROP", or "ALTER" in all caps.
-* `{CLASS}` -- the object class: the word "TABLE" or "DATABASE" in all caps. Other object classes (e.g. "VIEW") may be supported in the future.
+* `{CLASS}` -- the object class: the word "TABLE", "DATABASE", "PROCEDURE", or "FUNCTION" in all caps. Additional object classes (e.g. "VIEW") may be supported in the future.
 * `{CONNOPTS}` -- Session variables passed through from the [connect-options](#connect-options) option
 * `{DIRNAME}` -- The base name (last path element) of the directory being processed.
 * `{DIRPATH}` -- The full (absolute) path of the directory being processed.
@@ -525,6 +550,8 @@ Many external tools such as gh-ost and pt-online-schema-change will create tempo
 
 When supplied on the command-line to `skeema init`, the value will be persisted into the auto-generated .skeema option file, so that subsequent commands continue to ignore the corresponding table names.
 
+If a future version of Skeema adds support for views, this option will apply to views as well, since they share a namespace with tables. However, this option does not affect any other object types, such as stored procedures or functions.
+
 ### include-auto-inc
 
 Commands | init, pull
@@ -618,6 +645,8 @@ The size comparison is a strict less-than. This means that with the default valu
 To only allow unsafe operations on *empty* tables (ones without any rows), set [safe-below-size](#safe-below-size) to 1. Skeema always treats empty tables as size 0 bytes as a special-case.
 
 This option is intended to permit rapid development when altering a new table before it's in use, or dropping a table that was never in use. The intended pattern is to set [safe-below-size](#safe-below-size) in a global option file, potentially to a higher value in the development environment and a lower value in the production environment. This way, whenever unsafe operations are to be run on a larger table, the user must supply [--allow-unsafe](#allow-unsafe) *manually on the command-line* when appropriate to confirm the action.
+
+This option does not apply to other object types besides tables, such as stored procedures or functions, as they have no notion of "size".
 
 ### schema
 

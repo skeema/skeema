@@ -227,20 +227,40 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (schema *t
 		}
 	}()
 
+	// We need two separate connection pools: one with normal session settings,
+	// and another that removes the Skeema-specific sql_mode override. The latter
+	// is needed for object types that "remember" their creation-time sql_mode.
 	db, err := ws.ConnectionPool("")
 	if err != nil {
 		fatalErr = fmt.Errorf("Cannot connect to workspace: %s", err)
 		return
 	}
+	dbRemember, err := ws.ConnectionPool("sql_mode=@@GLOBAL.sql_mode")
+	if err != nil {
+		fatalErr = fmt.Errorf("Cannot connect to workspace: %s", err)
+		return
+	}
+	rememberSQLMode := map[tengo.ObjectType]bool{
+		tengo.ObjectTypeFunc: true,
+		tengo.ObjectTypeProc: true,
+		//tengo.ObjectTypeEvent: true,   // not implemented yet
+		//tengo.ObjectTypeTrigger: true, // not implemented yet
+	}
 
 	// Run all CREATEs in parallel. Temporarily limit max open conns as a simple
 	// means of limiting concurrency.
 	defer db.SetMaxOpenConns(0)
+	defer dbRemember.SetMaxOpenConns(0)
 	db.SetMaxOpenConns(10)
+	dbRemember.SetMaxOpenConns(10)
 	results := make(chan *StatementError)
 	for _, stmt := range logicalSchema.Creates {
 		go func(statement *fs.Statement) {
-			results <- execStatement(db, statement)
+			if rememberSQLMode[statement.ObjectType] {
+				results <- execStatement(dbRemember, statement)
+			} else {
+				results <- execStatement(db, statement)
+			}
 		}(stmt)
 	}
 	for range logicalSchema.Creates {

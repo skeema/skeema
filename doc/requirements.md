@@ -46,9 +46,11 @@ If using the [alter-wrapper option](options.md#alter-wrapper) to execute a third
 
 #### System schemas
 
-Skeema should not need to interact with the `mysql` system schema, nor with `performance_schema`.
-
 Skeema interacts extensively with `information_schema`, but MySQL grants appropriate access automatically based on other privileges provided.
+
+Skeema does not require access to the `mysql` system schema, but will conditionally query the `mysql.proc` table if it is available. This improves Skeema's performance on databases that have a large number of stored procedures and functions, since it avoids the need to run individual `SHOW CREATE` queries.
+
+Skeema does not interact with the `performance_schema` or `sys` schemas.
 
 #### Global privileges
 
@@ -72,15 +74,16 @@ Many of these will be added in future releases.
 
 At this time, Skeema does not support configuring a specific *client-side* SSL cert or CA when connecting to MySQL.
 
-#### Ignored by Skeema
+#### Ignored object types
 
-The following features are completely ignored by Skeema. Their presence in a schema won't immediately break anything, but Skeema will not interact with them. This means that `skeema init` and `skeema pull` won't create file representations of them; `skeema diff` and `skeema push` will not detect or alter them.
+The following object types are completely ignored by Skeema. Their presence won't break anything, but Skeema will not interact with them. This means that `skeema init` and `skeema pull` won't create file representations of them; `skeema diff` and `skeema push` will not detect or alter them.
 
 * views
 * triggers
-* stored procedures and functions
+* events
+* grants / users / roles
 
-#### Unsupported for ALTERs
+#### Unsupported for ALTER TABLE
 
 Skeema can CREATE or DROP tables using these features, but cannot ALTER them. The output of `skeema diff` and `skeema push` will note that it cannot generate or run ALTER TABLE for tables using these features, so the affected table(s) will be skipped, but the rest of the operation will proceed as normal. 
 
@@ -104,3 +107,16 @@ Currently, Skeema will interpret attempts to rename as DROP-then-ADD operations.
 Note that for empty tables as a special-case, a rename is technically equivalent to a DROP-then-ADD anyway. In Skeema, if you configure [safe-below-size=1](options.md#safe-below-size), the tool will permit this operation on tables with 0 rows. This is completely safe, and can aid in rapid development.
 
 For tables with data, the work-around to handle renames is to run the appropriate `ALTER TABLE` manually (outside of Skeema) on all relevant databases. You can update your schema repo afterwards by running `skeema pull`.
+
+#### Edge-cases for routines
+
+Skeema v1.2.0 added support for MySQL routines (stored procedures and functions). This support generally handles all common usage patterns, but there a few edge-cases to be aware of:
+
+* Dropping a routine is considered a destructive action, requiring the [--allow-unsafe](options.md#allow-unsafe) option.
+* When modifying an existing routine, Skeema will use a `DROP` followed by a re-`ADD`. Although MySQL supports `ALTER PROCEDURE` / `ALTER FUNCTION` for metadata-only changes, Skeema does not use this yet.
+* Because modifying a routine involves a `DROP`, it is still considered a destructive action, as there may be a split-second period where the routine does not exist.
+* If the value of the global sql_mode option changes, Skeema will generate diffs (`DROP` followed by a re-`ADD`) for all routines created under the old sql_mode. This is by design; when a routine is created in MySQL, the global sql_mode *at the routine's creation time* is stored and this affects the execution of the routine.
+* If the value of a schema's default charset or collation changes, Skeema will generate diffs (`DROP` followed by a re-`ADD`) for all routines in the schema. This is by design; when a routine is created in MySQL, its schema's default collation *at the routine's creation time* is stored and this affects the execution of the routine.
+* Skeema does not support management of [native UDFs](https://dev.mysql.com/doc/refman/8.0/en/create-function-udf.html), which are typically written in C or C++ and compiled into shared libraries.
+* MariaDB 10.3's Oracle-style routine PACKAGEs are not supported.
+

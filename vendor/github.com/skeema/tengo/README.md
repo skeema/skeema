@@ -13,7 +13,7 @@ Most of Go La Tengo's current functionality is focused on MySQL schema introspec
 
 ### Schema introspection
 
-Go La Tengo examines several `information_schema` tables in order to build Go struct values representing schemas (databases), tables, columns, indexes, and foreign key constraints. These values can be diff'ed to generate corresponding DDL statements.
+Go La Tengo examines several `information_schema` tables in order to build Go struct values representing schemas (databases), tables, columns, indexes, foreign key constraints, stored procedures, and functions. These values can be diff'ed to generate corresponding DDL statements.
 
 ### Instance modeling
 
@@ -68,6 +68,8 @@ Additional [contributions](https://github.com/skeema/tengo/graphs/contributors) 
 * [@tomkrouper](https://github.com/tomkrouper)
 * [@efixler](https://github.com/efixler)
 * [@chrisjpalmer](https://github.com/chrisjpalmer)
+
+Support for stored procedures and functions generously sponsored by [Psyonix](https://psyonix.com).
 
 ## License
 
