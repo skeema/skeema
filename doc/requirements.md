@@ -115,8 +115,7 @@ Skeema v1.2.0 added support for MySQL routines (stored procedures and functions)
 * Dropping a routine is considered a destructive action, requiring the [--allow-unsafe](options.md#allow-unsafe) option.
 * When modifying an existing routine, Skeema will use a `DROP` followed by a re-`ADD`. Although MySQL supports `ALTER PROCEDURE` / `ALTER FUNCTION` for metadata-only changes, Skeema does not use this yet.
 * Because modifying a routine involves a `DROP`, it is still considered a destructive action, as there may be a split-second period where the routine does not exist.
-* If the value of the global sql_mode option changes, Skeema will generate diffs (`DROP` followed by a re-`ADD`) for all routines created under the old sql_mode. This is by design; when a routine is created in MySQL, the global sql_mode *at the routine's creation time* is stored and this affects the execution of the routine.
-* If the value of a schema's default charset or collation changes, Skeema will generate diffs (`DROP` followed by a re-`ADD`) for all routines in the schema. This is by design; when a routine is created in MySQL, its schema's default collation *at the routine's creation time* is stored and this affects the execution of the routine.
+* By default, `skeema diff` and `skeema push` do not examine the creation-time sql_mode or db_collation associated with a routine. To add these comparisons, use the [compare-metadata option](options.md#compare-metadata).
 * Skeema does not support management of [native UDFs](https://dev.mysql.com/doc/refman/8.0/en/create-function-udf.html), which are typically written in C or C++ and compiled into shared libraries.
 * MariaDB 10.3's Oracle-style routine PACKAGEs are not supported.
 

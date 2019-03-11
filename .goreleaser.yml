@@ -22,10 +22,11 @@ changelog:
   sort: asc
   filters:
     exclude:
-    - '^docs:'
-    - '^test:'
-git:
-  short_hash: true
+    - '(?i)^docs:'
+    - '(?i)^help'
+    - '(?i)^internal'
+    - '(?i)^readme:'
+    - '(?i)^goreleaser:'
 nfpm:
   name_template: '{{ .ProjectName }}_{{ .Arch }}'
   homepage:  http://skeema.net
