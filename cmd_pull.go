@@ -208,23 +208,30 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Sche
 	// Objects that exist in instSchema, but have no corresponding create statement
 	// in fs: write new files, or append if filename already taken
 	for key, instCreate := range instDict {
-		if logicalSchema.Creates[key] == nil {
-			if key.Type == tengo.ObjectTypeTable && ignoreTable != nil && ignoreTable.MatchString(key.Name) {
-				continue
-			}
-			filePath := path.Join(dir.Path, fmt.Sprintf("%s.sql", key.Name))
-			contents := instCreate
-			if key.Type == tengo.ObjectTypeTable && !dir.Config.GetBool("include-auto-inc") {
-				contents, _ = tengo.ParseCreateAutoInc(contents)
-			}
-			contents = fs.AddDelimiter(contents)
-			if bytesWritten, wasNew, err := fs.AppendToFile(filePath, contents); err != nil {
-				return err
-			} else if wasNew {
-				log.Infof("Wrote %s (%d bytes) -- new %s", filePath, bytesWritten, key.Type)
-			} else {
-				log.Infof("Wrote %s (%d bytes) -- appended new %s", filePath, bytesWritten, key.Type)
-			}
+		if logicalSchema.Creates[key] != nil {
+			continue
+		}
+		if key.Type == tengo.ObjectTypeTable && ignoreTable != nil && ignoreTable.MatchString(key.Name) {
+			continue
+		}
+		filePath := path.Join(dir.Path, fmt.Sprintf("%s.sql", key.Name))
+		contents := instCreate
+		if key.Type == tengo.ObjectTypeTable && !dir.Config.GetBool("include-auto-inc") {
+			contents, _ = tengo.ParseCreateAutoInc(contents)
+		}
+		// Safety mechanism: don't write out statements that we cannot re-read. This
+		// will still cause erroneous DROPs in diff/push, but better to fail loudly.
+		if !fs.CanParse(contents) {
+			log.Errorf("%s is unexpectedly not able to be parsed by Skeema -- please file a bug at https://github.com/skeema/skeema/issues/new", key)
+			continue
+		}
+		contents = fs.AddDelimiter(contents)
+		if bytesWritten, wasNew, err := fs.AppendToFile(filePath, contents); err != nil {
+			return err
+		} else if wasNew {
+			log.Infof("Wrote %s (%d bytes) -- new %s", filePath, bytesWritten, key.Type)
+		} else {
+			log.Infof("Wrote %s (%d bytes) -- appended new %s", filePath, bytesWritten, key.Type)
 		}
 	}
 

@@ -66,9 +66,6 @@ func LintHandler(cfg *mybase.Config) error {
 
 func lintWalker(dir *fs.Dir, maxDepth int) (result *linter.Result) {
 	log.Infof("Linting %s", dir)
-	if len(dir.IgnoredStatements) > 0 {
-		log.Warnf("Ignoring %d unsupported or unparseable statements found in this directory's *.sql files", len(dir.IgnoredStatements))
-	}
 
 	// Connect to first defined instance, unless configured to use local Docker
 	var inst *tengo.Instance

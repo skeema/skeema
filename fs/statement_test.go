@@ -88,3 +88,18 @@ func TestStripAnyQuote(t *testing.T) {
 		}
 	}
 }
+
+func TestCanParse(t *testing.T) {
+	cases := map[string]bool{
+		"CREATE TABLE foo (\n\tid int\n) ;\n": true,
+		"USE some_db\n\n":                     true,
+		"INSERT INTO foo VALUES (';')":        false,
+		"bork bork bork":                      false,
+		"# hello":                             false,
+	}
+	for input, expected := range cases {
+		if actual := CanParse(input); actual != expected {
+			t.Errorf("CanParse on %s: Expected %t, found %t", input, expected, actual)
+		}
+	}
+}

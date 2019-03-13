@@ -39,6 +39,9 @@ func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<-
 			} else {
 				log.Infof("Pushing changes from %s/*.sql to %s %s", t.Dir, t.Instance, schemaName)
 			}
+			if len(t.Dir.IgnoredStatements) > 0 {
+				log.Warnf("Ignoring %d unsupported or unparseable statements found in this directory's *.sql files; run `skeema lint` for more info", len(t.Dir.IgnoredStatements))
+			}
 
 			diff := tengo.NewSchemaDiff(t.SchemaFromInstance, t.SchemaFromDir)
 			var targetStmtCount int

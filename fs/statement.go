@@ -106,6 +106,16 @@ func (stmt *Statement) Remove() {
 	panic(fmt.Errorf("Statement previously at %s not actually found in file", stmt.Location()))
 }
 
+// CanParse returns true if the supplied string can be parsed as a type of
+// SQL statement understood by this package. The supplied string should NOT
+// have a delimiter. Note that this method returns false for strings that are
+// entirely whitespace and/or comments.
+func CanParse(input string) bool {
+	sqlStmt := &sqlStatement{}
+	err := nameParser.ParseString(input, sqlStmt)
+	return err == nil
+}
+
 type statementTokenizer struct {
 	filePath  string
 	delimiter string // statement delimiter, typically ";" or sometimes "//" for routines

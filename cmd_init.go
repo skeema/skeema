@@ -220,6 +220,12 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *fs.Dir, makeSubdir bool) erro
 		if key.Type == tengo.ObjectTypeTable && !parentDir.Config.GetBool("include-auto-inc") {
 			createStmt, _ = tengo.ParseCreateAutoInc(createStmt)
 		}
+		// Safety mechanism: don't write out statements that we cannot re-read. This
+		// will still cause erroneous DROPs in diff/push, but better to fail loudly.
+		if !fs.CanParse(createStmt) {
+			log.Errorf("%s is unexpectedly not able to be parsed by Skeema -- please file a bug at https://github.com/skeema/skeema/issues/new", key)
+			continue
+		}
 		createStmt = fs.AddDelimiter(createStmt)
 		filePath := path.Join(subPath, fmt.Sprintf("%s.sql", key.Name))
 		var bytesWritten int

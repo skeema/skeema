@@ -94,6 +94,19 @@ func LintDir(dir *fs.Dir, wsOpts workspace.Options) *Result {
 		_, res := ExecLogicalSchema(logicalSchema, wsOpts, opts)
 		result.Merge(res)
 	}
+
+	// Add warning annotations for unparseable statements (unless we hit an
+	// exception, in which case skip it to avoid extra noise!)
+	if len(result.Exceptions) == 0 {
+		for _, stmt := range dir.IgnoredStatements {
+			result.Warnings = append(result.Warnings, &Annotation{
+				Statement: stmt,
+				Summary:   "Unable to parse statement",
+				Message:   "Ignoring unsupported or unparseable SQL statement",
+			})
+		}
+	}
+
 	return result
 }
 

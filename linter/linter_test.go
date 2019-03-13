@@ -63,9 +63,10 @@ func TestLintDir(t *testing.T) {
 		}
 	}
 
-	// bad-charset and bad-engine are warnings with this configuration
-	if len(result.Warnings) != 6 {
-		t.Errorf("Expected 6 lint warnings, instead found %d", len(result.Warnings))
+	// bad-charset and bad-engine are warnings with this configuration, along with
+	// unparseable which is always a warning
+	if len(result.Warnings) != 7 {
+		t.Errorf("Expected 7 lint warnings, instead found %d", len(result.Warnings))
 	} else {
 		for _, a := range result.Warnings {
 			switch a.Statement.ObjectName {
@@ -90,6 +91,10 @@ func TestLintDir(t *testing.T) {
 				}
 			case "multibad":
 				if (a.Problem != "bad-engine" && a.Problem != "bad-charset") || a.LineOffset != 3 {
+					t.Errorf("Unexpected annotation values: %+v", a)
+				}
+			case "": // corresponds to statement that cannot be parsed
+				if a.Statement.Type != fs.StatementTypeUnknown {
 					t.Errorf("Unexpected annotation values: %+v", a)
 				}
 			default:

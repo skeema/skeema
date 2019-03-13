@@ -255,6 +255,7 @@ func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
 
 	// Invalid options should error with CodeBadConfig
 	s.handleCommand(t, CodeBadConfig, ".", "skeema lint --workspace=doesnt-exist")
+	s.handleCommand(t, CodeBadConfig, "mydb/product", "skeema lint --password=wrong")
 
 	// Alter a few files in a way that is still valid SQL, but doesn't match
 	// the database's native format. Lint should rewrite these files and then
@@ -302,10 +303,14 @@ func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
 	s.verifyFiles(t, cfg, "../golden/init")
 	s.handleCommand(t, CodeSuccess, ".", "skeema lint")
 
-	// Files with valid SQL, but not CREATE TABLE statements, should not trigger
-	// CodeFatalError nor CodeDifferencesFound
+	// Files with SQL statements unsupported by this package should yield a
+	// warning, resulting in CodeDifferencesFound
 	fs.WriteTestFile(t, productDir.SQLFiles[0].Path(), "INSERT INTO foo (col1, col2) VALUES (123, 456)")
-	s.handleCommand(t, CodeSuccess, ".", "skeema lint")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint")
+
+	// Directories that have invalid options should yield CodeFatalError
+	fs.WriteTestFile(t, "mydb/uhoh/.skeema", "this is not a valid .skeema file")
+	s.handleCommand(t, CodeFatalError, ".", "skeema lint")
 }
 
 func (s SkeemaIntegrationSuite) TestDiffHandler(t *testing.T) {
