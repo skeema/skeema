@@ -405,7 +405,7 @@ var (
 		"|(?P<Word>[0-9a-zA-Z$_]+|`(?:[^`]|``)+`)" +
 		`|(?P<String>('(\\'|''|[^'])*')|("(\\"|""|[^"])*"))` +
 		`|(?P<Number>[-+]?\d*\.?\d+([eE][-+]?\d+)?)` +
-		`|(?P<Operator><>|!=|<=|>=|:=|[-+*/%,.()=<>@;~!^&|])`,
+		`|(?P<Operator><>|!=|<=|>=|:=|[-+*/%,.()=<>@;~!^&:|])`,
 	))
 	nameParser = participle.MustBuild(&sqlStatement{},
 		participle.Lexer(sqlLexer),
