@@ -1080,7 +1080,7 @@ func (instance *Instance) querySchemaRoutines(schema string) ([]*Routine, error)
 			if routine, ok := dict[key]; ok {
 				routine.ParamString = meta.ParamList
 				routine.ReturnDataType = meta.Returns
-				routine.Body = meta.Body
+				routine.Body = strings.Replace(meta.Body, "\r\n", "\n", -1)
 				routine.CreateStatement = routine.Definition(instance.Flavor())
 			}
 		}
@@ -1097,6 +1097,7 @@ func (instance *Instance) querySchemaRoutines(schema string) ([]*Routine, error)
 			if r.CreateStatement, err = showCreateRoutine(db, r.Name, r.Type); err != nil {
 				return fmt.Errorf("Error executing SHOW CREATE %s for %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), err)
 			}
+			r.CreateStatement = strings.Replace(r.CreateStatement, "\r\n", "\n", -1)
 			var returnsClause string
 			if r.Type == ObjectTypeFunc {
 				returnsClause = " RETURNS ([^\n]+)"

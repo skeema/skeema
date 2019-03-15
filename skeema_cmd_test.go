@@ -1003,6 +1003,14 @@ END`
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema lint")
 	s.verifyFiles(t, cfg, "../golden/routines")
 
+	// Change routine1.sql to use Windows-style CRLF line-end in one spot. No
+	// diff should be present. Pull should restore UNIX-style LFs.
+	routine1 := fs.ReadTestFile(t, "mydb/product/routine1.sql")
+	fs.WriteTestFile(t, "mydb/product/routine1.sql", strings.Replace(routine1, "BEGIN\n", "BEGIN\r\n", 1))
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	s.verifyFiles(t, cfg, "../golden/routines")
+
 	// Modify the db representation of the routine; diff/push should work, but only
 	// with --allow-unsafe (and not with --safe-below-size)
 	s.dbExec(t, "product", "DROP FUNCTION routine1")
