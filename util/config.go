@@ -70,6 +70,7 @@ func AddGlobalConfigFiles(cfg *mybase.Config) {
 		}
 		if strings.HasSuffix(path, ".my.cnf") {
 			f.IgnoreUnknownOptions = true
+			f.IgnoreOptions("host")
 		}
 		if err := f.Parse(cfg); err != nil {
 			log.Warnf("Ignoring global option file %s due to parse error: %s", f.Path(), err)

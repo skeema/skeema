@@ -27,7 +27,7 @@ func TestAddGlobalConfigFiles(t *testing.T) {
 	os.MkdirAll("fake-etc", 0777)
 	os.MkdirAll("fake-home", 0777)
 	ioutil.WriteFile("fake-etc/skeema", []byte("user=one\npassword=foo\n"), 0777)
-	ioutil.WriteFile("fake-home/.my.cnf", []byte("doesnt-exist\nuser=two\n"), 0777)
+	ioutil.WriteFile("fake-home/.my.cnf", []byte("doesnt-exist\nuser=two\nhost=uhoh\n"), 0777)
 	defer func() {
 		os.RemoveAll("fake-etc")
 		os.RemoveAll("fake-home")
@@ -35,7 +35,7 @@ func TestAddGlobalConfigFiles(t *testing.T) {
 
 	// Expectation: both global option files get applied; the one in home
 	// overrides the one in etc; undefined options don't cause problems for
-	// a file ending in .my.cnf
+	// a file ending in .my.cnf; host is ignored in .my.cnf
 	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff")
 	AddGlobalConfigFiles(cfg)
 	if actualUser := cfg.Get("user"); actualUser != "two" {
@@ -43,6 +43,9 @@ func TestAddGlobalConfigFiles(t *testing.T) {
 	}
 	if actualPassword := cfg.Get("password"); actualPassword != "foo" {
 		t.Errorf("Expected password to come from fake-etc/skeema; instead found %s", actualPassword)
+	}
+	if cfg.Supplied("host") {
+		t.Error("Expected host to be ignored in .my.cnf, but it was parsed anyway")
 	}
 
 	// Introduce an invalid option into fake-etc/skeema. Expectation: the file

@@ -36,6 +36,7 @@ type File struct {
 	parsed               bool
 	contents             string
 	selected             []string
+	ignoredOptionNames   map[string]bool
 }
 
 // NewFile returns a value representing an option file. The arg(s) will be
@@ -54,10 +55,11 @@ func NewFile(paths ...string) *File {
 	}
 
 	return &File{
-		Dir:          path.Dir(pathAndName),
-		Name:         path.Base(pathAndName),
-		sections:     []*Section{defaultSection},
-		sectionIndex: map[string]*Section{"": defaultSection},
+		Dir:                path.Dir(pathAndName),
+		Name:               path.Base(pathAndName),
+		sections:           []*Section{defaultSection},
+		sectionIndex:       map[string]*Section{"": defaultSection},
+		ignoredOptionNames: make(map[string]bool),
 	}
 }
 
@@ -170,6 +172,9 @@ func (f *File) Parse(cfg *Config) error {
 		case lineTypeSectionHeader:
 			section = f.getOrCreateSection(parsedLine.sectionName)
 		case lineTypeKeyOnly, lineTypeKeyValue:
+			if f.ignoredOptionNames[parsedLine.key] {
+				continue
+			}
 			opt := cfg.FindOption(parsedLine.key)
 			if opt == nil {
 				if parsedLine.isLoose || f.IgnoreUnknownOptions || cfg.LooseFileOptions {
@@ -308,6 +313,21 @@ func (f *File) SameContents(other *File) bool {
 		panic(errors.New("File.SameContents called on a file that has not yet been parsed"))
 	}
 	return reflect.DeepEqual(f.sectionIndex, other.sectionIndex)
+}
+
+// IgnoreOptions causes the supplied option names to be ignored by a subsequent
+// call to Parse. The supplied option names do not need to exist as valid
+// options.
+// Note that if the file is later re-written, ignored options will be stripped
+// from the rewritten version.
+// Panics if the file has already been parsed, as this would indicate a bug.
+func (f *File) IgnoreOptions(names ...string) {
+	if f.parsed {
+		panic(errors.New("File.IgnoreOptions called on a file that has already been parsed"))
+	}
+	for _, name := range names {
+		f.ignoredOptionNames[name] = true
+	}
 }
 
 func (f *File) getOrCreateSection(name string) *Section {
