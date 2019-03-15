@@ -85,9 +85,9 @@ func (stmt *Statement) Body() string {
 // SplitTextBody returns Text with its trailing delimiter and whitespace (if
 // any) separated out into a separate string.
 func (stmt *Statement) SplitTextBody() (body string, suffix string) {
-	body = strings.TrimRight(stmt.Text, "\n\t ")
+	body = strings.TrimRight(stmt.Text, "\n\r\t ")
 	body = strings.TrimSuffix(body, stmt.delimiter)
-	body = strings.TrimRight(body, "\n\t ")
+	body = strings.TrimRight(body, "\n\r\t ")
 	return body, stmt.Text[len(body):]
 }
 
