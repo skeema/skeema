@@ -453,7 +453,9 @@ func (dir *Dir) parseContents() error {
 	for _, sf := range dir.SQLFiles {
 		tokenizedFile, err := sf.Tokenize()
 		if err != nil {
-			return err
+			log.Warnf(err.Error())
+			dir.IgnoredStatements = append(dir.IgnoredStatements, tokenizedFile.Statements...)
+			continue
 		}
 		for _, stmt := range tokenizedFile.Statements {
 			if _, ok := logicalSchemasByName[stmt.Schema()]; !ok {

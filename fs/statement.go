@@ -192,7 +192,7 @@ func (st *statementTokenizer) processLine(line string, eof bool) {
 			}
 			continue
 		} else if ls.inQuote > 0 {
-			if c == '\\' && ls.peekRune() == ls.inQuote {
+			if c == '\\' {
 				ls.nextRune()
 			} else if c == ls.inQuote {
 				if ls.peekRune() == ls.inQuote {
@@ -403,7 +403,7 @@ var (
 		`|(/\*(.|\n)*?\*/)` +
 		`|(\s+)` +
 		"|(?P<Word>[0-9a-zA-Z$_]+|`(?:[^`]|``)+`)" +
-		`|(?P<String>('(\\'|''|[^'])*')|("(\\"|""|[^"])*"))` +
+		`|(?P<String>('(\\\\|\\'|''|[^'])*')|("(\\\\|\\"|""|[^"])*"))` +
 		`|(?P<Number>[-+]?\d*\.?\d+([eE][-+]?\d+)?)` +
 		`|(?P<Operator><>|!=|<=|>=|:=|[-+*/%,.()=<>@;~!^&:|])`,
 	))

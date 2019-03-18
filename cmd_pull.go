@@ -124,7 +124,10 @@ func pullWalker(dir *fs.Dir, maxDepth int) (handledSchemaNames []string, skipCou
 		}
 		if instance != nil && !dir.Config.Changed("schema") {
 			updateFlavor(dir, instance)
-			return nil, skipCount, findNewSchemas(dir, instance, allSubSchemaNames)
+			if dir.Config.GetBool("new-schemas") && badCount == 0 {
+				err = findNewSchemas(dir, instance, allSubSchemaNames)
+			}
+			return nil, skipCount, err
 		}
 	}
 	return handledSchemaNames, skipCount, nil
@@ -182,6 +185,10 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Sche
 			_, fsAutoInc := tengo.ParseCreateAutoInc(stmt.Text)
 			if key.Type == tengo.ObjectTypeTable && !dir.Config.GetBool("include-auto-inc") && fsAutoInc <= 1 {
 				instCreate, _ = tengo.ParseCreateAutoInc(instCreate)
+			}
+			if !fs.CanParse(instCreate) {
+				log.Errorf("%s is unexpectedly not able to be parsed by Skeema -- please file a bug at https://github.com/skeema/skeema/issues/new", key)
+				continue
 			}
 			fsCreate, fsDelimiter := stmt.SplitTextBody()
 			if instCreate != fsCreate {
@@ -319,9 +326,6 @@ func updateFlavor(dir *fs.Dir, instance *tengo.Instance) {
 }
 
 func findNewSchemas(dir *fs.Dir, instance *tengo.Instance, seenNames []string) error {
-	if !dir.Config.GetBool("new-schemas") {
-		return nil
-	}
 	subdirHasSchema := make(map[string]bool)
 	for _, name := range seenNames {
 		subdirHasSchema[name] = true

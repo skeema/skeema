@@ -261,3 +261,25 @@ func TestAppendToFile(t *testing.T) {
 	RemoveTestFile(t, "../testdata/.scratch/fs/append-test2")
 	RemoveTestFile(t, "../testdata/.scratch/fs")
 }
+
+func TestAddDelimiter(t *testing.T) {
+	proc := `CREATE PROCEDURE whatever(name varchar(10))
+BEGIN
+	DECLARE v1 INT;
+	SET v1=loops;
+	WHILE v1 > 0 DO
+		INSERT INTO users (name) values ('\xF0\x9D\x8C\x86');
+		SET v1 = v1 - (2 / 2); /* testing // testing */
+	END WHILE;
+END;`
+	result := AddDelimiter(proc)
+	if result == proc || !strings.Contains(result, "DELIMITER") {
+		t.Errorf("Unexpected result from AddDelimiter: %s", result)
+	}
+
+	proc = `CREATE FUNCTION foo() RETURNS varchar(30) RETURN "hello"`
+	result = AddDelimiter(proc)
+	if result == proc || strings.Contains(result, "DELIMITER") || !strings.HasSuffix(result, ";\n") {
+		t.Errorf("Unexpected result from AddDelimiter: %s", result)
+	}
+}

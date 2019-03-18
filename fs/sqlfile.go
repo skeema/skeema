@@ -68,9 +68,6 @@ func (sf SQLFile) Delete() error {
 func (sf SQLFile) Tokenize() (*TokenizedSQLFile, error) {
 	tokenizer := newStatementTokenizer(sf.Path(), ";")
 	statements, err := tokenizer.statements()
-	if err != nil {
-		return nil, err
-	}
 
 	// As a special case, if a file contains a single routine but no DELIMITER
 	// command, re-parse it as a single statement. This avoids user error from
@@ -102,11 +99,12 @@ func (sf SQLFile) Tokenize() (*TokenizedSQLFile, error) {
 	}
 	if seenRoutine && unknownAfterRoutine && tryReparse {
 		tokenizer := newStatementTokenizer(sf.Path(), "\000")
-		if statements2, err := tokenizer.statements(); err == nil {
+		if statements2, err2 := tokenizer.statements(); err2 == nil {
 			statements = statements2
+			err = nil
 		}
 	}
-	return NewTokenizedSQLFile(sf, statements), nil
+	return NewTokenizedSQLFile(sf, statements), err
 }
 
 // WriteStatements writes (or re-writes) the file using the contents of the

@@ -244,6 +244,14 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	if _, err := os.Stat("mydb/analytics/widget_counts.sql"); err != nil {
 		t.Errorf("Expected os.Stat to return nil error for mydb/analytics/widget_counts.sql; instead err=%v", err)
 	}
+
+	// If a dir has a bad option file, new schema detection should also be skipped,
+	// since we don't know what schemas the bad subdir maps to
+	fs.WriteTestFile(t, "mydb/analytics/.skeema", "this won't parse anymore")
+	s.handleCommand(t, CodePartialError, ".", "skeema pull")
+	if _, err := os.Stat("mydb/archives"); !os.IsNotExist(err) {
+		t.Errorf("Expected os.Stat to return IsNotExist error for mydb/archives; instead err=%v", err)
+	}
 }
 
 func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {

@@ -54,8 +54,11 @@ func TestParseDir(t *testing.T) {
 	cmd := mybase.NewCommand("fstest", "", "", nil)
 	cmd.AddArg("environment", "production", false)
 	cfg := mybase.ParseFakeCLI(t, cmd, "fstest")
+	if _, err := ParseDir("../testdata/golden/init/mydb", cfg); err == nil {
+		t.Error("Expected error from ParseDir(), but instead err is nil")
+	}
 	if _, err := ParseDir("../testdata/golden/init/mydb/product", cfg); err == nil {
-		t.Error("Expected error from ParseWorkingDir(), but instead err is nil")
+		t.Error("Expected error from ParseDir(), but instead err is nil")
 	}
 }
 
