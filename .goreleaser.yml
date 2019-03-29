@@ -29,7 +29,7 @@ changelog:
     - '(?i)^goreleaser:'
 nfpm:
   name_template: '{{ .ProjectName }}_{{ .Arch }}'
-  homepage:  http://skeema.net
+  homepage:  https://skeema.io
   description: Schema management CLI for MySQL
   maintainer: Evan Elias <evan@skeema.net>
   license: Apache 2.0
