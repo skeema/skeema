@@ -152,10 +152,10 @@
   version = "v1.0.5"
 
 [[projects]]
-  branch = "master"
   name = "github.com/skeema/mybase"
   packages = ["."]
-  revision = "45d02f9d7025368fcf260ad6a95df2a9bbe9ddd0"
+  revision = "8116f0ad0e3bdd0889061d636547492d0744e016"
+  version = "v1.0.5"
 
 [[projects]]
   branch = "master"

@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -92,9 +93,16 @@ func (f *File) Write(overwrite bool) error {
 		if section.Name != "" {
 			lines = append(lines, fmt.Sprintf("[%s]", section.Name))
 		}
-		for k, v := range section.Values {
-			lines = append(lines, fmt.Sprintf("%s=%s", k, v))
+
+		ks := make([]string, 0, len(section.Values))
+		for k := range section.Values {
+			ks = append(ks, k)
 		}
+		sort.Strings(ks)
+		for _, k := range ks {
+			lines = append(lines, fmt.Sprintf("%s=%s", k, section.Values[k]))
+		}
+
 		// Append a blank line after the section, unless it was the last one, or
 		// it was the default section and had no values
 		if n < len(f.sections)-1 && (section.Name != "" || len(section.Values) > 0) {

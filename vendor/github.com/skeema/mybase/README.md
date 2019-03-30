@@ -49,9 +49,13 @@ The following features are **not** yet implemented, but are planned for future r
 
 Unit test coverage of mybase is still incomplete; code coverage is currently around 40%. This will be improved in future releases.
 
-## Authors
+## Credits
 
-[@evanelias](https://github.com/evanelias)
+Created and maintained by [@evanelias](https://github.com/evanelias).
+
+Additional [contributions](https://github.com/skeema/mybase/graphs/contributors) by:
+
+* [@zls0424](https://github.com/zls0424)
 
 ## License
 
