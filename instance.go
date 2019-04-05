@@ -213,6 +213,17 @@ func (instance *Instance) Flavor() Flavor {
 	return instance.flavor
 }
 
+// SetFlavor attempts to set this instance's flavor value. If the instance's
+// flavor has already been hydrated successfully, the value is not changed and
+// an error is returned.
+func (instance *Instance) SetFlavor(flavor Flavor) error {
+	if instance.flavor.Vendor != VendorUnknown && instance.flavor.Major > 0 {
+		return fmt.Errorf("SetFlavor: instance %s already detected as flavor %s", instance, instance.flavor)
+	}
+	instance.flavor = flavor
+	return nil
+}
+
 // Version returns three ints representing the database's major, minor, and
 // patch version, respectively. If this is unable to be determined, all 0's
 // will be returned.
@@ -234,6 +245,12 @@ func (instance *Instance) hydrateFlavorAndVersion() {
 	}
 	instance.version = ParseVersion(versionString)
 	instance.flavor = NewFlavor(vendorString, instance.version[0], instance.version[1])
+
+	// If the vendor could not be parsed from @@global.version_comment, try again
+	// using version string
+	if instance.flavor.Vendor == VendorUnknown {
+		instance.flavor = NewFlavor(versionString, instance.version[0], instance.version[1])
+	}
 }
 
 // SchemaNames returns a slice of all schema name strings on the instance

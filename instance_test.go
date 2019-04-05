@@ -223,6 +223,7 @@ func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
 		"mariadb:10.3": FlavorMariaDB103,
 	}
 
+	// Determine expected Flavor value of the Dockerized instance being tested
 	var expected Flavor
 	if result, ok := imageToFlavor[s.d.Image]; ok {
 		expected = result
@@ -247,6 +248,17 @@ func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
 	}
 	if actualMajor, actualMinor, _ := s.d.Version(); actualMajor != expected.Major || actualMinor != expected.Minor {
 		t.Errorf("Expected image=%s to yield major=%d minor=%d, instead found major=%d minor=%d", s.d.Image, expected.Major, expected.Minor, actualMajor, actualMinor)
+	}
+
+	// Confirm that SetFlavor does not work once flavor hydrated
+	if err := s.d.SetFlavor(FlavorMariaDB102); err == nil {
+		t.Error("Expected SetFlavor to return an error, but it was nil")
+	}
+
+	// Manually nuke the hydrated flavor, and confirm SetFlavor now works
+	s.d.flavor = FlavorUnknown
+	if err := s.d.SetFlavor(expected); err != nil || s.d.Flavor() != expected {
+		t.Errorf("Unexpected outcome from SetFlavor: error=%v, flavor=%s", err, s.d.Flavor())
 	}
 }
 
