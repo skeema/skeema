@@ -217,11 +217,19 @@ func (instance *Instance) Flavor() Flavor {
 // flavor has already been hydrated successfully, the value is not changed and
 // an error is returned.
 func (instance *Instance) SetFlavor(flavor Flavor) error {
-	if instance.flavor.Vendor != VendorUnknown && instance.flavor.Major > 0 {
+	if instance.flavor.Known() {
 		return fmt.Errorf("SetFlavor: instance %s already detected as flavor %s", instance, instance.flavor)
 	}
-	instance.flavor = flavor
+	instance.ForceFlavor(flavor)
 	return nil
+}
+
+// ForceFlavor overrides this instance's flavor value. Only tests should call
+// this method directly; all other callers should use SetFlavor instead and
+// check the error return value.
+func (instance *Instance) ForceFlavor(flavor Flavor) {
+	instance.flavor = flavor
+	instance.version = [3]int{flavor.Major, flavor.Minor, 0}
 }
 
 // Version returns three ints representing the database's major, minor, and

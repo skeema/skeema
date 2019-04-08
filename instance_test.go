@@ -255,8 +255,8 @@ func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
 		t.Error("Expected SetFlavor to return an error, but it was nil")
 	}
 
-	// Manually nuke the hydrated flavor, and confirm SetFlavor now works
-	s.d.flavor = FlavorUnknown
+	// Nuke the hydrated flavor, and confirm SetFlavor now works
+	s.d.ForceFlavor(FlavorUnknown)
 	if err := s.d.SetFlavor(expected); err != nil || s.d.Flavor() != expected {
 		t.Errorf("Unexpected outcome from SetFlavor: error=%v, flavor=%s", err, s.d.Flavor())
 	}
@@ -622,9 +622,9 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 			t.Fatalf("Unexpected error from querySchemaRoutines: %s", err)
 		}
 		oldFlavor := s.d.Flavor()
-		s.d.flavor = FlavorMySQL80 // hacky, but ok for testing...
+		s.d.ForceFlavor(FlavorMySQL80)
 		slowResults, err := s.d.querySchemaRoutines("testing")
-		s.d.flavor = oldFlavor
+		s.d.ForceFlavor(oldFlavor)
 		if err != nil {
 			t.Fatalf("Unexpected error from querySchemaRoutines: %s", err)
 		}

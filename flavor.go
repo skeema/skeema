@@ -168,6 +168,12 @@ func (fl Flavor) Supported() bool {
 	}
 }
 
+// Known returns true if both the vendor and major version of this flavor were
+// parsed properly
+func (fl Flavor) Known() bool {
+	return fl.Vendor != VendorUnknown && fl.Major > 0
+}
+
 // AllowBlobDefaults returns true if the flavor permits blob and text types
 // to have default values.
 func (fl Flavor) AllowBlobDefaults() bool {

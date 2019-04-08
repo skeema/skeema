@@ -51,24 +51,26 @@ func TestNewFlavor(t *testing.T) {
 		expected        Flavor
 		expectedString  string
 		expectSupported bool
+		expectKnown     bool
 	}
 	cases := []testcase{
-		{"mysql", []int{5, 6, 40}, FlavorMySQL56, "mysql:5.6", true},
-		{"mysql:5.7", []int{}, FlavorMySQL57, "mysql:5.7", true},
-		{"mysql:5.5.49", []int{}, FlavorMySQL55, "mysql:5.5", true},
-		{"mysql", []int{8, 0, 11}, FlavorMySQL80, "mysql:8.0", true},
-		{"mysql:8", []int{}, FlavorMySQL80, "mysql:8.0", true},
-		{"mysql", []int{8, 1, 2}, Flavor{VendorMySQL, 8, 1}, "mysql:8.1", false},
-		{"percona", []int{5, 6}, FlavorPercona56, "percona:5.6", true},
-		{"percona:5.7", []int{}, FlavorPercona57, "percona:5.7", true},
-		{"percona", []int{}, Flavor{VendorPercona, 0, 0}, "percona:0.0", false},
-		{"percona", []int{8, 0, 12}, Flavor{VendorPercona, 8, 0}, "percona:8.0", true},
-		{"mariadb", []int{10, 1, 10}, FlavorMariaDB101, "mariadb:10.1", true},
-		{"mariadb:10.2", []int{}, FlavorMariaDB102, "mariadb:10.2", true},
-		{"mariadb", []int{10, 3}, FlavorMariaDB103, "mariadb:10.3", true},
-		{"mariadb", []int{10}, Flavor{VendorMariaDB, 10, 0}, "mariadb:10.0", false},
-		{"webscalesql", []int{}, FlavorUnknown, "unknown:0.0", false},
-		{"webscalesql", []int{5, 6}, Flavor{VendorUnknown, 5, 6}, "unknown:5.6", false},
+		{"mysql", []int{5, 6, 40}, FlavorMySQL56, "mysql:5.6", true, true},
+		{"mysql:5.7", []int{}, FlavorMySQL57, "mysql:5.7", true, true},
+		{"mysql:5.5.49", []int{}, FlavorMySQL55, "mysql:5.5", true, true},
+		{"mysql", []int{8, 0, 11}, FlavorMySQL80, "mysql:8.0", true, true},
+		{"mysql:8", []int{}, FlavorMySQL80, "mysql:8.0", true, true},
+		{"mysql", []int{8, 1, 2}, Flavor{VendorMySQL, 8, 1}, "mysql:8.1", false, true},
+		{"percona", []int{5, 6}, FlavorPercona56, "percona:5.6", true, true},
+		{"percona:5.7", []int{}, FlavorPercona57, "percona:5.7", true, true},
+		{"percona", []int{}, Flavor{VendorPercona, 0, 0}, "percona:0.0", false, false},
+		{"percona", []int{8, 0, 12}, Flavor{VendorPercona, 8, 0}, "percona:8.0", true, true},
+		{"mariadb", []int{10, 1, 10}, FlavorMariaDB101, "mariadb:10.1", true, true},
+		{"mariadb:10.2", []int{}, FlavorMariaDB102, "mariadb:10.2", true, true},
+		{"mariadb", []int{10, 3}, FlavorMariaDB103, "mariadb:10.3", true, true},
+		{"10.3.8-MariaDB-log", []int{10, 3}, FlavorMariaDB103, "mariadb:10.3", true, true},
+		{"mariadb", []int{10}, Flavor{VendorMariaDB, 10, 0}, "mariadb:10.0", false, true},
+		{"webscalesql", []int{}, FlavorUnknown, "unknown:0.0", false, false},
+		{"webscalesql", []int{5, 6}, Flavor{VendorUnknown, 5, 6}, "unknown:5.6", false, false},
 	}
 	for _, tc := range cases {
 		fl := NewFlavor(tc.base, tc.versionParts...)
@@ -78,6 +80,8 @@ func TestNewFlavor(t *testing.T) {
 			t.Errorf("Unexpected return from Flavor.String(): Expected %s, found %s", tc.expectedString, fl.String())
 		} else if fl.Supported() != tc.expectSupported {
 			t.Errorf("Unexpected return from Flavor.Supported(): Expected %t, found %t", tc.expectSupported, fl.Supported())
+		} else if fl.Known() != tc.expectKnown {
+			t.Errorf("Unexpected return from Flavor.Known(): Expected %t, found %t", tc.expectKnown, fl.Known())
 		}
 	}
 }
