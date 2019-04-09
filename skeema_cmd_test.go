@@ -991,6 +991,75 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 	s.assertTableExists(t, "product3", "foo2", "")
 }
 
+func (s SkeemaIntegrationSuite) TestFlavorConfig(t *testing.T) {
+	// Set up dir mydb to have flavor set, and then remove the flavor from
+	// the cached Instance, so that we can test the ability of the flavor option
+	// to be a fallback.
+	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+	dir, err := fs.ParseDir("mydb", cfg)
+	if err != nil {
+		t.Fatalf("Unexpected error from ParseDir: %s", err)
+	}
+	inst, err := dir.FirstInstance()
+	if inst == nil || err != nil {
+		t.Fatalf("No instances returned for %s: %s", dir, err)
+	}
+
+	realFlavor := inst.Flavor()
+	badFlavor := tengo.Flavor{Vendor: tengo.VendorUnknown, Major: 10, Minor: 3}
+
+	// diff should return no differences
+	inst.ForceFlavor(badFlavor)
+	s.handleCommand(t, CodeSuccess, "mydb", "skeema diff --debug")
+
+	// pull should keep the flavor override in place
+	// (note that we need to keep re-forcing the bad flavor each time, since some
+	// commands will forcibly override it using the dir config one!)
+	inst.ForceFlavor(badFlavor)
+	cfg = s.handleCommand(t, CodeSuccess, "mydb", "skeema pull --debug")
+	s.verifyFiles(t, cfg, "../golden/init")
+
+	// Doing init again to new dir mydbnf, confirm no flavor in mydbnf/.skeema
+	inst.ForceFlavor(badFlavor)
+	var extraFlag string
+	if realFlavor.HasDataDictionary() {
+		// Very counter-intuitive, but we need to ensure init is reusing the
+		// cached Instance that has param information_schema_stats_expiry=0 in the
+		// DSN, since that's what "inst" points to! Supplying the flavor on the CLI
+		// won't otherwise affect anything in init except for this one piece of logic
+		// in fs.Dir.InstanceDefaultParams().
+		// Note that supplying flavor on the CLI is undocumented. Behavior changes
+		// may break this test in the future; find a less hacky solution here if so!
+		extraFlag = " --flavor mysql:8.0"
+	}
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydbnf -h %s -P %d%s", s.d.Instance.Host, s.d.Instance.Port, extraFlag)
+	contents := fs.ReadTestFile(t, "mydbnf/.skeema")
+	if strings.Contains(contents, "flavor") {
+		t.Error("Expected init to skip flavor, but it was found")
+	}
+	fs.RemoveTestDirectory(t, "mydbnf")
+
+	// Restore the instance's correct flavor, and set a different flavor back in
+	// mydb/.skeema. Confirm diff behavior unaffected, meaning the instance flavor
+	// takes precedence over the dir one if both are known.
+	inst.ForceFlavor(realFlavor)
+	newFlavor := tengo.FlavorMariaDB103
+	if realFlavor.Vendor == tengo.VendorMariaDB {
+		newFlavor = tengo.FlavorMySQL57
+	}
+	contents = fs.ReadTestFile(t, "mydb/.skeema")
+	if !strings.Contains(contents, realFlavor.String()) {
+		t.Fatal("Could not find flavor line in mydb/.skeema")
+	}
+	contents = strings.Replace(contents, realFlavor.String(), newFlavor.String(), 1)
+	fs.WriteTestFile(t, "mydb/.skeema", contents)
+	s.handleCommand(t, CodeSuccess, "mydb", "skeema diff --debug")
+
+	// pull should fix flavor line
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --debug")
+	s.verifyFiles(t, cfg, "../golden/init")
+}
+
 func (s SkeemaIntegrationSuite) TestRoutines(t *testing.T) {
 	origCreate := `CREATE definer=root@localhost FUNCTION routine1(a int, b int)
 RETURNS int

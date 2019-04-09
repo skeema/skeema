@@ -108,7 +108,9 @@ func InitHandler(cfg *mybase.Config) error {
 	} else {
 		hostOptionFile.SetOptionValue(environment, "port", strconv.Itoa(inst.Port))
 	}
-	if flavor := inst.Flavor(); flavor != tengo.FlavorUnknown {
+	if flavor := inst.Flavor(); !flavor.Known() {
+		log.Warnf("Unable to automatically determine database vendor/version. To set manually, use the \"flavor\" option in %s", hostOptionFile)
+	} else {
 		hostOptionFile.SetOptionValue(environment, "flavor", flavor.String())
 	}
 	for _, persistOpt := range []string{"user", "ignore-schema", "ignore-table", "connect-options"} {

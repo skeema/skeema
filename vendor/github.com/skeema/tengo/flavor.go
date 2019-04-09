@@ -144,6 +144,16 @@ func (fl Flavor) VendorMinVersion(vendor Vendor, major, minor int) bool {
 	return fl.Major > major || (fl.Major == major && fl.Minor >= minor)
 }
 
+// MySQLishMinVersion returns true if the vendor isn't VendorMariaDB, and this
+// flavor has a version equal to or newer than the specified version. Note that
+// this intentionally DOES consider VendorUnknown to be MySQLish.
+func (fl Flavor) MySQLishMinVersion(major, minor int) bool {
+	if fl.Vendor == VendorMariaDB {
+		return false
+	}
+	return fl.Major > major || (fl.Major == major && fl.Minor >= minor)
+}
+
 // Supported returns true if package tengo officially supports this flavor
 func (fl Flavor) Supported() bool {
 	switch fl {
@@ -156,6 +166,12 @@ func (fl Flavor) Supported() bool {
 	default:
 		return false
 	}
+}
+
+// Known returns true if both the vendor and major version of this flavor were
+// parsed properly
+func (fl Flavor) Known() bool {
+	return fl.Vendor != VendorUnknown && fl.Major > 0
 }
 
 // AllowBlobDefaults returns true if the flavor permits blob and text types
@@ -183,13 +199,13 @@ func (fl Flavor) FractionalTimestamps() bool {
 // HasDataDictionary returns true if the flavor has a global transactional
 // data dictionary instead of using traditional frm files.
 func (fl Flavor) HasDataDictionary() bool {
-	return fl.VendorMinVersion(VendorMySQL, 8, 0) || fl.VendorMinVersion(VendorPercona, 8, 0)
+	return fl.MySQLishMinVersion(8, 0)
 }
 
 // DefaultUtf8mb4Collation returns the name of the default collation of the
 // utf8mb4 character set in this flavor.
 func (fl Flavor) DefaultUtf8mb4Collation() string {
-	if fl.VendorMinVersion(VendorMySQL, 8, 0) || fl.VendorMinVersion(VendorPercona, 8, 0) {
+	if fl.MySQLishMinVersion(8, 0) {
 		return "utf8mb4_0900_ai_ci"
 	}
 	return "utf8mb4_general_ci"
@@ -208,9 +224,7 @@ func (fl Flavor) AlwaysShowTableCollation(charSet string) bool {
 // HasInnoFileFormat returns true if the innodb_file_format variable exists in
 // the flavor, false otherwise.
 func (fl Flavor) HasInnoFileFormat() bool {
-	return !(fl.VendorMinVersion(VendorMySQL, 8, 0) ||
-		fl.VendorMinVersion(VendorPercona, 8, 0) ||
-		fl.VendorMinVersion(VendorMariaDB, 10, 3))
+	return !(fl.MySQLishMinVersion(8, 0) || fl.VendorMinVersion(VendorMariaDB, 10, 3))
 }
 
 // InnoRowFormatReqs returns information on the flavor's requirements for
@@ -224,7 +238,7 @@ func (fl Flavor) InnoRowFormatReqs(format string) (filePerTable, barracudaFormat
 	case "DYNAMIC":
 		// DYNAMIC is always OK in MySQL/Percona 5.7+, and MariaDB 10.1 or 10.3+.
 		// Oddly, MariaDB 10.2 is more picky and requires Barracuda.
-		if fl.VendorMinVersion(VendorMySQL, 5, 7) || fl.VendorMinVersion(VendorPercona, 5, 7) {
+		if fl.MySQLishMinVersion(5, 7) {
 			return false, false
 		} else if fl == FlavorMariaDB101 || fl.VendorMinVersion(VendorMariaDB, 10, 3) {
 			return false, false

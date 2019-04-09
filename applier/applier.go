@@ -57,11 +57,7 @@ func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<-
 			if err != nil {
 				return ConfigError(err.Error())
 			}
-			if configFlavor := tengo.NewFlavor(t.Dir.Config.Get("flavor")); configFlavor != tengo.FlavorUnknown {
-				mods.Flavor = configFlavor
-			} else {
-				mods.Flavor = t.Instance.Flavor()
-			}
+			mods.Flavor = t.Instance.Flavor()
 
 			// Build DDLStatements for each ObjectDiff, handling pre-execution errors
 			// accordingly

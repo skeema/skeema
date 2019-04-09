@@ -118,7 +118,7 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 	if requestedType == "docker" {
 		opts.Type = TypeLocalDocker
 		opts.Flavor = tengo.NewFlavor(dir.Config.Get("flavor"))
-		if opts.Flavor == tengo.FlavorUnknown && instance != nil {
+		if !opts.Flavor.Known() && instance != nil {
 			opts.Flavor = instance.Flavor()
 		}
 		opts.ContainerName = fmt.Sprintf("skeema-%s", strings.Replace(opts.Flavor.String(), ":", "-", -1))

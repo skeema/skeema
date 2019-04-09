@@ -82,7 +82,9 @@ func AddEnvHandler(cfg *mybase.Config) error {
 	} else {
 		dir.OptionFile.SetOptionValue(environment, "port", strconv.Itoa(inst.Port))
 	}
-	if flavor := inst.Flavor(); flavor != tengo.FlavorUnknown {
+	if flavor := inst.Flavor(); !flavor.Known() {
+		log.Warnf("Unable to automatically determine database vendor or version. To set manually, use the \"flavor\" option in %s", dir.OptionFile)
+	} else {
 		dir.OptionFile.SetOptionValue(environment, "flavor", flavor.String())
 	}
 	for _, persistOpt := range []string{"user", "ignore-schema", "ignore-table", "connect-options"} {

@@ -451,9 +451,15 @@ This option indicates the database server vendor and version corresponding to th
 
 This option is automatically populated in host-level .skeema files by `skeema init`, `skeema pull`, and `skeema add-environment` beginning in Skeema v1.0.3.
 
-This option controls use of vendor-and-version-specific DDL formatting, as well as session variables. For example, if `flavor: mysql:8.0` is set, Skeema automatically disables the information_schema stat cache (at the session level, i.e. just for Skeema's own connections) to ensure it always sees up-to-date values in information_schema.
+The value of this option affects Skeema's behavior in various ways:
 
-With [workspace=docker](#workspace), the [flavor](#flavor) value controls what Docker image is used for workspace containers.
+* In some environments, Skeema may display a warning that it cannot automatically parse the database server's actual vendor and/or version properly. In this situation, you can manually configure the correct flavor in a .skeema file, and Skeema will use this value to tweak schema introspection and DDL generation appropriately.
+
+* Some session variables may differ based on the flavor. For example, with `flavor: mysql:8.0`, Skeema automatically disables the information_schema stat cache (at the session level, i.e. just for Skeema's own connections) to ensure it always sees up-to-date values in information_schema. This session variable does not exist in older versions of MySQL, and Skeema needs to determine whether to use it for its connection pools *prior* to connecting to an instance, so Skeema looks at the configured flavor to determine whether it can be set.
+
+* With [workspace=docker](#workspace), the [flavor](#flavor) value controls what Docker image is used for workspace containers.
+
+Note that the database server's *actual* vendor and version take precedence over the [flavor](#flavor) option in all other cases except those listed above.
 
 ### foreign-key-checks
 

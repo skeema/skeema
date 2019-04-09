@@ -73,6 +73,29 @@ func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int)
 	return
 }
 
+// checkInstanceFlavor examines the actual flavor of the supplied instance,
+// and compares to the directory's configured flavor. If both are valid but
+// differ, log a warning. If the instance flavor cannot be detected but the
+// directory has a known flavor, override the instance to use the configured
+// dir flavor.
+func checkInstanceFlavor(instance *tengo.Instance, dir *fs.Dir) {
+	instFlavor := instance.Flavor()
+	confFlavor := tengo.NewFlavor(dir.Config.Get("flavor"))
+
+	if instFlavor.Known() {
+		if confFlavor != tengo.FlavorUnknown && instFlavor != confFlavor {
+			log.Warnf("Instance %s actual flavor %s differs from dir %s configured flavor %s", instance, instFlavor, dir, confFlavor)
+		}
+	} else {
+		if confFlavor == tengo.FlavorUnknown {
+			log.Warnf("Instance %s flavor cannot be parsed, and dir %s does not specify a flavor override in .skeema", instance, dir)
+		} else {
+			log.Debugf("Instance %s flavor cannot be parsed; using dir %s configured flavor %s instead", instance, dir, confFlavor)
+			instance.SetFlavor(confFlavor)
+		}
+	}
+}
+
 func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 	if dir.Config.GetBool("first-only") {
 		onlyInstance, err := dir.FirstInstance()
@@ -84,6 +107,7 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 			return nil, 1
 		}
 		// dir.FirstInstance already checks for connectivity, so no need to redo that here
+		checkInstanceFlavor(onlyInstance, dir)
 		return []*tengo.Instance{onlyInstance}, 0
 	}
 
@@ -101,6 +125,7 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 			log.Warnf("Skipping %s for %s: %s", inst, dir, err)
 			skipCount++
 		} else {
+			checkInstanceFlavor(inst, dir)
 			instances = append(instances, inst)
 		}
 	}

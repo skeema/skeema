@@ -260,10 +260,11 @@ func statementModifiersForPull(config *mybase.Config, instance *tengo.Instance, 
 		mods.NextAutoInc = tengo.NextAutoIncIfAlready
 	}
 	mods.IgnoreTable = ignoreTable
-	if configFlavor := tengo.NewFlavor(config.Get("flavor")); configFlavor != tengo.FlavorUnknown {
-		mods.Flavor = configFlavor
+	instFlavor, confFlavor := instance.Flavor(), tengo.NewFlavor(config.Get("flavor"))
+	if !instFlavor.Known() && confFlavor.Known() {
+		mods.Flavor = confFlavor
 	} else {
-		mods.Flavor = instance.Flavor()
+		mods.Flavor = instFlavor
 	}
 	return mods
 }
@@ -314,7 +315,7 @@ func objectsInDiff(instSchema *tengo.Schema, logicalSchema *fs.LogicalSchema, op
 // undetectable flavor.
 func updateFlavor(dir *fs.Dir, instance *tengo.Instance) {
 	instFlavor := instance.Flavor()
-	if instFlavor.Vendor == tengo.VendorUnknown || instFlavor.String() == dir.Config.Get("flavor") {
+	if !instFlavor.Known() || instFlavor.String() == dir.Config.Get("flavor") {
 		return
 	}
 	dir.OptionFile.SetOptionValue(dir.Config.Get("environment"), "flavor", instFlavor.String())
