@@ -451,15 +451,15 @@ This option indicates the database server vendor and version corresponding to th
 
 This option is automatically populated in host-level .skeema files by `skeema init`, `skeema pull`, and `skeema add-environment` beginning in Skeema v1.0.3.
 
-The value of this option affects Skeema's behavior in various ways:
+The notion of a database flavor affects various aspects of schema introspection and DDL generation in `skeema diff` and `skeema push`. Ordinarily, Skeema auto-detects the flavor of each database server it interacts with, and the value of [flavor](#flavor) in a .skeema file has no real effect. However, there are a few special cases where the option value is used directly:
 
-* In some environments, Skeema may display a warning that it cannot automatically parse the database server's actual vendor and/or version properly. In this situation, you can manually configure the correct flavor in a .skeema file, and Skeema will use this value to tweak schema introspection and DDL generation appropriately.
+* In some environments, Skeema may display a warning that it cannot automatically parse the database server's actual vendor and/or version properly. In this situation, you can *manually* configure the correct flavor in a .skeema file, and Skeema will use the configured value.
 
-* Some session variables may differ based on the flavor. For example, with `flavor: mysql:8.0`, Skeema automatically disables the information_schema stat cache (at the session level, i.e. just for Skeema's own connections) to ensure it always sees up-to-date values in information_schema. This session variable does not exist in older versions of MySQL, and Skeema needs to determine whether to use it for its connection pools *prior* to connecting to an instance, so Skeema looks at the configured flavor to determine whether it can be set.
+* Some aspects of Skeema's connection pool behavior depend on the database flavor, but the connection pool setup logic inherently must occur *prior* to actually connecting to a database. In such cases, the flavor option will be trusted as-is. For example, with `flavor=mysql:8.0`, Skeema automatically configures its connection pools to disable the information_schema stat cache, to ensure information_schema always returns up-to-date results. The relevant session variable does not exist in older versions of MySQL, so the internal logic is gated on the configured flavor value.
 
 * With [workspace=docker](#workspace), the [flavor](#flavor) value controls what Docker image is used for workspace containers.
 
-Note that the database server's *actual* vendor and version take precedence over the [flavor](#flavor) option in all other cases except those listed above.
+Note that the database server's *actual* auto-detected vendor and version take precedence over the [flavor](#flavor) option in all other cases not listed above.
 
 ### foreign-key-checks
 
