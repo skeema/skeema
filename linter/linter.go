@@ -40,6 +40,7 @@ type Result struct {
 	FormatNotices []*Annotation
 	DebugLogs     []string
 	Exceptions    []error
+	Schemas       map[string]*tengo.Schema // Keyed by dir path and optionally schema name
 }
 
 // Merge combines other into r's value in-place.
@@ -52,6 +53,12 @@ func (r *Result) Merge(other *Result) {
 	r.FormatNotices = append(r.FormatNotices, other.FormatNotices...)
 	r.DebugLogs = append(r.DebugLogs, other.DebugLogs...)
 	r.Exceptions = append(r.Exceptions, other.Exceptions...)
+	if r.Schemas == nil {
+		r.Schemas = make(map[string]*tengo.Schema)
+	}
+	for key, value := range other.Schemas {
+		r.Schemas[key] = value
+	}
 }
 
 // BadConfigResult returns a *Result containing a single ConfigError in the
@@ -91,7 +98,14 @@ func LintDir(dir *fs.Dir, wsOpts workspace.Options) *Result {
 				return result
 			}
 		}
-		_, res := ExecLogicalSchema(logicalSchema, wsOpts, opts)
+		schema, res := ExecLogicalSchema(logicalSchema, wsOpts, opts)
+		if schema != nil {
+			schemaKey := dir.Path
+			if logicalSchema.Name != "" {
+				schemaKey = fmt.Sprintf("%s:%s", schemaKey, logicalSchema.Name)
+			}
+			res.Schemas = map[string]*tengo.Schema{schemaKey: schema}
+		}
 		result.Merge(res)
 	}
 
@@ -112,7 +126,8 @@ func LintDir(dir *fs.Dir, wsOpts workspace.Options) *Result {
 
 // ExecLogicalSchema is a wrapper around workspace.ExecLogicalSchema. After the
 // tengo.Schema is obtained and introspected, it is also linted. Any errors
-// are captured as part of the *Result.
+// are captured as part of the *Result. However, the schema itself is not yet
+// placed into the *Result; this is the caller's responsibility.
 func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, wsOpts workspace.Options, opts Options) (*tengo.Schema, *Result) {
 	result := &Result{}
 

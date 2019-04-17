@@ -6,24 +6,26 @@ import (
 )
 
 func TestShellOutRun(t *testing.T) {
-	assertResult := func(command string, expectSuccess bool) {
+	assertResult := func(command, dirPath string, expectSuccess bool) {
 		t.Helper()
-		s := NewShellOut(command, "")
+		s := &ShellOut{Command: command, Dir: dirPath}
 		if err := s.Run(); expectSuccess && err != nil {
 			t.Errorf("Expected command `%s` to return no error, but it returned error %s", command, err)
 		} else if !expectSuccess && err == nil {
 			t.Errorf("Expected command `%s` to return an error, but it did not", command)
 		}
 	}
-	assertResult("", false)
-	assertResult("false", false)
-	assertResult("/does/not/exist", false)
-	assertResult("true", true)
+	assertResult("", "", false)
+	assertResult("false", "", false)
+	assertResult("/does/not/exist", "", false)
+	assertResult("true", "", true)
+	assertResult("true", "..", true)
+	assertResult("true", "/invalid/dir", false)
 }
 
 func TestRunCaptureSplit(t *testing.T) {
 	assertResult := func(command string, expectedTokens ...string) {
-		s := NewShellOut(command, "")
+		s := &ShellOut{Command: command}
 		result, err := s.RunCaptureSplit()
 		if err != nil {
 			t.Logf("Unexpected error return from %#v: %s", s, err)
@@ -42,11 +44,11 @@ func TestRunCaptureSplit(t *testing.T) {
 	assertResult(`/usr/bin/printf 'intentionally "no support" for quotes'`, "intentionally", `"no`, `support"`, "for", "quotes")
 
 	// Test error responses
-	s := NewShellOut("", "")
+	s := &ShellOut{}
 	if _, err := s.RunCaptureSplit(); err == nil {
 		t.Error("Expected empty shellout to error, but it did not")
 	}
-	s = NewShellOut("false", "")
+	s = &ShellOut{Command: "false"}
 	if _, err := s.RunCaptureSplit(); err == nil {
 		t.Error("Expected non-zero exit code from shellout to error, but it did not")
 	}
@@ -95,7 +97,7 @@ func TestNewInterpolatedShellOut(t *testing.T) {
 			t.Errorf("Unexpected result from NewInterpolatedShellOut when an invalid variable was present: %+v", s)
 		}
 	}
-	assertShellOutError("/bin/echo {HOST} {iNvAlId} {SCHEMA}", "/bin/echo ahost {INVALID} aschema")
+	assertShellOutError("/bin/echo {HOST} {iNvAlId} {SCHEMA}", "/bin/echo ahost {iNvAlId} aschema")
 	assertShellOutError("/bin/echo {HOST} {INVALIDX} {SCHEMA}", "/bin/echo ahost {INVALIDX} aschema")
 	assertShellOutError("/bin/echo {HOST} {X} {SCHEMA}", "/bin/echo ahost {X} aschema")
 }

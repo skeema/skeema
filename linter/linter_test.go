@@ -118,6 +118,17 @@ func TestLintDir(t *testing.T) {
 	if len(result.DebugLogs) != 1 {
 		t.Errorf("Expected 1 debug log, instead found %d", len(result.DebugLogs))
 	}
+
+	// One *tengo.Schema expected in map, with key corresponding to dir
+	if len(result.Schemas) != 1 {
+		t.Errorf("Expected 1 schema in Schemas map, instead found %d", len(result.Schemas))
+	} else {
+		for key := range result.Schemas {
+			if key != dir.Path {
+				t.Errorf("Expected schema to have key %s, instead found %s", dir.Path, key)
+			}
+		}
+	}
 }
 
 func TestLintDirIgnoreSchema(t *testing.T) {

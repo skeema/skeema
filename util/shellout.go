@@ -9,17 +9,11 @@ import (
 	"strings"
 )
 
-// varPlaceholder is a regexp for detecting placeholders in format "{VARNAME}"
-var varPlaceholder = regexp.MustCompile(`{([^}]*)}`)
-
-// noQuotesNeeded is a regexp for detecting which variable values do not require
-// escaping and quote-wrapping
-var noQuotesNeeded = regexp.MustCompile(`^[\w/@%=:.,+-]*$`)
-
 // ShellOut represents a command-line for an external command, executed via sh -c
 type ShellOut struct {
 	Command          string
-	PrintableCommand string // Same as Command, but used in String() if non-empty; useful for hiding passwords in output
+	PrintableCommand string // Used in String() if non-empty; useful for hiding passwords in output
+	Dir              string // Initial working dir for the command if non-empty
 }
 
 func (s *ShellOut) String() string {
@@ -37,6 +31,7 @@ func (s *ShellOut) Run() error {
 		return errors.New("Attempted to shell out to an empty command string")
 	}
 	cmd := exec.Command("/bin/sh", "-c", s.Command)
+	cmd.Dir = s.Dir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -51,6 +46,7 @@ func (s *ShellOut) RunCapture() (string, error) {
 		return "", errors.New("Attempted to shell out to an empty command string")
 	}
 	cmd := exec.Command("/bin/sh", "-c", s.Command)
+	cmd.Dir = s.Dir
 	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
@@ -91,14 +87,9 @@ func (s *ShellOut) RunCaptureSplit() ([]string, error) {
 	return result, err
 }
 
-// NewShellOut takes a shell command-line string and returns a ShellOut, without
-// performing any variable interpolation.
-func NewShellOut(command, printableCommand string) *ShellOut {
-	return &ShellOut{
-		Command:          command,
-		PrintableCommand: printableCommand,
-	}
-}
+// varPlaceholder is a regexp for detecting placeholders of format "{VARNAME}"
+// in NewInterpolatedShellOut()
+var varPlaceholder = regexp.MustCompile(`{([^}]*)}`)
 
 // NewInterpolatedShellOut takes a shell command-line containing variables of
 // format {VARNAME}, and performs substitution on them based on the supplied
@@ -115,32 +106,36 @@ func NewShellOut(command, printableCommand string) *ShellOut {
 // string contains "{PASSWORDX}" and variables has a key "PASSWORD", it will be
 // replaced in a manner that obfuscates the actual password in PrintableCommand.
 func NewInterpolatedShellOut(command string, variables map[string]string) (*ShellOut, error) {
-	var err error
-	var forDisplay bool
+	var forDisplay bool // affects behavior of replacer closure
+	var err error       // may be mutated by replacer closure
 	replacer := func(input string) string {
-		input = strings.ToUpper(input[1 : len(input)-1])
-		value, ok := variables[input]
-		if !ok && input[len(input)-1] == 'X' {
-			value, ok = variables[input[:len(input)-1]]
+		varName := strings.ToUpper(input[1 : len(input)-1])
+		value, ok := variables[varName]
+		if !ok && varName[len(varName)-1] == 'X' {
+			value, ok = variables[varName[:len(varName)-1]]
 			if ok && forDisplay {
 				return "XXXXX"
 			}
 		}
-		if ok {
-			return escapeVarValue(value)
+		if !ok {
+			err = fmt.Errorf("Unknown variable %s", input)
+			return input
 		}
-		err = fmt.Errorf("Unknown variable {%s}", input)
-		return fmt.Sprintf("{%s}", input)
+		return escapeVarValue(value)
 	}
 
-	result := varPlaceholder.ReplaceAllStringFunc(command, replacer)
+	s := &ShellOut{}
+	s.Command = varPlaceholder.ReplaceAllStringFunc(command, replacer)
 	if strings.Contains(strings.ToUpper(command), "X}") {
 		forDisplay = true
-		resultForDisplay := varPlaceholder.ReplaceAllStringFunc(command, replacer)
-		return NewShellOut(result, resultForDisplay), err
+		s.PrintableCommand = varPlaceholder.ReplaceAllStringFunc(command, replacer)
 	}
-	return NewShellOut(result, ""), err
+	return s, err
 }
+
+// noQuotesNeeded is a regexp for detecting which variable values do not require
+// escaping and quote-wrapping in escapeVarValue()
+var noQuotesNeeded = regexp.MustCompile(`^[\w/@%=:.,+-]*$`)
 
 // escapeVarValue takes a string, and wraps it in single-quotes so that it will
 // be interpretted as a single arg in a shell-out command line. If the value
