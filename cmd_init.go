@@ -229,7 +229,7 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *fs.Dir, makeSubdir bool) erro
 			continue
 		}
 		createStmt = fs.AddDelimiter(createStmt)
-		filePath := path.Join(subPath, fmt.Sprintf("%s.sql", key.Name))
+		filePath := fs.PathForObject(subPath, key.Name)
 		var bytesWritten int
 		if bytesWritten, _, err = fs.AppendToFile(filePath, createStmt); err != nil {
 			return NewExitValue(CodeCantCreate, "Unable to write to %s: %s", filePath, err)

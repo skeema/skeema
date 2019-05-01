@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"path"
 	"regexp"
 
 	log "github.com/sirupsen/logrus"
@@ -221,7 +220,6 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Sche
 		if key.Type == tengo.ObjectTypeTable && ignoreTable != nil && ignoreTable.MatchString(key.Name) {
 			continue
 		}
-		filePath := path.Join(dir.Path, fmt.Sprintf("%s.sql", key.Name))
 		contents := instCreate
 		if key.Type == tengo.ObjectTypeTable && !dir.Config.GetBool("include-auto-inc") {
 			contents, _ = tengo.ParseCreateAutoInc(contents)
@@ -233,6 +231,7 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Sche
 			continue
 		}
 		contents = fs.AddDelimiter(contents)
+		filePath := fs.PathForObject(dir.Path, key.Name)
 		if bytesWritten, wasNew, err := fs.AppendToFile(filePath, contents); err != nil {
 			return err
 		} else if wasNew {

@@ -7,6 +7,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/skeema/tengo"
 )
@@ -152,6 +153,37 @@ func (tsf *TokenizedSQLFile) Rewrite() (int, error) {
 		return tsf.WriteStatements(tsf.Statements)
 	}
 	return 0, tsf.Delete()
+}
+
+// PathForObject returns a string containing a path to use for the SQLFile
+// representing the supplied object name. Special characters in the objectName
+// will be removed; however, there is no risk of "conflicts" since a single
+// SQLFile can store definitions for multiple objects.
+func PathForObject(dirPath, objectName string) string {
+	objectName = strings.Map(removeSpecialChars, objectName)
+	if objectName == "" {
+		objectName = "symbols"
+	}
+	return path.Join(dirPath, fmt.Sprintf("%s.sql", objectName))
+}
+
+func removeSpecialChars(r rune) rune {
+	if unicode.IsSpace(r) {
+		return -1
+	}
+	banned := []rune{
+		'.',
+		'\\', '/',
+		'"', '\'', '`',
+		':', '*', '?', '|', '~', '#', '&', '-',
+		'<', '>', '{', '}', '[', ']', '(', ')',
+	}
+	for _, bad := range banned {
+		if r == bad {
+			return -1
+		}
+	}
+	return r
 }
 
 // AppendToFile appends the supplied string to the file at the given path. If the

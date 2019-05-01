@@ -235,6 +235,27 @@ func expectedStatements(filePath string) []*Statement {
 	}
 }
 
+func TestPathForObject(t *testing.T) {
+	cases := []struct {
+		DirPath    string
+		ObjectName string
+		Expected   string
+	}{
+		{"", "foobar", "foobar.sql"},
+		{"/foo/bar", "baz", "/foo/bar/baz.sql"},
+		{"/var/schemas", "", "/var/schemas/symbols.sql"},
+		{"/var/schemas", "[*]. ({`'\"})", "/var/schemas/symbols.sql"},
+		{"/var/schemas", "foo_bar", "/var/schemas/foo_bar.sql"},
+		{"/var/schemas", "foo-bar", "/var/schemas/foobar.sql"},
+		{"/var/schemas", "../../etc/passwd", "/var/schemas/etcpasswd.sql"},
+	}
+	for _, c := range cases {
+		if actual := PathForObject(c.DirPath, c.ObjectName); actual != c.Expected {
+			t.Errorf("Expected PathForObject(%q, %q) to return %q, instead found %q", c.DirPath, c.ObjectName, c.Expected, actual)
+		}
+	}
+}
+
 func TestAppendToFile(t *testing.T) {
 	assertAppend := func(filePath, contents string, expectBytes int, expectCreated bool) {
 		t.Helper()
