@@ -324,22 +324,28 @@ func (dir *Dir) SchemaNames(instance *tengo.Instance) (names []string, err error
 		names = dir.Config.GetSlice("schema", ',', true)
 	}
 
-	// Remove ignored schemas
-	if ignoreSchema, err := dir.Config.GetRegexp("ignore-schema"); err != nil {
+	// Remove ignored schemas and system schemas. (tengo removes the latter from
+	// some operations, but additional protection here is needed to ensure a user
+	// can't manually configure the schema option to a system schema.)
+	ignoreSchema, err := dir.Config.GetRegexp("ignore-schema")
+	if err != nil {
 		return nil, err
-	} else if ignoreSchema != nil {
-		keepNames := make([]string, 0, len(names))
-		for _, name := range names {
-			if ignoreSchema.MatchString(name) {
-				log.Debugf("Skipping schema %s because ignore-schema='%s'", name, ignoreSchema)
-			} else {
-				keepNames = append(keepNames, name)
-			}
-		}
-		names = keepNames
 	}
-
-	return names, nil
+	systemSchemas := map[string]bool{
+		"information_schema": true,
+		"performance_schema": true,
+		"sys":                true,
+		"mysql":              true,
+	}
+	keepNames := make([]string, 0, len(names))
+	for _, name := range names {
+		if ignoreSchema != nil && ignoreSchema.MatchString(name) {
+			log.Debugf("Skipping schema %s because ignore-schema='%s'", name, ignoreSchema)
+		} else if !systemSchemas[name] {
+			keepNames = append(keepNames, name)
+		}
+	}
+	return keepNames, nil
 }
 
 // HasSchema returns true if this dir maps to at least one schema, either by

@@ -289,7 +289,7 @@ func execStatement(db *sqlx.DB, statement *fs.Statement) (stmtErr *StatementErro
 	}
 	stmtErr = &StatementError{
 		Statement: statement,
-		Err:       fmt.Errorf("Error executing DDL: %s", err),
+		Err:       fmt.Errorf("Error executing DDL in workspace: %s", err),
 	}
 	if tengo.IsSyntaxError(err) {
 		stmtErr.Err = fmt.Errorf("SQL syntax error: %s", err)

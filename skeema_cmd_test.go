@@ -19,6 +19,9 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	// Specifying a single schema that doesn't exist on the instance
 	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir mydb -h %s -P %d --schema doesntexist", s.d.Instance.Host, s.d.Instance.Port)
 
+	// Specifying a single schema that is a system schema
+	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir mydb -h %s -P %d --schema mysql", s.d.Instance.Host, s.d.Instance.Port)
+
 	// Successful standard execution. Also confirm user is not persisted to .skeema
 	// since not specified on CLI.
 	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)

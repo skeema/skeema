@@ -49,6 +49,9 @@ func InitHandler(cfg *mybase.Config) error {
 	// schema_name level is skipped.
 	hostDirName := cfg.Get("dir")
 	onlySchema := cfg.Get("schema")
+	if onlySchema == "mysql" || onlySchema == "information_schema" || onlySchema == "performance_schema" || onlySchema == "sys" {
+		return NewExitValue(CodeBadConfig, "Option --schema may not be set to a system database name")
+	}
 	separateSchemaSubdir := (onlySchema == "")
 
 	if !cfg.OnCLI("host") {
