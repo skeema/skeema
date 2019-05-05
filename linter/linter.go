@@ -3,6 +3,7 @@ package linter
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/skeema/workspace"
@@ -43,6 +44,16 @@ type Result struct {
 	Schemas       map[string]*tengo.Schema // Keyed by dir path and optionally schema name
 }
 
+// SortByFile implements the sort.Interface for []*Annotation based on
+// the Annotation.Statement.File field.
+type SortByFile []*Annotation
+
+func (a SortByFile) Len() int      { return len(a) }
+func (a SortByFile) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a SortByFile) Less(i, j int) bool {
+	return a[i].Statement.File < a[j].Statement.File
+}
+
 // Merge combines other into r's value in-place.
 func (r *Result) Merge(other *Result) {
 	if r == nil || other == nil {
@@ -59,6 +70,18 @@ func (r *Result) Merge(other *Result) {
 	for key, value := range other.Schemas {
 		r.Schemas[key] = value
 	}
+}
+
+// SortByFile sorts the error, warning and format notice messages according
+// to the filenames they appear relate to.
+func (r *Result) SortByFile() {
+	if r == nil {
+		return
+	}
+
+	sort.Sort(SortByFile(r.Errors))
+	sort.Sort(SortByFile(r.Warnings))
+	sort.Sort(SortByFile(r.FormatNotices))
 }
 
 // BadConfigResult returns a *Result containing a single ConfigError in the
@@ -120,6 +143,9 @@ func LintDir(dir *fs.Dir, wsOpts workspace.Options) *Result {
 			})
 		}
 	}
+
+	// Make sure the problem messages have a deterministic order.
+	result.SortByFile()
 
 	return result
 }
