@@ -71,7 +71,7 @@ func badCharsetDetector(schema *tengo.Schema, logicalSchema *fs.LogicalSchema, o
 					Statement:  logicalSchema.Creates[key],
 					LineOffset: findFirstLineOffset(re, stmt.Text),
 					Summary:    "Character set not permitted",
-					Message:    fmt.Sprintf("Column %s of table %s is using character set %s, which is not listed in option allow-charset", col.Name, table.Name, table.CharSet),
+					Message:    fmt.Sprintf("Column %s of table %s is using character set %s, which is not listed in option allow-charset", col.Name, table.Name, col.CharSet),
 				})
 				break // stop after the first disallowed charset col per table
 			}
