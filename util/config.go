@@ -39,6 +39,7 @@ func AddGlobalOptions(cmd *mybase.Command) {
 	cmd.AddOption(mybase.StringOption("docker-cleanup", 0, "NONE", `With --workspace=docker, specifies how to clean up containers (valid values: "NONE", "STOP", "DESTROY")`))
 	cmd.AddOption(mybase.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done"))
 	cmd.AddOption(mybase.BoolOption("debug", 0, false, "Enable debug logging"))
+	cmd.AddOption(mybase.BoolOption("ignore-my-cnf", 0, false, "Skips reading users's ~/.my.cnf file when determining configuration" ))
 }
 
 // AddGlobalConfigFiles takes the mybase.Config generated from the CLI and adds
@@ -50,12 +51,20 @@ func AddGlobalConfigFiles(cfg *mybase.Config) {
 	// running the test happens to have a ~/.my.cnf, ~/.skeema, /etc/skeema, it
 	// it would affect the test logic.
 	if cfg.IsTest {
-		globalFilePaths = append(globalFilePaths, "fake-etc/skeema", "fake-home/.my.cnf")
+		if cfg.CLI.OptionValues["ignore-my-cnf"] == "1" {
+			globalFilePaths = append(globalFilePaths, path.Join("fake-etc/skeema"))
+		} else {
+			globalFilePaths = append(globalFilePaths, "fake-etc/skeema", "fake-home/.my.cnf")
+		}
 	} else {
 		globalFilePaths = append(globalFilePaths, "/etc/skeema", "/usr/local/etc/skeema")
 		home := filepath.Clean(os.Getenv("HOME"))
 		if home != "" {
-			globalFilePaths = append(globalFilePaths, path.Join(home, ".my.cnf"), path.Join(home, ".skeema"))
+			if cfg.CLI.OptionValues["ignore-my-cnf"] == "1" {
+				globalFilePaths = append(globalFilePaths, path.Join(home, ".skeema"))
+			} else {
+				globalFilePaths = append(globalFilePaths, path.Join(home, ".my.cnf"), path.Join(home, ".skeema"))
+			}
 		}
 	}
 

@@ -198,3 +198,34 @@ func TestRealConnectOptions(t *testing.T) {
 		t.Error("Expected error from SplitConnectOptions to be passed through to RealConnectOptions, but err is nil")
 	}
 }
+
+func TestConfigIgnoreOptions(t *testing.T) {
+	cmdSuite := mybase.NewCommandSuite("skeematest", "", "")
+	AddGlobalOptions(cmdSuite)
+	cmd := mybase.NewCommand("diff", "", "", nil)
+	cmd.AddArg("environment", "production", false)
+	cmdSuite.AddSubCommand(cmd)
+
+	// Expectation: global config files not existing isn't fatal
+	cfg := mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --ignore-my-cnf")
+	AddGlobalConfigFiles(cfg)
+	if actualPassword := cfg.Get("password"); actualPassword != "<no password>" {
+		t.Errorf("Expected password to be unchanged from default; instead found %s", actualPassword)
+	}
+
+	os.MkdirAll("fake-etc", 0777)
+	os.MkdirAll("fake-home", 0777)
+	ioutil.WriteFile("fake-etc/skeema", []byte("user=one\npassword=foo\n"), 0777)
+	ioutil.WriteFile("fake-home/.my.cnf", []byte("doesnt-exist\nuser=two\nhost=uhoh\n"), 0777)
+	defer func() {
+		os.RemoveAll("fake-etc")
+		os.RemoveAll("fake-home")
+	}()
+
+	// Expectation: both only the skeema file in etc gets used due to the override option
+	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --ignore-my-cnf")
+	AddGlobalConfigFiles(cfg)
+	if actualUser := cfg.Get("user"); actualUser != "one" {
+		t.Errorf("Expected user in fake-home/.my.cnf to be skipped; instead found %s", actualUser)
+	}
+}
