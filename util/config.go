@@ -39,7 +39,7 @@ func AddGlobalOptions(cmd *mybase.Command) {
 	cmd.AddOption(mybase.StringOption("docker-cleanup", 0, "NONE", `With --workspace=docker, specifies how to clean up containers (valid values: "NONE", "STOP", "DESTROY")`))
 	cmd.AddOption(mybase.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done"))
 	cmd.AddOption(mybase.BoolOption("debug", 0, false, "Enable debug logging"))
-	cmd.AddOption(mybase.BoolOption("my-cnf", 0, true, "If set to false, skips reading the ~/.my.cnf file for configuration"))
+	cmd.AddOption(mybase.BoolOption("my-cnf", 0, true, "Parse ~/.my.cnf for configuration"))
 }
 
 // AddGlobalConfigFiles takes the mybase.Config generated from the CLI and adds
@@ -72,7 +72,6 @@ func AddGlobalConfigFiles(cfg *mybase.Config) {
 		if strings.HasSuffix(path, ".my.cnf") {
 			f.IgnoreUnknownOptions = true
 			f.IgnoreOptions("host")
-
 			if !cfg.GetBool("my-cnf") {
 				continue
 			}

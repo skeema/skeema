@@ -33,6 +33,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [ignore-schema](#ignore-schema)
 * [ignore-table](#ignore-table)
 * [include-auto-inc](#include-auto-inc)
+* [my-cnf](#my-cnf)
 * [new-schemas](#new-schemas)
 * [normalize](#normalize)
 * [password](#password)
@@ -574,6 +575,20 @@ In `skeema pull`, a false value omits AUTO_INCREMENT=X clauses in any *newly-wri
 
 Only set this to true if you intentionally need to track auto_increment values in all tables. If only a few tables require nonstandard auto_increment, simply include the value manually in the CREATE TABLE statement in the *.sql file. Subsequent calls to `skeema pull` won't strip it, even if `include-auto-inc` is false.
 
+### my-cnf
+
+Commands | *all*
+--- | :---
+**Default** | true
+**Type** | boolean
+**Restrictions** | Ignored in .skeema files
+
+If true, Skeema will parse the standard per-user MySQL configuration file, `~/.my.cnf`, for configuration information in sections \[skeema\], \[client\], and \[mysql\]. This permits Skeema to re-use already-configured values for options shared with MySQL, such as [user](#user), [password](#password), and [socket](#socket). If false, `~/.my.cnf` parsing is skipped entirely.
+
+This option is enabled by default. To disable it, use `--skip-my-cnf` on the command-line, or `skip-my-cnf` in either `/etc/skeema` or `/usr/local/etc/skeema`. This option has no effect if disabled in `~/.skeema` or any other `.skeema` file, since these are parsed *after* `~/.my.cnf`.
+
+For more information on Skeema's configuration files and order of parsing, please refer to the [configuration documentation](config.md).
+
 ### new-schemas
 
 Commands | pull
@@ -595,18 +610,6 @@ Commands | pull
 **Restrictions** | none
 
 If true, `skeema pull` will normalize the format of all *.sql files to match the canonical format shown in MySQL's `SHOW CREATE`, just like if `skeema lint` was called afterwards. If false, this step is skipped.
-
-### my-cnf
-
-Commands | *all*
---- | :---
-**Default** | true
-**Type** | boolean
-**Restrictions** | none
-
-If false, skeema will skip reading of the `~/.my.cnf` for configuration information. If true, it will processed in order ([as specified by configuration priority](config.md#priority-of-options-set-in-multiple-places))
-
-Note that a file with higher priority can set this to option to false and disable the subsequent reading of the `~/.my.cnf` file. 
 
 ### password
 

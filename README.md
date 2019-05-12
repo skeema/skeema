@@ -2,6 +2,7 @@
 
 [![build status](https://img.shields.io/travis/skeema/skeema/master.svg)](http://travis-ci.org/skeema/skeema)
 [![code coverage](https://img.shields.io/coveralls/skeema/skeema.svg)](https://coveralls.io/r/skeema/skeema)
+[![downloads](https://img.shields.io/github/downloads/skeema/skeema/total.svg)](https://github.com/skeema/skeema/releases)
 [![latest release](https://img.shields.io/github/release/skeema/skeema.svg)](https://github.com/skeema/skeema/releases)
 
 Skeema is a tool for managing MySQL tables and schema changes in a declarative fashion using pure SQL. It provides a CLI tool allowing you to:
@@ -60,6 +61,7 @@ Additional [contributions](https://github.com/skeema/skeema/graphs/contributors)
 * [@tomkrouper](https://github.com/tomkrouper)
 * [@efixler](https://github.com/efixler)
 * [@chrisjpalmer](https://github.com/chrisjpalmer)
+* [@blueish](https://github.com/blueish)
 
 Support for stored procedures and functions generously sponsored by [Psyonix](https://psyonix.com).
 

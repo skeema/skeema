@@ -78,7 +78,7 @@ Skeema always looks for several "global" option file paths, regardless of the cu
 
 Skeema then also searches the current working directory (and its tree of parent directories) for additional option files; see the [execution model](#execution-model-and-per-directory-option-files) and [priority](#priority-of-options-set-in-multiple-places) sections below.
 
-Parsing of MySQL config file ~/.my.cnf is a special-case: instead of the normal environment logic applying, only the sections \[skeema\], \[client\], and \[mysql\] are evaluated. Parsing ignores any options that are unknown to Skeema (which will be most of them, aside from options shared between Skeema and MySQL).
+Parsing of MySQL config file ~/.my.cnf is a special-case: instead of the normal environment logic applying, only the sections \[skeema\], \[client\], and \[mysql\] are evaluated. Parsing ignores any options that are unknown to Skeema (which will be most of them, aside from options shared between Skeema and MySQL). If you do not want Skeema to parse ~/.my.cnf at all, you may specify [skip-my-cnf](options.md#my-cnf) in a global option file.
 
 ### Execution model and per-directory option files
 
