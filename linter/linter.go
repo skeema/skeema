@@ -27,24 +27,28 @@ func (a *Annotation) MessageWithLocation() string {
 	if a.Statement.File == "" || a.Statement.LineNo == 0 {
 		return fmt.Sprintf("%s [Full SQL: %s]", a.Message, a.Statement.Text)
 	}
-	if a.LineOffset == 0 && a.Statement.CharNo > 1 {
-		return fmt.Sprintf("%s: %s", a.Location(), a.Message)
-	}
 	return fmt.Sprintf("%s: %s", a.Location(), a.Message)
 }
 
-// Location returns the file, line number and character number where the
-// statement which is the cause of the Annotation was obtained from.
+// LineNo returns the line number of the annotation within its file.
+func (a *Annotation) LineNo() int {
+	return a.Statement.LineNo + a.LineOffset
+}
+
+// Location returns information on which file and line caused the Annotation
+// to be generated. This may include character number also, if available.
 func (a *Annotation) Location() string {
-	fileName := a.Statement.File
-	if fileName == "" {
-		fileName = "unknown"
+	// If the LineOffset is 0 (meaning the offending line of the statement could
+	// not be determined, OR it's the first line of the statement), and/or if the
+	// filename isn't available, just use the Statement's location string as-is
+	if a.LineOffset == 0 || a.Statement.File == "" {
+		return a.Statement.Location()
 	}
 
-	if a.LineOffset == 0 && a.Statement.CharNo > 1 {
-		return fmt.Sprintf("%s:%d:%d", fileName, a.Statement.LineNo, a.Statement.CharNo)
-	}
-	return fmt.Sprintf("%s:%d", fileName, a.Statement.LineNo+a.LineOffset)
+	// Otherwise, add the offset to the statement's line number. We exclude the
+	// charno in this case because it is relative to the first line of the
+	// statement, which isn't the line that generated the annotation.
+	return fmt.Sprintf("%s:%d", a.Statement.File, a.LineNo())
 }
 
 // Result is a combined set of linter annotations and/or Golang errors found
@@ -60,26 +64,18 @@ type Result struct {
 
 // sortByFile implements the sort.Interface for []*Annotation to get a deterministic
 // sort order for Annotation lists.
-// sortByFile sorts the Annotation slice in lexicographical order
-// based on the file location (file name, line number and character number).
-// If two Annotations have the same line number the Problem name is used to
-// determine the order, it is assumed several locations can not be associatd
-// with the same problem type.
+// Sorting is ordered by file name, line number, and problem name.
 type sortByFile []*Annotation
 
 func (a sortByFile) Len() int      { return len(a) }
 func (a sortByFile) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 func (a sortByFile) Less(i, j int) bool {
-	loc0 := a[i].Location()
-	loc1 := a[j].Location()
-	switch {
-	case loc0 < loc1:
-		return true
-	case loc0 == loc1:
-		return a[i].Problem < a[j].Problem
-	default:
-		return false
+	if a[i].Statement.File != a[j].Statement.File {
+		return a[i].Statement.File < a[j].Statement.File
+	} else if a[i].LineNo() != a[j].LineNo() {
+		return a[i].LineNo() < a[j].LineNo()
 	}
+	return a[i].Problem < a[j].Problem
 }
 
 // Merge combines other into r's value in-place.
@@ -106,7 +102,6 @@ func (r *Result) SortByFile() {
 	if r == nil {
 		return
 	}
-
 	sort.Sort(sortByFile(r.Errors))
 	sort.Sort(sortByFile(r.Warnings))
 	sort.Sort(sortByFile(r.FormatNotices))
