@@ -207,7 +207,7 @@ func TestConfigIgnoreOptions(t *testing.T) {
 	cmdSuite.AddSubCommand(cmd)
 
 	// Expectation: global config files not existing isn't fatal
-	cfg := mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --ignore-my-cnf")
+	cfg := mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --skip-my-cnf")
 	AddGlobalConfigFiles(cfg)
 	if actualPassword := cfg.Get("password"); actualPassword != "<no password>" {
 		t.Errorf("Expected password to be unchanged from default; instead found %s", actualPassword)
@@ -223,7 +223,7 @@ func TestConfigIgnoreOptions(t *testing.T) {
 	}()
 
 	// Expectation: both only the skeema file in etc gets used due to the override option
-	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --ignore-my-cnf")
+	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --skip-my-cnf")
 	AddGlobalConfigFiles(cfg)
 	if actualUser := cfg.Get("user"); actualUser != "one" {
 		t.Errorf("Expected user in fake-home/.my.cnf to be skipped; instead found %s", actualUser)

@@ -596,6 +596,18 @@ Commands | pull
 
 If true, `skeema pull` will normalize the format of all *.sql files to match the canonical format shown in MySQL's `SHOW CREATE`, just like if `skeema lint` was called afterwards. If false, this step is skipped.
 
+### my-cnf
+
+Commands | *all*
+--- | :---
+**Default** | true
+**Type** | boolean
+**Restrictions** | none
+
+If false, skeema will skip reading of the `~/.my.cnf` for configuration information. If true, it will processed in order ([as specified by configuration priority](config.md#priority-of-options-set-in-multiple-places))
+
+Note that a file with higher priority can set this to option to false and disable the subsequent reading of the `~/.my.cnf` file. 
+
 ### password
 
 Commands | *all*
