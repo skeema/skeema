@@ -3,6 +3,7 @@ package linter
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/skeema/workspace"
@@ -27,9 +28,23 @@ func (a *Annotation) MessageWithLocation() string {
 		return fmt.Sprintf("%s [Full SQL: %s]", a.Message, a.Statement.Text)
 	}
 	if a.LineOffset == 0 && a.Statement.CharNo > 1 {
-		return fmt.Sprintf("%s:%d:%d: %s", a.Statement.File, a.Statement.LineNo, a.Statement.CharNo, a.Message)
+		return fmt.Sprintf("%s: %s", a.Location(), a.Message)
 	}
-	return fmt.Sprintf("%s:%d: %s", a.Statement.File, a.Statement.LineNo+a.LineOffset, a.Message)
+	return fmt.Sprintf("%s: %s", a.Location(), a.Message)
+}
+
+// Location returns the file, line number and character number where the
+// statement which is the cause of the Annotation was obtained from.
+func (a *Annotation) Location() string {
+	fileName := a.Statement.File
+	if fileName == "" {
+		fileName = "unknown"
+	}
+
+	if a.LineOffset == 0 && a.Statement.CharNo > 1 {
+		return fmt.Sprintf("%s:%d:%d", fileName, a.Statement.LineNo, a.Statement.CharNo)
+	}
+	return fmt.Sprintf("%s:%d", fileName, a.Statement.LineNo+a.LineOffset)
 }
 
 // Result is a combined set of linter annotations and/or Golang errors found
@@ -41,6 +56,30 @@ type Result struct {
 	DebugLogs     []string
 	Exceptions    []error
 	Schemas       map[string]*tengo.Schema // Keyed by dir path and optionally schema name
+}
+
+// sortByFile implements the sort.Interface for []*Annotation to get a deterministic
+// sort order for Annotation lists.
+// sortByFile sorts the Annotation slice in lexicographical order
+// based on the file location (file name, line number and character number).
+// If two Annotations have the same line number the Problem name is used to
+// determine the order, it is assumed several locations can not be associatd
+// with the same problem type.
+type sortByFile []*Annotation
+
+func (a sortByFile) Len() int      { return len(a) }
+func (a sortByFile) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a sortByFile) Less(i, j int) bool {
+	loc0 := a[i].Location()
+	loc1 := a[j].Location()
+	switch {
+	case loc0 < loc1:
+		return true
+	case loc0 == loc1:
+		return a[i].Problem < a[j].Problem
+	default:
+		return false
+	}
 }
 
 // Merge combines other into r's value in-place.
@@ -59,6 +98,18 @@ func (r *Result) Merge(other *Result) {
 	for key, value := range other.Schemas {
 		r.Schemas[key] = value
 	}
+}
+
+// SortByFile sorts the error, warning and format notice messages according
+// to the filenames they appear relate to.
+func (r *Result) SortByFile() {
+	if r == nil {
+		return
+	}
+
+	sort.Sort(sortByFile(r.Errors))
+	sort.Sort(sortByFile(r.Warnings))
+	sort.Sort(sortByFile(r.FormatNotices))
 }
 
 // BadConfigResult returns a *Result containing a single ConfigError in the
@@ -120,6 +171,9 @@ func LintDir(dir *fs.Dir, wsOpts workspace.Options) *Result {
 			})
 		}
 	}
+
+	// Make sure the problem messages have a deterministic order.
+	result.SortByFile()
 
 	return result
 }
