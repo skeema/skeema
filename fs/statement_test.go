@@ -91,11 +91,17 @@ func TestStripAnyQuote(t *testing.T) {
 
 func TestCanParse(t *testing.T) {
 	cases := map[string]bool{
-		"CREATE TABLE foo (\n\tid int\n) ;\n": true,
-		"USE some_db\n\n":                     true,
-		"INSERT INTO foo VALUES (';')":        false,
-		"bork bork bork":                      false,
-		"# hello":                             false,
+		"CREATE TABLE foo (\n\t`id` int unsigned DEFAULT '0'\n) ;\n": true,
+		"CREATE TABLE   IF  not EXISTS  foo (\n\tid int\n) ;\n":      true,
+		"USE some_db\n\n":                                            true,
+		"INSERT INTO foo VALUES (';')":                               false,
+		"bork bork bork":                                             false,
+		"# hello":                                                    false,
+		"CREATE TEMPORARY TABLE foo (\n\tid int\n) ;\n":   false,
+		"CREATE TABLE foo LIKE bar":                       false,
+		"CREATE TABLE foo (like bar)":                     false,
+		"CREATE TABLE foo2 select * from foo":             false,
+		"CREATE TABLE foo2 (id int) AS select * from foo": false,
 	}
 	for input, expected := range cases {
 		if actual := CanParse(input); actual != expected {

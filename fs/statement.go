@@ -113,9 +113,17 @@ func (stmt *Statement) Remove() {
 func CanParse(input string) bool {
 	sqlStmt := &sqlStatement{}
 	err := nameParser.ParseString(input, sqlStmt)
-	return err == nil
+	return err == nil && !sqlStmt.forbidden()
 }
 
+//////////// lexing/parsing internals from here to end of this file ////////////
+
+// TODO: The current state of lexing and parsing in this file is a mess. First
+// there's a manually-coded lexer to split files into statements, and then
+// there's a separate regexp-based lexer for splitting statements into tokens,
+// followed by a parser for identifying the statement type and any identifier
+// names. These should all be unified, which would improve performance and
+// reduce the amount of code.
 type statementTokenizer struct {
 	filePath  string
 	delimiter string // statement delimiter, typically ";" or sometimes "//" for routines
@@ -344,7 +352,7 @@ func (ls *lineState) parseStatement() {
 		ls.stmt.Type = StatementTypeNoop
 	} else {
 		sqlStmt := &sqlStatement{}
-		if err := nameParser.ParseString(txt, sqlStmt); err != nil {
+		if err := nameParser.ParseString(txt, sqlStmt); err != nil || sqlStmt.forbidden() {
 			return
 		} else if sqlStmt.UseCommand != nil {
 			ls.stmt.Type = StatementTypeCommand
@@ -423,6 +431,23 @@ type sqlStatement struct {
 	DelimiterCommand *delimiterCommand `parser:"| @@"`
 }
 
+// forbidden returns true if the statement can be parsed, but is of a disallowed
+// form by this package.
+func (sqlStmt *sqlStatement) forbidden() bool {
+	// Forbid CREATE TABLE...LIKE and CREATE TABLE...SELECT. Both are potentially
+	// ordering-dependent; and the latter mixes DML, which violates "workspace
+	// tables should be empty" validations.
+	if sqlStmt.CreateTable != nil {
+		for _, token := range sqlStmt.CreateTable.Body.Contents {
+			token = strings.ToUpper(token)
+			if token == "LIKE" || token == "SELECT" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // objectName represents the name of an object, which may or may not be
 // backtick-wrapped, and may or may not have multiple qualifier parts (each
 // also potentially backtick-wrapped).
@@ -441,9 +466,11 @@ func (n *objectName) schemaAndTable() (string, string) {
 	return "", stripBackticks(n.Name)
 }
 
-// body slurps all body contents of a statement.
+// body slurps all body contents of a statement. Note that "body" and
+// "statement" here are used with respect to the parser internals, and do NOT
+// refer to Statement or Statement.Body().
 type body struct {
-	Contents string `parser:"(Word | String | Number | Operator)*"`
+	Contents []string `parser:"(@Word | @String | @Number | @Operator)*"`
 }
 
 // definer represents a user who is the definer of a routine or view.
