@@ -20,8 +20,8 @@ func TestAddGlobalConfigFiles(t *testing.T) {
 	// Expectation: global config files not existing isn't fatal
 	cfg := mybase.ParseFakeCLI(t, cmdSuite, "skeema diff")
 	AddGlobalConfigFiles(cfg)
-	if actualPassword := cfg.Get("password"); actualPassword != "<no password>" {
-		t.Errorf("Expected password to be unchanged from default; instead found %s", actualPassword)
+	if cfg.Supplied("password") || cfg.Changed("password") {
+		t.Errorf("Expected password to be unsupplied and unchanged from default; instead found %q", cfg.GetRaw("password"))
 	}
 
 	os.MkdirAll("fake-etc", 0777)
@@ -65,8 +65,8 @@ func TestAddGlobalConfigFiles(t *testing.T) {
 	if actualUser := cfg.Get("user"); actualUser != "two" {
 		t.Errorf("Expected user in fake-home/.my.cnf to take precedence; instead found %s", actualUser)
 	}
-	if actualPassword := cfg.Get("password"); actualPassword != "<no password>" {
-		t.Errorf("Expected password to be unchanged from default; instead found %s", actualPassword)
+	if cfg.Supplied("password") || cfg.Changed("password") {
+		t.Errorf("Expected password to be unsupplied and unchanged from default; instead found %q", cfg.GetRaw("password"))
 	}
 }
 
@@ -127,7 +127,8 @@ func TestPasswordOption(t *testing.T) {
 		t.Errorf("Expected password to be howdyplanet, instead found %s", cfg.Get("password"))
 	}
 
-	// ProcessSpecialGlobalOptions should error if STDIN isn't TTY
+	// ProcessSpecialGlobalOptions should error with valueless password if STDIN
+	// isn't a TTY. Test bare "password" (no =) on both CLI and config file.
 	oldStdin := os.Stdin
 	defer func() {
 		os.Stdin = oldStdin
@@ -139,6 +140,29 @@ func TestPasswordOption(t *testing.T) {
 	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --password")
 	if err := ProcessSpecialGlobalOptions(cfg); err == nil {
 		t.Error("Expected ProcessSpecialGlobalOptions to return an error for non-TTY STDIN, but it did not")
+	}
+	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --password", fakeFileSource)
+	if err := ProcessSpecialGlobalOptions(cfg); err == nil {
+		t.Error("Expected ProcessSpecialGlobalOptions to return an error for non-TTY STDIN, but it did not")
+	}
+	fakeFileSource["password"] = ""
+	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff", fakeFileSource)
+	if err := ProcessSpecialGlobalOptions(cfg); err == nil {
+		t.Error("Expected ProcessSpecialGlobalOptions to return an error for non-TTY STDIN, but it did not")
+	}
+
+	// Setting password to an empty string explicitly should not trigger TTY prompt
+	// (note: STDIN intentionally still points to a file here, from test above)
+	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --password=")
+	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
+		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %v", err)
+	}
+	if cfg.Changed("password") {
+		t.Error("Password unexpectedly considered changed from default")
+	}
+	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --password=''")
+	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
+		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %v", err)
 	}
 }
 

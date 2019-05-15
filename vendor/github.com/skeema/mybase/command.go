@@ -271,7 +271,7 @@ func helpHandler(cfg *Config) error {
 	}
 	var forCommandName string
 	if len(cfg.CLI.ArgValues) > 0 {
-		forCommandName = cfg.CLI.ArgValues[0]
+		forCommandName = unquote(cfg.CLI.ArgValues[0])
 	}
 	if len(forCommand.SubCommands) > 0 && forCommandName != "" {
 		var ok bool

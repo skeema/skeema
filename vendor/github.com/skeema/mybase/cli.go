@@ -47,6 +47,12 @@ func (cli *CommandLine) parseLongArg(arg string, args *[]string, longOptionIndex
 			// Boolean without value is treated as true
 			value = "1"
 		}
+	} else if value == "" && opt.Type == OptionTypeString {
+		// Convert empty strings into quote-wrapped empty strings, so that callers
+		// may differentiate between bare "--foo" vs "--foo=" if desired, by using
+		// Config.GetRaw(). Meanwhile Config.Get and most other getters strip
+		// surrounding quotes, so this does not break anything.
+		value = "''"
 	}
 
 	cli.OptionValues[opt.Name] = value

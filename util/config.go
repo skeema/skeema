@@ -31,7 +31,7 @@ func AddGlobalOptions(cmd *mybase.Command) {
 
 	// Visible global options
 	cmd.AddOption(mybase.StringOption("user", 'u', "root", "Username to connect to database host"))
-	cmd.AddOption(mybase.StringOption("password", 'p', "<no password>", "Password for database user; supply with no value to prompt").ValueOptional())
+	cmd.AddOption(mybase.StringOption("password", 'p', "", "Password for database user; omit value to prompt from TTY (default no password)").ValueOptional())
 	cmd.AddOption(mybase.StringOption("host-wrapper", 'H', "", "External bin to shell out to for host lookup; see manual for template vars"))
 	cmd.AddOption(mybase.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema for intermediate operations, created and dropped each run unless --reuse-temp-schema"))
 	cmd.AddOption(mybase.StringOption("connect-options", 'o', "", "Comma-separated session options to set upon connecting to each database instance"))
@@ -107,14 +107,14 @@ func ProcessSpecialGlobalOptions(cfg *mybase.Config) error {
 	}
 
 	// Special handling for password option: if not supplied at all, check env
-	// var instead. Or if supplied but with no value (empty string, instead of
-	// its default of "<no password>"), prompt on STDIN like mysql client does.
+	// var instead. Or if supplied but with no equals sign or value, prompt on
+	// STDIN like mysql client does.
 	if !cfg.Supplied("password") {
 		if val := os.Getenv("MYSQL_PWD"); val != "" {
 			cfg.CLI.OptionValues["password"] = val
 			cfg.MarkDirty()
 		}
-	} else if cfg.Get("password") == "" {
+	} else if !cfg.SuppliedWithValue("password") {
 		var err error
 		cfg.CLI.OptionValues["password"], err = PromptPassword()
 		cfg.MarkDirty()

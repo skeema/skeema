@@ -154,8 +154,8 @@
 [[projects]]
   name = "github.com/skeema/mybase"
   packages = ["."]
-  revision = "8116f0ad0e3bdd0889061d636547492d0744e016"
-  version = "v1.0.5"
+  revision = "488acfe7d1bc0916d1f58b1cc549e74b0eb056fd"
+  version = "v1.0.6"
 
 [[projects]]
   name = "github.com/skeema/tengo"

@@ -156,7 +156,7 @@ func (cfg *Config) MarkDirty() {
 }
 
 // Changed returns true if the specified option name has been set, and its
-// set value differs from the option's default value.
+// set value (after unquoting) differs from the option's default value.
 func (cfg *Config) Changed(name string) bool {
 	if !cfg.Supplied(name) {
 		return false
@@ -164,7 +164,7 @@ func (cfg *Config) Changed(name string) bool {
 	opt := cfg.FindOption(name)
 	// Note that opt cannot be nil here, so no need to check. If the name didn't
 	// correspond to an existing option, the previous call to Supplied panics.
-	return (cfg.unifiedValues[name] != opt.Default)
+	return (unquote(cfg.unifiedValues[name]) != opt.Default)
 }
 
 // Supplied returns true if the specified option name has been set by some
@@ -184,6 +184,24 @@ func (cfg *Config) Supplied(name string) bool {
 	default:
 		return true
 	}
+}
+
+// SuppliedWithValue returns true if the specified option name has been set by
+// some configuration source AND had a value specified, even if that value was
+// a blank string. For example, this returns true even for "--foo=''" or
+// "--foo=" on a command line, or "foo=''" or "foo=" in an option file. Returns
+// false for bare "--foo" on CLI or bare "foo" in an option file.
+// This method is only usable on OptionTypeString options with !RequireValue.
+// Panics if the supplied option name does not meet those requirements.
+func (cfg *Config) SuppliedWithValue(name string) bool {
+	opt := cfg.FindOption(name)
+	if opt.Type != OptionTypeString || opt.RequireValue {
+		panic(fmt.Errorf("Assertion failed: SuppliedWithValue called on wrong kind of option %s", name))
+	}
+	if !cfg.Supplied(name) {
+		return false
+	}
+	return cfg.GetRaw(name) != ""
 }
 
 // OnCLI returns true if the specified option name was set on the command-line,

@@ -198,6 +198,12 @@ func (f *File) Parse(cfg *Config) error {
 					// For booleans, option without value indicates option is being enabled
 					parsedLine.value = "1"
 				}
+			} else if parsedLine.value == "" && opt.Type == OptionTypeString {
+				// Convert empty strings into quote-wrapped empty strings, so that callers
+				// may differentiate between bare "foo" vs "foo=" if desired, by using
+				// Config.GetRaw(). Meanwhile Config.Get and most other getters strip
+				// surrounding quotes, so this does not break anything.
+				parsedLine.value = "''"
 			}
 			section.Values[parsedLine.key] = parsedLine.value
 		}
