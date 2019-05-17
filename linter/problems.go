@@ -34,10 +34,14 @@ func noPKDetector(schema *tengo.Schema, logicalSchema *fs.LogicalSchema, _ Optio
 	for _, table := range schema.Tables {
 		if table.PrimaryKey == nil {
 			key := tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: table.Name}
+			message := fmt.Sprintf("Table %s does not define a PRIMARY KEY.", table.Name)
+			if table.Engine == "InnoDB" && table.ClusteredIndexKey() == nil {
+				message += " Lack of an explicit PRIMARY KEY hurts performance, and prevents use of third-party tools such as pt-online-schema-change."
+			}
 			results = append(results, &Annotation{
 				Statement: logicalSchema.Creates[key],
 				Summary:   "No primary key",
-				Message:   fmt.Sprintf("Table %s does not define a PRIMARY KEY", table.Name),
+				Message:   message,
 			})
 		}
 	}
@@ -46,6 +50,28 @@ func noPKDetector(schema *tengo.Schema, logicalSchema *fs.LogicalSchema, _ Optio
 
 func badCharsetDetector(schema *tengo.Schema, logicalSchema *fs.LogicalSchema, opts Options) []*Annotation {
 	results := make([]*Annotation, 0)
+	makeMessage := func(table *tengo.Table, column *tengo.Column) string {
+		var subject, charSet, allowedList, moreInfo string
+		if column == nil {
+			subject = fmt.Sprintf("Table %s", table.Name)
+			charSet = table.CharSet
+		} else {
+			subject = fmt.Sprintf("Column %s of table %s", column.Name, table.Name)
+			charSet = column.CharSet
+		}
+		if len(opts.AllowedCharSets) == 1 {
+			allowedList = fmt.Sprintf(" Only the %s character set is permitted.", opts.AllowedCharSets[0])
+		} else if len(opts.AllowedCharSets) > 1 && len(opts.AllowedCharSets) <= 5 {
+			allowedList = fmt.Sprintf(" The following character sets are permitted: %s.", strings.Join(opts.AllowedCharSets, ", "))
+		}
+		if charSet == "utf8" && isAllowed("utf8mb4", opts.AllowedCharSets) {
+			moreInfo = "\nTo permit storage of all valid UTF-8 characters, use the utf8mb4 character set instead of the legacy utf8 character set."
+		} else if charSet == "binary" {
+			moreInfo = "\nUsing equivalent binary column types (e.g. BINARY, VARBINARY, BLOB) is preferred for readability."
+		}
+		return fmt.Sprintf("%s is using default character set %s, which is not listed in option allow-charset.%s%s", subject, charSet, allowedList, moreInfo)
+	}
+
 	for _, table := range schema.Tables {
 		// Check the table's default charset
 		if !isAllowed(table.CharSet, opts.AllowedCharSets) {
@@ -56,7 +82,7 @@ func badCharsetDetector(schema *tengo.Schema, logicalSchema *fs.LogicalSchema, o
 				Statement:  logicalSchema.Creates[key],
 				LineOffset: findLastLineOffset(re, stmt.Text),
 				Summary:    "Character set not permitted",
-				Message:    fmt.Sprintf("Table %s is using default character set %s, which is not listed in option allow-charset", table.Name, table.CharSet),
+				Message:    makeMessage(table, nil),
 			})
 			continue // if a table's default charset isn't allowed, don't generate col-level annotations too
 		}
@@ -71,9 +97,8 @@ func badCharsetDetector(schema *tengo.Schema, logicalSchema *fs.LogicalSchema, o
 					Statement:  logicalSchema.Creates[key],
 					LineOffset: findFirstLineOffset(re, stmt.Text),
 					Summary:    "Character set not permitted",
-					Message:    fmt.Sprintf("Column %s of table %s is using character set %s, which is not listed in option allow-charset", col.Name, table.Name, col.CharSet),
+					Message:    makeMessage(table, col),
 				})
-				break // stop after the first disallowed charset col per table
 			}
 		}
 	}
@@ -87,11 +112,17 @@ func badEngineDetector(schema *tengo.Schema, logicalSchema *fs.LogicalSchema, op
 			key := tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: table.Name}
 			stmt := logicalSchema.Creates[key]
 			re := regexp.MustCompile(fmt.Sprintf(`(?i)ENGINE\s*=?\s*%s`, table.Engine))
+			message := fmt.Sprintf("Table %s is using storage engine %s, which is not listed in option allow-engine.", table.Name, table.Engine)
+			if len(opts.AllowedEngines) == 1 {
+				message = fmt.Sprintf("%s Only the %s storage engine is permitted.", message, opts.AllowedEngines[0])
+			} else if len(opts.AllowedEngines) > 1 && len(opts.AllowedEngines) <= 5 {
+				message = fmt.Sprintf("%s The following storage engines are permitted: %s.", message, strings.Join(opts.AllowedEngines, ", "))
+			}
 			results = append(results, &Annotation{
 				Statement:  stmt,
 				LineOffset: findFirstLineOffset(re, stmt.Text),
 				Summary:    "Storage engine not permitted",
-				Message:    fmt.Sprintf("Table %s is using storage engine %s, which is not listed in option allow-engine", table.Name, table.Engine),
+				Message:    message,
 			})
 		}
 	}
