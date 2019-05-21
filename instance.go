@@ -926,11 +926,11 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		         CONCAT(kcu.constraint_schema, '.', kcu.table_name, '.', kcu.column_name) AS col_lookup_key
 		FROM     referential_constraints rc
 		JOIN     key_column_usage kcu ON kcu.constraint_name = rc.constraint_name AND
-		                                 kcu.constraint_schema = rc.constraint_schema AND
+		                                 kcu.table_schema = ? AND
 		                                 kcu.referenced_column_name IS NOT NULL
 		WHERE    rc.constraint_schema = ?
 		ORDER BY BINARY rc.constraint_name, kcu.ordinal_position`
-	if err := db.Select(&rawForeignKeys, query, schema); err != nil {
+	if err := db.Select(&rawForeignKeys, query, schema, schema); err != nil {
 		return nil, fmt.Errorf("Error querying foreign key constraints for schema %s: %s", schema, err)
 	}
 	foreignKeysByTableName := make(map[string][]*ForeignKey)
