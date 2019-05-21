@@ -158,10 +158,10 @@
   version = "v1.0.6"
 
 [[projects]]
+  branch = "master"
   name = "github.com/skeema/tengo"
   packages = ["."]
-  revision = "1ea32f545b1c0d18fa9829ea438789d1b3d680bb"
-  version = "v0.8.15"
+  revision = "05dd6e28cfd112a2e528b4c60fbe772c46fd85fb"
 
 [[projects]]
   branch = "master"
