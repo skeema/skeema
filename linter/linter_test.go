@@ -43,7 +43,8 @@ func TestLintDir(t *testing.T) {
 	}
 
 	// With the configuration in validcfg/.skeema, lack-of-PK is an error, along
-	// with invalid SQL (which is always an error). Other problems are warnings.
+	// with SQL syntax error (which is always an error). Other problems are
+	// warnings.
 	if len(result.Errors) != 3 {
 		t.Errorf("Expected 3 lint errors, instead found %d", len(result.Errors))
 	} else {
@@ -54,7 +55,7 @@ func TestLintDir(t *testing.T) {
 					t.Errorf("Unexpected annotation values: %+v", a)
 				}
 			case "borked1":
-				if a.LineOffset != 0 || !strings.Contains(a.Message, "Error 1064") {
+				if a.LineOffset != 2 || !strings.Contains(a.Message, "Error 1064") {
 					t.Errorf("Unexpected annotation values: %+v", a)
 				}
 			default:

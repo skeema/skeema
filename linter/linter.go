@@ -3,7 +3,9 @@ package linter
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/skeema/workspace"
@@ -173,6 +175,8 @@ func LintDir(dir *fs.Dir, wsOpts workspace.Options) *Result {
 	return result
 }
 
+var reSyntaxErrorLine = regexp.MustCompile(`(?s) the right syntax to use near '.*' at line (\d+)`)
+
 // ExecLogicalSchema is a wrapper around workspace.ExecLogicalSchema. After the
 // tengo.Schema is obtained and introspected, it is also linted. Any errors
 // are captured as part of the *Result. However, the schema itself is not yet
@@ -192,11 +196,18 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, wsOpts workspace.Options
 			result.DebugLogs = append(result.DebugLogs, fmt.Sprintf("Skipping %s because ignore-table='%s'", stmtErr.ObjectKey(), opts.IgnoreTable))
 			continue
 		}
-		result.Errors = append(result.Errors, &Annotation{
+		a := &Annotation{
 			Statement: stmtErr.Statement,
 			Summary:   "SQL statement returned an error",
 			Message:   stmtErr.Err.Error(),
-		})
+		}
+		// If the error was a syntax error, attempt to capture the correct line
+		if matches := reSyntaxErrorLine.FindStringSubmatch(a.Message); matches != nil {
+			if lineNumber, _ := strconv.Atoi(matches[1]); lineNumber > 0 {
+				a.LineOffset = lineNumber - 1 // convert from 1-based line number to 0-based offset
+			}
+		}
+		result.Errors = append(result.Errors, a)
 	}
 
 	for problemName, severity := range opts.ProblemSeverity {
