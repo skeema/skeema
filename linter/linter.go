@@ -112,9 +112,9 @@ func (r *Result) SortByFile() {
 // BadConfigResult returns a *Result containing a single ConfigError in the
 // Exceptions field. The supplied err will be converted to a ConfigError if it
 // is not already one.
-func BadConfigResult(err error) *Result {
+func BadConfigResult(dir *fs.Dir, err error) *Result {
 	if _, ok := err.(ConfigError); !ok {
-		err = ConfigError(err.Error())
+		err = toConfigError(dir, err)
 	}
 	return &Result{
 		Exceptions: []error{err},
@@ -126,7 +126,7 @@ func BadConfigResult(err error) *Result {
 func LintDir(dir *fs.Dir, wsOpts workspace.Options) *Result {
 	opts, err := OptionsForDir(dir)
 	if err != nil && len(dir.LogicalSchemas) > 0 {
-		return BadConfigResult(err)
+		return BadConfigResult(dir, err)
 	}
 
 	result := &Result{}

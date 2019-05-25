@@ -2,6 +2,8 @@ package fs
 
 import (
 	"net/url"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -25,6 +27,10 @@ func TestParseDir(t *testing.T) {
 	if len(dir.LogicalSchemas) != 1 {
 		t.Fatalf("Expected 1 LogicalSchema; instead found %d", len(dir.LogicalSchemas))
 	}
+	if expectRepoBase, _ := filepath.Abs(".."); expectRepoBase != dir.repoBase {
+		// expected repo base is .. due to presence of .git there
+		t.Errorf("dir repoBase %q does not match expectation %q", dir.repoBase, expectRepoBase)
+	}
 	logicalSchema := dir.LogicalSchemas[0]
 	if logicalSchema.CharSet != "latin1" || logicalSchema.Collation != "latin1_swedish_ci" {
 		t.Error("LogicalSchema not correctly populated with charset/collation from .skeema file")
@@ -39,6 +45,14 @@ func TestParseDir(t *testing.T) {
 				t.Errorf("Did not find Create for table %s in LogicalSchema", name)
 			}
 		}
+	}
+
+	// Confirm that parsing ~ should cause it to be its own repoBase, since we
+	// do not search beyond HOME for .skeema files or .git dirs
+	home := filepath.Clean(os.Getenv("HOME"))
+	dir = getDir(t, home)
+	if dir.repoBase != home {
+		t.Errorf("Unexpected repoBase for $HOME: expected %s, found %s", home, dir.repoBase)
 	}
 
 	// Confirm error cases: nonexistent dir; non-dir file; dir with *.sql files
@@ -62,6 +76,30 @@ func TestParseDir(t *testing.T) {
 	}
 }
 
+func TestParseDirSymlinks(t *testing.T) {
+	dir := getDir(t, "../testdata/fs/symlinks")
+
+	// Confirm symlinks to dirs are ignored by Subdirs
+	subs, badCount, err := dir.Subdirs()
+	if err != nil || badCount > 0 || len(subs) != 2 {
+		t.Fatalf("Unexpected error from Subdirs(): %v, %d, %v", subs, badCount, err)
+	}
+
+	dir = getDir(t, "../testdata/fs/symlinks/product")
+	logicalSchema := dir.LogicalSchemas[0]
+	expectTableNames := []string{"comments", "posts", "subscriptions", "users", "activity", "rollups"}
+	if len(logicalSchema.Creates) != len(expectTableNames) {
+		t.Errorf("Unexpected object count: found %d, expected %d", len(logicalSchema.Creates), len(expectTableNames))
+	} else {
+		for _, name := range expectTableNames {
+			key := tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: name}
+			if logicalSchema.Creates[key] == nil {
+				t.Errorf("Did not find Create for table %s in LogicalSchema", name)
+			}
+		}
+	}
+}
+
 func TestDirBaseName(t *testing.T) {
 	dir := getDir(t, "../testdata/golden/init/mydb/product")
 	if bn := dir.BaseName(); bn != "product" {
@@ -71,18 +109,18 @@ func TestDirBaseName(t *testing.T) {
 
 func TestDirRelPath(t *testing.T) {
 	dir := getDir(t, "../testdata/golden/init/mydb/product")
-	if rel := dir.RelPath(); rel != "../testdata/golden/init/mydb/product" {
+	if rel := dir.RelPath(); rel != "testdata/golden/init/mydb/product" {
 		t.Errorf("Unexpected rel path: %s", rel)
 	}
-	dir = getDir(t, "./")
+	dir = getDir(t, "..")
 	if rel := dir.RelPath(); rel != "." {
 		t.Errorf("Unexpected rel path: %s", rel)
 	}
 
 	// Force a relative path into dir.Path (shouldn't normally be possible) and
-	// confirm same value is returned
+	// confirm just the basename (bar) is returned
 	dir.Path = "foo/bar"
-	if rel := dir.RelPath(); rel != "foo/bar" {
+	if rel := dir.RelPath(); rel != "bar" {
 		t.Errorf("Unexpected rel path: %s", rel)
 	}
 }

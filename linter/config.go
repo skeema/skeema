@@ -60,11 +60,11 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 	var err error
 	opts.IgnoreSchema, err = dir.Config.GetRegexp("ignore-schema")
 	if err != nil {
-		return Options{}, ConfigError(err.Error())
+		return Options{}, toConfigError(dir, err)
 	}
 	opts.IgnoreTable, err = dir.Config.GetRegexp("ignore-table")
 	if err != nil {
-		return Options{}, ConfigError(err.Error())
+		return Options{}, toConfigError(dir, err)
 	}
 
 	// Populate opts.ProblemSeverity from the warnings and errors options (in
@@ -74,14 +74,14 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 	for _, val := range dir.Config.GetSlice("warnings", ',', true) {
 		val = strings.ToLower(val)
 		if !problemExists(val) {
-			return Options{}, ConfigError(fmt.Sprintf("Option warnings must be a comma-separated list including these values: %s", allAllowed))
+			return Options{}, newConfigError(dir, "Option warnings must be a comma-separated list including these values: %s", allAllowed)
 		}
 		opts.ProblemSeverity[val] = SeverityWarning
 	}
 	for _, val := range dir.Config.GetSlice("errors", ',', true) {
 		val = strings.ToLower(val)
 		if !problemExists(val) {
-			return Options{}, ConfigError(fmt.Sprintf("Option errors must be a comma-separated list including these values: %s", allAllowed))
+			return Options{}, newConfigError(dir, "Option errors must be a comma-separated list including these values: %s", allAllowed)
 		}
 		opts.ProblemSeverity[val] = SeverityError
 	}
@@ -94,12 +94,12 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 	for problem, listOption := range problemToList {
 		severity, ok := opts.ProblemSeverity[problem]
 		if ok && len(listOption) == 0 {
-			errStr := fmt.Sprintf(
+			err := newConfigError(dir,
 				"With option %ss=%s, corresponding option %s must be non-empty",
 				string(severity),
 				problem,
 				strings.Replace(problem, "bad-", "allow-", -1))
-			return Options{}, ConfigError(errStr)
+			return Options{}, err
 		}
 	}
 
@@ -112,4 +112,17 @@ type ConfigError string
 // Error satisfies the builtin error interface.
 func (ce ConfigError) Error() string {
 	return string(ce)
+}
+
+// newConfigError creates a config error referring to the specified directory
+// and message.
+func newConfigError(dir *fs.Dir, format string, a ...interface{}) ConfigError {
+	message := fmt.Sprintf(format, a...)
+	return ConfigError(fmt.Sprintf("%s: %s", dir.RelPath(), message))
+}
+
+// toConfigError converts another error to a ConfigError, prefixed with info
+// on the directory.
+func toConfigError(dir *fs.Dir, err error) ConfigError {
+	return ConfigError(fmt.Sprintf("%s: %s", dir.RelPath(), err))
 }

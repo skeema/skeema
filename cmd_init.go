@@ -276,7 +276,7 @@ func preparePath(dirPath string, globalConfig *mybase.Config) (created bool, err
 	}
 
 	// Confirm no ancestor of dirPath defines a schema already
-	parentFiles, err := fs.ParentOptionFiles(dirPath, globalConfig)
+	parentFiles, _, err := fs.ParentOptionFiles(dirPath, globalConfig)
 	if err != nil {
 		return false, err
 	}

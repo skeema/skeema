@@ -26,6 +26,7 @@ type Dir struct {
 	SQLFiles          []SQLFile
 	LogicalSchemas    []*LogicalSchema // for now, always 0 or 1 elements; 2+ in same dir to be supported in future
 	IgnoredStatements []*Statement     // statements with unknown type / not supported by this package
+	repoBase          string           // absolute path of containing repo, or topmost-found .skeema file
 }
 
 // LogicalSchema represents a set of statements from *.sql files in a directory
@@ -78,13 +79,14 @@ func ParseDir(dirPath string, globalConfig *mybase.Config) (*Dir, error) {
 	}
 
 	// Apply the parent option files
-	parentFiles, err := ParentOptionFiles(dirPath, globalConfig)
+	parentFiles, repoBase, err := ParentOptionFiles(dirPath, globalConfig)
 	if err != nil {
 		return nil, err
 	}
 	for _, optionFile := range parentFiles {
 		dir.Config.AddSource(optionFile)
 	}
+	dir.repoBase = repoBase
 
 	if err := dir.parseContents(); err != nil {
 		return nil, err
@@ -101,17 +103,14 @@ func (dir *Dir) BaseName() string {
 	return path.Base(dir.Path)
 }
 
-// RelPath attempts to return the directory path relative to the current working
-// directory. If this is not possible to determine, dir.Path will be returned
-// as-is.
+// RelPath attempts to return the directory path relative to the dir's repoBase.
+// If this cannot be determined, the BaseName is returned.
+// This method is intended for situations when the dir's location within its
+// repo is more relevant than the dir's absolute path.
 func (dir *Dir) RelPath() string {
-	wd, err := os.Getwd()
-	if err != nil {
-		return dir.Path
-	}
-	rel, err := filepath.Rel(wd, dir.Path)
-	if err != nil {
-		return dir.Path
+	rel, err := filepath.Rel(dir.repoBase, dir.Path)
+	if dir.repoBase == "" || err != nil {
+		return dir.BaseName()
 	}
 	return rel
 }
@@ -148,8 +147,9 @@ func (dir *Dir) Subdirs() ([]*Dir, int, error) {
 	for _, fi := range fileInfos {
 		if fi.IsDir() && fi.Name()[0] != '.' {
 			sub := &Dir{
-				Path:   path.Join(dir.Path, fi.Name()),
-				Config: dir.Config.Clone(),
+				Path:     path.Join(dir.Path, fi.Name()),
+				Config:   dir.Config.Clone(),
+				repoBase: dir.repoBase,
 			}
 			subErr := sub.parseContents()
 			if subErr != nil {
@@ -453,7 +453,7 @@ func (dir *Dir) parseContents() error {
 
 	// Tokenize and parse any *.sql files
 	var err error
-	if dir.SQLFiles, err = sqlFiles(dir.Path); err != nil {
+	if dir.SQLFiles, err = sqlFiles(dir.Path, dir.repoBase); err != nil {
 		return err
 	}
 	for _, sf := range dir.SQLFiles {
@@ -472,7 +472,7 @@ func (dir *Dir) parseContents() error {
 			if stmt.Type == StatementTypeCreate {
 				if err := logicalSchemasByName[stmt.Schema()].AddStatement(stmt); err != nil {
 					foundStmt := logicalSchemasByName[stmt.Schema()].Creates[stmt.ObjectKey()]
-					return fmt.Errorf("%s %s found multiple times in %s: %s line %d and %s line %d", stmt.ObjectType, tengo.EscapeIdentifier(stmt.ObjectName), dir, foundStmt.File, foundStmt.LineNo, stmt.File, stmt.LineNo)
+					return fmt.Errorf("%s %s found multiple times in %s: %s line %d and %s line %d", stmt.ObjectType, tengo.EscapeIdentifier(stmt.ObjectName), dir.RelPath(), foundStmt.File, foundStmt.LineNo, stmt.File, stmt.LineNo)
 				}
 			} else if stmt.Type == StatementTypeAlter {
 				logicalSchemasByName[stmt.Schema()].AddStatement(stmt)
@@ -515,21 +515,26 @@ func (dir *Dir) parseContents() error {
 // as the home directory's, as these are presumed to be parsed elsewhere.
 // The files will be read and parsed, using baseConfig to know which options
 // are defined and valid.
-func ParentOptionFiles(dirPath string, baseConfig *mybase.Config) ([]*mybase.File, error) {
+// An absolute path to the "repo base" is also returned as a string. This will
+// typically be either a dir containing a .git subdir, or the rootmost dir
+// containing a .skeema file; failing that, it will be the supplied dirPath.
+func ParentOptionFiles(dirPath string, baseConfig *mybase.Config) ([]*mybase.File, string, error) {
 	cleaned, err := filepath.Abs(filepath.Clean(dirPath))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	cleaned = strings.TrimRight(cleaned, "/") // Prevent strings.Split from spitting out 2 blank strings for root dir
 
 	components := strings.Split(cleaned, string(os.PathSeparator))
 	files := make([]*mybase.File, 0, len(components)-1)
 
+	home := filepath.Clean(os.Getenv("HOME"))
+	repoBase := cleaned
+
 	// Examine parent dirs, going up one level at a time, stopping early if we
 	// hit either the user's home directory or a directory containing a .git subdir.
-	home := filepath.Clean(os.Getenv("HOME"))
-	var atRepoRoot bool
-	for n := len(components) - 1; n >= 0 && !atRepoRoot; n-- {
+	var atRepoBase bool
+	for n := len(components) - 1; n >= 0 && !atRepoBase; n-- {
 		curPath := "/" + path.Join(components[0:n+1]...)
 		if curPath == home {
 			// We already read ~/.skeema as a global file
@@ -542,16 +547,18 @@ func ParentOptionFiles(dirPath string, baseConfig *mybase.Config) ([]*mybase.Fil
 		}
 		for _, fi := range fileInfos {
 			if fi.Name() == ".git" {
-				atRepoRoot = true
+				repoBase = curPath
+				atRepoBase = true
 			} else if fi.Name() == ".skeema" && n < len(components)-1 {
 				// The second part of the above conditional ensures we ignore dirPath's own
 				// .skeema file, since that is handled in Dir.parseContents() to save as
 				// dir.OptionFile.
 				f, err := parseOptionFile(curPath, baseConfig)
 				if err != nil {
-					return nil, err
+					return nil, repoBase, err
 				}
 				files = append(files, f)
+				repoBase = curPath
 			}
 		}
 	}
@@ -561,7 +568,7 @@ func ParentOptionFiles(dirPath string, baseConfig *mybase.Config) ([]*mybase.Fil
 	for left, right := 0, len(files)-1; left < right; left, right = left+1, right-1 {
 		files[left], files[right] = files[right], files[left]
 	}
-	return files, nil
+	return files, repoBase, nil
 }
 
 func parseOptionFile(dirPath string, baseConfig *mybase.Config) (*mybase.File, error) {
@@ -580,7 +587,9 @@ func parseOptionFile(dirPath string, baseConfig *mybase.Config) (*mybase.File, e
 // path. This function does not recursively search subdirs, and does not parse
 // or validate the SQLFile contents in any way. An error will only be returned
 // if the directory cannot be read.
-func sqlFiles(dirPath string) ([]SQLFile, error) {
+// The repoBase affects evaluation of symlinks; any link destinations outside
+// of the repoBase are ignored.
+func sqlFiles(dirPath, repoBase string) ([]SQLFile, error) {
 	fileInfos, err := ioutil.ReadDir(dirPath)
 	if err != nil {
 		return nil, err
@@ -588,17 +597,31 @@ func sqlFiles(dirPath string) ([]SQLFile, error) {
 	result := make([]SQLFile, 0, len(fileInfos))
 	for _, fi := range fileInfos {
 		name := fi.Name()
+		// symlinks: verify it points to an existing file within repoBase. If it
+		// does not, or if any error occurs in any step in checking, skip it.
 		if fi.Mode()&os.ModeSymlink == os.ModeSymlink {
-			fi, err = os.Stat(path.Join(dirPath, name))
+			dest, err := os.Readlink(path.Join(dirPath, name))
 			if err != nil {
-				// ignore symlink pointing to a missing path
+				continue
+			}
+			dest = filepath.Clean(dest)
+			if !filepath.IsAbs(dest) {
+				if dest, err = filepath.Abs(path.Join(dirPath, dest)); err != nil {
+					continue
+				}
+			}
+			if !strings.HasPrefix(dest, repoBase) {
+				continue
+			}
+			if fi, err = os.Lstat(dest); err != nil { // using Lstat here to prevent symlinks-to-symlinks
 				continue
 			}
 		}
-		if strings.HasSuffix(name, ".sql") && fi.Mode().IsRegular() {
+		destName := fi.Name()
+		if strings.HasSuffix(destName, ".sql") && fi.Mode().IsRegular() {
 			sf := SQLFile{
 				Dir:      dirPath,
-				FileName: name,
+				FileName: name, // name relative to dirPath, NOT symlink destination!
 			}
 			result = append(result, sf)
 		}

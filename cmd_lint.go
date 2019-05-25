@@ -72,12 +72,12 @@ func lintWalker(dir *fs.Dir, maxDepth int) (result *linter.Result) {
 	if wsType, _ := dir.Config.GetEnum("workspace", "temp-schema", "docker"); wsType != "docker" || !dir.Config.Changed("flavor") {
 		var err error
 		if inst, err = dir.FirstInstance(); err != nil {
-			result = linter.BadConfigResult(err)
+			result = linter.BadConfigResult(dir, err)
 		}
 	}
 	opts, err := workspace.OptionsForDir(dir, inst)
 	if err != nil {
-		result = linter.BadConfigResult(err)
+		result = linter.BadConfigResult(dir, err)
 	}
 
 	if result == nil {
