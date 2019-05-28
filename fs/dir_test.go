@@ -77,7 +77,7 @@ func TestParseDir(t *testing.T) {
 }
 
 func TestParseDirSymlinks(t *testing.T) {
-	dir := getDir(t, "../testdata/fs/symlinks")
+	dir := getDir(t, "../testdata/fs/sqlsymlinks")
 
 	// Confirm symlinks to dirs are ignored by Subdirs
 	subs, badCount, err := dir.Subdirs()
@@ -85,7 +85,7 @@ func TestParseDirSymlinks(t *testing.T) {
 		t.Fatalf("Unexpected error from Subdirs(): %v, %d, %v", subs, badCount, err)
 	}
 
-	dir = getDir(t, "../testdata/fs/symlinks/product")
+	dir = getDir(t, "../testdata/fs/sqlsymlinks/product")
 	logicalSchema := dir.LogicalSchemas[0]
 	expectTableNames := []string{"comments", "posts", "subscriptions", "users", "activity", "rollups"}
 	if len(logicalSchema.Creates) != len(expectTableNames) {
@@ -96,6 +96,29 @@ func TestParseDirSymlinks(t *testing.T) {
 			if logicalSchema.Creates[key] == nil {
 				t.Errorf("Did not find Create for table %s in LogicalSchema", name)
 			}
+		}
+	}
+
+	// .skeema files that are symlinks pointing within same repo are OK
+	getDir(t, "../testdata/fs/cfgsymlinks1/validrel")
+	dir = getDir(t, "../testdata/fs/cfgsymlinks1")
+	subs, badCount, err = dir.Subdirs()
+	if err != nil || badCount != 2 || len(subs) != 1 {
+		t.Errorf("Expected Subdirs() to return 1 valid sub and 2 bad ones; instead found [%d], %d, %v", len(subs), badCount, err)
+	}
+
+	// Otherwise, .skeema files that are symlinks pointing outside the repo, or
+	// to non-regular files, generate errors
+	expectErrors := []string{
+		"../testdata/fs/cfgsymlinks1/invalidrel",
+		"../testdata/fs/cfgsymlinks1/invalidabs",
+		"../testdata/fs/cfgsymlinks2/product",
+		"../testdata/fs/cfgsymlinks2",
+	}
+	cfg := getValidConfig(t)
+	for _, dirPath := range expectErrors {
+		if _, err := ParseDir(dirPath, cfg); err == nil {
+			t.Error("Expected error from ParseDir(), but instead err is nil")
 		}
 	}
 }

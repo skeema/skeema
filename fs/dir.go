@@ -79,14 +79,14 @@ func ParseDir(dirPath string, globalConfig *mybase.Config) (*Dir, error) {
 	}
 
 	// Apply the parent option files
-	parentFiles, repoBase, err := ParentOptionFiles(dirPath, globalConfig)
+	var parentFiles []*mybase.File
+	parentFiles, dir.repoBase, err = ParentOptionFiles(dirPath, globalConfig)
 	if err != nil {
 		return nil, err
 	}
 	for _, optionFile := range parentFiles {
 		dir.Config.AddSource(optionFile)
 	}
-	dir.repoBase = repoBase
 
 	if err := dir.parseContents(); err != nil {
 		return nil, err
@@ -122,7 +122,7 @@ func (dir *Dir) Delete() error {
 
 // HasFile returns true if the specified filename exists in dir.
 func (dir *Dir) HasFile(name string) (bool, error) {
-	_, err := os.Stat(path.Join(dir.Path, name))
+	_, err := os.Lstat(path.Join(dir.Path, name))
 	if err == nil {
 		return true, nil
 	} else if os.IsNotExist(err) {
@@ -445,7 +445,7 @@ func (dir *Dir) parseContents() error {
 	if has, err := dir.HasFile(".skeema"); err != nil {
 		return err
 	} else if has {
-		if dir.OptionFile, err = parseOptionFile(dir.Path, dir.Config); err != nil {
+		if dir.OptionFile, err = parseOptionFile(dir.Path, dir.repoBase, dir.Config); err != nil {
 			return err
 		}
 		dir.Config.AddSource(dir.OptionFile)
@@ -526,7 +526,7 @@ func ParentOptionFiles(dirPath string, baseConfig *mybase.Config) ([]*mybase.Fil
 	cleaned = strings.TrimRight(cleaned, "/") // Prevent strings.Split from spitting out 2 blank strings for root dir
 
 	components := strings.Split(cleaned, string(os.PathSeparator))
-	files := make([]*mybase.File, 0, len(components)-1)
+	filePaths := make([]string, 0, len(components)-1)
 
 	home := filepath.Clean(os.Getenv("HOME"))
 	repoBase := cleaned
@@ -553,26 +553,54 @@ func ParentOptionFiles(dirPath string, baseConfig *mybase.Config) ([]*mybase.Fil
 				// The second part of the above conditional ensures we ignore dirPath's own
 				// .skeema file, since that is handled in Dir.parseContents() to save as
 				// dir.OptionFile.
-				f, err := parseOptionFile(curPath, baseConfig)
-				if err != nil {
-					return nil, repoBase, err
-				}
-				files = append(files, f)
+				filePaths = append(filePaths, curPath)
 				repoBase = curPath
 			}
 		}
 	}
 
-	// Reverse the order of the result, so that dir's option file is last. This way
-	// we can easily add the files to the config by applying them in order.
-	for left, right := 0, len(files)-1; left < right; left, right = left+1, right-1 {
-		files[left], files[right] = files[right], files[left]
+	// Now that we have the list of dirs with .skeema files, iterate over it in
+	// reverse order. We want to return an ordered result such that parent dirs
+	// are sorted before their subdirs, so that options may be overridden in
+	// subdirs.
+	files := make([]*mybase.File, 0, len(filePaths))
+	for n := len(filePaths) - 1; n >= 0; n-- {
+		f, err := parseOptionFile(filePaths[n], repoBase, baseConfig)
+		if err != nil {
+			return nil, repoBase, err
+		}
+		files = append(files, f)
 	}
+
 	return files, repoBase, nil
 }
 
-func parseOptionFile(dirPath string, baseConfig *mybase.Config) (*mybase.File, error) {
+func parseOptionFile(dirPath, repoBase string, baseConfig *mybase.Config) (*mybase.File, error) {
 	f := mybase.NewFile(dirPath, ".skeema")
+	fi, err := os.Lstat(f.Path())
+	if err != nil {
+		return nil, err
+	} else if fi.Mode()&os.ModeSymlink == os.ModeSymlink {
+		dest, err := os.Readlink(f.Path())
+		if err != nil {
+			return nil, err
+		}
+		dest = filepath.Clean(dest)
+		if !filepath.IsAbs(dest) {
+			if dest, err = filepath.Abs(path.Join(dirPath, dest)); err != nil {
+				return nil, err
+			}
+		}
+		if !strings.HasPrefix(dest, repoBase) {
+			return nil, fmt.Errorf("%s is a symlink pointing outside of its repo", f.Path())
+		}
+		if fi, err = os.Lstat(dest); err != nil { // using Lstat here to prevent symlinks-to-symlinks
+			return nil, err
+		}
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file, nor a symlink to a regular file", f.Path())
+	}
 	if err := f.Read(); err != nil {
 		return nil, err
 	}
