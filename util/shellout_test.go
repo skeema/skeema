@@ -1,8 +1,11 @@
 package util
 
 import (
+	"io/ioutil"
+	"os"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestShellOutRun(t *testing.T) {
@@ -124,6 +127,56 @@ func TestEscapeVarValue(t *testing.T) {
 	for _, val := range fineAsIs {
 		if actual := escapeVarValue(val); actual != val {
 			t.Errorf("Expected \"%s\" to not need escaping, but escapeVarValue returned: %s", val, actual)
+		}
+	}
+}
+
+func TestShellOutTimeout(t *testing.T) {
+	s := &ShellOut{
+		Command: "sleep 1",
+		Timeout: 10 * time.Millisecond,
+	}
+	if err := s.Run(); err == nil {
+		t.Error("ShellOut.Timeout not working as expected")
+	}
+	s.Command = "echo hello"
+	if _, err := s.RunCapture(); err != nil {
+		t.Errorf("Unexpected error from RunCapture(): %v", err)
+	}
+}
+
+func TestShellOutCombineOutput(t *testing.T) {
+	s := &ShellOut{Command: "echo hello 1>&2; echo world"}
+	if output, err := s.RunCapture(); err != nil {
+		t.Errorf("Unexpected error from RunCapture(): %v", err)
+	} else if output != "world\n" {
+		t.Errorf("Unexpected output from RunCapture(): %q", output)
+	}
+
+	s.CombineOutput = true
+	if output, err := s.RunCapture(); err != nil {
+		t.Errorf("Unexpected error from RunCapture(): %v", err)
+	} else if output != "hello\nworld\n" {
+		t.Errorf("Unexpected output from RunCapture(): %q", output)
+	}
+
+	realStdout := os.Stdout
+	if outFile, err := os.Create("test-shellout-combine.out"); err != nil {
+		t.Fatalf("Unable to redirect stdout to a file: %s", err)
+	} else {
+		os.Stdout = outFile
+		defer func() {
+			os.Stdout = realStdout
+			os.Remove("test-shellout-combine.out")
+		}()
+		if err := s.Run(); err != nil {
+			t.Errorf("Unexpected error from Run(): %v", err)
+		}
+		outFile.Close()
+		if output, err := ioutil.ReadFile("test-shellout-combine.out"); err != nil {
+			t.Fatalf("Unable to read file: %v", err)
+		} else if string(output) != "hello\nworld\n" {
+			t.Errorf("Unexpected STDOUT from Run(): %q", output)
 		}
 	}
 }

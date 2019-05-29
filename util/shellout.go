@@ -1,19 +1,24 @@
 package util
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // ShellOut represents a command-line for an external command, executed via sh -c
 type ShellOut struct {
 	Command          string
-	PrintableCommand string // Used in String() if non-empty; useful for hiding passwords in output
-	Dir              string // Initial working dir for the command if non-empty
+	PrintableCommand string        // Used in String() if non-empty; useful for hiding passwords in output
+	Dir              string        // Initial working dir for the command if non-empty
+	Timeout          time.Duration // If > 0, kill process after this amount of time
+	CombineOutput    bool          // If true, combine stdout and stderr into a single stream
+	cancelFunc       context.CancelFunc
 }
 
 func (s *ShellOut) String() string {
@@ -23,6 +28,15 @@ func (s *ShellOut) String() string {
 	return s.Command
 }
 
+func (s *ShellOut) cmd() *exec.Cmd {
+	if s.Timeout > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), s.Timeout)
+		s.cancelFunc = cancel
+		return exec.CommandContext(ctx, "/bin/sh", "-c", s.Command)
+	}
+	return exec.Command("/bin/sh", "-c", s.Command)
+}
+
 // Run shells out to the external command and blocks until it completes. It
 // returns an error if one occurred. STDIN, STDOUT, and STDERR will be
 // redirected to those of the parent process.
@@ -30,30 +44,48 @@ func (s *ShellOut) Run() error {
 	if s.Command == "" {
 		return errors.New("Attempted to shell out to an empty command string")
 	}
-	cmd := exec.Command("/bin/sh", "-c", s.Command)
+	cmd := s.cmd()
+	if s.cancelFunc != nil {
+		defer s.cancelFunc()
+	}
 	cmd.Dir = s.Dir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	if s.CombineOutput {
+		cmd.Stderr = os.Stdout
+	} else {
+		cmd.Stderr = os.Stderr
+	}
 	return cmd.Run()
 }
 
 // RunCapture shells out to the external command and blocks until it completes.
-// It returns the command's STDOUT output as a single string. STDIN and STDERR
-// are redirected to those of the parent process.
+// It returns the command's STDOUT output as a single string, optionally with
+// STDERR if CombineOutput is true; otherwise STDERR is redirected to that of
+// the parent process. STDIN is always redirected from the parent process.
 func (s *ShellOut) RunCapture() (string, error) {
 	if s.Command == "" {
 		return "", errors.New("Attempted to shell out to an empty command string")
 	}
-	cmd := exec.Command("/bin/sh", "-c", s.Command)
+	cmd := s.cmd()
+	if s.cancelFunc != nil {
+		defer s.cancelFunc()
+	}
 	cmd.Dir = s.Dir
 	cmd.Stdin = os.Stdin
-	cmd.Stderr = os.Stderr
-	out, err := cmd.Output()
+
+	var out []byte
+	var err error
+	if s.CombineOutput {
+		out, err = cmd.CombinedOutput()
+	} else {
+		cmd.Stderr = os.Stderr
+		out, err = cmd.Output()
+	}
 	return string(out), err
 }
 
-// RunCaptureSplit behaves like RunCapture, except the STDOUT will be tokenized.
+// RunCaptureSplit behaves like RunCapture, except the output will be tokenized.
 // If newlines are present in the output, it will be split on newlines; else if
 // commas are present, it will be split on commas; else ditto for tabs; else
 // ditto for spaces. Blank tokens will be ignored (i.e. 2 delimiters in a row
