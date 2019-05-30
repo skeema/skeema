@@ -51,16 +51,33 @@ func (s WorkspaceIntegrationSuite) TestLocalDocker(t *testing.T) {
 	if schema, err := ws.IntrospectSchema(); err != nil || schema.Name != opts.SchemaName || len(schema.Tables) > 0 {
 		t.Errorf("Unexpected result from IntrospectSchema(): %+v / %v", schema, err)
 	}
-	db, err := ws.ConnectionPool("")
-	if err != nil {
-		t.Errorf("Unexpected error from ConnectionPool(): %s", err)
+
+	// Check behavior of default connection params, as well as overrides
+	assertWaitTimeout := func(params string, expected int, shouldErr bool) {
+		t.Helper()
+		db, err := ws.ConnectionPool(params)
+		if shouldErr {
+			if err == nil {
+				t.Error("Expected error, but it was nil")
+			}
+			return
+		} else if err != nil {
+			t.Errorf("Unexpected error from ConnectionPool(): %v", err)
+		}
+		var waitTimeout int
+		if err := db.QueryRow("SELECT @@wait_timeout").Scan(&waitTimeout); err != nil {
+			t.Fatalf("Unexpected error querying wait_timeout: %s", err)
+		} else if waitTimeout != expected {
+			t.Errorf("DefaultConnParams not working as expected; found wait_timeout %d, expected %d", waitTimeout, expected)
+		}
 	}
-	var waitTimeout int
-	if err := db.QueryRow("SELECT @@wait_timeout").Scan(&waitTimeout); err != nil {
-		t.Fatalf("Unexpected error querying wait_timeout: %s", err)
-	} else if waitTimeout != 123 {
-		t.Errorf("DefaultConnParams not working as expected; wait_timeout is %d", waitTimeout)
-	}
+	assertWaitTimeout("", 123, false)
+	assertWaitTimeout("wait_timeout=456", 456, false)
+	assertWaitTimeout("wait_timeout=456&%%%%%%", 0, true)
+	ld.defaultConnParams = "%%%%"
+	assertWaitTimeout("wait_timeout=456", 0, true)
+
+	// Continuing on with CleanupActionNone...
 	if err := ws.Cleanup(); err != nil {
 		t.Errorf("Unexpected error from cleanup: %s", err)
 	}
