@@ -51,13 +51,15 @@ func noPKDetector(schema *tengo.Schema, logicalSchema *fs.LogicalSchema, _ Optio
 func badCharsetDetector(schema *tengo.Schema, logicalSchema *fs.LogicalSchema, opts Options) []*Annotation {
 	results := make([]*Annotation, 0)
 	makeMessage := func(table *tengo.Table, column *tengo.Column) string {
-		var subject, charSet, allowedList, moreInfo string
+		var subject, charSet, using, allowedList, moreInfo string
 		if column == nil {
 			subject = fmt.Sprintf("Table %s", table.Name)
 			charSet = table.CharSet
+			using = "default character set"
 		} else {
 			subject = fmt.Sprintf("Column %s of table %s", column.Name, table.Name)
 			charSet = column.CharSet
+			using = "character set"
 		}
 		if len(opts.AllowedCharSets) == 1 {
 			allowedList = fmt.Sprintf(" Only the %s character set is permitted.", opts.AllowedCharSets[0])
@@ -69,7 +71,7 @@ func badCharsetDetector(schema *tengo.Schema, logicalSchema *fs.LogicalSchema, o
 		} else if charSet == "binary" {
 			moreInfo = "\nUsing equivalent binary column types (e.g. BINARY, VARBINARY, BLOB) is preferred for readability."
 		}
-		return fmt.Sprintf("%s is using default character set %s, which is not listed in option allow-charset.%s%s", subject, charSet, allowedList, moreInfo)
+		return fmt.Sprintf("%s is using %s %s, which is not listed in option allow-charset.%s%s", subject, using, charSet, allowedList, moreInfo)
 	}
 
 	for _, table := range schema.Tables {
