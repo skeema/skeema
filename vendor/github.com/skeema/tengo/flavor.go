@@ -180,12 +180,6 @@ func (fl Flavor) AllowBlobDefaults() bool {
 	return fl.VendorMinVersion(VendorMariaDB, 10, 2)
 }
 
-// AllowDefaultExpression returns true if the DEFAULT clause of a column is
-// allowed to contain an arbitrary expression
-func (fl Flavor) AllowDefaultExpression() bool {
-	return fl.VendorMinVersion(VendorMariaDB, 10, 2)
-}
-
 // FractionalTimestamps returns true if the flavor supports fractional
 // seconds in timestamp and datetime values. Note that this returns true for
 // FlavorUnknown as a special-case, since all recent flavors do support this.

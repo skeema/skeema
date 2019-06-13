@@ -220,14 +220,14 @@ func (di *DockerizedInstance) Destroy() error {
 
 // TryConnect sets up a connection pool to the containerized mysql-server,
 // and tests connectivity. It returns an error if a connection cannot be
-// established within 20 seconds.
+// established within 30 seconds.
 func (di *DockerizedInstance) TryConnect() (err error) {
 	var ok bool
 	di.Instance, err = NewInstance("mysql", di.DSN())
 	if err != nil {
 		return err
 	}
-	for attempts := 0; attempts < 80; attempts++ {
+	for attempts := 0; attempts < 120; attempts++ {
 		if ok, err = di.Instance.CanConnect(); ok {
 			return err
 		}
