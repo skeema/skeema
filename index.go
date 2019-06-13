@@ -48,16 +48,17 @@ func (idx *Index) Definition(_ Flavor) string {
 
 // Equals returns true if two indexes are identical, false otherwise.
 func (idx *Index) Equals(other *Index) bool {
-	// shortcut if both nil pointers, or both pointing to same underlying struct
-	if idx == other {
-		return true
-	}
-	// if one is nil, but we already know the two aren't equal, then we know the other is non-nil
 	if idx == nil || other == nil {
-		return false
+		return idx == other // only equal if BOTH are nil
 	}
-	if idx.Name != other.Name || idx.Comment != other.Comment {
-		return false
+	return idx.Name == other.Name && idx.Comment == other.Comment && idx.Equivalent(other)
+}
+
+// Equivalent returns true if two Indexes are functionally equivalent,
+// regardless of whether or not they have the same names or comments.
+func (idx *Index) Equivalent(other *Index) bool {
+	if idx == nil || other == nil {
+		return idx == other // only equivalent if BOTH are nil
 	}
 	if idx.PrimaryKey != other.PrimaryKey || idx.Unique != other.Unique {
 		return false
@@ -67,6 +68,33 @@ func (idx *Index) Equals(other *Index) bool {
 	}
 	for n, col := range idx.Columns {
 		if col.Name != other.Columns[n].Name || idx.SubParts[n] != other.SubParts[n] {
+			return false
+		}
+	}
+	return true
+}
+
+// RedundantTo returns true if idx is equivalent to, or a strict subset of,
+// other. Both idx and other should be indexes of the same table.
+// Uniqueness and sub-parts are accounted for in the logic; for example, a
+// unique index is not considered redundant with a non-unique index having
+// the same or more cols. A primary key is never redundant, although another
+// unique index may be redundant to the primary key.
+func (idx *Index) RedundantTo(other *Index) bool {
+	if idx == nil || other == nil {
+		return false
+	}
+	if idx.PrimaryKey || (idx.Unique && !other.Unique) {
+		return false
+	}
+	if len(idx.Columns) > len(other.Columns) {
+		return false // can't be redundant to an index with fewer cols
+	}
+	for n, col := range idx.Columns {
+		if col.Name != other.Columns[n].Name {
+			return false
+		}
+		if (idx.SubParts[n] == 0 && other.SubParts[n] > 0) || (other.SubParts[n] > 0 && idx.SubParts[n] > other.SubParts[n]) {
 			return false
 		}
 	}
