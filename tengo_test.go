@@ -177,7 +177,7 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 		Default:  ColumnDefaultValue("1"),
 	}
 	aliveDef := "`alive` tinyint(1) NOT NULL DEFAULT '1'"
-	if flavor.AllowDefaultExpression() {
+	if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
 		aliveCol.Default = ColumnDefaultExpression("1")
 		aliveDef = "`alive` tinyint(1) NOT NULL DEFAULT 1"
 	}

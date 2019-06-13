@@ -679,6 +679,8 @@ func (instance *Instance) StrictModeCompliant(schemas []*Schema) (bool, error) {
 	return true, nil
 }
 
+var reExtraOnUpdate = regexp.MustCompile(`(?i)\bon update (current_timestamp(?:\(\d*\))?)`)
+
 func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	db, err := instance.Connect("information_schema", "")
 	if err != nil {
@@ -786,7 +788,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		}
 		if !rawColumn.Default.Valid {
 			col.Default = ColumnDefaultNull
-		} else if flavor.AllowDefaultExpression() {
+		} else if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
 			if rawColumn.Default.String[0] == '\'' {
 				col.Default = ColumnDefaultValue(strings.Trim(rawColumn.Default.String, "'"))
 			} else if rawColumn.Default.String == "NULL" {
@@ -798,11 +800,15 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			col.Default = ColumnDefaultExpression(rawColumn.Default.String)
 		} else if strings.HasPrefix(rawColumn.Type, "bit") && strings.HasPrefix(rawColumn.Default.String, "b'") {
 			col.Default = ColumnDefaultExpression(rawColumn.Default.String)
+		} else if strings.Contains(rawColumn.Extra, "DEFAULT_GENERATED") && strings.HasPrefix(rawColumn.Default.String, "(") {
+			// MySQL/Percona 8.0.13+ added default expressions, which are single-paren-
+			// wrapped in information_schema, but double-paren-wrapped in SHOW CREATE
+			col.Default = ColumnDefaultExpression(fmt.Sprintf("(%s)", rawColumn.Default.String))
 		} else {
 			col.Default = ColumnDefaultValue(rawColumn.Default.String)
 		}
-		if strings.HasPrefix(strings.ToLower(rawColumn.Extra), "on update ") {
-			col.OnUpdate = rawColumn.Extra[10:]
+		if matches := reExtraOnUpdate.FindStringSubmatch(rawColumn.Extra); matches != nil {
+			col.OnUpdate = matches[1]
 			// Some flavors omit fractional precision from ON UPDATE in
 			// information_schema only, despite it being present everywhere else
 			if openParen := strings.IndexByte(rawColumn.Type, '('); openParen > -1 && !strings.Contains(col.OnUpdate, "(") {

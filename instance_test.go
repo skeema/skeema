@@ -578,6 +578,26 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		t.Error("fixIndexOrder did not behave as expected")
 	}
 
+	// Test introspection of default expressions, if flavor supports them
+	hasDefaultExpressions := flavor.VendorMinVersion(VendorMariaDB, 10, 2)
+	if flavor.MySQLishMinVersion(8, 0) {
+		if _, _, patch := s.d.Version(); patch >= 13 { // 8.0.13 added default expressions
+			hasDefaultExpressions = true
+		}
+	}
+	if hasDefaultExpressions {
+		db, err := s.d.Connect("testing", "")
+		if err != nil {
+			t.Fatalf("Unexpected error from connect: %s", err)
+		}
+		if _, err := db.Exec("ALTER TABLE grab_bag ADD COLUMN expiration DATE DEFAULT (CURRENT_DATE + INTERVAL 1 YEAR)"); err != nil {
+			t.Fatalf("Unexpected error from ALTER: %s", err)
+		}
+		table := s.GetTable(t, "testing", "grab_bag")
+		if table.UnsupportedDDL {
+			t.Error("Use of default expression unexpectedly triggers UnsupportedDDL")
+		}
+	}
 }
 
 func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
