@@ -13,7 +13,7 @@ Skeema is a tool for managing MySQL tables and schema changes in a declarative f
 * Configure use of online schema change tools, such as pt-online-schema-change, for performing ALTERs
 * Convert non-online migrations from frameworks like Rails or Django into online schema changes in production
 
-Skeema supports a pull-request-based workflow for schema change submission, review, and execution. This permits your team to manage schema changes in exactly the same way as you manage code changes.
+Skeema supports a pull-request-based workflow for schema change submission, review, and execution. This permits your team to manage schema changes in exactly the same way as you manage code changes. Our new companion [CI app for GitHub repos](https://github.com/apps/skeema-io) even provides automatic linting of schema change pull requests.
 
 ## Downloading
 
@@ -35,12 +35,13 @@ To download, build from master, and install (or upgrade) Skeema, run:
 * [Options reference](doc/options.md)
 * [Requirements](doc/requirements.md)
 * [Frequently asked questions](doc/faq.md)
+* [Skeema.io CI beta](https://www.skeema.io/ci) -- **new**
 
 ## Status
 
-Skeema is generally available, having reached the v1 release milestone in July 2018. Prior to that, it was in public beta since October 2016.
+The Skeema CLI tool is generally available, having reached the v1 release milestone in July 2018. Prior to that, it was in public beta since October 2016.
 
-The `skeema` binary is supported on macOS and Linux. For now, it cannot be compiled on Windows.
+The `skeema` binary is supported on macOS and Linux. No native Windows version is available yet, though the Linux binary works properly under WSL.
 
 Tagged releases are tested against the following databases, all running on Linux:
 

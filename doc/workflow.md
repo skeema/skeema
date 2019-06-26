@@ -10,7 +10,10 @@
 
 4. Add all of the generated directories and files to a git repo. This can either be a new repo that you create just for schema storage, or it can be placed inside of a corresponding application repo.
 
-5. If you have large tables, configure Skeema to use an external online schema change tool. Configure the `alter-wrapper` setting in a `.skeema` file in the top dir of your schema repo. See FAQ for more information.
+5. Optional: if using GitHub.com for your repo's origin, enable the [Skeema.io CI system](https://www.skeema.io/ci) to your repo. This provides automated safety checks on every `git push`. This hosted (SAAS) system can be added to your repo with a few clicks; there's nothing to install, and no additional configuration beyond what the Skeema CLI already uses.
+
+6. Optional: if you have large tables, configure Skeema to use an external online schema change tool. Configure the `alter-wrapper` setting in a `.skeema` file in the top dir of your schema repo. See FAQ for more information.
+
 
 ### Updating dev environment with changes from other engineers
 
@@ -36,7 +39,7 @@ Steps 1-3 are performed by a developer. Steps 4-6 can be performed by a develope
   
   c) If you prefer to just change the CREATE TABLE files: Modify the files as desired. Use `skeema diff development` to confirm the auto-generated DDL looks sane, and then use `skeema push development` to update the dev database.
 
-3. Commit the change to the repo, push to origin, and open a pull request. Follow whatever review process your team uses for code changes.
+3. Commit the change to the repo, push to origin, and open a pull request. Follow whatever review process your team uses for code changes. If using the [Skeema.io CI system](https://www.skeema.io/ci), your pull request will receive automated comments with errors and warnings, saving your reviewers time.
 
 4. Once merged, `git checkout master` and `git pull` to ensure your working copy of the schema repo is up-to-date.
 

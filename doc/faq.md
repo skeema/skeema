@@ -15,9 +15,9 @@ Skeema does not implement its own method for online schema changes, but it can b
 
 ### Do schema changes get pushed automatically when I change files?
 
-No. In its current form, Skeema is just a CLI tool. Schema changes only occur when you run `skeema push`.
+No. When using the Skeema CLI tool, schema changes only occur when you run `skeema push`.
 
-A future version will include an agent/daemon that can integrate with sites like GitHub, to automatically push changes when a branch is merged to master. Use of this automatic workflow will be entirely optional.
+Separate from the CLI tool, optional products supporting continuous integration and continuous deployment are under development at [Skeema.io](https://www.skeema.io). The CI product is [currently in open beta testing](https://www.skeema.io/ci); it provides automatic linting of GitHub commits and pull requests. The corresponding CD product, providing an agent/daemon that can automatically push *safe* changes when a branch is merged to master, will be launched later in 2019.
 
 ### Is it safe?
 
@@ -65,7 +65,7 @@ Skeema is a declarative tool: users declare what the table *should* look like (v
 
 #### Pedigree
 
-Skeema's author has been using MySQL for over 15 years, and is a former member of Facebook's elite team that maintains and automates the world's largest MySQL environment. Prior to Facebook, he started and led the database team at Tumblr, and created the open-source Ruby database automation library and shard-split tool [Jetpants](https://github.com/tumblr/jetpants). Rest assured that safety of data is baked into Skeema's DNA.
+Skeema's author has been using MySQL extensively since 2003, and is a former member of Facebook's elite team that maintains and automates the world's largest MySQL environment. Prior to Facebook, he started and led the database team at Tumblr, and created the open-source Ruby database automation library and shard-split tool [Jetpants](https://github.com/tumblr/jetpants). Rest assured that safety of data is baked into Skeema's DNA.
 
 #### Responsibilities for the user
 
@@ -103,4 +103,4 @@ There are several possibilities here, all based on how the [host](options.md#hos
 
 * Configuration management: You could use a system like Chef or Puppet to rewrite directories' .skeema config files periodically, ensuring that an up-to-date master IP is listed for [host](options.md#host) in each file.
 
-Simpler integration with etcd, Consul, and ZooKeeper is planned for future releases.
+Simpler integration with etcd, Consul, and ZooKeeper may be added in the future.

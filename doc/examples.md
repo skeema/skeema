@@ -108,6 +108,13 @@ skeema diff production
 skeema push production
 ```
 
+### Automatically sanity-check commits and pull requests
+
+If your schema repo is stored on GitHub, you can now use the [Skeema.io CI system](https://www.skeema.io/ci) to perform automated safety checks on every `git push`. This hosted (SAAS) system can be added to your repo with a few clicks; there's nothing to install, and no additional configuration beyond what the Skeema CLI already uses.
+
+![CI annotation](https://www.skeema.io/img/ci-annotation.png) ![PR comment](https://www.skeema.io/img/ci-comment.png)
+
+
 ### Advanced configuration
 
 This example shows how to configure Skeema to use the following set of rules:

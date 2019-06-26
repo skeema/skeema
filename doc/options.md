@@ -395,7 +395,9 @@ Commands | lint
 **Type** | string
 **Restrictions** | To specify multiple values, use a comma-separated list
 
-This option specifies which problems are treated as *fatal errors* by Skeema's linter. The exit code of `skeema lint` will be 2 (or more) if any errors were emitted.
+This option specifies which problems are treated as *fatal errors* by Skeema's linter. This affects the CLI's `skeema lint` command, as well as the [Skeema.io CI service](https://www.skeema.io/ci).
+
+The exit code of `skeema lint` will be 2 (or more) if any errors were emitted. Similarly, the CI service will report a failure status for any commit or pull request that had an error.
 
 The value of this option can include any of these problem names as values:
 
@@ -407,7 +409,7 @@ By default, the value of [errors](#errors) is an empty string, meaning that none
 
 Regardless of the value of this option, invalid SQL is always treated as a fatal error.
 
-Currently, in Skeema v1.2, this option only affects `skeema lint`. In future versions of Skeema, this option will also affect `skeema diff` and `skeema push`, which will automatically lint any new or changed objects. If any errors are triggered, the push will not be executed for the current directory.
+Currently, in Skeema CLI v1.2, this option only affects `skeema lint`. In future versions of the Skeema CLI, this option will also affect `skeema diff` and `skeema push`, which will automatically lint any new or changed objects. If any errors are triggered, the push will not be executed for the current directory.
 
 ### exact-match
 
@@ -458,7 +460,9 @@ The notion of a database flavor affects various aspects of schema introspection 
 
 * Some aspects of Skeema's connection pool behavior depend on the database flavor, but the connection pool setup logic inherently must occur *prior* to actually connecting to a database. In such cases, the flavor option will be trusted as-is. For example, with `flavor=mysql:8.0`, Skeema automatically configures its connection pools to disable the information_schema stat cache, to ensure information_schema always returns up-to-date results. The relevant session variable does not exist in older versions of MySQL, so the internal logic is gated on the configured flavor value.
 
-* With [workspace=docker](#workspace), the [flavor](#flavor) value controls what Docker image is used for workspace containers.
+* With [workspace=docker](#workspace), the [flavor](#flavor) value controls what Docker image is used for workspace containers. If no flavor is specified, an error is generated.
+
+* In the [Skeema.io CI service](https://www.skeema.io/ci), the [flavor](#flavor) value controls what database vendor and version is used for purposes of linting this directory. If no flavor is specified, the CI default is currently `mysql:5.7`.
 
 Note that the database server's *actual* auto-detected vendor and version take precedence over the [flavor](#flavor) option in all other cases not listed above.
 
@@ -759,13 +763,15 @@ Commands | lint
 **Type** | string
 **Restrictions** | To specify multiple values, use a comma-separated list
 
-This option specifies which problems are treated as *warnings* by Skeema's linter. Warnings are displayed, but are not considered fatal. The exit code of `skeema lint` will be non-zero if any warnings were emitted.
+This option specifies which problems are treated as *warnings* by Skeema's linter. This affects the CLI's `skeema lint` command, as well as the [Skeema.io CI service](https://www.skeema.io/ci).
+
+Warnings are displayed, but are not considered fatal. The exit code of `skeema lint` will be non-zero if any warnings were emitted. Meanwhile, the CI service will report a neutral status for any commit or pull request that had a warning.
 
 See the [errors](#errors) option for valid values (problem names). You may specify zero or more of those values.
 
 If the same problem name is listed in both [errors](#errors) and [warnings](#warnings), the former takes precedence, meaning the problem is treated as an error and not as a warning.
 
-Currently, in Skeema v1.2, this option only affects `skeema lint`. In future versions of Skeema, this option will also affect `skeema diff` and `skeema push`, which will automatically lint any new or changed objects. If any warnings are triggered, they will be displayed and tallied, but they will not block the push process.
+Currently, in Skeema CLI v1.2, this option only affects `skeema lint`. In future versions of the Skeema CLI, this option will also affect `skeema diff` and `skeema push`, which will automatically lint any new or changed objects. If any warnings are triggered, they will be displayed and tallied, but they will not block the push process.
 
 ### workspace
 
