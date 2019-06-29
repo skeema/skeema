@@ -34,6 +34,7 @@ func NewTempSchema(opts Options) (ts *TempSchema, err error) {
 	if ts.releaseLock, err = getLock(ts.inst, lockName, opts.LockWaitTimeout); err != nil {
 		return nil, fmt.Errorf("Unable to lock temporary schema on %s: %s", ts.inst, err)
 	}
+
 	// If NewTempSchema errors, don't continue to hold the lock
 	defer func() {
 		if err != nil {
@@ -43,7 +44,7 @@ func NewTempSchema(opts Options) (ts *TempSchema, err error) {
 	}()
 
 	if has, err := ts.inst.HasSchema(ts.schemaName); err != nil {
-		return nil, fmt.Errorf("Unable to check for existence of temp schema on %s: %s", ts.inst, err)
+		return ts, fmt.Errorf("Unable to check for existence of temp schema on %s: %s", ts.inst, err)
 	} else if has {
 		// Attempt to drop any tables already present in tempSchema, but fail if
 		// any of them actually have 1 or more rows
