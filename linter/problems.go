@@ -23,9 +23,12 @@ func RegisterProblem(name string, fn Detector) {
 
 func init() {
 	problems = map[string]Detector{
-		"no-pk":       noPKDetector,
-		"bad-charset": badCharsetDetector,
-		"bad-engine":  badEngineDetector,
+		"no-pk":                   noPKDetector,
+		"bad-charset":             badCharsetDetector,
+		"bad-engine":              badEngineDetector,
+		"non-unique-fk-ref":       nonUniqueForeignKeyReferenceDetector,
+		"duplicate-fk":            duplicateForeignKeyDetector,
+		"fk-missing-parent-table": parentTableMissingDetector,
 	}
 }
 

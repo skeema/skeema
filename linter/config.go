@@ -22,7 +22,7 @@ const (
 // AddCommandOptions adds linting-related mybase options to the supplied
 // mybase.Command.
 func AddCommandOptions(cmd *mybase.Command) {
-	cmd.AddOption(mybase.StringOption("warnings", 0, "bad-charset,bad-engine,no-pk", "Linter problems to display as warnings (non-fatal); see manual for usage"))
+	cmd.AddOption(mybase.StringOption("warnings", 0, "bad-charset,bad-engine,no-pk,non-unique-fk-ref,duplicate-fk,fk-missing-parent-table", "Linter problems to display as warnings (non-fatal); see manual for usage"))
 	cmd.AddOption(mybase.StringOption("errors", 0, "", "Linter problems to treat as fatal errors; see manual for usage"))
 	cmd.AddOption(mybase.StringOption("allow-charset", 0, "latin1,utf8mb4", "Whitelist of acceptable character sets"))
 	cmd.AddOption(mybase.StringOption("allow-engine", 0, "innodb", "Whitelist of acceptable storage engines"))

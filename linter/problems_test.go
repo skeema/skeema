@@ -18,7 +18,7 @@ func TestProblemExists(t *testing.T) {
 }
 
 func TestAllProblemNames(t *testing.T) {
-	expected := []string{"bad-charset", "bad-engine", "no-pk"}
+	expected := []string{"bad-charset", "bad-engine", "duplicate-fk", "fk-missing-parent-table", "no-pk", "non-unique-fk-ref"}
 	actual := allProblemNames()
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("allProblemNames returned %+v, did not match expectation %+v", actual, expected)
@@ -30,7 +30,7 @@ func TestAllProblemNames(t *testing.T) {
 		// Clean up the global state
 		delete(problems, "new-prob")
 	}()
-	expected = []string{"bad-charset", "bad-engine", "new-prob", "no-pk"}
+	expected = []string{"bad-charset", "bad-engine", "duplicate-fk", "fk-missing-parent-table", "new-prob", "no-pk", "non-unique-fk-ref"}
 	actual = allProblemNames()
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("allProblemNames returned %+v, did not match expectation %+v", actual, expected)
