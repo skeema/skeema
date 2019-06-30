@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/skeema/workspace"
@@ -199,7 +200,7 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, wsOpts workspace.Options
 		a := &Annotation{
 			Statement: stmtErr.Statement,
 			Summary:   "SQL statement returned an error",
-			Message:   stmtErr.Err.Error(),
+			Message:   strings.Replace(stmtErr.Err.Error(), "Error executing DDL in workspace: ", "", 1),
 		}
 		// If the error was a syntax error, attempt to capture the correct line
 		if matches := reSyntaxErrorLine.FindStringSubmatch(a.Message); matches != nil {
