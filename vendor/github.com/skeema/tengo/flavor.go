@@ -16,6 +16,7 @@ const (
 	VendorMySQL
 	VendorPercona
 	VendorMariaDB
+	VendorUbuntu
 )
 
 func (v Vendor) String() string {
@@ -26,6 +27,8 @@ func (v Vendor) String() string {
 		return "percona"
 	case VendorMariaDB:
 		return "mariadb"
+	case VendorUbuntu:
+		return "ubuntu"
 	default:
 		return "unknown"
 	}
@@ -77,6 +80,12 @@ type Flavor struct {
 // FlavorUnknown represents a flavor that cannot be parsed. This is the zero
 // value for Flavor.
 var FlavorUnknown = Flavor{VendorUnknown, 0, 0}
+
+// FlavorUbuntu51 represents Ubuntu MySQL 5.1.x
+var FlavorUbuntu51 = Flavor{VendorUbuntu, 5, 1}
+
+// FlavorMySQL51 represents MySQL 5.1.x
+var FlavorMySQL51 = Flavor{VendorMySQL, 5, 1}
 
 // FlavorMySQL55 represents MySQL 5.5.x
 var FlavorMySQL55 = Flavor{VendorMySQL, 5, 5}
@@ -157,6 +166,8 @@ func (fl Flavor) MySQLishMinVersion(major, minor int) bool {
 // Supported returns true if package tengo officially supports this flavor
 func (fl Flavor) Supported() bool {
 	switch fl {
+	case FlavorMySQL51, FlavorUbuntu51:
+		return true
 	case FlavorMySQL55, FlavorMySQL56, FlavorMySQL57, FlavorMySQL80:
 		return true
 	case FlavorPercona55, FlavorPercona56, FlavorPercona57, FlavorPercona80:
@@ -249,4 +260,20 @@ func (fl Flavor) InnoRowFormatReqs(format string) (filePerTable, barracudaFormat
 	}
 	// Panic on unexpected input, since this may be programmer error / a typo
 	panic(fmt.Errorf("Unknown row_format %s is not supported", format))
+}
+
+// HasIndexComment returns true if the information_schema.statistics table has
+// the index_comment column, false otherwise.
+func (fl Flavor) HasIndexComment() bool {
+	return (fl.MySQLishMinVersion(5, 5) || fl.VendorMinVersion(VendorUbuntu, 5, 5))
+}
+
+// HasInnodbStrictMode returns true if the global variable innodb_strict_mode exists, false otherwise.
+func (fl Flavor) HasInnodbStrictMode() bool {
+	return (fl.MySQLishMinVersion(5, 5) || fl.VendorMinVersion(VendorUbuntu, 5, 5))
+}
+
+// HasDefaultStorageEngine returns true if global variable default_storage_engine exists, false otherwise.
+func (fl Flavor) HasDefaultStorageEngine() bool {
+	return (fl.MySQLishMinVersion(5, 5) || fl.VendorMinVersion(VendorUbuntu, 5, 5))
 }
