@@ -131,6 +131,40 @@ func NewFlavor(base string, versionParts ...int) Flavor {
 	return Flavor{ParseVendor(base), versionParts[0], versionParts[1]}
 }
 
+// ParseFlavor returns a Flavor value based on inputs obtained from server vars
+// @@global.version and @@global.version_comment. It accounts for how some
+// distributions and/or cloud platforms manipulate those values.
+func ParseFlavor(versionString, versionComment string) Flavor {
+	version := ParseVersion(versionString)
+	vendor := VendorUnknown
+	versionString = strings.ToLower(versionString)
+	versionComment = strings.ToLower(versionComment)
+	for _, attempt := range []Vendor{VendorMariaDB, VendorPercona, VendorMySQL} {
+		if strings.Contains(versionComment, attempt.String()) || strings.Contains(versionString, attempt.String()) {
+			vendor = attempt
+			break
+		}
+	}
+
+	// Ubuntu distributions include Ubuntu in one or both strings, but we need to
+	// check for it *after* the previous checks, since it may also still include
+	// a better indicator like "mariadb".
+	if vendor == VendorUnknown && (strings.Contains(versionComment, "ubuntu") || strings.Contains(versionString, "ubuntu")) {
+		// This logic will need to change if/when MySQL hits major version 10
+		if version[0] >= 10 {
+			vendor = VendorMariaDB
+		} else if version[0] >= 5 {
+			vendor = VendorMySQL
+		}
+	}
+
+	return Flavor{
+		Vendor: vendor,
+		Major:  version[0],
+		Minor:  version[1],
+	}
+}
+
 func (fl Flavor) String() string {
 	return fmt.Sprintf("%s:%d.%d", fl.Vendor, fl.Major, fl.Minor)
 }

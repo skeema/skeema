@@ -247,18 +247,12 @@ func (instance *Instance) hydrateFlavorAndVersion() {
 	if err != nil {
 		return
 	}
-	var vendorString, versionString string
-	if err = db.QueryRow("SELECT @@global.version_comment, @@global.version").Scan(&vendorString, &versionString); err != nil {
+	var versionComment, versionString string
+	if err = db.QueryRow("SELECT @@global.version_comment, @@global.version").Scan(&versionComment, &versionString); err != nil {
 		return
 	}
 	instance.version = ParseVersion(versionString)
-	instance.flavor = NewFlavor(vendorString, instance.version[0], instance.version[1])
-
-	// If the vendor could not be parsed from @@global.version_comment, try again
-	// using version string
-	if instance.flavor.Vendor == VendorUnknown {
-		instance.flavor = NewFlavor(versionString, instance.version[0], instance.version[1])
-	}
+	instance.flavor = ParseFlavor(versionString, versionComment)
 }
 
 // SchemaNames returns a slice of all schema name strings on the instance
