@@ -44,6 +44,33 @@ func TestParseVersion(t *testing.T) {
 	}
 }
 
+func TestParseFlavor(t *testing.T) {
+	type testcase struct {
+		versionString  string
+		versionComment string
+		expected       Flavor
+	}
+	cases := []testcase{
+		{"5.6.42", "MySQL Community Server (GPL)", FlavorMySQL56},
+		{"5.7.26-0ubuntu0.18.04.1", "(Ubuntu)", FlavorMySQL57},
+		{"8.0.16", "MySQL Community Server - GPL", FlavorMySQL80},
+		{"5.7.23-23", "Percona Server (GPL), Release 23, Revision 500fcf5", FlavorPercona57},
+		{"10.1.34-MariaDB-1~bionic", "mariadb.org binary distribution", FlavorMariaDB101},
+		{"10.1.40-MariaDB-0ubuntu0.18.04.1", "Ubuntu 18.04", FlavorMariaDB101},
+		{"10.2.15-MariaDB-log", "MariaDB Server", FlavorMariaDB102},
+		{"10.3.8-MariaDB-log", "Source distribution", FlavorMariaDB103},
+		{"10.3.8-0ubuntu0.18.04.1", "(Ubuntu)", FlavorMariaDB103}, // due to major version >= 10 --> MariaDB
+		{"webscalesql", "webscalesql", FlavorUnknown},
+		{"5.6.27", "webscalesql", Flavor{VendorUnknown, 5, 6}},
+	}
+	for _, tc := range cases {
+		fl := ParseFlavor(tc.versionString, tc.versionComment)
+		if fl != tc.expected {
+			t.Errorf("Unexpected return from ParseFlavor(%q, %q): Expected %s, found %s", tc.versionString, tc.versionComment, tc.expected, fl)
+		}
+	}
+}
+
 func TestNewFlavor(t *testing.T) {
 	type testcase struct {
 		base            string
