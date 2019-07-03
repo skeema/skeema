@@ -1019,10 +1019,13 @@ func (instance *Instance) querySchemaRoutines(schema string) ([]*Routine, error)
 		return nil, err
 	}
 
+	// Obtain the routines in the schema
+	// We completely exclude routines that the user can call, but not examine --
+	// e.g. user has EXECUTE priv but missing other vital privs. In this case
+	// routine_definition will be NULL.
 	// Note on this query: MySQL 8.0 changes information_schema column names to
 	// come back from queries in all caps, so we need to explicitly use AS clauses
 	// in order to get them back as lowercase and have sqlx Select() work
-	// Obtain the routines in the schema
 	var rawRoutines []struct {
 		Name              string         `db:"routine_name"`
 		Type              string         `db:"routine_type"`
@@ -1044,7 +1047,7 @@ func (instance *Instance) querySchemaRoutines(schema string) ([]*Routine, error)
 		       r.sql_mode AS sql_mode, r.routine_comment AS routine_comment,
 		       r.definer AS definer, r.database_collation AS database_collation
 		FROM   routines r
-		WHERE  r.routine_schema = ?`
+		WHERE  r.routine_schema = ? AND routine_definition IS NOT NULL`
 	if err := db.Select(&rawRoutines, query, schema); err != nil {
 		return nil, fmt.Errorf("Error querying information_schema.routines for schema %s: %s", schema, err)
 	}
@@ -1131,7 +1134,7 @@ func (instance *Instance) querySchemaRoutines(schema string) ([]*Routine, error)
 			var reCreateRoutine = regexp.MustCompile(reTemplate)
 			matches := reCreateRoutine.FindStringSubmatch(r.CreateStatement)
 			if matches == nil {
-				return fmt.Errorf("Failed to parse %s", r.CreateStatement)
+				return fmt.Errorf("Failed to parse SHOW CREATE %s %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), r.CreateStatement)
 			}
 			r.ParamString = matches[1]
 			if r.Type == ObjectTypeFunc {

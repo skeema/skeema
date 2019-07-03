@@ -42,16 +42,19 @@ In order for all functionality in Skeema to work, it needs the following privile
 * `DROP` -- in order for `skeema push --allow-unsafe` to execute DROP TABLE statements; omit this privilege on application schemas if you do not plan to ever drop tables via Skeema
 * `ALTER` -- in order for `skeema push` to execute ALTER TABLE statements
 * `INDEX` -- in order for `skeema push` to execute ALTER TABLE statements that manipulate indexes
+* `CREATE ROUTINE`, `ALTER ROUTINE` -- if you would like to manage stored procedures and functions using Skeema
 
 When first testing out Skeema, it is fine to omit the latter four privileges if you do not plan on using `skeema push` initially. However, Skeema still needs the `SELECT` privilege on each database that it will operate on.
 
 If using the [alter-wrapper option](options.md#alter-wrapper) to execute a third-party online schema change tool, you will likely need to provide additional privileges as required by the tool; or you may configure the third-party tool to connect to the database using a different user than Skeema does.
 
+If you wish to manage stored procedures / functions that use a different `DEFINER` than Skeema's user, and/or impact binary logging, `SUPER` privileges may be necessary for Skeema's user. Consult the manual for your database version for more information.
+
 #### System schemas
 
 Skeema interacts extensively with `information_schema`, but MySQL grants appropriate access automatically based on other privileges provided.
 
-Skeema does not require access to the `mysql` system schema, but will conditionally query the `mysql.proc` table if it is available. This improves Skeema's performance on databases that have a large number of stored procedures and functions, since it avoids the need to run individual `SHOW CREATE` queries.
+Skeema does not require access to the `mysql` system schema, but will conditionally query the `mysql.proc` table if it is available and exists in your server version. This improves Skeema's performance on databases that have a large number of stored procedures and functions, since it avoids the need to run individual `SHOW CREATE` queries.
 
 Skeema does not interact with the `performance_schema` or `sys` schemas.
 
@@ -119,6 +122,7 @@ Skeema v1.2.0 added support for MySQL routines (stored procedures and functions)
 * When modifying an existing routine, Skeema will use a `DROP` followed by a re-`ADD`. Although MySQL supports `ALTER PROCEDURE` / `ALTER FUNCTION` for metadata-only changes, Skeema does not use this yet.
 * Because modifying a routine involves a `DROP`, it is still considered a destructive action, as there may be a split-second period where the routine does not exist.
 * By default, `skeema diff` and `skeema push` do not examine the creation-time sql_mode or db_collation associated with a routine. To add these comparisons, use the [compare-metadata option](options.md#compare-metadata).
+* If you wish to manage stored procedures / functions that use a different `DEFINER` than Skeema's user, and/or impact binary logging, `SUPER` privileges may be necessary for Skeema's user. Consult the manual for your database version for more information.
 * Skeema does not support management of [native UDFs](https://dev.mysql.com/doc/refman/8.0/en/create-function-udf.html), which are typically written in C or C++ and compiled into shared libraries.
 * MariaDB 10.3's Oracle-style routine PACKAGEs are not supported.
 
