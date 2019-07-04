@@ -72,7 +72,7 @@ func TestLintDir(t *testing.T) {
 		for _, a := range result.Warnings {
 			switch a.Statement.ObjectName {
 			case "badcsdef":
-				if a.Problem != "bad-charset" || a.LineOffset != 0 {
+				if a.Problem != "bad-charset" || a.LineOffset != 4 {
 					t.Errorf("Unexpected annotation values: %+v", a)
 				}
 			case "badcscol":

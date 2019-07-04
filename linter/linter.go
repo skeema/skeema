@@ -211,20 +211,8 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, wsOpts workspace.Options
 		result.Errors = append(result.Errors, a)
 	}
 
-	for problemName, severity := range opts.ProblemSeverity {
-		annotations := problems[problemName](schema, logicalSchema, opts)
-		for _, a := range annotations {
-			a.Problem = problemName
-			if opts.ShouldIgnore(a.Statement.ObjectKey()) {
-				result.DebugLogs = append(result.DebugLogs, fmt.Sprintf("Skipping %s because ignore-table='%s'", a.Statement.ObjectKey(), opts.IgnoreTable))
-			} else if severity == SeverityWarning {
-				result.Warnings = append(result.Warnings, a)
-			} else {
-				result.Errors = append(result.Errors, a)
-			}
-		}
-	}
-
+	// It's important to check format prior to checking problems. Otherwise, the
+	// relative line offsets for the problem annotations can be incorrect.
 	// Compare each canonical CREATE in the real schema to each CREATE statement
 	// from the filesystem. In cases where they differ, emit a notice to reformat
 	// the file using the canonical version from the DB.
@@ -235,11 +223,25 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, wsOpts workspace.Options
 			if opts.ShouldIgnore(key) {
 				result.DebugLogs = append(result.DebugLogs, fmt.Sprintf("Skipping %s because ignore-table='%s'", key, opts.IgnoreTable))
 			} else {
+				fsStmt.Text = fmt.Sprintf("%s%s", instCreateText, fsSuffix)
 				result.FormatNotices = append(result.FormatNotices, &Annotation{
 					Statement: fsStmt,
 					Summary:   "SQL statement should be reformatted",
-					Message:   fmt.Sprintf("%s%s", instCreateText, fsSuffix),
 				})
+			}
+		}
+	}
+
+	for problemName, severity := range opts.ProblemSeverity {
+		annotations := problems[problemName](schema, logicalSchema, opts)
+		for _, a := range annotations {
+			a.Problem = problemName
+			if opts.ShouldIgnore(a.Statement.ObjectKey()) {
+				result.DebugLogs = append(result.DebugLogs, fmt.Sprintf("Skipping %s because ignore-table='%s'", a.Statement.ObjectKey(), opts.IgnoreTable))
+			} else if severity == SeverityWarning {
+				result.Warnings = append(result.Warnings, a)
+			} else {
+				result.Errors = append(result.Errors, a)
 			}
 		}
 	}

@@ -3,7 +3,7 @@ CREATE TABLE badcsdef (
 	id int unsigned NOT NULL,
 	name varchar(30),
 	PRIMARY KEY (id)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB; -- bad charset will show up on this line due to reformat happening first
 
 CREATE TABLE badcscol (
 	id int unsigned NOT NULL,
