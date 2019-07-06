@@ -203,13 +203,48 @@ func (se *StatementError) String() string {
 	return se.Error()
 }
 
-// ExecLogicalSchema converts a LogicalSchema to a tengo.Schema. It obtains
-// a Workspace, executes the creation DDL contained in a LogicalSchema there,
-// introspects it into a *tengo.Schema, cleans up the Workspace, and then
-// returns the introspected schema. SQL errors (e.g. tables that could not be
-// created) are non-fatal, and are returned in the second return value. The
-// third return value represents fatal errors only.
-func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (schema *tengo.Schema, statementErrors []*StatementError, fatalErr error) {
+// Schema captures the result of executing the SQL from an fs.LogicalSchema
+// in a workspace, and then introspecting the resulting schema. It wraps the
+// introspected tengo.Schema alongside the original fs.LogicalSchema and any
+// SQL errors that occurred.
+type Schema struct {
+	*tengo.Schema
+	LogicalSchema *fs.LogicalSchema
+	Failures      []*StatementError
+}
+
+// CopyWithName makes a copy of a workspace.Schema and assigns a different
+// schema name. The copy is a shallow copy in terms of most fields: it points
+// to the same LogicalSchema, Failures, and all pointer/reference fields
+// inside the tengo.Schema. The tengo.Schema itself is a copy though, allowing
+// the name to be changed without affecting the receiver.
+func (wsSchema *Schema) CopyWithName(schemaName string) *Schema {
+	schemaCopy := *wsSchema.Schema
+	schemaCopy.Name = schemaName
+	return &Schema{
+		Schema:        &schemaCopy,
+		LogicalSchema: wsSchema.LogicalSchema,
+		Failures:      wsSchema.Failures,
+	}
+}
+
+// FailedKeys returns a slice of tengo.ObjectKey values corresponding to
+// statements that had SQL errors when executed.
+func (wsSchema *Schema) FailedKeys() (result []tengo.ObjectKey) {
+	for _, statementError := range wsSchema.Failures {
+		result = append(result, statementError.ObjectKey())
+	}
+	return result
+}
+
+// ExecLogicalSchema converts a LogicalSchema into a workspace.Schema. It
+// obtains a Workspace, executes the creation DDL contained in a LogicalSchema
+// there, introspects it into a *tengo.Schema, cleans up the Workspace, and then
+// returns a value containing the introspected schema and any SQL errors (e.g.
+// tables that could not be created). Such individual statement errors are not
+// fatal and are not included in the error return value. The error return value
+// only represents fatal errors that prevented the entire process.
+func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema *Schema, fatalErr error) {
 	if logicalSchema.CharSet != "" {
 		opts.DefaultCharacterSet = logicalSchema.CharSet
 	}
@@ -263,9 +298,13 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (schema *t
 			}
 		}(stmt)
 	}
+	wsSchema = &Schema{
+		LogicalSchema: logicalSchema,
+		Failures:      []*StatementError{},
+	}
 	for range logicalSchema.Creates {
 		if result := <-results; result != nil {
-			statementErrors = append(statementErrors, result)
+			wsSchema.Failures = append(wsSchema.Failures, result)
 		}
 	}
 	close(results)
@@ -274,11 +313,11 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (schema *t
 	// nice with concurrency.
 	for _, statement := range logicalSchema.Alters {
 		if err := execStatement(db, statement); err != nil {
-			statementErrors = append(statementErrors, err)
+			wsSchema.Failures = append(wsSchema.Failures, err)
 		}
 	}
 
-	schema, fatalErr = ws.IntrospectSchema()
+	wsSchema.Schema, fatalErr = ws.IntrospectSchema()
 	return
 }
 

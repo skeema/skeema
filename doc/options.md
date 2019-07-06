@@ -33,6 +33,9 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [ignore-schema](#ignore-schema)
 * [ignore-table](#ignore-table)
 * [include-auto-inc](#include-auto-inc)
+* [lint-charset](#lint-charset)
+* [lint-engine](#lint-engine)
+* [lint-pk](#lint-pk)
 * [my-cnf](#my-cnf)
 * [new-schemas](#new-schemas)
 * [normalize](#normalize)
@@ -52,25 +55,25 @@ This document is a reference, describing all options supported by Skeema. To lea
 
 ### allow-charset
 
-Commands | lint
+Commands | lint, [CI](https://www.skeema.io/ci)
 --- | :---
 **Default** | "latin1,utf8mb4"
 **Type** | string
 **Restrictions** | To specify multiple values, use a comma-separated list
 
-This option specifies which character sets are permitted by Skeema's linter. This option only has an effect if either the [errors](#errors) or [warnings](#warnings) options includes "bad-charset". If so, an error or warning (as appropriate) will be emitted for any table using a character set not included in this list.
+This option specifies which character sets are permitted by Skeema's linter. This option only has an effect if [lint-charset](#lint-charset) is set to "warning" (the default) or "error". If so, an error or warning (respectively) will be emitted for any table using a character set not included in this list.
 
 This option checks column character sets as well as table default character sets. It does not currently check any other object type besides tables.
 
 ### allow-engine
 
-Commands | lint
+Commands | lint, [CI](https://www.skeema.io/ci)
 --- | :---
 **Default** | "innodb"
 **Type** | string
 **Restrictions** | To specify multiple values, use a comma-separated list
 
-This option specifies which storage engines are permitted by Skeema's linter. This option only has an effect if either the [errors](#errors) or [warnings](#warnings) options includes "bad-engine". If so, an error or warning (as appropriate) will be emitted for any table using a storage engine not included in this list.
+This option specifies which storage engines are permitted by Skeema's linter. This option only has an effect if [lint-engine](#lint-engine) is set to "warning" (the default) or "error". If so, an error or warning (respectively) will be emitted for any table using a storage engine not included in this list.
 
 ### allow-unsafe
 
@@ -393,23 +396,11 @@ Commands | lint
 --- | :---
 **Default** | *empty string*
 **Type** | string
-**Restrictions** | To specify multiple values, use a comma-separated list
+**Restrictions** | Deprecated as of Skeema v1.3
 
-This option specifies which problems are treated as *fatal errors* by Skeema's linter. This affects the CLI's `skeema lint` command, as well as the [Skeema.io CI service](https://www.skeema.io/ci).
+This option controlled the functionality of `skeema lint` in Skeema v1.2. As of Skeema v1.3 it is now deprecated, in favor of using separate `lint-*` options for each linter rule. This change has been made to avoid having a cumbersome list in a single option value. 
 
-The exit code of `skeema lint` will be 2 (or more) if any errors were emitted. Similarly, the CI service will report a failure status for any commit or pull request that had an error.
-
-The value of this option can include any of these problem names as values:
-
-* `bad-charset`: Flag tables using character sets not specified in [allow-charset](#allow-charset)
-* `bad-engine`: Flag tables using storage engines not specified in [allow-engine](#allow-engine)
-* `no-pk`: Flag tables that do not have an explicit PRIMARY KEY
-
-By default, the value of [errors](#errors) is an empty string, meaning that none of the above problems are treated as fatal errors.
-
-Regardless of the value of this option, invalid SQL is always treated as a fatal error.
-
-Currently, in Skeema CLI v1.2, this option only affects `skeema lint`. In future versions of the Skeema CLI, this option will also affect `skeema diff` and `skeema push`, which will automatically lint any new or changed objects. If any errors are triggered, the push will not be executed for the current directory.
+If set, this option will still function in Skeema v1.3+, but it can only control the three linter rules that existed in Skeema v1.2. If this option is set alongside the newer-style `lint-*` options, the newer-style options take precedence.
 
 ### exact-match
 
@@ -444,7 +435,7 @@ In a sharded environment, this option can be useful to examine or execute a chan
 
 ### flavor
 
-Commands | *all*
+Commands | *all*, as well as [CI](https://www.skeema.io/ci)
 --- | :---
 **Default** | *empty string*
 **Type** | string
@@ -536,7 +527,7 @@ If ports are omitted, the [port](#port) option is used instead, which defaults t
 The external command should only return addresses of master instances, never replicas.
 
 ### ignore-schema
-Commands | init, pull
+Commands | init, pull, diff, push
 --- | :---
 **Default** | *empty string*
 **Type** | regular expression
@@ -548,7 +539,9 @@ The value of this option must be a valid regex, and should not be wrapped in del
 
 When supplied on the command-line to `skeema init`, the value will be persisted into the auto-generated .skeema option file, so that subsequent commands continue to ignore the corresponding schema names.
 
-Once configured, this option affects all Skeema commands, effectively acting as a filter against the [schema](#schema) option. The documentation for the [schema](#schema) option describes some potential sharding use-cases.
+Once configured, this option affects `skeema pull`, `skeema diff`, and `skeema push`, effectively acting as a filter against the [schema](#schema) option. The documentation for the [schema](#schema) option describes some potential sharding use-cases.
+
+Note that this option does not affect `skeema lint` or `skeema format`, as these commands operate on the filesystem representation without needing to interact with the [schema](#schema) option.
 
 ### ignore-table
 Commands | *all*
@@ -578,6 +571,38 @@ In `skeema init`, a false value omits AUTO_INCREMENT=X clauses in all table defi
 In `skeema pull`, a false value omits AUTO_INCREMENT=X clauses in any *newly-written* table files (tables were created outside of Skeema, which are now getting a \*.sql file written for the first time). Modified tables *that already had AUTO_INCREMENT=X clauses*, where X > 1, will have their AUTO_INCREMENT values updated; otherwise the clause will continue to be omitted in any file that previously omitted it. Meanwhile a true value causes all table files to now have AUTO_INCREMENT=X clauses.
 
 Only set this to true if you intentionally need to track auto_increment values in all tables. If only a few tables require nonstandard auto_increment, simply include the value manually in the CREATE TABLE statement in the *.sql file. Subsequent calls to `skeema pull` won't strip it, even if `include-auto-inc` is false.
+
+### lint-charset
+
+Commands | lint, [CI](https://www.skeema.io/ci)
+--- | :---
+**Default** | "WARNING"
+**Type** | enum
+**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+
+This linter rule checks each table's default character set, along with the character set of each textual column. Unless set to "IGNORE", a warning or error will be emitted for any usage of a character set not listed in option [allow-charset](#allow-charset).
+
+This rule does not currently check any other object type besides tables.
+
+### lint-engine
+
+Commands | lint, [CI](https://www.skeema.io/ci)
+--- | :---
+**Default** | "WARNING"
+**Type** | enum
+**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+
+This linter rule checks each table's storage engine. Unless set to "IGNORE", a warning or error will be emitted for any table using a storage engine not listed in option [allow-engine](#allow-engine).
+
+### lint-pk
+
+Commands | lint, [CI](https://www.skeema.io/ci)
+--- | :---
+**Default** | "WARNING"
+**Type** | enum
+**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+
+This linter rule checks each table for presence of a primary key. Unless set to "IGNORE", a warning or error will be emitted for any table lacking a primary key.
 
 ### my-cnf
 
@@ -759,19 +784,15 @@ It is recommended that this option be left at its default of true, but if desire
 
 Commands | lint
 --- | :---
-**Default** | "bad-charset,bad-engine,no-pk"
+**Default** | *empty string*
 **Type** | string
-**Restrictions** | To specify multiple values, use a comma-separated list
+**Restrictions** | Deprecated as of Skeema v1.3
 
-This option specifies which problems are treated as *warnings* by Skeema's linter. This affects the CLI's `skeema lint` command, as well as the [Skeema.io CI service](https://www.skeema.io/ci).
+This option controlled the functionality of `skeema lint` in Skeema v1.2. As of Skeema v1.3 it is now deprecated, in favor of using separate `lint-*` options for each linter rule. This change has been made to avoid having a cumbersome list in a single option value.
 
-Warnings are displayed, but are not considered fatal. The exit code of `skeema lint` will be non-zero if any warnings were emitted. Meanwhile, the CI service will report a neutral status for any commit or pull request that had a warning.
+If set, this option will still function in Skeema v1.3+, but it can only control the three linter rules that existed in Skeema v1.2. If this option is set alongside the newer-style `lint-*` options, the newer-style options take precedence.
 
-See the [errors](#errors) option for valid values (problem names). You may specify zero or more of those values.
-
-If the same problem name is listed in both [errors](#errors) and [warnings](#warnings), the former takes precedence, meaning the problem is treated as an error and not as a warning.
-
-Currently, in Skeema CLI v1.2, this option only affects `skeema lint`. In future versions of the Skeema CLI, this option will also affect `skeema diff` and `skeema push`, which will automatically lint any new or changed objects. If any warnings are triggered, they will be displayed and tallied, but they will not block the push process.
+In Skeema v1.2 the default value of this option was "bad-charset,bad-engine,no-pk", but in v1.3 it is now an empty string. The individual `lint-*` options each have their own appropriate default.
 
 ### workspace
 

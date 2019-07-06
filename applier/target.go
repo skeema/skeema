@@ -145,24 +145,24 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 		log.Warnf("Skipping %s: %s\n", dir, err)
 		return nil, len(instances)
 	}
-	fsSchema, statementErrors, err := workspace.ExecLogicalSchema(logicalSchema, opts)
+	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, opts)
 	if err != nil {
 		log.Warnf("Skipping %s: %s\n", dir, err)
 		return nil, len(instances)
 	}
-	for _, stmtErr := range statementErrors {
+	for _, stmtErr := range wsSchema.Failures {
 		log.Error(stmtErr.Error())
 		if (strings.Contains(stmtErr.Error(), "Error 1031") || strings.Contains(stmtErr.Error(), "Error 1067")) && !dir.Config.Changed("connect-options") {
 			log.Info("This may be caused by Skeema's default usage of strict-mode settings. To disable strict-mode, add this to a .skeema file:")
 			log.Info("connect-options=\"innodb_strict_mode=0,sql_mode='ONLY_FULL_GROUP_BY,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'\"\n")
 		}
 	}
-	if len(statementErrors) > 0 {
+	if stmtErrCount := len(wsSchema.Failures); stmtErrCount > 0 {
 		noun := "errors"
-		if len(statementErrors) == 1 {
+		if stmtErrCount == 1 {
 			noun = "error"
 		}
-		log.Warnf("Skipping %s due to %d SQL %s\n", dir, len(statementErrors), noun)
+		log.Warnf("Skipping %s due to %d SQL %s\n", dir, stmtErrCount, noun)
 		return nil, len(instances)
 	}
 
@@ -190,13 +190,12 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 		}
 
 		for _, schemaName := range schemaNames {
-			schemaCopy := *fsSchema
-			schemaCopy.Name = schemaName
+			schemaCopy := wsSchema.CopyWithName(schemaName)
 			t := &Target{
 				Instance:           inst,
 				Dir:                dir,
 				SchemaFromInstance: schemasByName[schemaName], // this may be nil if schema doesn't exist yet; callers handle that
-				SchemaFromDir:      &schemaCopy,
+				SchemaFromDir:      schemaCopy.Schema,
 			}
 			targets = append(targets, t)
 		}

@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"regexp"
 	"testing"
+
+	"github.com/skeema/tengo"
 )
 
 func TestOptionsForDir(t *testing.T) {
@@ -12,14 +14,13 @@ func TestOptionsForDir(t *testing.T) {
 		t.Errorf("Unexpected error from OptionsForDir: %s", err)
 	} else {
 		expected := Options{
-			ProblemSeverity: map[string]Severity{
-				"no-pk":       SeverityError,
-				"bad-charset": SeverityWarning,
-				"bad-engine":  SeverityWarning,
+			RuleSeverity: map[string]Severity{
+				"pk":      SeverityError,
+				"charset": SeverityWarning,
+				"engine":  SeverityWarning,
 			},
 			AllowedCharSets: []string{"utf8mb4"},
 			AllowedEngines:  []string{"innodb", "myisam"},
-			IgnoreSchema:    regexp.MustCompile(`^metadata$`),
 			IgnoreTable:     regexp.MustCompile(`^_`),
 		}
 		if !reflect.DeepEqual(opts, expected) {
@@ -32,9 +33,9 @@ func TestOptionsForDir(t *testing.T) {
 		"--errors=made-up-problem",
 		"--warnings='bad-charset,made-up-problem,bad-engine'",
 		"--ignore-table=+",
-		"--ignore-schema=+",
 		"--allow-charset=''",
-		"--allow-engine='' --errors=''",
+		"--allow-engine=''",
+		"--lint-engine=gentle-nudge",
 	}
 	confirmError := func(cliArgs string) {
 		t.Helper()
@@ -55,4 +56,47 @@ func TestOptionsForDir(t *testing.T) {
 	if err.Error() != "testing ConfigError" {
 		t.Errorf("ConfigError not behaving as expected")
 	}
+}
+
+func TestOptionsIgnore(t *testing.T) {
+	var opts Options
+	assertIgnore := func(ot tengo.ObjectType, name string, expected bool) {
+		t.Helper()
+		key := tengo.ObjectKey{Type: ot, Name: name}
+		if actual := opts.shouldIgnore(key); actual != expected {
+			t.Errorf("Unexpected result from shouldIgnore(%s): expected %t, found %t", key, expected, actual)
+		}
+	}
+
+	// Confirm behavior of IgnoreTable
+	opts = Options{
+		IgnoreTable: regexp.MustCompile("^multi"),
+	}
+	assertIgnore(tengo.ObjectTypeTable, "multi1", true)
+	assertIgnore(tengo.ObjectTypeTable, "ultimulti", false)
+	assertIgnore(tengo.ObjectTypeFunc, "multi1", false)
+
+	// Confirm behavior of OnlyKeys
+	keys := []tengo.ObjectKey{
+		{Type: tengo.ObjectTypeTable, Name: "cats"},
+		{Type: tengo.ObjectTypeTable, Name: "tigers"},
+		{Type: tengo.ObjectTypeProc, Name: "pounce"},
+	}
+	opts = Options{}
+	opts.OnlyKeys(keys)
+	assertIgnore(tengo.ObjectTypeTable, "multi1", true)
+	assertIgnore(tengo.ObjectTypeTable, "cats", false)
+	assertIgnore(tengo.ObjectTypeFunc, "pounce", true)
+
+	// Confirm behavior of combination of these settings
+	opts = Options{
+		IgnoreTable: regexp.MustCompile("^dog"),
+	}
+	opts.OnlyKeys([]tengo.ObjectKey{
+		{Type: tengo.ObjectTypeTable, Name: "cats"},
+		{Type: tengo.ObjectTypeTable, Name: "dogs"},
+	})
+	assertIgnore(tengo.ObjectTypeTable, "cats", false)
+	assertIgnore(tengo.ObjectTypeTable, "horses", true)
+	assertIgnore(tengo.ObjectTypeTable, "dogs", true)
 }

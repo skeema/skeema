@@ -8,6 +8,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/dumper"
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/skeema/workspace"
 	"github.com/skeema/tengo"
@@ -137,27 +138,6 @@ func pullWalker(dir *fs.Dir, maxDepth int) (handledSchemaNames []string, skipCou
 func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Schema, logicalSchema *fs.LogicalSchema) error {
 	log.Infof("Updating %s to reflect %s %s", dir, instance, instSchema.Name)
 
-	ignoreTable, err := dir.Config.GetRegexp("ignore-table")
-	if err != nil {
-		return NewExitValue(CodeBadConfig, err.Error())
-	}
-
-	// When --skip-normalize is in use, we only want to update objects that have
-	// actual functional modifications, NOT just cosmetic/formatting differences.
-	// To make this distinction, we need to actually execute the *.sql files in a
-	// Workspace and run a diff against it.
-	var inDiff map[tengo.ObjectKey]bool
-	if !dir.Config.GetBool("normalize") {
-		mods := statementModifiersForPull(dir.Config, instance, ignoreTable)
-		opts, err := workspace.OptionsForDir(dir, instance)
-		if err != nil {
-			return NewExitValue(CodeBadConfig, err.Error())
-		}
-		if inDiff, err = objectsInDiff(instSchema, logicalSchema, opts, mods); err != nil {
-			return err
-		}
-	}
-
 	// Handle changes in schema's default character set and/or collation by
 	// persisting changes to the dir's option file.
 	if dir.Config.Get("default-character-set") != instSchema.CharSet || dir.Config.Get("default-collation") != instSchema.Collation {
@@ -169,80 +149,34 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Sche
 		log.Infof("Wrote %s -- updated schema-level default-character-set and default-collation", dir.OptionFile.Path())
 	}
 
-	// Iterate through the objects that have create statements in the filesystem,
-	// and compare to instSchema. Track which files need rewrites.
-	filesToRewrite := make(map[*fs.TokenizedSQLFile]bool)
-	instDict := instSchema.ObjectDefinitions()
-	for key, stmt := range logicalSchema.Creates {
-		if key.Type == tengo.ObjectTypeTable && ignoreTable != nil && ignoreTable.MatchString(key.Name) {
-			continue
-		}
-		if instCreate, stillExists := instDict[key]; stillExists {
-			if !dir.Config.GetBool("normalize") && !inDiff[key] {
-				continue
-			}
-			_, fsAutoInc := tengo.ParseCreateAutoInc(stmt.Text)
-			if key.Type == tengo.ObjectTypeTable && !dir.Config.GetBool("include-auto-inc") && fsAutoInc <= 1 {
-				instCreate, _ = tengo.ParseCreateAutoInc(instCreate)
-			}
-			if !fs.CanParse(instCreate) {
-				log.Errorf("%s is unexpectedly not able to be parsed by Skeema -- please file a bug at https://github.com/skeema/skeema/issues/new", key)
-				continue
-			}
-			fsCreate, fsDelimiter := stmt.SplitTextBody()
-			if instCreate != fsCreate {
-				stmt.Text = fmt.Sprintf("%s%s", instCreate, fsDelimiter)
-				filesToRewrite[stmt.FromFile] = true
-			}
-		} else {
-			filesToRewrite[stmt.FromFile] = true
-			stmt.Remove()
-		}
+	dumpOpts := dumper.Options{
+		IncludeAutoInc: dir.Config.GetBool("include-auto-inc"),
+	}
+	var err error
+	if dumpOpts.IgnoreTable, err = dir.Config.GetRegexp("ignore-table"); err != nil {
+		return NewExitValue(CodeBadConfig, err.Error())
 	}
 
-	// Do the appropriate rewrites of files tracked above
-	for file := range filesToRewrite {
-		if bytesWritten, err := file.Rewrite(); err != nil {
+	// When --skip-normalize is in use, we only want to update objects that have
+	// actual functional modifications, NOT just cosmetic/formatting differences.
+	// To make this distinction, we need to actually execute the *.sql files in a
+	// Workspace and run a diff against it.
+	if !dir.Config.GetBool("normalize") {
+		mods := statementModifiersForPull(dir.Config, instance, dumpOpts.IgnoreTable)
+		opts, err := workspace.OptionsForDir(dir, instance)
+		if err != nil {
+			return NewExitValue(CodeBadConfig, err.Error())
+		}
+		inDiff, err := objectsInDiff(logicalSchema, instSchema, opts, mods)
+		if err != nil {
 			return err
-		} else if bytesWritten == 0 {
-			log.Infof("Deleted %s -- no longer exists", file)
-		} else {
-			log.Infof("Wrote %s (%d bytes) -- updated definition", file, bytesWritten)
 		}
+		dumpOpts.OnlyKeys(inDiff)
 	}
 
-	// Objects that exist in instSchema, but have no corresponding create statement
-	// in fs: write new files, or append if filename already taken
-	for key, instCreate := range instDict {
-		if logicalSchema.Creates[key] != nil {
-			continue
-		}
-		if key.Type == tengo.ObjectTypeTable && ignoreTable != nil && ignoreTable.MatchString(key.Name) {
-			continue
-		}
-		contents := instCreate
-		if key.Type == tengo.ObjectTypeTable && !dir.Config.GetBool("include-auto-inc") {
-			contents, _ = tengo.ParseCreateAutoInc(contents)
-		}
-		// Safety mechanism: don't write out statements that we cannot re-read. This
-		// will still cause erroneous DROPs in diff/push, but better to fail loudly.
-		if !fs.CanParse(contents) {
-			log.Errorf("%s is unexpectedly not able to be parsed by Skeema -- please file a bug at https://github.com/skeema/skeema/issues/new", key)
-			continue
-		}
-		contents = fs.AddDelimiter(contents)
-		filePath := fs.PathForObject(dir.Path, key.Name)
-		if bytesWritten, wasNew, err := fs.AppendToFile(filePath, contents); err != nil {
-			return err
-		} else if wasNew {
-			log.Infof("Wrote %s (%d bytes) -- new %s", filePath, bytesWritten, key.Type)
-		} else {
-			log.Infof("Wrote %s (%d bytes) -- appended new %s", filePath, bytesWritten, key.Type)
-		}
-	}
-
+	_, err = dumper.DumpSchema(instSchema, dir, dumpOpts)
 	os.Stderr.WriteString("\n")
-	return nil
+	return err
 }
 
 func statementModifiersForPull(config *mybase.Config, instance *tengo.Instance, ignoreTable *regexp.Regexp) tengo.StatementModifiers {
@@ -274,15 +208,15 @@ func statementModifiersForPull(config *mybase.Config, instance *tengo.Instance, 
 // a SQL syntax error. The return value does not include tables whose
 // differences are cosmetic / formatting-related, or are otherwise ignored by
 // mods.
-func objectsInDiff(instSchema *tengo.Schema, logicalSchema *fs.LogicalSchema, opts workspace.Options, mods tengo.StatementModifiers) (map[tengo.ObjectKey]bool, error) {
-	fsSchema, statementErrors, err := workspace.ExecLogicalSchema(logicalSchema, opts)
+func objectsInDiff(logicalSchema *fs.LogicalSchema, instSchema *tengo.Schema, opts workspace.Options, mods tengo.StatementModifiers) ([]tengo.ObjectKey, error) {
+	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, opts)
 	if err != nil {
 		return nil, fmt.Errorf("Error introspecting filesystem version of schema %s: %s", instSchema.Name, err)
 	}
 
 	// Run a diff, and create a map to track objects in the diff
-	diff := tengo.NewSchemaDiff(fsSchema, instSchema)
-	inDiff := make(map[tengo.ObjectKey]bool)
+	diff := tengo.NewSchemaDiff(wsSchema.Schema, instSchema)
+	inDiff := make([]tengo.ObjectKey, 0)
 	for _, od := range diff.ObjectDiffs() {
 		odStatement, odStatementErr := od.Statement(mods)
 		// Errors are fatal, except for UnsupportedDiffError which we can safely
@@ -294,15 +228,13 @@ func objectsInDiff(instSchema *tengo.Schema, logicalSchema *fs.LogicalSchema, op
 		// mods may cause the diff to be a no-op; only include it in result if this
 		// isn't the case
 		if odStatement != "" {
-			inDiff[od.ObjectKey()] = true
+			inDiff = append(inDiff, od.ObjectKey())
 		}
 	}
 
 	// Treat objects with syntax errors as modified, since it isn't possible for
 	// the filesystem definition to match the live definition in this case.
-	for _, statementError := range statementErrors {
-		inDiff[statementError.ObjectKey()] = true
-	}
+	inDiff = append(inDiff, wsSchema.FailedKeys()...)
 
 	return inDiff, nil
 }

@@ -17,33 +17,52 @@ type Severity string
 const (
 	SeverityError   Severity = "error"
 	SeverityWarning Severity = "warning"
+	SeverityIgnore  Severity = "ignore"
 )
 
 // AddCommandOptions adds linting-related mybase options to the supplied
 // mybase.Command.
 func AddCommandOptions(cmd *mybase.Command) {
-	cmd.AddOption(mybase.StringOption("warnings", 0, "bad-charset,bad-engine,no-pk", "Linter problems to display as warnings (non-fatal); see manual for usage"))
-	cmd.AddOption(mybase.StringOption("errors", 0, "", "Linter problems to treat as fatal errors; see manual for usage"))
-	cmd.AddOption(mybase.StringOption("allow-charset", 0, "latin1,utf8mb4", "Whitelist of acceptable character sets"))
-	cmd.AddOption(mybase.StringOption("allow-engine", 0, "innodb", "Whitelist of acceptable storage engines"))
+	cmd.AddOption(mybase.StringOption("warnings", 0, "", "Deprecated method of setting multiple linter options to warning level").Hidden())
+	cmd.AddOption(mybase.StringOption("errors", 0, "", "Deprecated method of setting multiple linter options to error level").Hidden())
+	for _, r := range rulesByName {
+		opt := mybase.StringOption(r.optionName(), 0, string(r.DefaultSeverity), r.optionDescription())
+		cmd.AddOption(opt)
+		if r.RelatedOption != nil {
+			cmd.AddOption(r.RelatedOption)
+		}
+	}
 }
 
 // Options contains parsed settings controlling linter behavior.
 type Options struct {
-	ProblemSeverity map[string]Severity
+	RuleSeverity    map[string]Severity
 	AllowedCharSets []string
 	AllowedEngines  []string
-	IgnoreSchema    *regexp.Regexp
 	IgnoreTable     *regexp.Regexp
+	onlyKeys        map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
 }
 
-// ShouldIgnore returns true if the option configuration indicates the supplied
+// OnlyKeys specifies a list of tengo.ObjectKeys that the linter should
+// operate on. (Objects with keys NOT in this list will be skipped.)
+// Repeated calls to this method add to the existing whitelist.
+func (opts *Options) OnlyKeys(keys []tengo.ObjectKey) {
+	if opts.onlyKeys == nil {
+		opts.onlyKeys = make(map[tengo.ObjectKey]bool, len(keys))
+	}
+	for _, key := range keys {
+		opts.onlyKeys[key] = true
+	}
+}
+
+// shouldIgnore returns true if the option configuration indicates the supplied
 // tengo.ObjectKey should be ignored.
-func (opts Options) ShouldIgnore(key tengo.ObjectKey) bool {
-	if key.Type == tengo.ObjectTypeDatabase && opts.IgnoreSchema != nil {
-		return opts.IgnoreSchema.MatchString(key.Name)
-	} else if key.Type == tengo.ObjectTypeTable && opts.IgnoreTable != nil {
-		return opts.IgnoreTable.MatchString(key.Name)
+func (opts *Options) shouldIgnore(key tengo.ObjectKey) bool {
+	if key.Type == tengo.ObjectTypeTable && opts.IgnoreTable != nil && opts.IgnoreTable.MatchString(key.Name) {
+		return true
+	}
+	if opts.onlyKeys != nil && !opts.onlyKeys[key] {
+		return true
 	}
 	return false
 }
@@ -52,61 +71,63 @@ func (opts Options) ShouldIgnore(key tengo.ObjectKey) bool {
 // effectively converting between mybase options and linter options.
 func OptionsForDir(dir *fs.Dir) (Options, error) {
 	opts := Options{
-		ProblemSeverity: make(map[string]Severity),
+		RuleSeverity:    make(map[string]Severity),
 		AllowedCharSets: dir.Config.GetSlice("allow-charset", ',', true),
 		AllowedEngines:  dir.Config.GetSlice("allow-engine", ',', true),
 	}
 
 	var err error
-	opts.IgnoreSchema, err = dir.Config.GetRegexp("ignore-schema")
-	if err != nil {
-		return Options{}, toConfigError(dir, err)
-	}
 	opts.IgnoreTable, err = dir.Config.GetRegexp("ignore-table")
 	if err != nil {
 		return Options{}, toConfigError(dir, err)
 	}
 
-	// Populate opts.ProblemSeverity from the warnings and errors options (in
-	// that order, so that in case of duplicate entries, errors take precedence).
-	// The values specified in warnings and errors must be valid defined problems.
-	allAllowed := strings.Join(allProblemNames(), ", ")
-	for _, val := range dir.Config.GetSlice("warnings", ',', true) {
-		val = strings.ToLower(val)
-		if !problemExists(val) {
-			return Options{}, newConfigError(dir, "Option warnings must be a comma-separated list including these values: %s", allAllowed)
+	// Populate opts.RuleSeverity from individual rule options
+	for name, r := range rulesByName {
+		val, err := dir.Config.GetEnum(r.optionName(), string(SeverityIgnore), string(SeverityWarning), string(SeverityError))
+		if err != nil {
+			return Options{}, toConfigError(dir, err)
 		}
-		opts.ProblemSeverity[val] = SeverityWarning
-	}
-	for _, val := range dir.Config.GetSlice("errors", ',', true) {
-		val = strings.ToLower(val)
-		if !problemExists(val) {
-			return Options{}, newConfigError(dir, "Option errors must be a comma-separated list including these values: %s", allAllowed)
-		}
-		opts.ProblemSeverity[val] = SeverityError
+		opts.RuleSeverity[name] = Severity(val)
 	}
 
-	// For list-based problems, confirm corresponding list is non-empty
-	problemToList := map[string][]string{
-		"bad-charset": opts.AllowedCharSets,
-		"bad-engine":  opts.AllowedEngines,
+	// Backwards-compat for the deprecated "warnings" and "errors" options (in that
+	// order, so in case of duplicate entries, errors take precedence).
+	// Note that these used different names for the rules, and only 3 existed at
+	// the time, so they're hard-coded here.
+	deprecatedNames := map[string]string{
+		"bad-charset": "charset",
+		"bad-engine":  "engine",
+		"no-pk":       "pk",
 	}
-	for problem, listOption := range problemToList {
-		severity, ok := opts.ProblemSeverity[problem]
-		if ok && len(listOption) == 0 {
-			err := newConfigError(dir,
-				"With option %ss=%s, corresponding option %s must be non-empty",
-				string(severity),
-				problem,
-				strings.Replace(problem, "bad-", "allow-", -1))
-			return Options{}, err
+	for _, severity := range []Severity{SeverityWarning, SeverityError} {
+		oldOptionName := fmt.Sprintf("%ss", severity)
+		for _, oldName := range dir.Config.GetSlice(oldOptionName, ',', true) {
+			oldName = strings.ToLower(oldName)
+			if newName, ok := deprecatedNames[oldName]; ok {
+				opts.RuleSeverity[newName] = severity
+			} else {
+				return Options{}, newConfigError(dir, "Option %s is deprecated and cannot include value %s. Please see individual lint-* options instead.", oldOptionName, oldName)
+			}
+		}
+	}
+
+	// For rules with allow-lists, confirm corresponding list option is non-empty
+	ruleToListOpt := map[string][]string{
+		"charset": opts.AllowedCharSets,
+		"engine":  opts.AllowedEngines,
+	}
+	for ruleName, listOption := range ruleToListOpt {
+		severity := opts.RuleSeverity[ruleName]
+		if severity != SeverityIgnore && len(listOption) == 0 {
+			return Options{}, newConfigError(dir, "With option lint-%s=%s, corresponding option allow-%s must be non-empty", ruleName, severity, ruleName)
 		}
 	}
 
 	return opts, nil
 }
 
-// ConfigError represents a configuration problem encountered at runtime.
+// ConfigError represents a configuration issue encountered at runtime.
 type ConfigError string
 
 // Error satisfies the builtin error interface.

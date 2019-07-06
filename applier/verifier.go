@@ -70,9 +70,9 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 	if err != nil {
 		return err
 	}
-	wsSchema, statementErrors, err := workspace.ExecLogicalSchema(logicalSchema, opts)
-	if err == nil && len(statementErrors) > 0 {
-		err = statementErrors[0]
+	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, opts)
+	if err == nil && len(wsSchema.Failures) > 0 {
+		err = wsSchema.Failures[0]
 	}
 	if err != nil {
 		return fmt.Errorf("Diff verification failure: %s", err.Error())

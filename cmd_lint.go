@@ -5,6 +5,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/dumper"
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/skeema/linter"
 	"github.com/skeema/skeema/workspace"
@@ -54,53 +55,24 @@ func LintHandler(cfg *mybase.Config) error {
 			}
 		}
 		return NewExitValue(exitCode, "Skipped %d operations due to fatal errors", len(result.Exceptions))
-	case len(result.Errors) > 0:
-		return NewExitValue(CodeFatalError, "Found %d errors", len(result.Errors))
-	case len(result.Warnings) > 0:
-		return NewExitValue(CodeDifferencesFound, "Found %d warnings", len(result.Warnings))
-	case len(result.FormatNotices) > 0:
+	case result.ErrorCount > 0:
+		return NewExitValue(CodeFatalError, "Found %d errors", result.ErrorCount)
+	case result.WarningCount > 0:
+		return NewExitValue(CodeDifferencesFound, "Found %d warnings", result.WarningCount)
+	case result.ReformatCount > 0:
 		return NewExitValue(CodeDifferencesFound, "")
 	}
 	return nil
 }
 
-func lintWalker(dir *fs.Dir, maxDepth int) (result *linter.Result) {
+func lintWalker(dir *fs.Dir, maxDepth int) *linter.Result {
 	log.Infof("Linting %s", dir)
-
-	// Connect to first defined instance, unless configured to use local Docker
-	var inst *tengo.Instance
-	if wsType, _ := dir.Config.GetEnum("workspace", "temp-schema", "docker"); wsType != "docker" || !dir.Config.Changed("flavor") {
-		var err error
-		if inst, err = dir.FirstInstance(); err != nil {
-			result = linter.BadConfigResult(dir, err)
-		}
-	}
-	opts, err := workspace.OptionsForDir(dir, inst)
-	if err != nil {
-		result = linter.BadConfigResult(dir, err)
-	}
-
-	if result == nil {
-		result = linter.LintDir(dir, opts)
-	}
+	result := lintDir(dir, true)
 	for _, err := range result.Exceptions {
 		log.Error(fmt.Errorf("Skipping schema in %s due to error: %s", dir.RelPath(), err))
 	}
-	for _, annotation := range result.Errors {
-		log.Error(annotation.MessageWithLocation())
-	}
-	for _, annotation := range result.Warnings {
-		log.Warning(annotation.MessageWithLocation())
-	}
-	for _, annotation := range result.FormatNotices {
-		length, err := annotation.Statement.FromFile.Rewrite()
-		if err != nil {
-			writeErr := fmt.Errorf("Unable to write to %s: %s", annotation.Statement.File, err)
-			log.Error(writeErr.Error())
-			result.Exceptions = append(result.Exceptions, writeErr)
-		} else {
-			log.Infof("Wrote %s (%d bytes) -- updated file to normalize format", annotation.Statement.File, length)
-		}
+	for _, annotation := range result.Annotations {
+		annotation.Log()
 	}
 	for _, dl := range result.DebugLogs {
 		log.Debug(dl)
@@ -121,7 +93,76 @@ func lintWalker(dir *fs.Dir, maxDepth int) (result *linter.Result) {
 	}
 	if subdirErr != nil {
 		log.Error(subdirErr)
-		result.Exceptions = append(result.Exceptions, subdirErr)
+		result.Fatal(subdirErr)
 	}
+	return result
+}
+
+// lintDir lints all logical schemas in dir, optionally also reformatting
+// SQL statements along the way. A combined result for the directory is
+// returned. This function does not recurse into subdirs.
+func lintDir(dir *fs.Dir, reformat bool) *linter.Result {
+	opts, err := linter.OptionsForDir(dir)
+	if err != nil && len(dir.LogicalSchemas) > 0 {
+		return linter.BadConfigResult(dir, err)
+	}
+
+	// Get workspace options for dir. This involves connecting to the first
+	// defined instance, unless configured to use local Docker.
+	var inst *tengo.Instance
+	if wsType, _ := dir.Config.GetEnum("workspace", "temp-schema", "docker"); wsType != "docker" || !dir.Config.Changed("flavor") {
+		if inst, err = dir.FirstInstance(); err != nil {
+			return linter.BadConfigResult(dir, err)
+		}
+	}
+	wsOpts, err := workspace.OptionsForDir(dir, inst)
+	if err != nil {
+		return linter.BadConfigResult(dir, err)
+	}
+
+	result := &linter.Result{}
+	for _, logicalSchema := range dir.LogicalSchemas {
+		// Convert the logical schema from the filesystem into a real schema, using a
+		// workspace
+		wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
+		if err != nil {
+			result.Fatal(err)
+			return result
+		}
+		result.AnnotateStatementErrors(wsSchema.Failures, opts)
+
+		// Reformat statements if requested. This must be done prior to checking for
+		// problems. Otherwise, the line offsets in annotations can be wrong.
+		if reformat {
+			dumpOpts := dumper.Options{
+				IncludeAutoInc: true,
+				IgnoreTable:    opts.IgnoreTable,
+			}
+			dumpOpts.IgnoreKeys(wsSchema.FailedKeys())
+			result.ReformatCount, err = dumper.DumpSchema(wsSchema.Schema, dir, dumpOpts)
+			if err != nil {
+				result.Fatal(err)
+			}
+		}
+
+		// Check for problems
+		subresult := linter.CheckSchema(wsSchema, opts)
+		result.Merge(subresult)
+	}
+
+	// Add warning annotations for unparseable statements (unless we hit an
+	// exception, in which case skip it to avoid extra noise!)
+	if len(result.Exceptions) == 0 {
+		for _, stmt := range dir.IgnoredStatements {
+			note := linter.Note{
+				Summary: "Unable to parse statement",
+				Message: "Ignoring unsupported or unparseable SQL statement",
+			}
+			result.Annotate(stmt, linter.SeverityWarning, "", note)
+		}
+	}
+
+	// Make sure the problem messages have a deterministic order.
+	result.SortByFile()
 	return result
 }

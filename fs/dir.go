@@ -163,6 +163,76 @@ func (dir *Dir) Subdirs() ([]*Dir, int, error) {
 	return result, badSubdirCount, nil
 }
 
+// CreateSubdir creates a subdirectory with the supplied name and optional
+// config file. If the directory already exists, it is an error if it already
+// contains any *.sql files or a .skeema file.
+func (dir *Dir) CreateSubdir(name string, optionFile *mybase.File) (*Dir, error) {
+	dirPath := path.Join(dir.Path, name)
+	if dir.OptionFile != nil && dir.OptionFile.SomeSectionHasOption("schema") {
+		return nil, fmt.Errorf("Cannot use dir %s: parent option file %s defines schema option", dirPath, dir.OptionFile)
+	} else if _, ok := dir.Config.Source("schema").(*mybase.File); ok {
+		return nil, fmt.Errorf("Cannot use dir %s: an ancestor option file defines schema option", dirPath)
+	}
+
+	if fi, err := os.Stat(dirPath); os.IsNotExist(err) {
+		err = os.MkdirAll(dirPath, 0777)
+		if err != nil {
+			return nil, fmt.Errorf("Unable to create directory %s: %s", dirPath, err)
+		}
+	} else if err != nil {
+		return nil, err
+	} else if !fi.IsDir() {
+		return nil, fmt.Errorf("Path %s already exists but is not a directory", dirPath)
+	} else {
+		// Existing dir: confirm it doesn't already have .skeema or *.sql files
+		fileInfos, err := ioutil.ReadDir(dirPath)
+		if err != nil {
+			return nil, err
+		}
+		for _, fi := range fileInfos {
+			if fi.Name() == ".skeema" {
+				return nil, fmt.Errorf("Cannot use dir %s: already has .skeema file", dirPath)
+			} else if strings.HasSuffix(fi.Name(), ".sql") {
+				return nil, fmt.Errorf("Cannot use dir %s: Already contains *.sql files", dirPath)
+			}
+		}
+	}
+
+	if optionFile != nil {
+		optionFile.Dir = dirPath
+		if err := optionFile.Write(false); err != nil {
+			return nil, fmt.Errorf("Cannot use dir %s: Unable to write to %s: %s", dirPath, optionFile.Path(), err)
+		}
+	}
+
+	sub := &Dir{
+		Path:     dirPath,
+		Config:   dir.Config.Clone(),
+		repoBase: dir.repoBase,
+	}
+	if err := sub.parseContents(); err != nil {
+		return nil, err
+	}
+	return sub, nil
+}
+
+// CreateOptionFile adds the supplied option file to dir. It is an error if dir
+// already has an option file.
+func (dir *Dir) CreateOptionFile(optionFile *mybase.File) (err error) {
+	if dir.OptionFile != nil {
+		return fmt.Errorf("Directory %s already has an option file", dir)
+	}
+	optionFile.Dir = dir.Path
+	if err := optionFile.Write(false); err != nil {
+		return fmt.Errorf("Unable to write to %s: %s", optionFile.Path(), err)
+	}
+	if dir.OptionFile, err = parseOptionFile(dir.Path, dir.repoBase, dir.Config); err != nil {
+		return err
+	}
+	dir.Config.AddSource(dir.OptionFile)
+	return nil
+}
+
 // Instances returns 0 or more tengo.Instance pointers, based on the
 // directory's configuration. The Instances will NOT be checked for
 // connectivity. However, if the configuration is invalid (for example, illegal

@@ -26,7 +26,7 @@ before_install:
 script:
   - $GOPATH/bin/goveralls -v -service=travis-ci
   - go vet ./...
-  - test -z "$(gofmt -s -d {.,fs,workspace,util,applier,linter}/*.go 2>&1)"
+  - test -z "$(gofmt -s -d {.,fs,workspace,util,applier,linter,dumper}/*.go 2>&1)"
   - go list -f '{{.Dir}}' ./... | xargs golint -set_exit_status
 
 deploy:

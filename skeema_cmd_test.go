@@ -105,7 +105,7 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	// init should fail if a parent dir has an invalid .skeema file
 	fs.MakeTestDirectory(t, "hasbadoptions")
 	fs.WriteTestFile(t, "hasbadoptions/.skeema", "invalid file will not parse")
-	s.handleCommand(t, CodeBadConfig, "hasbadoptions", "skeema init -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+	s.handleCommand(t, CodeFatalError, "hasbadoptions", "skeema init -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
 
 	// init should fail if the --dir specifies an existing non-directory file; or
 	// if the --dir already contains a subdir matching a schema name; or if the
@@ -113,7 +113,7 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	fs.WriteTestFile(t, "nondir", "foo bar")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir nondir -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
 	fs.WriteTestFile(t, "alreadyexists/product/.skeema", "schema=product\n")
-	s.handleCommand(t, CodeFatalError, ".", "skeema init --dir alreadyexists -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+	s.handleCommand(t, CodeCantCreate, ".", "skeema init --dir alreadyexists -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
 	fs.MakeTestDirectory(t, "hassql")
 	fs.WriteTestFile(t, "hassql/foo.sql", "foo")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir hassql --schema product -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
@@ -720,7 +720,7 @@ func (s SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
 	newContents := strings.Replace(contents, "`", "", -1)
 	fs.WriteTestFile(t, "mydb/analytics/_trending.sql", newContents)
 	fs.WriteTestFile(t, "mydb/analytics/_hmm.sql", "CREATE TABLE _hmm uhoh this is not valid;\n")
-	fs.WriteTestFile(t, "mydb/archives/bar.sql", "CREATE TABLE bar uhoh this is not valid;\n")
+	fs.RemoveTestFile(t, "mydb/archives/bar.sql")
 	s.handleCommand(t, CodeSuccess, ".", "skeema lint")
 	if fs.ReadTestFile(t, "mydb/analytics/_trending.sql") != newContents {
 		t.Error("Expected `skeema lint` to ignore mydb/analytics/_trending.sql, but it did not")
@@ -729,7 +729,6 @@ func (s SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
 	// push, pull, lint, init: invalid regexes should error. Error is CodeBadConfig
 	// except for cases of invalid ignore-schema being hit in fs.Dir.SchemaNames().
 	s.handleCommand(t, CodeBadConfig, ".", "skeema lint --ignore-table='+'")
-	s.handleCommand(t, CodeBadConfig, ".", "skeema lint --ignore-schema='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema pull --ignore-table='+'")
 	s.handleCommand(t, CodeFatalError, ".", "skeema pull --ignore-schema='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema push --ignore-table='+'")
