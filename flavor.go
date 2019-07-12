@@ -146,14 +146,14 @@ func ParseFlavor(versionString, versionComment string) Flavor {
 		}
 	}
 
-	// Ubuntu distributions include Ubuntu in one or both strings, but we need to
-	// check for it *after* the previous checks, since it may also still include
-	// a better indicator like "mariadb".
-	if vendor == VendorUnknown && (strings.Contains(versionComment, "ubuntu") || strings.Contains(versionString, "ubuntu")) {
-		// This logic will need to change if/when MySQL hits major version 10
-		if version[0] >= 10 {
+	// If the vendor is still unknown after the above checks, it may be because
+	// various distribution methods adjust one or both of those strings. Fall
+	// back to sane defaults for known major versions.
+	// This logic will need to change whenever MySQL 9+ or MariaDB 11+ exists.
+	if vendor == VendorUnknown {
+		if version[0] == 10 {
 			vendor = VendorMariaDB
-		} else if version[0] >= 5 {
+		} else if version[0] == 5 || version[0] == 8 {
 			vendor = VendorMySQL
 		}
 	}
