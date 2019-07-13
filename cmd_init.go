@@ -137,7 +137,7 @@ func InitHandler(cfg *mybase.Config) error {
 		if compliant, err := inst.StrictModeCompliant(schemas); err == nil && !compliant {
 			nonStrictWarning = fmt.Sprintf("Detected some tables are incompatible with strict-mode; setting relaxed connect-options in %s\n", hostOptionFile)
 			hostOptionFile.SetOptionValue(environment, "connect-options", "innodb_strict_mode=0,sql_mode='ONLY_FULL_GROUP_BY,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'")
-	        }
+		}
 	}
 
 	// Write the option file
