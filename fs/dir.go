@@ -407,9 +407,7 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	v.Set("writeTimeout", "5s")
 	v.Set("sql_mode", "'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'")
         flavorFromConfig := tengo.NewFlavor(dir.Config.Get("flavor"))
-        if flavorFromConfig.HasInnodbStrictMode() {
-                v.Set("innodb_strict_mode", "1")
-        }
+        v.Set("innodb_strict_mode", "1")
 
 	// Set values from connect-options
 	for name, value := range options {
@@ -428,14 +426,10 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	// Set non-overridable options
 	v.Set("interpolateParams", "true")
 	v.Set("foreign_key_checks", "0")
-        if flavorFromConfig.HasDefaultStorageEngine() {
-                v.Set("default_storage_engine", "'InnoDB'")
-        }
+        v.Set("default_storage_engine", "'InnoDB'")
 	v.Set("sql_quote_show_create", "1")
 
-	if flavorFromConfig.HasDataDictionary() {
-		v.Set("information_schema_stats_expiry", "0")
-	}
+	v.Set("information_schema_stats_expiry", "0")
 
 	return v.Encode(), nil
 }

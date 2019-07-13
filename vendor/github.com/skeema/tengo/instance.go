@@ -845,7 +845,6 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		SubPart    sql.NullInt64  `db:"sub_part"`
 		Comment    sql.NullString `db:"index_comment"`
 	}
-	if instance.Flavor().HasIndexComment() {
 	query = `
 		SELECT   index_name AS index_name, table_name AS table_name,
 		         non_unique AS non_unique, seq_in_index AS seq_in_index,
@@ -853,15 +852,6 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		         index_comment AS index_comment
 		FROM     statistics
 		WHERE    table_schema = ?`
-	} else {
-	query = `
-		SELECT   index_name AS index_name, table_name AS table_name,
-		         non_unique AS non_unique, seq_in_index AS seq_in_index,
-		         column_name AS column_name, sub_part AS sub_part,
-		         ''
-		FROM     statistics
-		WHERE    table_schema = ?`
-	}
 	if err := db.Select(&rawIndexes, query, schema); err != nil {
 		return nil, fmt.Errorf("Error querying information_schema.statistics for schema %s: %s", schema, err)
 	}
@@ -992,6 +982,11 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			if flavor.HasDataDictionary() && len(t.SecondaryIndexes) > 1 {
 				fixIndexOrder(t)
 			}
+			// Foreign keys order is unpredictable in MySQL before 5.6, so reorder
+			// foreign keys based on parsing SHOW CREATE TABLE if needed
+			if !flavor.SortedForeignKeys() && len(t.ForeignKeys) > 1 {
+				fixForeignKeyOrder(t)
+			}
 			// Compare what we expect the create DDL to be, to determine if we support
 			// diffing for the table. Ignore next-auto-increment differences in this
 			// comparison, since the value may have changed between our previous
@@ -1007,7 +1002,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	return tables, g.Wait()
 }
 
-var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE )?KEY `(.+)` \\(`")
+var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE )?KEY `((?:[^`]|``)+)` \\(`")
 
 func fixIndexOrder(t *Table) {
 	byName := t.SecondaryIndexesByName()
@@ -1019,6 +1014,22 @@ func fixIndexOrder(t *Table) {
 			continue
 		}
 		t.SecondaryIndexes[cur] = byName[matches[1]]
+		cur++
+	}
+}
+
+var reForeignKeyLine = regexp.MustCompile("^\\s+CONSTRAINT `((?:[^`]|``)+)` FOREIGN KEY")
+
+func fixForeignKeyOrder(t *Table) {
+	byName := t.foreignKeysByName()
+	t.ForeignKeys = make([]*ForeignKey, len(byName))
+	var cur int
+	for _, line := range strings.Split(t.CreateStatement, "\n") {
+		matches := reForeignKeyLine.FindStringSubmatch(line)
+		if matches == nil {
+			continue
+		}
+		t.ForeignKeys[cur] = byName[matches[1]]
 		cur++
 	}
 }
