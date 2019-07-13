@@ -315,6 +315,30 @@ func TestInnoRowFormatReqs(t *testing.T) {
 	}
 }
 
+func TestSortedForeignKeys(t *testing.T) {
+	type testcase struct {
+		receiver Flavor
+		expected bool
+	}
+	cases := []testcase{
+		{FlavorMySQL55, false},
+		{FlavorMySQL56, true},
+		{FlavorMySQL80, true},
+		{FlavorPercona55, false},
+		{FlavorPercona57, true},
+		{FlavorMariaDB101, true},
+		{FlavorMariaDB102, true},
+		{FlavorMariaDB103, true},
+		{NewFlavor("unknown:5.6"), true},
+	}
+	for _, tc := range cases {
+		actual := tc.receiver.SortedForeignKeys()
+		if actual != tc.expected {
+			t.Errorf("Expected %s.SortedForeignKeys() to return %t, instead found %t", tc.receiver, tc.expected, actual)
+		}
+	}
+}
+
 func (s TengoIntegrationSuite) TestInnoRowFormatReqs(t *testing.T) {
 	// Connect using innodb_strict_mode, which causes CREATE TABLE to fail if the
 	// ROW_FORMAT clause isn't allowed with current settings

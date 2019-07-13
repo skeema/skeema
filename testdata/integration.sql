@@ -98,7 +98,9 @@ CREATE TABLE grab_bag (
 	KEY owner_idx (owner_id) COMMENT 'index comment',
 	CONSTRAINT Ab FOREIGN KEY (id, code) REFERENCES sometable1 (somecol1a, somecol1b),
 	CONSTRAINT _aa FOREIGN KEY (updated_at, created_at) REFERENCES sometable2 (somecol2a, somecol2b),
-	CONSTRAINT aa FOREIGN KEY (name) REFERENCES sometable3 (somecol3)
+	CONSTRAINT cc FOREIGN KEY (name) REFERENCES sometable3 (somecol3),
+	CONSTRAINT aa FOREIGN KEY (name) REFERENCES sometable3 (somecol3),
+	CONSTRAINT bb FOREIGN KEY (name) REFERENCES sometable3 (somecol3)
 ) AUTO_INCREMENT=123;
 
 # Routine definitions here are intentionally formatted oddly. The DB remembers

@@ -574,8 +574,15 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	aTableFromDB = s.GetTable(t, "testing", "grab_bag")
 	aTableFromDB.SecondaryIndexes[0], aTableFromDB.SecondaryIndexes[1], aTableFromDB.SecondaryIndexes[2] = aTableFromDB.SecondaryIndexes[2], aTableFromDB.SecondaryIndexes[0], aTableFromDB.SecondaryIndexes[1]
 	fixIndexOrder(aTableFromDB)
-	if aTableFromDB.GeneratedCreateStatement(flavor) != aTableFromDB.CreateStatement && !aTableFromDB.UnsupportedDDL {
+	if aTableFromDB.GeneratedCreateStatement(flavor) != aTableFromDB.CreateStatement {
 		t.Error("fixIndexOrder did not behave as expected")
+	}
+
+	// Test foreign key order correction, even if no test image lacks sorted FKs
+	aTableFromDB.ForeignKeys[0], aTableFromDB.ForeignKeys[1], aTableFromDB.ForeignKeys[2] = aTableFromDB.ForeignKeys[2], aTableFromDB.ForeignKeys[0], aTableFromDB.ForeignKeys[1]
+	fixForeignKeyOrder(aTableFromDB)
+	if aTableFromDB.GeneratedCreateStatement(flavor) != aTableFromDB.CreateStatement {
+		t.Error("fixForeignKeyOrder did not behave as expected")
 	}
 
 	// Test introspection of default expressions, if flavor supports them
