@@ -93,7 +93,6 @@ func lintWalker(dir *fs.Dir, maxDepth int) (result *linter.Result) {
 		log.Warning(annotation.MessageWithLocation())
 	}
 	for _, annotation := range result.FormatNotices {
-		annotation.Statement.Text = annotation.Message
 		length, err := annotation.Statement.FromFile.Rewrite()
 		if err != nil {
 			writeErr := fmt.Errorf("Unable to write to %s: %s", annotation.Statement.File, err)
