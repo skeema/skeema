@@ -982,6 +982,11 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			if flavor.HasDataDictionary() && len(t.SecondaryIndexes) > 1 {
 				fixIndexOrder(t)
 			}
+			// Foreign keys order is unpredictable in MySQL before 5.6, so reorder
+			// foreign keys based on parsing SHOW CREATE TABLE if needed
+			if !flavor.MySQLishMinVersion(5, 6) && len(t.ForeignKeys) > 1 {
+				fixForeignKeyOrder(t)
+			}
 			// Compare what we expect the create DDL to be, to determine if we support
 			// diffing for the table. Ignore next-auto-increment differences in this
 			// comparison, since the value may have changed between our previous
@@ -1009,6 +1014,22 @@ func fixIndexOrder(t *Table) {
 			continue
 		}
 		t.SecondaryIndexes[cur] = byName[matches[1]]
+		cur++
+	}
+}
+
+var reForeignKeyLine = regexp.MustCompile("^\\s+?CONSTRAINT `(.+)` FOREIGN KEY")
+
+func fixForeignKeyOrder(t *Table) {
+	ByName := t.foreignKeysByName()
+	t.ForeignKeys = make([]*ForeignKey, len(ByName))
+	var cur int
+	for _, line := range strings.Split(t.CreateStatement, "\n") {
+		matches := reForeignKeyLine.FindStringSubmatch(line)
+		if matches == nil {
+			continue
+		}
+		t.ForeignKeys[cur] = ByName[matches[1]]
 		cur++
 	}
 }
