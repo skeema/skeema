@@ -984,7 +984,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			}
 			// Foreign keys order is unpredictable in MySQL before 5.6, so reorder
 			// foreign keys based on parsing SHOW CREATE TABLE if needed
-			if !flavor.MySQLishMinVersion(5, 6) && len(t.ForeignKeys) > 1 {
+			if !flavor.SortedForeignKeys() && len(t.ForeignKeys) > 1 {
 				fixForeignKeyOrder(t)
 			}
 			// Compare what we expect the create DDL to be, to determine if we support
@@ -1002,7 +1002,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	return tables, g.Wait()
 }
 
-var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE )?KEY `(.+)` \\(`")
+var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE )?KEY `((?:[^`]|``)+)` \\(`")
 
 func fixIndexOrder(t *Table) {
 	byName := t.SecondaryIndexesByName()
@@ -1018,18 +1018,18 @@ func fixIndexOrder(t *Table) {
 	}
 }
 
-var reForeignKeyLine = regexp.MustCompile("^\\s+?CONSTRAINT `(.+)` FOREIGN KEY")
+var reForeignKeyLine = regexp.MustCompile("^\\s+CONSTRAINT `((?:[^`]|``)+)` FOREIGN KEY")
 
 func fixForeignKeyOrder(t *Table) {
-	ByName := t.foreignKeysByName()
-	t.ForeignKeys = make([]*ForeignKey, len(ByName))
+	byName := t.foreignKeysByName()
+	t.ForeignKeys = make([]*ForeignKey, len(byName))
 	var cur int
 	for _, line := range strings.Split(t.CreateStatement, "\n") {
 		matches := reForeignKeyLine.FindStringSubmatch(line)
 		if matches == nil {
 			continue
 		}
-		t.ForeignKeys[cur] = ByName[matches[1]]
+		t.ForeignKeys[cur] = byName[matches[1]]
 		cur++
 	}
 }

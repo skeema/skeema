@@ -284,3 +284,9 @@ func (fl Flavor) InnoRowFormatReqs(format string) (filePerTable, barracudaFormat
 	// Panic on unexpected input, since this may be programmer error / a typo
 	panic(fmt.Errorf("Unknown row_format %s is not supported", format))
 }
+
+// SortedForeignKeys returns true if the flavor sorts foreign keys
+// lexicographically in SHOW CREATE TABLE.
+func (fl Flavor) SortedForeignKeys() bool {
+	return fl.Major > 5 || (fl.Major == 5 && fl.Minor > 5)
+}
