@@ -68,6 +68,7 @@ Additional [contributions](https://github.com/skeema/tengo/graphs/contributors) 
 * [@tomkrouper](https://github.com/tomkrouper)
 * [@efixler](https://github.com/efixler)
 * [@chrisjpalmer](https://github.com/chrisjpalmer)
+* [@thinQ-skeema](https://github.com/thinQ-skeema)
 
 Support for stored procedures and functions generously sponsored by [Psyonix](https://psyonix.com).
 
