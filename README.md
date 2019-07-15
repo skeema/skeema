@@ -64,6 +64,7 @@ Additional [contributions](https://github.com/skeema/skeema/graphs/contributors)
 * [@chrisjpalmer](https://github.com/chrisjpalmer)
 * [@johlo](https://github.com/johlo)
 * [@blueish](https://github.com/blueish)
+* [@thinQ-skeema](https://github.com/thinQ-skeema)
 
 Support for stored procedures and functions generously sponsored by [Psyonix](https://psyonix.com).
 
