@@ -93,6 +93,7 @@ func (s *ShellOut) RunCapture() (string, error) {
 // Does NOT provide any special treatment for quoted fields in the output.
 func (s *ShellOut) RunCaptureSplit() ([]string, error) {
 	raw, err := s.RunCapture()
+	raw = strings.TrimSpace(raw) // in case output ends in newline despite using a different delimiter
 	var delimiter rune
 	for _, candidate := range []rune{'\n', ',', '\t', ' '} {
 		if strings.ContainsRune(raw, candidate) {

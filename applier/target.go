@@ -112,12 +112,12 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 	}
 
 	rawInstances, err := dir.Instances()
-	if len(rawInstances) == 0 {
-		log.Warnf("Skipping %s: dir maps to an empty list of instances\n", dir)
-		return nil, 0
-	} else if err != nil {
+	if err != nil {
 		log.Warnf("Skipping %s: %s\n", dir, err)
 		return nil, 1
+	} else if len(rawInstances) == 0 {
+		log.Warnf("Skipping %s: dir maps to an empty list of instances\n", dir)
+		return nil, 0
 	}
 	// dir.Instances doesn't pre-check for connectivity problems, so do that now
 	for _, inst := range rawInstances {

@@ -39,11 +39,11 @@ func TestRunCaptureSplit(t *testing.T) {
 	}
 
 	assertResult(`/usr/bin/printf 'hello there\n \n world   \n'`, "hello there", "world")
-	assertResult(`/usr/bin/printf 'hello, this splits on trailing newline\n'`, "hello, this splits on trailing newline")
+	assertResult(`/usr/bin/printf 'hello, this does not break on trailing newline\n'`, "hello", "this does not break on trailing newline")
 	assertResult(`/usr/bin/printf 'tab\tseparated\tvalues'`, "tab", "separated", "values")
 	assertResult("/usr/bin/printf 'colons:do:not:split'", "colons:do:not:split")
 	assertResult(`/usr/bin/printf ',,,commas,  have the,,next priority, if no newlines'`, "commas", "have the", "next priority", "if no newlines")
-	assertResult("/usr/bin/printf 'spaces    work  if no other   delimiters'", "spaces", "work", "if", "no", "other", "delimiters")
+	assertResult("/usr/bin/printf 'spaces    work  if no other   delimiters\n\n'", "spaces", "work", "if", "no", "other", "delimiters")
 	assertResult(`/usr/bin/printf 'intentionally "no support" for quotes'`, "intentionally", `"no`, `support"`, "for", "quotes")
 
 	// Test error responses
