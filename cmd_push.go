@@ -7,6 +7,7 @@ import (
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/applier"
 	"github.com/skeema/skeema/fs"
+	"github.com/skeema/skeema/linter"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -32,6 +33,7 @@ top of the file. If no environment name is supplied, the default is
 	cmd.AddOption(mybase.BoolOption("exact-match", 0, false, "Follow *.sql table definitions exactly, even for differences with no functional impact"))
 	cmd.AddOption(mybase.BoolOption("foreign-key-checks", 0, false, "Force the server to check referential integrity of any new foreign key"))
 	cmd.AddOption(mybase.BoolOption("compare-metadata", 0, false, "For stored programs, detect changes to creation-time sql_mode or DB collation"))
+	cmd.AddOption(mybase.BoolOption("lint", 'L', true, "Check modified objects for problems before proceeding"))
 	cmd.AddOption(mybase.BoolOption("brief", 'q', false, "<overridden by diff command>").Hidden())
 	cmd.AddOption(mybase.StringOption("alter-wrapper", 'x', "", "External bin to shell out to for ALTER TABLE; see manual for template vars"))
 	cmd.AddOption(mybase.StringOption("alter-wrapper-min-size", 0, "0", "Ignore --alter-wrapper for tables smaller than this size in bytes"))
@@ -40,6 +42,7 @@ top of the file. If no environment name is supplied, the default is
 	cmd.AddOption(mybase.StringOption("ddl-wrapper", 'X', "", "Like --alter-wrapper, but applies to all DDL types (CREATE, DROP, ALTER)"))
 	cmd.AddOption(mybase.StringOption("safe-below-size", 0, "0", "Always permit destructive operations for tables below this size in bytes"))
 	cmd.AddOption(mybase.StringOption("concurrent-instances", 'c', "1", "Perform operations on this number of instances concurrently"))
+	linter.AddCommandOptions(cmd)
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 	clonePushOptionsToDiff()

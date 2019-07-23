@@ -32,7 +32,7 @@ type DDLStatement struct {
 func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, target *Target) (ddl *DDLStatement, err error) {
 	ddl = &DDLStatement{
 		instance:   target.Instance,
-		schemaName: target.SchemaFromDir.Name,
+		schemaName: target.SchemaName,
 	}
 
 	var tableSize int64
@@ -220,9 +220,9 @@ func (ddl *DDLStatement) Execute() error {
 // the target. If the table has no rows, this method always returns a size of 0,
 // even though information_schema normally indicates at least 16kb in this case.
 func (ddl *DDLStatement) getTableSize(target *Target, table *tengo.Table) (int64, error) {
-	hasRows, err := target.Instance.TableHasRows(target.SchemaFromDir.Name, table.Name)
+	hasRows, err := target.Instance.TableHasRows(target.SchemaName, table.Name)
 	if !hasRows || err != nil {
 		return 0, err
 	}
-	return target.Instance.TableSize(target.SchemaFromDir.Name, table.Name)
+	return target.Instance.TableSize(target.SchemaName, table.Name)
 }

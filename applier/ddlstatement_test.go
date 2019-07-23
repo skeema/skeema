@@ -7,6 +7,7 @@ import (
 
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/fs"
+	"github.com/skeema/skeema/workspace"
 	"github.com/skeema/tengo"
 )
 
@@ -73,12 +74,15 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 		Config: cfg,
 	}
 	target := &Target{
-		Instance:      s.d[0].Instance,
-		Dir:           dir,
-		SchemaFromDir: fsSchema,
+		Instance:   s.d[0].Instance,
+		Dir:        dir,
+		SchemaName: "analytics",
+		DesiredSchema: &workspace.Schema{
+			Schema: fsSchema,
+		},
 	}
 
-	sd := tengo.NewSchemaDiff(instSchema, target.SchemaFromDir)
+	sd := tengo.NewSchemaDiff(instSchema, fsSchema)
 	objDiffs := sd.ObjectDiffs()
 	if len(objDiffs) != 5 {
 		// modifications in ddlstatement.sql should have yielded 5 diffs: one alter

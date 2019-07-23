@@ -24,25 +24,25 @@ func (s ApplierIntegrationSuite) TestTargetsForDirSimple(t *testing.T) {
 	if targets[0].Instance.String() != targets[1].Instance.String() {
 		t.Errorf("Expected both targets to have the same instance, but instead found %s vs %s", targets[0].Instance, targets[1].Instance)
 	}
-	if targets[0].SchemaFromDir.Name == targets[1].SchemaFromDir.Name {
-		t.Errorf("Both targets unexpectedly have same SchemaFromDir name of %s", targets[0].SchemaFromDir.Name)
+	if targets[0].SchemaName == targets[1].SchemaName {
+		t.Errorf("Both targets unexpectedly have same SchemaName name of %s", targets[0].SchemaName)
 	}
 	for _, target := range targets {
 		if inst, err := target.SchemaFromInstance(); inst != nil || err != nil {
 			t.Errorf("Expected SchemaFromInstance() to be nil, instead found %+v, %v", inst, err)
 		}
-		if len(target.SchemaFromDir.Tables) != 1 {
-			t.Errorf("Expected SchemaFromDir to have 1 table, instead found %d", len(target.SchemaFromDir.Tables))
+		if len(target.DesiredSchema.Tables) != 1 {
+			t.Errorf("Expected DesiredSchema to have 1 table, instead found %d", len(target.DesiredSchema.Tables))
 		} else {
 			expectTableNames := map[string]string{
 				"one": "foo",
 				"two": "bar",
 			}
-			expected, ok := expectTableNames[target.SchemaFromDir.Name]
+			expected, ok := expectTableNames[target.SchemaName]
 			if !ok {
-				t.Errorf("Found unexpected schema name %s", target.SchemaFromDir.Name)
-			} else if expected != target.SchemaFromDir.Tables[0].Name {
-				t.Errorf("Found unexpected table name %s in schema %s; expected table name %s", target.SchemaFromDir.Tables[0].Name, target.SchemaFromDir.Name, expected)
+				t.Errorf("Found unexpected schema name %s", target.SchemaName)
+			} else if expected != target.DesiredSchema.Tables[0].Name {
+				t.Errorf("Found unexpected table name %s in schema %s; expected table name %s", target.DesiredSchema.Tables[0].Name, target.SchemaName, expected)
 			}
 		}
 	}
@@ -163,8 +163,8 @@ func (s ApplierIntegrationSuite) TestTargetsForDirError(t *testing.T) {
 		t.Errorf("Expected targets to have different instances, but instead found both are %s", targets[0].Instance)
 	}
 	for _, target := range targets {
-		if target.SchemaFromDir.Name != "two" {
-			t.Errorf("Expected schema name 'two', instead found '%s'", target.SchemaFromDir.Name)
+		if target.SchemaName != "two" {
+			t.Errorf("Expected schema name 'two', instead found '%s'", target.SchemaName)
 		}
 	}
 
@@ -181,8 +181,8 @@ func (s ApplierIntegrationSuite) TestTargetsForDirError(t *testing.T) {
 		t.Errorf("Expected targets to have different instances, but instead found both are %s", targets[0].Instance)
 	}
 	for _, target := range targets {
-		if target.SchemaFromDir.Name != "two" {
-			t.Errorf("Expected schema name 'two', instead found '%s'", target.SchemaFromDir.Name)
+		if target.SchemaName != "two" {
+			t.Errorf("Expected schema name 'two', instead found '%s'", target.SchemaName)
 		}
 	}
 }

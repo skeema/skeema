@@ -17,17 +17,25 @@ import (
 type Target struct {
 	Instance      *tengo.Instance
 	Dir           *fs.Dir
-	SchemaFromDir *tengo.Schema
+	SchemaName    string
+	DesiredSchema *workspace.Schema
 }
 
 // SchemaFromInstance introspects and returns the instance's version of the
 // schema, if it exists.
 func (t *Target) SchemaFromInstance() (*tengo.Schema, error) {
-	schema, err := t.Instance.Schema(t.SchemaFromDir.Name)
+	schema, err := t.Instance.Schema(t.SchemaName)
 	if err == sql.ErrNoRows {
 		err = nil
 	}
 	return schema, err
+}
+
+// SchemaFromDir returns the desired schema expressed in the filesystem.
+func (t *Target) SchemaFromDir() *tengo.Schema {
+	schemaCopy := *t.DesiredSchema.Schema
+	schemaCopy.Name = t.SchemaName
+	return &schemaCopy
 }
 
 // TargetGroup represents a group of Targets that all have the same Instance.
@@ -193,11 +201,11 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 			schemaNames = []string{logicalSchema.Name}
 		}
 		for _, schemaName := range schemaNames {
-			schemaCopy := wsSchema.CopyWithName(schemaName)
 			t := &Target{
 				Instance:      inst,
 				Dir:           dir,
-				SchemaFromDir: schemaCopy.Schema,
+				SchemaName:    schemaName,
+				DesiredSchema: wsSchema,
 			}
 			targets = append(targets, t)
 		}

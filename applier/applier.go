@@ -8,6 +8,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/fs"
+	"github.com/skeema/skeema/linter"
 	"github.com/skeema/tengo"
 )
 
@@ -28,14 +29,13 @@ func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<-
 	for tg := range targetGroups {
 	TargetsInGroup:
 		for _, t := range tg { // iterate over each Target in the TargetGroup
-			schemaName := t.SchemaFromDir.Name
 			dryRun := t.Dir.Config.GetBool("dry-run")
 			brief := dryRun && t.Dir.Config.GetBool("brief")
 
 			if dryRun {
-				log.Infof("Generating diff of %s %s vs %s/*.sql", t.Instance, schemaName, t.Dir)
+				log.Infof("Generating diff of %s %s vs %s/*.sql", t.Instance, t.SchemaName, t.Dir)
 			} else {
-				log.Infof("Pushing changes from %s/*.sql to %s %s", t.Dir, t.Instance, schemaName)
+				log.Infof("Pushing changes from %s/*.sql to %s %s", t.Dir, t.Instance, t.SchemaName)
 			}
 			if len(t.Dir.IgnoredStatements) > 0 {
 				log.Warnf("Ignoring %d unsupported or unparseable statements found in this directory's *.sql files; run `skeema lint` for more info", len(t.Dir.IgnoredStatements))
@@ -44,9 +44,9 @@ func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<-
 			schemaFromInstance, err := t.SchemaFromInstance()
 			if err != nil {
 				result.SkipCount++
-				log.Errorf("Skipping %s schema %s for %s: %s", t.Instance, schemaName, t.Dir, err)
+				log.Errorf("Skipping %s schema %s for %s: %s", t.Instance, t.SchemaName, t.Dir, err)
 			}
-			diff := tengo.NewSchemaDiff(schemaFromInstance, t.SchemaFromDir)
+			diff := tengo.NewSchemaDiff(schemaFromInstance, t.SchemaFromDir())
 			var targetStmtCount int
 
 			if t.Dir.Config.GetBool("verify") && len(diff.TableDiffs) > 0 && !brief {
@@ -55,17 +55,24 @@ func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<-
 				}
 			}
 
-			// Obtain StatementModifiers based on the dir's config
+			// Obtain StatementModifiers based on the dir's config, along with linter
+			// options
 			mods, err := StatementModifiersForDir(t.Dir)
 			if err != nil {
 				return ConfigError(err.Error())
 			}
 			mods.Flavor = t.Instance.Flavor()
+			lintOpts, err := linter.OptionsForDir(t.Dir)
+			if err != nil {
+				return ConfigError(err.Error())
+			}
 
 			// Build DDLStatements for each ObjectDiff, handling pre-execution errors
-			// accordingly
+			// accordingly. Also track ObjectKeys for modified objects, for subsequent
+			// use in linting.
 			objDiffs := diff.ObjectDiffs()
 			ddls := make([]*DDLStatement, 0, len(objDiffs))
+			keys := make([]tengo.ObjectKey, 0, len(objDiffs))
 			for _, objDiff := range objDiffs {
 				ddl, err := NewDDLStatement(objDiff, mods, t)
 				if ddl == nil && err == nil {
@@ -75,6 +82,7 @@ func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<-
 				result.Differences = true
 				if err == nil {
 					ddls = append(ddls, ddl)
+					keys = append(keys, objDiff.ObjectKey())
 				} else if unsupportedErr, ok := err.(*tengo.UnsupportedDiffError); ok {
 					result.UnsupportedCount++
 					log.Warnf("Skipping %s: unable to generate DDL due to use of unsupported features. Use --debug for more information.", unsupportedErr.ObjectKey)
@@ -83,8 +91,28 @@ func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<-
 					result.SkipCount += len(objDiffs)
 					log.Errorf(err.Error())
 					if len(objDiffs) > 1 {
-						log.Warnf("Skipping %d additional operations for %s %s due to previous error", len(objDiffs)-1, t.Instance, schemaName)
+						log.Warnf("Skipping %d additional operations for %s %s due to previous error", len(objDiffs)-1, t.Instance, t.SchemaName)
 					}
+					continue TargetsInGroup
+				}
+			}
+
+			// Lint any modified objects; output the result; skip target if any
+			// annotations are at the error level
+			if t.Dir.Config.GetBool("lint") {
+				lintOpts.OnlyKeys(keys)
+				lintResult := linter.CheckSchema(t.DesiredSchema, lintOpts)
+				lintResult.SortByFile()
+				for _, annotation := range lintResult.Annotations {
+					annotation.Log()
+				}
+				if lintResult.ErrorCount > 0 {
+					noun := "error"
+					if lintResult.ErrorCount > 1 {
+						noun = "errors"
+					}
+					result.SkipCount += len(objDiffs)
+					log.Warnf("Skipping %s %s due to %d linter %s", t.Instance, t.SchemaName, lintResult.ErrorCount, noun)
 					continue TargetsInGroup
 				}
 			}
@@ -94,11 +122,11 @@ func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<-
 				printer.printDDL(ddl)
 				if !dryRun {
 					if err := ddl.Execute(); err != nil {
-						log.Errorf("Error running DDL on %s %s: %s", t.Instance, schemaName, err)
+						log.Errorf("Error running DDL on %s %s: %s", t.Instance, t.SchemaName, err)
 						skipped := len(ddls) - i
 						result.SkipCount += skipped
 						if skipped > 1 {
-							log.Warnf("Skipping %d remaining operations for %s %s due to previous error", skipped-1, t.Instance, schemaName)
+							log.Warnf("Skipping %d remaining operations for %s %s due to previous error", skipped-1, t.Instance, t.SchemaName)
 						}
 						break
 					}
@@ -106,13 +134,13 @@ func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<-
 			}
 
 			if targetStmtCount == 0 {
-				log.Infof("%s %s: No differences found\n", t.Instance, schemaName)
+				log.Infof("%s %s: No differences found\n", t.Instance, t.SchemaName)
 			} else {
 				verb := "push"
 				if dryRun {
 					verb = "diff"
 				}
-				log.Infof("%s %s: %s complete\n", t.Instance, schemaName, verb)
+				log.Infof("%s %s: %s complete\n", t.Instance, t.SchemaName, verb)
 			}
 
 			// Exit early if context cancelled

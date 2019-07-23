@@ -377,6 +377,7 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 	s.handleCommand(t, CodeBadConfig, ".", "skeema push --alter-algorithm=invalid")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema push --alter-lock=invalid")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema push --ignore-table='+'")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema push --lint-charset=gentle-nudge")
 
 	// Make some changes on the db side, mix of safe and unsafe changes to
 	// multiple schemas. Remember, subsequent pushes will effectively be UN-DOING
@@ -446,6 +447,29 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 	s.assertTableMissing(t, "product", "comments", "foo")
 	s.assertTableMissing(t, "product", "users", "foo")
 	s.assertTableExists(t, "bonus", "table2", "")
+
+	// confirm that lint errors (in modified objects only) prevent push:
+	// drop a PK from a table in bonus schema in the db;
+	// pull to restore valid filesystem state after prev test;
+	// remove PKs from 2 tables in the filesystem in product dir;
+	// add a col to a different table in bonus schema;
+	// try pushing and confirm no changes are made in product schema (due to
+	// lint failure), but bonus change proceeds (since the PK-less table there was
+	// not modified in this diff)
+	s.dbExec(t, "bonus", "ALTER TABLE placeholder DROP PRIMARY KEY")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	fs.WriteTestFile(t, "mydb/bonus/table2.sql", "CREATE TABLE table2 (name varchar(20) NOT NULL, newcol int, PRIMARY KEY (name))")
+	contents = fs.ReadTestFile(t, "mydb/product/users.sql")
+	fs.WriteTestFile(t, "mydb/product/users.sql", strings.Replace(contents, "PRIMARY KEY", "KEY", 1))
+	contents = fs.ReadTestFile(t, "mydb/product/posts.sql")
+	fs.WriteTestFile(t, "mydb/product/posts.sql", strings.Replace(contents, "PRIMARY KEY", "KEY", 1))
+	s.handleCommand(t, CodeFatalError, ".", "skeema push --lint-pk=error")
+	s.assertTableExists(t, "bonus", "table2", "newcol")
+	s.handleCommand(t, CodeDifferencesFound, "mydb/product", "skeema diff")
+
+	// Confirm behavior of --skip-lint even with --lint-pk=error
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --lint-pk=error --skip-lint")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff --lint-pk=error")
 }
 
 func (s SkeemaIntegrationSuite) TestHelpHandler(t *testing.T) {

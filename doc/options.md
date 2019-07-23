@@ -33,6 +33,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [ignore-schema](#ignore-schema)
 * [ignore-table](#ignore-table)
 * [include-auto-inc](#include-auto-inc)
+* [lint](#lint)
 * [lint-charset](#lint-charset)
 * [lint-engine](#lint-engine)
 * [lint-pk](#lint-pk)
@@ -55,7 +56,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 
 ### allow-charset
 
-Commands | lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 --- | :---
 **Default** | "latin1,utf8mb4"
 **Type** | string
@@ -67,7 +68,7 @@ This option checks column character sets as well as table default character sets
 
 ### allow-engine
 
-Commands | lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 --- | :---
 **Default** | "innodb"
 **Type** | string
@@ -392,15 +393,15 @@ Running `skeema push --dry-run` is exactly equivalent to running `skeema diff`: 
 
 ### errors
 
-Commands | lint
+Commands | diff, push, lint
 --- | :---
 **Default** | *empty string*
 **Type** | string
 **Restrictions** | Deprecated as of Skeema v1.3
 
-This option controlled the functionality of `skeema lint` in Skeema v1.2. As of Skeema v1.3 it is now deprecated, in favor of using separate `lint-*` options for each linter rule. This change has been made to avoid having a cumbersome list in a single option value. 
+This option controlled the linter functionality in Skeema v1.2. As of Skeema v1.3 it is now deprecated, in favor of using separate `lint-*` options for each linter rule. This change has been made to avoid having a cumbersome list in a single option value.
 
-If set, this option will still function in Skeema v1.3+, but it can only control the three linter rules that existed in Skeema v1.2. If this option is set alongside the newer-style `lint-*` options, the newer-style options take precedence.
+If set, this option will still function in Skeema v1.3, but it can only control the three linter rules that existed in Skeema v1.2. Users should migrate their configuration to the new options.
 
 ### exact-match
 
@@ -527,6 +528,7 @@ If ports are omitted, the [port](#port) option is used instead, which defaults t
 The external command should only return addresses of master instances, never replicas.
 
 ### ignore-schema
+
 Commands | init, pull, diff, push
 --- | :---
 **Default** | *empty string*
@@ -544,6 +546,7 @@ Once configured, this option affects `skeema pull`, `skeema diff`, and `skeema p
 Note that this option does not affect `skeema lint` or `skeema format`, as these commands operate on the filesystem representation without needing to interact with the [schema](#schema) option.
 
 ### ignore-table
+
 Commands | *all*
 --- | :---
 **Default** | *empty string*
@@ -572,9 +575,25 @@ In `skeema pull`, a false value omits AUTO_INCREMENT=X clauses in any *newly-wri
 
 Only set this to true if you intentionally need to track auto_increment values in all tables. If only a few tables require nonstandard auto_increment, simply include the value manually in the CREATE TABLE statement in the *.sql file. Subsequent calls to `skeema pull` won't strip it, even if `include-auto-inc` is false.
 
+### lint
+
+Commands | diff, push
+--- | :---
+**Default** | true
+**Type** | boolean
+**Restrictions** | none
+
+If true, `skeema diff` and `skeema push` will perform linter checks on all *modified* objects in the diff. Any triggered check set to "warning" level will be displayed, but will not otherwise affect the diff or push operation, nor will it affect the process's exit code. Any triggered check set to "error" level will prevent the operation from proceeding for the current instance/schema pair.
+
+Objects that were not modified in the diff -- i.e. anything where the filesystem definition already functionally matches the database definition -- are not linted during `skeema diff` or `skeema push`. To check *all* objects, use `skeema lint` instead.
+
+Users with sharded environments should note that the definition of "modified in the diff" may vary per shard, if the shards are not all in the same state. Skeema computes the diff for each shard and lints the modified objects for each shard individually. Linter warning and error output will be generated (potentially redundantly) for every shard. In the rare situation that only some shards have modified objects with linter errors, only those shards will be bypassed by `skeema push`.
+
+This option is enabled by default. To disable linting of changed objects in `skeema diff` and `skeema push`, use `--skip-lint` on the command-line or `skip-lint` in an option file. This will cause the linting step of diff/push to be skipped entirely, regardless of the configuration of other lint-related options.
+
 ### lint-charset
 
-Commands | lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 --- | :---
 **Default** | "WARNING"
 **Type** | enum
@@ -586,7 +605,7 @@ This rule does not currently check any other object type besides tables.
 
 ### lint-engine
 
-Commands | lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 --- | :---
 **Default** | "WARNING"
 **Type** | enum
@@ -596,13 +615,13 @@ This linter rule checks each table's storage engine. Unless set to "IGNORE", a w
 
 ### lint-pk
 
-Commands | lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 --- | :---
 **Default** | "WARNING"
 **Type** | enum
 **Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
 
-This linter rule checks each table for presence of a primary key. Unless set to "IGNORE", a warning or error will be emitted for any table lacking a primary key.
+This linter rule checks each table for presence of a primary key. Unless set to "IGNORE", a warning or error will be emitted for any table lacking an explicit primary key.
 
 ### my-cnf
 
@@ -782,15 +801,15 @@ It is recommended that this option be left at its default of true, but if desire
 
 ### warnings
 
-Commands | lint
+Commands | diff, push, lint
 --- | :---
 **Default** | *empty string*
 **Type** | string
 **Restrictions** | Deprecated as of Skeema v1.3
 
-This option controlled the functionality of `skeema lint` in Skeema v1.2. As of Skeema v1.3 it is now deprecated, in favor of using separate `lint-*` options for each linter rule. This change has been made to avoid having a cumbersome list in a single option value.
+This option controlled the linter functionality in Skeema v1.2. As of Skeema v1.3 it is now deprecated, in favor of using separate `lint-*` options for each linter rule. This change has been made to avoid having a cumbersome list in a single option value.
 
-If set, this option will still function in Skeema v1.3+, but it can only control the three linter rules that existed in Skeema v1.2. If this option is set alongside the newer-style `lint-*` options, the newer-style options take precedence.
+If set, this option will still function in Skeema v1.3, but it can only control the three linter rules that existed in Skeema v1.2. Users should migrate their configuration to the new options.
 
 In Skeema v1.2 the default value of this option was "bad-charset,bad-engine,no-pk", but in v1.3 it is now an empty string. The individual `lint-*` options each have their own appropriate default.
 

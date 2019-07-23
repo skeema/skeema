@@ -213,21 +213,6 @@ type Schema struct {
 	Failures      []*StatementError
 }
 
-// CopyWithName makes a copy of a workspace.Schema and assigns a different
-// schema name. The copy is a shallow copy in terms of most fields: it points
-// to the same LogicalSchema, Failures, and all pointer/reference fields
-// inside the tengo.Schema. The tengo.Schema itself is a copy though, allowing
-// the name to be changed without affecting the receiver.
-func (wsSchema *Schema) CopyWithName(schemaName string) *Schema {
-	schemaCopy := *wsSchema.Schema
-	schemaCopy.Name = schemaName
-	return &Schema{
-		Schema:        &schemaCopy,
-		LogicalSchema: wsSchema.LogicalSchema,
-		Failures:      wsSchema.Failures,
-	}
-}
-
 // FailedKeys returns a slice of tengo.ObjectKey values corresponding to
 // statements that had SQL errors when executed.
 func (wsSchema *Schema) FailedKeys() (result []tengo.ObjectKey) {
