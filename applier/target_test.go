@@ -28,8 +28,8 @@ func (s ApplierIntegrationSuite) TestTargetsForDirSimple(t *testing.T) {
 		t.Errorf("Both targets unexpectedly have same SchemaFromDir name of %s", targets[0].SchemaFromDir.Name)
 	}
 	for _, target := range targets {
-		if target.SchemaFromInstance != nil {
-			t.Errorf("Expected SchemaFromInstance to be nil, instead found %+v", target.SchemaFromInstance)
+		if inst, err := target.SchemaFromInstance(); inst != nil || err != nil {
+			t.Errorf("Expected SchemaFromInstance() to be nil, instead found %+v, %v", inst, err)
 		}
 		if len(target.SchemaFromDir.Tables) != 1 {
 			t.Errorf("Expected SchemaFromDir to have 1 table, instead found %d", len(target.SchemaFromDir.Tables))

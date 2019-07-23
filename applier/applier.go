@@ -28,8 +28,6 @@ func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<-
 	for tg := range targetGroups {
 	TargetsInGroup:
 		for _, t := range tg { // iterate over each Target in the TargetGroup
-			// Get schema name from t.SchemaFromDir, NOT t.SchemaFromInstance, since
-			// t.SchemaFromInstance will be nil if the schema doesn't exist yet
 			schemaName := t.SchemaFromDir.Name
 			dryRun := t.Dir.Config.GetBool("dry-run")
 			brief := dryRun && t.Dir.Config.GetBool("brief")
@@ -43,7 +41,12 @@ func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<-
 				log.Warnf("Ignoring %d unsupported or unparseable statements found in this directory's *.sql files; run `skeema lint` for more info", len(t.Dir.IgnoredStatements))
 			}
 
-			diff := tengo.NewSchemaDiff(t.SchemaFromInstance, t.SchemaFromDir)
+			schemaFromInstance, err := t.SchemaFromInstance()
+			if err != nil {
+				result.SkipCount++
+				log.Errorf("Skipping %s schema %s for %s: %s", t.Instance, schemaName, t.Dir, err)
+			}
+			diff := tengo.NewSchemaDiff(schemaFromInstance, t.SchemaFromDir)
 			var targetStmtCount int
 
 			if t.Dir.Config.GetBool("verify") && len(diff.TableDiffs) > 0 && !brief {

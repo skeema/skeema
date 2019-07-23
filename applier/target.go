@@ -1,6 +1,7 @@
 package applier
 
 import (
+	"database/sql"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -14,10 +15,19 @@ import (
 // (instances this dir maps to) x (schemas that this dir maps to on each
 // instance).
 type Target struct {
-	Instance           *tengo.Instance
-	Dir                *fs.Dir
-	SchemaFromInstance *tengo.Schema
-	SchemaFromDir      *tengo.Schema
+	Instance      *tengo.Instance
+	Dir           *fs.Dir
+	SchemaFromDir *tengo.Schema
+}
+
+// SchemaFromInstance introspects and returns the instance's version of the
+// schema, if it exists.
+func (t *Target) SchemaFromInstance() (*tengo.Schema, error) {
+	schema, err := t.Instance.Schema(t.SchemaFromDir.Name)
+	if err == sql.ErrNoRows {
+		err = nil
+	}
+	return schema, err
 }
 
 // TargetGroup represents a group of Targets that all have the same Instance.
@@ -182,20 +192,12 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 		} else {
 			schemaNames = []string{logicalSchema.Name}
 		}
-		schemasByName, err := inst.SchemasByName(schemaNames...)
-		if err != nil {
-			log.Warnf("Skipping %s for %s: %s", inst, dir, err)
-			skipCount++
-			continue
-		}
-
 		for _, schemaName := range schemaNames {
 			schemaCopy := wsSchema.CopyWithName(schemaName)
 			t := &Target{
-				Instance:           inst,
-				Dir:                dir,
-				SchemaFromInstance: schemasByName[schemaName], // this may be nil if schema doesn't exist yet; callers handle that
-				SchemaFromDir:      schemaCopy.Schema,
+				Instance:      inst,
+				Dir:           dir,
+				SchemaFromDir: schemaCopy.Schema,
 			}
 			targets = append(targets, t)
 		}

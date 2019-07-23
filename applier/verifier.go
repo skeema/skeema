@@ -10,18 +10,14 @@ import (
 
 // VerifyDiff verifies the result of all AlterTable values found in
 // diff.TableDiffs, confirming that applying the corresponding ALTER would
-// bring a table from the version in t.SchemaFromInstance to the version in
-// t.SchemaFromDir.
+// bring a table from the version currently in the instance to the version
+// specified in the filesystem.
 func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
-	// If the schema is being newly created on the instance, we know there are
-	// no alters and therefore nothing to verify
-	if t.SchemaFromInstance == nil {
+	// If diff contains no ALTER TABLEs, nothing to verify
+	altersInDiff := diff.FilteredTableDiffs(tengo.DiffTypeAlter)
+	if len(altersInDiff) == 0 {
 		return nil
 	}
-
-	// Approach: for all altered tables in diff, gather their CREATE TABLE and
-	// ALTER TABLE statements; execute them all in a workspace; compare the
-	// resulting CREATE TABLEs to the expected "to" side of the diff.
 
 	// Build a set of statement modifiers that will yield matching CREATE TABLE
 	// statements in all edge cases.
@@ -47,7 +43,7 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 		Alters:    make([]*fs.Statement, 0),
 	}
 	expected := make(map[string]*tengo.Table)
-	for _, td := range diff.FilteredTableDiffs(tengo.DiffTypeAlter) {
+	for _, td := range altersInDiff {
 		stmt, err := td.Statement(mods)
 		if stmt != "" && err == nil {
 			expected[td.From.Name] = td.To

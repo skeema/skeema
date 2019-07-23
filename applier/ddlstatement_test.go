@@ -73,13 +73,12 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 		Config: cfg,
 	}
 	target := &Target{
-		Instance:           s.d[0].Instance,
-		Dir:                dir,
-		SchemaFromInstance: instSchema,
-		SchemaFromDir:      fsSchema,
+		Instance:      s.d[0].Instance,
+		Dir:           dir,
+		SchemaFromDir: fsSchema,
 	}
 
-	sd := tengo.NewSchemaDiff(target.SchemaFromInstance, target.SchemaFromDir)
+	sd := tengo.NewSchemaDiff(instSchema, target.SchemaFromDir)
 	objDiffs := sd.ObjectDiffs()
 	if len(objDiffs) != 5 {
 		// modifications in ddlstatement.sql should have yielded 5 diffs: one alter
