@@ -803,3 +803,6 @@ The containers have the following properties:
 * The containerized MySQL instance will have an empty root password.
 
 Skeema dynamically manages containers as needed: if a container with a specific image is required, but does not currently exist, it will be created on-the-fly. This may take 10-20 seconds upon first use of [workspace=docker](#workspace). By default, the containers remain running after Skeema exits (avoiding the performance hit of subsequent invocations), but this behavior is configurable using the [docker-cleanup](#docker-cleanup) option.
+
+Note that use of [workspace=docker](#workspace) may be difficult if Skeema itself is also being run in a Docker container. In this case, you must either bind-mount the host's Docker socket into Skeema's container, or use a privileged Docker-in-Docker (dind) image; each choice has trade-offs involving operational complexity and security.
+
