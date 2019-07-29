@@ -101,7 +101,7 @@ CREATE TABLE grab_bag (
 	CONSTRAINT cc FOREIGN KEY (name) REFERENCES sometable3 (somecol3),
 	CONSTRAINT aa FOREIGN KEY (name) REFERENCES sometable3 (somecol3),
 	CONSTRAINT bb FOREIGN KEY (name) REFERENCES sometable3 (somecol3)
-) AUTO_INCREMENT=123;
+) AUTO_INCREMENT=123 ROW_FORMAT=COMPACT CHECKSUM=1 DELAY_KEY_WRITE=1 COMMENT='hello';
 
 # Routine definitions here are intentionally formatted oddly. The DB remembers
 # formatting in some places but not others.

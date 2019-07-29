@@ -987,6 +987,10 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			if !flavor.SortedForeignKeys() && len(t.ForeignKeys) > 1 {
 				fixForeignKeyOrder(t)
 			}
+			// Create options order is unpredictable with the new MySQL 8 data dictionary
+			if flavor.HasDataDictionary() {
+				fixCreateOptionsOrder(t, flavor)
+			}
 			// Compare what we expect the create DDL to be, to determine if we support
 			// diffing for the table. Ignore next-auto-increment differences in this
 			// comparison, since the value may have changed between our previous
@@ -1004,6 +1008,9 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 
 var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE )?KEY `((?:[^`]|``)+)` \\(`")
 
+// MySQL 8.0 uses a different index order in SHOW CREATE TABLE than in
+// information_schema. This function fixes the struct to match SHOW CREATE
+// TABLE's ordering.
 func fixIndexOrder(t *Table) {
 	byName := t.SecondaryIndexesByName()
 	t.SecondaryIndexes = make([]*Index, len(byName))
@@ -1020,6 +1027,8 @@ func fixIndexOrder(t *Table) {
 
 var reForeignKeyLine = regexp.MustCompile("^\\s+CONSTRAINT `((?:[^`]|``)+)` FOREIGN KEY")
 
+// MySQL 5.5 doesn't alphabetize foreign keys; this function fixes the struct
+// to match SHOW CREATE TABLE's order
 func fixForeignKeyOrder(t *Table) {
 	byName := t.foreignKeysByName()
 	t.ForeignKeys = make([]*ForeignKey, len(byName))
@@ -1031,6 +1040,40 @@ func fixForeignKeyOrder(t *Table) {
 		}
 		t.ForeignKeys[cur] = byName[matches[1]]
 		cur++
+	}
+}
+
+// MySQL 8.0 uses a different order for table options in SHOW CREATE TABLE
+// than in information_schema. This function fixes the struct to match SHOW
+// CREATE TABLE's ordering.
+func fixCreateOptionsOrder(t *Table, flavor Flavor) {
+	if !strings.Contains(t.CreateOptions, " ") {
+		return
+	}
+
+	// Use the generated (but incorrectly-ordered) create statement to build a
+	// regexp that pulls out the create options from the actual create string
+	genCreate := t.GeneratedCreateStatement(flavor)
+	var template string
+	for _, line := range strings.Split(genCreate, "\n") {
+		if strings.HasPrefix(line, ") ENGINE=") {
+			template = line
+			break
+		}
+	}
+	template = strings.Replace(template, t.CreateOptions, "!!!CREATEOPTS!!!", 1)
+	template = regexp.QuoteMeta(template)
+	template = strings.Replace(template, "!!!CREATEOPTS!!!", "(.+)", 1)
+	re := regexp.MustCompile(fmt.Sprintf("^%s$", template))
+
+	for _, line := range strings.Split(t.CreateStatement, "\n") {
+		if strings.HasPrefix(line, ") ENGINE=") {
+			matches := re.FindStringSubmatch(line)
+			if matches != nil {
+				t.CreateOptions = matches[1]
+				return
+			}
+		}
 	}
 }
 

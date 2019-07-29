@@ -570,19 +570,31 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		}
 	}
 
-	// Test index order correction, even if no test image is using new data dict
+	// Test various flavor-specific ordering fixes
 	aTableFromDB = s.GetTable(t, "testing", "grab_bag")
-	aTableFromDB.SecondaryIndexes[0], aTableFromDB.SecondaryIndexes[1], aTableFromDB.SecondaryIndexes[2] = aTableFromDB.SecondaryIndexes[2], aTableFromDB.SecondaryIndexes[0], aTableFromDB.SecondaryIndexes[1]
-	fixIndexOrder(aTableFromDB)
-	if aTableFromDB.GeneratedCreateStatement(flavor) != aTableFromDB.CreateStatement {
-		t.Error("fixIndexOrder did not behave as expected")
-	}
+	if aTableFromDB.UnsupportedDDL {
+		t.Error("Cannot test various order-fixups because testing.grab_bag is unexpectedly not supported for diff")
+	} else {
+		// Test index order correction, even if no test image is using new data dict
+		aTableFromDB.SecondaryIndexes[0], aTableFromDB.SecondaryIndexes[1], aTableFromDB.SecondaryIndexes[2] = aTableFromDB.SecondaryIndexes[2], aTableFromDB.SecondaryIndexes[0], aTableFromDB.SecondaryIndexes[1]
+		fixIndexOrder(aTableFromDB)
+		if aTableFromDB.GeneratedCreateStatement(flavor) != aTableFromDB.CreateStatement {
+			t.Error("fixIndexOrder did not behave as expected")
+		}
 
-	// Test foreign key order correction, even if no test image lacks sorted FKs
-	aTableFromDB.ForeignKeys[0], aTableFromDB.ForeignKeys[1], aTableFromDB.ForeignKeys[2] = aTableFromDB.ForeignKeys[2], aTableFromDB.ForeignKeys[0], aTableFromDB.ForeignKeys[1]
-	fixForeignKeyOrder(aTableFromDB)
-	if aTableFromDB.GeneratedCreateStatement(flavor) != aTableFromDB.CreateStatement {
-		t.Error("fixForeignKeyOrder did not behave as expected")
+		// Test foreign key order correction, even if no test image lacks sorted FKs
+		aTableFromDB.ForeignKeys[0], aTableFromDB.ForeignKeys[1], aTableFromDB.ForeignKeys[2] = aTableFromDB.ForeignKeys[2], aTableFromDB.ForeignKeys[0], aTableFromDB.ForeignKeys[1]
+		fixForeignKeyOrder(aTableFromDB)
+		if aTableFromDB.GeneratedCreateStatement(flavor) != aTableFromDB.CreateStatement {
+			t.Error("fixForeignKeyOrder did not behave as expected")
+		}
+
+		// Test create option order correction, even if no test image is using new data dict
+		aTableFromDB.CreateOptions = "ROW_FORMAT=COMPACT DELAY_KEY_WRITE=1 CHECKSUM=1"
+		fixCreateOptionsOrder(aTableFromDB, flavor)
+		if aTableFromDB.GeneratedCreateStatement(flavor) != aTableFromDB.CreateStatement {
+			t.Error("fixCreateOptionsOrder did not behave as expected")
+		}
 	}
 
 	// Test introspection of default expressions, if flavor supports them
