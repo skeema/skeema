@@ -100,29 +100,29 @@ func DumpSchema(schema *tengo.Schema, dir *fs.Dir, opts Options) (count int, err
 				continue // statement already present with correct formatting
 			}
 			count++
+			filesToRewrite[stmt.FromFile] = true
 			if !opts.CountOnly {
 				stmt.Text = fmt.Sprintf("%s%s", canonicalCreate, fsDelimiter)
-				filesToRewrite[stmt.FromFile] = true
 			}
 		} else {
 			count++
+			filesToRewrite[stmt.FromFile] = true
 			if !opts.CountOnly {
 				stmt.Remove()
-				filesToRewrite[stmt.FromFile] = true
 			}
 		}
 	}
 
-	// Do the appropriate rewrites of files tracked above. Note that if
-	// opts.CountOnly is true, filesToRewrite will be empty, so no need to
-	// re-check.
+	// Do the appropriate rewrites of files tracked above, if requested
 	for file := range filesToRewrite {
-		if bytesWritten, err := file.Rewrite(); err != nil {
+		if opts.CountOnly {
+			log.Infof("File %s requires formatting changes", file)
+		} else if bytesWritten, err := file.Rewrite(); err != nil {
 			return count, err
 		} else if bytesWritten == 0 {
-			log.Infof("Deleted %s -- no longer exists", file)
+			log.Infof("Deleted %s", file)
 		} else {
-			log.Infof("Wrote %s (%d bytes) -- updated definition", file, bytesWritten)
+			log.Infof("Wrote %s (%d bytes)", file, bytesWritten)
 		}
 	}
 
@@ -148,7 +148,7 @@ func DumpSchema(schema *tengo.Schema, dir *fs.Dir, opts Options) (count int, err
 		if bytesWritten, wasNew, err := fs.AppendToFile(filePath, canonicalCreate); err != nil {
 			return count, err
 		} else if wasNew {
-			log.Infof("Wrote %s (%d bytes) -- new %s", filePath, bytesWritten, key.Type)
+			log.Infof("Created %s (%d bytes)", filePath, bytesWritten)
 		} else {
 			log.Infof("Wrote %s (%d bytes) -- appended new %s", filePath, bytesWritten, key.Type)
 		}

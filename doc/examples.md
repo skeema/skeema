@@ -53,15 +53,17 @@ skeema push --allow-unsafe
 
 To aid in rapid development, you can configure Skeema to always allow dropping empty tables or small tables with the [safe-below-size](options.md#safe-below-size) option. For example, putting `safe-below-size=10m` in ~/schemas/.skeema will remove the requirement of specifying --allow-unsafe when dropping any table under 10 megabytes in size. Or use `safe-below-size=1` to only loosen safeties for tables that have no rows. (Skeema always treats zero-row tables as size 0 bytes, as a special-case.)
 
-### Normalize format of CREATE TABLE files, and check for syntax errors
+### Check table definitions for problems
 
-This will rewrite all of the *.sql files to match the format shown by MySQL's SHOW CREATE TABLE. If any of the *.sql files contained an invalid CREATE TABLE statement, errors will be reported.
+Skeema's linter checks the CREATE statements in \*.sql files for common problems, including SQL syntax errors, undesirable storage engine or character set usage, lack of primary key, and more:
 
 ```
 skeema lint
 ```
 
 [![asciicast](https://asciinema.org/a/2up4ho8hnninxph72y01lyms9.png)](https://asciinema.org/a/2up4ho8hnninxph72y01lyms9)
+
+By default, this will rewrite all of the CREATE statements in the \*.sql files to match the canonical format shown by MySQL's SHOW CREATE, but this behavior may be disabled via `--skip-format`. Conversely, if you *only* want to reformat statements, see the `skeema format` command.
 
 ### Update CREATE TABLE files with changes made manually / outside of Skeema
 
@@ -71,7 +73,7 @@ If you make changes outside of Skeema -- either due to use of a language-specifi
 skeema pull
 ```
 
-By default, this also normalizes file format like `skeema lint`, but you can skip that behavior with the --skip-normalize option (or equivalently set as --normalize=0, --normalize=false, etc).
+By default, this also normalizes file format like `skeema format`, but you can skip that behavior with the --skip-format option (or equivalently set as --format=0 or --format=false).
 
 [![asciicast](https://asciinema.org/a/bz7mdynz1u2kiqrfbxzvzhkse.png)](https://asciinema.org/a/bz7mdynz1u2kiqrfbxzvzhkse)
 

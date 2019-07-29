@@ -28,6 +28,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [first-only](#first-only)
 * [flavor](#flavor)
 * [foreign-key-checks](#foreign-key-checks)
+* [format](#format)
 * [host](#host)
 * [host-wrapper](#host-wrapper)
 * [ignore-schema](#ignore-schema)
@@ -39,7 +40,6 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [lint-pk](#lint-pk)
 * [my-cnf](#my-cnf)
 * [new-schemas](#new-schemas)
-* [normalize](#normalize)
 * [password](#password)
 * [port](#port)
 * [reuse-temp-schema](#reuse-temp-schema)
@@ -474,6 +474,20 @@ This option does not affect Skeema's behavior for other DDL, including `CREATE T
 
 This option has no effect in cases where an external OSC tool is being used via [alter-wrapper](#alter-wrapper) or [ddl-wrapper](#ddl-wrapper).
 
+### format
+
+Commands | pull, lint
+--- | :---
+**Default** | true
+**Type** | boolean
+**Restrictions** | none
+
+If true, `skeema pull` and `skeema lint` will normalize the format of creation statements in all *.sql files to match the canonical format shown in MySQL's `SHOW CREATE`, just like if `skeema format` was also called. If false, this step is skipped.
+
+This option is enabled by default. To disable reformatting in `skeema pull` and `skeema lint`, use `--skip-format` on the command-line or `skip-format` in an option file.
+
+Prior to Skeema 1.3, this option was only available for `skeema pull` and was called `normalize` / `skip-normalize`. The old name still works for `skeema pull`, but is deprecated.
+
 ### host
 
 Commands | *all*
@@ -649,16 +663,6 @@ If true, `skeema pull` will look for schemas (databases) that exist on the insta
 
 When using a workflow that involves running `skeema pull development` regularly, it may be useful to disable this option. For example, if the development environment tends to contain various extra schemas for testing purposes, set `skip-new-schemas` in a global or top-level .skeema file's `[development]` section to avoid storing these testing schemas in the filesystem.
 
-### normalize
-
-Commands | pull
---- | :---
-**Default** | true
-**Type** | boolean
-**Restrictions** | none
-
-If true, `skeema pull` will normalize the format of all *.sql files to match the canonical format shown in MySQL's `SHOW CREATE`, just like if `skeema lint` was called afterwards. If false, this step is skipped.
-
 ### password
 
 Commands | *all*
@@ -826,7 +830,7 @@ This option controls where workspace schemas are created. See [the FAQ](faq.md#n
 * `skeema diff`
 * `skeema push`
 * `skeema lint`
-* `skeema pull` (only if [skip-normalize](#normalize) is used)
+* `skeema pull` (only if [skip-format](#format) is used)
 
 With the default value of [workspace=temp-schema](#workspace), a temporary schema is created on each MySQL instance that Skeema interacts with. The schema name is configured by the [temp-schema](#temp-schema) option. When the schema is no longer needed, it is dropped, unless the [reuse-temp-schema](#reuse-temp-schema) option is enabled.
 
@@ -846,3 +850,14 @@ Skeema dynamically manages containers as needed: if a container with a specific 
 
 Note that use of [workspace=docker](#workspace) may be difficult if Skeema itself is also being run in a Docker container. In this case, you must either bind-mount the host's Docker socket into Skeema's container, or use a privileged Docker-in-Docker (dind) image; each choice has trade-offs involving operational complexity and security.
 
+### write
+
+Commands | format
+--- | :---
+**Default** | true
+**Type** | boolean
+**Restrictions** | none
+
+If true, `skeema format` will rewrite .sql files to match the canonical format shown in MySQL's `SHOW CREATE`. If false, this step is skipped. Either way, the command's exit code will be non-zero if any files contained statements that were not already in the canonical format.
+
+This option is enabled by default. To disable file writes in `skeema format`, use `--skip-write` on the command-line. This may be useful in CI pipelines that verify proper formatting of commits, to enforce a strict style guide.

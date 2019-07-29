@@ -30,7 +30,8 @@ top of the file. If no environment name is supplied, the default is
 
 	cmd := mybase.NewCommand("pull", summary, desc, PullHandler)
 	cmd.AddOption(mybase.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in new table files, and update in existing files"))
-	cmd.AddOption(mybase.BoolOption("normalize", 0, true, "Reformat SQL statements to match canonical SHOW CREATE"))
+	cmd.AddOption(mybase.BoolOption("format", 0, true, "Reformat SQL statements to match canonical SHOW CREATE"))
+	cmd.AddOption(mybase.BoolOption("normalize", 0, true, "(deprecated alias for format)").Hidden())
 	cmd.AddOption(mybase.BoolOption("new-schemas", 0, true, "Detect any new schemas and populate new dirs for them"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
@@ -157,11 +158,11 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Sche
 		return NewExitValue(CodeBadConfig, err.Error())
 	}
 
-	// When --skip-normalize is in use, we only want to update objects that have
+	// When --skip-format is in use, we only want to update objects that have
 	// actual functional modifications, NOT just cosmetic/formatting differences.
 	// To make this distinction, we need to actually execute the *.sql files in a
 	// Workspace and run a diff against it.
-	if !dir.Config.GetBool("normalize") {
+	if !dir.Config.GetBool("format") || !dir.Config.GetBool("normalize") {
 		mods := statementModifiersForPull(dir.Config, instance, dumpOpts.IgnoreTable)
 		opts, err := workspace.OptionsForDir(dir, instance)
 		if err != nil {

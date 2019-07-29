@@ -269,7 +269,8 @@ func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
 	s.handleCommand(t, CodeBadConfig, "mydb/product", "skeema lint --password=wrong")
 
 	// Alter a few files in a way that is still valid SQL, but doesn't match
-	// the database's native format. Lint should rewrite these files and then
+	// the database's native format. Lint with --skip-format should do nothing;
+	// otherwise lint with default of format should rewrite these files and then
 	// return exit code CodeDifferencesFound.
 	productDir, err := fs.ParseDir("mydb/product", cfg)
 	if err != nil {
@@ -297,6 +298,7 @@ func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
 		}
 	}
 	rewriteFiles(false)
+	s.handleCommand(t, CodeSuccess, ".", "skeema lint --skip-format")
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint")
 	s.verifyFiles(t, cfg, "../golden/init")
 
@@ -322,6 +324,77 @@ func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
 	// Directories that have invalid options should yield CodeFatalError
 	fs.WriteTestFile(t, "mydb/uhoh/.skeema", "this is not a valid .skeema file")
 	s.handleCommand(t, CodeFatalError, ".", "skeema lint")
+}
+
+func (s SkeemaIntegrationSuite) TestFormatHandler(t *testing.T) {
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+
+	// Initial format should be a no-op that returns exit code 0
+	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema format")
+	s.verifyFiles(t, cfg, "../golden/init")
+
+	// Invalid options should error with CodeBadConfig
+	s.handleCommand(t, CodeBadConfig, ".", "skeema format --workspace=doesnt-exist")
+	s.handleCommand(t, CodeBadConfig, "mydb/product", "skeema format --password=wrong")
+
+	// Alter a few files in a way that is still valid SQL, but doesn't match
+	// the database's native format. Format with --skip-write should return exit
+	// CodeDifferencesFound repeatedly; format with default (--write) should return
+	// CodeDifferencesFound followed by CodeSuccess.
+	productDir, err := fs.ParseDir("mydb/product", cfg)
+	if err != nil {
+		t.Fatalf("Unable to obtain dir for mydb/product: %s", err)
+	}
+	if len(productDir.SQLFiles) < 4 {
+		t.Fatalf("Unable to obtain *.sql files from %s", productDir)
+	}
+	rewriteFiles := func(includeSyntaxError bool) {
+		for n, sf := range productDir.SQLFiles {
+			contents := fs.ReadTestFile(t, sf.Path())
+			switch n {
+			case 0:
+				if includeSyntaxError {
+					contents = strings.Replace(contents, "DEFAULT", "DEFALUT", 1)
+				}
+			case 1:
+				contents = strings.ToLower(contents)
+			case 2:
+				contents = strings.Replace(contents, "`", "", -1)
+			case 3:
+				contents = strings.Replace(contents, " ", "  ", -1)
+			}
+			fs.WriteTestFile(t, sf.Path(), contents)
+		}
+	}
+	rewriteFiles(false)
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema format --skip-write")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema format --skip-write")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema format")
+	s.handleCommand(t, CodeSuccess, ".", "skeema format")
+	s.verifyFiles(t, cfg, "../golden/init")
+
+	// Change a file to contain invalid SQL; format should return
+	// CodeDifferencesFound repeatedly
+	rewriteFiles(true)
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema format")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema format")
+
+	// Manually restore the file with invalid SQL; the files should now verify,
+	// confirming that the fatal error did not prevent the other files from being
+	// reformatted; re-formatting again should yield no changes.
+	contents := fs.ReadTestFile(t, productDir.SQLFiles[0].Path())
+	fs.WriteTestFile(t, productDir.SQLFiles[0].Path(), strings.Replace(contents, "DEFALUT", "DEFAULT", 1))
+	s.verifyFiles(t, cfg, "../golden/init")
+	s.handleCommand(t, CodeSuccess, ".", "skeema format")
+
+	// Files with SQL statements unsupported by this package should not affect
+	// exit code
+	fs.WriteTestFile(t, productDir.SQLFiles[0].Path(), "INSERT INTO foo (col1, col2) VALUES (123, 456)")
+	s.handleCommand(t, CodeSuccess, ".", "skeema format --debug")
+
+	// Directories that have invalid options should yield CodeBadConfig
+	fs.WriteTestFile(t, "mydb/uhoh/.skeema", "this is not a valid .skeema file")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema format")
 }
 
 func (s SkeemaIntegrationSuite) TestDiffHandler(t *testing.T) {
@@ -547,10 +620,10 @@ func (s SkeemaIntegrationSuite) TestForeignKeys(t *testing.T) {
 	fs.WriteTestFile(t, "mydb/product/posts.sql", contents1)
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
-	// pull won't update the file unless normalizing
-	s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-normalize")
+	// pull won't update the file unless reformatting
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-format")
 	if fs.ReadTestFile(t, "mydb/product/posts.sql") != contents1 {
-		t.Error("Expected skeema pull --skip-normalize to leave file untouched, but it rewrote it")
+		t.Error("Expected skeema pull --skip-format to leave file untouched, but it rewrote it")
 	}
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	if fs.ReadTestFile(t, "mydb/product/posts.sql") != oldContents {
@@ -576,7 +649,7 @@ func (s SkeemaIntegrationSuite) TestForeignKeys(t *testing.T) {
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
 	fs.WriteTestFile(t, "mydb/product/posts.sql", contents1)
-	s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-normalize")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-format")
 	if fs.ReadTestFile(t, "mydb/product/posts.sql") != contents2 {
 		t.Error("Expected skeema pull to rewrite file, but it did not")
 	}
@@ -750,9 +823,11 @@ func (s SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
 		t.Error("Expected `skeema lint` to ignore mydb/analytics/_trending.sql, but it did not")
 	}
 
-	// push, pull, lint, init: invalid regexes should error. Error is CodeBadConfig
-	// except for cases of invalid ignore-schema being hit in fs.Dir.SchemaNames().
+	// push, pull, lint, format, init: invalid regexes should error. Error is
+	// CodeBadConfig except for cases of invalid ignore-schema being hit in
+	// fs.Dir.SchemaNames().
 	s.handleCommand(t, CodeBadConfig, ".", "skeema lint --ignore-table='+'")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema format --ignore-table='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema pull --ignore-table='+'")
 	s.handleCommand(t, CodeFatalError, ".", "skeema pull --ignore-schema='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema push --ignore-table='+'")
@@ -770,6 +845,7 @@ func (s SkeemaIntegrationSuite) TestDirEdgeCases(t *testing.T) {
 	s.handleCommand(t, CodeFatalError, "mydb", "skeema pull")
 	s.handleCommand(t, CodeFatalError, "mydb", "skeema diff")
 	s.handleCommand(t, CodeFatalError, "mydb", "skeema lint")
+	s.handleCommand(t, CodeFatalError, "mydb", "skeema format")
 	s.handleCommand(t, CodeFatalError, ".", "skeema add-environment --host my.staging.db.com --dir mydb staging")
 	fs.WriteTestFile(t, "mydb/.skeema", oldContents)
 
@@ -907,14 +983,14 @@ func (s SkeemaIntegrationSuite) TestReuseTempSchema(t *testing.T) {
 	// Ensure that re-using temp schema works as expected, and does not confuse
 	// subsequent commands
 	for n := 0; n < 2; n++ {
-		// Need --skip-normalize in order for pull to use temp schema
-		cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-normalize --reuse-temp-schema --temp-schema=verytemp")
+		// Need --skip-format in order for pull to use temp schema
+		cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-format --reuse-temp-schema --temp-schema=verytemp")
 		s.assertTableExists(t, "verytemp", "", "")
 		s.verifyFiles(t, cfg, "../golden/init")
 	}
 
 	// Invalid workspace option should error
-	s.handleCommand(t, CodeBadConfig, ".", "skeema pull --workspace=doesnt-exist --skip-normalize --reuse-temp-schema --temp-schema=verytemp")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema pull --workspace=doesnt-exist --skip-format --reuse-temp-schema --temp-schema=verytemp")
 }
 
 func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
@@ -1130,9 +1206,9 @@ END`
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
 	// Delete that file and do a pull; file should be back, even with
-	// --skip-normalize
+	// --skip-format
 	fs.RemoveTestFile(t, "mydb/product/routine1.sql")
-	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-normalize")
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-format")
 	s.verifyFiles(t, cfg, "../golden/routines")
 
 	// Confirm changing the db's collation counts as a diff for routines if (and
@@ -1180,15 +1256,15 @@ return 'abc''def';
 		t.Errorf("Unexpected contents after linting; found:\n%s", contents)
 	}
 
-	// Restore old formatting and test pull, with and without --normalize
+	// Restore old formatting and test pull, with and without --format
 	fs.WriteTestFile(t, "mydb/product/routine2.sql", origContents)
-	s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-normalize")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-format")
 	if contents := fs.ReadTestFile(t, "mydb/product/routine2.sql"); contents != origContents {
-		t.Errorf("Expected contents unchanged from pull with --skip-normalize; instead found:\n%s", contents)
+		t.Errorf("Expected contents unchanged from pull with --skip-format; instead found:\n%s", contents)
 	}
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	if contents := fs.ReadTestFile(t, "mydb/product/routine2.sql"); contents != normalizedContents {
-		t.Errorf("Expected contents to be normalized from pull with --normalize; instead found:\n%s", contents)
+		t.Errorf("Expected contents to be normalized from pull with --format; instead found:\n%s", contents)
 	}
 
 	// Add a *procedure* called routine2. pull should place this in same file as

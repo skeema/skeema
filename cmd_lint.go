@@ -13,17 +13,22 @@ import (
 )
 
 func init() {
-	summary := "Verify table files and reformat them in a standardized way"
-	desc := `Reformats the filesystem representation of tables to match the format of SHOW
-CREATE TABLE. Verifies that all table files contain valid SQL in their CREATE
-TABLE statements.
+	summary := "Check for problems in filesystem representation of database objects"
+	desc := `Checks for problems in filesystem representation of database objects. A set of
+linter rules are run against all objects. Each rule may be configured to
+generate an error, a warning, or be ignored entirely. Statements that contain
+invalid SQL, or otherwise return an error from the database, are always flagged
+as linter errors.
 
-This command relies on accessing database instances to test the SQL DDL. All DDL
-will be run against a temporary schema, with no impact on the real schema.
+By default, this command also reformats statements to their canonical form,
+just like ` + "`skeema format`" + `.
+
+This command relies on accessing database instances to test the SQL DDL in a
+temporary location. See the workspace option for more information.
 
 You may optionally pass an environment name as a CLI option. This will affect
-which section of .skeema config files is used for obtaining a database instance
-to test the SQL DDL against. For example, running ` + "`" + `skeema lint staging` + "`" + ` will
+which section of .skeema config files is used for linter configuration and
+workspace selection. For example, running ` + "`" + `skeema lint staging` + "`" + ` will
 apply config directives from the [staging] section of config files, as well as
 any sectionless directives at the top of the file. If no environment name is
 supplied, the default is "production".
@@ -34,6 +39,7 @@ some files were reformatted; or 2+ if any errors were emitted for any reason.`
 
 	cmd := mybase.NewCommand("lint", summary, desc, LintHandler)
 	linter.AddCommandOptions(cmd)
+	cmd.AddOption(mybase.BoolOption("format", 0, true, "Reformat SQL statements to match canonical SHOW CREATE"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
@@ -67,7 +73,7 @@ func LintHandler(cfg *mybase.Config) error {
 
 func lintWalker(dir *fs.Dir, maxDepth int) *linter.Result {
 	log.Infof("Linting %s", dir)
-	result := lintDir(dir, true)
+	result := lintDir(dir)
 	for _, err := range result.Exceptions {
 		log.Error(fmt.Errorf("Skipping schema in %s due to error: %s", dir.RelPath(), err))
 	}
@@ -101,7 +107,7 @@ func lintWalker(dir *fs.Dir, maxDepth int) *linter.Result {
 // lintDir lints all logical schemas in dir, optionally also reformatting
 // SQL statements along the way. A combined result for the directory is
 // returned. This function does not recurse into subdirs.
-func lintDir(dir *fs.Dir, reformat bool) *linter.Result {
+func lintDir(dir *fs.Dir) *linter.Result {
 	opts, err := linter.OptionsForDir(dir)
 	if err != nil && len(dir.LogicalSchemas) > 0 {
 		return linter.BadConfigResult(dir, err)
@@ -133,7 +139,7 @@ func lintDir(dir *fs.Dir, reformat bool) *linter.Result {
 
 		// Reformat statements if requested. This must be done prior to checking for
 		// problems. Otherwise, the line offsets in annotations can be wrong.
-		if reformat {
+		if dir.Config.GetBool("format") {
 			dumpOpts := dumper.Options{
 				IncludeAutoInc: true,
 				IgnoreTable:    opts.IgnoreTable,
