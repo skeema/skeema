@@ -7,5 +7,5 @@ CREATE TABLE borked1 (
 # Expect this to go in Result.DebugLogs due to ignore-table in .skeema
 CREATE TABLE _borked2 (same here ok cool thanks);
 
-# Expect this to go in Result.Warnings since it cannot be parsed
+# Expect this to go in Result.Annotations as warning since it cannot be parsed
 INSERT INTO whatever (name) VALUES ("hello");

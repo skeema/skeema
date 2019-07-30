@@ -36,6 +36,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [include-auto-inc](#include-auto-inc)
 * [lint](#lint)
 * [lint-charset](#lint-charset)
+* [lint-dupe-index](#lint-dupe-index)
 * [lint-engine](#lint-engine)
 * [lint-pk](#lint-pk)
 * [my-cnf](#my-cnf)
@@ -51,6 +52,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [verify](#verify)
 * [warnings](#warnings)
 * [workspace](#workspace)
+* [write](#write)
 
 ---
 
@@ -616,6 +618,16 @@ Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 This linter rule checks each table's default character set, along with the character set of each textual column. Unless set to "IGNORE", a warning or error will be emitted for any usage of a character set not listed in option [allow-charset](#allow-charset).
 
 This rule does not currently check any other object type besides tables.
+
+### lint-dupe-index
+
+Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+--- | :---
+**Default** | "WARNING"
+**Type** | enum
+**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+
+This linter rule checks each table for duplicate secondary indexes. Unless set to "IGNORE", a warning or error will be emitted for each redundant index that is found.
 
 ### lint-engine
 

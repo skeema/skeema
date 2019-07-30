@@ -13,12 +13,13 @@ func TestOptionsForDir(t *testing.T) {
 	if opts, err := OptionsForDir(dir); err != nil {
 		t.Errorf("Unexpected error from OptionsForDir: %s", err)
 	} else {
+		expectedSeverity := make(map[string]Severity, len(rulesByName))
+		for name, rule := range rulesByName {
+			expectedSeverity[name] = rule.DefaultSeverity
+		}
+		expectedSeverity["pk"] = SeverityError // see ../testdata/linter/validcfg/.skeema
 		expected := Options{
-			RuleSeverity: map[string]Severity{
-				"pk":      SeverityError,
-				"charset": SeverityWarning,
-				"engine":  SeverityWarning,
-			},
+			RuleSeverity:    expectedSeverity,
 			AllowedCharSets: []string{"utf8mb4"},
 			AllowedEngines:  []string{"innodb", "myisam"},
 			IgnoreTable:     regexp.MustCompile(`^_`),

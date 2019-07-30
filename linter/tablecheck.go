@@ -9,7 +9,8 @@ import (
 	"github.com/skeema/tengo"
 )
 
-// TableChecker is a function that looks for problems in a table.
+// TableChecker is a function that looks for problems in a table. It can return
+// any number of notes per table.
 type TableChecker func(table *tengo.Table, createStatement string, schema *tengo.Schema, opts Options) []Note
 
 // CheckObject provides arg conversion in order for TableChecker functions to
@@ -21,10 +22,25 @@ func (tc TableChecker) CheckObject(object interface{}, createStatement string, s
 	return nil
 }
 
+// TableBinaryChecker is like a TableChecker that returns at most a single Note
+// per table.
+type TableBinaryChecker func(table *tengo.Table, createStatement string, schema *tengo.Schema, opts Options) *Note
+
+// CheckObject provides arg and return conversion in order for
+// TableBinaryChecker functions to satisfy the ObjectChecker interface.
+func (tbc TableBinaryChecker) CheckObject(object interface{}, createStatement string, schema *tengo.Schema, opts Options) []Note {
+	if table, ok := object.(*tengo.Table); ok {
+		if note := tbc(table, createStatement, schema, opts); note != nil {
+			return []Note{*note}
+		}
+	}
+	return nil
+}
+
 func init() {
 	RegisterRules([]Rule{
 		{
-			CheckerFunc:     TableChecker(pkChecker),
+			CheckerFunc:     TableBinaryChecker(pkChecker),
 			Name:            "pk",
 			Description:     "Require tables to have a primary key",
 			DefaultSeverity: SeverityWarning,
@@ -37,16 +53,22 @@ func init() {
 			RelatedOption:   mybase.StringOption("allow-charset", 0, "latin1,utf8mb4", "List of allowed character sets for --lint-charset"),
 		},
 		{
-			CheckerFunc:     TableChecker(engineChecker),
+			CheckerFunc:     TableBinaryChecker(engineChecker),
 			Name:            "engine",
 			Description:     "Only allow storage engines listed in --allow-engine",
 			DefaultSeverity: SeverityWarning,
 			RelatedOption:   mybase.StringOption("allow-engine", 0, "innodb", "List of allowed storage engines for --lint-engine"),
 		},
+		{
+			CheckerFunc:     TableChecker(dupeIndexChecker),
+			Name:            "dupe-index",
+			Description:     "Prevent redundant secondary indexes",
+			DefaultSeverity: SeverityWarning,
+		},
 	})
 }
 
-func pkChecker(table *tengo.Table, _ string, _ *tengo.Schema, _ Options) []Note {
+func pkChecker(table *tengo.Table, _ string, _ *tengo.Schema, _ Options) *Note {
 	if table.PrimaryKey != nil {
 		return nil
 	}
@@ -55,7 +77,11 @@ func pkChecker(table *tengo.Table, _ string, _ *tengo.Schema, _ Options) []Note 
 		advice = " Lack of a PRIMARY KEY hurts performance, and prevents use of third-party tools such as pt-online-schema-change."
 	}
 	message := fmt.Sprintf("Table %s does not define a PRIMARY KEY.%s", table.Name, advice)
-	return OneNote(0, "No primary key", message)
+	return &Note{
+		LineOffset: 0,
+		Summary:    "No primary key",
+		Message:    message,
+	}
 }
 
 func charsetChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts Options) []Note {
@@ -88,7 +114,12 @@ func charsetChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 	// of redundant messages for columns using the table default charset.
 	if !isAllowed(table.CharSet, opts.AllowedCharSets) {
 		re := regexp.MustCompile(fmt.Sprintf(`(?i)(default)?\s*(character\s+set|charset|collate)\s*=?\s*(%s|%s)`, table.CharSet, table.Collation))
-		return OneNote(findLastLineOffset(re, createStatement), "Character set not permitted", makeMessage(nil))
+		note := Note{
+			LineOffset: findLastLineOffset(re, createStatement),
+			Summary:    "Character set not permitted",
+			Message:    makeMessage(nil),
+		}
+		return []Note{note}
 	}
 
 	// Now check individual columns
@@ -106,11 +137,10 @@ func charsetChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 	return results
 }
 
-func engineChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts Options) []Note {
+func engineChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts Options) *Note {
 	if isAllowed(table.Engine, opts.AllowedEngines) {
 		return nil
 	}
-
 	re := regexp.MustCompile(fmt.Sprintf(`(?i)ENGINE\s*=?\s*%s`, table.Engine))
 	message := fmt.Sprintf("Table %s is using storage engine %s, which is not listed in option allow-engine.", table.Name, table.Engine)
 	if len(opts.AllowedEngines) == 1 {
@@ -118,5 +148,44 @@ func engineChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, 
 	} else if len(opts.AllowedEngines) > 1 && len(opts.AllowedEngines) <= 5 {
 		message = fmt.Sprintf("%s The following storage engines are permitted: %s.", message, strings.Join(opts.AllowedEngines, ", "))
 	}
-	return OneNote(findFirstLineOffset(re, createStatement), "Storage engine not permitted", message)
+	return &Note{
+		LineOffset: findFirstLineOffset(re, createStatement),
+		Summary:    "Storage engine not permitted",
+		Message:    message,
+	}
+}
+
+func dupeIndexChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ Options) []Note {
+	makeNote := func(dupeIndexName, betterIndexName string, equivalent bool) Note {
+		re := regexp.MustCompile(fmt.Sprintf("(?i)(key|index)\\s+`?%s(?:`|\\s)", dupeIndexName))
+		var reason string
+		if equivalent {
+			reason = fmt.Sprintf("Indexes %s and %s of table %s are functionally identical.\nOne of them should be dropped.", dupeIndexName, betterIndexName, table.Name)
+		} else {
+			reason = fmt.Sprintf("Index %s of table %s is redundant to larger index %s.\nConsider dropping index %s.", dupeIndexName, table.Name, betterIndexName, dupeIndexName)
+		}
+		message := fmt.Sprintf("%s Redundant indexes waste disk space, and harm write performance.", reason)
+		return Note{
+			LineOffset: findFirstLineOffset(re, createStatement),
+			Summary:    "Redundant index detected",
+			Message:    message,
+		}
+	}
+	results := make([]Note, 0)
+	for i, idx := range table.SecondaryIndexes {
+		if idx.RedundantTo(table.PrimaryKey) {
+			results = append(results, makeNote(idx.Name, "PRIMARY", false))
+			continue
+		}
+		for j, other := range table.SecondaryIndexes {
+			if i != j && idx.RedundantTo(other) {
+				equivalent := idx.Equivalent(other)
+				if !equivalent || i > j { // avoid 2 annotations for an equivalent pair
+					results = append(results, makeNote(idx.Name, other.Name, equivalent))
+				}
+				break // max one note for each idx
+			}
+		}
+	}
+	return results
 }

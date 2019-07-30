@@ -21,18 +21,6 @@ type Note struct {
 	Message    string
 }
 
-// OneNote is a helper function to generate a one-element []Note slice, for use
-// in checkers that only ever return up to a single note per statement.
-func OneNote(lineOffset int, summary string, message string) []Note {
-	return []Note{
-		{
-			LineOffset: lineOffset,
-			Summary:    summary,
-			Message:    message,
-		},
-	}
-}
-
 // Annotation is an error, warning, or notice from linting a single SQL
 // statement.
 type Annotation struct {
