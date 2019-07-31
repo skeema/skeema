@@ -36,6 +36,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [include-auto-inc](#include-auto-inc)
 * [lint](#lint)
 * [lint-charset](#lint-charset)
+* [lint-display-width](#lint-display-width)
 * [lint-dupe-index](#lint-dupe-index)
 * [lint-engine](#lint-engine)
 * [lint-pk](#lint-pk)
@@ -618,6 +619,22 @@ Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 This linter rule checks each table's default character set, along with the character set of each textual column. Unless set to "IGNORE", a warning or error will be emitted for any usage of a character set not listed in option [allow-charset](#allow-charset).
 
 This rule does not currently check any other object type besides tables.
+
+### lint-display-width
+
+Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+--- | :---
+**Default** | "WARNING"
+**Type** | enum
+**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+
+This linter rule checks that the [display width](https://dev.mysql.com/doc/refman/8.0/en/numeric-type-attributes.html) of int-type columns, e.g. the 11 in `int(11)`, is equal to the default display width for the column type. Integer display widths are commonly misunderstood, and do not affect the range of values that can be stored in the column. In almost all cases, the display width has no effect whatsoever, and should be left at its default value for the column type, or omitted entirely.
+
+There are only 3 cases where non-default display widths are relevant:
+
+* By convention, boolean columns are typically defined using `tinyint(1)` (or as `bool` which is just an alias for `tinyint(1)`). [lint-display-width](#lint-display-width) always ignores such columns.
+* Int-type columns using the `zerofill` modifier are padded with leading zeroes based on the display width. [lint-display-width](#lint-display-width) always ignores such columns.
+* Display widths are included in query result metadata, and in theory some applications may use this information programmatically, and intentionally have non-default display widths for this reason. This is quite rare, but in this situation it makes sense to use `lint-display-width=ignore`.
 
 ### lint-dupe-index
 

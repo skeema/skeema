@@ -3,6 +3,7 @@ package linter
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/skeema/mybase"
@@ -63,6 +64,12 @@ func init() {
 			CheckerFunc:     TableChecker(dupeIndexChecker),
 			Name:            "dupe-index",
 			Description:     "Prevent redundant secondary indexes",
+			DefaultSeverity: SeverityWarning,
+		},
+		{
+			CheckerFunc:     TableChecker(displayWidthChecker),
+			Name:            "display-width",
+			Description:     "Only allow default display width for int types",
 			DefaultSeverity: SeverityWarning,
 		},
 	})
@@ -185,6 +192,54 @@ func dupeIndexChecker(table *tengo.Table, createStatement string, _ *tengo.Schem
 				}
 				break // max one note for each idx
 			}
+		}
+	}
+	return results
+}
+
+var reDisplayWidth = regexp.MustCompile(`^(tinyint|smallint|mediumint|int|bigint)\((\d+)\)( unsigned)?( zerofill)?`)
+
+func displayWidthChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ Options) []Note {
+	signedDefaults := map[string]int{
+		"tinyint":   4,  // unsigned is 3
+		"smallint":  6,  // unsigned is 5
+		"mediumint": 9,  // unsigned is 8
+		"int":       11, // unsigned is 10
+		"bigint":    20, // unsigned also 20
+	}
+	results := make([]Note, 0)
+	for _, col := range table.Columns {
+		if !strings.Contains(col.TypeInDB, "int(") {
+			continue
+		}
+		matches := reDisplayWidth.FindStringSubmatch(col.TypeInDB)
+		rawType, displayWidth := matches[1], matches[2]
+		unsigned, zerofill := (matches[3] != ""), (matches[4] != "")
+		if zerofill {
+			continue // non-default display width may be intentional with zerofill
+		}
+		if rawType == "tinyint" && displayWidth == "1" {
+			continue // allow tinyint(1) since bool is an alias for this
+		}
+		defaultWidthInt := signedDefaults[rawType]
+		if unsigned && rawType != "bigint" {
+			defaultWidthInt--
+		}
+		defaultWidth := strconv.Itoa(defaultWidthInt)
+		if displayWidth != defaultWidth {
+			colWithSpace := fmt.Sprintf(`\b%s\b`, regexp.QuoteMeta(col.Name))
+			re := regexp.MustCompile(colWithSpace)
+			message := fmt.Sprintf(
+				"Column %s of table %s is using display width %s, but the default for %s%s is %s.\nInteger display widths don't function the way most users expect; they have no intrinsic effect on what values may be stored in the column. If in doubt, use the default of %s(%s)%s.",
+				col.Name, table.Name, displayWidth,
+				rawType, matches[3], defaultWidth,
+				rawType, defaultWidth, matches[3],
+			)
+			results = append(results, Note{
+				LineOffset: findFirstLineOffset(re, createStatement),
+				Summary:    "Non-default display width detected",
+				Message:    message,
+			})
 		}
 	}
 	return results
