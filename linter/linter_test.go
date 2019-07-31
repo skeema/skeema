@@ -106,9 +106,10 @@ func (s IntegrationSuite) TestCheckSchema(t *testing.T) {
 
 func (s *IntegrationSuite) Setup(backend string) (err error) {
 	s.d, err = s.manager.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
-		Name:         fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1)),
-		Image:        backend,
-		RootPassword: "fakepw",
+		Name:              fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1)),
+		Image:             backend,
+		RootPassword:      "fakepw",
+		DefaultConnParams: "foreign_key_checks=0",
 	})
 	return err
 }

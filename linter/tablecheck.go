@@ -63,7 +63,7 @@ func init() {
 		{
 			CheckerFunc:     TableChecker(dupeIndexChecker),
 			Name:            "dupe-index",
-			Description:     "Prevent redundant secondary indexes",
+			Description:     "Flag redundant secondary indexes",
 			DefaultSeverity: SeverityWarning,
 		},
 		{
@@ -71,6 +71,12 @@ func init() {
 			Name:            "display-width",
 			Description:     "Only allow default display width for int types",
 			DefaultSeverity: SeverityWarning,
+		},
+		{
+			CheckerFunc:     TableBinaryChecker(hasForeignKeysChecker),
+			Name:            "has-fk",
+			Description:     "Flag use of foreign keys; useful in environments that restrict their presence",
+			DefaultSeverity: SeverityIgnore,
 		},
 	})
 }
@@ -104,16 +110,16 @@ func charsetChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 			using = "character set"
 		}
 		if len(opts.AllowedCharSets) == 1 {
-			allowedList = fmt.Sprintf(" Only the %s character set is permitted.", opts.AllowedCharSets[0])
+			allowedList = fmt.Sprintf(" Only the %s character set is listed in option allow-charset.", opts.AllowedCharSets[0])
 		} else if len(opts.AllowedCharSets) > 1 && len(opts.AllowedCharSets) <= 5 {
-			allowedList = fmt.Sprintf(" The following character sets are permitted: %s.", strings.Join(opts.AllowedCharSets, ", "))
+			allowedList = fmt.Sprintf(" The following character sets are listed in option allow-charset: %s.", strings.Join(opts.AllowedCharSets, ", "))
 		}
 		if charSet == "utf8" && isAllowed("utf8mb4", opts.AllowedCharSets) {
-			moreInfo = "\nTo permit storage of all valid UTF-8 characters, use the utf8mb4 character set instead of the legacy utf8 character set."
+			moreInfo = "\nTo permit storage of all valid four-byte UTF-8 characters, use the utf8mb4 character set instead of the legacy three-byte utf8 character set."
 		} else if charSet == "binary" {
 			moreInfo = "\nUsing equivalent binary column types (e.g. BINARY, VARBINARY, BLOB) is preferred for readability."
 		}
-		return fmt.Sprintf("%s is using %s %s, which is not listed in option allow-charset.%s%s", subject, using, charSet, allowedList, moreInfo)
+		return fmt.Sprintf("%s is using %s %s, which is not configured to be permitted.%s%s", subject, using, charSet, allowedList, moreInfo)
 	}
 
 	// Check the table's default charset. If it fails, return a single
@@ -149,11 +155,11 @@ func engineChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, 
 		return nil
 	}
 	re := regexp.MustCompile(fmt.Sprintf(`(?i)ENGINE\s*=?\s*%s`, table.Engine))
-	message := fmt.Sprintf("Table %s is using storage engine %s, which is not listed in option allow-engine.", table.Name, table.Engine)
+	message := fmt.Sprintf("Table %s is using storage engine %s, which is not configured to be permitted.", table.Name, table.Engine)
 	if len(opts.AllowedEngines) == 1 {
-		message = fmt.Sprintf("%s Only the %s storage engine is permitted.", message, opts.AllowedEngines[0])
+		message = fmt.Sprintf("%s Only the %s storage engine is listed in option allow-engine.", message, opts.AllowedEngines[0])
 	} else if len(opts.AllowedEngines) > 1 && len(opts.AllowedEngines) <= 5 {
-		message = fmt.Sprintf("%s The following storage engines are permitted: %s.", message, strings.Join(opts.AllowedEngines, ", "))
+		message = fmt.Sprintf("%s The following storage engines are listed in option allow-engine: %s.", message, strings.Join(opts.AllowedEngines, ", "))
 	}
 	return &Note{
 		LineOffset: findFirstLineOffset(re, createStatement),
@@ -230,7 +236,7 @@ func displayWidthChecker(table *tengo.Table, createStatement string, _ *tengo.Sc
 			colWithSpace := fmt.Sprintf(`\b%s\b`, regexp.QuoteMeta(col.Name))
 			re := regexp.MustCompile(colWithSpace)
 			message := fmt.Sprintf(
-				"Column %s of table %s is using display width %s, but the default for %s%s is %s.\nInteger display widths don't function the way most users expect; they have no intrinsic effect on what values may be stored in the column. If in doubt, use the default of %s(%s)%s.",
+				"Column %s of table %s is using display width %s, but the default for %s%s is %s.\nInteger display widths do not control what range of values may be stored in a column. Typically they have no effect whatsoever. If in doubt, omit the width entirely, or use the default of %s(%s)%s.",
 				col.Name, table.Name, displayWidth,
 				rawType, matches[3], defaultWidth,
 				rawType, defaultWidth, matches[3],
@@ -243,4 +249,22 @@ func displayWidthChecker(table *tengo.Table, createStatement string, _ *tengo.Sc
 		}
 	}
 	return results
+}
+
+var reHasFK = regexp.MustCompile(`(?i)foreign key`)
+
+func hasForeignKeysChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ Options) *Note {
+	if len(table.ForeignKeys) == 0 {
+		return nil
+	}
+	var plural string
+	if len(table.ForeignKeys) > 1 {
+		plural = "s"
+	}
+	message := fmt.Sprintf("Table %s has %d foreign key%s. Foreign keys may harm write performance, and can be problematic for online schema change tools. They are also ineffective in sharded environments.", table.Name, len(table.ForeignKeys), plural)
+	return &Note{
+		LineOffset: findFirstLineOffset(reHasFK, createStatement),
+		Summary:    "Table has foreign keys",
+		Message:    message,
+	}
 }

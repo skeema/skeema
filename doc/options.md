@@ -39,6 +39,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [lint-display-width](#lint-display-width)
 * [lint-dupe-index](#lint-dupe-index)
 * [lint-engine](#lint-engine)
+* [lint-has-fk](#lint-has-fk)
 * [lint-pk](#lint-pk)
 * [my-cnf](#my-cnf)
 * [new-schemas](#new-schemas)
@@ -655,6 +656,22 @@ Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 **Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
 
 This linter rule checks each table's storage engine. Unless set to "IGNORE", a warning or error will be emitted for any table using a storage engine not listed in option [allow-engine](#allow-engine).
+
+### lint-has-fk
+
+Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+--- | :---
+**Default** | "IGNORE"
+**Type** | enum
+**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+
+This linter rule checks for presence of foreign keys. This option defaults to "IGNORE", meaning that presence of foreign keys does not result in a linter annotation by default. However, companies that restrict or forbid foreign keys may wish to set this to "WARNING" or "ERROR", which will flag any table defining one or more foreign keys (where the definition appears, i.e. on the "child" side of the foreign key relationship).
+
+Companies that restrict foreign keys typically do so for these reasons:
+
+* Foreign keys introduce nontrivial write latency, due to the extra locking. In a high-write-volume OLTP environment, the performance impact can be quite substantial.
+* Foreign keys are problematic when using online schema change tools. Percona's pt-osc allows them, albeit with extra complexity and risk. Other popular OSC tools -- gh-ost, fb-osc, LHM -- don't support foreign keys at all.
+* Conceptually, foreign keys simply don't work across a sharded environment. Although they still function within a single shard, application-level checks become necessary anyway for cross-shard purposes. As a result, sharded companies tend to converge on application-level checks exclusively.
 
 ### lint-pk
 
