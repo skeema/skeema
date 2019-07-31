@@ -40,6 +40,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [lint-dupe-index](#lint-dupe-index)
 * [lint-engine](#lint-engine)
 * [lint-has-fk](#lint-has-fk)
+* [lint-has-routine](#lint-has-routine)
 * [lint-pk](#lint-pk)
 * [my-cnf](#my-cnf)
 * [new-schemas](#new-schemas)
@@ -672,6 +673,21 @@ Companies that restrict foreign keys typically do so for these reasons:
 * Foreign keys introduce nontrivial write latency, due to the extra locking. In a high-write-volume OLTP environment, the performance impact can be quite substantial.
 * Foreign keys are problematic when using online schema change tools. Percona's pt-osc allows them, albeit with extra complexity and risk. Other popular OSC tools -- gh-ost, fb-osc, LHM -- don't support foreign keys at all.
 * Conceptually, foreign keys simply don't work across a sharded environment. Although they still function within a single shard, application-level checks become necessary anyway for cross-shard purposes. As a result, sharded companies tend to converge on application-level checks exclusively.
+
+### lint-has-routine
+
+Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+--- | :---
+**Default** | "IGNORE"
+**Type** | enum
+**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+
+This linter rule checks for presence of stored procedures and functions. This option defaults to "IGNORE", meaning that presence of routines does not result in a linter annotation by default. However, companies that restrict or forbid routines may wish to set this to "WARNING" or "ERROR".
+
+Companies that restrict use of routines typically do so for these reasons:
+
+* Routines can present scalability challenges, since they involve moving computation onto the database (which is stateful and therefore harder to scale) instead of the application stack (which is stateless and easier to scale).
+* Routines involve some degree of operational complexity, in part because their bodies cannot be altered in-place without dropping and recreating the routine. Although Skeema automates this process, there is no way to avoid having a split-second period where a modified routine does not exist, which can result in application-facing query errors. As a work-around, some companies version routines using a naming scheme, but this can cause complicated deployment dependencies between the application and the database.
 
 ### lint-pk
 
