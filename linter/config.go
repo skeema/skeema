@@ -36,11 +36,13 @@ func AddCommandOptions(cmd *mybase.Command) {
 
 // Options contains parsed settings controlling linter behavior.
 type Options struct {
-	RuleSeverity    map[string]Severity
-	AllowedCharSets []string
-	AllowedEngines  []string
-	IgnoreTable     *regexp.Regexp
-	onlyKeys        map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
+	RuleSeverity         map[string]Severity
+	AllowedCharSets      []string
+	AllowedEngines       []string
+	AllowedDefiners      []string
+	AllowedDefinersMatch []*regexp.Regexp
+	IgnoreTable          *regexp.Regexp
+	onlyKeys             map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
 }
 
 // OnlyKeys specifies a list of tengo.ObjectKeys that the linter should
@@ -74,6 +76,7 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 		RuleSeverity:    make(map[string]Severity),
 		AllowedCharSets: dir.Config.GetSlice("allow-charset", ',', true),
 		AllowedEngines:  dir.Config.GetSlice("allow-engine", ',', true),
+		AllowedDefiners: dir.Config.GetSlice("allow-definer", ',', true),
 	}
 
 	var err error
@@ -116,12 +119,24 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 	ruleToListOpt := map[string][]string{
 		"charset": opts.AllowedCharSets,
 		"engine":  opts.AllowedEngines,
+		"definer": opts.AllowedDefiners,
 	}
 	for ruleName, listOption := range ruleToListOpt {
 		severity := opts.RuleSeverity[ruleName]
 		if severity != SeverityIgnore && len(listOption) == 0 {
 			return Options{}, newConfigError(dir, "With option lint-%s=%s, corresponding option allow-%s must be non-empty", ruleName, severity, ruleName)
 		}
+	}
+
+	// Build regexp allow-list for definers
+	opts.AllowedDefinersMatch = make([]*regexp.Regexp, len(opts.AllowedDefiners))
+	for i, definer := range opts.AllowedDefiners {
+		definer = strings.Replace(definer, "'", "", -1)
+		definer = strings.Replace(definer, "`", "", -1)
+		definer = regexp.QuoteMeta(definer)
+		definer = strings.Replace(definer, "%", ".*", -1)
+		definer = strings.Replace(definer, "_", ".", -1)
+		opts.AllowedDefinersMatch[i] = regexp.MustCompile(fmt.Sprintf("^%s$", definer))
 	}
 
 	return opts, nil

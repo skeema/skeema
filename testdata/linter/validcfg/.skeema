@@ -4,6 +4,7 @@ lint-engine	= warning
 
 allow-charset=utf8mb4
 allow-engine=innodb, myisam
+allow-definer='root'@'%',procbot@127.0.0.1
 
 ignore-table=^_
 

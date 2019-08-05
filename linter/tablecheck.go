@@ -75,7 +75,7 @@ func init() {
 		{
 			CheckerFunc:     TableBinaryChecker(hasForeignKeysChecker),
 			Name:            "has-fk",
-			Description:     "Flag use of foreign keys; useful in environments that restrict their presence",
+			Description:     "Flag any use of foreign keys; intended for environments that restrict their presence",
 			DefaultSeverity: SeverityIgnore,
 		},
 	})
@@ -111,7 +111,7 @@ func charsetChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 		}
 		if len(opts.AllowedCharSets) == 1 {
 			allowedList = fmt.Sprintf(" Only the %s character set is listed in option allow-charset.", opts.AllowedCharSets[0])
-		} else if len(opts.AllowedCharSets) > 1 && len(opts.AllowedCharSets) <= 5 {
+		} else {
 			allowedList = fmt.Sprintf(" The following character sets are listed in option allow-charset: %s.", strings.Join(opts.AllowedCharSets, ", "))
 		}
 		if charSet == "utf8" && isAllowed("utf8mb4", opts.AllowedCharSets) {
@@ -158,7 +158,7 @@ func engineChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, 
 	message := fmt.Sprintf("Table %s is using storage engine %s, which is not configured to be permitted.", table.Name, table.Engine)
 	if len(opts.AllowedEngines) == 1 {
 		message = fmt.Sprintf("%s Only the %s storage engine is listed in option allow-engine.", message, opts.AllowedEngines[0])
-	} else if len(opts.AllowedEngines) > 1 && len(opts.AllowedEngines) <= 5 {
+	} else {
 		message = fmt.Sprintf("%s The following storage engines are listed in option allow-engine: %s.", message, strings.Join(opts.AllowedEngines, ", "))
 	}
 	return &Note{

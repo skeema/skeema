@@ -22,7 +22,12 @@ func TestOptionsForDir(t *testing.T) {
 			RuleSeverity:    expectedSeverity,
 			AllowedCharSets: []string{"utf8mb4"},
 			AllowedEngines:  []string{"innodb", "myisam"},
-			IgnoreTable:     regexp.MustCompile(`^_`),
+			AllowedDefiners: []string{"'root'@'%'", "procbot@127.0.0.1"},
+			AllowedDefinersMatch: []*regexp.Regexp{
+				regexp.MustCompile(`^root@.*$`),
+				regexp.MustCompile(`^procbot@127\.0\.0\.1$`),
+			},
+			IgnoreTable: regexp.MustCompile(`^_`),
 		}
 		if !reflect.DeepEqual(opts, expected) {
 			t.Errorf("OptionsForDir returned %+v, did not match expectation %+v", opts, expected)

@@ -6,6 +6,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 
 
 * [allow-charset](#allow-charset)
+* [allow-definer](#allow-definer)
 * [allow-engine](#allow-engine)
 * [allow-unsafe](#allow-unsafe)
 * [alter-algorithm](#alter-algorithm)
@@ -36,6 +37,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [include-auto-inc](#include-auto-inc)
 * [lint](#lint)
 * [lint-charset](#lint-charset)
+* [lint-definer](#lint-definer)
 * [lint-display-width](#lint-display-width)
 * [lint-dupe-index](#lint-dupe-index)
 * [lint-engine](#lint-engine)
@@ -67,9 +69,25 @@ Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 **Type** | string
 **Restrictions** | To specify multiple values, use a comma-separated list
 
-This option specifies which character sets are permitted by Skeema's linter. This option only has an effect if [lint-charset](#lint-charset) is set to "warning" (the default) or "error". If so, an error or warning (respectively) will be emitted for any table using a character set not included in this list.
+This option specifies which character sets are permitted by Skeema's linter. This option only has an effect if [lint-charset](#lint-charset) is set to "warning" (the default) or "error". If so, a warning or error (respectively) will be emitted for any table using a character set not included in this list.
 
 This option checks column character sets as well as table default character sets. It does not currently check any other object type besides tables.
+
+### allow-definer
+
+Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+--- | :---
+**Default** | "%@%"
+**Type** | string
+**Restrictions** | To specify multiple values, use a comma-separated list
+
+This option specifies which DEFINER users are permitted by Skeema's linter for stored procedures and functions. This option only has an effect if [lint-definer](#lint-definer) is set to "error" (the default) or "warning". If so, an error or warning (respectively) will be emitted for any routine using a DEFINER not matched by any value in this list.
+
+The value of this option should be a comma-separated list of MySQL-style `user@host` values, optionally using SQL `LIKE`-style wildcards of `%` and `_`. For example, `allow-definer=root@%,procdef@192.168.%` will permit a definer of root with any hostname, or procdef with any IP beginning with 192.168.
+
+The default value for this option is intentionally permissive of all possible DEFINER users. You must override this option if you wish to restrict what DEFINER users are permissible. This is useful for limiting privileges of routines.
+
+This option may also affect other object types with definers (e.g. views) once they are supported in a future version of Skeema.
 
 ### allow-engine
 
@@ -79,7 +97,7 @@ Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 **Type** | string
 **Restrictions** | To specify multiple values, use a comma-separated list
 
-This option specifies which storage engines are permitted by Skeema's linter. This option only has an effect if [lint-engine](#lint-engine) is set to "warning" (the default) or "error". If so, an error or warning (respectively) will be emitted for any table using a storage engine not included in this list.
+This option specifies which storage engines are permitted by Skeema's linter. This option only has an effect if [lint-engine](#lint-engine) is set to "warning" (the default) or "error". If so, a warning or error (respectively) will be emitted for any table using a storage engine not included in this list.
 
 ### allow-unsafe
 
@@ -621,6 +639,20 @@ Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 This linter rule checks each table's default character set, along with the character set of each textual column. Unless set to "IGNORE", a warning or error will be emitted for any usage of a character set not listed in option [allow-charset](#allow-charset).
 
 This rule does not currently check any other object type besides tables.
+
+### lint-definer
+
+Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+--- | :---
+**Default** | "ERROR"
+**Type** | enum
+**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+
+This linter rule specifies the severity of non-whitelisted DEFINER values for stored procedures and functions. Unless set to "IGNORE", a warning or error will be emitted for any DEFINER not listed in option [allow-definer](#allow-definer).
+
+Although this option defaults to "ERROR" severity, please note that the default value of corresponding option [allow-definer](#allow-definer) is `%@%`, which intentionally permits all possible users. To enforce a restriction on definers, be sure to override [allow-definer](#allow-definer). Overriding [lint-definer](#lint-definer) only controls the *annotation severity* (e.g. warning vs error) for routines with non-whitelisted DEFINER users.
+
+This option may also affect other object types with definers (e.g. views) once they are supported in a future version of Skeema.
 
 ### lint-display-width
 
