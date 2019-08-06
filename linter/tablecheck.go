@@ -43,7 +43,7 @@ func init() {
 		{
 			CheckerFunc:     TableBinaryChecker(pkChecker),
 			Name:            "pk",
-			Description:     "Require tables to have a primary key",
+			Description:     "Flag tables that lack a primary key",
 			DefaultSeverity: SeverityWarning,
 		},
 		{
@@ -76,6 +76,12 @@ func init() {
 			CheckerFunc:     TableBinaryChecker(hasForeignKeysChecker),
 			Name:            "has-fk",
 			Description:     "Flag any use of foreign keys; intended for environments that restrict their presence",
+			DefaultSeverity: SeverityIgnore,
+		},
+		{
+			CheckerFunc:     TableChecker(hasTimeChecker),
+			Name:            "has-time",
+			Description:     "Flag columns using TIMESTAMP, DATETIME, or TIME data types",
 			DefaultSeverity: SeverityIgnore,
 		},
 	})
@@ -139,7 +145,7 @@ func charsetChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 	var results []Note
 	for _, col := range table.Columns {
 		if col.CharSet != "" && !isAllowed(col.CharSet, opts.AllowedCharSets) {
-			re := regexp.MustCompile(fmt.Sprintf(`(?i)(character\s+set|charset|collate)\s*(%s|%s)`, col.CharSet, col.Collation))
+			re := regexp.MustCompile(fmt.Sprintf(`\b%s\b`, regexp.QuoteMeta(col.Name)))
 			results = append(results, Note{
 				LineOffset: findFirstLineOffset(re, createStatement),
 				Summary:    "Character set not permitted",
@@ -261,10 +267,32 @@ func hasForeignKeysChecker(table *tengo.Table, createStatement string, _ *tengo.
 	if len(table.ForeignKeys) > 1 {
 		plural = "s"
 	}
-	message := fmt.Sprintf("Table %s has %d foreign key%s. Foreign keys may harm write performance, and can be problematic for online schema change tools. They are also ineffective in sharded environments.", table.Name, len(table.ForeignKeys), plural)
+	message := fmt.Sprintf(
+		"Table %s has %d foreign key%s. Foreign keys may harm write performance, and can be problematic for online schema change tools. They are also ineffective in sharded environments.",
+		table.Name, len(table.ForeignKeys), plural,
+	)
 	return &Note{
 		LineOffset: findFirstLineOffset(reHasFK, createStatement),
 		Summary:    "Table has foreign keys",
 		Message:    message,
 	}
+}
+
+func hasTimeChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ Options) []Note {
+	results := make([]Note, 0)
+	for _, col := range table.Columns {
+		if strings.Contains(col.TypeInDB, "time") {
+			re := regexp.MustCompile(fmt.Sprintf(`\b%s\b`, regexp.QuoteMeta(col.Name)))
+			message := fmt.Sprintf(
+				"Column %s of table %s is using type %s. Temporal data types can be problematic when dealing with timezone conversions, daylight savings time transitions, and leap seconds. Some companies prefer to store time-related values using unsigned ints or unsigned bigints for this reason.",
+				col.Name, table.Name, col.TypeInDB,
+			)
+			results = append(results, Note{
+				LineOffset: findFirstLineOffset(re, createStatement),
+				Summary:    "Column using temporal type",
+				Message:    message,
+			})
+		}
+	}
+	return results
 }

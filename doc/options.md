@@ -4,7 +4,6 @@ This document is a reference, describing all options supported by Skeema. To lea
 
 ### Index
 
-
 * [allow-charset](#allow-charset)
 * [allow-definer](#allow-definer)
 * [allow-engine](#allow-engine)
@@ -43,6 +42,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [lint-engine](#lint-engine)
 * [lint-has-fk](#lint-has-fk)
 * [lint-has-routine](#lint-has-routine)
+* [lint-has-time](#lint-has-time)
 * [lint-pk](#lint-pk)
 * [my-cnf](#my-cnf)
 * [new-schemas](#new-schemas)
@@ -720,6 +720,21 @@ Companies that restrict use of routines typically do so for these reasons:
 
 * Routines can present scalability challenges, since they involve moving computation onto the database (which is stateful and therefore harder to scale) instead of the application stack (which is stateless and easier to scale).
 * Routines involve some degree of operational complexity, in part because their bodies cannot be altered in-place without dropping and recreating the routine. Although Skeema automates this process, there is no way to avoid having a split-second period where a modified routine does not exist, which can result in application-facing query errors. As a work-around, some companies version routines using a naming scheme, but this can cause complicated deployment dependencies between the application and the database.
+
+### lint-has-time
+
+Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+--- | :---
+**Default** | "IGNORE"
+**Type** | enum
+**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+
+This linter rule checks for table columns using data type TIMESTAMP, DATETIME, or TIME. This option defaults to "IGNORE", meaning that these data types do not result in a linter annotation by default. However, companies that restrict or forbid use of temporal types may wish to set this to "WARNING" or "ERROR".
+
+As an alternative to temporal types, some companies instead opt to store time-related values in an `int unsigned` or `bigint unsigned`, depending on the chosen epoch and precision. Companies that restrict use of temporal types usually do so for these reasons:
+
+* Conversions involving timezones, daylight savings time transitions, and/or leap second transitions are a common source of application bugs or subtle data corruption. For example, TIMESTAMP values have automatic timezone conversion behavior, while DATETIME and TIME do not.
+* Some nonstandard TIMESTAMP behaviors vary by database server version. For example, prior to MySQL 8.0, the *first* TIMESTAMP column in a table automatically has `DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` if no clauses are explicitly set. This behavior can be surprising or confusing, and the version-specific change can be problematic upon upgrade.
 
 ### lint-pk
 
