@@ -4,6 +4,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 
 ### Index
 
+* [allow-auto-inc](#allow-auto-inc)
 * [allow-charset](#allow-charset)
 * [allow-definer](#allow-definer)
 * [allow-engine](#allow-engine)
@@ -35,6 +36,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [ignore-table](#ignore-table)
 * [include-auto-inc](#include-auto-inc)
 * [lint](#lint)
+* [lint-auto-inc](#lint-auto-inc)
 * [lint-charset](#lint-charset)
 * [lint-definer](#lint-definer)
 * [lint-display-width](#lint-display-width)
@@ -60,6 +62,26 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [write](#write)
 
 ---
+
+### allow-auto-inc
+
+Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+--- | :---
+**Default** | "int unsigned, bigint unsigned"
+**Type** | string
+**Restrictions** | To specify multiple values, use a comma-separated list
+
+This option specifies which data types are permissible for auto_increment columns. This option only has an effect if [lint-auto-inc](#lint-auto-inc) is set to "warning" (the default) or "error". If so, a warning or error (respectively) will be emitted for any auto_increment column using a data type not included in this list.
+
+When specifying values in this list, always omit the display width. For example, specify "int unsigned", never "int(10) unsigned".
+
+The purpose of this option is to avoid various auto_increment pain points:
+
+* Integer overflow / ID exhaustion: it is extremely problematic when an auto_increment column reaches the maximum value for its column type. To avoid this situation, only allow larger int types for this option.
+* Signed types: The behavior of auto_increment columns is undefined when negative numbers are present. To avoid this situation, only permit unsigned types for this option.
+* Float types: MySQL and MariaDB permit `float` and `double` columns to be auto_increment, but due to inexact precision the behavior is undesirable and nonsensical, and now deprecated in MySQL 8.0.17.
+
+Some companies ban use of auto_increment entirely. This can be enforced in Skeema by setting this option to a blank string (e.g. `allow-auto-inc=''`) while also setting [lint-auto-inc](#lint-auto-inc) to "error".
 
 ### allow-charset
 
@@ -627,6 +649,20 @@ Objects that were not modified in the diff -- i.e. anything where the filesystem
 Users with sharded environments should note that the definition of "modified in the diff" may vary per shard, if the shards are not all in the same state. Skeema computes the diff for each shard and lints the modified objects for each shard individually. Linter warning and error output will be generated (potentially redundantly) for every shard. In the rare situation that only some shards have modified objects with linter errors, only those shards will be bypassed by `skeema push`.
 
 This option is enabled by default. To disable linting of changed objects in `skeema diff` and `skeema push`, use `--skip-lint` on the command-line or `skip-lint` in an option file. This will cause the linting step of diff/push to be skipped entirely, regardless of the configuration of other lint-related options.
+
+### lint-auto-inc
+
+Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+--- | :---
+**Default** | "WARNING"
+**Type** | enum
+**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+
+This linter rule checks the data type used in auto_increment columns. Unless set to "IGNORE", a warning or error will be emitted for any auto_increment column using a data type not listed in option [allow-auto-inc](#allow-auto-inc).
+
+The primary purpose of this linter rule is to avoid problematic auto_increment edge cases. Please refer to the manual entry for [allow-auto-inc](#allow-auto-inc) for usage recommendations.
+
+In addition to checking the type of the column, this linter rule also examines the next AUTO_INCREMENT value, if one is specifically defined in the filesystem (\*.sql) version of the CREATE TABLE statement. If the defined value exceeds 80% of the maximum storable value for the column type, a warning or error will be emitted, even if the column data type is allowed. However, please note that Skeema's linter **only examines \*.sql definitions, not live databases**, and by default Skeema does not automatically put next AUTO_INCREMENT values into \*.sql table definitions. You must regularly run `skeema pull --include-auto-inc` to put these values into \*.sql table definitions.
 
 ### lint-charset
 

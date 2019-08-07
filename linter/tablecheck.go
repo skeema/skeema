@@ -2,6 +2,7 @@ package linter
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -83,6 +84,13 @@ func init() {
 			Name:            "has-time",
 			Description:     "Flag columns using TIMESTAMP, DATETIME, or TIME data types",
 			DefaultSeverity: SeverityIgnore,
+		},
+		{
+			CheckerFunc:     TableBinaryChecker(autoIncChecker),
+			Name:            "auto-inc",
+			Description:     "Only allow auto_increment column data types listed in --allow-auto-inc",
+			DefaultSeverity: SeverityWarning,
+			RelatedOption:   mybase.StringOption("allow-auto-inc", 0, "int unsigned, bigint unsigned", "List of allowed auto_increment column data types for --lint-auto-inc"),
 		},
 	})
 }
@@ -295,4 +303,71 @@ func hasTimeChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 		}
 	}
 	return results
+}
+
+func autoIncChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts Options) *Note {
+	if table.NextAutoIncrement == 0 {
+		return nil
+	}
+	var col *tengo.Column
+	for _, c := range table.Columns {
+		if c.AutoIncrement {
+			col = c
+			break
+		}
+	}
+	if col == nil {
+		return nil
+	}
+
+	maxes := map[string]uint64{
+		"tinyint":            math.MaxInt8,
+		"tinyint unsigned":   math.MaxUint8,
+		"smallint":           math.MaxInt16,
+		"smallint unsigned":  math.MaxUint16,
+		"mediumint":          8388607,
+		"mediumint unsigned": 16777215,
+		"int":                math.MaxInt32,
+		"int unsigned":       math.MaxUint32,
+		"bigint":             math.MaxInt64,
+		"bigint unsigned":    math.MaxUint64,
+	}
+	colType := col.TypeInDB
+	matches := reDisplayWidth.FindStringSubmatch(col.TypeInDB) // use same regexp as displayWidthChecker
+	if matches != nil {
+		colType = fmt.Sprintf("%s%s", matches[1], matches[3])
+	}
+	re := regexp.MustCompile(fmt.Sprintf(`\b%s\b`, regexp.QuoteMeta(col.Name)))
+	if !isAllowed(colType, opts.AllowedAutoIncTypes) {
+		allowList := strings.Join(opts.AllowedAutoIncTypes, ", ")
+		if len(opts.AllowedAutoIncTypes) == 0 {
+			allowList = "none (disallow auto_increment entirely)"
+		}
+		message := fmt.Sprintf(
+			"Column %s of table %s is an auto_increment column using data type %s, which is not configured to be permitted. The following data types are listed in option allow-auto-inc: %s.",
+			col.Name, table.Name, colType, allowList,
+		)
+		if !strings.Contains(colType, "unsigned") && strings.Contains(allowList, "unsigned") {
+			message += "\nIn general, auto_increment columns should be unsigned, since behavior of auto_increment is undefined with negative numbers."
+		} else if !strings.Contains(colType, "bigint") && strings.Contains(allowList, "bigint") {
+			message += "\nIn general, auto_increment columns should use larger int types to avoid risk of integer overflow / exhausting the ID space."
+		}
+		return &Note{
+			LineOffset: findFirstLineOffset(re, createStatement),
+			Summary:    "Column data type not permitted for auto_increment",
+			Message:    message,
+		}
+	}
+	if maxVal, ok := maxes[colType]; ok && float64(table.NextAutoIncrement)/float64(maxVal) > 0.8 {
+		message := fmt.Sprintf(
+			"Column %s of table %s defines a next auto_increment value of %d, which is %4.1f%% of the maximum for type %s. Be careful to avoid exhausting the ID space.",
+			col.Name, table.Name, table.NextAutoIncrement, float64(table.NextAutoIncrement)/float64(maxVal)*100.0, colType,
+		)
+		return &Note{
+			LineOffset: findFirstLineOffset(re, createStatement),
+			Summary:    "Approaching ID exhaustion for auto_increment column",
+			Message:    message,
+		}
+	}
+	return nil
 }

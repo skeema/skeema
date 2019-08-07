@@ -40,6 +40,7 @@ type Options struct {
 	AllowedCharSets      []string
 	AllowedEngines       []string
 	AllowedDefiners      []string
+	AllowedAutoIncTypes  []string
 	AllowedDefinersMatch []*regexp.Regexp
 	IgnoreTable          *regexp.Regexp
 	onlyKeys             map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
@@ -73,10 +74,11 @@ func (opts *Options) shouldIgnore(key tengo.ObjectKey) bool {
 // effectively converting between mybase options and linter options.
 func OptionsForDir(dir *fs.Dir) (Options, error) {
 	opts := Options{
-		RuleSeverity:    make(map[string]Severity),
-		AllowedCharSets: dir.Config.GetSlice("allow-charset", ',', true),
-		AllowedEngines:  dir.Config.GetSlice("allow-engine", ',', true),
-		AllowedDefiners: dir.Config.GetSlice("allow-definer", ',', true),
+		RuleSeverity:        make(map[string]Severity),
+		AllowedCharSets:     dir.Config.GetSlice("allow-charset", ',', true),
+		AllowedEngines:      dir.Config.GetSlice("allow-engine", ',', true),
+		AllowedAutoIncTypes: dir.Config.GetSlice("allow-auto-inc", ',', true),
+		AllowedDefiners:     dir.Config.GetSlice("allow-definer", ',', true),
 	}
 
 	var err error
@@ -116,6 +118,8 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 	}
 
 	// For rules with allow-lists, confirm corresponding list option is non-empty
+	// (exception: opts.AllowedAutoIncTypes is intentionally allowed to be empty,
+	// since this provides a mechanism for banning use of auto-increment)
 	ruleToListOpt := map[string][]string{
 		"charset": opts.AllowedCharSets,
 		"engine":  opts.AllowedEngines,

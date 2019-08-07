@@ -19,10 +19,11 @@ func TestOptionsForDir(t *testing.T) {
 		}
 		expectedSeverity["pk"] = SeverityError // see ../testdata/linter/validcfg/.skeema
 		expected := Options{
-			RuleSeverity:    expectedSeverity,
-			AllowedCharSets: []string{"utf8mb4"},
-			AllowedEngines:  []string{"innodb", "myisam"},
-			AllowedDefiners: []string{"'root'@'%'", "procbot@127.0.0.1"},
+			RuleSeverity:        expectedSeverity,
+			AllowedCharSets:     []string{"utf8mb4"},
+			AllowedEngines:      []string{"innodb", "myisam"},
+			AllowedAutoIncTypes: []string{"int unsigned", "bigint unsigned"},
+			AllowedDefiners:     []string{"'root'@'%'", "procbot@127.0.0.1"},
 			AllowedDefinersMatch: []*regexp.Regexp{
 				regexp.MustCompile(`^root@.*$`),
 				regexp.MustCompile(`^procbot@127\.0\.0\.1$`),
