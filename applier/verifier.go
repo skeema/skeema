@@ -31,7 +31,7 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 	if major, minor, _ := t.Instance.Version(); major > 5 || minor > 5 {
 		// avoid having MySQL ignore index changes that are simply reordered, but only
 		// legal syntax in 5.6+
-		mods.AlgorithmClause = "COPY"
+		mods.AlgorithmClause = "copy"
 	}
 
 	// Gather CREATE and ALTER for modified tables, and put into a LogicalSchema,

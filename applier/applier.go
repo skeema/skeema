@@ -177,10 +177,10 @@ func StatementModifiersForDir(dir *fs.Dir) (mods tengo.StatementModifiers, err e
 		mods.StrictIndexOrder = true
 		mods.StrictForeignKeyNaming = true
 	}
-	if mods.AlgorithmClause, err = dir.Config.GetEnum("alter-algorithm", "INPLACE", "COPY", "INSTANT", "DEFAULT"); err != nil {
+	if mods.AlgorithmClause, err = dir.Config.GetEnum("alter-algorithm", "inplace", "copy", "instant", "default"); err != nil {
 		return
 	}
-	if mods.LockClause, err = dir.Config.GetEnum("alter-lock", "NONE", "SHARED", "EXCLUSIVE", "DEFAULT"); err != nil {
+	if mods.LockClause, err = dir.Config.GetEnum("alter-lock", "none", "shared", "exclusive", "default"); err != nil {
 		return
 	}
 	if mods.IgnoreTable, err = dir.Config.GetRegexp("ignore-table"); err != nil {

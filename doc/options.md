@@ -150,15 +150,15 @@ Commands | diff, push
 --- | :---
 **Default** | *empty string*
 **Type** | enum
-**Restrictions** | Requires one of these values: "INPLACE", "COPY", "INSTANT", "DEFAULT", ""
+**Restrictions** | Requires one of these values: "inplace", "copy", "instant", "default", ""
 
 Adds an ALGORITHM clause to any generated ALTER TABLE statement, in order to force enabling/disabling MySQL 5.6+ or MariaDB 10.0+ support for online DDL. When used in `skeema push`, executing the statement will fail if any generated ALTER clause does not support the specified algorithm. See the MySQL manual for more information on the effect of this clause.
 
-The explicit value "DEFAULT" is supported, and will add a "ALGORITHM=DEFAULT" clause to all ALTER TABLEs, but this has no real effect vs simply omitting [alter-algorithm](#alter-algorithm) entirely.
+The explicit value "default" is supported, and will add a "ALGORITHM=DEFAULT" clause to all ALTER TABLEs, but this has no real effect vs simply omitting [alter-algorithm](#alter-algorithm) entirely.
 
 MySQL 5.5 does not support the ALGORITHM clause of ALTER TABLE, so use of this option will cause an error in that version.
 
-The INSTANT algorithm was added in MySQL 8.0. Supplying `alter-algorithm=INSTANT` in an older version will cause an error.
+The "instant" algorithm was added in MySQL 8.0. Supplying `alter-algorithm=instant` in an older version will cause an error.
 
 If [alter-wrapper](#alter-wrapper) is set to use an external online schema change (OSC) tool such as pt-online-schema-change, [alter-algorithm](#alter-algorithm) should not also be used unless [alter-wrapper-min-size](#alter-wrapper-min-size) is also in-use. This is to prevent sending ALTER statements containing ALGORITHM clauses to the external OSC tool.
 
@@ -168,11 +168,11 @@ Commands | diff, push
 --- | :---
 **Default** | *empty string*
 **Type** | enum
-**Restrictions** | Requires one of these values: "NONE", "SHARED", "EXCLUSIVE", "DEFAULT", ""
+**Restrictions** | Requires one of these values: "none", "shared", "exclusive", "default", ""
 
 Adds a LOCK clause to any generated ALTER TABLE statement, in order to force enabling/disabling MySQL 5.6+ or MariaDB 10.0+ support for online DDL. When used in `skeema push`, executing the statement will fail if any generated ALTER clause does not support the specified lock method. See the MySQL manual for more information on the effect of this clause.
 
-The explicit value "DEFAULT" is supported, and will add a "LOCK=DEFAULT" clause to all ALTER TABLEs, but this has no real effect vs simply omitting [alter-lock](#alter-lock) entirely.
+The explicit value "default" is supported, and will add a "LOCK=DEFAULT" clause to all ALTER TABLEs, but this has no real effect vs simply omitting [alter-lock](#alter-lock) entirely.
 
 MySQL 5.5 does not support the LOCK clause of ALTER TABLE, so use of this option will cause an error in that version.
 
@@ -412,17 +412,17 @@ For `skeema add-environment`, specifies which directory's .skeema file to add th
 
 Commands | diff, push, pull, lint
 --- | :---
-**Default** | "NONE"
+**Default** | "none"
 **Type** | enum
-**Restrictions** | Requires one of these values: "NONE", "STOP", "DESTROY"
+**Restrictions** | Requires one of these values: "none", "stop", "destroy"
 
 When using [workspace=docker](#workspace), the [docker-cleanup](#docker-cleanup) option controls cleanup behavior of dynamically-managed Docker containers right before Skeema exits.
 
-With the default value of "NONE", no cleanup occurs, meaning that any dynamically-managed container(s) are left in the running state. This allows subsequent Skeema invocations to perform well, since no time is wasted recreating or restarting local database containers. However, the running containers may consume some resources on your local machine.
+With the default value of "none", no cleanup occurs, meaning that any dynamically-managed container(s) are left in the running state. This allows subsequent Skeema invocations to perform well, since no time is wasted recreating or restarting local database containers. However, the running containers may consume some resources on your local machine.
 
-With a value of "STOP", containers are stopped, but not destroyed completely. Subsequent invocations of Skeema will need to restart the containers, which can take a few seconds, but is still faster than completely recreating the containers from scratch. The stopped containers won't consume CPU or memory on your local machine, but may consume disk space.
+With a value of "stop", containers are stopped, but not destroyed completely. Subsequent invocations of Skeema will need to restart the containers, which can take a few seconds, but is still faster than completely recreating the containers from scratch. The stopped containers won't consume CPU or memory on your local machine, but may consume disk space.
 
-With a value of "DESTROY", containers are deleted upon Skeema shutdown. Each invocation of Skeema will need to recreate the containers, which can take 10-20 seconds. This option avoids most resource consumption on your local machine.
+With a value of "destroy", containers are deleted upon Skeema shutdown. Each invocation of Skeema will need to recreate the containers, which can take 10-20 seconds. This option avoids most resource consumption on your local machine.
 
 Regardless of the option used here, you may need to periodically perform [prune operations in Docker itself](https://docs.docker.com/engine/reference/commandline/system_prune/) to completely avoid any storage impact.
 
@@ -463,7 +463,7 @@ Ordinarily, `skeema diff` and `skeema push` ignore certain table differences whi
 
 If the [exact-match](#exact-match) option is used, these purely-cosmetic differences will be included in the generated `ALTER TABLE` statements instead of being suppressed. In other words, Skeema will attempt to make the exact table definition in MySQL exactly match the corresponding table definition specified in the *.sql file.
 
-Be aware that MySQL itself sometimes also suppresses attempts to make cosmetic changes to a table's definition! For example, MySQL may ignore attempts to cosmetically re-order indexes unless the table is forcibly rebuilt. You can combine the [exact-match](#exact-match) option with [alter-algorithm=COPY](#alter-algorithm) to circumvent this behavior on the MySQL side, but it may be slow for large tables.
+Be aware that MySQL itself sometimes also suppresses attempts to make cosmetic changes to a table's definition! For example, MySQL may ignore attempts to cosmetically re-order indexes unless the table is forcibly rebuilt. You can combine the [exact-match](#exact-match) option with [alter-algorithm=copy](#alter-algorithm) to circumvent this behavior on the MySQL side, but it may be slow for large tables.
 
 Please note that in the one case in InnoDB when index ordering has a functional impact (tables with no primary key, but multiple unique indexes over all non-nullable columns), Skeema will automatically respect index ordering, regardless of whether [exact-match](#exact-match) is enabled.
 
@@ -654,11 +654,11 @@ This option is enabled by default. To disable linting of changed objects in `ske
 
 Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 --- | :---
-**Default** | "WARNING"
+**Default** | "warning"
 **Type** | enum
-**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+**Restrictions** | Requires one of these values: "ignore", "warning", "error"
 
-This linter rule checks the data type used in auto_increment columns. Unless set to "IGNORE", a warning or error will be emitted for any auto_increment column using a data type not listed in option [allow-auto-inc](#allow-auto-inc).
+This linter rule checks the data type used in auto_increment columns. Unless set to "ignore", a warning or error will be emitted for any auto_increment column using a data type not listed in option [allow-auto-inc](#allow-auto-inc).
 
 The primary purpose of this linter rule is to avoid problematic auto_increment edge cases. Please refer to the manual entry for [allow-auto-inc](#allow-auto-inc) for usage recommendations.
 
@@ -668,11 +668,11 @@ In addition to checking the type of the column, this linter rule also examines t
 
 Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 --- | :---
-**Default** | "WARNING"
+**Default** | "warning"
 **Type** | enum
-**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+**Restrictions** | Requires one of these values: "ignore", "warning", "error"
 
-This linter rule checks each table's default character set, along with the character set of each textual column. Unless set to "IGNORE", a warning or error will be emitted for any usage of a character set not listed in option [allow-charset](#allow-charset).
+This linter rule checks each table's default character set, along with the character set of each textual column. Unless set to "ignore", a warning or error will be emitted for any usage of a character set not listed in option [allow-charset](#allow-charset).
 
 This rule does not currently check any other object type besides tables.
 
@@ -680,13 +680,13 @@ This rule does not currently check any other object type besides tables.
 
 Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 --- | :---
-**Default** | "ERROR"
+**Default** | "error"
 **Type** | enum
-**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+**Restrictions** | Requires one of these values: "ignore", "warning", "error"
 
-This linter rule specifies the severity of non-whitelisted DEFINER values for stored procedures and functions. Unless set to "IGNORE", a warning or error will be emitted for any DEFINER not listed in option [allow-definer](#allow-definer).
+This linter rule specifies the severity of non-whitelisted DEFINER values for stored procedures and functions. Unless set to "ignore", a warning or error will be emitted for any DEFINER not listed in option [allow-definer](#allow-definer).
 
-Although this option defaults to "ERROR" severity, please note that the default value of corresponding option [allow-definer](#allow-definer) is `%@%`, which intentionally permits all possible users. To enforce a restriction on definers, be sure to override [allow-definer](#allow-definer). Overriding [lint-definer](#lint-definer) only controls the *annotation severity* (e.g. warning vs error) for routines with non-whitelisted DEFINER users.
+Although this option defaults to "error" severity, please note that the default value of corresponding option [allow-definer](#allow-definer) is `%@%`, which intentionally permits all possible users. To enforce a restriction on definers, be sure to override [allow-definer](#allow-definer). Overriding [lint-definer](#lint-definer) only controls the *annotation severity* (e.g. warning vs error) for routines with non-whitelisted DEFINER users.
 
 This option may also affect other object types with definers (e.g. views) once they are supported in a future version of Skeema.
 
@@ -694,9 +694,9 @@ This option may also affect other object types with definers (e.g. views) once t
 
 Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 --- | :---
-**Default** | "WARNING"
+**Default** | "warning"
 **Type** | enum
-**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+**Restrictions** | Requires one of these values: "ignore", "warning", "error"
 
 This linter rule checks that the [display width](https://dev.mysql.com/doc/refman/8.0/en/numeric-type-attributes.html) of int-type columns, e.g. the 11 in `int(11)`, is equal to the default display width for the column type. Integer display widths are commonly misunderstood, and do not affect the range of values that can be stored in the column. In almost all cases, the display width has no effect whatsoever, and should be left at its default value for the column type, or omitted entirely.
 
@@ -710,31 +710,31 @@ There are only 3 cases where non-default display widths are relevant:
 
 Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 --- | :---
-**Default** | "WARNING"
+**Default** | "warning"
 **Type** | enum
-**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+**Restrictions** | Requires one of these values: "ignore", "warning", "error"
 
-This linter rule checks each table for duplicate secondary indexes. Unless set to "IGNORE", a warning or error will be emitted for each redundant index that is found.
+This linter rule checks each table for duplicate secondary indexes. Unless set to "ignore", a warning or error will be emitted for each redundant index that is found.
 
 ### lint-engine
 
 Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 --- | :---
-**Default** | "WARNING"
+**Default** | "warning"
 **Type** | enum
-**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+**Restrictions** | Requires one of these values: "ignore", "warning", "error"
 
-This linter rule checks each table's storage engine. Unless set to "IGNORE", a warning or error will be emitted for any table using a storage engine not listed in option [allow-engine](#allow-engine).
+This linter rule checks each table's storage engine. Unless set to "ignore", a warning or error will be emitted for any table using a storage engine not listed in option [allow-engine](#allow-engine).
 
 ### lint-has-fk
 
 Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 --- | :---
-**Default** | "IGNORE"
+**Default** | "ignore"
 **Type** | enum
-**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+**Restrictions** | Requires one of these values: "ignore", "warning", "error"
 
-This linter rule checks for presence of foreign keys. This option defaults to "IGNORE", meaning that presence of foreign keys does not result in a linter annotation by default. However, companies that restrict or forbid foreign keys may wish to set this to "WARNING" or "ERROR", which will flag any table defining one or more foreign keys (where the definition appears, i.e. on the "child" side of the foreign key relationship).
+This linter rule checks for presence of foreign keys. This option defaults to "ignore", meaning that presence of foreign keys does not result in a linter annotation by default. However, companies that restrict or forbid foreign keys may wish to set this to "warning" or "error", which will flag any table defining one or more foreign keys (where the definition appears, i.e. on the "child" side of the foreign key relationship).
 
 Companies that restrict foreign keys typically do so for these reasons:
 
@@ -746,11 +746,11 @@ Companies that restrict foreign keys typically do so for these reasons:
 
 Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 --- | :---
-**Default** | "IGNORE"
+**Default** | "ignore"
 **Type** | enum
-**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+**Restrictions** | Requires one of these values: "ignore", "warning", "error"
 
-This linter rule checks for presence of stored procedures and functions. This option defaults to "IGNORE", meaning that presence of routines does not result in a linter annotation by default. However, companies that restrict or forbid routines may wish to set this to "WARNING" or "ERROR".
+This linter rule checks for presence of stored procedures and functions. This option defaults to "ignore", meaning that presence of routines does not result in a linter annotation by default. However, companies that restrict or forbid routines may wish to set this to "warning" or "error".
 
 Companies that restrict use of routines typically do so for these reasons:
 
@@ -761,11 +761,11 @@ Companies that restrict use of routines typically do so for these reasons:
 
 Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 --- | :---
-**Default** | "IGNORE"
+**Default** | "ignore"
 **Type** | enum
-**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+**Restrictions** | Requires one of these values: "ignore", "warning", "error"
 
-This linter rule checks for table columns using data type TIMESTAMP, DATETIME, or TIME. This option defaults to "IGNORE", meaning that these data types do not result in a linter annotation by default. However, companies that restrict or forbid use of temporal types may wish to set this to "WARNING" or "ERROR".
+This linter rule checks for table columns using data type TIMESTAMP, DATETIME, or TIME. This option defaults to "ignore", meaning that these data types do not result in a linter annotation by default. However, companies that restrict or forbid use of temporal types may wish to set this to "warning" or "error".
 
 As an alternative to temporal types, some companies instead opt to store time-related values in an `int unsigned` or `bigint unsigned`, depending on the chosen epoch and precision. Companies that restrict use of temporal types usually do so for these reasons:
 
@@ -776,11 +776,11 @@ As an alternative to temporal types, some companies instead opt to store time-re
 
 Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 --- | :---
-**Default** | "WARNING"
+**Default** | "warning"
 **Type** | enum
-**Restrictions** | Requires one of these values: "IGNORE", "WARNING", "ERROR"
+**Restrictions** | Requires one of these values: "ignore", "warning", "error"
 
-This linter rule checks each table for presence of a primary key. Unless set to "IGNORE", a warning or error will be emitted for any table lacking an explicit primary key.
+This linter rule checks each table for presence of a primary key. Unless set to "ignore", a warning or error will be emitted for any table lacking an explicit primary key.
 
 ### my-cnf
 
@@ -966,9 +966,9 @@ In Skeema v1.2 the default value of this option was "bad-charset,bad-engine,no-p
 
 Commands | diff, push, pull, lint
 --- | :---
-**Default** | "TEMP-SCHEMA"
+**Default** | "temp-schema"
 **Type** | enum
-**Restrictions** | Requires one of these values: "TEMP-SCHEMA", "DOCKER"
+**Restrictions** | Requires one of these values: "temp-schema", "docker"
 
 This option controls where workspace schemas are created. See [the FAQ](faq.md#no-reliance-on-sql-parsing) for background on the purpose of workspace schemas. The following commands use workspaces in order to introspect the tables contained in each directory's *.sql files:
 

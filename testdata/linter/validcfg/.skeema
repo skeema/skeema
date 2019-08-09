@@ -1,6 +1,6 @@
-lint-pk		= error
-lint-charset	= warning
-lint-engine	= warning
+lint-pk = ERROR
+lint-charset = warning
+skip-lint-display-width
 
 allow-charset=utf8mb4
 allow-engine=innodb, myisam

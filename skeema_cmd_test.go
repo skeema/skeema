@@ -597,7 +597,7 @@ func (s SkeemaIntegrationSuite) TestIndexOrdering(t *testing.T) {
 	if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
 		s.handleCommand(t, CodeSuccess, "", "skeema push --exact-match")
 	} else {
-		s.handleCommand(t, CodeSuccess, "", "skeema push --exact-match --alter-algorithm=COPY")
+		s.handleCommand(t, CodeSuccess, "", "skeema push --exact-match --alter-algorithm=copy")
 	}
 	s.handleCommand(t, CodeSuccess, "", "skeema diff")
 	s.handleCommand(t, CodeSuccess, "", "skeema diff --exact-match")

@@ -72,7 +72,7 @@ func (r *Rule) optionName() string {
 }
 
 func (r *Rule) optionDescription() string {
-	return fmt.Sprintf("%s (valid values: \"IGNORE\", \"WARNING\", \"ERROR\")", r.Description)
+	return fmt.Sprintf("%s (valid values: \"ignore\", \"warning\", \"error\")", r.Description)
 }
 
 var rulesByName = map[string]*Rule{}

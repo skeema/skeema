@@ -89,6 +89,11 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 
 	// Populate opts.RuleSeverity from individual rule options
 	for name, r := range rulesByName {
+		// Treat falsey values (incl --skip- prefix) as SeverityIgnore
+		if !dir.Config.GetBool(r.optionName()) {
+			opts.RuleSeverity[name] = SeverityIgnore
+			continue
+		}
 		val, err := dir.Config.GetEnum(r.optionName(), string(SeverityIgnore), string(SeverityWarning), string(SeverityError))
 		if err != nil {
 			return Options{}, toConfigError(dir, err)

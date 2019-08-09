@@ -172,7 +172,7 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	}
 
 	// Test docker with other cleanup actions
-	if opts = getOpts("--workspace=docker --docker-cleanup=STOP"); opts.CleanupAction != CleanupActionStop {
+	if opts = getOpts("--workspace=docker --docker-cleanup=StOp"); opts.CleanupAction != CleanupActionStop {
 		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
 	}
 	if opts = getOpts("--workspace=docker --docker-cleanup=destroy"); opts.CleanupAction != CleanupActionDestroy {

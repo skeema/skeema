@@ -17,7 +17,8 @@ func TestOptionsForDir(t *testing.T) {
 		for name, rule := range rulesByName {
 			expectedSeverity[name] = rule.DefaultSeverity
 		}
-		expectedSeverity["pk"] = SeverityError // see ../testdata/linter/validcfg/.skeema
+		expectedSeverity["pk"] = SeverityError             // see ../testdata/linter/validcfg/.skeema
+		expectedSeverity["display-width"] = SeverityIgnore // ditto
 		expected := Options{
 			RuleSeverity:        expectedSeverity,
 			AllowedCharSets:     []string{"utf8mb4"},

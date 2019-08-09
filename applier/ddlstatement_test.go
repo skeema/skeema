@@ -56,8 +56,8 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 		"ddl-wrapper":            "/bin/echo ddl-wrapper {SCHEMA}.{NAME} {TYPE} {CLASS}",
 		"alter-wrapper":          "/bin/echo alter-wrapper {SCHEMA}.{TABLE} {TYPE} {CLAUSES}",
 		"alter-wrapper-min-size": "1",
-		"alter-algorithm":        "INPLACE",
-		"alter-lock":             "NONE",
+		"alter-algorithm":        "inplace",
+		"alter-lock":             "none",
 		"safe-below-size":        "0",
 		"connect-options":        "",
 		"environment":            "production",
@@ -93,7 +93,7 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 
 	mods := tengo.StatementModifiers{AllowUnsafe: true}
 	if !is55 {
-		mods.LockClause, mods.AlgorithmClause = "NONE", "INPLACE"
+		mods.LockClause, mods.AlgorithmClause = "none", "inplace"
 	}
 	for _, diff := range objDiffs {
 		ddl, err := NewDDLStatement(diff, mods, target)
