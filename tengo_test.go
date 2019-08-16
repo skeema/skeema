@@ -486,7 +486,7 @@ func aProc(dbCollation, sqlMode string) Routine {
 		Body: `BEGIN
   SELECT @iterations + 1, 98.76 INTO iterations, pct;
   END`,
-		ParamString:       "IN name varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin, INOUT iterations int(10) unsigned, OUT pct decimal(5, 2)",
+		ParamString:       "\n    IN name varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin,\n    INOUT iterations int(10) unsigned,   OUT pct decimal(5, 2)\n",
 		ReturnDataType:    "",
 		Definer:           "root@localhost",
 		DatabaseCollation: dbCollation,

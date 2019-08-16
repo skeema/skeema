@@ -1190,25 +1190,7 @@ func (instance *Instance) querySchemaRoutines(schema string) ([]*Routine, error)
 				return fmt.Errorf("Error executing SHOW CREATE %s for %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), err)
 			}
 			r.CreateStatement = strings.Replace(r.CreateStatement, "\r\n", "\n", -1)
-			var returnsClause string
-			if r.Type == ObjectTypeFunc {
-				returnsClause = " RETURNS ([^\n]+)"
-			}
-			reTemplate := fmt.Sprintf("^CREATE[^\n]* %s %s\\(([^\n]*)\\)%s\n", r.Type.Caps(), EscapeIdentifier(r.Name), returnsClause)
-			var reCreateRoutine = regexp.MustCompile(reTemplate)
-			matches := reCreateRoutine.FindStringSubmatch(r.CreateStatement)
-			if matches == nil {
-				return fmt.Errorf("Failed to parse SHOW CREATE %s %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), r.CreateStatement)
-			}
-			r.ParamString = matches[1]
-			if r.Type == ObjectTypeFunc {
-				r.ReturnDataType = matches[2]
-			}
-			// Attempt to replace r.Body with one that doesn't have character conversion problems
-			if header := r.head(instance.Flavor()); strings.HasPrefix(r.CreateStatement, header) {
-				r.Body = r.CreateStatement[len(header):]
-			}
-			return nil
+			return r.parseCreateStatement(instance.Flavor(), schema)
 		})
 	}
 	return routines, g.Wait()
