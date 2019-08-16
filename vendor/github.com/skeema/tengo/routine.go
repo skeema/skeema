@@ -84,3 +84,44 @@ func (r *Routine) Equals(other *Routine) bool {
 func (r *Routine) DropStatement() string {
 	return fmt.Sprintf("DROP %s %s", r.Type.Caps(), EscapeIdentifier(r.Name))
 }
+
+// parseCreateStatement populates Body, ParamString, and ReturnDataType by
+// parsing CreateStatement. It is used during introspection of routines in
+// situations where the mysql.proc table is unavailable or does not exist.
+func (r *Routine) parseCreateStatement(flavor Flavor, schema string) error {
+	// Find matching parens around arg list
+	argStart := strings.IndexRune(r.CreateStatement, '(')
+	var argEnd int
+	nestCount := 1
+	for pos, r := range r.CreateStatement {
+		if nestCount == 0 {
+			argEnd = pos
+			break
+		} else if pos <= argStart {
+			continue
+		} else if r == '(' {
+			nestCount++
+		} else if r == ')' {
+			nestCount--
+		}
+	}
+	if argStart <= 0 || argEnd <= 0 {
+		return fmt.Errorf("Failed to parse SHOW CREATE %s %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), r.CreateStatement)
+	}
+	r.ParamString = r.CreateStatement[argStart+1 : argEnd-1]
+
+	if r.Type == ObjectTypeFunc {
+		retStart := argEnd + len(" RETURNS ")
+		retEnd := retStart + strings.IndexRune(r.CreateStatement[retStart:], '\n')
+		if retEnd <= 0 {
+			return fmt.Errorf("Failed to parse SHOW CREATE %s %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), r.CreateStatement)
+		}
+		r.ReturnDataType = r.CreateStatement[retStart:retEnd]
+	}
+
+	// Attempt to replace r.Body with one that doesn't have character conversion problems
+	if header := r.head(flavor); strings.HasPrefix(r.CreateStatement, header) {
+		r.Body = r.CreateStatement[len(header):]
+	}
+	return nil
+}
