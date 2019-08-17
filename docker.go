@@ -117,12 +117,13 @@ func (dc *DockerClient) CreateInstance(opts DockerizedInstanceOptions) (*Dockeri
 }
 
 // GetInstance attempts to find an existing container with name equal to
-// opts.Name. If a non-blank opts.Image is supplied, and the container
-// exists but has a different image, an error will be returned. Otherwise, if
-// the container is found, it will be started if not already running, and a
-// connection pool will be established. If the container does not exist or
-// cannot be started or connected to, a nil *DockerizedInstance and a non-nil
-// error will be returned.
+// opts.Name. If the container is found, it will be started if not already
+// running, and a connection pool will be established. If the container does
+// not exist or cannot be started or connected to, a nil *DockerizedInstance
+// and a non-nil error will be returned.
+// If a non-blank opts.Image is supplied, and the existing container has a
+// a different image, the instance's flavor will be examined as a fallback. If
+// it also does not match the requested image, an error will be returned.
 func (dc *DockerClient) GetInstance(opts DockerizedInstanceOptions) (*DockerizedInstance, error) {
 	var err error
 	di := &DockerizedInstance{
@@ -145,8 +146,6 @@ func (dc *DockerClient) GetInstance(opts DockerizedInstanceOptions) (*Dockerized
 	}
 	if opts.Image == "" {
 		di.Image = actualImage
-	} else if actualImage != opts.Image {
-		return nil, fmt.Errorf("Container %s based on unexpected image: expected %s, found %s", opts.Name, opts.Image, actualImage)
 	}
 	if err = di.Start(); err != nil {
 		return nil, err
@@ -154,15 +153,21 @@ func (dc *DockerClient) GetInstance(opts DockerizedInstanceOptions) (*Dockerized
 	if err = di.TryConnect(); err != nil {
 		return nil, err
 	}
+	// The actual image may not match the requested one if, for example, the tag
+	// for version a.b previously pointed to a.b.c but now points to a.b.d. We
+	// check the instance's flavor as a fallback.
+	if actualImage != opts.Image && di.Flavor().String() != opts.Image {
+		return nil, fmt.Errorf("Container %s based on unexpected image: expected %s, found %s", opts.Name, opts.Image, actualImage)
+	}
 	return di, nil
 }
 
 // GetOrCreateInstance attempts to fetch an existing Docker container with name
-// equal to opts.Name. If it exists and its image matches opts.Image, and there
-// are no errors starting or connecting to the instance, it will be returned. If
-// it exists but its image doesn't match, or it cannot be started or connected
-// to, an error will be returned. If no container exists with this name, a new
-// one will attempt to be created.
+// equal to opts.Name. If it exists and its image (or flavor) matches
+// opts.Image, and there are no errors starting or connecting to the instance,
+// it will be returned. If it exists but its image/flavor don't match, or it
+// cannot be started or connected to, an error will be returned. If no container
+// exists with this name, a new one will attempt to be created.
 func (dc *DockerClient) GetOrCreateInstance(opts DockerizedInstanceOptions) (*DockerizedInstance, error) {
 	di, err := dc.GetInstance(opts)
 	if err == nil {
