@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"syscall"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
@@ -134,7 +133,7 @@ func ProcessSpecialGlobalOptions(cfg *mybase.Config) error {
 // PromptPassword reads a password from STDIN without echoing the typed
 // characters. Requires that STDIN is a TTY.
 func PromptPassword() (string, error) {
-	stdin := int(syscall.Stdin)
+	stdin := int(os.Stdin.Fd())
 	if !terminal.IsTerminal(stdin) {
 		return "", errors.New("STDIN must be a TTY to read password")
 	}

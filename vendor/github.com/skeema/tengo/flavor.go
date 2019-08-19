@@ -111,6 +111,9 @@ var FlavorMariaDB102 = Flavor{VendorMariaDB, 10, 2}
 // FlavorMariaDB103 represents MariaDB 10.3.x
 var FlavorMariaDB103 = Flavor{VendorMariaDB, 10, 3}
 
+// FlavorMariaDB104 represents MariaDB 10.4.x
+var FlavorMariaDB104 = Flavor{VendorMariaDB, 10, 4}
+
 // NewFlavor returns a Flavor value based on its inputs, which can either be
 // in the form of NewFlavor("vendor", major, minor) or
 // NewFlavor("vendor:major.minor").
