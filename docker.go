@@ -156,7 +156,7 @@ func (dc *DockerClient) GetInstance(opts DockerizedInstanceOptions) (*Dockerized
 	// The actual image may not match the requested one if, for example, the tag
 	// for version a.b previously pointed to a.b.c but now points to a.b.d. We
 	// check the instance's flavor as a fallback.
-	if actualImage != opts.Image && di.Flavor().String() != opts.Image {
+	if opts.Image != "" && opts.Image != actualImage && opts.Image != di.Flavor().String() {
 		return nil, fmt.Errorf("Container %s based on unexpected image: expected %s, found %s", opts.Name, opts.Image, actualImage)
 	}
 	return di, nil
