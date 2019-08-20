@@ -103,46 +103,7 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 		if !ddl.IsShellOut() {
 			t.Fatalf("Expected this configuration to result in all DDLs being shellouts, but %v is not", ddl)
 		}
-		var expected string
-		switch diff := diff.(type) {
-		case *tengo.DatabaseDiff:
-			expected = "/bin/echo ddl-wrapper .analytics ALTER DATABASE"
-			if ddl.schemaName != "" {
-				t.Errorf("Unexpected DDLStatement.schemaName: %s", ddl.schemaName)
-			}
-		case *tengo.TableDiff:
-			if ddl.schemaName != "analytics" {
-				t.Errorf("Unexpected DDLStatement.schemaName: %s", ddl.schemaName)
-			}
-			switch diff.DiffType() {
-			case tengo.DiffTypeAlter:
-				if diff.To.Name == "rollups" {
-					// no rows, so ddl-wrapper used. verify the statement separately.
-					expected = "/bin/echo ddl-wrapper analytics.rollups ALTER TABLE"
-					expectedStmt := "ALTER TABLE `rollups` ALGORITHM=INPLACE, LOCK=NONE, ADD COLUMN `value` bigint(20) DEFAULT NULL"
-					if is55 {
-						expectedStmt = "ALTER TABLE `rollups` ADD COLUMN `value` bigint(20) DEFAULT NULL"
-					}
-					if ddl.stmt != expectedStmt {
-						t.Errorf("Expected statement:\n%s\nActual statement:\n%s\n", expectedStmt, ddl.stmt)
-					}
-				} else if diff.To.Name == "pageviews" {
-					// has 1 row, so alter-wrapper used. verify the execution separately to
-					// sanity-check the quoting rules.
-					expected = "/bin/echo alter-wrapper analytics.pageviews ALTER 'ADD COLUMN `domain` varchar(40) NOT NULL DEFAULT '\"'\"'skeema.io'\"'\"''"
-					expectedOutput := "alter-wrapper analytics.pageviews ALTER ADD COLUMN `domain` varchar(40) NOT NULL DEFAULT 'skeema.io'\n"
-					if actualOutput, err := ddl.shellOut.RunCapture(); err != nil || actualOutput != expectedOutput {
-						t.Errorf("Expected output:\n%sActual output:\n%sErr:\n%v\n", expectedOutput, actualOutput, err)
-					}
-				} else {
-					t.Fatalf("Unexpected AlterTable for %s; perhaps test fixture changed without updating this test?", diff.To.Name)
-				}
-			case tengo.DiffTypeDrop:
-				expected = "/bin/echo ddl-wrapper analytics.widget_counts DROP TABLE"
-			case tengo.DiffTypeCreate:
-				expected = "/bin/echo ddl-wrapper analytics.activity CREATE TABLE"
-			}
-		}
+		expected := objectDiffExpected(t, diff, ddl, is55)
 		if ddl.shellOut.Command != expected {
 			t.Errorf("Expected shellout:\n%s\nActual shellout:\n%s\n", expected, ddl.shellOut.Command)
 		}
@@ -150,4 +111,49 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 			t.Errorf("Expected String():\n%s\nActual String():\n%s\n", expectedString, ddl.String())
 		}
 	}
+}
+
+// helper for TestNewDDLStatement; return value is specific to the setup of
+// that test
+func objectDiffExpected(t *testing.T, diff tengo.ObjectDiff, ddl *DDLStatement, is55 bool) (expected string) {
+	switch diff := diff.(type) {
+	case *tengo.DatabaseDiff:
+		expected = "/bin/echo ddl-wrapper .analytics ALTER DATABASE"
+		if ddl.schemaName != "" {
+			t.Errorf("Unexpected DDLStatement.schemaName: %s", ddl.schemaName)
+		}
+	case *tengo.TableDiff:
+		if ddl.schemaName != "analytics" {
+			t.Errorf("Unexpected DDLStatement.schemaName: %s", ddl.schemaName)
+		}
+		switch diff.DiffType() {
+		case tengo.DiffTypeAlter:
+			if diff.To.Name == "rollups" {
+				// no rows, so ddl-wrapper used. verify the statement separately.
+				expected = "/bin/echo ddl-wrapper analytics.rollups ALTER TABLE"
+				expectedStmt := "ALTER TABLE `rollups` ALGORITHM=INPLACE, LOCK=NONE, ADD COLUMN `value` bigint(20) DEFAULT NULL"
+				if is55 {
+					expectedStmt = "ALTER TABLE `rollups` ADD COLUMN `value` bigint(20) DEFAULT NULL"
+				}
+				if ddl.stmt != expectedStmt {
+					t.Errorf("Expected statement:\n%s\nActual statement:\n%s\n", expectedStmt, ddl.stmt)
+				}
+			} else if diff.To.Name == "pageviews" {
+				// has 1 row, so alter-wrapper used. verify the execution separately to
+				// sanity-check the quoting rules.
+				expected = "/bin/echo alter-wrapper analytics.pageviews ALTER 'ADD COLUMN `domain` varchar(40) NOT NULL DEFAULT '\"'\"'skeema.io'\"'\"''"
+				expectedOutput := "alter-wrapper analytics.pageviews ALTER ADD COLUMN `domain` varchar(40) NOT NULL DEFAULT 'skeema.io'\n"
+				if actualOutput, err := ddl.shellOut.RunCapture(); err != nil || actualOutput != expectedOutput {
+					t.Errorf("Expected output:\n%sActual output:\n%sErr:\n%v\n", expectedOutput, actualOutput, err)
+				}
+			} else {
+				t.Fatalf("Unexpected AlterTable for %s; perhaps test fixture changed without updating this test?", diff.To.Name)
+			}
+		case tengo.DiffTypeDrop:
+			expected = "/bin/echo ddl-wrapper analytics.widget_counts DROP TABLE"
+		case tengo.DiffTypeCreate:
+			expected = "/bin/echo ddl-wrapper analytics.activity CREATE TABLE"
+		}
+	}
+	return
 }

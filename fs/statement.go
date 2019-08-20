@@ -106,6 +106,14 @@ func (stmt *Statement) Remove() {
 	panic(fmt.Errorf("Statement previously at %s not actually found in file", stmt.Location()))
 }
 
+// isCreateWithBegin is useful for identifying multi-line statements that may
+// have been mis-parsed (for example, due to lack of DELIMITER commands)
+func (stmt *Statement) isCreateWithBegin() bool {
+	return stmt.Type == StatementTypeCreate &&
+		(stmt.ObjectType == tengo.ObjectTypeProc || stmt.ObjectType == tengo.ObjectTypeFunc) &&
+		strings.Contains(strings.ToLower(stmt.Text), "begin")
+}
+
 // CanParse returns true if the supplied string can be parsed as a type of
 // SQL statement understood by this package. The supplied string should NOT
 // have a delimiter. Note that this method returns false for strings that are
@@ -236,7 +244,7 @@ func (st *statementTokenizer) processLine(line string, eof bool) {
 		// When transitioning from whitespace and/or comments, to something that
 		// isn't whitespace or comments, split the whitespace/comments into its own
 		// statement. That way, future file manipulations that change individual
-		// statements won't remove any preceeding whitespace or comments.
+		// statements won't remove any preceding whitespace or comments.
 		if !ls.inRelevant && !unicode.IsSpace(c) {
 			ls.doneStatement(cLen)
 			ls.inRelevant = true

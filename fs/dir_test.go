@@ -54,7 +54,9 @@ func TestParseDir(t *testing.T) {
 	if dir.repoBase != home {
 		t.Errorf("Unexpected repoBase for $HOME: expected %s, found %s", home, dir.repoBase)
 	}
+}
 
+func TestParseDirErrors(t *testing.T) {
 	// Confirm error cases: nonexistent dir; non-dir file; dir with *.sql files
 	// creating same table multiple times
 	for _, dirPath := range []string{"../bestdata", "../testdata/setup.sql", "../testdata"} {

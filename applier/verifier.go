@@ -13,6 +13,10 @@ import (
 // bring a table from the version currently in the instance to the version
 // specified in the filesystem.
 func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
+	if !wantVerify(diff, t) {
+		return nil
+	}
+
 	// If diff contains no ALTER TABLEs, nothing to verify
 	altersInDiff := diff.FilteredTableDiffs(tengo.DiffTypeAlter)
 	if len(altersInDiff) == 0 {
@@ -83,4 +87,8 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 		}
 	}
 	return nil
+}
+
+func wantVerify(diff *tengo.SchemaDiff, t *Target) bool {
+	return t.Dir.Config.GetBool("verify") && len(diff.TableDiffs) > 0 && !t.briefOutput()
 }

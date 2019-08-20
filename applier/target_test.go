@@ -55,10 +55,15 @@ func (s ApplierIntegrationSuite) TestTargetsForDirSimple(t *testing.T) {
 	if len(targets) != 2 || skipCount != 0 {
 		t.Fatalf("Unexpected result from TargetsForDir: %+v, %d", targets, skipCount)
 	}
+}
+
+func (s ApplierIntegrationSuite) TestTargetsForDirSimpleFailure(t *testing.T) {
+	setupHostList(t, s.d[0].Instance)
+	defer cleanupHostList(t)
 
 	// Test with insufficient maxDepth: should return 0 targets, 2 skipped
-	dir = getDir(t, "testdata/simple", "")
-	targets, skipCount = TargetsForDir(dir, 0)
+	dir := getDir(t, "testdata/simple", "")
+	targets, skipCount := TargetsForDir(dir, 0)
 	if len(targets) != 0 || skipCount != 2 {
 		t.Fatalf("Unexpected result from TargetsForDir: %+v, %d", targets, skipCount)
 	}

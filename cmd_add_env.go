@@ -34,22 +34,9 @@ editing .skeema files directly is a better approach.`
 
 // AddEnvHandler is the handler method for `skeema add-environment`
 func AddEnvHandler(cfg *mybase.Config) error {
-	dirPath := cfg.Get("dir")
-	fi, err := os.Stat(dirPath)
-	if err == nil && !fi.IsDir() {
-		return NewExitValue(CodeBadConfig, "--dir=%s already exists but is not a directory", dirPath)
-	} else if os.IsNotExist(err) {
-		return NewExitValue(CodeBadConfig, "In add-environment, --dir must refer to a directory that already exists")
-	} else if err != nil {
-		return err
-	}
-
-	dir, err := fs.ParseDir(dirPath, cfg)
+	dir, err := dirForAddEnv(cfg)
 	if err != nil {
 		return err
-	}
-	if dir.OptionFile == nil {
-		return NewExitValue(CodeBadConfig, "Dir %s does not have an existing .skeema file! Can only use `skeema add-environment` on a dir previously created by `skeema init`", dir)
 	}
 
 	environment := cfg.Get("environment")
@@ -103,4 +90,25 @@ func AddEnvHandler(cfg *mybase.Config) error {
 
 	log.Infof("Added environment [%s] to %s", environment, dir.OptionFile.Path())
 	return nil
+}
+
+func dirForAddEnv(cfg *mybase.Config) (*fs.Dir, error) {
+	dirPath := cfg.Get("dir")
+	fi, err := os.Stat(dirPath)
+	if err == nil && !fi.IsDir() {
+		return nil, NewExitValue(CodeBadConfig, "--dir=%s already exists but is not a directory", dirPath)
+	} else if os.IsNotExist(err) {
+		return nil, NewExitValue(CodeBadConfig, "In add-environment, --dir must refer to a directory that already exists")
+	} else if err != nil {
+		return nil, err
+	}
+
+	dir, err := fs.ParseDir(dirPath, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if dir.OptionFile == nil {
+		return nil, NewExitValue(CodeBadConfig, "Dir %s does not have an existing .skeema file! Can only use `skeema add-environment` on a dir previously created by `skeema init`", dir)
+	}
+	return dir, nil
 }

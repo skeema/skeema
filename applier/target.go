@@ -38,6 +38,59 @@ func (t *Target) SchemaFromDir() *tengo.Schema {
 	return &schemaCopy
 }
 
+// dryRun returns true if this target is only being used for dry-run purposes,
+// rather than actually wanting to apply changes to this target.
+func (t *Target) dryRun() bool {
+	return t.Dir.Config.GetBool("dry-run")
+}
+
+// briefOutput returns true if this target is only being evaluated for having
+// differences or not.
+func (t *Target) briefOutput() bool {
+	return t.Dir.Config.GetBool("brief") && t.dryRun()
+}
+
+func (t *Target) logApplyStart() {
+	if t.dryRun() {
+		log.Infof("Generating diff of %s %s vs %s/*.sql", t.Instance, t.SchemaName, t.Dir)
+	} else {
+		log.Infof("Pushing changes from %s/*.sql to %s %s", t.Dir, t.Instance, t.SchemaName)
+	}
+	if len(t.Dir.IgnoredStatements) > 0 {
+		log.Warnf("Ignoring %d unsupported or unparseable statements found in this directory's *.sql files; run `skeema lint` for more info", len(t.Dir.IgnoredStatements))
+	}
+}
+
+func (t *Target) logApplyEnd(result Result) {
+	if result.Differences {
+		log.Infof("%s %s: No differences found\n", t.Instance, t.SchemaName)
+	} else {
+		verb := "push"
+		if t.dryRun() {
+			verb = "diff"
+		}
+		log.Infof("%s %s: %s complete\n", t.Instance, t.SchemaName, verb)
+	}
+}
+
+func (t *Target) processDDL(ddls []*DDLStatement, printer *Printer) (skipCount int) {
+	for i, ddl := range ddls {
+		printer.printDDL(ddl)
+		if !t.dryRun() {
+			if err := ddl.Execute(); err != nil {
+				log.Errorf("Error running DDL on %s %s: %s", t.Instance, t.SchemaName, err)
+				skipped := len(ddls) - i
+				skipCount += skipped
+				if skipped > 1 {
+					log.Warnf("Skipping %d remaining operations for %s %s due to previous error", skipped-1, t.Instance, t.SchemaName)
+				}
+				return
+			}
+		}
+	}
+	return
+}
+
 // TargetGroup represents a group of Targets that all have the same Instance.
 type TargetGroup []*Target
 
@@ -61,10 +114,12 @@ func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int)
 
 		// For each LogicalSchema, obtain a *tengo.Schema representation and then
 		// create a Target for each instance x schema combination
-		for _, logicalSchema := range dir.LogicalSchemas {
-			thisTargets, thisSkipCount := targetsForLogicalSchema(logicalSchema, dir, instances)
-			targets = append(targets, thisTargets...)
-			skipCount += thisSkipCount
+		if len(instances) > 0 {
+			for _, logicalSchema := range dir.LogicalSchemas {
+				thisTargets, thisSkipCount := targetsForLogicalSchema(logicalSchema, dir, instances)
+				targets = append(targets, thisTargets...)
+				skipCount += thisSkipCount
+			}
 		}
 	} else if dir.HasSchema() {
 		// If we have a schema defined but no host, display a warning
@@ -154,11 +209,6 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 }
 
 func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, instances []*tengo.Instance) (targets []*Target, skipCount int) {
-	// If dir mapped to no instances, it generates no targets
-	if len(instances) == 0 {
-		return
-	}
-
 	// Obtain a *tengo.Schema representation of the dir's *.sql files from a
 	// workspace
 	opts, err := workspace.OptionsForDir(dir, instances[0])
@@ -173,7 +223,7 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 	}
 	for _, stmtErr := range wsSchema.Failures {
 		log.Error(stmtErr.Error())
-		if (strings.Contains(stmtErr.Error(), "Error 1031") || strings.Contains(stmtErr.Error(), "Error 1067")) && !dir.Config.Changed("connect-options") {
+		if isStrictModeError(stmtErr) && !dir.Config.Changed("connect-options") {
 			log.Info("This may be caused by Skeema's default usage of strict-mode settings. To disable strict-mode, add this to a .skeema file:")
 			log.Info("connect-options=\"innodb_strict_mode=0,sql_mode='ONLY_FULL_GROUP_BY,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'\"\n")
 		}
@@ -234,4 +284,9 @@ func TargetGroupChanForDir(dir *fs.Dir) (<-chan TargetGroup, int) {
 		close(groups)
 	}()
 	return groups, skipCount
+}
+
+func isStrictModeError(err error) bool {
+	message := err.Error()
+	return strings.Contains(message, "Error 1031") || strings.Contains(message, "Error 1067")
 }

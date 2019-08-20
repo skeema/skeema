@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/tengo"
 )
@@ -57,11 +58,7 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error from ParseDir: %s", err)
 	}
-	for _, option := range []string{"host", "schema", "default-character-set", "default-collation"} {
-		if _, setsOption := dir.OptionFile.OptionValue(option); !setsOption {
-			t.Errorf("Expected .skeema to contain %s, but it does not", option)
-		}
-	}
+	mybase.AssertFileSetsOptions(t, dir.OptionFile, "host", "schema", "default-character-set", "default-collation")
 	if subdirs, err := dir.Subdirs(); err != nil {
 		t.Fatalf("Unexpected error listing subdirs of %s: %v", dir, err)
 	} else if len(subdirs) > 0 {
@@ -86,16 +83,8 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	if dir, err = fs.ParseDir(expectDir, cfg); err != nil {
 		t.Fatalf("Unexpected error from ParseDir: %s", err)
 	}
-	for _, option := range []string{"host", "port", "connect-options"} {
-		if _, setsOption := dir.OptionFile.OptionValue(option); !setsOption {
-			t.Errorf("Expected host-level .skeema to contain %s, but it does not", option)
-		}
-	}
-	for _, option := range []string{"schema", "default-character-set", "default-collation"} {
-		if _, setsOption := dir.OptionFile.OptionValue(option); setsOption {
-			t.Errorf("Expected host-level .skeema to NOT contain %s, but it does", option)
-		}
-	}
+	mybase.AssertFileSetsOptions(t, dir.OptionFile, "host", "port", "connect-options")
+	mybase.AssertFileMissingOptions(t, dir.OptionFile, "schema", "default-character-set", "default-collation")
 
 	// Test successful init on a schema that isn't strict-mode compliant
 	s.dbExecWithParams(t, "product", "sql_mode=%27NO_ENGINE_SUBSTITUTION%27", "ALTER TABLE posts MODIFY COLUMN created_at datetime NOT NULL DEFAULT '0000-00-00 00:00:00'")
@@ -831,7 +820,7 @@ func (s SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
 	// To set up this test, we do a pull that overrides the previous ignore options
 	// and then edit those files so that they contain formatting mistakes or even
 	// invalid SQL.
-	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --ignore-table=''")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull --ignore-table=''")
 	contents := fs.ReadTestFile(t, "mydb/analytics/_trending.sql")
 	newContents := strings.Replace(contents, "`", "", -1)
 	fs.WriteTestFile(t, "mydb/analytics/_trending.sql", newContents)

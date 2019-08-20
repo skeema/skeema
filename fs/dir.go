@@ -46,19 +46,27 @@ type LogicalSchema struct {
 // AddStatement adds the supplied statement into the appropriate data structure
 // within the receiver. This is useful when assembling a new logical schema.
 // An error will be returned if a duplicate CREATE object name/type pair is
-// added, or if the type of statement is not supported.
+// added.
 func (logicalSchema *LogicalSchema) AddStatement(stmt *Statement) error {
-	if stmt.Type == StatementTypeCreate {
-		if _, already := logicalSchema.Creates[stmt.ObjectKey()]; already {
-			return fmt.Errorf("Duplicate CREATE for %s", stmt.ObjectKey())
+	switch stmt.Type {
+	case StatementTypeCreate:
+		if origStmt, already := logicalSchema.Creates[stmt.ObjectKey()]; already {
+			return DuplicateDefinitionError{
+				ObjectKey: stmt.ObjectKey(),
+				FirstFile: origStmt.File,
+				FirstLine: origStmt.LineNo,
+				DupeFile:  stmt.File,
+				DupeLine:  stmt.LineNo,
+			}
 		}
 		logicalSchema.Creates[stmt.ObjectKey()] = stmt
 		return nil
-	} else if stmt.Type == StatementTypeAlter {
+	case StatementTypeAlter:
 		logicalSchema.Alters = append(logicalSchema.Alters, stmt)
 		return nil
+	default:
+		return nil
 	}
-	return fmt.Errorf("AddStatement: unsupported statement type %d in %+v", stmt.Type, stmt)
 }
 
 // ParseDir parses the specified directory, including all *.sql files in it,
@@ -223,16 +231,41 @@ func (dir *Dir) CreateOptionFile(optionFile *mybase.File) (err error) {
 	return nil
 }
 
+// Hostnames returns 0 or more hosts that the directory maps to. This properly
+// handles the host option being set to a comma-separated list of multiple
+// hosts, or the host-wrapper option being used to shell out to an external
+// script to obtain hosts.
+func (dir *Dir) Hostnames() ([]string, error) {
+	if dir.Config.Changed("host-wrapper") {
+		variables := map[string]string{
+			"HOST":        dir.Config.Get("host"),
+			"ENVIRONMENT": dir.Config.Get("environment"),
+			"DIRNAME":     dir.BaseName(),
+			"DIRPATH":     dir.Path,
+			"SCHEMA":      dir.Config.Get("schema"),
+		}
+		shellOut, err := util.NewInterpolatedShellOut(dir.Config.Get("host-wrapper"), variables)
+		if err != nil {
+			return nil, err
+		}
+		return shellOut.RunCaptureSplit()
+	}
+	return dir.Config.GetSlice("host", ',', true), nil
+}
+
 // Instances returns 0 or more tengo.Instance pointers, based on the
 // directory's configuration. The Instances will NOT be checked for
 // connectivity. However, if the configuration is invalid (for example, illegal
 // hostname or invalid connect-options), an error will be returned instead of
 // any instances.
 func (dir *Dir) Instances() ([]*tengo.Instance, error) {
-	// If no host defined in this dir (meaning this dir's .skeema, as well as
-	// parent dirs' .skeema, global option files, or command-line) then nothing
-	// to do
-	if !dir.Config.Changed("host") {
+	hosts, err := dir.Hostnames()
+	if err != nil {
+		return nil, err
+	} else if len(hosts) == 0 {
+		// If no host defined in this dir (meaning this dir's .skeema, as well as
+		// parent dirs' .skeema, global option files, or command-line) then nothing
+		// to do
 		return nil, nil
 	}
 
@@ -253,29 +286,6 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 	portIsntDefault := dir.Config.Changed("port")
 	socketValue := dir.Config.Get("socket")
 	socketWasSupplied := dir.Config.Supplied("socket")
-
-	// Interpret the host value: if host-wrapper is set, use it to interpret the
-	// host list; otherwise assume host is a comma-separated list of literal
-	// hostnames.
-	var hosts []string
-	if dir.Config.Changed("host-wrapper") {
-		variables := map[string]string{
-			"HOST":        dir.Config.Get("host"),
-			"ENVIRONMENT": dir.Config.Get("environment"),
-			"DIRNAME":     dir.BaseName(),
-			"DIRPATH":     dir.Path,
-			"SCHEMA":      dir.Config.Get("schema"),
-		}
-		shellOut, err := util.NewInterpolatedShellOut(dir.Config.Get("host-wrapper"), variables)
-		if err != nil {
-			return nil, err
-		}
-		if hosts, err = shellOut.RunCaptureSplit(); err != nil {
-			return nil, err
-		}
-	} else {
-		hosts = dir.Config.GetSlice("host", ',', true)
-	}
 
 	// For each hostname, construct a DSN and use it to create an Instance
 	var instances []*tengo.Instance
@@ -300,7 +310,7 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 			dsn = fmt.Sprintf("%s@tcp(%s:%d)/?%s", userAndPass, host, thisPortValue, params)
 		}
 		instance, err := util.NewInstance("mysql", dsn)
-		if err != nil || instance == nil {
+		if err != nil {
 			if dir.Config.Changed("password") {
 				safeUserPass := fmt.Sprintf("%s:*****", dir.Config.Get("user"))
 				dsn = strings.Replace(dsn, userAndPass, safeUserPass, 1)
@@ -500,8 +510,6 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 // fields of dir accordingly. This method modifies dir in-place. Any fatal
 // error will populate dir.ParseError.
 func (dir *Dir) parseContents() {
-	logicalSchemasByName := make(map[string]*LogicalSchema)
-
 	// Parse the option file, if one exists
 	var has bool
 	if has, dir.ParseError = dir.HasFile(".skeema"); dir.ParseError != nil {
@@ -517,6 +525,7 @@ func (dir *Dir) parseContents() {
 	if dir.SQLFiles, dir.ParseError = sqlFiles(dir.Path, dir.repoBase); dir.ParseError != nil {
 		return
 	}
+	logicalSchemasByName := make(map[string]*LogicalSchema)
 	for _, sf := range dir.SQLFiles {
 		tokenizedFile, err := sf.Tokenize()
 		if err != nil {
@@ -530,22 +539,11 @@ func (dir *Dir) parseContents() {
 					Creates: make(map[tengo.ObjectKey]*Statement),
 				}
 			}
-			if stmt.Type == StatementTypeCreate {
-				if err := logicalSchemasByName[stmt.Schema()].AddStatement(stmt); err != nil {
-					origStmt := logicalSchemasByName[stmt.Schema()].Creates[stmt.ObjectKey()]
-					dir.ParseError = DuplicateDefinitionError{
-						ObjectKey: stmt.ObjectKey(),
-						RelPath:   dir.RelPath(),
-						FirstFile: origStmt.File,
-						FirstLine: origStmt.LineNo,
-						DupeFile:  stmt.File,
-						DupeLine:  stmt.LineNo,
-					}
-					return
-				}
-			} else if stmt.Type == StatementTypeAlter {
-				logicalSchemasByName[stmt.Schema()].AddStatement(stmt)
-			} else if stmt.Type == StatementTypeUnknown {
+			dir.ParseError = logicalSchemasByName[stmt.Schema()].AddStatement(stmt)
+			if dir.ParseError != nil {
+				return
+			}
+			if stmt.Type == StatementTypeUnknown {
 				dir.IgnoredStatements = append(dir.IgnoredStatements, stmt)
 			}
 		}
@@ -561,16 +559,14 @@ func (dir *Dir) parseContents() {
 	}
 
 	dir.LogicalSchemas = make([]*LogicalSchema, 0, len(logicalSchemasByName))
-	for name, ls := range logicalSchemasByName {
-		// Blank-named entry added to front of list in conditional below
-		if name != "" {
-			dir.LogicalSchemas = append(dir.LogicalSchemas, ls)
-		}
-	}
 	if ls, ok := logicalSchemasByName[""]; ok {
 		ls.CharSet = dir.Config.Get("default-character-set")
 		ls.Collation = dir.Config.Get("default-collation")
 		dir.LogicalSchemas = append([]*LogicalSchema{ls}, dir.LogicalSchemas...)
+		delete(logicalSchemasByName, "")
+	}
+	for _, ls := range logicalSchemasByName {
+		dir.LogicalSchemas = append(dir.LogicalSchemas, ls)
 	}
 }
 
@@ -730,7 +726,6 @@ func sqlFiles(dirPath, repoBase string) ([]SQLFile, error) {
 // encounters multiple CREATE statements for the same exact object.
 type DuplicateDefinitionError struct {
 	ObjectKey tengo.ObjectKey
-	RelPath   string
 	FirstFile string
 	FirstLine int
 	DupeFile  string
@@ -739,8 +734,8 @@ type DuplicateDefinitionError struct {
 
 // Error satisfies the builtin error interface.
 func (dde DuplicateDefinitionError) Error() string {
-	return fmt.Sprintf("%s found multiple times in %s: %s line %d and %s line %d",
-		dde.ObjectKey, dde.RelPath,
+	return fmt.Sprintf("%s defined multiple times in same directory: %s line %d and %s line %d",
+		dde.ObjectKey,
 		dde.FirstFile, dde.FirstLine,
 		dde.DupeFile, dde.DupeLine,
 	)

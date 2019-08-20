@@ -153,62 +153,71 @@ func PromptPassword() (string, error) {
 // single quotes, and values in general may contain escaped commas; these are
 // all also treated properly.
 func SplitConnectOptions(connectOpts string) (map[string]string, error) {
-	result := make(map[string]string)
 	if len(connectOpts) == 0 {
-		return result, nil
+		return map[string]string{}, nil
 	}
 	if connectOpts[len(connectOpts)-1] == '\\' {
-		return result, fmt.Errorf("Trailing backslash in connect-options \"%s\"", connectOpts)
+		return nil, fmt.Errorf("Trailing backslash in connect-options \"%s\"", connectOpts)
 	}
+	return parseConnectOptions(connectOpts)
+}
 
+func parseConnectOptions(input string) (map[string]string, error) {
+	result := make(map[string]string)
 	var startToken int
 	var name string
 	var inQuote, escapeNext bool
-	for n, c := range connectOpts + "," {
+
+	// Add a trailing comma to simplify handling of end-of-string
+	for n, c := range input + "," {
 		if escapeNext {
 			escapeNext = false
-			continue
-		}
-		if inQuote && c != '\'' && c != '\\' {
 			continue
 		}
 		switch c {
 		case '\'':
 			if name == "" {
-				return result, fmt.Errorf("Invalid quote character in option name at byte offset %d in connect-options \"%s\"", n, connectOpts)
+				return result, fmt.Errorf("Invalid quote character in option name at byte offset %d in connect-options \"%s\"", n, input)
 			}
 			inQuote = !inQuote
 		case '\\':
 			escapeNext = true
 		case '=':
+			if inQuote {
+				continue
+			}
 			if name == "" {
-				name = connectOpts[startToken:n]
+				name = input[startToken:n]
 				startToken = n + 1
 			} else {
-				return result, fmt.Errorf("Invalid equals-sign character in option value at byte offset %d in connect-options \"%s\"", n, connectOpts)
+				return result, fmt.Errorf("Invalid equals-sign character in option value at byte offset %d in connect-options \"%s\"", n, input)
 			}
 		case ',':
+			if inQuote {
+				continue
+			}
 			if startToken == n { // comma directly after equals sign, comma, or start of string
-				return result, fmt.Errorf("Invalid comma placement in option value at byte offset %d in connect-options \"%s\"", n, connectOpts)
+				return result, fmt.Errorf("Invalid comma placement in option value at byte offset %d in connect-options \"%s\"", n, input)
 			}
 			if name == "" {
-				return result, fmt.Errorf("Option %s is missing a value at byte offset %d in connect-options \"%s\"", connectOpts[startToken:n], n, connectOpts)
+				return result, fmt.Errorf("Option %s is missing a value at byte offset %d in connect-options \"%s\"", input[startToken:n], n, input)
 			}
 			if _, already := result[name]; already {
 				// Disallow this since it's inherently ordering-dependent, and would
 				// further complicate RealConnectOptions logic
-				return result, fmt.Errorf("Option %s is set multiple times in connect-options \"%s\"", name, connectOpts)
+				return result, fmt.Errorf("Option %s is set multiple times in connect-options \"%s\"", name, input)
 			}
-			result[name] = connectOpts[startToken:n]
+			result[name] = input[startToken:n]
 			name = ""
 			startToken = n + 1
 		}
 	}
 
+	var err error
 	if inQuote {
-		return result, fmt.Errorf("Unterminated quote in connect-options \"%s\"", connectOpts)
+		err = fmt.Errorf("Unterminated quote in connect-options \"%s\"", input)
 	}
-	return result, nil
+	return result, err
 }
 
 // RealConnectOptions takes a comma-separated string of connection options,

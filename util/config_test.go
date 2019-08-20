@@ -71,6 +71,16 @@ func TestAddGlobalConfigFiles(t *testing.T) {
 }
 
 func TestPasswordOption(t *testing.T) {
+	assertPassword := func(cfg *mybase.Config, expected string) {
+		t.Helper()
+		actual := cfg.Get("password")
+		if expected == "" && cfg.Changed("password") {
+			t.Errorf("Expected password to remain default, instead it is set to %s", actual)
+		} else if actual != expected {
+			t.Errorf("Expected password to be %s, instead found %s", expected, actual)
+		}
+	}
+
 	cmdSuite := mybase.NewCommandSuite("skeematest", "", "")
 	AddGlobalOptions(cmdSuite)
 	cmdSuite.AddSubCommand(mybase.NewCommand("diff", "", "", nil))
@@ -81,9 +91,7 @@ func TestPasswordOption(t *testing.T) {
 	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
 		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %s", err)
 	}
-	if cfg.Changed("password") {
-		t.Errorf("Expected password to remain default, instead it is set to %s", cfg.Get("password"))
-	}
+	assertPassword(cfg, "")
 
 	// Password set in env but to a blank string: should be same as specifying
 	// nothing at all
@@ -92,9 +100,7 @@ func TestPasswordOption(t *testing.T) {
 	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
 		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %s", err)
 	}
-	if cfg.Changed("password") {
-		t.Errorf("Expected password to remain default, instead it is set to %s", cfg.Get("password"))
-	}
+	assertPassword(cfg, "")
 
 	// Password set in env only, to a non-blank string
 	os.Setenv("MYSQL_PWD", "helloworld")
@@ -102,18 +108,14 @@ func TestPasswordOption(t *testing.T) {
 	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
 		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %s", err)
 	}
-	if cfg.Get("password") != "helloworld" {
-		t.Errorf("Expected password to be helloworld, instead found %s", cfg.Get("password"))
-	}
+	assertPassword(cfg, "helloworld")
 
 	// Password set on CLI and in env: CLI should win out
 	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --password=heyearth")
 	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
 		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %s", err)
 	}
-	if cfg.Get("password") != "heyearth" {
-		t.Errorf("Expected password to be heyearth, instead found %s", cfg.Get("password"))
-	}
+	assertPassword(cfg, "heyearth")
 
 	// Password set in file and env: file should win out
 	fakeFileSource := mybase.SimpleSource(map[string]string{
@@ -123,9 +125,7 @@ func TestPasswordOption(t *testing.T) {
 	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
 		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %s", err)
 	}
-	if cfg.Get("password") != "howdyplanet" {
-		t.Errorf("Expected password to be howdyplanet, instead found %s", cfg.Get("password"))
-	}
+	assertPassword(cfg, "howdyplanet")
 
 	// ProcessSpecialGlobalOptions should error with valueless password if STDIN
 	// isn't a TTY. Test bare "password" (no =) on both CLI and config file.
@@ -157,9 +157,7 @@ func TestPasswordOption(t *testing.T) {
 	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
 		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %v", err)
 	}
-	if cfg.Changed("password") {
-		t.Error("Password unexpectedly considered changed from default")
-	}
+	assertPassword(cfg, "")
 	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --password=''")
 	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
 		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %v", err)

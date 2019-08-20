@@ -47,32 +47,20 @@ func InitHandler(cfg *mybase.Config) error {
 	// Ordinarily, we use a dir structure of: host_dir/schema_name/*.sql
 	// However, if --schema option used, we're only importing one schema and the
 	// schema_name level is skipped.
-	hostDirName := cfg.Get("dir")
 	onlySchema := cfg.Get("schema")
-	if onlySchema == "mysql" || onlySchema == "information_schema" || onlySchema == "performance_schema" || onlySchema == "sys" {
+	if isSystemSchema(onlySchema) {
 		return NewExitValue(CodeBadConfig, "Option --schema may not be set to a system database name")
 	}
 	separateSchemaSubdir := (onlySchema == "")
 
-	if !cfg.OnCLI("host") {
-		return NewExitValue(CodeBadConfig, "Option --host must be supplied on the command-line")
-	}
-	if !cfg.Changed("dir") { // default for dir is to base it on the hostname
-		port := cfg.GetIntOrDefault("port")
-		if port > 0 && cfg.Changed("port") {
-			hostDirName = fmt.Sprintf("%s:%d", cfg.Get("host"), port)
-		} else {
-			hostDirName = cfg.Get("host")
-		}
+	environment := cfg.Get("environment")
+	if environment == "" || strings.ContainsAny(environment, "[]\n\r") {
+		return NewExitValue(CodeBadConfig, "Environment name \"%s\" is invalid", environment)
 	}
 
-	dir, err := fs.ParseDir(".", cfg)
+	hostDir, err := createHostDir(cfg)
 	if err != nil {
 		return err
-	}
-	hostDir, err := dir.CreateSubdir(hostDirName, nil) // nil because we'll set up the option file later
-	if err != nil {
-		return NewExitValue(CodeBadConfig, err.Error())
 	}
 
 	// Validate connection-related options (host, port, socket, user, password) by
@@ -83,11 +71,6 @@ func InitHandler(cfg *mybase.Config) error {
 		return err
 	} else if inst == nil {
 		return NewExitValue(CodeBadConfig, "Command line did not specify which instance to connect to")
-	}
-
-	environment := cfg.Get("environment")
-	if environment == "" || strings.ContainsAny(environment, "[]\n\r") {
-		return NewExitValue(CodeBadConfig, "Environment name \"%s\" is invalid", environment)
 	}
 
 	// Build list of schemas
@@ -103,7 +86,59 @@ func InitHandler(cfg *mybase.Config) error {
 		return NewExitValue(CodeBadConfig, "Schema %s does not exist on instance %s", onlySchema, inst)
 	}
 
-	// Figure out what needs to go in the hostDir's .skeema file.
+	// Write host option file
+	err = createHostOptionFile(cfg, hostDir, inst, schemas)
+	if err != nil {
+		return err
+	}
+
+	// Iterate over the schemas. For each one, create a dir with .skeema and *.sql files
+	for _, s := range schemas {
+		if err := PopulateSchemaDir(s, hostDir, separateSchemaSubdir); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func isSystemSchema(name string) bool {
+	systemSchemas := map[string]bool{
+		"mysql":              true,
+		"information_schema": true,
+		"performance_schema": true,
+		"sys":                true,
+	}
+	return systemSchemas[name]
+}
+
+func createHostDir(cfg *mybase.Config) (*fs.Dir, error) {
+	if !cfg.OnCLI("host") {
+		return nil, NewExitValue(CodeBadConfig, "Option --host must be supplied on the command-line")
+	}
+	hostDirName := cfg.Get("dir")
+	if !cfg.Changed("dir") { // default for dir is to base it on the hostname
+		port := cfg.GetIntOrDefault("port")
+		if port > 0 && cfg.Changed("port") {
+			hostDirName = fmt.Sprintf("%s:%d", cfg.Get("host"), port)
+		} else {
+			hostDirName = cfg.Get("host")
+		}
+	}
+
+	dir, err := fs.ParseDir(".", cfg)
+	if err != nil {
+		return nil, err
+	}
+	hostDir, err := dir.CreateSubdir(hostDirName, nil) // nil because we'll set up the option file later
+	if err != nil {
+		return nil, NewExitValue(CodeBadConfig, err.Error())
+	}
+	return hostDir, nil
+}
+
+func createHostOptionFile(cfg *mybase.Config, hostDir *fs.Dir, inst *tengo.Instance, schemas []*tengo.Schema) error {
+	environment := cfg.Get("environment")
 	hostOptionFile := mybase.NewFile(hostDir.Path, ".skeema")
 	hostOptionFile.SetOptionValue(environment, "host", inst.Host)
 	if inst.Host == "localhost" && inst.SocketPath != "" {
@@ -121,10 +156,13 @@ func InitHandler(cfg *mybase.Config) error {
 			hostOptionFile.SetOptionValue(environment, persistOpt, cfg.Get(persistOpt))
 		}
 	}
-	if !separateSchemaSubdir {
-		// schema name is placed outside of any named section/environment since the
-		// default assumption is that schema names match between environments
-		hostOptionFile.SetOptionValue("", "schema", onlySchema)
+
+	// If a schema name was supplied, a "flat" dir is created that represents both
+	// the host and the schema. The schema name is placed outside of any named
+	// section/environment since the default assumption is that schema names match
+	// between environments.
+	if cfg.Changed("schema") {
+		hostOptionFile.SetOptionValue("", "schema", cfg.Get("schema"))
 		hostOptionFile.SetOptionValue("", "default-character-set", schemas[0].CharSet)
 		hostOptionFile.SetOptionValue("", "default-collation", schemas[0].Collation)
 	}
@@ -146,7 +184,7 @@ func InitHandler(cfg *mybase.Config) error {
 	}
 
 	var suffix string
-	if !separateSchemaSubdir {
+	if cfg.Changed("schema") {
 		suffix = "; skipping schema-level subdirs"
 	}
 	if nonStrictWarning == "" {
@@ -156,14 +194,6 @@ func InitHandler(cfg *mybase.Config) error {
 	if nonStrictWarning != "" {
 		log.Warn(nonStrictWarning)
 	}
-
-	// Iterate over the schemas. For each one, create a dir with .skeema and *.sql files
-	for _, s := range schemas {
-		if err := PopulateSchemaDir(s, hostDir, separateSchemaSubdir); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 

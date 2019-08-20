@@ -8,8 +8,6 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
-
-	"github.com/skeema/tengo"
 )
 
 // SQLFile represents a file containing zero or more SQL statements.
@@ -80,9 +78,7 @@ func (sf SQLFile) Tokenize() (*TokenizedSQLFile, error) {
 		case StatementTypeNoop:
 			// nothing to do for StatementTypeNoop, just excluding it from the default case
 		case StatementTypeCreate:
-			if !seenRoutine &&
-				(stmt.ObjectType == tengo.ObjectTypeProc || stmt.ObjectType == tengo.ObjectTypeFunc) &&
-				strings.Contains(strings.ToLower(stmt.Text), "begin") {
+			if !seenRoutine && stmt.isCreateWithBegin() {
 				seenRoutine = true
 			} else {
 				tryReparse = false

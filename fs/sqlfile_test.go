@@ -45,7 +45,7 @@ func TestSQLFileCreate(t *testing.T) {
 	}
 }
 
-func TestSQLFileTokenize(t *testing.T) {
+func TestSQLFileTokenizeSuccess(t *testing.T) {
 	sf := SQLFile{
 		Dir:      "testdata",
 		FileName: "statements.sql",
@@ -92,14 +92,21 @@ func TestSQLFileTokenize(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestSQLFileTokenizeFail(t *testing.T) {
+	sf := SQLFile{
+		Dir:      "testdata",
+		FileName: "statements.sql",
+	}
+	origContents := ReadTestFile(t, sf.Path())
 
 	// Test error returns for unterminated quote or unterminated C-style comment
+	contents := strings.Replace(origContents, "use /*wtf*/`analytics`", "use /*wtf*/`analytics", 1)
 	sf2 := SQLFile{
 		Dir:      "testdata",
 		FileName: "statements2.sql",
 	}
-	origContents := ReadTestFile(t, sf.Path())
-	contents := strings.Replace(origContents, "use /*wtf*/`analytics`", "use /*wtf*/`analytics", 1)
 	WriteTestFile(t, sf2.Path(), contents)
 	if _, err := sf2.Tokenize(); err == nil {
 		t.Error("Expected to get an error about unterminated quote, but err was nil")

@@ -196,94 +196,6 @@ func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, d
 		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mysql80", 1)
 	}
 
-	var compareDirs func(*fs.Dir, *fs.Dir)
-	compareDirs = func(a, b *fs.Dir) {
-		t.Helper()
-
-		// Compare .skeema option files
-		if (a.OptionFile == nil && b.OptionFile != nil) || (a.OptionFile != nil && b.OptionFile == nil) {
-			t.Errorf("Presence of option files does not match between %s and %s", a, b)
-		}
-		if a.OptionFile != nil {
-			// Force port number of a to equal port number in b, since b will use whatever
-			// dynamic port was allocated to the Dockerized database instance
-			aSectionsWithPort := a.OptionFile.SectionsWithOption("port")
-			bSectionsWithPort := b.OptionFile.SectionsWithOption("port")
-			if !reflect.DeepEqual(aSectionsWithPort, bSectionsWithPort) {
-				t.Errorf("Sections with port option do not match between %s and %s", a.OptionFile.Path(), b.OptionFile.Path())
-			} else {
-				for _, section := range bSectionsWithPort {
-					b.OptionFile.UseSection(section)
-					forcedValue, _ := b.OptionFile.OptionValue("port")
-					a.OptionFile.SetOptionValue(section, "port", forcedValue)
-				}
-			}
-			// Force flavor of a to match the DockerizedInstance's flavor
-			for _, section := range a.OptionFile.SectionsWithOption("flavor") {
-				a.OptionFile.SetOptionValue(section, "flavor", s.d.Flavor().String())
-			}
-
-			if !a.OptionFile.SameContents(b.OptionFile) {
-				t.Errorf("File contents do not match between %s and %s", a.OptionFile.Path(), b.OptionFile.Path())
-				fmt.Printf("Expected:\n%s\n", fs.ReadTestFile(t, a.OptionFile.Path()))
-				fmt.Printf("Actual:\n%s\n", fs.ReadTestFile(t, b.OptionFile.Path()))
-			}
-		}
-
-		// Compare *.sql files
-		if len(a.SQLFiles) != len(b.SQLFiles) {
-			t.Errorf("Differing count of *.sql files between %s and %s", a, b)
-		} else {
-			for n := range a.SQLFiles {
-				if a.SQLFiles[n].FileName != b.SQLFiles[n].FileName {
-					t.Errorf("Differing file name at position[%d]: %s vs %s", n, a.SQLFiles[n].FileName, b.SQLFiles[n].FileName)
-				}
-			}
-		}
-
-		// Compare parsed CREATEs
-		if len(a.LogicalSchemas) != len(b.LogicalSchemas) {
-			t.Errorf("Mismatch between count of parsed logical schemas: %s=%d vs %s=%d", a, len(a.LogicalSchemas), b, len(b.LogicalSchemas))
-		} else if len(a.LogicalSchemas) > 0 {
-			aCreates, bCreates := a.LogicalSchemas[0].Creates, b.LogicalSchemas[0].Creates
-			if len(aCreates) != len(bCreates) {
-				t.Errorf("Mismatch in CREATE count: %s=%d, %s=%d", a, len(aCreates), b, len(bCreates))
-			} else {
-				for key, aStmt := range aCreates {
-					bStmt := bCreates[key]
-					if aStmt.Text != bStmt.Text {
-						t.Errorf("Mismatch for %s:\n%s:\n%s\n\n%s:\n%s\n", key, aStmt.Location(), aStmt.Text, bStmt.Location(), bStmt.Text)
-					}
-				}
-			}
-		}
-
-		// Compare subdirs and walk them
-		aSubdirs, err := a.Subdirs()
-		if err != nil {
-			t.Fatalf("Unable to list subdirs of %s: %v", a, err)
-		}
-		bSubdirs, err := b.Subdirs()
-		if err != nil {
-			t.Fatalf("Unable to list subdirs of %s: %v", b, err)
-		}
-		if len(aSubdirs) != len(bSubdirs) {
-			t.Errorf("Differing count of subdirs between %s and %s", a, b)
-		} else {
-			for n := range aSubdirs {
-				if aSubdirs[n].ParseError != nil {
-					t.Fatalf("Dir parse error: %v", aSubdirs[n].ParseError)
-				} else if bSubdirs[n].ParseError != nil {
-					t.Fatalf("Dir parse error: %v", bSubdirs[n].ParseError)
-				} else if aSubdirs[n].BaseName() != bSubdirs[n].BaseName() {
-					t.Errorf("Subdir name mismatch: %s vs %s", aSubdirs[n], bSubdirs[n])
-				} else {
-					compareDirs(aSubdirs[n], bSubdirs[n])
-				}
-			}
-		}
-	}
-
 	expected, err := fs.ParseDir(dirExpectedBase, cfg)
 	if err != nil {
 		t.Fatalf("ParseDir(%s) returned %s", dirExpectedBase, err)
@@ -292,7 +204,112 @@ func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, d
 	if err != nil {
 		t.Fatalf("ParseDir(%s) returned %s", s.scratchPath(), err)
 	}
-	compareDirs(expected, actual)
+	s.compareDirs(t, expected, actual)
+}
+
+func (s *SkeemaIntegrationSuite) compareDirs(t *testing.T, a, b *fs.Dir) {
+	t.Helper()
+
+	if a.ParseError != nil {
+		t.Fatalf("Dir parse error: %v", a.ParseError)
+	} else if b.ParseError != nil {
+		t.Fatalf("Dir parse error: %v", b.ParseError)
+	}
+
+	compareDirOptionFiles(t, a, b, s.d.Flavor())
+	compareDirSQLFiles(t, a, b)
+	compareDirLogicalSchemas(t, a, b)
+
+	// Compare subdirs and walk them
+	aSubdirs, err := a.Subdirs()
+	if err != nil {
+		t.Fatalf("Unable to list subdirs of %s: %v", a, err)
+	}
+	bSubdirs, err := b.Subdirs()
+	if err != nil {
+		t.Fatalf("Unable to list subdirs of %s: %v", b, err)
+	}
+	if len(aSubdirs) != len(bSubdirs) {
+		t.Errorf("Differing count of subdirs between %s and %s", a, b)
+	} else {
+		for n := range aSubdirs {
+			if aSubdirs[n].BaseName() != bSubdirs[n].BaseName() {
+				t.Errorf("Subdir name mismatch: %s vs %s", aSubdirs[n], bSubdirs[n])
+			}
+			s.compareDirs(t, aSubdirs[n], bSubdirs[n])
+		}
+	}
+}
+
+// compareDirOptionFiles confirms that option files are nearly identical between
+// a and b. In the process we manipulate a few fields in a's option file to look
+// like b; this is to avoid false positives in fields that we expect to differ
+// based solely on the test environment itself (such as the random port number
+// of the Docker container).
+func compareDirOptionFiles(t *testing.T, a, b *fs.Dir, flavor tengo.Flavor) {
+	t.Helper()
+	if (a.OptionFile == nil && b.OptionFile != nil) || (a.OptionFile != nil && b.OptionFile == nil) {
+		t.Errorf("Presence of option files does not match between %s and %s", a, b)
+	}
+	if a.OptionFile != nil {
+		// Force port number of a to equal port number in b, since b will use whatever
+		// dynamic port was allocated to the Dockerized database instance
+		aSectionsWithPort := a.OptionFile.SectionsWithOption("port")
+		bSectionsWithPort := b.OptionFile.SectionsWithOption("port")
+		if !reflect.DeepEqual(aSectionsWithPort, bSectionsWithPort) {
+			t.Errorf("Sections with port option do not match between %s and %s", a.OptionFile.Path(), b.OptionFile.Path())
+		} else {
+			for _, section := range bSectionsWithPort {
+				b.OptionFile.UseSection(section)
+				forcedValue, _ := b.OptionFile.OptionValue("port")
+				a.OptionFile.SetOptionValue(section, "port", forcedValue)
+			}
+		}
+		// Force flavor of a to match the DockerizedInstance's flavor
+		for _, section := range a.OptionFile.SectionsWithOption("flavor") {
+			a.OptionFile.SetOptionValue(section, "flavor", flavor.String())
+		}
+
+		if !a.OptionFile.SameContents(b.OptionFile) {
+			t.Errorf("File contents do not match between %s and %s", a.OptionFile.Path(), b.OptionFile.Path())
+			fmt.Printf("Expected:\n%s\n", fs.ReadTestFile(t, a.OptionFile.Path()))
+			fmt.Printf("Actual:\n%s\n", fs.ReadTestFile(t, b.OptionFile.Path()))
+		}
+	}
+}
+
+// compareDirSQLFiles compares *.sql between a and b.
+func compareDirSQLFiles(t *testing.T, a, b *fs.Dir) {
+	t.Helper()
+	if len(a.SQLFiles) != len(b.SQLFiles) {
+		t.Errorf("Differing count of *.sql files between %s and %s", a, b)
+	} else {
+		for n := range a.SQLFiles {
+			if a.SQLFiles[n].FileName != b.SQLFiles[n].FileName {
+				t.Errorf("Differing file name at position[%d]: %s vs %s", n, a.SQLFiles[n].FileName, b.SQLFiles[n].FileName)
+			}
+		}
+	}
+}
+
+// compareDirLogicalSchemas compares LogicalSchemas between a and b.
+func compareDirLogicalSchemas(t *testing.T, a, b *fs.Dir) {
+	t.Helper()
+	if len(a.LogicalSchemas) != len(b.LogicalSchemas) {
+		t.Errorf("Mismatch between count of parsed logical schemas: %s=%d vs %s=%d", a, len(a.LogicalSchemas), b, len(b.LogicalSchemas))
+	} else if len(a.LogicalSchemas) > 0 {
+		aCreates, bCreates := a.LogicalSchemas[0].Creates, b.LogicalSchemas[0].Creates
+		if len(aCreates) != len(bCreates) {
+			t.Errorf("Mismatch in CREATE count: %s=%d, %s=%d", a, len(aCreates), b, len(bCreates))
+		} else {
+			for key, aStmt := range aCreates {
+				bStmt := bCreates[key]
+				if aStmt.Text != bStmt.Text {
+					t.Errorf("Mismatch for %s:\n%s:\n%s\n\n%s:\n%s\n", key, aStmt.Location(), aStmt.Text, bStmt.Location(), bStmt.Text)
+				}
+			}
+		}
+	}
 }
 
 func (s *SkeemaIntegrationSuite) reinitAndVerifyFiles(t *testing.T, extraInitOpts, comparePath string) {

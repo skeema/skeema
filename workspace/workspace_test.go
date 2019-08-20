@@ -82,10 +82,28 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchema(t *testing.T) {
 	if expected := oldUserColumnCount + 1; len(wsSchema.Table("users").Columns) != expected {
 		t.Errorf("Expected table users to now have %d columns, instead found %d", expected, len(wsSchema.Table("users").Columns))
 	}
+}
+
+func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaErrors(t *testing.T) {
+	dirPath := "../testdata/golden/init/mydb/product"
+	if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
+		dirPath = strings.Replace(dirPath, "golden", "golden-mysql55", 1)
+	}
+	dir := s.getParsedDir(t, dirPath, "")
+	opts, err := OptionsForDir(dir, s.d.Instance)
+	if err != nil {
+		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
+	}
+	opts.LockWaitTimeout = 100 * time.Millisecond
 
 	// Test with invalid ALTER (valid syntax but nonexistent table)
-	dir.LogicalSchemas[0].Alters[0].Text = "ALTER TABLE nopenopenope ADD COLUMN foo int"
-	wsSchema, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
+	dir.LogicalSchemas[0].AddStatement(&fs.Statement{
+		Type:       fs.StatementTypeAlter,
+		ObjectType: tengo.ObjectTypeTable,
+		ObjectName: "nopenopenope",
+		Text:       "ALTER TABLE nopenopenope ADD COLUMN foo int",
+	})
+	wsSchema, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 	if err != nil {
 		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
 	}

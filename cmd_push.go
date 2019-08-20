@@ -97,18 +97,9 @@ func PushHandler(cfg *mybase.Config) error {
 		}
 		return nil
 	}
-	var plural, reason string
 	code := CodeFatalError
-	if sum.SkipCount+sum.UnsupportedCount > 1 {
-		plural = "s"
-	}
 	if sum.SkipCount == 0 {
 		code = CodePartialError
-		reason = "unsupported feature"
-	} else if sum.UnsupportedCount == 0 {
-		reason = "error"
-	} else {
-		reason = "unsupported features or error"
 	}
-	return NewExitValue(code, "Skipped %d operation%s due to %s%s", sum.SkipCount+sum.UnsupportedCount, plural, reason, plural)
+	return NewExitValue(code, sum.Summary())
 }
