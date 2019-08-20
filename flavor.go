@@ -198,7 +198,7 @@ func (fl Flavor) Supported() bool {
 		return true
 	case FlavorPercona55, FlavorPercona56, FlavorPercona57, FlavorPercona80:
 		return true
-	case FlavorMariaDB101, FlavorMariaDB102, FlavorMariaDB103:
+	case FlavorMariaDB101, FlavorMariaDB102, FlavorMariaDB103, FlavorMariaDB104:
 		return true
 	default:
 		return false
