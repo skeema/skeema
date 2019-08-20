@@ -167,7 +167,7 @@
   branch = "master"
   name = "github.com/skeema/tengo"
   packages = ["."]
-  revision = "7838cbe8745496bd017f63488dd70a6b0d64aeef"
+  revision = "092b231a5ed8c22cf9acc1d23a5af804f9ac5fd7"
 
 [[projects]]
   branch = "master"
@@ -204,6 +204,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "4a0a8d5326c6407f47038eac323ced321f5e2e4e384be40f02a4ad775326ad54"
+  inputs-digest = "c0ba92d5be870c754a2a586ce4dc9a1c2c85931d060ee82781e75a951f1fb5f9"
   solver-name = "gps-cdcl"
   solver-version = 1
