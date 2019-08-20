@@ -111,6 +111,12 @@
   revision = "2aeb6a910c2b94f2d5eb53d9895d80e27264ec41"
 
 [[projects]]
+  name = "github.com/mitchellh/go-wordwrap"
+  packages = ["."]
+  revision = "9e67c67572bc5dd02aef930e2b0ae3c02a4b5a5c"
+  version = "v1.0.0"
+
+[[projects]]
   name = "github.com/opencontainers/go-digest"
   packages = ["."]
   revision = "279bed98673dd5bef374d3b6e4b09e2af76183bf"
@@ -152,10 +158,10 @@
   version = "v1.0.5"
 
 [[projects]]
+  branch = "master"
   name = "github.com/skeema/mybase"
   packages = ["."]
-  revision = "488acfe7d1bc0916d1f58b1cc549e74b0eb056fd"
-  version = "v1.0.6"
+  revision = "052eda2c53cef9adbd8f3814805a3eeff32b6dd9"
 
 [[projects]]
   branch = "master"
@@ -198,6 +204,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "f219f656309d37caedd501f0fa4be71e51e6c78654174be224f93096325ae586"
+  inputs-digest = "4a0a8d5326c6407f47038eac323ced321f5e2e4e384be40f02a4ad775326ad54"
   solver-name = "gps-cdcl"
   solver-version = 1

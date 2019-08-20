@@ -6,18 +6,27 @@ import (
 	"os"
 	"strings"
 
+	"github.com/mitchellh/go-wordwrap"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
 func init() {
-	log.SetFormatter(&customFormatter{
-		isTerminal: terminal.IsTerminal(int(os.Stderr.Fd())),
-	})
+	stderr := int(os.Stderr.Fd())
+	formatter := &customFormatter{}
+	if terminal.IsTerminal(stderr) {
+		formatter.isTerminal = true
+		formatter.width, _, _ = terminal.GetSize(stderr)
+		if formatter.width > 0 && formatter.width < 80 {
+			formatter.width = 80
+		}
+	}
+	log.SetFormatter(formatter)
 }
 
 type customFormatter struct {
 	isTerminal bool
+	width      int
 }
 
 func (f *customFormatter) Format(entry *log.Entry) ([]byte, error) {
@@ -51,8 +60,15 @@ func (f *customFormatter) Format(entry *log.Entry) ([]byte, error) {
 	if len(levelName) == 4 { // align level for INFO or WARN; other levels are all 5 chars
 		spacing = " "
 	}
-	levelText := fmt.Sprintf("[%s%s%s]%s", startColor, levelName, endColor, spacing)
+	levelText := fmt.Sprintf("[%s%s%s]%s ", startColor, levelName, endColor, spacing)
+	message := entry.Message
+	if f.isTerminal && f.width > 0 {
+		headerLen := 28 // length of line header, e.g. "2019-08-20 16:53:57 [INFO]  "
+		message = wordwrap.WrapString(message, uint(f.width-headerLen))
+		spacer := fmt.Sprintf("\n%*s", headerLen, " ")
+		message = strings.Replace(message, "\n", spacer, -1)
+	}
 
-	fmt.Fprintf(b, "%s %s %s\n", entry.Time.Format("2006-01-02 15:04:05"), levelText, entry.Message)
+	fmt.Fprintf(b, "%s %s%s\n", entry.Time.Format("2006-01-02 15:04:05"), levelText, message)
 	return b.Bytes(), nil
 }

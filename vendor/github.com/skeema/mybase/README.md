@@ -15,7 +15,7 @@ A light-weight Golang framework for building command-line applications, with MyS
 * Supports command suites / subcommands, including nesting
 * Extensible to other option file formats/sources via a simple one-method interface
 * Automatic help/usage flags and subcommands
-* Only uses the Go standard library -- no external dependencies
+* Few external dependencies
 
 ## Motivation
 
@@ -47,7 +47,7 @@ The following features are **not** yet implemented, but are planned for future r
 * API for re-reading all option files that have changed
 * Command aliases
 
-Unit test coverage of mybase is still incomplete; code coverage is currently around 40%. This will be improved in future releases.
+Unit test coverage of mybase is still incomplete; code coverage is currently around 55%. This will be improved in future releases.
 
 ## Credits
 
@@ -59,7 +59,7 @@ Additional [contributions](https://github.com/skeema/mybase/graphs/contributors)
 
 ## License
 
-**Copyright 2018 Skeema LLC**
+**Copyright 2019 Skeema LLC**
 
 ```text
 Licensed under the Apache License, Version 2.0 (the "License");

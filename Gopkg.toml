@@ -52,3 +52,7 @@
 [prune]
   go-tests = true
   unused-packages = true
+
+[[constraint]]
+  name = "github.com/mitchellh/go-wordwrap"
+  version = "1.0.0"

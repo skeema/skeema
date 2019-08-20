@@ -2,8 +2,12 @@ package mybase
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"unicode"
+
+	"github.com/mitchellh/go-wordwrap"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 // OptionType is an enum for representing the type of an option.
@@ -94,26 +98,20 @@ func (opt *Option) Usage(maxNameLength int) string {
 	if opt.HiddenOnCLI {
 		return ""
 	}
-	var shorthand, long, def string
 
+	lineLen := 10000
+	stdinFd := int(os.Stderr.Fd())
+	if terminal.IsTerminal(stdinFd) {
+		lineLen, _, _ = terminal.GetSize(stdinFd)
+		if lineLen < 80 {
+			lineLen = 80
+		}
+	}
+
+	var shorthand, def string
 	if opt.Shorthand > 0 {
 		shorthand = fmt.Sprintf("-%c,", opt.Shorthand)
-	} else {
-		shorthand = "   "
 	}
-
-	if opt.Type == OptionTypeBool {
-		if opt.HasNonzeroDefault() {
-			long = fmt.Sprintf("[skip-]%s", opt.Name)
-		} else {
-			long = opt.Name
-		}
-	} else if opt.RequireValue {
-		long = fmt.Sprintf("%s value", opt.Name)
-	} else {
-		long = fmt.Sprintf("%s[=value]", opt.Name)
-	}
-
 	if opt.HasNonzeroDefault() {
 		if opt.Type == OptionTypeBool {
 			def = fmt.Sprintf(" (enabled by default; disable with --skip-%s)", opt.Name)
@@ -122,8 +120,30 @@ func (opt *Option) Usage(maxNameLength int) string {
 		}
 	}
 
-	maxNameLength += 8 // additional space for worst-case "[=value]" suffix
-	return fmt.Sprintf("  %s --%*s %s%s\n", shorthand, -1*maxNameLength, long, opt.Description, def)
+	head := fmt.Sprintf("  %3s --%*s  ", shorthand, -1*maxNameLength, opt.usageName())
+	desc := fmt.Sprintf("%s%s", opt.Description, def)
+	if len(desc)+len(head) > lineLen {
+		desc = wordwrap.WrapString(desc, uint(lineLen-len(head)))
+		spacer := fmt.Sprintf("\n%s", strings.Repeat(" ", len(head)))
+		desc = strings.Replace(desc, "\n", spacer, -1)
+	}
+	return fmt.Sprintf("%s%s\n", head, desc)
+}
+
+// usageName returns the option's name, potentially modified/annotated for
+// display on help screen.
+func (opt *Option) usageName() string {
+	if opt.HiddenOnCLI {
+		return ""
+	} else if opt.Type == OptionTypeBool {
+		if opt.HasNonzeroDefault() {
+			return fmt.Sprintf("[skip-]%s", opt.Name)
+		}
+		return opt.Name
+	} else if opt.RequireValue {
+		return fmt.Sprintf("%s value", opt.Name)
+	}
+	return fmt.Sprintf("%s[=value]", opt.Name)
 }
 
 // HasNonzeroDefault returns true if the Option's default value differs from

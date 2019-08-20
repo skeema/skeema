@@ -200,10 +200,10 @@ func (cmd *Command) Usage() {
 		fmt.Println("\nOptions:")
 		var maxLen int
 		names := make([]string, 0, len(allOptions))
-		for name := range allOptions {
+		for name, opt := range allOptions {
 			names = append(names, name)
-			if len(name) > maxLen {
-				maxLen = len(name)
+			if nameLen := len(opt.usageName()); nameLen > maxLen {
+				maxLen = nameLen
 			}
 		}
 		sort.Strings(names)
