@@ -3,13 +3,14 @@ package linter
 import (
 	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/skeema/tengo"
 )
 
 func TestOptionsForDir(t *testing.T) {
-	dir := getDir(t, "../testdata/linter/validcfg")
+	dir := getDir(t, "testdata/validcfg")
 	if opts, err := OptionsForDir(dir); err != nil {
 		t.Errorf("Unexpected error from OptionsForDir: %s", err)
 	} else {
@@ -17,22 +18,39 @@ func TestOptionsForDir(t *testing.T) {
 		for name, rule := range rulesByName {
 			expectedSeverity[name] = rule.DefaultSeverity
 		}
-		expectedSeverity["pk"] = SeverityError             // see ../testdata/linter/validcfg/.skeema
+		expectedSeverity["pk"] = SeverityError             // see testdata/validcfg/.skeema
 		expectedSeverity["display-width"] = SeverityIgnore // ditto
-		expected := Options{
-			RuleSeverity:        expectedSeverity,
-			AllowedCharSets:     []string{"utf8mb4"},
-			AllowedEngines:      []string{"innodb", "myisam"},
-			AllowedAutoIncTypes: []string{"int unsigned", "bigint unsigned"},
-			AllowedDefiners:     []string{"'root'@'%'", "procbot@127.0.0.1"},
-			AllowedDefinersMatch: []*regexp.Regexp{
+		if !reflect.DeepEqual(opts.RuleSeverity, expectedSeverity) {
+			t.Errorf("RuleSeverity is %v, does not match expectation %v", opts.RuleSeverity, expectedSeverity)
+		}
+
+		expectedIgnoreTable := regexp.MustCompile(`^_`)
+		if !reflect.DeepEqual(expectedIgnoreTable, opts.IgnoreTable) {
+			t.Errorf("IgnoreTable did not match expectation")
+		}
+
+		expectedAllowList := map[string]string{
+			"charset":  "utf8mb4",
+			"engine":   "innodb, myisam",
+			"auto-inc": "int unsigned, bigint unsigned",
+		}
+		for ruleName, expected := range expectedAllowList {
+			actual := strings.Join(opts.AllowList(ruleName), ", ")
+			if actual != expected {
+				t.Errorf("AllowList(%q) returned %q, expected %q", ruleName, actual, expected)
+			}
+		}
+
+		expectedDefinerConfig := definerConfig{
+			allowedDefinersString: "'root'@'%', procbot@127.0.0.1",
+			allowedDefinersMatch: []*regexp.Regexp{
 				regexp.MustCompile(`^root@.*$`),
 				regexp.MustCompile(`^procbot@127\.0\.0\.1$`),
 			},
-			IgnoreTable: regexp.MustCompile(`^_`),
 		}
-		if !reflect.DeepEqual(opts, expected) {
-			t.Errorf("OptionsForDir returned %+v, did not match expectation %+v", opts, expected)
+		actualDefinerConfig := opts.RuleConfig["definer"].(definerConfig)
+		if !reflect.DeepEqual(expectedDefinerConfig, actualDefinerConfig) {
+			t.Errorf("definerConfig did not match expectation")
 		}
 	}
 
@@ -40,14 +58,16 @@ func TestOptionsForDir(t *testing.T) {
 	badOptions := []string{
 		"--errors=made-up-problem",
 		"--warnings='bad-charset,made-up-problem,bad-engine'",
+		"--lint-engine=ignore --warnings=bad-engine",
 		"--ignore-table=+",
 		"--allow-charset=''",
 		"--allow-engine=''",
 		"--lint-engine=gentle-nudge",
+		"--allow-definer=''",
 	}
 	confirmError := func(cliArgs string) {
 		t.Helper()
-		dir := getDir(t, "../testdata/linter/validcfg", cliArgs)
+		dir := getDir(t, "testdata/validcfg", cliArgs)
 		if _, err := OptionsForDir(dir); err == nil {
 			t.Errorf("Expected an error from OptionsForDir with CLI %s, but it was nil", cliArgs)
 		} else if _, ok := err.(ConfigError); !ok {

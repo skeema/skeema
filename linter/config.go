@@ -36,14 +36,30 @@ func AddCommandOptions(cmd *mybase.Command) {
 
 // Options contains parsed settings controlling linter behavior.
 type Options struct {
-	RuleSeverity         map[string]Severity
-	AllowedCharSets      []string
-	AllowedEngines       []string
-	AllowedDefiners      []string
-	AllowedAutoIncTypes  []string
-	AllowedDefinersMatch []*regexp.Regexp
-	IgnoreTable          *regexp.Regexp
-	onlyKeys             map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
+	RuleSeverity map[string]Severity
+	RuleConfig   map[string]interface{}
+	IgnoreTable  *regexp.Regexp
+	onlyKeys     map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
+}
+
+// AllowList returns a slice of configured allowed values for the given rule.
+// This method can only be used by rules that use RelatedListOption to configure
+// their related option and config func.
+func (opts *Options) AllowList(ruleName string) []string {
+	return opts.RuleConfig[ruleName].([]string)
+}
+
+// IsAllowed returns true if the given rule's config permits the supplied value.
+// This method can only be used by rules that use RelatedListOption to configure
+// their related option and config func.
+func (opts *Options) IsAllowed(ruleName, value string) bool {
+	value = strings.ToLower(value)
+	for _, allowedValue := range opts.AllowList(ruleName) {
+		if value == strings.ToLower(allowedValue) {
+			return true
+		}
+	}
+	return false
 }
 
 // OnlyKeys specifies a list of tengo.ObjectKeys that the linter should
@@ -74,11 +90,8 @@ func (opts *Options) shouldIgnore(key tengo.ObjectKey) bool {
 // effectively converting between mybase options and linter options.
 func OptionsForDir(dir *fs.Dir) (Options, error) {
 	opts := Options{
-		RuleSeverity:        make(map[string]Severity),
-		AllowedCharSets:     dir.Config.GetSlice("allow-charset", ',', true),
-		AllowedEngines:      dir.Config.GetSlice("allow-engine", ',', true),
-		AllowedAutoIncTypes: dir.Config.GetSlice("allow-auto-inc", ',', true),
-		AllowedDefiners:     dir.Config.GetSlice("allow-definer", ',', true),
+		RuleSeverity: make(map[string]Severity),
+		RuleConfig:   make(map[string]interface{}),
 	}
 
 	var err error
@@ -114,38 +127,30 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 		oldOptionName := fmt.Sprintf("%ss", severity)
 		for _, oldName := range dir.Config.GetSlice(oldOptionName, ',', true) {
 			oldName = strings.ToLower(oldName)
-			if newName, ok := deprecatedNames[oldName]; ok {
-				opts.RuleSeverity[newName] = severity
-			} else {
+			if newName, ok := deprecatedNames[oldName]; !ok {
 				return Options{}, newConfigError(dir, "Option %s is deprecated and cannot include value %s. Please see individual lint-* options instead.", oldOptionName, oldName)
+			} else if dir.Config.Changed(fmt.Sprintf("lint-%s", newName)) && severity != opts.RuleSeverity[newName] {
+				return Options{}, newConfigError(dir, "Deprecated option %s has been set to a value that conflicts with newer option %s. Please remove %s from your configuration to resolve this.", oldOptionName, newName, oldOptionName)
+			} else {
+				opts.RuleSeverity[newName] = severity
 			}
 		}
 	}
 
-	// For rules with allow-lists, confirm corresponding list option is non-empty
-	// (exception: opts.AllowedAutoIncTypes is intentionally allowed to be empty,
-	// since this provides a mechanism for banning use of auto-increment)
-	ruleToListOpt := map[string][]string{
-		"charset": opts.AllowedCharSets,
-		"engine":  opts.AllowedEngines,
-		"definer": opts.AllowedDefiners,
-	}
-	for ruleName, listOption := range ruleToListOpt {
-		severity := opts.RuleSeverity[ruleName]
-		if severity != SeverityIgnore && len(listOption) == 0 {
-			return Options{}, newConfigError(dir, "With option lint-%s=%s, corresponding option allow-%s must be non-empty", ruleName, severity, ruleName)
+	// Process supplemental configuration of rules where needed
+	for name, rule := range rulesByName {
+		// No need to configure rules that are disabled, or rules that have no
+		// configuration function
+		if opts.RuleSeverity[name] == SeverityIgnore || rule.ConfigFunc == nil {
+			continue
 		}
-	}
-
-	// Build regexp allow-list for definers
-	opts.AllowedDefinersMatch = make([]*regexp.Regexp, len(opts.AllowedDefiners))
-	for i, definer := range opts.AllowedDefiners {
-		definer = strings.Replace(definer, "'", "", -1)
-		definer = strings.Replace(definer, "`", "", -1)
-		definer = regexp.QuoteMeta(definer)
-		definer = strings.Replace(definer, "%", ".*", -1)
-		definer = strings.Replace(definer, "_", ".", -1)
-		opts.AllowedDefinersMatch[i] = regexp.MustCompile(fmt.Sprintf("^%s$", definer))
+		ruleConfig := rule.ConfigFunc(dir.Config)
+		if err, ok := ruleConfig.(error); ok {
+			return Options{}, toConfigError(dir, err)
+		}
+		if ruleConfig != nil {
+			opts.RuleConfig[name] = ruleConfig
+		}
 	}
 
 	return opts, nil

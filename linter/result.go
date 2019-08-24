@@ -74,6 +74,34 @@ func (a *Annotation) Log() {
 	}
 }
 
+// FindFirstLineOffset returns the line offset (i.e. line number starting at 0)
+// for the first match of re within createStatement. If no match occurs, 0 is
+// returned. This may happen often due to createStatement being arbitrarily
+// formatted.
+// This is useful for ObjectCheckers when populating Note.LineOffset.
+func FindFirstLineOffset(re *regexp.Regexp, createStatement string) int {
+	loc := re.FindStringIndex(createStatement)
+	if loc == nil {
+		return 0
+	}
+	// Count how many newlines occur in createStatement before the match
+	return strings.Count(createStatement[0:loc[0]], "\n")
+}
+
+// FindLastLineOffset returns the line offset (i.e. line number starting at 0)
+// for the last match of re within createStatement. If no match occurs, 0 is
+// returned. This may happen often due to createStatement being arbitrarily
+// formatted.
+// This is useful for ObjectCheckers when populating Note.LineOffset.
+func FindLastLineOffset(re *regexp.Regexp, createStatement string) int {
+	locs := re.FindAllStringIndex(createStatement, -1)
+	if locs == nil {
+		return 0
+	}
+	lastLoc := locs[len(locs)-1]
+	return strings.Count(createStatement[0:lastLoc[0]], "\n")
+}
+
 // Result is a combined set of linter annotations and/or Golang errors found
 // when linting a directory and its subdirs.
 type Result struct {

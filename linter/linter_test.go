@@ -22,39 +22,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestIsAllowed(t *testing.T) {
-	if !isAllowed("UTF8mb4", []string{"", "utf8mb4", "utf8", "latin1"}) {
-		t.Error("Unexpected result from isAllowed")
-	}
-	if isAllowed("utf8", []string{"utf8mb4", "latin1"}) {
-		t.Error("Unexpected result from isAllowed")
-	}
-}
-
-func TestFindFirstLineOffset(t *testing.T) {
-	stmt := fs.ReadTestFile(t, "../testdata/golden/init/mydb/product/posts.sql")
-	re := regexp.MustCompile(`\sDEFAULT\s`)
-	if actual := findFirstLineOffset(re, stmt); actual != 4 {
-		t.Errorf("Expected first line offset to be 4, instead found %d", actual)
-	}
-	re = regexp.MustCompile(`not found in string`)
-	if actual := findFirstLineOffset(re, stmt); actual != 0 {
-		t.Errorf("Expected first line offset to be 0, instead found %d", actual)
-	}
-}
-
-func TestFindLastLineOffset(t *testing.T) {
-	stmt := fs.ReadTestFile(t, "../testdata/golden/init/mydb/product/posts.sql")
-	re := regexp.MustCompile(`\sDEFAULT\s`)
-	if actual := findLastLineOffset(re, stmt); actual != 8 {
-		t.Errorf("Expected last line offset to be 8, instead found %d", actual)
-	}
-	re = regexp.MustCompile(`not found in string`)
-	if actual := findLastLineOffset(re, stmt); actual != 0 {
-		t.Errorf("Expected last line offset to be 0, instead found %d", actual)
-	}
-}
-
 func TestIntegration(t *testing.T) {
 	images := tengo.SplitEnv("SKEEMA_TEST_IMAGES")
 	if len(images) == 0 {
@@ -78,11 +45,11 @@ type IntegrationSuite struct {
 }
 
 // TestCheckSchema runs all checkers against the dir
-// ../testdata/linter/validcfg, wherein the CREATE statements have special
+// ./testdata/validcfg, wherein the CREATE statements have special
 // inline comments indicating which annotations are expected to be found on a
 // given line. See expectedAnnotations() for more information.
 func (s IntegrationSuite) TestCheckSchema(t *testing.T) {
-	dir := getDir(t, "../testdata/linter/validcfg")
+	dir := getDir(t, "testdata/validcfg")
 	opts, err := OptionsForDir(dir)
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %v", err)

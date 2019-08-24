@@ -2,12 +2,37 @@ package linter
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"testing"
 
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/skeema/workspace"
 )
+
+func TestFindFirstLineOffset(t *testing.T) {
+	stmt := fs.ReadTestFile(t, "testdata/offsets.sql")
+	re := regexp.MustCompile(`\sDEFAULT\s`)
+	if actual := FindFirstLineOffset(re, stmt); actual != 4 {
+		t.Errorf("Expected first line offset to be 4, instead found %d", actual)
+	}
+	re = regexp.MustCompile(`not found in string`)
+	if actual := FindFirstLineOffset(re, stmt); actual != 0 {
+		t.Errorf("Expected first line offset to be 0, instead found %d", actual)
+	}
+}
+
+func TestFindLastLineOffset(t *testing.T) {
+	stmt := fs.ReadTestFile(t, "testdata/offsets.sql")
+	re := regexp.MustCompile(`\sDEFAULT\s`)
+	if actual := FindLastLineOffset(re, stmt); actual != 8 {
+		t.Errorf("Expected last line offset to be 8, instead found %d", actual)
+	}
+	re = regexp.MustCompile(`not found in string`)
+	if actual := FindLastLineOffset(re, stmt); actual != 0 {
+		t.Errorf("Expected last line offset to be 0, instead found %d", actual)
+	}
+}
 
 func TestResultMerge(t *testing.T) {
 	r1 := &Result{}
@@ -62,7 +87,7 @@ func TestResultSortByFile(t *testing.T) {
 }
 
 func TestBadConfigResult(t *testing.T) {
-	dir := getDir(t, "../testdata/linter/validcfg")
+	dir := getDir(t, "testdata/validcfg")
 	err := fmt.Errorf("Made up error")
 	r := BadConfigResult(dir, err)
 	if len(r.Annotations)+len(r.DebugLogs)+r.ErrorCount+r.WarningCount+r.ReformatCount > 0 {
@@ -77,7 +102,7 @@ func TestBadConfigResult(t *testing.T) {
 }
 
 func (s IntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
-	dir := getDir(t, "../testdata/linter/validcfg")
+	dir := getDir(t, "testdata/validcfg")
 	opts, err := OptionsForDir(dir)
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
