@@ -62,10 +62,16 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 			t.Errorf("Expected .skeema to contain %s, but it does not", option)
 		}
 	}
-	if subdirs, badSubdirCount, err := dir.Subdirs(); err != nil || badSubdirCount > 0 {
-		t.Fatalf("Unexpected error listing subdirs of %s: %s (bad subdir count %d)", dir, err, badSubdirCount)
+	if subdirs, err := dir.Subdirs(); err != nil {
+		t.Fatalf("Unexpected error listing subdirs of %s: %v", dir, err)
 	} else if len(subdirs) > 0 {
 		t.Errorf("Expected %s to have no subdirs, but it has %d", dir, len(subdirs))
+	} else {
+		for _, sub := range subdirs {
+			if sub.ParseError != nil {
+				t.Errorf("Unexpected parse error in %s: %v", sub, sub.ParseError)
+			}
+		}
 	}
 	if len(dir.SQLFiles) < 1 {
 		t.Errorf("Expected %s to have *.sql files, but it does not", dir)
@@ -255,6 +261,19 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	if _, err := os.Stat("mydb/archives"); !os.IsNotExist(err) {
 		t.Errorf("Expected os.Stat to return IsNotExist error for mydb/archives; instead err=%v", err)
 	}
+
+	// Test pull behavior on a "flat" layout (single dir defining host and schema):
+	// ensure flavor updated; ensure deleted sql file brought back
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --schema product --dir flat -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+	fs.RemoveTestFile(t, "flat/users.sql")
+	fs.WriteTestFile(t, "flat/.skeema", strings.Replace(fs.ReadTestFile(t, "flat/.skeema"), "flavor", "####", 1))
+	cfg = s.handleCommand(t, CodeSuccess, "flat", "skeema pull")
+	if _, err := os.Stat("flat/users.sql"); err != nil {
+		t.Errorf("Expected os.Stat to return nil error for flat/users.sql; instead err=%v", err)
+	}
+	if contents := fs.ReadTestFile(t, "flat/.skeema"); !strings.Contains(contents, "flavor") {
+		t.Error("Expected flat/.skeema to contain flavor after pull, but it does not")
+	}
 }
 
 func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
@@ -321,9 +340,9 @@ func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
 	fs.WriteTestFile(t, productDir.SQLFiles[0].Path(), "INSERT INTO foo (col1, col2) VALUES (123, 456)")
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint")
 
-	// Directories that have invalid options should yield CodeFatalError
+	// Directories that have invalid options should yield CodeBadConfig
 	fs.WriteTestFile(t, "mydb/uhoh/.skeema", "this is not a valid .skeema file")
-	s.handleCommand(t, CodeFatalError, ".", "skeema lint")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema lint")
 }
 
 func (s SkeemaIntegrationSuite) TestFormatHandler(t *testing.T) {

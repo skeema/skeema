@@ -59,7 +59,7 @@ func TestParseDir(t *testing.T) {
 	// creating same table multiple times
 	for _, dirPath := range []string{"../bestdata", "../testdata/setup.sql", "../testdata"} {
 		dir, err := ParseDir(dirPath, getValidConfig(t))
-		if dir != nil || err == nil {
+		if err == nil || (dir != nil && dir.ParseError == nil) {
 			t.Errorf("Expected ParseDir to return nil dir and non-nil error, but dir=%v err=%v", dir, err)
 		}
 	}
@@ -80,9 +80,9 @@ func TestParseDirSymlinks(t *testing.T) {
 	dir := getDir(t, "../testdata/fs/sqlsymlinks")
 
 	// Confirm symlinks to dirs are ignored by Subdirs
-	subs, badCount, err := dir.Subdirs()
-	if err != nil || badCount > 0 || len(subs) != 2 {
-		t.Fatalf("Unexpected error from Subdirs(): %v, %d, %v", subs, badCount, err)
+	subs, err := dir.Subdirs()
+	if err != nil || countParseErrors(subs) > 0 || len(subs) != 2 {
+		t.Fatalf("Unexpected error from Subdirs(): %v, %v; %d parse errors", subs, err, countParseErrors(subs))
 	}
 
 	dir = getDir(t, "../testdata/fs/sqlsymlinks/product")
@@ -102,9 +102,9 @@ func TestParseDirSymlinks(t *testing.T) {
 	// .skeema files that are symlinks pointing within same repo are OK
 	getDir(t, "../testdata/fs/cfgsymlinks1/validrel")
 	dir = getDir(t, "../testdata/fs/cfgsymlinks1")
-	subs, badCount, err = dir.Subdirs()
-	if err != nil || badCount != 2 || len(subs) != 1 {
-		t.Errorf("Expected Subdirs() to return 1 valid sub and 2 bad ones; instead found [%d], %d, %v", len(subs), badCount, err)
+	subs, err = dir.Subdirs()
+	if badCount := countParseErrors(subs); err != nil || badCount != 2 || len(subs)-badCount != 1 {
+		t.Errorf("Expected Subdirs() to return 1 valid sub and 2 bad ones; instead found %d good, %d bad, %v", len(subs)-badCount, badCount, err)
 	}
 
 	// Otherwise, .skeema files that are symlinks pointing outside the repo, or
@@ -150,8 +150,8 @@ func TestDirRelPath(t *testing.T) {
 
 func TestDirSubdirs(t *testing.T) {
 	dir := getDir(t, "../testdata/golden/init/mydb")
-	subs, badCount, err := dir.Subdirs()
-	if err != nil || badCount > 0 {
+	subs, err := dir.Subdirs()
+	if err != nil || countParseErrors(subs) > 0 {
 		t.Fatalf("Unexpected error from Subdirs(): %s", err)
 	}
 	if len(subs) < 2 {
@@ -159,8 +159,8 @@ func TestDirSubdirs(t *testing.T) {
 	}
 
 	dir = getDir(t, ".")
-	subs, badCount, err = dir.Subdirs()
-	if len(subs) != 0 || err != nil || badCount > 0 {
+	subs, err = dir.Subdirs()
+	if len(subs) != 0 || err != nil || countParseErrors(subs) > 0 {
 		t.Errorf("Unexpected return from Subdirs(): %d subs, err=%s", len(subs), err)
 	}
 }
@@ -303,4 +303,13 @@ func getDir(t *testing.T, dirPath string) *Dir {
 		t.Fatalf("Unexpected error parsing dir %s: %s", dirPath, err)
 	}
 	return dir
+}
+
+func countParseErrors(subs []*Dir) (count int) {
+	for _, sub := range subs {
+		if sub.ParseError != nil {
+			count++
+		}
+	}
+	return
 }

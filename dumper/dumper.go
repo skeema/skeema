@@ -6,60 +6,17 @@ package dumper
 
 import (
 	"fmt"
-	"regexp"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/tengo"
 )
 
-// Options controls dumper behavior.
-type Options struct {
-	IncludeAutoInc bool                     // if false, strip AUTO_INCREMENT clauses from CREATE TABLE
-	CountOnly      bool                     // if true, skip writing files, just report count of rewrites
-	IgnoreTable    *regexp.Regexp           // skip tables with names matching this regex
-	skipKeys       map[tengo.ObjectKey]bool // skip objects with true values
-	onlyKeys       map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
-}
-
-// OnlyKeys specifies a list of tengo.ObjectKeys that the dump should
-// operate on. (Objects with keys NOT in this list will be skipped.)
-// Repeated calls to this method add to the existing whitelist.
-func (opts *Options) OnlyKeys(keys []tengo.ObjectKey) {
-	if opts.onlyKeys == nil {
-		opts.onlyKeys = make(map[tengo.ObjectKey]bool, len(keys))
-	}
-	for _, key := range keys {
-		opts.onlyKeys[key] = true
-	}
-}
-
-// IgnoreKeys specifies a list of tengo.ObjectKeys that the dump should
-// ignore. Repeated calls to this method add to the existing blacklist.
-// If the same key was supplied to both OnlyKeys and IgnoreKeys, the latter
-// takes precedence, meaning the object will be skipped.
-func (opts *Options) IgnoreKeys(keys []tengo.ObjectKey) {
-	if opts.skipKeys == nil {
-		opts.skipKeys = make(map[tengo.ObjectKey]bool, len(keys))
-	}
-	for _, key := range keys {
-		opts.skipKeys[key] = true
-	}
-}
-
-// shouldIgnore returns true if the option configuration indicates the supplied
-// tengo.ObjectKey should be ignored.
-func (opts *Options) shouldIgnore(key tengo.ObjectKey) bool {
-	if opts.skipKeys[key] {
-		return true
-	}
-	if key.Type == tengo.ObjectTypeTable && opts.IgnoreTable != nil && opts.IgnoreTable.MatchString(key.Name) {
-		return true
-	}
-	if opts.onlyKeys != nil && !opts.onlyKeys[key] {
-		return true
-	}
-	return false
+type statement struct {
+	canonicalCreate  string
+	filesystemCreate string
+	filesystemDelim  string
+	fsStatement      *fs.Statement
 }
 
 // DumpSchema updates the *.sql files in dir to match the creation statements
@@ -69,47 +26,30 @@ func (opts *Options) shouldIgnore(key tengo.ObjectKey) bool {
 // statements is returned, along with any fatal write error. If opts.CountOnly
 // is true, no actual filesystem writes occur, but a count is still returned.
 func DumpSchema(schema *tengo.Schema, dir *fs.Dir, opts Options) (count int, err error) {
-	// TODO: handle dirs that contain multiple logical schemas by name
-	var logicalSchema *fs.LogicalSchema
-	if len(dir.LogicalSchemas) > 0 {
-		logicalSchema = dir.LogicalSchemas[0]
-	} else {
-		logicalSchema = &fs.LogicalSchema{}
-	}
-
 	filesToRewrite := make(map[*fs.TokenizedSQLFile]bool)
-	schemaObjects := schema.ObjectDefinitions()
-	for key, stmt := range logicalSchema.Creates {
-		if opts.shouldIgnore(key) {
+	for key, s := range getStatementMap(schema, dir, opts) {
+		if opts.shouldIgnore(key) || s.canonicalCreate == s.filesystemCreate {
 			continue
 		}
-		if canonicalCreate, existsInSchema := schemaObjects[key]; existsInSchema {
-			// Include or strip auto_increment clause. (Note that if fs representation
-			// explicitly had an autoinc value > 1, we keep and update it regardless.)
-			if key.Type == tengo.ObjectTypeTable && !opts.IncludeAutoInc {
-				if _, fsAutoInc := tengo.ParseCreateAutoInc(stmt.Text); fsAutoInc <= 1 {
-					canonicalCreate, _ = tengo.ParseCreateAutoInc(canonicalCreate)
-				}
+
+		count++
+		if s.fsStatement != nil {
+			filesToRewrite[s.fsStatement.FromFile] = true
+		}
+		if opts.CountOnly {
+			continue
+		}
+
+		if s.fsStatement == nil { // exists in live db schema but not yet in filesystem
+			contents := fs.AddDelimiter(s.canonicalCreate)
+			filePath := fs.PathForObject(dir.Path, key.Name)
+			if err := appendToFile(filePath, contents); err != nil {
+				return count, err
 			}
-			if !fs.CanParse(canonicalCreate) {
-				log.Errorf("%s is unexpectedly not able to be parsed by Skeema -- please file a bug at https://github.com/skeema/skeema/issues/new", key)
-				continue
-			}
-			fsCreate, fsDelimiter := stmt.SplitTextBody()
-			if canonicalCreate == fsCreate {
-				continue // statement already present with correct formatting
-			}
-			count++
-			filesToRewrite[stmt.FromFile] = true
-			if !opts.CountOnly {
-				stmt.Text = fmt.Sprintf("%s%s", canonicalCreate, fsDelimiter)
-			}
-		} else {
-			count++
-			filesToRewrite[stmt.FromFile] = true
-			if !opts.CountOnly {
-				stmt.Remove()
-			}
+		} else if s.canonicalCreate == "" { // already exists in filesystem, but does not exist in live db schema
+			s.fsStatement.Remove()
+		} else { // exists in live db schema AND filesystem, but needs reformat/update
+			s.fsStatement.Text = fmt.Sprintf("%s%s", s.canonicalCreate, s.filesystemDelim)
 		}
 	}
 
@@ -117,42 +57,81 @@ func DumpSchema(schema *tengo.Schema, dir *fs.Dir, opts Options) (count int, err
 	for file := range filesToRewrite {
 		if opts.CountOnly {
 			log.Infof("File %s requires formatting changes", file)
-		} else if bytesWritten, err := file.Rewrite(); err != nil {
+		} else if err := rewriteSQLFile(file); err != nil {
 			return count, err
-		} else if bytesWritten == 0 {
-			log.Infof("Deleted %s", file)
-		} else {
-			log.Infof("Wrote %s (%d bytes)", file, bytesWritten)
-		}
-	}
-
-	// Objects that exist in schema, but have no corresponding create statement
-	// in fs yet: write new files, or append if filename already in use
-	for key, canonicalCreate := range schemaObjects {
-		if logicalSchema.Creates[key] != nil || opts.shouldIgnore(key) {
-			continue
-		}
-		count++
-		if opts.CountOnly {
-			continue
-		}
-		if key.Type == tengo.ObjectTypeTable && !opts.IncludeAutoInc {
-			canonicalCreate, _ = tengo.ParseCreateAutoInc(canonicalCreate)
-		}
-		if !fs.CanParse(canonicalCreate) {
-			log.Errorf("%s is unexpectedly not able to be parsed by Skeema -- please file a bug at https://github.com/skeema/skeema/issues/new", key)
-			continue
-		}
-		canonicalCreate = fs.AddDelimiter(canonicalCreate)
-		filePath := fs.PathForObject(dir.Path, key.Name)
-		if bytesWritten, wasNew, err := fs.AppendToFile(filePath, canonicalCreate); err != nil {
-			return count, err
-		} else if wasNew {
-			log.Infof("Created %s (%d bytes)", filePath, bytesWritten)
-		} else {
-			log.Infof("Wrote %s (%d bytes) -- appended new %s", filePath, bytesWritten, key.Type)
 		}
 	}
 
 	return count, nil
+}
+
+// getStatementMap builds a mapping of all object keys relevant to this dir,
+// regardless of whether they're only in filesystem, only in the live db schema,
+// or both.
+func getStatementMap(schema *tengo.Schema, dir *fs.Dir, opts Options) map[tengo.ObjectKey]statement {
+	statementMap := make(map[tengo.ObjectKey]statement)
+
+	// TODO: handle dirs that contain multiple logical schemas by name
+	var logicalSchema *fs.LogicalSchema
+	if len(dir.LogicalSchemas) > 0 {
+		logicalSchema = dir.LogicalSchemas[0]
+	} else {
+		logicalSchema = &fs.LogicalSchema{}
+	}
+	for key, stmt := range logicalSchema.Creates {
+		fsCreate, fsDelimiter := stmt.SplitTextBody()
+		statementMap[key] = statement{
+			filesystemCreate: fsCreate,
+			filesystemDelim:  fsDelimiter,
+			fsStatement:      stmt,
+		}
+	}
+
+	schemaObjects := schema.ObjectDefinitions()
+	for key, canonicalCreate := range schemaObjects {
+		s := statementMap[key] // not a pointer, zero value fine
+		s.canonicalCreate = canonicalCreate
+
+		// Include or strip auto_increment clause. (Note that if fs representation
+		// already exists and explicitly had an autoinc value > 1, we keep and update
+		// it regardless.)
+		if key.Type == tengo.ObjectTypeTable && !opts.IncludeAutoInc {
+			if _, fsAutoInc := tengo.ParseCreateAutoInc(s.filesystemCreate); fsAutoInc <= 1 {
+				s.canonicalCreate, _ = tengo.ParseCreateAutoInc(s.canonicalCreate)
+			}
+		}
+
+		if fs.CanParse(s.canonicalCreate) {
+			statementMap[key] = s
+		} else {
+			log.Errorf("%s is unexpectedly not able to be parsed by Skeema -- please file a bug at https://github.com/skeema/skeema/issues/new", key)
+			delete(statementMap, key)
+		}
+	}
+
+	return statementMap
+}
+
+// appendToFile appends contents to filePath.
+func appendToFile(filePath, contents string) error {
+	if bytesWritten, wasNew, err := fs.AppendToFile(filePath, contents); err != nil {
+		return err
+	} else if wasNew {
+		log.Infof("Created %s (%d bytes)", filePath, bytesWritten)
+	} else {
+		log.Infof("Wrote %s (%d bytes) -- appended new object", filePath, bytesWritten)
+	}
+	return nil
+}
+
+// rewriteSQLFile rewrites a TokenizedSQLFile.
+func rewriteSQLFile(file *fs.TokenizedSQLFile) error {
+	if bytesWritten, err := file.Rewrite(); err != nil {
+		return err
+	} else if bytesWritten == 0 {
+		log.Infof("Deleted %s", file)
+	} else {
+		log.Infof("Wrote %s (%d bytes)", file, bytesWritten)
+	}
+	return nil
 }

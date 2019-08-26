@@ -1,0 +1,56 @@
+package dumper
+
+import (
+	"regexp"
+
+	"github.com/skeema/tengo"
+)
+
+// Options controls dumper behavior.
+type Options struct {
+	IncludeAutoInc bool                     // if false, strip AUTO_INCREMENT clauses from CREATE TABLE
+	CountOnly      bool                     // if true, skip writing files, just report count of rewrites
+	IgnoreTable    *regexp.Regexp           // skip tables with names matching this regex
+	skipKeys       map[tengo.ObjectKey]bool // skip objects with true values
+	onlyKeys       map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
+}
+
+// OnlyKeys specifies a list of tengo.ObjectKeys that the dump should
+// operate on. (Objects with keys NOT in this list will be skipped.)
+// Repeated calls to this method add to the existing whitelist.
+func (opts *Options) OnlyKeys(keys []tengo.ObjectKey) {
+	if opts.onlyKeys == nil {
+		opts.onlyKeys = make(map[tengo.ObjectKey]bool, len(keys))
+	}
+	for _, key := range keys {
+		opts.onlyKeys[key] = true
+	}
+}
+
+// IgnoreKeys specifies a list of tengo.ObjectKeys that the dump should
+// ignore. Repeated calls to this method add to the existing blacklist.
+// If the same key was supplied to both OnlyKeys and IgnoreKeys, the latter
+// takes precedence, meaning the object will be skipped.
+func (opts *Options) IgnoreKeys(keys []tengo.ObjectKey) {
+	if opts.skipKeys == nil {
+		opts.skipKeys = make(map[tengo.ObjectKey]bool, len(keys))
+	}
+	for _, key := range keys {
+		opts.skipKeys[key] = true
+	}
+}
+
+// shouldIgnore returns true if the option configuration indicates the supplied
+// tengo.ObjectKey should be ignored.
+func (opts *Options) shouldIgnore(key tengo.ObjectKey) bool {
+	if opts.skipKeys[key] {
+		return true
+	}
+	if key.Type == tengo.ObjectTypeTable && opts.IgnoreTable != nil && opts.IgnoreTable.MatchString(key.Name) {
+		return true
+	}
+	if opts.onlyKeys != nil && !opts.onlyKeys[key] {
+		return true
+	}
+	return false
+}

@@ -60,11 +60,22 @@ func LintHandler(cfg *mybase.Config) error {
 				exitCode = CodeBadConfig
 			}
 		}
-		return NewExitValue(exitCode, "Skipped %d operations due to fatal errors", len(result.Exceptions))
+		return NewExitValue(exitCode, "Skipped %s due to fatal errors",
+			countAndNoun(len(result.Exceptions), "operation", "operations"),
+		)
+	case result.ErrorCount > 0 && result.WarningCount > 0:
+		return NewExitValue(CodeFatalError, "Found %s and %s",
+			countAndNoun(result.ErrorCount, "error", "errors"),
+			countAndNoun(result.WarningCount, "warning", "warnings"),
+		)
 	case result.ErrorCount > 0:
-		return NewExitValue(CodeFatalError, "Found %d errors", result.ErrorCount)
+		return NewExitValue(CodeFatalError, "Found %s",
+			countAndNoun(result.ErrorCount, "error", "errors"),
+		)
 	case result.WarningCount > 0:
-		return NewExitValue(CodeDifferencesFound, "Found %d warnings", result.WarningCount)
+		return NewExitValue(CodePartialError, "Found %s",
+			countAndNoun(result.WarningCount, "warning", "warnings"),
+		)
 	case result.ReformatCount > 0:
 		return NewExitValue(CodeDifferencesFound, "")
 	}
@@ -72,10 +83,14 @@ func LintHandler(cfg *mybase.Config) error {
 }
 
 func lintWalker(dir *fs.Dir, maxDepth int) *linter.Result {
+	if dir.ParseError != nil {
+		log.Error(fmt.Sprintf("Skipping schema in %s due to error: %s", dir.RelPath(), dir.ParseError))
+		return linter.BadConfigResult(dir, dir.ParseError)
+	}
 	log.Infof("Linting %s", dir)
 	result := lintDir(dir)
 	for _, err := range result.Exceptions {
-		log.Error(fmt.Errorf("Skipping schema in %s due to error: %s", dir.RelPath(), err))
+		log.Error(fmt.Sprintf("Skipping schema in %s due to error: %s", dir.RelPath(), err))
 	}
 	for _, annotation := range result.Annotations {
 		annotation.Log()
@@ -85,14 +100,11 @@ func lintWalker(dir *fs.Dir, maxDepth int) *linter.Result {
 	}
 
 	var subdirErr error
-	if subdirs, badCount, err := dir.Subdirs(); err != nil {
+	if subdirs, err := dir.Subdirs(); err != nil {
 		subdirErr = fmt.Errorf("Cannot list subdirs of %s: %s", dir, err)
 	} else if len(subdirs) > 0 && maxDepth <= 0 {
 		subdirErr = fmt.Errorf("Not walking subdirs of %s: max depth reached", dir)
 	} else {
-		if badCount > 0 {
-			subdirErr = fmt.Errorf("Ignoring %d subdirs of %s with configuration errors", badCount, dir)
-		}
 		for _, sub := range subdirs {
 			result.Merge(lintWalker(sub, maxDepth-1))
 		}

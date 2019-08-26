@@ -42,24 +42,40 @@ func FormatHandler(cfg *mybase.Config) error {
 	if err != nil {
 		return err
 	}
-	return formatWalker(dir, 5)
+
+	// formatWalker returns the "worst" (highest) exit code it encounters. We care
+	// about the exit code, but not the error message, since any error will already
+	// have been logged. (Multiple errors may have been encountered along the way,
+	// and it's simpler to log them when they occur, rather than needlessly
+	// collecting them.)
+	err = formatWalker(dir, 5)
+	return NewExitValue(ExitCode(err), "")
 }
 
 func formatWalker(dir *fs.Dir, maxDepth int) error {
+	if dir.ParseError != nil {
+		log.Warnf("Skipping %s: %s", dir.Path, dir.ParseError)
+		return NewExitValue(CodeBadConfig, "")
+	}
+
 	result := formatDir(dir)
-	if subdirs, badCount, err := dir.Subdirs(); err != nil {
+	if ExitCode(result) > CodeDifferencesFound {
+		log.Errorf("Skipping %s: %s", dir, result)
+		return result // don't walk subdirs if something fatal happened here
+	}
+
+	subdirs, err := dir.Subdirs()
+	if err != nil {
 		log.Errorf("Cannot list subdirs of %s: %s", dir, err)
-		result = HighestExitValue(result, err)
+		return err
 	} else if len(subdirs) > 0 && maxDepth <= 0 {
 		log.Errorf("Not walking subdirs of %s: max depth reached", dir)
-		result = HighestExitValue(result, NewExitValue(CodePartialError, ""))
-	} else {
-		if badCount > 0 {
-			log.Errorf("Ignoring %d subdirs of %s with configuration errors", badCount, dir)
-			result = HighestExitValue(result, NewExitValue(CodeBadConfig, ""))
-		}
-		for _, sub := range subdirs {
-			result = HighestExitValue(result, formatWalker(sub, maxDepth-1))
+		return result
+	}
+	for _, sub := range subdirs {
+		err := formatWalker(sub, maxDepth-1)
+		if ExitCode(err) > ExitCode(result) {
+			result = err
 		}
 	}
 	return result
@@ -87,16 +103,15 @@ func formatDir(dir *fs.Dir) error {
 	}
 
 	var totalReformatCount int
-	var failures bool
 	for _, logicalSchema := range dir.LogicalSchemas {
 		wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
 		if err != nil {
-			return NewExitValue(CodeFatalError, err.Error())
+			return err
 		}
 		for _, stmtErr := range wsSchema.Failures {
-			failures = true
 			message := strings.Replace(stmtErr.Err.Error(), "Error executing DDL in workspace: ", "", 1)
 			log.Errorf("%s: %s", stmtErr.Location(), message)
+			totalReformatCount++
 		}
 
 		dumpOpts := dumper.Options{
@@ -107,14 +122,14 @@ func formatDir(dir *fs.Dir) error {
 		dumpOpts.IgnoreKeys(wsSchema.FailedKeys())
 		reformatCount, err := dumper.DumpSchema(wsSchema.Schema, dir, dumpOpts)
 		if err != nil {
-			return NewExitValue(CodeFatalError, err.Error())
+			return err
 		}
 		totalReformatCount += reformatCount
 	}
 	for _, stmt := range dir.IgnoredStatements {
-		log.Debug("%s: unable to parse statement", stmt.Location())
+		log.Debugf("%s: unable to parse statement", stmt.Location())
 	}
-	if failures || totalReformatCount > 0 {
+	if totalReformatCount > 0 {
 		return NewExitValue(CodeDifferencesFound, "")
 	}
 	return nil

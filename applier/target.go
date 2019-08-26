@@ -51,6 +51,10 @@ type TargetGroup []*Target
 // Targets are returned as a slice with no guaranteed ordering. Errors are not
 // fatal; a count of skipped dirs is returned instead.
 func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int) {
+	if dir.ParseError != nil {
+		log.Warnf("Skipping %s: %s", dir.Path, dir.ParseError)
+		return nil, 1
+	}
 	if dir.Config.Changed("host") && dir.HasSchema() {
 		var instances []*tengo.Instance
 		instances, skipCount = instancesForDir(dir)
@@ -71,8 +75,7 @@ func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int)
 		log.Warnf("Skipping %s: no schema defined for environment \"%s\"\n", dir, dir.Config.Get("environment"))
 	}
 
-	subdirs, badSubdirCount, err := dir.Subdirs()
-	skipCount += badSubdirCount
+	subdirs, err := dir.Subdirs()
 	if err != nil {
 		log.Warnf("Skipping subdirs of %s: %s\n", dir, err)
 		skipCount++
@@ -82,12 +85,12 @@ func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int)
 		skipCount += len(subdirs)
 		return
 	}
+
 	for _, subdir := range subdirs {
 		subTargets, subSkipCount := TargetsForDir(subdir, maxDepth-1)
 		targets = append(targets, subTargets...)
 		skipCount += subSkipCount
 	}
-
 	return
 }
 

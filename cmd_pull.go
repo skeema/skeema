@@ -45,7 +45,7 @@ func PullHandler(cfg *mybase.Config) error {
 	}
 
 	var skipCount int
-	if _, skipCount, err = pullWalker(dir, 5); err != nil {
+	if skipCount, err = pullWalker(dir, 5); err != nil {
 		return err
 	}
 	if skipCount == 0 {
@@ -62,81 +62,111 @@ func PullHandler(cfg *mybase.Config) error {
 // error is only returned if something fatal occurs. skipCount reflects the
 // number of non-fatal failed operations that were skipped for dir and its
 // subdirectories.
-func pullWalker(dir *fs.Dir, maxDepth int) (handledSchemaNames []string, skipCount int, err error) {
+func pullWalker(dir *fs.Dir, maxDepth int) (skipCount int, err error) {
 	var instance *tengo.Instance
 	if dir.Config.Changed("host") {
 		instance, err = dir.FirstInstance()
 		if err != nil {
 			log.Warnf("Skipping %s: %s", dir, err)
-			return nil, 1, nil
+			return 1, nil
 		}
 	}
 
+	// "flat" dir defining both host and schema
 	if instance != nil && dir.HasSchema() {
-		for _, logicalSchema := range dir.LogicalSchemas {
-			// TODO: support pull for case where multiple explicitly-named schemas per
-			// dir. For example, ability to convert a multi-schema single-file mysqldump
-			// into Skeema's usual multi-dir layout.
-			if logicalSchema.Name != "" {
-				handledSchemaNames = append(handledSchemaNames, logicalSchema.Name)
-				log.Warnf("Ignoring schema %s from directory %s -- multiple schemas per dir not supported yet", logicalSchema.Name, dir)
-				continue
-			}
-
-			var schemaNames []string
-			if schemaNames, err = dir.SchemaNames(instance); err != nil {
-				return nil, skipCount, fmt.Errorf("%s: Unable to fetch schema names mapped by this dir: %s", dir, err)
-			}
-			if len(schemaNames) == 0 {
-				log.Warnf("Ignoring directory %s -- did not map to any schema names for environment \"%s\"\n", dir, dir.Config.Get("environment"))
-				continue
-			}
-			handledSchemaNames = append(handledSchemaNames, schemaNames...)
-			instSchema, err := instance.Schema(schemaNames[0])
-			if err == sql.ErrNoRows {
-				log.Infof("Deleted directory %s -- schema %s no longer exists\n", dir, handledSchemaNames[0])
-				// Explicitly return here to prevent later attempt at subdir traversal
-				return nil, skipCount, dir.Delete()
-			} else if err != nil {
-				return nil, skipCount, fmt.Errorf("%s: Unable to fetch schema %s from %s: %s", dir, handledSchemaNames[0], instance, err)
-			}
-			if err = pullSchemaDir(dir, instance, instSchema, logicalSchema); err != nil {
-				return nil, skipCount, err
-			}
-		}
+		updateFlavor(dir, instance)
+		_, err = pullSchemaDir(dir, instance)
+		return skipCount, err
 	}
 
-	if subdirs, badCount, err := dir.Subdirs(); err != nil {
+	subdirs, err := dir.Subdirs()
+	if err != nil {
 		log.Errorf("Cannot list subdirs of %s: %s", dir, err)
-		skipCount++
+		return skipCount + 1, nil
 	} else if len(subdirs) > 0 && maxDepth <= 0 {
 		log.Warnf("Not walking subdirs of %s: max depth reached", dir)
-		skipCount += len(subdirs)
-	} else {
-		skipCount += badCount
-		allSubSchemaNames := make([]string, 0)
-		for _, sub := range subdirs {
-			subSchemaNames, subSkipCount, walkErr := pullWalker(sub, maxDepth-1)
-			skipCount += subSkipCount
-			if walkErr != nil {
-				return nil, skipCount, walkErr
-			}
-			allSubSchemaNames = append(allSubSchemaNames, subSchemaNames...)
+		return skipCount + len(subdirs), nil
+	}
+
+	wantNewSchemas := dir.Config.GetBool("new-schemas")
+	allSchemaNames := []string{}
+	for _, sub := range subdirs {
+		if sub.ParseError != nil {
+			log.Warnf("Skipping %s: %s", sub.Path, sub.ParseError)
+			skipCount++
+			wantNewSchemas = false // can't accurately detect bad subdir vs new schema
+			continue
 		}
-		if instance != nil && !dir.Config.Changed("schema") {
-			updateFlavor(dir, instance)
-			if dir.Config.GetBool("new-schemas") && badCount == 0 {
-				err = findNewSchemas(dir, instance, allSubSchemaNames)
+
+		// If dir does not define host, simply recurse into subdirs.
+		if instance == nil {
+			subSkipCount, subErr := pullWalker(sub, maxDepth-1)
+			skipCount += subSkipCount
+			if subErr != nil {
+				return skipCount, subErr
 			}
-			return nil, skipCount, err
+			continue
+		}
+
+		// Otherwise, dir defines host but not schema. Treat subdirs as schema dirs,
+		// and use the combined list of handled schemas to figure out whether any
+		// new schema dirs need to be created (if requested).
+		subSchemaNames, subErr := pullSchemaDir(sub, instance)
+		if subErr != nil {
+			return skipCount, subErr
+		}
+		allSchemaNames = append(allSchemaNames, subSchemaNames...)
+	}
+
+	if instance != nil {
+		updateFlavor(dir, instance)
+		if wantNewSchemas {
+			err = findNewSchemas(dir, instance, allSchemaNames)
 		}
 	}
-	return handledSchemaNames, skipCount, nil
+	return skipCount, err
+}
+
+// pullSchemaDir updates all logical schemas in dir to reflect the actual
+// definitions found in instance. A slice of handled schema names is returned,
+// along with any error encountered.
+func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance) (schemaNames []string, err error) {
+	for _, logicalSchema := range dir.LogicalSchemas {
+		names, err := pullLogicalSchema(dir, instance, logicalSchema)
+		if err != nil {
+			return nil, err
+		}
+		schemaNames = append(schemaNames, names...)
+	}
+	return
 }
 
 // pullSchemaDir performs appropriate pull logic on a dir that maps to one or
-// more schemas. Typically these are leaf dirs.
-func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Schema, logicalSchema *fs.LogicalSchema) error {
+// more schemas. A slice of handled schema names is returned, along with any
+// error encountered.
+func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.LogicalSchema) (schemaNames []string, err error) {
+	if logicalSchema.Name != "" {
+		// TODO: support pull for case where multiple explicitly-named schemas per
+		// dir. For example, ability to convert a multi-schema single-file mysqldump
+		// into Skeema's usual multi-dir layout.
+		log.Warnf("Ignoring schema %s from directory %s -- multiple schemas per dir not supported yet", logicalSchema.Name, dir)
+		return []string{logicalSchema.Name}, nil
+	}
+	if schemaNames, err = dir.SchemaNames(instance); err != nil {
+		return nil, fmt.Errorf("%s: Unable to fetch schema names mapped by this dir: %s", dir, err)
+	}
+	if len(schemaNames) == 0 {
+		log.Warnf("Ignoring directory %s -- did not map to any schema names for environment \"%s\"\n", dir, dir.Config.Get("environment"))
+		return
+	}
+	instSchema, err := instance.Schema(schemaNames[0])
+	if err == sql.ErrNoRows {
+		log.Infof("Deleted directory %s -- schema %s no longer exists\n", dir, schemaNames[0])
+		return nil, dir.Delete()
+	} else if err != nil {
+		return nil, fmt.Errorf("%s: Unable to fetch schema %s from %s: %s", dir, schemaNames[0], instance, err)
+	}
+
 	log.Infof("Updating %s to reflect %s %s", dir, instance, instSchema.Name)
 
 	// Handle changes in schema's default character set and/or collation by
@@ -145,7 +175,7 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Sche
 		dir.OptionFile.SetOptionValue("", "default-character-set", instSchema.CharSet)
 		dir.OptionFile.SetOptionValue("", "default-collation", instSchema.Collation)
 		if err := dir.OptionFile.Write(true); err != nil {
-			return fmt.Errorf("Unable to update character set and collation for %s: %s", dir.OptionFile.Path(), err)
+			return nil, fmt.Errorf("Unable to update character set and collation for %s: %s", dir.OptionFile.Path(), err)
 		}
 		log.Infof("Wrote %s -- updated schema-level default-character-set and default-collation", dir.OptionFile.Path())
 	}
@@ -153,9 +183,8 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Sche
 	dumpOpts := dumper.Options{
 		IncludeAutoInc: dir.Config.GetBool("include-auto-inc"),
 	}
-	var err error
 	if dumpOpts.IgnoreTable, err = dir.Config.GetRegexp("ignore-table"); err != nil {
-		return NewExitValue(CodeBadConfig, err.Error())
+		return nil, NewExitValue(CodeBadConfig, err.Error())
 	}
 
 	// When --skip-format is in use, we only want to update objects that have
@@ -166,18 +195,18 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance, instSchema *tengo.Sche
 		mods := statementModifiersForPull(dir.Config, instance, dumpOpts.IgnoreTable)
 		opts, err := workspace.OptionsForDir(dir, instance)
 		if err != nil {
-			return NewExitValue(CodeBadConfig, err.Error())
+			return nil, NewExitValue(CodeBadConfig, err.Error())
 		}
 		inDiff, err := objectsInDiff(logicalSchema, instSchema, opts, mods)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		dumpOpts.OnlyKeys(inDiff)
 	}
 
 	_, err = dumper.DumpSchema(instSchema, dir, dumpOpts)
 	os.Stderr.WriteString("\n")
-	return err
+	return
 }
 
 func statementModifiersForPull(config *mybase.Config, instance *tengo.Instance, ignoreTable *regexp.Regexp) tengo.StatementModifiers {

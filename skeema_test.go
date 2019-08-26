@@ -259,19 +259,23 @@ func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, d
 		}
 
 		// Compare subdirs and walk them
-		aSubdirs, badSubdirCount, err := a.Subdirs()
-		if err != nil || badSubdirCount > 0 {
-			t.Fatalf("Unable to list subdirs of %s: %s (bad subdir count %d)", a, err, badSubdirCount)
+		aSubdirs, err := a.Subdirs()
+		if err != nil {
+			t.Fatalf("Unable to list subdirs of %s: %v", a, err)
 		}
-		bSubdirs, badSubdirCount, err := b.Subdirs()
-		if err != nil || badSubdirCount > 0 {
-			t.Fatalf("Unable to list subdirs of %s: %s (bad subdir count %d)", b, err, badSubdirCount)
+		bSubdirs, err := b.Subdirs()
+		if err != nil {
+			t.Fatalf("Unable to list subdirs of %s: %v", b, err)
 		}
 		if len(aSubdirs) != len(bSubdirs) {
 			t.Errorf("Differing count of subdirs between %s and %s", a, b)
 		} else {
 			for n := range aSubdirs {
-				if aSubdirs[n].BaseName() != bSubdirs[n].BaseName() {
+				if aSubdirs[n].ParseError != nil {
+					t.Fatalf("Dir parse error: %v", aSubdirs[n].ParseError)
+				} else if bSubdirs[n].ParseError != nil {
+					t.Fatalf("Dir parse error: %v", bSubdirs[n].ParseError)
+				} else if aSubdirs[n].BaseName() != bSubdirs[n].BaseName() {
 					t.Errorf("Subdir name mismatch: %s vs %s", aSubdirs[n], bSubdirs[n])
 				} else {
 					compareDirs(aSubdirs[n], bSubdirs[n])

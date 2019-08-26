@@ -49,19 +49,6 @@ func (ev *ExitValue) Error() string {
 	return ev.message
 }
 
-// HighestExitValue returns whichever supplied value has the highest exit code.
-func HighestExitValue(errs ...error) error {
-	var highest error
-	var highestCode int
-	for _, err := range errs {
-		if code := ExitCode(err); code >= highestCode {
-			highest = err
-			highestCode = code
-		}
-	}
-	return highest
-}
-
 // ExitCode returns an exit code corresponding to the supplied error. If err
 // is nil, code 0 (success) is returned. If err is an *ExitValue, its Code is
 // returned. Otherwise, exit 2 code (fatal error) is returned.

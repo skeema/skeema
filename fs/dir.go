@@ -25,6 +25,7 @@ type Dir struct {
 	OptionFile        *mybase.File
 	SQLFiles          []SQLFile
 	LogicalSchemas    []*LogicalSchema // for now, always 0 or 1 elements; 2+ in same dir to be supported in future
+	ParseError        error            // any fatal error found parsing dir's config or contents
 	IgnoredStatements []*Statement     // statements with unknown type / not supported by this package
 	repoBase          string           // absolute path of containing repo, or topmost-found .skeema file
 }
@@ -88,10 +89,8 @@ func ParseDir(dirPath string, globalConfig *mybase.Config) (*Dir, error) {
 		dir.Config.AddSource(optionFile)
 	}
 
-	if err := dir.parseContents(); err != nil {
-		return nil, err
-	}
-	return dir, nil
+	dir.parseContents()
+	return dir, dir.ParseError
 }
 
 func (dir *Dir) String() string {
@@ -134,16 +133,14 @@ func (dir *Dir) HasFile(name string) (bool, error) {
 // Subdirs reads the list of direct, non-hidden subdirectories of dir, parses
 // them (*.sql and .skeema files), and returns them. An error will be returned
 // if there are problems reading dir's the directory list. Otherwise, err is
-// nil but the returned int is a count of subdirs that had problems being read
-// or parsed.
-func (dir *Dir) Subdirs() ([]*Dir, int, error) {
+// nil, but some of the returned Dir values will have a non-nil ParseError if
+// any problems were encountered in that subdir.
+func (dir *Dir) Subdirs() ([]*Dir, error) {
 	fileInfos, err := ioutil.ReadDir(dir.Path)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-
 	result := make([]*Dir, 0, len(fileInfos))
-	var badSubdirCount int
 	for _, fi := range fileInfos {
 		if fi.IsDir() && fi.Name()[0] != '.' {
 			sub := &Dir{
@@ -151,16 +148,11 @@ func (dir *Dir) Subdirs() ([]*Dir, int, error) {
 				Config:   dir.Config.Clone(),
 				repoBase: dir.repoBase,
 			}
-			subErr := sub.parseContents()
-			if subErr != nil {
-				log.Warnf("%s: %s", sub.Path, subErr)
-				badSubdirCount++
-			} else {
-				result = append(result, sub)
-			}
+			sub.parseContents()
+			result = append(result, sub)
 		}
 	}
-	return result, badSubdirCount, nil
+	return result, nil
 }
 
 // CreateSubdir creates a subdirectory with the supplied name and optional
@@ -210,10 +202,8 @@ func (dir *Dir) CreateSubdir(name string, optionFile *mybase.File) (*Dir, error)
 		Config:   dir.Config.Clone(),
 		repoBase: dir.repoBase,
 	}
-	if err := sub.parseContents(); err != nil {
-		return nil, err
-	}
-	return sub, nil
+	sub.parseContents()
+	return sub, sub.ParseError
 }
 
 // CreateOptionFile adds the supplied option file to dir. It is an error if dir
@@ -507,24 +497,25 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 }
 
 // parseContents reads the .skeema and *.sql files in the dir, populating
-// fields of dir accordingly. This method modifies dir in-place.
-func (dir *Dir) parseContents() error {
+// fields of dir accordingly. This method modifies dir in-place. Any fatal
+// error will populate dir.ParseError.
+func (dir *Dir) parseContents() {
 	logicalSchemasByName := make(map[string]*LogicalSchema)
 
 	// Parse the option file, if one exists
-	if has, err := dir.HasFile(".skeema"); err != nil {
-		return err
+	var has bool
+	if has, dir.ParseError = dir.HasFile(".skeema"); dir.ParseError != nil {
+		return
 	} else if has {
-		if dir.OptionFile, err = parseOptionFile(dir.Path, dir.repoBase, dir.Config); err != nil {
-			return err
+		if dir.OptionFile, dir.ParseError = parseOptionFile(dir.Path, dir.repoBase, dir.Config); dir.ParseError != nil {
+			return
 		}
 		dir.Config.AddSource(dir.OptionFile)
 	}
 
 	// Tokenize and parse any *.sql files
-	var err error
-	if dir.SQLFiles, err = sqlFiles(dir.Path, dir.repoBase); err != nil {
-		return err
+	if dir.SQLFiles, dir.ParseError = sqlFiles(dir.Path, dir.repoBase); dir.ParseError != nil {
+		return
 	}
 	for _, sf := range dir.SQLFiles {
 		tokenizedFile, err := sf.Tokenize()
@@ -541,8 +532,16 @@ func (dir *Dir) parseContents() error {
 			}
 			if stmt.Type == StatementTypeCreate {
 				if err := logicalSchemasByName[stmt.Schema()].AddStatement(stmt); err != nil {
-					foundStmt := logicalSchemasByName[stmt.Schema()].Creates[stmt.ObjectKey()]
-					return fmt.Errorf("%s %s found multiple times in %s: %s line %d and %s line %d", stmt.ObjectType, tengo.EscapeIdentifier(stmt.ObjectName), dir.RelPath(), foundStmt.File, foundStmt.LineNo, stmt.File, stmt.LineNo)
+					origStmt := logicalSchemasByName[stmt.Schema()].Creates[stmt.ObjectKey()]
+					dir.ParseError = DuplicateDefinitionError{
+						ObjectKey: stmt.ObjectKey(),
+						RelPath:   dir.RelPath(),
+						FirstFile: origStmt.File,
+						FirstLine: origStmt.LineNo,
+						DupeFile:  stmt.File,
+						DupeLine:  stmt.LineNo,
+					}
+					return
 				}
 			} else if stmt.Type == StatementTypeAlter {
 				logicalSchemasByName[stmt.Schema()].AddStatement(stmt)
@@ -573,7 +572,6 @@ func (dir *Dir) parseContents() error {
 		ls.Collation = dir.Config.Get("default-collation")
 		dir.LogicalSchemas = append([]*LogicalSchema{ls}, dir.LogicalSchemas...)
 	}
-	return nil
 }
 
 // ParentOptionFiles returns a slice of *mybase.File, corresponding to the
@@ -601,8 +599,9 @@ func ParentOptionFiles(dirPath string, baseConfig *mybase.Config) ([]*mybase.Fil
 	home := filepath.Clean(os.Getenv("HOME"))
 	repoBase := cleaned
 
-	// Examine parent dirs, going up one level at a time, stopping early if we
-	// hit either the user's home directory or a directory containing a .git subdir.
+	// Examine dirs, starting with dirPath and going up one level at a time,
+	// stopping early if we hit either the user's home directory or a directory
+	// containing a .git subdir.
 	var atRepoBase bool
 	for n := len(components) - 1; n >= 0 && !atRepoBase; n-- {
 		curPath := "/" + path.Join(components[0:n+1]...)
@@ -725,4 +724,24 @@ func sqlFiles(dirPath, repoBase string) ([]SQLFile, error) {
 		}
 	}
 	return result, nil
+}
+
+// DuplicateDefinitionError is an error returned when Dir.parseContents()
+// encounters multiple CREATE statements for the same exact object.
+type DuplicateDefinitionError struct {
+	ObjectKey tengo.ObjectKey
+	RelPath   string
+	FirstFile string
+	FirstLine int
+	DupeFile  string
+	DupeLine  int
+}
+
+// Error satisfies the builtin error interface.
+func (dde DuplicateDefinitionError) Error() string {
+	return fmt.Sprintf("%s found multiple times in %s: %s line %d and %s line %d",
+		dde.ObjectKey, dde.RelPath,
+		dde.FirstFile, dde.FirstLine,
+		dde.DupeFile, dde.DupeLine,
+	)
 }
