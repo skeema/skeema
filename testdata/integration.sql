@@ -103,6 +103,13 @@ CREATE TABLE grab_bag (
 	CONSTRAINT bb FOREIGN KEY (name) REFERENCES sometable3 (somecol3)
 ) AUTO_INCREMENT=123 ROW_FORMAT=COMPACT CHECKSUM=1 DELAY_KEY_WRITE=1 COMMENT='hello';
 
+CREATE TABLE ft_test (
+	id int unsigned not null auto_increment,
+	body varchar(2000),
+	PRIMARY KEY (id),
+	/*!50601 FULLTEXT */ KEY ftbody (body)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
 # Routine definitions here are intentionally formatted oddly. The DB remembers
 # formatting in some places but not others.
 # Keep this in sync with tengo_test.go's aProc()

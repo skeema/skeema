@@ -144,6 +144,7 @@ func primaryKey(cols ...*Column) *Index {
 		SubParts:   make([]uint16, len(cols)),
 		PrimaryKey: true,
 		Unique:     true,
+		Type:       "BTREE",
 	}
 }
 
@@ -228,11 +229,13 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 			Columns:  []*Column{columns[4]},
 			SubParts: []uint16{0},
 			Unique:   true,
+			Type:     "BTREE",
 		},
 		{
 			Name:     "idx_actor_name",
 			Columns:  []*Column{columns[2], columns[1]},
 			SubParts: []uint16{10, 1},
+			Type:     "BTREE",
 		},
 	}
 
@@ -290,6 +293,7 @@ func anotherTableForFlavor(flavor Flavor) Table {
 		Name:     "film_name",
 		Columns:  []*Column{columns[1]},
 		SubParts: []uint16{0},
+		Type:     "BTREE",
 	}
 	stmt := `CREATE TABLE ` + "`" + `actor_in_film` + "`" + ` (
   ` + "`" + `actor_id` + "`" + ` smallint(5) unsigned NOT NULL,
@@ -406,12 +410,14 @@ func foreignKeyTable() Table {
 			Name:     "customer",
 			Columns:  []*Column{columns[1]},
 			SubParts: []uint16{0},
+			Type:     "BTREE",
 		},
 		{
 			Name:     "product",
 			Columns:  []*Column{columns[2], columns[3]},
 			Unique:   true,
 			SubParts: []uint16{0, 0},
+			Type:     "BTREE",
 		},
 	}
 

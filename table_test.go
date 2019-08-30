@@ -190,6 +190,7 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 		Name:     "idx_alive_lastname",
 		Columns:  []*Column{to.Columns[5], to.Columns[2]},
 		SubParts: []uint16{0, 10},
+		Type:     "BTREE",
 	}
 	to.SecondaryIndexes = append(to.SecondaryIndexes, newSecondary)
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
@@ -395,6 +396,7 @@ func TestTableAlterAddIndexOrder(t *testing.T) {
 			Name:     fmt.Sprintf("newidx_%d", n),
 			Columns:  []*Column{to.Columns[0]},
 			SubParts: []uint16{0},
+			Type:     "BTREE",
 		})
 	}
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
@@ -441,6 +443,7 @@ func TestTableAlterIndexReorder(t *testing.T) {
 			Name:     "idx_alive_lastname",
 			Columns:  []*Column{table.Columns[5], table.Columns[2]},
 			SubParts: []uint16{0, 10},
+			Type:     "BTREE",
 		})
 		table.CreateStatement = table.GeneratedCreateStatement(FlavorUnknown)
 		return table
@@ -537,6 +540,7 @@ func TestTableAlterIndexReorder(t *testing.T) {
 		Name:     "idx_firstname",
 		Columns:  []*Column{to.Columns[1]},
 		SubParts: []uint16{0},
+		Type:     "BTREE",
 	}
 	to.SecondaryIndexes = []*Index{to.SecondaryIndexes[0], newIdx, to.SecondaryIndexes[1], to.SecondaryIndexes[2]}
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
