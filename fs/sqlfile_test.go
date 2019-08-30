@@ -9,7 +9,7 @@ import (
 
 func TestSQLFileExists(t *testing.T) {
 	sf := SQLFile{
-		Dir:      "../testdata",
+		Dir:      "testdata",
 		FileName: "statements.sql",
 	}
 	ok, err := sf.Exists()
@@ -31,7 +31,7 @@ func TestSQLFileExists(t *testing.T) {
 
 func TestSQLFileCreate(t *testing.T) {
 	sf := SQLFile{
-		Dir:      "../testdata",
+		Dir:      "testdata",
 		FileName: "statements.sql",
 	}
 	if err := sf.Create("# hello world"); err == nil {
@@ -47,7 +47,7 @@ func TestSQLFileCreate(t *testing.T) {
 
 func TestSQLFileTokenize(t *testing.T) {
 	sf := SQLFile{
-		Dir:      "../testdata",
+		Dir:      "testdata",
 		FileName: "statements.sql",
 	}
 	tokenizedFile, err := sf.Tokenize()
@@ -95,7 +95,7 @@ func TestSQLFileTokenize(t *testing.T) {
 
 	// Test error returns for unterminated quote or unterminated C-style comment
 	sf2 := SQLFile{
-		Dir:      "../testdata",
+		Dir:      "testdata",
 		FileName: "statements2.sql",
 	}
 	origContents := ReadTestFile(t, sf.Path())
@@ -120,7 +120,7 @@ func TestSQLFileTokenize(t *testing.T) {
 	// Test handling of files that just contain a single routine definition, but
 	// without using the DELIMITER command
 	nd1 := SQLFile{
-		Dir:      "../testdata",
+		Dir:      "testdata",
 		FileName: "nodelimiter1.sql",
 	}
 	if tokenizedFile, err := nd1.Tokenize(); err != nil {
@@ -139,7 +139,7 @@ func TestSQLFileTokenize(t *testing.T) {
 	// command) followed by another CREATE, and confirm the parsing is "incorrect"
 	// in the expected way
 	nd2 := SQLFile{
-		Dir:      "../testdata",
+		Dir:      "testdata",
 		FileName: "nodelimiter2.sql",
 	}
 	if tokenizedFile, err := nd2.Tokenize(); err != nil {
@@ -162,9 +162,9 @@ func TestSQLFileTokenize(t *testing.T) {
 
 func TestTokenizedSQLFileRewrite(t *testing.T) {
 	// Use Rewrite() to write file statements2.sql with same contents as statements.sql
-	contents := ReadTestFile(t, "../testdata/statements.sql")
+	contents := ReadTestFile(t, "testdata/statements.sql")
 	sf2 := SQLFile{
-		Dir:      "../testdata",
+		Dir:      "testdata",
 		FileName: "statements2.sql",
 	}
 	tokenizedFile := &TokenizedSQLFile{
@@ -204,7 +204,7 @@ func TestTokenizedSQLFileRewrite(t *testing.T) {
 	}
 }
 
-// expectedStatements returns the expected contents of ../testdata/statements.sql
+// expectedStatements returns the expected contents of testdata/statements.sql
 // in the form of a slice of statement pointers
 func expectedStatements(filePath string) []*Statement {
 	return []*Statement{
@@ -271,16 +271,16 @@ func TestAppendToFile(t *testing.T) {
 		}
 	}
 
-	WriteTestFile(t, "../testdata/.scratch/fs/append-test1", "")
-	assertAppend("../testdata/.scratch/fs/append-test1", "hello world", 11, false)
-	assertAppend("../testdata/.scratch/fs/append-test2", "hello world", 11, true)
-	assertAppend("../testdata/.scratch/fs/append-test2", "hello world", 23, false)
-	if contents := ReadTestFile(t, "../testdata/.scratch/fs/append-test2"); contents != "hello world\nhello world" {
+	WriteTestFile(t, "testdata/.scratch/append-test1", "")
+	assertAppend("testdata/.scratch/append-test1", "hello world", 11, false)
+	assertAppend("testdata/.scratch/append-test2", "hello world", 11, true)
+	assertAppend("testdata/.scratch/append-test2", "hello world", 23, false)
+	if contents := ReadTestFile(t, "testdata/.scratch/append-test2"); contents != "hello world\nhello world" {
 		t.Errorf("Unexpected contents: %s", contents)
 	}
-	RemoveTestFile(t, "../testdata/.scratch/fs/append-test1")
-	RemoveTestFile(t, "../testdata/.scratch/fs/append-test2")
-	RemoveTestFile(t, "../testdata/.scratch/fs")
+	RemoveTestFile(t, "testdata/.scratch/append-test1")
+	RemoveTestFile(t, "testdata/.scratch/append-test2")
+	RemoveTestFile(t, "testdata/.scratch")
 }
 
 func TestAddDelimiter(t *testing.T) {

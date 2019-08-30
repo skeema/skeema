@@ -1,3 +1,0 @@
-host=placeholder
-host-wrapper='cat ../testdata/.scratch/applier-hosts'
-password=fakepw

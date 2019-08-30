@@ -14,7 +14,7 @@ import (
 func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 	sourceSQL := func(filename string) {
 		t.Helper()
-		if _, err := s.d[0].SourceSQL(filepath.Join("..", "testdata", filename)); err != nil {
+		if _, err := s.d[0].SourceSQL(filepath.Join("testdata", filename)); err != nil {
 			t.Fatalf("Unexpected error from SourceSQL on %s: %s", filename, err)
 		}
 	}

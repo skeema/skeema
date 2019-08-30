@@ -16,7 +16,7 @@ func (s ApplierIntegrationSuite) TestTargetsForDirSimple(t *testing.T) {
 	setupHostList(t, s.d[0].Instance)
 	defer cleanupHostList(t)
 
-	dir := getDir(t, "../testdata/applier/simple", "")
+	dir := getDir(t, "testdata/simple", "")
 	targets, skipCount := TargetsForDir(dir, 1)
 	if len(targets) != 2 || skipCount != 0 {
 		t.Fatalf("Unexpected result from TargetsForDir: %+v, %d", targets, skipCount)
@@ -50,21 +50,21 @@ func (s ApplierIntegrationSuite) TestTargetsForDirSimple(t *testing.T) {
 	// Using --first-only here should still result in 2 targets, since there's
 	// only 1 instance, and the subdirs are distinct schemas (rather than identical
 	// shards)
-	dir = getDir(t, "../testdata/applier/simple", "--first-only")
+	dir = getDir(t, "testdata/simple", "--first-only")
 	targets, skipCount = TargetsForDir(dir, 1)
 	if len(targets) != 2 || skipCount != 0 {
 		t.Fatalf("Unexpected result from TargetsForDir: %+v, %d", targets, skipCount)
 	}
 
 	// Test with insufficient maxDepth: should return 0 targets, 2 skipped
-	dir = getDir(t, "../testdata/applier/simple", "")
+	dir = getDir(t, "testdata/simple", "")
 	targets, skipCount = TargetsForDir(dir, 0)
 	if len(targets) != 0 || skipCount != 2 {
 		t.Fatalf("Unexpected result from TargetsForDir: %+v, %d", targets, skipCount)
 	}
 
 	// Test with invalid workspace option: should return 0 targets, 2 skipped
-	dir = getDir(t, "../testdata/applier/simple", "--workspace=invalid-option")
+	dir = getDir(t, "testdata/simple", "--workspace=invalid-option")
 	targets, skipCount = TargetsForDir(dir, 1)
 	if len(targets) != 0 || skipCount != 2 {
 		t.Fatalf("Unexpected result from TargetsForDir: %+v, %d", targets, skipCount)
@@ -92,20 +92,20 @@ func (s ApplierIntegrationSuite) TestTargetsForDirMulti(t *testing.T) {
 
 	// Parent dir maps to 2 instances, and schema dir maps to 2 schemas, so expect
 	// 4 targets
-	dir := getDir(t, "../testdata/applier/multi", "")
+	dir := getDir(t, "testdata/multi", "")
 	assertTargetsForDir(dir, 1, 4, 0)
 
 	// Using --first-only should restrict to 1 instance, 1 schema
-	dir = getDir(t, "../testdata/applier/multi", "--first-only")
+	dir = getDir(t, "testdata/multi", "--first-only")
 	assertTargetsForDir(dir, 1, 1, 0)
 
 	// Insufficient maxDepth: skipCount should equal the subdir count of 1
-	dir = getDir(t, "../testdata/applier/multi", "")
+	dir = getDir(t, "testdata/multi", "")
 	assertTargetsForDir(dir, 0, 0, 1)
 
 	// Test with sufficient maxDepth, but empty instance list and --first-only:
 	// expect 0 targets, 0 skipped
-	dir = getDir(t, "../testdata/applier/multi", "--first-only")
+	dir = getDir(t, "testdata/multi", "--first-only")
 	setupHostList(t)
 	assertTargetsForDir(dir, 1, 0, 0)
 
@@ -116,9 +116,9 @@ func (s ApplierIntegrationSuite) TestTargetsForDirMulti(t *testing.T) {
 	if err := s.d[0].Stop(); err != nil {
 		t.Fatalf("Unexpected error from Stop(): %s", err)
 	}
-	dir = getDir(t, "../testdata/applier/multi", "")
+	dir = getDir(t, "testdata/multi", "")
 	assertTargetsForDir(dir, 1, 2, 1)
-	dir = getDir(t, "../testdata/applier/multi", "--first-only")
+	dir = getDir(t, "testdata/multi", "--first-only")
 	assertTargetsForDir(dir, 1, 1, 0)
 
 	// Shut down the second DockerizedInstance and confirm behavior: no valid
@@ -126,9 +126,9 @@ func (s ApplierIntegrationSuite) TestTargetsForDirMulti(t *testing.T) {
 	if err := s.d[1].Stop(); err != nil {
 		t.Fatalf("Unexpected error from Stop(): %s", err)
 	}
-	dir = getDir(t, "../testdata/applier/multi", "")
+	dir = getDir(t, "testdata/multi", "")
 	assertTargetsForDir(dir, 1, 0, 2)
-	dir = getDir(t, "../testdata/applier/multi", "--first-only")
+	dir = getDir(t, "testdata/multi", "--first-only")
 	assertTargetsForDir(dir, 1, 0, 1)
 
 	// Restore the DockerizedInstances
@@ -154,7 +154,7 @@ func (s ApplierIntegrationSuite) TestTargetsForDirError(t *testing.T) {
 	// SQL syntax error in testdata/applier/sqlerror/one/bad.sql should cause one/
 	// dir to be skipped entirely for both hosts, so skipCount of 2. But other
 	// dir two/ has no errors and should successfully yield 2 targets (1 per host).
-	dir := getDir(t, "../testdata/applier/sqlerror", "")
+	dir := getDir(t, "testdata/sqlerror", "")
 	targets, skipCount := TargetsForDir(dir, 1)
 	if len(targets) != 2 || skipCount != 2 {
 		t.Fatalf("Unexpected result from TargetsForDir: %+v, %d", targets, skipCount)
@@ -172,7 +172,7 @@ func (s ApplierIntegrationSuite) TestTargetsForDirError(t *testing.T) {
 	// cause one/ dir to be skipped entirely for both hosts, so skipCount of 2.
 	// Meanwhile dir three/ has no schemas (but no skip count), and dir four/ does
 	// not define schemas for the production environment (so also no skip count).
-	dir = getDir(t, "../testdata/applier/schemaerror", "")
+	dir = getDir(t, "testdata/schemaerror", "")
 	targets, skipCount = TargetsForDir(dir, 1)
 	if len(targets) != 2 || skipCount != 2 {
 		t.Fatalf("Unexpected result from TargetsForDir: %+v, %d", targets, skipCount)
@@ -193,7 +193,7 @@ func (s ApplierIntegrationSuite) TestTargetGroupChanForDir(t *testing.T) {
 
 	// Parent dir maps to 2 instances, and schema dir maps to 2 schemas, so expect
 	// 4 targets split into 2 groups (by instance)
-	dir := getDir(t, "../testdata/applier/multi", "")
+	dir := getDir(t, "testdata/multi", "")
 	tgchan, skipCount := TargetGroupChanForDir(dir)
 	if skipCount != 0 {
 		t.Errorf("Expected skip count of 0, instead found %d", skipCount)
@@ -218,7 +218,7 @@ func (s ApplierIntegrationSuite) TestTargetGroupChanForDir(t *testing.T) {
 	// dir to be skipped entirely for both hosts, so skipCount of 2. But other
 	// dir two/ has no errors and should successfully yield 2 targets (1 per host,
 	// and put into different targetgroups)
-	dir = getDir(t, "../testdata/applier/sqlerror", "")
+	dir = getDir(t, "testdata/sqlerror", "")
 	tgchan, skipCount = TargetGroupChanForDir(dir)
 	if skipCount != 2 {
 		t.Errorf("Expected skip count of 2, instead found %d", skipCount)
@@ -276,9 +276,9 @@ func setupHostList(t *testing.T, instances ...*tengo.Instance) {
 		lines[n] = fmt.Sprintf("%s\n", instances[n].String())
 	}
 	contents := strings.Join(lines, "")
-	fs.WriteTestFile(t, "../testdata/.scratch/applier-hosts", contents)
+	fs.WriteTestFile(t, "testdata/.scratch/applier-hosts", contents)
 }
 
 func cleanupHostList(t *testing.T) {
-	fs.RemoveTestDirectory(t, "../testdata/.scratch")
+	fs.RemoveTestDirectory(t, "testdata/.scratch")
 }

@@ -149,7 +149,7 @@ func (s *IntegrationSuite) BeforeTest(method string, backend string) error {
 	if err := os.MkdirAll(s.scratchPath(), 0777); err != nil {
 		return err
 	}
-	cpCommand := fmt.Sprintf("cp %s/*.sql %s", s.testdata("dumper", "input"), s.scratchPath())
+	cpCommand := fmt.Sprintf("cp %s/*.sql %s", s.testdata("input"), s.scratchPath())
 	if err := exec.Command("/bin/sh", "-c", cpCommand).Run(); err != nil {
 		return err
 	}
@@ -175,7 +175,7 @@ func (s *IntegrationSuite) BeforeTest(method string, backend string) error {
 // testdata returns the absolute path of the testdata dir, or a file or dir
 // based from it
 func (s *IntegrationSuite) testdata(joins ...string) string {
-	parts := append([]string{"..", "testdata"}, joins...)
+	parts := append([]string{"testdata"}, joins...)
 	result := filepath.Join(parts...)
 	if cleaned, err := filepath.Abs(filepath.Clean(result)); err == nil {
 		return cleaned
@@ -208,7 +208,7 @@ func (s *IntegrationSuite) verifyFormat(t *testing.T) {
 	t.Helper()
 
 	s.reparseScratchDir(t)
-	goldenDir, err := getDir(s.testdata("dumper", "golden"))
+	goldenDir, err := getDir(s.testdata("golden"))
 	if err != nil {
 		t.Fatalf("Unable to obtain golden dir: %v", err)
 	}

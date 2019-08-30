@@ -77,7 +77,7 @@ func TestParseDir(t *testing.T) {
 }
 
 func TestParseDirSymlinks(t *testing.T) {
-	dir := getDir(t, "../testdata/fs/sqlsymlinks")
+	dir := getDir(t, "testdata/sqlsymlinks")
 
 	// Confirm symlinks to dirs are ignored by Subdirs
 	subs, err := dir.Subdirs()
@@ -85,7 +85,7 @@ func TestParseDirSymlinks(t *testing.T) {
 		t.Fatalf("Unexpected error from Subdirs(): %v, %v; %d parse errors", subs, err, countParseErrors(subs))
 	}
 
-	dir = getDir(t, "../testdata/fs/sqlsymlinks/product")
+	dir = getDir(t, "testdata/sqlsymlinks/product")
 	logicalSchema := dir.LogicalSchemas[0]
 	expectTableNames := []string{"comments", "posts", "subscriptions", "users", "activity", "rollups"}
 	if len(logicalSchema.Creates) != len(expectTableNames) {
@@ -100,8 +100,8 @@ func TestParseDirSymlinks(t *testing.T) {
 	}
 
 	// .skeema files that are symlinks pointing within same repo are OK
-	getDir(t, "../testdata/fs/cfgsymlinks1/validrel")
-	dir = getDir(t, "../testdata/fs/cfgsymlinks1")
+	getDir(t, "testdata/cfgsymlinks1/validrel")
+	dir = getDir(t, "testdata/cfgsymlinks1")
 	subs, err = dir.Subdirs()
 	if badCount := countParseErrors(subs); err != nil || badCount != 2 || len(subs)-badCount != 1 {
 		t.Errorf("Expected Subdirs() to return 1 valid sub and 2 bad ones; instead found %d good, %d bad, %v", len(subs)-badCount, badCount, err)
@@ -110,15 +110,15 @@ func TestParseDirSymlinks(t *testing.T) {
 	// Otherwise, .skeema files that are symlinks pointing outside the repo, or
 	// to non-regular files, generate errors
 	expectErrors := []string{
-		"../testdata/fs/cfgsymlinks1/invalidrel",
-		"../testdata/fs/cfgsymlinks1/invalidabs",
-		"../testdata/fs/cfgsymlinks2/product",
-		"../testdata/fs/cfgsymlinks2",
+		"testdata/cfgsymlinks1/invalidrel",
+		"testdata/cfgsymlinks1/invalidabs",
+		"testdata/cfgsymlinks2/product",
+		"testdata/cfgsymlinks2",
 	}
 	cfg := getValidConfig(t)
 	for _, dirPath := range expectErrors {
 		if _, err := ParseDir(dirPath, cfg); err == nil {
-			t.Error("Expected error from ParseDir(), but instead err is nil")
+			t.Errorf("For path %s, expected error from ParseDir(), but instead err is nil", dirPath)
 		}
 	}
 }
@@ -160,8 +160,9 @@ func TestDirSubdirs(t *testing.T) {
 
 	dir = getDir(t, ".")
 	subs, err = dir.Subdirs()
-	if len(subs) != 0 || err != nil || countParseErrors(subs) > 0 {
-		t.Errorf("Unexpected return from Subdirs(): %d subs, err=%s", len(subs), err)
+	if len(subs) != 1 || err != nil || countParseErrors(subs) != 1 {
+		// parse error is from redundant definition of same table between nodelimiter1.sql and nodelimiter2.sql
+		t.Errorf("Unexpected return from Subdirs(): %d subs, %d parse errors, err=%v", len(subs), countParseErrors(subs), err)
 	}
 }
 
