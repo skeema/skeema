@@ -406,8 +406,8 @@ func stripAnyQuote(input string) string {
 // intentionally matches several non-operator symbols in case they are used
 // as delimiters (via the delimiter command).
 var (
-	sqlLexer = lexer.Must(lexer.Regexp(`(#[^\n]+(?:\n|$))` +
-		`|(--\s[^\n]+(?:\n|$))` +
+	sqlLexer = lexer.Must(lexer.Regexp(`(#[^\n]*(?:\n|$))` +
+		`|(--\s[^\n]*(?:\n|$))` +
 		`|(/\*(.|\n)*?\*/)` +
 		`|(\s+)` +
 		"|(?P<Word>[0-9a-zA-Z$_]+|`(?:[^`]|``)+`)" +
