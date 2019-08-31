@@ -104,7 +104,7 @@ func TestCanParse(t *testing.T) {
 		"CREATE TABLE foo2 (id int) AS select * from foo": false,
 	}
 	for input, expected := range cases {
-		if actual := CanParse(input); actual != expected {
+		if actual, _ := CanParse(input); actual != expected {
 			t.Errorf("CanParse on %s: Expected %t, found %t", input, expected, actual)
 		}
 	}

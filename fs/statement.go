@@ -110,10 +110,10 @@ func (stmt *Statement) Remove() {
 // SQL statement understood by this package. The supplied string should NOT
 // have a delimiter. Note that this method returns false for strings that are
 // entirely whitespace and/or comments.
-func CanParse(input string) bool {
+func CanParse(input string) (bool, error) {
 	sqlStmt := &sqlStatement{}
 	err := nameParser.ParseString(input, sqlStmt)
-	return err == nil && !sqlStmt.forbidden()
+	return err == nil && !sqlStmt.forbidden(), err
 }
 
 //////////// lexing/parsing internals from here to end of this file ////////////

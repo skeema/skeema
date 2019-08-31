@@ -101,11 +101,12 @@ func getStatementMap(schema *tengo.Schema, dir *fs.Dir, opts Options) map[tengo.
 			}
 		}
 
-		if fs.CanParse(s.canonicalCreate) {
+		if ok, err := fs.CanParse(s.canonicalCreate); ok {
 			statementMap[key] = s
 		} else {
-			log.Errorf("%s is unexpectedly not able to be parsed by Skeema -- please file a bug at https://github.com/skeema/skeema/issues/new", key)
-			delete(statementMap, key)
+			log.Errorf("%s is unexpectedly not able to be parsed by Skeema\nPlease file an issue report at https://github.com/skeema/skeema/issues/new with this information:\nError value=%v", key, err)
+			log.Error("Unfortunately this error is fatal and prevents Skeema from being usable in your environment until this is resolved.")
+			return nil
 		}
 	}
 
