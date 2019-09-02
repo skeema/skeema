@@ -34,6 +34,7 @@ top of the file. If no environment name is supplied, the default is
 	cmd.AddOption(mybase.BoolOption("foreign-key-checks", 0, false, "Force the server to check referential integrity of any new foreign key"))
 	cmd.AddOption(mybase.BoolOption("compare-metadata", 0, false, "For stored programs, detect changes to creation-time sql_mode or DB collation"))
 	cmd.AddOption(mybase.BoolOption("lint", 0, true, "Check modified objects for problems before proceeding"))
+	cmd.AddOption(mybase.BoolOption("ddl-wrapper-comment", 0, false, "Wrap DDL statements with marker comments"))
 	cmd.AddOption(mybase.BoolOption("brief", 'q', false, "<overridden by diff command>").Hidden())
 	cmd.AddOption(mybase.StringOption("alter-wrapper", 'x', "", "External bin to shell out to for ALTER TABLE; see manual for template vars"))
 	cmd.AddOption(mybase.StringOption("alter-wrapper-min-size", 0, "0", "Ignore --alter-wrapper for tables smaller than this size in bytes"))
@@ -56,7 +57,8 @@ func PushHandler(cfg *mybase.Config) error {
 	}
 
 	briefMode := dir.Config.GetBool("dry-run") && dir.Config.GetBool("brief")
-	printer := applier.NewPrinter(briefMode)
+	ddlWrapperComment := dir.Config.GetBool("ddl-wrapper-comment")
+	printer := applier.NewPrinter(briefMode, ddlWrapperComment)
 	g, ctx := errgroup.WithContext(context.Background())
 	tgchan, skipCount := applier.TargetGroupChanForDir(dir)
 	results := make(chan applier.Result)
