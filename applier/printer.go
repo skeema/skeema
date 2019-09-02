@@ -11,10 +11,10 @@ import (
 // being called from multiple pushworker goroutines.
 type Printer struct {
 	briefOutput        bool
-	wrapperComments    bool
 	lastStdoutInstance string
 	lastStdoutSchema   string
 	seenInstance       map[string]bool
+	wrapperComments    bool
 	*sync.Mutex
 }
 
@@ -25,8 +25,8 @@ type Printer struct {
 func NewPrinter(briefMode bool, wrapperComments bool) *Printer {
 	return &Printer{
 		briefOutput:     briefMode,
-		wrapperComments: wrapperComments,
 		seenInstance:    make(map[string]bool),
+		wrapperComments: wrapperComments,
 		Mutex:           new(sync.Mutex),
 	}
 }
