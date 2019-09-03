@@ -329,8 +329,8 @@ type filteredLogger struct {
 }
 
 func (fl filteredLogger) Print(v ...interface{}) {
-	if len(v) > 0 {
-		if err, ok := v[0].(error); ok && err.Error() == "unexpected EOF" {
+	for _, arg := range v {
+		if err, ok := arg.(error); ok && strings.Contains(err.Error(), "EOF") {
 			return
 		}
 	}

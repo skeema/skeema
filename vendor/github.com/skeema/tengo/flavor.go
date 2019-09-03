@@ -48,12 +48,13 @@ func ParseVendor(versionComment string) Vendor {
 	return VendorUnknown
 }
 
+var reVersion = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)`)
+
 // ParseVersion takes a version string (e.g. @@version variable from MySQL)
 // and returns a 3-element array of major, minor, and patch numbers. If parsing
 // failed, the returned value will be {0, 0, 0}.
 func ParseVersion(version string) (result [3]int) {
-	re := regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)`)
-	matches := re.FindStringSubmatch(version)
+	matches := reVersion.FindStringSubmatch(version)
 	if matches != nil {
 		var err error
 		for n := range result {

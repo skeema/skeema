@@ -73,12 +73,13 @@ func SplitHostOptionalPort(hostaddr string) (string, int, error) {
 	return host, port, nil
 }
 
+var reParseCreate = regexp.MustCompile(`[)] ENGINE=\w+ (AUTO_INCREMENT=(\d+) )DEFAULT CHARSET=`)
+
 // ParseCreateAutoInc parses a CREATE TABLE statement, formatted in the same
 // manner as SHOW CREATE TABLE, and removes the table-level next-auto-increment
 // clause if present. The modified CREATE TABLE will be returned, along with
 // the next auto-increment value if one was found.
 func ParseCreateAutoInc(createStmt string) (string, uint64) {
-	reParseCreate := regexp.MustCompile(`[)] ENGINE=\w+ (AUTO_INCREMENT=(\d+) )DEFAULT CHARSET=`)
 	matches := reParseCreate.FindStringSubmatch(createStmt)
 	if matches == nil {
 		return createStmt, 0

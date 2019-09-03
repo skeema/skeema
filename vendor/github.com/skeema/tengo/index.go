@@ -15,6 +15,7 @@ type Index struct {
 	PrimaryKey bool
 	Unique     bool
 	Comment    string
+	Type       string
 }
 
 // Definition returns this index's definition clause, for use as part of a DDL
@@ -36,6 +37,8 @@ func (idx *Index) Definition(_ Flavor) string {
 		typeAndName = "PRIMARY KEY"
 	} else if idx.Unique {
 		typeAndName = fmt.Sprintf("UNIQUE KEY %s", EscapeIdentifier(idx.Name))
+	} else if idx.Type != "BTREE" && idx.Type != "" {
+		typeAndName = fmt.Sprintf("%s KEY %s", idx.Type, EscapeIdentifier(idx.Name))
 	} else {
 		typeAndName = fmt.Sprintf("KEY %s", EscapeIdentifier(idx.Name))
 	}

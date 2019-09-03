@@ -173,7 +173,11 @@ func (f *File) Parse(cfg *Config) error {
 
 		parsedLine, err := parseLine(line)
 		if err != nil {
-			return fmt.Errorf("Parse error in %s line %d: %s", f.Path(), lineNumber, err)
+			return FileParseFormatError{
+				Problem:    err.Error(),
+				FilePath:   f.Path(),
+				LineNumber: lineNumber,
+			}
 		}
 
 		switch parsedLine.kind {
@@ -468,4 +472,18 @@ func parseLine(line string) (*parsedLine, error) {
 		result.kind = lineTypeKeyOnly
 	}
 	return result, nil
+}
+
+// FileParseFormatError is an error returned when File.Parse encounters a
+// problem with the formatting of a file (separate from an unknown option or a
+// lack of a required value for an option, which are handled by other types)
+type FileParseFormatError struct {
+	Problem    string
+	FilePath   string
+	LineNumber int
+}
+
+// Error satisfies golang's error interface.
+func (fpf FileParseFormatError) Error() string {
+	return fmt.Sprintf("Parse error in %s line %d: %s", fpf.FilePath, fpf.LineNumber, fpf.Problem)
 }

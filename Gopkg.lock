@@ -158,16 +158,16 @@
   version = "v1.0.5"
 
 [[projects]]
-  branch = "master"
   name = "github.com/skeema/mybase"
   packages = ["."]
-  revision = "052eda2c53cef9adbd8f3814805a3eeff32b6dd9"
+  revision = "081614a4ad9ed79fb5b2ec0bc2e265a0fc8117d7"
+  version = "v1.0.7"
 
 [[projects]]
-  branch = "master"
   name = "github.com/skeema/tengo"
   packages = ["."]
-  revision = "092b231a5ed8c22cf9acc1d23a5af804f9ac5fd7"
+  revision = "659488725fb389520a003386577ff29356994e7a"
+  version = "v0.8.18"
 
 [[projects]]
   branch = "master"

@@ -9,6 +9,30 @@ import (
 // This file contains exported methods and types that may be useful in testing
 // applications using MyBase, as well as testing MyBase itself.
 
+// AssertFileSetsOptions verifies that the file sets all of the supplied option
+// names in at least one of its currently-selected sections. The test fails if
+// not.
+func AssertFileSetsOptions(t *testing.T, file *File, options ...string) {
+	t.Helper()
+	for _, option := range options {
+		if _, setsOption := file.OptionValue(option); !setsOption {
+			t.Errorf("Expected %s to set option %s, but it does not", file, option)
+		}
+	}
+}
+
+// AssertFileMissingOptions verifies that the file does NOT set any of the
+// supplied option names in any of its currently-selected sections. The test
+// fails otherwise.
+func AssertFileMissingOptions(t *testing.T, file *File, options ...string) {
+	t.Helper()
+	for _, option := range options {
+		if _, setsOption := file.OptionValue(option); setsOption {
+			t.Errorf("Expected %s to NOT contain %s, but it does", file, option)
+		}
+	}
+}
+
 // SimpleSource is the most trivial possible implementation of the OptionValuer
 // interface: it just maps option name strings to option value strings.
 type SimpleSource map[string]string

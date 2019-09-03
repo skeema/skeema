@@ -51,9 +51,11 @@ func (cfg *Config) Clone() *Config {
 	sourcesCopy := make([]OptionValuer, len(cfg.sources))
 	copy(sourcesCopy, cfg.sources)
 	return &Config{
-		CLI:     cfg.CLI,
-		sources: sourcesCopy,
-		dirty:   true,
+		CLI:              cfg.CLI,
+		IsTest:           cfg.IsTest,
+		LooseFileOptions: cfg.LooseFileOptions,
+		sources:          sourcesCopy,
+		dirty:            true,
 	}
 }
 
