@@ -20,6 +20,8 @@ func init() {
 		if formatter.width > 0 && formatter.width < 80 {
 			formatter.width = 80
 		}
+	} else if strings.HasSuffix(os.Args[0], ".test") {
+		formatter.isTerminal = true
 	}
 	log.SetFormatter(formatter)
 }

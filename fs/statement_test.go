@@ -50,8 +50,8 @@ func TestStatementSchema(t *testing.T) {
 
 func TestStatementSplitTextBody(t *testing.T) {
 	cases := map[string][]string{
-		"":    {"", ""},
-		";\n": {"", ";\n"},
+		"":                                    {"", ""},
+		";\n":                                 {"", ";\n"},
 		"CREATE TABLE foo (\n\tid int\n) ;\n": {"CREATE TABLE foo (\n\tid int\n)", " ;\n"},
 		"INSERT INTO foo VALUES (';');":       {"INSERT INTO foo VALUES (';')", ";"},
 		"USE some_db":                         {"USE some_db", ""},
@@ -93,10 +93,10 @@ func TestCanParse(t *testing.T) {
 	cases := map[string]bool{
 		"CREATE TABLE foo (\n\t`id` int unsigned DEFAULT '0'\n) ;\n": true,
 		"CREATE TABLE   IF  not EXISTS  foo (\n\tid int\n) ;\n":      true,
-		"USE some_db\n\n":                                            true,
-		"INSERT INTO foo VALUES (';')":                               false,
-		"bork bork bork":                                             false,
-		"# hello":                                                    false,
+		"USE some_db\n\n":              true,
+		"INSERT INTO foo VALUES (';')": false,
+		"bork bork bork":               false,
+		"# hello":                      false,
 		"CREATE TEMPORARY TABLE foo (\n\tid int\n) ;\n":   false,
 		"CREATE TABLE foo LIKE bar":                       false,
 		"CREATE TABLE foo (like bar)":                     false,

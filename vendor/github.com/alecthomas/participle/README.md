@@ -16,6 +16,7 @@
 9. [Options](#options)
 10. [Examples](#examples)
 11. [Performance](#performance)
+12. [Concurrency](#concurrency)
 
 <!-- /TOC -->
 
@@ -33,11 +34,9 @@ encoders, but is unusual for a parser.
 <a id="markdown-limitations" name="limitations"></a>
 ## Limitations
 
-Participle parsers are recursive descent. Among other things, this means that they do not support left recursion.
+Participle parsers are LL(k). Among other things, this means that they do not support left recursion.
 
-There is an experimental lookahead option for using precomputed lookahead
-tables for disambiguation. You can enable this with the parser option
-`participle.UseLookahead()`.
+The default value of K is 1 but this can be controlled with `participle.UseLookahead(k)`.
 
 Left recursion must be eliminated by restructuring your grammar.
 
@@ -240,7 +239,7 @@ import (
 )
 
 type File struct {
-  Entries []*Entry `{ @@ }`
+  Entries []*Entry `@@*`
 }
 
 type Entry struct {
@@ -252,36 +251,36 @@ type Entry struct {
 
 type Enum struct {
   Name  string   `"enum" @Ident`
-  Cases []string `"{" { @Ident } "}"`
+  Cases []string `"{" @Ident* "}"`
 }
 
 type Schema struct {
-  Fields []*Field `"schema" "{" { @@ } "}"`
+  Fields []*Field `"schema" "{" @@* "}"`
 }
 
 type Type struct {
   Name       string   `"type" @Ident`
-  Implements string   `[ "implements" @Ident ]`
-  Fields     []*Field `"{" { @@ } "}"`
+  Implements string   `("implements" @Ident)?`
+  Fields     []*Field `"{" @@* "}"`
 }
 
 type Field struct {
   Name       string      `@Ident`
-  Arguments  []*Argument `[ "(" [ @@ { "," @@ } ] ")" ]`
+  Arguments  []*Argument `("(" (@@ ("," @@)*)? ")")?`
   Type       *TypeRef    `":" @@`
-  Annotation string      `[ "@" @Ident ]`
+  Annotation string      `("@" @Ident)?`
 }
 
 type Argument struct {
   Name    string   `@Ident`
   Type    *TypeRef `":" @@`
-  Default *Value   `[ "=" @@ ]`
+  Default *Value   `("=" @@)?`
 }
 
 type TypeRef struct {
   Array       *TypeRef `(   "[" @@ "]"`
   Type        string   `  | @Ident )`
-  NonNullable bool     `[ @"!" ]`
+  NonNullable bool     `@"!"?`
 }
 
 type Value struct {
@@ -343,3 +342,8 @@ You can run the benchmarks yourself, but here's the output on my machine:
 
 On a real life codebase of 47K lines of Thrift, Participle takes 200ms and go-
 thrift takes 630ms, which aligns quite closely with the benchmarks.
+
+<a id="markdown-concurrency" name="concurrency"></a>
+## Concurrency
+
+A compiled `Parser` instance can be used concurrently. A `LexerDefinition` can be used concurrently. A `Lexer` instance cannot be used concurrently.

@@ -21,7 +21,7 @@ Pre-built `skeema` binaries for Linux and macOS can be downloaded from the [rele
 
 ## Compiling
 
-Compiling from scratch requires the [Go programming language toolchain](https://golang.org/dl/), version 1.9 or higher.
+Compiling from scratch requires the [Go programming language toolchain](https://golang.org/dl/), version 1.12 or higher.
 
 To download, build from master, and install (or upgrade) Skeema, run:
 

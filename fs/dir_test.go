@@ -255,10 +255,10 @@ func TestDirInstanceDefaultParams(t *testing.T) {
 	}
 	baseDefaults := "interpolateParams=true&foreign_key_checks=0&timeout=5s&writeTimeout=5s&readTimeout=5s&innodb_strict_mode=1&default_storage_engine=%27InnoDB%27&sql_quote_show_create=1&sql_mode=%27ONLY_FULL_GROUP_BY%2CSTRICT_TRANS_TABLES%2CNO_ZERO_IN_DATE%2CNO_ZERO_DATE%2CERROR_FOR_DIVISION_BY_ZERO%2CNO_ENGINE_SUBSTITUTION%27"
 	expectParams := map[string]string{
-		"":                                          baseDefaults,
-		"foo='bar'":                                 baseDefaults + "&foo=%27bar%27",
-		"bool=true,quotes='yes,no'":                 baseDefaults + "&bool=true&quotes=%27yes,no%27",
-		`escaped=we\'re ok`:                         baseDefaults + "&escaped=we%5C%27re ok",
+		"":                          baseDefaults,
+		"foo='bar'":                 baseDefaults + "&foo=%27bar%27",
+		"bool=true,quotes='yes,no'": baseDefaults + "&bool=true&quotes=%27yes,no%27",
+		`escaped=we\'re ok`:         baseDefaults + "&escaped=we%5C%27re ok",
 		`escquotes='we\'re still quoted',this=that`: baseDefaults + "&escquotes=%27we%5C%27re still quoted%27&this=that",
 		"ok=1,writeTimeout=12ms":                    strings.Replace(baseDefaults, "writeTimeout=5s", "writeTimeout=12ms&ok=1", 1),
 	}

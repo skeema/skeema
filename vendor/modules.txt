@@ -1,0 +1,94 @@
+# github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78
+github.com/Azure/go-ansiterm
+github.com/Azure/go-ansiterm/winterm
+# github.com/Microsoft/go-winio v0.4.7
+github.com/Microsoft/go-winio
+# github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5
+github.com/Nvveen/Gotty
+# github.com/VividCortex/mysqlerr v0.0.0-20170204212430-6c6b55f8796f
+github.com/VividCortex/mysqlerr
+# github.com/alecthomas/participle v0.3.0
+github.com/alecthomas/participle
+github.com/alecthomas/participle/lexer
+# github.com/containerd/continuity v0.0.0-20180612233548-246e49050efd
+github.com/containerd/continuity/pathdriver
+# github.com/docker/docker v0.0.0-20180412203414-a422774e593b
+github.com/docker/docker/api/types
+github.com/docker/docker/api/types/blkiodev
+github.com/docker/docker/api/types/container
+github.com/docker/docker/api/types/filters
+github.com/docker/docker/api/types/mount
+github.com/docker/docker/api/types/network
+github.com/docker/docker/api/types/registry
+github.com/docker/docker/api/types/strslice
+github.com/docker/docker/api/types/swarm
+github.com/docker/docker/api/types/swarm/runtime
+github.com/docker/docker/api/types/versions
+github.com/docker/docker/opts
+github.com/docker/docker/pkg/archive
+github.com/docker/docker/pkg/fileutils
+github.com/docker/docker/pkg/homedir
+github.com/docker/docker/pkg/idtools
+github.com/docker/docker/pkg/ioutils
+github.com/docker/docker/pkg/jsonmessage
+github.com/docker/docker/pkg/longpath
+github.com/docker/docker/pkg/mount
+github.com/docker/docker/pkg/pools
+github.com/docker/docker/pkg/stdcopy
+github.com/docker/docker/pkg/system
+github.com/docker/docker/pkg/term
+github.com/docker/docker/pkg/term/windows
+# github.com/docker/go-connections v0.3.0
+github.com/docker/go-connections/nat
+# github.com/docker/go-units v0.3.3
+github.com/docker/go-units
+# github.com/fsouza/go-dockerclient v1.2.1
+github.com/fsouza/go-dockerclient
+# github.com/go-sql-driver/mysql v1.4.1-0.20190510102335-877a9775f068
+github.com/go-sql-driver/mysql
+# github.com/gogo/protobuf v1.0.0
+github.com/gogo/protobuf/proto
+# github.com/jmoiron/sqlx v0.0.0-20180406164412-2aeb6a910c2b
+github.com/jmoiron/sqlx
+github.com/jmoiron/sqlx/reflectx
+# github.com/mattn/goveralls v0.0.3-0.20190605103025-4d9899298d21
+github.com/mattn/goveralls
+# github.com/mitchellh/go-wordwrap v1.0.0
+github.com/mitchellh/go-wordwrap
+# github.com/opencontainers/go-digest v1.0.0-rc1
+github.com/opencontainers/go-digest
+# github.com/opencontainers/image-spec v1.0.1
+github.com/opencontainers/image-spec/specs-go
+github.com/opencontainers/image-spec/specs-go/v1
+# github.com/opencontainers/runc v1.0.0-rc5
+github.com/opencontainers/runc/libcontainer/system
+github.com/opencontainers/runc/libcontainer/user
+# github.com/pkg/errors v0.8.0
+github.com/pkg/errors
+# github.com/pmezard/go-difflib v1.0.0
+github.com/pmezard/go-difflib/difflib
+# github.com/sirupsen/logrus v1.0.5
+github.com/sirupsen/logrus
+# github.com/skeema/mybase v1.0.7
+github.com/skeema/mybase
+# github.com/skeema/tengo v0.8.18
+github.com/skeema/tengo
+# golang.org/x/crypto v0.0.0-20190701094942-4def268fd1a4
+golang.org/x/crypto/ssh/terminal
+# golang.org/x/lint v0.0.0-20190409202823-959b441ac422
+golang.org/x/lint
+golang.org/x/lint/golint
+# golang.org/x/net v0.0.0-20190620200207-3b0461eec859
+golang.org/x/net/context
+# golang.org/x/sync v0.0.0-20190423024810-112230192c58
+golang.org/x/sync/errgroup
+# golang.org/x/sys v0.0.0-20190412213103-97732733099d
+golang.org/x/sys/unix
+golang.org/x/sys/windows
+# golang.org/x/tools v0.0.0-20190903163617-be0da057c5e3
+golang.org/x/tools/cover
+golang.org/x/tools/go/ast/astutil
+golang.org/x/tools/go/gcexportdata
+golang.org/x/tools/go/internal/gcimporter
+# google.golang.org/appengine v1.0.0
+google.golang.org/appengine/cloudsql
