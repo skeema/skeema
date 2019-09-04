@@ -121,9 +121,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerShutdown(t *testing.T) {
 
 	// Test with CleanupActionDestroy
 	opts.CleanupAction = CleanupActionDestroy
-	if ld, err = NewLocalDocker(opts); err != nil {
-		t.Fatalf("Unexpected error from NewLocalDocker(): %s", err)
-	}
+	ld, _ = NewLocalDocker(opts)
 	// Cleanup should fail if a table has rows
 	if _, err := ld.d.SourceSQL("../testdata/tempschema1.sql"); err != nil {
 		t.Fatalf("Unexpected SourceSQL error: %s", err)

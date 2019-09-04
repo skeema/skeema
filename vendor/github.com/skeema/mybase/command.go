@@ -209,7 +209,7 @@ func (cmd *Command) Usage() {
 		sort.Strings(names)
 		for _, name := range names {
 			opt := allOptions[name]
-			fmt.Printf(opt.Usage(maxLen))
+			fmt.Print(opt.Usage(maxLen))
 		}
 	}
 }

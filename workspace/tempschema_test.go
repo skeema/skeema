@@ -79,7 +79,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCleanupDrop(t *testing.T) {
 		t.Fatalf("Temp schema unexpectedly does not exist: has=%t err=%s", has, err)
 	}
 
-	// Coverage for sucessful CleanupActionDrop
+	// Coverage for successful CleanupActionDrop
 	if err := ts.Cleanup(); err != nil {
 		t.Errorf("Unexpected error from cleanup: %s", err)
 	}

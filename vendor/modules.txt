@@ -51,6 +51,8 @@ github.com/gogo/protobuf/proto
 # github.com/jmoiron/sqlx v0.0.0-20180406164412-2aeb6a910c2b
 github.com/jmoiron/sqlx
 github.com/jmoiron/sqlx/reflectx
+# github.com/konsorten/go-windows-terminal-sequences v1.0.1
+github.com/konsorten/go-windows-terminal-sequences
 # github.com/mattn/goveralls v0.0.3-0.20190605103025-4d9899298d21
 github.com/mattn/goveralls
 # github.com/mitchellh/go-wordwrap v1.0.0
@@ -67,9 +69,9 @@ github.com/opencontainers/runc/libcontainer/user
 github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
-# github.com/sirupsen/logrus v1.0.5
+# github.com/sirupsen/logrus v1.4.2
 github.com/sirupsen/logrus
-# github.com/skeema/mybase v1.0.7
+# github.com/skeema/mybase v1.0.8
 github.com/skeema/mybase
 # github.com/skeema/tengo v0.8.18
 github.com/skeema/tengo
@@ -82,7 +84,7 @@ golang.org/x/lint/golint
 golang.org/x/net/context
 # golang.org/x/sync v0.0.0-20190423024810-112230192c58
 golang.org/x/sync/errgroup
-# golang.org/x/sys v0.0.0-20190412213103-97732733099d
+# golang.org/x/sys v0.0.0-20190422165155-953cdadca894
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 # golang.org/x/tools v0.0.0-20190903163617-be0da057c5e3

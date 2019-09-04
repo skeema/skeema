@@ -256,7 +256,7 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema init --schema product --dir flat -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
 	fs.RemoveTestFile(t, "flat/users.sql")
 	fs.WriteTestFile(t, "flat/.skeema", strings.Replace(fs.ReadTestFile(t, "flat/.skeema"), "flavor", "####", 1))
-	cfg = s.handleCommand(t, CodeSuccess, "flat", "skeema pull")
+	s.handleCommand(t, CodeSuccess, "flat", "skeema pull")
 	if _, err := os.Stat("flat/users.sql"); err != nil {
 		t.Errorf("Expected os.Stat to return nil error for flat/users.sql; instead err=%v", err)
 	}
