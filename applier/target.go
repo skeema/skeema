@@ -63,13 +63,13 @@ func (t *Target) logApplyStart() {
 
 func (t *Target) logApplyEnd(result Result) {
 	if result.Differences {
-		log.Infof("%s %s: No differences found\n", t.Instance, t.SchemaName)
-	} else {
 		verb := "push"
 		if t.dryRun() {
 			verb = "diff"
 		}
 		log.Infof("%s %s: %s complete\n", t.Instance, t.SchemaName, verb)
+	} else {
+		log.Infof("%s %s: No differences found\n", t.Instance, t.SchemaName)
 	}
 }
 
