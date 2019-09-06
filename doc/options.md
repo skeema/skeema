@@ -186,9 +186,11 @@ Commands | diff, push
 **Type** | string
 **Restrictions** | none
 
-This option causes Skeema to shell out to an external process, such as `pt-online-schema-change`, for running ALTER TABLE statements via `skeema push`. The output of `skeema diff` will also display what command-line would be executed, but it won't actually be run.
+This option causes `skeema push` to shell out to an external process, such as `pt-online-schema-change`, to handle execution of ALTER TABLE statements.
 
-This command supports use of special variables. Skeema will dynamically replace these with an appropriate value when building the final command-line. See [options with variable interpolation](config.md#options-with-variable-interpolation) for more information. The following variables are supported by `alter-wrapper`:
+For each ALTER TABLE statement in the diff, rather than executing the ALTER directly, `skeema push` will instead shell out to the external process. Meanwhile the output of `skeema diff` will *display* what command-line would be executed, but it won't actually be run.
+
+This option supports use of special variables, which you can pass to the external script on its command-line. Skeema will dynamically replace these with an appropriate value when building the final command-line. See [options with variable interpolation](config.md#options-with-variable-interpolation) for more information. The following variables are supported by `alter-wrapper`:
 
 * `{HOST}` -- hostname (or IP) that this ALTER TABLE targets
 * `{PORT}` -- port number for the host that this ALTER TABLE targets
@@ -325,6 +327,8 @@ Commands | diff, push
 **Restrictions** | none
 
 This option works exactly like [alter-wrapper](#alter-wrapper), except that it applies to all DDL statements regardless of operation type (ALTER, DROP, CREATE) or object class (TABLE, DATABASE, etc) -- not just ALTER TABLE statements. This is intended for use in situations where all DDL statements need to be sent through a common script or system for execution.
+
+For each DDL statement in the diff, rather than executing the DDL directly, `skeema push` will instead shell out to the external process. Meanwhile the output of `skeema diff` will *display* what command-line would be executed, but it won't actually be run.
 
 If *both* of [alter-wrapper](#alter-wrapper) and [ddl-wrapper](#ddl-wrapper) are set, then [alter-wrapper](#alter-wrapper) will be applied to ALTER TABLE statements, and [ddl-wrapper](#ddl-wrapper) will be applied to all other DDL.
 
@@ -547,7 +551,7 @@ If host is "localhost", and no port is specified (inline or via the [port option
 
 For simple sharded environments with a small number of shards, you may optionally specify multiple addresses in a single [host](#host) value by using a comma-separated list. In this situation, `skeema diff` and `skeema push` operate on all listed hosts, unless their [first-only option](#first-only) is used. `skeema pull` always just operates on the first host as its source of truth.
 
-Skeema can optionally integrate with service discovery systems via the [host-wrapper option](#host-wrapper). In this situation, the purpose of [host](#host) changes: instead of specifying a hostname or address, [host](#host) is used for specifying a lookup key, which the service discovery system maps to one or more addresses. The lookup key may be inserted in the external command-line via the `{HOST}` placeholder variable. See the documentation for [host-wrapper](#host-wrapper) for more information. In this configuration [host](#host) should be just a single value, never a comma-separated list; in a sharded environment it is the service discovery system's responsibility to map a single lookup key to multiple addresses when appropriate.
+Skeema can optionally integrate with service discovery systems via the [host-wrapper option](#host-wrapper). In this situation, the purpose of [host](#host) changes: instead of specifying a hostname or address, [host](#host) is used for specifying a lookup key, which the service discovery system maps to one or more addresses. The lookup key may be inserted in the external command-line via the `{HOST}` placeholder variable. See the documentation for [host-wrapper](#host-wrapper) for more information. In this configuration [host](#host) should be just a single value, never a comma-separated list; in a sharded environment it is the service discovery system's responsibility to map a single lookup key to multiple addresses when appropriate. If all of your hosts are in the same group of shards and you have no need for a lookup key, you should still set [host](#host) to a placeholder/dummy value in order to indicate that [host-wrapper](#host-wrapper) should be applied to a given directory.
 
 In all cases, the specified host(s) should always be master instances, not replicas.
 
@@ -993,7 +997,7 @@ The containers have the following properties:
 
 Skeema dynamically manages containers as needed: if a container with a specific image is required, but does not currently exist, it will be created on-the-fly. This may take 10-20 seconds upon first use of [workspace=docker](#workspace). By default, the containers remain running after Skeema exits (avoiding the performance hit of subsequent invocations), but this behavior is configurable using the [docker-cleanup](#docker-cleanup) option.
 
-Note that use of [workspace=docker](#workspace) may be difficult if Skeema itself is also being run in a Docker container. In this case, you must either bind-mount the host's Docker socket into Skeema's container, or use a privileged Docker-in-Docker (dind) image; each choice has trade-offs involving operational complexity and security.
+Note that use of [workspace=docker](#workspace) may be difficult if Skeema itself is also being run in a Docker container. In this case, you must either bind-mount the host's Docker socket into Skeema's container, or use a privileged Docker-in-Docker (dind) image; each choice has trade-offs involving operational complexity and security. For more information, please see [GitHub issue #89](https://github.com/skeema/skeema/issues/89).
 
 ### write
 
