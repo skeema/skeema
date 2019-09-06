@@ -5,17 +5,18 @@ builds:
   env:
   - CGO_ENABLED=0
   - GO111MODULE=on
-  - GOFLAGS="-mod=vendor"
+  - GOFLAGS=-mod=vendor
   goos:
     - linux
     - darwin
   goarch:
     - amd64
-archive:
-  name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
-  replacements:
-    darwin: mac
-    linux: linux
+archives:
+  -
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    replacements:
+      darwin: mac
+      linux: linux
 checksum:
   name_template: '{{ .ProjectName }}_checksums_{{ .Version }}.txt'
 snapshot:
@@ -29,14 +30,14 @@ changelog:
     - '(?i)^internal'
     - '(?i)^readme:'
     - '(?i)^goreleaser:'
-nfpm:
-  name_template: '{{ .ProjectName }}_{{ .Arch }}'
-  homepage:  https://skeema.io
-  description: Schema management CLI for MySQL
-  maintainer: Evan Elias <evan@skeema.net>
-  license: Apache 2.0
-  vendor: Skeema LLC
-  formats:
-  - deb
-  - rpm
-  
+nfpms:
+  -
+    name_template: '{{ .ProjectName }}_{{ .Arch }}'
+    homepage:  https://skeema.io
+    description: Schema management CLI for MySQL
+    maintainer: Evan Elias <evan@skeema.net>
+    license: Apache 2.0
+    vendor: Skeema LLC
+    formats:
+    - deb
+    - rpm
