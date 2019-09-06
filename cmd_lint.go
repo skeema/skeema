@@ -99,6 +99,11 @@ func lintWalker(dir *fs.Dir, maxDepth int) *linter.Result {
 		log.Debug(dl)
 	}
 
+	// Don't recurse into subdirs if there was something fatally wrong
+	if len(result.Exceptions) > 0 {
+		return result
+	}
+
 	var subdirErr error
 	if subdirs, err := dir.Subdirs(); err != nil {
 		subdirErr = fmt.Errorf("Cannot list subdirs of %s: %s", dir, err)

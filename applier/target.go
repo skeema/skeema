@@ -105,7 +105,7 @@ type TargetGroup []*Target
 // fatal; a count of skipped dirs is returned instead.
 func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int) {
 	if dir.ParseError != nil {
-		log.Warnf("Skipping %s: %s", dir.Path, dir.ParseError)
+		log.Warnf("Skipping %s: %s\n", dir.Path, dir.ParseError)
 		return nil, 1
 	}
 	if dir.Config.Changed("host") && dir.HasSchema() {

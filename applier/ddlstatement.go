@@ -68,6 +68,7 @@ func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, targe
 
 	// Get the raw DDL statement as a string, handling errors and noops correctly
 	if ddl.stmt, err = diff.Statement(mods); tengo.IsForbiddenDiff(err) {
+		// Intentionally avoiding fmt.Errorf here to avoid golint complaining about capitalization
 		errorText := fmt.Sprintf("Destructive statement /* %s */ is considered unsafe. Use --allow-unsafe or --safe-below-size to permit this operation; see --help for more information.", ddl.stmt)
 		return nil, errors.New(errorText)
 	} else if err != nil {
@@ -116,6 +117,7 @@ func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, targe
 		}
 
 		if ddl.shellOut, err = util.NewInterpolatedShellOut(wrapper, variables); err != nil {
+			// Intentionally avoiding fmt.Errorf here to avoid golint complaining about capitalization
 			errorText := fmt.Sprintf("A fatal error occurred with pre-processing a DDL statement: %s.", err)
 			return nil, errors.New(errorText)
 		}

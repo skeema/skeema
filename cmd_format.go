@@ -58,6 +58,11 @@ func formatWalker(dir *fs.Dir, maxDepth int) error {
 		return NewExitValue(CodeBadConfig, "")
 	}
 
+	if dir.Config.GetBool("write") {
+		log.Infof("Reformatting %s", dir)
+	} else {
+		log.Infof("Checking format of %s", dir)
+	}
 	result := formatDir(dir)
 	if ExitCode(result) > CodeDifferencesFound {
 		log.Errorf("Skipping %s: %s", dir, result)
