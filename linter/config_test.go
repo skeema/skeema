@@ -80,7 +80,7 @@ func TestOptionsForDir(t *testing.T) {
 
 	// Confirm ConfigError implements Error interface and works as expected
 	var err error
-	err = ConfigError("testing ConfigError")
+	err = NewConfigError(dir, "testing ConfigError")
 	if err.Error() != "testing ConfigError" {
 		t.Errorf("ConfigError not behaving as expected")
 	}

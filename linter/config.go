@@ -97,7 +97,7 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 	var err error
 	opts.IgnoreTable, err = dir.Config.GetRegexp("ignore-table")
 	if err != nil {
-		return Options{}, toConfigError(dir, err)
+		return Options{}, ConfigError{Dir: dir, err: err}
 	}
 
 	// Populate opts.RuleSeverity from individual rule options
@@ -109,7 +109,7 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 		}
 		val, err := dir.Config.GetEnum(r.optionName(), string(SeverityIgnore), string(SeverityWarning), string(SeverityError))
 		if err != nil {
-			return Options{}, toConfigError(dir, err)
+			return Options{}, ConfigError{Dir: dir, err: err}
 		}
 		opts.RuleSeverity[name] = Severity(val)
 	}
@@ -128,9 +128,9 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 		for _, oldName := range dir.Config.GetSlice(oldOptionName, ',', true) {
 			oldName = strings.ToLower(oldName)
 			if newName, ok := deprecatedNames[oldName]; !ok {
-				return Options{}, newConfigError(dir, "Option %s is deprecated and cannot include value %s. Please see individual lint-* options instead.", oldOptionName, oldName)
+				return Options{}, NewConfigError(dir, "Option %s is deprecated and cannot include value %s. Please see individual lint-* options instead.", oldOptionName, oldName)
 			} else if dir.Config.Changed(fmt.Sprintf("lint-%s", newName)) && severity != opts.RuleSeverity[newName] {
-				return Options{}, newConfigError(dir, "Deprecated option %s has been set to a value that conflicts with newer option %s. Please remove %s from your configuration to resolve this.", oldOptionName, newName, oldOptionName)
+				return Options{}, NewConfigError(dir, "Deprecated option %s has been set to a value that conflicts with newer option %s. Please remove %s from your configuration to resolve this.", oldOptionName, newName, oldOptionName)
 			} else {
 				opts.RuleSeverity[newName] = severity
 			}
@@ -146,7 +146,7 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 		}
 		ruleConfig := rule.ConfigFunc(dir.Config)
 		if err, ok := ruleConfig.(error); ok {
-			return Options{}, toConfigError(dir, err)
+			return Options{}, ConfigError{Dir: dir, err: err}
 		}
 		if ruleConfig != nil {
 			opts.RuleConfig[name] = ruleConfig
@@ -157,22 +157,21 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 }
 
 // ConfigError represents a configuration issue encountered at runtime.
-type ConfigError string
+type ConfigError struct {
+	Dir *fs.Dir
+	err error
+}
 
 // Error satisfies the builtin error interface.
 func (ce ConfigError) Error() string {
-	return string(ce)
+	return ce.err.Error()
 }
 
-// newConfigError creates a config error referring to the specified directory
+// NewConfigError creates a config error referring to the specified directory
 // and message.
-func newConfigError(dir *fs.Dir, format string, a ...interface{}) ConfigError {
-	message := fmt.Sprintf(format, a...)
-	return ConfigError(fmt.Sprintf("%s: %s", dir.RelPath(), message))
-}
-
-// toConfigError converts another error to a ConfigError, prefixed with info
-// on the directory.
-func toConfigError(dir *fs.Dir, err error) ConfigError {
-	return ConfigError(fmt.Sprintf("%s: %s", dir.RelPath(), err))
+func NewConfigError(dir *fs.Dir, format string, a ...interface{}) ConfigError {
+	return ConfigError{
+		Dir: dir,
+		err: fmt.Errorf(format, a...),
+	}
 }

@@ -84,13 +84,13 @@ func LintHandler(cfg *mybase.Config) error {
 
 func lintWalker(dir *fs.Dir, maxDepth int) *linter.Result {
 	if dir.ParseError != nil {
-		log.Error(fmt.Sprintf("Skipping schema in %s due to error: %s", dir.RelPath(), dir.ParseError))
+		log.Error(fmt.Sprintf("Skipping directory %s due to error: %s", dir.RelPath(), dir.ParseError))
 		return linter.BadConfigResult(dir, dir.ParseError)
 	}
 	log.Infof("Linting %s", dir)
 	result := lintDir(dir)
 	for _, err := range result.Exceptions {
-		log.Error(fmt.Sprintf("Skipping schema in %s due to error: %s", dir.RelPath(), err))
+		log.Error(fmt.Sprintf("Skipping directory %s due to error: %s", dir.RelPath(), err))
 	}
 	for _, annotation := range result.Annotations {
 		annotation.Log()
@@ -150,7 +150,7 @@ func lintDir(dir *fs.Dir) *linter.Result {
 		wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
 		if err != nil {
 			result.Fatal(err)
-			return result
+			continue
 		}
 		result.AnnotateStatementErrors(wsSchema.Failures, opts)
 

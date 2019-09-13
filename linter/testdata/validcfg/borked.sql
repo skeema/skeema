@@ -1,4 +1,4 @@
-# Expect this to go in Result.Exceptions due to SQL syntax error
+# This would normally generate an Error annotation via AnnotateStatementErrors
 CREATE TABLE borked1 (
 	id int,
 	lol I dunno,

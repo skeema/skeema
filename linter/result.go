@@ -209,7 +209,7 @@ func (r *Result) SortByFile() {
 // is not already one.
 func BadConfigResult(dir *fs.Dir, err error) *Result {
 	if _, ok := err.(ConfigError); !ok {
-		err = toConfigError(dir, err)
+		err = ConfigError{Dir: dir, err: err}
 	}
 	return &Result{
 		Exceptions: []error{err},
