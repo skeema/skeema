@@ -2,6 +2,7 @@ package linter
 
 import (
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -72,6 +73,23 @@ func (opts *Options) OnlyKeys(keys []tengo.ObjectKey) {
 	for _, key := range keys {
 		opts.onlyKeys[key] = true
 	}
+}
+
+// Equals returns true if other is equivalent to opts.
+func (opts *Options) Equals(other *Options) bool {
+	if !reflect.DeepEqual(opts.RuleSeverity, other.RuleSeverity) {
+		return false
+	}
+	if !reflect.DeepEqual(opts.RuleConfig, other.RuleConfig) {
+		return false
+	}
+	if !reflect.DeepEqual(opts.onlyKeys, other.onlyKeys) {
+		return false
+	}
+	if opts.IgnoreTable == nil || other.IgnoreTable == nil {
+		return opts.IgnoreTable == other.IgnoreTable
+	}
+	return opts.IgnoreTable.String() == other.IgnoreTable.String()
 }
 
 // shouldIgnore returns true if the option configuration indicates the supplied
