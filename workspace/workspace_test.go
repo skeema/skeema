@@ -148,6 +148,36 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaErrors(t *testing.T) {
 	}
 }
 
+// TestExecLogicalSchemaFK confirms that ExecLogicalSchema does not choke on
+// concurrent table creation involving cross-referencing foreign keys. This
+// situation, if not specially handled, is known to cause random deadlock
+// errors with MySQL 8.0's new data dictionary.
+func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaFK(t *testing.T) {
+	if !s.d.Flavor().HasDataDictionary() {
+		t.Skip("Test only relevant for flavors that have the new data dictionary")
+	}
+
+	dir := s.getParsedDir(t, "testdata/manyfk", "")
+	opts, err := OptionsForDir(dir, s.d.Instance)
+	if err != nil {
+		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
+	}
+	opts.LockWaitTimeout = 100 * time.Millisecond
+
+	// Test multiple times, since the problem isn't deterministic
+	for n := 0; n < 3; n++ {
+		wsSchema, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts)
+		if err != nil {
+			t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
+		}
+		if len(wsSchema.Failures) > 0 {
+			t.Errorf("Expected no StatementErrors, instead found %d; first err %v from %s", len(wsSchema.Failures), wsSchema.Failures[0].Err, wsSchema.Failures[0].Statement.Location())
+		} else if len(wsSchema.Tables) < 6 {
+			t.Errorf("Expected at least 6 tables, but instead found %d", len(wsSchema.Tables))
+		}
+	}
+}
+
 func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	getOpts := func(cliFlags string) Options {
 		t.Helper()

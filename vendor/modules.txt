@@ -57,6 +57,8 @@ github.com/konsorten/go-windows-terminal-sequences
 github.com/mattn/goveralls
 # github.com/mitchellh/go-wordwrap v1.0.0
 github.com/mitchellh/go-wordwrap
+# github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
+github.com/nozzle/throttler
 # github.com/opencontainers/go-digest v1.0.0-rc1
 github.com/opencontainers/go-digest
 # github.com/opencontainers/image-spec v1.0.1

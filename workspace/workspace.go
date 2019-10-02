@@ -13,7 +13,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/VividCortex/mysqlerr"
 	"github.com/jmoiron/sqlx"
+	"github.com/nozzle/throttler"
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/tengo"
@@ -247,58 +249,51 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 		}
 	}()
 
-	// We need two separate connection pools: one with normal session settings,
-	// and another that removes the Skeema-specific sql_mode override. The latter
-	// is needed for object types that "remember" their creation-time sql_mode.
-	db, err := ws.ConnectionPool("")
-	if err != nil {
-		fatalErr = fmt.Errorf("Cannot connect to workspace: %s", err)
-		return
-	}
-	dbRemember, err := ws.ConnectionPool("sql_mode=@@GLOBAL.sql_mode")
-	if err != nil {
-		fatalErr = fmt.Errorf("Cannot connect to workspace: %s", err)
-		return
-	}
-	rememberSQLMode := map[tengo.ObjectType]bool{
-		tengo.ObjectTypeFunc: true,
-		tengo.ObjectTypeProc: true,
-		//tengo.ObjectTypeEvent: true,   // not implemented yet
-		//tengo.ObjectTypeTrigger: true, // not implemented yet
+	// Run CREATEs in parallel, up to 10 at a time. If any deadlocks occur,
+	// track them to retry sequentially later, since some deadlocks are expected
+	// from concurrent CREATEs in MySQL 8+ if FKs are present.
+	th := throttler.New(10, len(logicalSchema.Creates))
+	sequentialStatements := []*fs.Statement{}
+	for _, stmt := range logicalSchema.Creates {
+		db, err := ws.ConnectionPool(paramsForStatement(stmt))
+		if err != nil {
+			fatalErr = fmt.Errorf("Cannot connect to workspace: %s", err)
+			return
+		}
+		go func(db *sqlx.DB, statement *fs.Statement) {
+			_, err := db.Exec(statement.Body())
+			if tengo.IsDatabaseError(err, mysqlerr.ER_LOCK_DEADLOCK) {
+				sequentialStatements = append(sequentialStatements, statement)
+				err = nil
+			} else if err != nil {
+				err = failure(statement, err)
+			}
+			th.Done(err)
+		}(db, stmt)
+		th.Throttle()
 	}
 
-	// Run all CREATEs in parallel. Temporarily limit max open conns as a simple
-	// means of limiting concurrency.
-	defer db.SetMaxOpenConns(0)
-	defer dbRemember.SetMaxOpenConns(0)
-	db.SetMaxOpenConns(10)
-	dbRemember.SetMaxOpenConns(10)
-	results := make(chan *StatementError)
-	for _, stmt := range logicalSchema.Creates {
-		go func(statement *fs.Statement) {
-			if rememberSQLMode[statement.ObjectType] {
-				results <- execStatement(dbRemember, statement)
-			} else {
-				results <- execStatement(db, statement)
-			}
-		}(stmt)
-	}
 	wsSchema = &Schema{
 		LogicalSchema: logicalSchema,
 		Failures:      []*StatementError{},
 	}
-	for range logicalSchema.Creates {
-		if result := <-results; result != nil {
-			wsSchema.Failures = append(wsSchema.Failures, result)
-		}
+	for _, err := range th.Errs() {
+		stmterr := err.(*StatementError)
+		wsSchema.Failures = append(wsSchema.Failures, stmterr)
 	}
-	close(results)
 
 	// Run ALTERs sequentially, since foreign key manipulations don't play
 	// nice with concurrency.
-	for _, statement := range logicalSchema.Alters {
-		if err := execStatement(db, statement); err != nil {
-			wsSchema.Failures = append(wsSchema.Failures, err)
+	sequentialStatements = append(sequentialStatements, logicalSchema.Alters...)
+
+	for _, statement := range sequentialStatements {
+		db, connErr := ws.ConnectionPool(paramsForStatement(statement))
+		if connErr != nil {
+			fatalErr = fmt.Errorf("Cannot connect to workspace: %s", connErr)
+			return
+		}
+		if _, err := db.Exec(statement.Body()); err != nil {
+			wsSchema.Failures = append(wsSchema.Failures, failure(statement, err))
 		}
 	}
 
@@ -306,17 +301,41 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 	return
 }
 
-func execStatement(db *sqlx.DB, statement *fs.Statement) (stmtErr *StatementError) {
-	_, err := db.Exec(statement.Body())
-	if err == nil {
-		return nil
+// paramsForStatement returns the session settings for executing the supplied
+// statement in a workspace.
+func paramsForStatement(statement *fs.Statement) string {
+	// Disable FK checks when operating on tables, since otherwise DDL would
+	// need to be ordered to resolve dependencies, and circular references would
+	// be highly problematic
+	if statement.ObjectType == tengo.ObjectTypeTable {
+		return "foreign_key_checks=0"
 	}
-	stmtErr = &StatementError{
+
+	if statement.Type == fs.StatementTypeCreate {
+		// Some object types "remember" their creation-time sql_mode, so we need to
+		// disable Skeema's usual sql_mode override before creating them
+		rememberSQLMode := map[tengo.ObjectType]bool{
+			tengo.ObjectTypeFunc: true,
+			tengo.ObjectTypeProc: true,
+			//tengo.ObjectTypeEvent: true,   // not implemented yet
+			//tengo.ObjectTypeTrigger: true, // not implemented yet
+		}
+		if rememberSQLMode[statement.ObjectType] {
+			return "sql_mode=@@GLOBAL.sql_mode"
+		}
+	}
+
+	return ""
+}
+
+func failure(statement *fs.Statement, err error) *StatementError {
+	stmtErr := &StatementError{
 		Statement: statement,
-		Err:       fmt.Errorf("Error executing DDL in workspace: %s", err),
 	}
 	if tengo.IsSyntaxError(err) {
 		stmtErr.Err = fmt.Errorf("SQL syntax error: %s", err)
+	} else {
+		stmtErr.Err = fmt.Errorf("Error executing DDL in workspace: %s", err)
 	}
 	return stmtErr
 }
