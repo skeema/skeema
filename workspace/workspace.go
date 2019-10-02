@@ -249,11 +249,8 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 		}
 	}()
 
-	// Run CREATEs in parallel, up to 10 at a time. If any deadlocks occur,
-	// track them to retry sequentially later, since some deadlocks are expected
-	// from concurrent CREATEs in MySQL 8+ if FKs are present.
+	// Run CREATEs in parallel, up to 10 at a time.
 	th := throttler.New(10, len(logicalSchema.Creates))
-	sequentialStatements := []*fs.Statement{}
 	for _, stmt := range logicalSchema.Creates {
 		db, err := ws.ConnectionPool(paramsForStatement(stmt))
 		if err != nil {
@@ -262,24 +259,29 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 		}
 		go func(db *sqlx.DB, statement *fs.Statement) {
 			_, err := db.Exec(statement.Body())
-			if tengo.IsDatabaseError(err, mysqlerr.ER_LOCK_DEADLOCK) {
-				sequentialStatements = append(sequentialStatements, statement)
-				err = nil
-			} else if err != nil {
-				err = failure(statement, err)
+			if err != nil {
+				err = wrapFailure(statement, err)
 			}
 			th.Done(err)
 		}(db, stmt)
 		th.Throttle()
 	}
 
+	// Construct the workspace.Schema and then examine statement errors. If any
+	// deadlocks occurred, retry them sequentially, since some deadlocks are
+	// expected from concurrent CREATEs in MySQL 8+ if FKs are present.
 	wsSchema = &Schema{
 		LogicalSchema: logicalSchema,
 		Failures:      []*StatementError{},
 	}
+	sequentialStatements := []*fs.Statement{}
 	for _, err := range th.Errs() {
 		stmterr := err.(*StatementError)
-		wsSchema.Failures = append(wsSchema.Failures, stmterr)
+		if tengo.IsDatabaseError(stmterr.Err, mysqlerr.ER_LOCK_DEADLOCK) {
+			sequentialStatements = append(sequentialStatements, stmterr.Statement)
+		} else {
+			wsSchema.Failures = append(wsSchema.Failures, stmterr)
+		}
 	}
 
 	// Run ALTERs sequentially, since foreign key manipulations don't play
@@ -293,7 +295,7 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 			return
 		}
 		if _, err := db.Exec(statement.Body()); err != nil {
-			wsSchema.Failures = append(wsSchema.Failures, failure(statement, err))
+			wsSchema.Failures = append(wsSchema.Failures, wrapFailure(statement, err))
 		}
 	}
 
@@ -328,12 +330,14 @@ func paramsForStatement(statement *fs.Statement) string {
 	return ""
 }
 
-func failure(statement *fs.Statement, err error) *StatementError {
+func wrapFailure(statement *fs.Statement, err error) *StatementError {
 	stmtErr := &StatementError{
 		Statement: statement,
 	}
 	if tengo.IsSyntaxError(err) {
 		stmtErr.Err = fmt.Errorf("SQL syntax error: %s", err)
+	} else if tengo.IsDatabaseError(err, mysqlerr.ER_LOCK_DEADLOCK) {
+		stmtErr.Err = err // Need to maintain original type
 	} else {
 		stmtErr.Err = fmt.Errorf("Error executing DDL in workspace: %s", err)
 	}
