@@ -21,8 +21,9 @@ type Table struct {
 	ForeignKeys        []*ForeignKey
 	Comment            string
 	NextAutoIncrement  uint64
-	UnsupportedDDL     bool   // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
-	CreateStatement    string // complete SHOW CREATE TABLE obtained from an instance
+	Partitioning       *TablePartitioning // nil if table isn't partitioned
+	UnsupportedDDL     bool               // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
+	CreateStatement    string             // complete SHOW CREATE TABLE obtained from an instance
 }
 
 // AlterStatement returns the prefix to a SQL "ALTER TABLE" statement.
@@ -70,7 +71,7 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 	if t.Comment != "" {
 		comment = fmt.Sprintf(" COMMENT='%s'", EscapeValueForCreateTable(t.Comment))
 	}
-	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n) ENGINE=%s%s DEFAULT CHARSET=%s%s%s%s",
+	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n) ENGINE=%s%s DEFAULT CHARSET=%s%s%s%s%s",
 		EscapeIdentifier(t.Name),
 		strings.Join(defs, ",\n  "),
 		t.Engine,
@@ -79,6 +80,7 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 		collate,
 		createOptions,
 		comment,
+		t.Partitioning.Definition(flavor, t),
 	)
 	return result
 }

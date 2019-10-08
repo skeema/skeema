@@ -131,7 +131,7 @@ func TestUnitTableFlavors(t *testing.T) {
 	if table2.GeneratedCreateStatement(FlavorMariaDB102) == orig2.GeneratedCreateStatement(FlavorUnknown) {
 		t.Errorf("MariaDB 10.2: Expected GeneratedCreateStatement to differ vs FlavorUnknown, but it did not")
 	}
-	defaultClause := table2.Columns[2].Default.Clause(FlavorMariaDB102, table2.Columns[2])
+	defaultClause := table2.Columns[3].Default.Clause(FlavorMariaDB102, table2.Columns[3])
 	if !strings.Contains(defaultClause, "DEFAULT NULL") {
 		t.Errorf("MariaDB 10.2: Expected text column to now emit a default value, but it did not")
 	}
@@ -316,16 +316,13 @@ func anotherTableForFlavor(flavor Flavor) Table {
 
 func unsupportedTable() Table {
 	t := supportedTable()
-	t.CreateStatement += ` ROW_FORMAT=REDUNDANT
-   /*!50100 PARTITION BY RANGE (customer_id)
-   (PARTITION p0 VALUES LESS THAN (123) ENGINE = InnoDB,
-    PARTITION p1 VALUES LESS THAN MAXVALUE ENGINE = InnoDB) */`
+	t.CreateStatement = strings.Replace(t.CreateStatement, "varchar(15) NOT NULL", "varchar(15) AS concat('cust_', customer_id) VIRTUAL NOT NULL", 1)
 	t.UnsupportedDDL = true
 	return t
 }
 
-// Returns the same as unsupportedTable() but without partitioning, so that
-// the table is actually supported.
+// Returns the same as unsupportedTable() but without the generated modifier,
+// so that the table is actually supported.
 func supportedTable() Table {
 	return supportedTableForFlavor(FlavorUnknown)
 }
@@ -344,6 +341,11 @@ func supportedTableForFlavor(flavor Flavor) Table {
 			Default:  ColumnDefaultNull,
 		},
 		{
+			Name:     "customer_code",
+			TypeInDB: "varchar(15)",
+			Default:  ColumnDefaultNull,
+		},
+		{
 			Name:               "info",
 			Nullable:           true,
 			TypeInDB:           "text",
@@ -356,6 +358,7 @@ func supportedTableForFlavor(flavor Flavor) Table {
 	stmt := strings.Replace(`CREATE TABLE ~orders~ (
   ~id~ int(10) unsigned NOT NULL AUTO_INCREMENT,
   ~customer_id~ int(10) unsigned NOT NULL,
+  ~customer_code~ varchar(15) NOT NULL,
   ~info~ text,
   PRIMARY KEY (~id~,~customer_id~)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1`, "~", "`", -1)

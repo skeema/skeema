@@ -139,6 +139,20 @@ func NormalizeCreateOptions(createStmt string) string {
 	return createStmt
 }
 
+// NormalizePartitioning adjusts the supplied CREATE TABLE's partitioning clause
+// to remove any oddities that are not reflected in information_schema and/or
+// cannot be altered by this package, but are included in SHOW CREATE TABLE.
+func NormalizePartitioning(createStmt string, flavor Flavor) string {
+	if flavor.Major == 5 && flavor.Minor == 5 {
+		createStmt = strings.Replace(createStmt, "PARTITION BY KEY */ /*!50531 ALGORITHM = 1 */ /*!50100 ", "PARTITION BY KEY ", 1)
+	} else if flavor.MySQLishMinVersion(5, 6) || flavor == FlavorMariaDB101 {
+		createStmt = strings.Replace(createStmt, "PARTITION BY KEY */ /*!50611 ALGORITHM = 1 */ /*!50100 ", "PARTITION BY KEY ", 1)
+	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
+		createStmt = strings.Replace(createStmt, "PARTITION BY KEY ALGORITHM = 1 ", "PARTITION BY KEY ", 1)
+	}
+	return createStmt
+}
+
 // baseDSN returns a DSN with the database (schema) name and params stripped.
 // Currently only supports MySQL, via go-sql-driver/mysql's DSN format.
 func baseDSN(dsn string) string {

@@ -576,15 +576,12 @@ func TestTableDiffUnsupportedAlter(t *testing.T) {
 		// table was on the "to" or "from" side, the message should show what part
 		// of the unsupported table triggered the issue.
 		extended := err.(*UnsupportedDiffError).ExtendedError()
-		expected := `--- Expected CREATE
+		expected := strings.Replace(`--- Expected CREATE
 +++ MySQL-actual SHOW CREATE
-@@ -6 +6,4 @@
--) ENGINE=InnoDB DEFAULT CHARSET=latin1
-+) ENGINE=InnoDB DEFAULT CHARSET=latin1 ROW_FORMAT=REDUNDANT
-+   /*!50100 PARTITION BY RANGE (customer_id)
-+   (PARTITION p0 VALUES LESS THAN (123) ENGINE = InnoDB,
-+    PARTITION p1 VALUES LESS THAN MAXVALUE ENGINE = InnoDB) */
-`
+@@ -4 +4 @@
+-  ~customer_code~ varchar(15) NOT NULL,
++  ~customer_code~ varchar(15) AS concat('cust_', customer_id) VIRTUAL NOT NULL,
+`, "~", "`", -1)
 		if expected != extended {
 			t.Errorf("Output of ExtendedError() did not match expectation. Returned value:\n%s", extended)
 		}

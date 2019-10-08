@@ -737,6 +737,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		return []*Table{}, nil
 	}
 	tables := make([]*Table, len(rawTables))
+	var havePartitions bool
 	for n, rawTable := range rawTables {
 		tables[n] = &Table{
 			Name:               rawTable.Name,
@@ -749,16 +750,16 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		if rawTable.AutoIncrement.Valid {
 			tables[n].NextAutoIncrement = uint64(rawTable.AutoIncrement.Int64)
 		}
-		if rawTable.CreateOptions.Valid && rawTable.CreateOptions.String != "" && rawTable.CreateOptions.String != "PARTITIONED" {
-			// information_schema.tables.create_options annoyingly contains "partitioned"
-			// if the table is partitioned, despite this not being present as-is in the
-			// table table definition. All other create_options are present verbatim.
-			// Currently in mysql-server/sql/sql_show.cc, it's always at the *end* of
-			// create_options... but just to code defensively we handle any location.
-			if strings.HasPrefix(rawTable.CreateOptions.String, "PARTITIONED ") {
-				tables[n].CreateOptions = strings.Replace(rawTable.CreateOptions.String, "PARTITIONED ", "", 1)
-			} else {
-				tables[n].CreateOptions = strings.Replace(rawTable.CreateOptions.String, " PARTITIONED", "", 1)
+		if rawTable.CreateOptions.Valid && rawTable.CreateOptions.String != "" {
+			tables[n].CreateOptions = rawTable.CreateOptions.String
+
+			// information_schema.tables.create_options contains "partitioned" if the
+			// table is partitioned, despite this not being present as-is in the table
+			// definition. All other create_options are present verbatim.
+			if strings.Contains(tables[n].CreateOptions, "PARTITIONED") {
+				tables[n].CreateOptions = strings.Replace(tables[n].CreateOptions, "PARTITIONED", "", 1)
+				tables[n].CreateOptions = strings.TrimSpace(strings.Replace(tables[n].CreateOptions, "  ", " ", 1))
+				havePartitions = true
 			}
 		}
 	}
@@ -980,6 +981,64 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		t.ForeignKeys = foreignKeysByTableName[t.Name]
 	}
 
+	// Obtain partitioning information, if at least one table was partitioned
+	if havePartitions {
+		var rawPartitioning []struct {
+			TableName     string         `db:"table_name"`
+			PartitionName string         `db:"partition_name"`
+			SubName       sql.NullString `db:"subpartition_name"`
+			Method        string         `db:"partition_method"`
+			SubMethod     sql.NullString `db:"subpartition_method"`
+			Expression    sql.NullString `db:"partition_expression"`
+			SubExpression sql.NullString `db:"subpartition_expression"`
+			Values        sql.NullString `db:"partition_description"`
+			Comment       string         `db:"partition_comment"`
+		}
+		query := `
+			SELECT   p.table_name AS table_name, p.partition_name as partition_name,
+			         p.subpartition_name as subpartition_name,
+			         p.partition_method as partition_method,
+			         p.subpartition_method as subpartition_method,
+			         p.partition_expression as partition_expression,
+			         p.subpartition_expression as subpartition_expression,
+			         p.partition_description as partition_description,
+			         p.partition_comment as partition_comment
+			FROM     partitions p
+			WHERE    p.table_schema = ?
+			AND      p.partition_name IS NOT NULL
+			ORDER BY p.table_name, p.partition_ordinal_position,
+			         p.subpartition_ordinal_position`
+		if err := db.Select(&rawPartitioning, query, schema); err != nil {
+			return nil, fmt.Errorf("Error querying information_schema.partitions for schema %s: %s", schema, err)
+		}
+
+		partitioningByTableName := make(map[string]*TablePartitioning)
+		for _, rawPart := range rawPartitioning {
+			p, ok := partitioningByTableName[rawPart.TableName]
+			if !ok {
+				p = &TablePartitioning{
+					Method:        rawPart.Method,
+					SubMethod:     rawPart.SubMethod.String,
+					Expression:    rawPart.Expression.String,
+					SubExpression: rawPart.SubExpression.String,
+					Partitions:    make([]*Partition, 0),
+				}
+				partitioningByTableName[rawPart.TableName] = p
+			}
+			p.Partitions = append(p.Partitions, &Partition{
+				Name:    rawPart.PartitionName,
+				SubName: rawPart.SubName.String,
+				Values:  rawPart.Values.String,
+				Comment: rawPart.Comment,
+			})
+		}
+		for _, t := range tables {
+			if p, ok := partitioningByTableName[t.Name]; ok {
+				t.Partitioning = p
+			}
+		}
+	}
+
 	// Obtain actual SHOW CREATE TABLE output and store in each table. Since
 	// there's no way in MySQL to bulk fetch this for multiple tables at once,
 	// use multiple goroutines to make this faster.
@@ -997,6 +1056,9 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			}
 			if t.Engine == "InnoDB" {
 				t.CreateStatement = NormalizeCreateOptions(t.CreateStatement)
+			}
+			if t.Partitioning != nil {
+				t.CreateStatement = NormalizePartitioning(t.CreateStatement, flavor)
 			}
 			// Index order is unpredictable with new MySQL 8 data dictionary, so reorder
 			// indexes based on parsing SHOW CREATE TABLE if needed
