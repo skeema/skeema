@@ -20,7 +20,7 @@ import (
 type IntegrationTestSuite interface {
 	Setup(backend string) error
 	Teardown(backend string) error
-	BeforeTest(method string, backend string) error
+	BeforeTest(backend string) error
 }
 
 // RunSuite runs all test methods in the supplied suite once per backend. It
@@ -49,16 +49,25 @@ func RunSuite(suite IntegrationTestSuite, t *testing.T, backends []string) {
 			t.Skipf("RunSuite %s: Setup(%s) failed: %s", suiteName, backend, err)
 		}
 
+		// When using `go test -run ...`, some tests may be skipped, but the testing
+		// package does not directly expose this. We can detect it by toggling a var
+		// in the subtest closure.
+		needReset := true
+
 		// Run test methods
 		for n := 0; n < suiteType.NumMethod(); n++ {
 			method := suiteType.Method(n)
 			if strings.HasPrefix(method.Name, "Test") {
-				if err := suite.BeforeTest(method.Name, backend); err != nil {
-					suite.Teardown(backend)
-					t.Fatalf("RunSuite %s: BeforeTest(%s, %s) failed: %s", suiteName, method.Name, backend, err)
+				if needReset {
+					if err := suite.BeforeTest(backend); err != nil {
+						suite.Teardown(backend)
+						t.Fatalf("RunSuite %s: BeforeTest(%s) failed: %s", suiteName, backend, err)
+					}
+					needReset = false
 				}
 				subtestName := fmt.Sprintf("%s.%s:%s", suiteName, method.Name, backend)
 				subtest := func(t *testing.T) {
+					needReset = true
 					method.Func.Call([]reflect.Value{reflect.ValueOf(suite), reflect.ValueOf(t)})
 				}
 				t.Run(subtestName, subtest)

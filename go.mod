@@ -17,7 +17,7 @@ require (
 	github.com/opencontainers/selinux v1.3.0 // indirect
 	github.com/sirupsen/logrus v1.4.2
 	github.com/skeema/mybase v1.0.8
-	github.com/skeema/tengo v0.8.18
+	github.com/skeema/tengo v0.8.19-0.20191008200715-c840b0ecb8a2
 	golang.org/x/crypto v0.0.0-20190701094942-4def268fd1a4
 	golang.org/x/lint v0.0.0-20190409202823-959b441ac422
 	golang.org/x/sync v0.0.0-20190423024810-112230192c58

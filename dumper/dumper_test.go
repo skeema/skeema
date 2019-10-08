@@ -137,7 +137,7 @@ func (s *IntegrationSuite) Teardown(backend string) error {
 	return os.RemoveAll(s.scratchPath())
 }
 
-func (s *IntegrationSuite) BeforeTest(method string, backend string) error {
+func (s *IntegrationSuite) BeforeTest(backend string) error {
 	if err := s.d.NukeData(); err != nil {
 		return err
 	}

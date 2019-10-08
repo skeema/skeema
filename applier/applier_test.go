@@ -94,7 +94,7 @@ func (s *ApplierIntegrationSuite) Teardown(backend string) error {
 	return g.Wait()
 }
 
-func (s *ApplierIntegrationSuite) BeforeTest(method string, backend string) error {
+func (s *ApplierIntegrationSuite) BeforeTest(backend string) error {
 	var g errgroup.Group
 	for n := range s.d {
 		n := n

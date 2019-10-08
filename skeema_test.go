@@ -77,7 +77,7 @@ func (s *SkeemaIntegrationSuite) Teardown(backend string) error {
 	return nil
 }
 
-func (s *SkeemaIntegrationSuite) BeforeTest(method string, backend string) error {
+func (s *SkeemaIntegrationSuite) BeforeTest(backend string) error {
 	// Clear data and re-source setup data
 	if err := s.d.NukeData(); err != nil {
 		return err

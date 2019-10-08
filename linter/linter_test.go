@@ -85,7 +85,7 @@ func (s *IntegrationSuite) Teardown(backend string) error {
 	return s.d.Stop()
 }
 
-func (s *IntegrationSuite) BeforeTest(method string, backend string) error {
+func (s *IntegrationSuite) BeforeTest(backend string) error {
 	return s.d.NukeData()
 }
 

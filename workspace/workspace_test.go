@@ -289,7 +289,7 @@ func (s *WorkspaceIntegrationSuite) Teardown(backend string) error {
 	return s.d.Stop()
 }
 
-func (s *WorkspaceIntegrationSuite) BeforeTest(method string, backend string) error {
+func (s *WorkspaceIntegrationSuite) BeforeTest(backend string) error {
 	return s.d.NukeData()
 }
 
