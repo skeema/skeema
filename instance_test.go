@@ -455,7 +455,7 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesDeadlock(t *testing.T) {
 		if err = s.d.DropTablesInSchema("testing", false); err != nil {
 			t.Fatalf("Error dropping tables: %s", err)
 		}
-		if err = s.BeforeTest("", ""); err != nil {
+		if err = s.BeforeTest(""); err != nil {
 			t.Fatalf("Error nuking and re-sourcing data: %s", err)
 		}
 	}

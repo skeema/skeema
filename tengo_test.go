@@ -46,7 +46,7 @@ func (s *TengoIntegrationSuite) Teardown(backend string) error {
 	return s.d.Stop()
 }
 
-func (s *TengoIntegrationSuite) BeforeTest(method string, backend string) error {
+func (s *TengoIntegrationSuite) BeforeTest(backend string) error {
 	if err := s.d.NukeData(); err != nil {
 		return err
 	}
