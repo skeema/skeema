@@ -18,7 +18,7 @@ type TablePartitioning struct {
 }
 
 // Definition returns the overall partitioning definition for a table.
-func (tp *TablePartitioning) Definition(flavor Flavor, table *Table) string {
+func (tp *TablePartitioning) Definition(flavor Flavor) string {
 	if tp == nil {
 		return ""
 	}
@@ -34,7 +34,7 @@ func (tp *TablePartitioning) Definition(flavor Flavor, table *Table) string {
 	if needPartitionList {
 		pdefs := make([]string, len(tp.Partitions))
 		for n, p := range tp.Partitions {
-			pdefs[n] = p.Definition(flavor, table)
+			pdefs[n] = p.Definition(flavor)
 		}
 		partitionsClause = fmt.Sprintf("(%s)", strings.Join(pdefs, ",\n "))
 	} else {
@@ -44,7 +44,7 @@ func (tp *TablePartitioning) Definition(flavor Flavor, table *Table) string {
 	open, close := "/*!50100", " */"
 	if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
 		// MariaDB stopped wrapping partitioning clauses in version-gated comments
-		// in 10.2
+		// in 10.2.
 		open, close = "", ""
 	} else if strings.HasSuffix(tp.Method, "COLUMNS") {
 		// RANGE COLUMNS and LIST COLUMNS were introduced in 5.5
@@ -78,22 +78,24 @@ type Partition struct {
 	SubName string // empty string if no sub-partitioning; not fully supported yet
 	Values  string // only populated for RANGE or LIST
 	Comment string
+	method  string
+	engine  string
 }
 
 // Definition returns this partition's definition clause, for use as part of a
 // DDL statement. This is only used for some partition methods.
-func (p *Partition) Definition(flavor Flavor, table *Table) string {
+func (p *Partition) Definition(flavor Flavor) string {
 	name := p.Name
 	if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
 		name = EscapeIdentifier(name)
 	}
 
 	var values string
-	if table.Partitioning.Method == "RANGE" && p.Values == "MAXVALUE" {
+	if p.method == "RANGE" && p.Values == "MAXVALUE" {
 		values = "VALUES LESS THAN MAXVALUE "
-	} else if strings.Contains(table.Partitioning.Method, "RANGE") {
+	} else if strings.Contains(p.method, "RANGE") {
 		values = fmt.Sprintf("VALUES LESS THAN (%s) ", p.Values)
-	} else if strings.Contains(table.Partitioning.Method, "LIST") {
+	} else if strings.Contains(p.method, "LIST") {
 		values = fmt.Sprintf("VALUES IN (%s) ", p.Values)
 	}
 
@@ -102,5 +104,5 @@ func (p *Partition) Definition(flavor Flavor, table *Table) string {
 		comment = fmt.Sprintf("COMMENT = '%s' ", EscapeValueForCreateTable(p.Comment))
 	}
 
-	return fmt.Sprintf("PARTITION %s %s%sENGINE = %s", name, values, comment, table.Engine)
+	return fmt.Sprintf("PARTITION %s %s%sENGINE = %s", name, values, comment, p.engine)
 }

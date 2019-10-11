@@ -56,19 +56,31 @@ const (
 	NextAutoIncAlways                             // always include auto-inc value in diff
 )
 
+// PartitioningMode enumerates ways of handling partitioning status -- that is,
+// presence or lack of a PARTITION BY clause.
+type PartitioningMode int
+
+// Constants for how to handle partitioning status differences.
+const (
+	PartitioningPermissive PartitioningMode = iota // don't negate any partitioning-related clauses
+	PartitioningRemove                             // negate PARTITION BY clauses from DDL
+	PartitioningKeep                               // negate REMOVE PARTITIONING clauses from ALTERs
+)
+
 // StatementModifiers are options that may be applied to adjust the DDL emitted
 // for a particular table, and/or generate errors if certain clauses are
 // present.
 type StatementModifiers struct {
-	NextAutoInc            NextAutoIncMode // How to handle differences in next-auto-inc values
-	AllowUnsafe            bool            // Whether to allow potentially-destructive DDL (drop table, drop column, modify col type, etc)
-	LockClause             string          // Include a LOCK=[value] clause in generated ALTER TABLE
-	AlgorithmClause        string          // Include an ALGORITHM=[value] clause in generated ALTER TABLE
-	IgnoreTable            *regexp.Regexp  // Generate blank DDL if table name matches this regexp
-	StrictIndexOrder       bool            // If true, maintain index order even in cases where there is no functional difference
-	StrictForeignKeyNaming bool            // If true, maintain foreign key names even if no functional difference in definition
-	CompareMetadata        bool            // If true, compare creation-time sql_mode and db collation for funcs, procs (and eventually events, triggers)
-	Flavor                 Flavor          // Adjust generated DDL to match vendor/version. Zero value is FlavorUnknown which makes no adjustments.
+	NextAutoInc            NextAutoIncMode  // How to handle differences in next-auto-inc values
+	Partitioning           PartitioningMode // How to handle differences in partitioning status
+	AllowUnsafe            bool             // Whether to allow potentially-destructive DDL (drop table, drop column, modify col type, etc)
+	LockClause             string           // Include a LOCK=[value] clause in generated ALTER TABLE
+	AlgorithmClause        string           // Include an ALGORITHM=[value] clause in generated ALTER TABLE
+	IgnoreTable            *regexp.Regexp   // Generate blank DDL if table name matches this regexp
+	StrictIndexOrder       bool             // If true, maintain index order even in cases where there is no functional difference
+	StrictForeignKeyNaming bool             // If true, maintain foreign key names even if no functional difference in definition
+	CompareMetadata        bool             // If true, compare creation-time sql_mode and db collation for funcs, procs (and eventually events, triggers)
+	Flavor                 Flavor           // Adjust generated DDL to match vendor/version. Zero value is FlavorUnknown which makes no adjustments.
 }
 
 ///// SchemaDiff ///////////////////////////////////////////////////////////////
@@ -434,6 +446,9 @@ func (td *TableDiff) Statement(mods StatementModifiers) (string, error) {
 	switch td.Type {
 	case DiffTypeCreate:
 		stmt := td.To.CreateStatement
+		if td.To.Partitioning != nil && mods.Partitioning == PartitioningRemove {
+			stmt = td.To.UnpartitionedCreateStatement(mods.Flavor)
+		}
 		if td.To.HasAutoIncrement() && (mods.NextAutoInc == NextAutoIncIgnore || mods.NextAutoInc == NextAutoIncIfAlready) {
 			stmt, _ = ParseCreateAutoInc(stmt)
 		}

@@ -80,9 +80,33 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 		collate,
 		createOptions,
 		comment,
-		t.Partitioning.Definition(flavor, t),
+		t.Partitioning.Definition(flavor),
 	)
 	return result
+}
+
+// UnpartitionedCreateStatement returns the table's CREATE statement without
+// its PARTITION BY clause.
+func (t *Table) UnpartitionedCreateStatement(flavor Flavor) string {
+	if t.Partitioning == nil {
+		return t.CreateStatement
+	}
+
+	// If UnsupportedDDL is false, we know that our generated partitioning
+	// clause definition is exactly correct, so it is sufficient to return the
+	// create statement without those runes. Otherwise, search for just the
+	// beginning of the clause.
+	partClause := t.Partitioning.Definition(flavor)
+	if t.UnsupportedDDL {
+		headerPos := strings.Index(partClause, " PARTITION BY ")
+		header := partClause[0 : headerPos+len(" PARTITION BY ")]
+		pos := strings.LastIndex(t.CreateStatement, header)
+		if pos < 0 {
+			pos = strings.LastIndex(t.CreateStatement, "PARTITION BY")
+		}
+		return t.CreateStatement[0:pos]
+	}
+	return t.CreateStatement[0 : len(t.CreateStatement)-len(partClause)]
 }
 
 // ColumnsByName returns a mapping of column names to Column value pointers,
@@ -317,6 +341,15 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// Compare comment
 	if from.Comment != to.Comment {
 		clauses = append(clauses, ChangeComment{NewComment: to.Comment})
+	}
+
+	// Compare existence of partitioning. This must be performed last due to a
+	// MySQL requirement of PARTITION BY / REMOVE PARTITIONING occurring last in
+	// a multi-clause ALTER TABLE.
+	if from.Partitioning == nil && to.Partitioning != nil {
+		clauses = append(clauses, AddPartitioning{PartitionBy: to.Partitioning})
+	} else if from.Partitioning != nil && to.Partitioning == nil {
+		clauses = append(clauses, RemovePartitioning{})
 	}
 
 	// If the SHOW CREATE TABLE output differed between the two tables, but we

@@ -524,3 +524,35 @@ func (cse ChangeStorageEngine) Clause(_ StatementModifiers) string {
 func (cse ChangeStorageEngine) Unsafe() bool {
 	return true
 }
+
+///// AddPartitioning //////////////////////////////////////////////////////////
+
+// AddPartitioning represents initially partitioning a previously-unpartitioned
+// table. It satisfies the TableAlterClause interface.
+type AddPartitioning struct {
+	PartitionBy *TablePartitioning
+}
+
+// Clause returns a clause of an ALTER TABLE statement that partitions a
+// previously-unpartitioned table.
+func (ap AddPartitioning) Clause(mods StatementModifiers) string {
+	if mods.Partitioning == PartitioningRemove {
+		return ""
+	}
+	return ap.PartitionBy.Definition(mods.Flavor)
+}
+
+///// RemovePartitioning ///////////////////////////////////////////////////////
+
+// RemovePartitioning represents de-partitioning a previously-partitioned table.
+// It satisfies the TableAlterClause interface.
+type RemovePartitioning struct{}
+
+// Clause returns a clause of an ALTER TABLE statement that partitions a
+// previously-unpartitioned table.
+func (rp RemovePartitioning) Clause(mods StatementModifiers) string {
+	if mods.Partitioning == PartitioningKeep {
+		return ""
+	}
+	return "REMOVE PARTITIONING"
+}

@@ -1030,10 +1030,14 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 				SubName: rawPart.SubName.String,
 				Values:  rawPart.Values.String,
 				Comment: rawPart.Comment,
+				method:  rawPart.Method,
 			})
 		}
 		for _, t := range tables {
 			if p, ok := partitioningByTableName[t.Name]; ok {
+				for _, part := range p.Partitions {
+					part.engine = t.Engine
+				}
 				t.Partitioning = p
 			}
 		}
