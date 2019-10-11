@@ -1008,7 +1008,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	return tables, g.Wait()
 }
 
-var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE )?KEY `((?:[^`]|``)+)` \\(`")
+var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE |FULLTEXT |SPATIAL )?KEY `((?:[^`]|``)+)` (?:USING \\w+ )?\\(`")
 
 // MySQL 8.0 uses a different index order in SHOW CREATE TABLE than in
 // information_schema. This function fixes the struct to match SHOW CREATE
@@ -1024,6 +1024,9 @@ func fixIndexOrder(t *Table) {
 		}
 		t.SecondaryIndexes[cur] = byName[matches[1]]
 		cur++
+	}
+	if cur != len(t.SecondaryIndexes) {
+		panic(fmt.Errorf("Failed to parse indexes of %s for reordering: only matched %d of %d secondary indexes", t.Name, cur, len(t.SecondaryIndexes)))
 	}
 }
 
