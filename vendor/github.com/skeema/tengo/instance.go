@@ -1175,7 +1175,7 @@ func (instance *Instance) querySchemaRoutines(schema string) ([]*Routine, error)
 		for _, meta := range rawRoutineMeta {
 			key := ObjectKey{Type: ObjectType(strings.ToLower(meta.Type)), Name: meta.Name}
 			if routine, ok := dict[key]; ok {
-				routine.ParamString = meta.ParamList
+				routine.ParamString = strings.Replace(meta.ParamList, "\r\n", "\n", -1)
 				routine.ReturnDataType = meta.Returns
 				routine.Body = strings.Replace(meta.Body, "\r\n", "\n", -1)
 				routine.CreateStatement = routine.Definition(instance.Flavor())

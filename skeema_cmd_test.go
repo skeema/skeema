@@ -1171,7 +1171,8 @@ func (s SkeemaIntegrationSuite) TestFlavorConfig(t *testing.T) {
 }
 
 func (s SkeemaIntegrationSuite) TestRoutines(t *testing.T) {
-	origCreate := `CREATE definer=root@localhost FUNCTION routine1(a int, b int)
+	origCreate := `CREATE definer=root@localhost FUNCTION routine1(a int,
+  b int)
 RETURNS int
 DETERMINISTIC
 BEGIN
@@ -1190,10 +1191,12 @@ END`
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema lint")
 	s.verifyFiles(t, cfg, "../golden/routines")
 
-	// Change routine1.sql to use Windows-style CRLF line-end in one spot. No
+	// Change routine1.sql to use Windows-style CRLF line-end in two spots. No
 	// diff should be present. Pull should restore UNIX-style LFs.
 	routine1 := fs.ReadTestFile(t, "mydb/product/routine1.sql")
-	fs.WriteTestFile(t, "mydb/product/routine1.sql", strings.Replace(routine1, "BEGIN\n", "BEGIN\r\n", 1))
+	routine1 = strings.Replace(routine1, "a int,\n", "a int,\r\n", 1)
+	routine1 = strings.Replace(routine1, "BEGIN\n", "BEGIN\r\n", 1)
+	fs.WriteTestFile(t, "mydb/product/routine1.sql", routine1)
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	s.verifyFiles(t, cfg, "../golden/routines")

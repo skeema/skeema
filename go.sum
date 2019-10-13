@@ -61,8 +61,8 @@ github.com/sirupsen/logrus v1.4.2 h1:SPIRibHv4MatM3XXNO2BJeFLZwZ2LvZgfQ5+UNI2im4
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
 github.com/skeema/mybase v1.0.8 h1:eqtxi5FfphYhosEEeHBsYf/9oXfwjCZ8fMnpGJ+AdxI=
 github.com/skeema/mybase v1.0.8/go.mod h1:09Uz3MIoXTNCUZWBeKDeO8SUHlQNjIEocXbc1DFvEKQ=
-github.com/skeema/tengo v0.8.19 h1:I37mcTpdR3X7mGRrxfEkm5lpGsoIe7zqqxDBqjZ6yY0=
-github.com/skeema/tengo v0.8.19/go.mod h1:iz608OkLZGwQUFMwivJCldvM4sxk57p5nt9UCWyJwO0=
+github.com/skeema/tengo v0.8.20-0.20191013015520-a651cef39808 h1:OaE4G0tYAqnM2twfUYy6WWobyXpYT4PCqd1GS+waliA=
+github.com/skeema/tengo v0.8.20-0.20191013015520-a651cef39808/go.mod h1:iz608OkLZGwQUFMwivJCldvM4sxk57p5nt9UCWyJwO0=
 github.com/stretchr/objx v0.1.1/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.2.2 h1:bSDNvY7ZPG5RlJ8otE/7V6gMiyenm9RtJ7IUVIAoJ1w=
 github.com/stretchr/testify v1.2.2/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXfy6kDkUVs=
