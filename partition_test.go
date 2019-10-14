@@ -35,7 +35,7 @@ func TestTableCreatePartitioning(t *testing.T) {
 	}
 }
 
-func TestTableAlterPartitioning(t *testing.T) {
+func TestTableAlterPartitioningStatus(t *testing.T) {
 	unpartitioned := unpartitionedTable(FlavorUnknown)
 	partitioned := partitionedTable(FlavorUnknown)
 
@@ -74,6 +74,51 @@ func TestTableAlterPartitioning(t *testing.T) {
 			t.Errorf("Unexpected return from Clause(): expected %q, found %q", expected, actual)
 		}
 	}
+}
+
+func TestTableAlterPartitioningOther(t *testing.T) {
+	assertIgnored := func(t1, t2 *Table) {
+		t.Helper()
+		t2.CreateStatement = "" // bypass diff logic short-circuit on matching CreateStatement
+		tableAlters, supported := t1.Diff(t2)
+		if !supported || len(tableAlters) != 1 {
+			t.Errorf("Unexpected return from Diff: %d alters / %t supported", len(tableAlters), supported)
+		} else {
+			_, ok := tableAlters[0].(ModifyPartitions)
+			clause := tableAlters[0].Clause(StatementModifiers{})
+			if !ok || clause != "" {
+				t.Errorf("Unexpected type or clause returned from diff: %T %s", tableAlters[0], clause)
+			}
+		}
+	}
+
+	assertUnsupported := func(t1, t2 *Table) {
+		t.Helper()
+		t2.CreateStatement = "" // bypass diff logic short-circuit on matching CreateStatement
+		_, supported := t1.Diff(t2)
+		if supported {
+			t.Error("Expected diff to be unsupported, but it was supported")
+		}
+	}
+
+	// Changes to the partition list are ignored (via placeholder
+	// ModifyPartitions clause) for unit test table since it has RANGE partitioning
+	p1, p2 := partitionedTable(FlavorUnknown), partitionedTable(FlavorUnknown)
+	p2.Partitioning.Partitions[1].Comment = "hello world"
+	assertIgnored(&p1, &p2)
+	p2.Partitioning.Partitions = []*Partition{p2.Partitioning.Partitions[0], p2.Partitioning.Partitions[2]}
+	assertIgnored(&p1, &p2)
+	assertIgnored(&p2, &p1)
+
+	// Changes to the partition list are unsupported for HASH partitioning
+	p1.Partitioning.Method, p2.Partitioning.Method = "HASH", "HASH"
+	assertUnsupported(&p1, &p2)
+	assertUnsupported(&p2, &p1)
+
+	// Changing the method of partitioning is unsupported
+	p1.Partitioning.Method = "RANGE"
+	assertUnsupported(&p1, &p2)
+	assertUnsupported(&p2, &p1)
 }
 
 func TestTableUnpartitionedCreateStatement(t *testing.T) {

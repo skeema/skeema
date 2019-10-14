@@ -556,3 +556,17 @@ func (rp RemovePartitioning) Clause(mods StatementModifiers) string {
 	}
 	return "REMOVE PARTITIONING"
 }
+
+///// ModifyPartitions /////////////////////////////////////////////////////////
+
+// ModifyPartitions represents a change to the partition list for a table using
+// RANGE, RANGE COLUMNS, LIST, or LIST COLUMNS partitioning. This clause is just
+// an empty placeholder for now; this package currently always ignores
+// differences in partition lists for these partitioning types.
+type ModifyPartitions struct{}
+
+// Clause always returns an empty string currently, as this package currently
+// always ignores differences in partition lists.
+func (mp ModifyPartitions) Clause(_ StatementModifiers) string {
+	return ""
+}

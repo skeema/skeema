@@ -343,13 +343,15 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 		clauses = append(clauses, ChangeComment{NewComment: to.Comment})
 	}
 
-	// Compare existence of partitioning. This must be performed last due to a
-	// MySQL requirement of PARTITION BY / REMOVE PARTITIONING occurring last in
-	// a multi-clause ALTER TABLE.
-	if from.Partitioning == nil && to.Partitioning != nil {
-		clauses = append(clauses, AddPartitioning{PartitionBy: to.Partitioning})
-	} else if from.Partitioning != nil && to.Partitioning == nil {
-		clauses = append(clauses, RemovePartitioning{})
+	// Compare partitioning. This must be performed last due to a MySQL requirement
+	// of PARTITION BY / REMOVE PARTITIONING occurring last in a multi-clause ALTER
+	// TABLE.
+	// Note that some partitioning differences aren't supported yet, and others are
+	// intentionally ignored.
+	partClauses, partSupported := from.Partitioning.Diff(to.Partitioning)
+	clauses = append(clauses, partClauses...)
+	if !partSupported {
+		return clauses, false
 	}
 
 	// If the SHOW CREATE TABLE output differed between the two tables, but we

@@ -72,6 +72,49 @@ func (tp *TablePartitioning) partitionBy(flavor Flavor) string {
 	return fmt.Sprintf("%s(%s)", method, expr)
 }
 
+// Diff returns a set of differences between this TablePartitioning and another
+// TablePartitioning. If supported==true, the returned clauses (if executed)
+// would transform tp into other.
+func (tp *TablePartitioning) Diff(other *TablePartitioning) (clauses []TableAlterClause, supported bool) {
+	// Handle cases where one or both sides are nil, meaning one or both tables are
+	// unpartitioned
+	if tp == nil && other == nil {
+		return nil, true
+	} else if tp == nil {
+		return []TableAlterClause{AddPartitioning{PartitionBy: other}}, true
+	} else if other == nil {
+		return []TableAlterClause{RemovePartitioning{}}, true
+	}
+
+	// Modifications to partitioning method or expression: currently unsupported
+	if tp.Method != other.Method || tp.SubMethod != other.SubMethod || tp.Expression != other.Expression || tp.SubExpression != other.SubExpression {
+		return nil, false
+	}
+
+	// Modifications to partition list: ignored for RANGE, RANGE COLUMNS, LIST,
+	// LIST COLUMNS via generation of a no-op placeholder clause. This is done
+	// to side-step the safety mechanism at the end of Table.Diff() which treats 0
+	// clauses as indicative of an unsupported diff.
+	// For other partitioning methods, changing the partition list is currently
+	// unsupported.
+	var foundPartitionsDiff bool
+	if len(tp.Partitions) != len(other.Partitions) {
+		foundPartitionsDiff = true
+	} else {
+		for n := range tp.Partitions {
+			// all Partition fields are scalars, so simple comparison is fine
+			if *tp.Partitions[n] != *other.Partitions[n] {
+				foundPartitionsDiff = true
+				break
+			}
+		}
+	}
+	if foundPartitionsDiff && (strings.HasPrefix(tp.Method, "RANGE") || strings.HasPrefix(tp.Method, "LIST")) {
+		return []TableAlterClause{ModifyPartitions{}}, true
+	}
+	return nil, !foundPartitionsDiff
+}
+
 // Partition stores information on a single partition.
 type Partition struct {
 	Name    string
