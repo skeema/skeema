@@ -56,6 +56,7 @@ Go La Tengo also does not yet support rename operations, e.g. column renames or 
 * http://github.com/VividCortex/mysqlerr (MIT License)
 * http://github.com/fsouza/go-dockerclient (BSD License)
 * http://github.com/pmezard/go-difflib/difflib (BSD License)
+* http://github.com/nozzle/throttler (Apache License 2.0)
 
 ## Credits
 

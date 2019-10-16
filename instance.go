@@ -14,7 +14,7 @@ import (
 	"github.com/VividCortex/mysqlerr"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
-	"golang.org/x/sync/errgroup"
+	"github.com/nozzle/throttler"
 )
 
 // Instance represents a single database server running on a specific host or address.
@@ -444,6 +444,23 @@ func tableHasRows(db *sqlx.DB, table string) (bool, error) {
 	return len(result) != 0, nil
 }
 
+func confirmTablesEmpty(db *sqlx.DB, tables []string) error {
+	th := throttler.New(15, len(tables))
+	for _, name := range tables {
+		go func(name string) {
+			hasRows, err := tableHasRows(db, name)
+			if err == nil && hasRows {
+				err = fmt.Errorf("table %s has at least one row", EscapeIdentifier(name))
+			}
+			th.Done(err)
+		}(name)
+		if th.Throttle() > 0 {
+			return th.Errs()[0]
+		}
+	}
+	return nil
+}
+
 // CreateSchema creates a new database schema with the supplied name, and
 // optionally the supplied default charSet and collation. (Leave charSet and
 // collation blank to use server defaults.)
@@ -481,10 +498,10 @@ func (instance *Instance) CreateSchema(name, charSet, collation string) (*Schema
 }
 
 // DropSchema first drops all tables in the schema, and then drops the database
-// schema itself. If onlyIfEmpty==true, returns an error if any of the tables
-// have any rows.
-func (instance *Instance) DropSchema(schema string, onlyIfEmpty bool) error {
-	err := instance.DropTablesInSchema(schema, onlyIfEmpty)
+// schema itself. If opts.OnlyIfEmpty==true, returns an error if any of the
+// tables have any rows.
+func (instance *Instance) DropSchema(schema string, opts BulkDropOptions) error {
+	err := instance.DropTablesInSchema(schema, opts)
 	if err != nil {
 		return err
 	}
@@ -540,9 +557,23 @@ func (instance *Instance) AlterSchema(schema, newCharSet, newCollation string) e
 	return nil
 }
 
-// DropTablesInSchema drops all tables in a schema. If onlyIfEmpty==true,
+// BulkDropOptions controls how tables are dropped in bulk.
+type BulkDropOptions struct {
+	OnlyIfEmpty    bool // If true, error if any tables have rows
+	MaxConcurrency int  // Max tables to drop at once
+}
+
+// Concurrency returns the concurrency, with a minimum value of 1.
+func (opts BulkDropOptions) Concurrency() int {
+	if opts.MaxConcurrency < 1 {
+		return 1
+	}
+	return opts.MaxConcurrency
+}
+
+// DropTablesInSchema drops all tables in a schema. If opts.OnlyIfEmpty==true,
 // returns an error if any of the tables have any rows.
-func (instance *Instance) DropTablesInSchema(schema string, onlyIfEmpty bool) error {
+func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions) error {
 	db, err := instance.Connect(schema, "foreign_key_checks=0")
 	if err != nil {
 		return err
@@ -562,31 +593,17 @@ func (instance *Instance) DropTablesInSchema(schema string, onlyIfEmpty bool) er
 		return nil
 	}
 
-	var g errgroup.Group
-	defer db.SetMaxOpenConns(0)
-
-	if onlyIfEmpty {
-		db.SetMaxOpenConns(15)
-		for _, name := range names {
-			name := name
-			g.Go(func() error {
-				hasRows, err := tableHasRows(db, name)
-				if err == nil && hasRows {
-					err = fmt.Errorf("DropTablesInSchema: table %s.%s has at least one row", EscapeIdentifier(schema), EscapeIdentifier(name))
-				}
-				return err
-			})
-		}
-		if err := g.Wait(); err != nil {
+	// If requested, confirm tables are empty
+	if opts.OnlyIfEmpty {
+		if err := confirmTablesEmpty(db, names); err != nil {
 			return err
 		}
 	}
 
-	db.SetMaxOpenConns(10)
+	th := throttler.New(opts.Concurrency(), len(names))
 	retries := make(chan string, len(names))
 	for _, name := range names {
-		name := name
-		g.Go(func() error {
+		go func(name string) {
 			_, err := db.Exec(fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(name)))
 			// With the new data dictionary added in MySQL 8.0, attempting to
 			// concurrently drop two tables that have a foreign key constraint between
@@ -595,17 +612,20 @@ func (instance *Instance) DropTablesInSchema(schema string, onlyIfEmpty bool) er
 				retries <- name
 				err = nil
 			}
-			return err
-		})
+			th.Done(err)
+		}(name)
+		th.Throttle()
 	}
-	err = g.Wait()
 	close(retries)
 	for name := range retries {
 		if _, err := db.Exec(fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(name))); err != nil {
 			return err
 		}
 	}
-	return err
+	if errs := th.Errs(); len(errs) > 0 {
+		return errs[0]
+	}
+	return nil
 }
 
 // DefaultCharSetAndCollation returns the instance's default character set and
@@ -967,14 +987,13 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer db.SetMaxOpenConns(0)
-	db.SetMaxOpenConns(10)
-	var g errgroup.Group
+	th := throttler.New(10, len(tables))
 	for _, t := range tables {
-		t := t
-		g.Go(func() (err error) {
+		go func(t *Table) {
+			var err error
 			if t.CreateStatement, err = showCreateTable(db, t.Name); err != nil {
-				return fmt.Errorf("Error executing SHOW CREATE TABLE for %s.%s: %s", EscapeIdentifier(schema), EscapeIdentifier(t.Name), err)
+				th.Done(fmt.Errorf("Error executing SHOW CREATE TABLE for %s.%s: %s", EscapeIdentifier(schema), EscapeIdentifier(t.Name), err))
+				return
 			}
 			if t.Engine == "InnoDB" {
 				t.CreateStatement = NormalizeCreateOptions(t.CreateStatement)
@@ -1002,10 +1021,13 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			if actual != expected {
 				t.UnsupportedDDL = true
 			}
-			return nil
-		})
+			th.Done(nil)
+		}(t)
+		if th.Throttle() > 0 {
+			return tables, th.Errs()[0]
+		}
 	}
-	return tables, g.Wait()
+	return tables, nil
 }
 
 var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE |FULLTEXT |SPATIAL )?KEY `((?:[^`]|``)+)` (?:USING \\w+ )?\\(`")
@@ -1182,23 +1204,26 @@ func (instance *Instance) querySchemaRoutines(schema string) ([]*Routine, error)
 			}
 		}
 	}
-	defer db.SetMaxOpenConns(0)
-	db.SetMaxOpenConns(10)
-	var g errgroup.Group
+	th := throttler.New(15, len(routines))
 	for _, r := range routines {
-		if r.CreateStatement != "" {
-			continue // already hydrated from mysql.proc query above
+		if r.CreateStatement != "" { // already hydrated from mysql.proc query above
+			th.Done(nil)
+			continue
 		}
-		r := r
-		g.Go(func() (err error) {
+		go func(r *Routine) {
+			var err error
 			if r.CreateStatement, err = showCreateRoutine(db, r.Name, r.Type); err != nil {
-				return fmt.Errorf("Error executing SHOW CREATE %s for %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), err)
+				th.Done(fmt.Errorf("Error executing SHOW CREATE %s for %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), err))
+			} else {
+				r.CreateStatement = strings.Replace(r.CreateStatement, "\r\n", "\n", -1)
+				th.Done(r.parseCreateStatement(instance.Flavor(), schema))
 			}
-			r.CreateStatement = strings.Replace(r.CreateStatement, "\r\n", "\n", -1)
-			return r.parseCreateStatement(instance.Flavor(), schema)
-		})
+		}(r)
+		if th.Throttle() > 0 {
+			return routines, th.Errs()[0]
+		}
 	}
-	return routines, g.Wait()
+	return routines, nil
 }
 
 func showCreateRoutine(db *sqlx.DB, routine string, ot ObjectType) (create string, err error) {

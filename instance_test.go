@@ -405,28 +405,33 @@ func (s TengoIntegrationSuite) TestInstanceCreateSchema(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestInstanceDropSchema(t *testing.T) {
-	// Dropping a schema with non-empty tables when onlyIfEmpty==true should fail
-	if err := s.d.DropSchema("testing", true); err == nil {
-		t.Error("Expected dropping a schema with tables to fail when onlyIfEmpty==true, but it did not")
+	opts := BulkDropOptions{
+		MaxConcurrency: 10,
+		OnlyIfEmpty:    true,
+	}
+	// Dropping a schema with non-empty tables when OnlyIfEmpty==true should fail
+	if err := s.d.DropSchema("testing", opts); err == nil {
+		t.Error("Expected dropping a schema with tables to fail when OnlyIfEmpty==true, but it did not")
 	}
 
-	// Dropping a schema without tables when onlyIfEmpty==true should succeed
-	if err := s.d.DropSchema("testcollate", true); err != nil {
-		t.Errorf("Expected dropping a schema without tables to succeed when onlyIfEmpty==true, but error=%s", err)
+	// Dropping a schema without tables when OnlyIfEmpty==true should succeed
+	if err := s.d.DropSchema("testcollate", opts); err != nil {
+		t.Errorf("Expected dropping a schema without tables to succeed when OnlyIfEmpty==true, but error=%s", err)
 	}
 
-	// Dropping a schema with only empty tables when onlyIfEmpty==true should succeed
-	if err := s.d.DropSchema("testcharcoll", true); err != nil {
-		t.Errorf("Expected dropping a schema with only empty tables to succeed when onlyIfEmpty==true, but error=%s", err)
+	// Dropping a schema with only empty tables when OnlyIfEmpty==true should succeed
+	if err := s.d.DropSchema("testcharcoll", opts); err != nil {
+		t.Errorf("Expected dropping a schema with only empty tables to succeed when OnlyIfEmpty==true, but error=%s", err)
 	}
 
-	// Dropping a schema with non-empty tables when onlyIfEmpty==false should succeed
-	if err := s.d.DropSchema("testing", false); err != nil {
-		t.Errorf("Expected dropping a schema with tables to succeed when onlyIfEmpty==false, but error=%s", err)
+	// Dropping a schema with non-empty tables when OnlyIfEmpty==false should succeed
+	opts.OnlyIfEmpty = false
+	if err := s.d.DropSchema("testing", opts); err != nil {
+		t.Errorf("Expected dropping a schema with tables to succeed when OnlyIfEmpty==false, but error=%s", err)
 	}
 
 	// Dropping a schema that doesn't exist should fail
-	if err := s.d.DropSchema("testing", false); err == nil {
+	if err := s.d.DropSchema("testing", opts); err == nil {
 		t.Error("Expected dropping a nonexistent schema to fail, but error was nil")
 	}
 }
@@ -447,12 +452,13 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesDeadlock(t *testing.T) {
 	// Add a FK relation, drop all tables in the schema, and then restore the
 	// test database to its previous state. Without the fix in DropTablesInSchema,
 	// this tends to hit a deadlock within just a few loop iterations.
+	opts := BulkDropOptions{MaxConcurrency: 10}
 	for n := 0; n < 10; n++ {
 		_, err = db.Exec("ALTER TABLE testing.actor_in_film ADD CONSTRAINT actor FOREIGN KEY (actor_id) REFERENCES testing.actor (actor_id)")
 		if err != nil {
 			t.Fatalf("Error running query on DockerizedInstance: %s", err)
 		}
-		if err = s.d.DropTablesInSchema("testing", false); err != nil {
+		if err = s.d.DropTablesInSchema("testing", opts); err != nil {
 			t.Fatalf("Error dropping tables: %s", err)
 		}
 		if err = s.BeforeTest(""); err != nil {

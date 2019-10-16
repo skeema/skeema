@@ -276,7 +276,7 @@ func (di *DockerizedInstance) NukeData() error {
 		return err
 	}
 	for _, schema := range schemas {
-		if err := di.Instance.DropSchema(schema, false); err != nil {
+		if err := di.Instance.DropSchema(schema, BulkDropOptions{}); err != nil {
 			return err
 		}
 	}
