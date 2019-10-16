@@ -48,7 +48,11 @@ func NewTempSchema(opts Options) (ts *TempSchema, err error) {
 	} else if has {
 		// Attempt to drop any tables already present in tempSchema, but fail if
 		// any of them actually have 1 or more rows
-		if err := ts.inst.DropTablesInSchema(ts.schemaName, true); err != nil {
+		dropOpts := tengo.BulkDropOptions{
+			MaxConcurrency: 10,
+			OnlyIfEmpty:    true,
+		}
+		if err := ts.inst.DropTablesInSchema(ts.schemaName, dropOpts); err != nil {
 			return ts, fmt.Errorf("Cannot drop existing temp schema tables on %s: %s", ts.inst, err)
 		}
 	} else {
@@ -84,11 +88,15 @@ func (ts *TempSchema) Cleanup() error {
 		ts.releaseLock = nil
 	}()
 
+	dropOpts := tengo.BulkDropOptions{
+		MaxConcurrency: 10,
+		OnlyIfEmpty:    true,
+	}
 	if ts.keepSchema {
-		if err := ts.inst.DropTablesInSchema(ts.schemaName, true); err != nil {
+		if err := ts.inst.DropTablesInSchema(ts.schemaName, dropOpts); err != nil {
 			return fmt.Errorf("Cannot drop tables in temporary schema on %s: %s", ts.inst, err)
 		}
-	} else if err := ts.inst.DropSchema(ts.schemaName, true); err != nil {
+	} else if err := ts.inst.DropSchema(ts.schemaName, dropOpts); err != nil {
 		return fmt.Errorf("Cannot drop temporary schema on %s: %s", ts.inst, err)
 	}
 	return nil

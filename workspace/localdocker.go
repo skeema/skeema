@@ -92,7 +92,11 @@ func NewLocalDocker(opts Options) (ld *LocalDocker, err error) {
 	} else if has {
 		// Attempt to drop any tables already present in schema, but fail if any
 		// of them actually have 1 or more rows
-		if err := ld.d.DropTablesInSchema(ld.schemaName, true); err != nil {
+		dropOpts := tengo.BulkDropOptions{
+			MaxConcurrency: 10,
+			OnlyIfEmpty:    true,
+		}
+		if err := ld.d.DropTablesInSchema(ld.schemaName, dropOpts); err != nil {
 			return ld, fmt.Errorf("Cannot drop existing temporary schema tables on %s: %s", ld.d.Instance, err)
 		}
 	} else {
@@ -150,7 +154,11 @@ func (ld *LocalDocker) Cleanup() error {
 		ld.releaseLock = nil
 	}()
 
-	if err := ld.d.DropSchema(ld.schemaName, true); err != nil {
+	dropOpts := tengo.BulkDropOptions{
+		MaxConcurrency: 10,
+		OnlyIfEmpty:    true,
+	}
+	if err := ld.d.DropSchema(ld.schemaName, dropOpts); err != nil {
 		return fmt.Errorf("Cannot drop temporary schema on %s: %s", ld.d.Instance, err)
 	}
 	return nil
