@@ -181,12 +181,30 @@ func (s TengoIntegrationSuite) TestPartitionedIntrospection(t *testing.T) {
 	}
 }
 
+func (s TengoIntegrationSuite) TestBulkDropPartitioned(t *testing.T) {
+	if _, err := s.d.SourceSQL("testdata/partition.sql"); err != nil {
+		t.Fatalf("Unexpected error sourcing testdata/partition.sql: %v", err)
+	}
+	opts := BulkDropOptions{
+		MaxConcurrency:  15,
+		PartitionsFirst: true,
+	}
+	err := s.d.DropTablesInSchema("partitionparty", opts)
+	if err != nil {
+		t.Errorf("Unexpected error from DropTablesInSchema: %v", err)
+	}
+}
+
 // Keep this definition in sync with table prange in partition.sql
 func partitionedTable(flavor Flavor) Table {
 	t := unpartitionedTable(flavor)
+	expression := "customer_id"
+	if flavor.HasDataDictionary() || flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
+		expression = EscapeIdentifier(expression)
+	}
 	t.Partitioning = &TablePartitioning{
 		Method:     "RANGE",
-		Expression: "customer_id",
+		Expression: expression,
 		Partitions: []*Partition{
 			{Name: "p0", Values: "123", method: "RANGE", engine: "InnoDB"},
 			{Name: "p1", Values: "456", method: "RANGE", engine: "InnoDB"},

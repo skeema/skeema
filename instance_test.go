@@ -406,8 +406,9 @@ func (s TengoIntegrationSuite) TestInstanceCreateSchema(t *testing.T) {
 
 func (s TengoIntegrationSuite) TestInstanceDropSchema(t *testing.T) {
 	opts := BulkDropOptions{
-		MaxConcurrency: 10,
-		OnlyIfEmpty:    true,
+		MaxConcurrency:  10,
+		OnlyIfEmpty:     true,
+		PartitionsFirst: true,
 	}
 	// Dropping a schema with non-empty tables when OnlyIfEmpty==true should fail
 	if err := s.d.DropSchema("testing", opts); err == nil {

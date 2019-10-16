@@ -559,8 +559,9 @@ func (instance *Instance) AlterSchema(schema, newCharSet, newCollation string) e
 
 // BulkDropOptions controls how tables are dropped in bulk.
 type BulkDropOptions struct {
-	OnlyIfEmpty    bool // If true, error if any tables have rows
-	MaxConcurrency int  // Max tables to drop at once
+	OnlyIfEmpty     bool // If true, error if any tables have rows
+	MaxConcurrency  int  // Max tables to drop at once
+	PartitionsFirst bool // If true, drop RANGE/LIST partitioned tables one partition at a time
 }
 
 // Concurrency returns the concurrency, with a minimum value of 1.
@@ -579,41 +580,45 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 		return err
 	}
 
-	// Obtain table names directly; faster than going through instance.Schema(schema)
-	// since we don't need other info besides the names
-	var names []string
-	query := `
-		SELECT table_name
-		FROM   information_schema.tables
-		WHERE  table_schema = ?
-		AND    table_type = 'BASE TABLE'`
-	if err := db.Select(&names, query, schema); err != nil {
+	// Obtain table and partition names
+	tableMap, err := tablesToPartitions(db, schema)
+	if err != nil {
 		return err
-	} else if len(names) == 0 {
+	} else if len(tableMap) == 0 {
 		return nil
 	}
 
 	// If requested, confirm tables are empty
 	if opts.OnlyIfEmpty {
+		names := make([]string, 0, len(tableMap))
+		for tableName := range tableMap {
+			names = append(names, tableName)
+		}
 		if err := confirmTablesEmpty(db, names); err != nil {
 			return err
 		}
 	}
 
-	th := throttler.New(opts.Concurrency(), len(names))
-	retries := make(chan string, len(names))
-	for _, name := range names {
-		go func(name string) {
-			_, err := db.Exec(fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(name)))
-			// With the new data dictionary added in MySQL 8.0, attempting to
-			// concurrently drop two tables that have a foreign key constraint between
-			// them can deadlock.
-			if IsDatabaseError(err, mysqlerr.ER_LOCK_DEADLOCK) {
-				retries <- name
-				err = nil
+	th := throttler.New(opts.Concurrency(), len(tableMap))
+	retries := make(chan string, len(tableMap))
+	for name, partitions := range tableMap {
+		go func(name string, partitions []string) {
+			var err error
+			if len(partitions) > 1 && opts.PartitionsFirst {
+				err = dropPartitions(db, name, partitions[0:len(partitions)-1])
+			}
+			if err == nil {
+				_, err := db.Exec(fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(name)))
+				// With the new data dictionary added in MySQL 8.0, attempting to
+				// concurrently drop two tables that have a foreign key constraint between
+				// them can deadlock.
+				if IsDatabaseError(err, mysqlerr.ER_LOCK_DEADLOCK) {
+					retries <- name
+					err = nil
+				}
 			}
 			th.Done(err)
-		}(name)
+		}(name, partitions)
 		th.Throttle()
 	}
 	close(retries)
@@ -624,6 +629,57 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 	}
 	if errs := th.Errs(); len(errs) > 0 {
 		return errs[0]
+	}
+	return nil
+}
+
+// tablesToPartitions returns a map whose keys are all tables in the schema
+// (whether partitioned or not), and values are either nil (if unpartitioned or
+// partitioned in a way that doesn't support DROP PARTITION) or a slice of
+// partition names (if using RANGE or LIST partitioning). Views are excluded
+// from the result.
+func tablesToPartitions(db *sqlx.DB, schema string) (map[string][]string, error) {
+	// information_schema.partitions contains all tables (not just partitioned)
+	// and excludes views (which we don't want here anyway)
+	var rawNames []struct {
+		TableName     string         `db:"table_name"`
+		PartitionName sql.NullString `db:"partition_name"`
+		Method        sql.NullString `db:"partition_method"`
+		Position      sql.NullInt64  `db:"partition_ordinal_position"`
+	}
+	// Explicit AS clauses needed for compatibility with MySQL 8 data dictionary,
+	// otherwise results come back with uppercase col names, breaking Select
+	query := `
+		SELECT   p.table_name AS table_name, p.partition_name AS partition_name,
+		         p.partition_method AS partition_method,
+		         p.partition_ordinal_position AS partition_ordinal_position
+		FROM     information_schema.partitions p
+		WHERE    p.table_schema = ?
+		ORDER BY p.table_name, p.partition_ordinal_position`
+	if err := db.Select(&rawNames, query, schema); err != nil {
+		return nil, err
+	}
+
+	partitions := make(map[string][]string)
+	for _, rn := range rawNames {
+		if !rn.Position.Valid || rn.Position.Int64 == 1 {
+			partitions[rn.TableName] = nil
+		}
+		if rn.Method.Valid && (strings.HasPrefix(rn.Method.String, "RANGE") || strings.HasPrefix(rn.Method.String, "LIST")) {
+			partitions[rn.TableName] = append(partitions[rn.TableName], rn.PartitionName.String)
+		}
+	}
+	return partitions, nil
+}
+
+func dropPartitions(db *sqlx.DB, table string, partitions []string) error {
+	for _, partName := range partitions {
+		_, err := db.Exec(fmt.Sprintf("ALTER TABLE %s DROP PARTITION %s",
+			EscapeIdentifier(table),
+			EscapeIdentifier(partName)))
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -995,14 +1051,14 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			Comment       string         `db:"partition_comment"`
 		}
 		query := `
-			SELECT   p.table_name AS table_name, p.partition_name as partition_name,
-			         p.subpartition_name as subpartition_name,
-			         p.partition_method as partition_method,
-			         p.subpartition_method as subpartition_method,
-			         p.partition_expression as partition_expression,
-			         p.subpartition_expression as subpartition_expression,
-			         p.partition_description as partition_description,
-			         p.partition_comment as partition_comment
+			SELECT   p.table_name AS table_name, p.partition_name AS partition_name,
+			         p.subpartition_name AS subpartition_name,
+			         p.partition_method AS partition_method,
+			         p.subpartition_method AS subpartition_method,
+			         p.partition_expression AS partition_expression,
+			         p.subpartition_expression AS subpartition_expression,
+			         p.partition_description AS partition_description,
+			         p.partition_comment AS partition_comment
 			FROM     partitions p
 			WHERE    p.table_schema = ?
 			AND      p.partition_name IS NOT NULL
