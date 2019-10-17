@@ -195,6 +195,55 @@ func (s TengoIntegrationSuite) TestBulkDropPartitioned(t *testing.T) {
 	}
 }
 
+func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
+	if _, err := s.d.SourceSQL("testdata/partition.sql"); err != nil {
+		t.Fatalf("Unexpected error sourcing testdata/partition.sql: %v", err)
+	}
+
+	flavor := s.d.Flavor()
+	mods := StatementModifiers{AllowUnsafe: true, Flavor: flavor}
+	tableFromDB := s.GetTable(t, "partitionparty", "prange")
+	tableFromUnit := unpartitionedTable(flavor)
+	tableFromUnitP := partitionedTable(flavor)
+	if tableFromDB.CreateStatement != tableFromUnitP.CreateStatement {
+		t.Fatal("Test requires no drift between definition of unit test table and corresponding actual table")
+	}
+	db, err := s.d.Connect("partitionparty", "")
+	if err != nil {
+		t.Fatalf("Unable to connect to DockerizedInstance: %v", err)
+	}
+
+	// Confirm that combining REMOVE PARTITIONING with other clauses works
+	// properly, since the syntax is unusual  (no comma before partitioning clause)
+	tableFromUnit.Columns = append(tableFromUnit.Columns,
+		&Column{
+			Name:     "foo1",
+			TypeInDB: "int(10) unsigned",
+			Default:  ColumnDefaultNull,
+		},
+	)
+	tableFromUnit.CreateStatement = tableFromUnit.GeneratedCreateStatement(flavor)
+	stmt, _ := NewAlterTable(tableFromDB, &tableFromUnit).Statement(mods)
+	if _, err := db.Exec(stmt); err != nil {
+		t.Fatalf("Unexpected error running statement %q: %v", stmt, err)
+	}
+	tableFromDB = s.GetTable(t, "partitionparty", "prange")
+	if tableFromDB.Partitioning != nil || len(tableFromDB.Columns) != len(tableFromUnit.Columns) {
+		t.Fatalf("Statement %q did not have the intended effect", stmt)
+	}
+
+	// Now confirm combining ADD PARTITIONING with other clauses works properly,
+	// again because the syntax is unusual (no comma before partitioning clause)
+	stmt, _ = NewAlterTable(tableFromDB, &tableFromUnitP).Statement(mods)
+	if _, err := db.Exec(stmt); err != nil {
+		t.Fatalf("Unexpected error running statement %q: %v", stmt, err)
+	}
+	tableFromDB = s.GetTable(t, "partitionparty", "prange")
+	if tableFromDB.CreateStatement != tableFromUnitP.CreateStatement {
+		t.Fatalf("Statement %q did not have the intended effect", stmt)
+	}
+}
+
 // Keep this definition in sync with table prange in partition.sql
 func partitionedTable(flavor Flavor) Table {
 	t := unpartitionedTable(flavor)

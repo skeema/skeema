@@ -522,6 +522,7 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 	}
 
 	clauseStrings := make([]string, 0, len(td.alterClauses))
+	var partitionClauseString string
 	var err error
 	for _, clause := range td.alterClauses {
 		if err == nil && !mods.AllowUnsafe {
@@ -533,10 +534,17 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 			}
 		}
 		if clauseString := clause.Clause(mods); clauseString != "" {
-			clauseStrings = append(clauseStrings, clauseString)
+			switch clause.(type) {
+			case AddPartitioning, RemovePartitioning:
+				// Adding or removing partitioning must occur at the end of the ALTER
+				// TABLE, and oddly *without* a preceeding comma
+				partitionClauseString = clauseString
+			default:
+				clauseStrings = append(clauseStrings, clauseString)
+			}
 		}
 	}
-	if len(clauseStrings) == 0 {
+	if len(clauseStrings) == 0 && partitionClauseString == "" {
 		return "", nil
 	}
 
@@ -549,7 +557,10 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 		clauseStrings = append([]string{algorithmClause}, clauseStrings...)
 	}
 
-	stmt := fmt.Sprintf("%s %s", td.From.AlterStatement(), strings.Join(clauseStrings, ", "))
+	if len(clauseStrings) > 0 && partitionClauseString != "" {
+		partitionClauseString = fmt.Sprintf(" %s", partitionClauseString)
+	}
+	stmt := fmt.Sprintf("%s %s%s", td.From.AlterStatement(), strings.Join(clauseStrings, ", "), partitionClauseString)
 	if fde, isForbiddenDiff := err.(*ForbiddenDiffError); isForbiddenDiff {
 		fde.Statement = stmt
 	}
