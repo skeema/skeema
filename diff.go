@@ -80,6 +80,7 @@ type StatementModifiers struct {
 	StrictIndexOrder       bool             // If true, maintain index order even in cases where there is no functional difference
 	StrictForeignKeyNaming bool             // If true, maintain foreign key names even if no functional difference in definition
 	CompareMetadata        bool             // If true, compare creation-time sql_mode and db collation for funcs, procs (and eventually events, triggers)
+	SkipPreDropAlters      bool             // If true, skip ALTERs that were only generated to make DROP TABLE faster
 	Flavor                 Flavor           // Adjust generated DDL to match vendor/version. Zero value is FlavorUnknown which makes no adjustments.
 }
 
@@ -118,6 +119,7 @@ func compareTables(from, to *Schema) []*TableDiff {
 	for name, fromTable := range fromByName {
 		toTable, stillExists := toByName[name]
 		if !stillExists {
+			tableDiffs = append(tableDiffs, PreDropAlters(fromTable)...)
 			tableDiffs = append(tableDiffs, NewDropTable(fromTable))
 			continue
 		}
@@ -378,6 +380,39 @@ func NewDropTable(table *Table) *TableDiff {
 	}
 }
 
+// PreDropAlters returns a slice of *TableDiff to run prior to dropping a
+// table. For tables partitioned with RANGE or LIST partitioning, this returns
+// ALTERs to drop all partitions but one. In all other cases, this returns nil.
+func PreDropAlters(table *Table) []*TableDiff {
+	if table.Partitioning == nil || table.Partitioning.SubMethod != "" {
+		return nil
+	}
+	// Only RANGE, RANGE COLUMNS, LIST, LIST COLUMNS support ALTER TABLE...DROP
+	// PARTITION clause
+	if !strings.HasPrefix(table.Partitioning.Method, "RANGE") && !strings.HasPrefix(table.Partitioning.Method, "LIST") {
+		return nil
+	}
+
+	fakeTo := &Table{}
+	*fakeTo = *table
+	fakeTo.Partitioning = nil
+	var result []*TableDiff
+	for _, p := range table.Partitioning.Partitions[0 : len(table.Partitioning.Partitions)-1] {
+		clause := ModifyPartitions{
+			Drop:         []*Partition{p},
+			ForDropTable: true,
+		}
+		result = append(result, &TableDiff{
+			Type:         DiffTypeAlter,
+			From:         table,
+			To:           fakeTo,
+			alterClauses: []TableAlterClause{clause},
+			supported:    true,
+		})
+	}
+	return result
+}
+
 // SplitAddForeignKeys looks through a TableDiff's alterClauses and pulls out
 // any AddForeignKey clauses into a separate TableDiff. The first returned
 // TableDiff is guaranteed to contain no AddForeignKey clauses, and the second
@@ -539,6 +574,12 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 				// Adding or removing partitioning must occur at the end of the ALTER
 				// TABLE, and oddly *without* a preceeding comma
 				partitionClauseString = clauseString
+			case ModifyPartitions:
+				// Other partitioning-related clauses cannot appear alongside any other
+				// clauses, including ALGORITHM or LOCK clauses
+				mods.LockClause = ""
+				mods.AlgorithmClause = ""
+				clauseStrings = append(clauseStrings, clauseString)
 			default:
 				clauseStrings = append(clauseStrings, clauseString)
 			}

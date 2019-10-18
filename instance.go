@@ -645,6 +645,7 @@ func tablesToPartitions(db *sqlx.DB, schema string) (map[string][]string, error)
 		TableName     string         `db:"table_name"`
 		PartitionName sql.NullString `db:"partition_name"`
 		Method        sql.NullString `db:"partition_method"`
+		SubMethod     sql.NullString `db:"subpartition_method"`
 		Position      sql.NullInt64  `db:"partition_ordinal_position"`
 	}
 	// Explicit AS clauses needed for compatibility with MySQL 8 data dictionary,
@@ -652,6 +653,7 @@ func tablesToPartitions(db *sqlx.DB, schema string) (map[string][]string, error)
 	query := `
 		SELECT   p.table_name AS table_name, p.partition_name AS partition_name,
 		         p.partition_method AS partition_method,
+		         p.subpartition_method AS subpartition_method,
 		         p.partition_ordinal_position AS partition_ordinal_position
 		FROM     information_schema.partitions p
 		WHERE    p.table_schema = ?
@@ -665,7 +667,8 @@ func tablesToPartitions(db *sqlx.DB, schema string) (map[string][]string, error)
 		if !rn.Position.Valid || rn.Position.Int64 == 1 {
 			partitions[rn.TableName] = nil
 		}
-		if rn.Method.Valid && (strings.HasPrefix(rn.Method.String, "RANGE") || strings.HasPrefix(rn.Method.String, "LIST")) {
+		if rn.Method.Valid && !rn.SubMethod.Valid &&
+			(strings.HasPrefix(rn.Method.String, "RANGE") || strings.HasPrefix(rn.Method.String, "LIST")) {
 			partitions[rn.TableName] = append(partitions[rn.TableName], rn.PartitionName.String)
 		}
 	}

@@ -539,7 +539,7 @@ func (ap AddPartitioning) Clause(mods StatementModifiers) string {
 	if mods.Partitioning == PartitioningRemove {
 		return ""
 	}
-	return ap.PartitionBy.Definition(mods.Flavor)
+	return strings.TrimSpace(ap.PartitionBy.Definition(mods.Flavor))
 }
 
 ///// RemovePartitioning ///////////////////////////////////////////////////////
@@ -560,13 +560,37 @@ func (rp RemovePartitioning) Clause(mods StatementModifiers) string {
 ///// ModifyPartitions /////////////////////////////////////////////////////////
 
 // ModifyPartitions represents a change to the partition list for a table using
-// RANGE, RANGE COLUMNS, LIST, or LIST COLUMNS partitioning. This clause is just
-// an empty placeholder for now; this package currently always ignores
-// differences in partition lists for these partitioning types.
-type ModifyPartitions struct{}
+// RANGE, RANGE COLUMNS, LIST, or LIST COLUMNS partitioning. Generation of this
+// clause is only partially supported at this time.
+type ModifyPartitions struct {
+	Add          []*Partition
+	Drop         []*Partition
+	ForDropTable bool
+}
 
-// Clause always returns an empty string currently, as this package currently
-// always ignores differences in partition lists.
-func (mp ModifyPartitions) Clause(_ StatementModifiers) string {
-	return ""
+// Clause currently returns an empty string when a partition list difference
+// is present in a table that exists in both "from" and "to" sides of the diff;
+// in that situation, ModifyPartitions is just used as a placeholder to indicate
+// that a difference was detected.
+// ModifyPartitions currently returns a non-empty clause string only for the
+// use-case of dropping individual partitions before dropping a table entirely,
+// which reduces the amount of time the dict_sys mutex is held when dropping the
+// table.
+func (mp ModifyPartitions) Clause(mods StatementModifiers) string {
+	if !mp.ForDropTable || len(mp.Drop) == 0 {
+		return ""
+	}
+	if mp.ForDropTable && mods.SkipPreDropAlters {
+		return ""
+	}
+	var names []string
+	for _, p := range mp.Drop {
+		names = append(names, p.Name)
+	}
+	return fmt.Sprintf("DROP PARTITION %s", strings.Join(names, ", "))
+}
+
+// Unsafe returns true if this clause is potentially destructive of data.
+func (mp ModifyPartitions) Unsafe() bool {
+	return len(mp.Drop) > 0
 }

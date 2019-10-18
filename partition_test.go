@@ -1,6 +1,8 @@
 package tengo
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -48,7 +50,7 @@ func TestTableAlterPartitioningStatus(t *testing.T) {
 		t.Errorf("Wrong type of alter clause: expected %T, found %T", clause, tableAlters[0])
 	} else {
 		mods := StatementModifiers{}
-		if expected, actual := partitioned.Partitioning.Definition(FlavorUnknown), clause.Clause(mods); expected != actual {
+		if expected, actual := strings.TrimSpace(partitioned.Partitioning.Definition(FlavorUnknown)), clause.Clause(mods); expected != actual {
 			t.Errorf("Unexpected return from Clause(): expected %q, found %q", expected, actual)
 		}
 		mods.Partitioning = PartitioningRemove
@@ -147,6 +149,61 @@ func TestTableUnpartitionedCreateStatement(t *testing.T) {
 	}
 }
 
+func TestSchemaDiffDropPartitionedTable(t *testing.T) {
+	table := partitionedTable(FlavorUnknown)
+	s1 := aSchema("s1", &table)
+	s2 := aSchema("s2")
+
+	// Expectation: this diff should contain ALTERs to drop 2 out of the 3
+	// partitions in table, and then a DROP TABLE for the table.
+	diff := NewSchemaDiff(&s1, &s2)
+	expectStatements := []string{
+		fmt.Sprintf("ALTER TABLE %s DROP PARTITION %s", EscapeIdentifier(table.Name), table.Partitioning.Partitions[0].Name),
+		fmt.Sprintf("ALTER TABLE %s DROP PARTITION %s", EscapeIdentifier(table.Name), table.Partitioning.Partitions[1].Name),
+		fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(table.Name)),
+	}
+	objDiffs := diff.ObjectDiffs()
+	if len(objDiffs) != len(expectStatements) {
+		t.Errorf("Expected %d statements, instead found %d", len(expectStatements), len(objDiffs))
+	} else {
+		for n, od := range objDiffs {
+			stmt, err := od.Statement(StatementModifiers{LockClause: "SHARED", AlgorithmClause: "COPY"})
+			if stmt != expectStatements[n] {
+				t.Errorf("Statement[%d]: Expected %q, found %q", n, expectStatements[n], stmt)
+			}
+			if !IsForbiddenDiff(err) {
+				t.Errorf("Statement[%d]: Expected forbidden diff error, instead err=%v", n, err)
+			}
+			if _, err = od.Statement(StatementModifiers{AllowUnsafe: true}); err != nil {
+				t.Errorf("Statement[%d]: Expected no error with AllowUnsafe enabled, instead found err=%v", n, err)
+			}
+			stmt, _ = od.Statement(StatementModifiers{SkipPreDropAlters: true})
+			var expected string
+			if !strings.HasPrefix(expectStatements[n], "ALTER") {
+				expected = expectStatements[n]
+			}
+			if stmt != expected {
+				t.Errorf("Statement[%d]: With SkipPreDropAlters, expected %q but found %q", n, expected, stmt)
+			}
+		}
+	}
+
+	// After changing the partitioning type to one that doesn't support ALTER
+	// TABLE ... DROP PARTITION, a diff should only contain the DROP TABLE.
+	table.Partitioning.Method = "HASH"
+	diff = NewSchemaDiff(&s1, &s2)
+	expectStatements = expectStatements[2:]
+	objDiffs = diff.ObjectDiffs()
+	if len(objDiffs) != len(expectStatements) {
+		t.Errorf("Expected %d statements, instead found %d", len(expectStatements), len(objDiffs))
+	} else {
+		stmt, _ := objDiffs[0].Statement(StatementModifiers{})
+		if stmt != expectStatements[0] {
+			t.Errorf("Statement[0]: Expected %q, found %q", expectStatements[0], stmt)
+		}
+	}
+}
+
 func (s TengoIntegrationSuite) TestPartitionedIntrospection(t *testing.T) {
 	if _, err := s.d.SourceSQL("testdata/partition.sql"); err != nil {
 		t.Fatalf("Unexpected error sourcing testdata/partition.sql: %v", err)
@@ -178,6 +235,63 @@ func (s TengoIntegrationSuite) TestPartitionedIntrospection(t *testing.T) {
 		if actual != expected {
 			t.Errorf("Table %s unexpected result from UnpartitionedCreateStatement: expected %q, found %q", table.Name, expected, actual)
 		}
+	}
+}
+
+func (s TengoIntegrationSuite) TestDropPartitionedTable(t *testing.T) {
+	if _, err := s.d.SourceSQL("testdata/partition.sql"); err != nil {
+		t.Fatalf("Unexpected error sourcing testdata/partition.sql: %v", err)
+	}
+
+	// Setup: build a "to" schema which removes 2 tables in the "from" schema:
+	// one partitioned using RANGE COLUMNS and one partitioned using LINEAR KEY
+	from := s.GetSchema(t, "partitionparty")
+	to := s.GetSchema(t, "partitionparty")
+	var keepTables []*Table
+	for _, table := range to.Tables {
+		if table.Name != "prangecol" && table.Name != "plinearkey" {
+			keepTables = append(keepTables, table)
+		}
+	}
+	to.Tables = keepTables
+	if len(to.Tables) != len(from.Tables)-2 {
+		t.Fatal("Fatal problem in test setup: table names from partition.sql have changed?")
+	}
+
+	// Confirm diff contains expected number of statements
+	diff := NewSchemaDiff(from, to)
+	objDiffs := diff.ObjectDiffs()
+	expectLen := len(from.Table("prangecol").Partitioning.Partitions) + 1
+	if len(objDiffs) != expectLen {
+		t.Errorf("Expected %d ObjectDiffs, instead found %d", expectLen, len(objDiffs))
+	}
+
+	// Execute the statements to confirm they are syntactically valid and in the
+	// correct order (e.g. ALTERs to drop partitions come before DROP TABLE)
+	db, err := s.d.Connect("partitionparty", "")
+	if err != nil {
+		t.Fatalf("Unable to connect to db: %v", err)
+	}
+	mods := StatementModifiers{
+		AllowUnsafe:     true,     // permit the DROPs
+		LockClause:      "SHARED", // confirming this is removed for DROP PARTITION
+		AlgorithmClause: "COPY",   // ditto
+	}
+	for _, od := range objDiffs {
+		stmt, err := od.Statement(mods)
+		if err != nil {
+			t.Errorf("Unexpected error from Statement: %v", err)
+		} else if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("Unexpected error running statement %q: %v", stmt, err)
+		}
+	}
+
+	// Confirm the statements had the intended effect
+	after := s.GetSchema(t, "partitionparty")
+	diff = NewSchemaDiff(after, to)
+	objDiffs = diff.ObjectDiffs()
+	if len(objDiffs) != 0 {
+		t.Errorf("Expected no remaining diffs, instead found %d", len(objDiffs))
 	}
 }
 
