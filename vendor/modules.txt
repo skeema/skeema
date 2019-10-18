@@ -75,7 +75,7 @@ github.com/pmezard/go-difflib/difflib
 github.com/sirupsen/logrus
 # github.com/skeema/mybase v1.0.8
 github.com/skeema/mybase
-# github.com/skeema/tengo v0.8.20-0.20191016162327-fa0750033735
+# github.com/skeema/tengo v0.8.20-0.20191023033155-f3604144981e
 github.com/skeema/tengo
 # golang.org/x/crypto v0.0.0-20190701094942-4def268fd1a4
 golang.org/x/crypto/ssh/terminal

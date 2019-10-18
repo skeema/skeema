@@ -56,19 +56,32 @@ const (
 	NextAutoIncAlways                             // always include auto-inc value in diff
 )
 
+// PartitioningMode enumerates ways of handling partitioning status -- that is,
+// presence or lack of a PARTITION BY clause.
+type PartitioningMode int
+
+// Constants for how to handle partitioning status differences.
+const (
+	PartitioningPermissive PartitioningMode = iota // don't negate any partitioning-related clauses
+	PartitioningRemove                             // negate PARTITION BY clauses from DDL
+	PartitioningKeep                               // negate REMOVE PARTITIONING clauses from ALTERs
+)
+
 // StatementModifiers are options that may be applied to adjust the DDL emitted
 // for a particular table, and/or generate errors if certain clauses are
 // present.
 type StatementModifiers struct {
-	NextAutoInc            NextAutoIncMode // How to handle differences in next-auto-inc values
-	AllowUnsafe            bool            // Whether to allow potentially-destructive DDL (drop table, drop column, modify col type, etc)
-	LockClause             string          // Include a LOCK=[value] clause in generated ALTER TABLE
-	AlgorithmClause        string          // Include an ALGORITHM=[value] clause in generated ALTER TABLE
-	IgnoreTable            *regexp.Regexp  // Generate blank DDL if table name matches this regexp
-	StrictIndexOrder       bool            // If true, maintain index order even in cases where there is no functional difference
-	StrictForeignKeyNaming bool            // If true, maintain foreign key names even if no functional difference in definition
-	CompareMetadata        bool            // If true, compare creation-time sql_mode and db collation for funcs, procs (and eventually events, triggers)
-	Flavor                 Flavor          // Adjust generated DDL to match vendor/version. Zero value is FlavorUnknown which makes no adjustments.
+	NextAutoInc            NextAutoIncMode  // How to handle differences in next-auto-inc values
+	Partitioning           PartitioningMode // How to handle differences in partitioning status
+	AllowUnsafe            bool             // Whether to allow potentially-destructive DDL (drop table, drop column, modify col type, etc)
+	LockClause             string           // Include a LOCK=[value] clause in generated ALTER TABLE
+	AlgorithmClause        string           // Include an ALGORITHM=[value] clause in generated ALTER TABLE
+	IgnoreTable            *regexp.Regexp   // Generate blank DDL if table name matches this regexp
+	StrictIndexOrder       bool             // If true, maintain index order even in cases where there is no functional difference
+	StrictForeignKeyNaming bool             // If true, maintain foreign key names even if no functional difference in definition
+	CompareMetadata        bool             // If true, compare creation-time sql_mode and db collation for funcs, procs (and eventually events, triggers)
+	SkipPreDropAlters      bool             // If true, skip ALTERs that were only generated to make DROP TABLE faster
+	Flavor                 Flavor           // Adjust generated DDL to match vendor/version. Zero value is FlavorUnknown which makes no adjustments.
 }
 
 ///// SchemaDiff ///////////////////////////////////////////////////////////////
@@ -106,6 +119,7 @@ func compareTables(from, to *Schema) []*TableDiff {
 	for name, fromTable := range fromByName {
 		toTable, stillExists := toByName[name]
 		if !stillExists {
+			tableDiffs = append(tableDiffs, PreDropAlters(fromTable)...)
 			tableDiffs = append(tableDiffs, NewDropTable(fromTable))
 			continue
 		}
@@ -366,6 +380,39 @@ func NewDropTable(table *Table) *TableDiff {
 	}
 }
 
+// PreDropAlters returns a slice of *TableDiff to run prior to dropping a
+// table. For tables partitioned with RANGE or LIST partitioning, this returns
+// ALTERs to drop all partitions but one. In all other cases, this returns nil.
+func PreDropAlters(table *Table) []*TableDiff {
+	if table.Partitioning == nil || table.Partitioning.SubMethod != "" {
+		return nil
+	}
+	// Only RANGE, RANGE COLUMNS, LIST, LIST COLUMNS support ALTER TABLE...DROP
+	// PARTITION clause
+	if !strings.HasPrefix(table.Partitioning.Method, "RANGE") && !strings.HasPrefix(table.Partitioning.Method, "LIST") {
+		return nil
+	}
+
+	fakeTo := &Table{}
+	*fakeTo = *table
+	fakeTo.Partitioning = nil
+	var result []*TableDiff
+	for _, p := range table.Partitioning.Partitions[0 : len(table.Partitioning.Partitions)-1] {
+		clause := ModifyPartitions{
+			Drop:         []*Partition{p},
+			ForDropTable: true,
+		}
+		result = append(result, &TableDiff{
+			Type:         DiffTypeAlter,
+			From:         table,
+			To:           fakeTo,
+			alterClauses: []TableAlterClause{clause},
+			supported:    true,
+		})
+	}
+	return result
+}
+
 // SplitAddForeignKeys looks through a TableDiff's alterClauses and pulls out
 // any AddForeignKey clauses into a separate TableDiff. The first returned
 // TableDiff is guaranteed to contain no AddForeignKey clauses, and the second
@@ -434,6 +481,9 @@ func (td *TableDiff) Statement(mods StatementModifiers) (string, error) {
 	switch td.Type {
 	case DiffTypeCreate:
 		stmt := td.To.CreateStatement
+		if td.To.Partitioning != nil && mods.Partitioning == PartitioningRemove {
+			stmt = td.To.UnpartitionedCreateStatement(mods.Flavor)
+		}
 		if td.To.HasAutoIncrement() && (mods.NextAutoInc == NextAutoIncIgnore || mods.NextAutoInc == NextAutoIncIfAlready) {
 			stmt, _ = ParseCreateAutoInc(stmt)
 		}
@@ -507,6 +557,7 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 	}
 
 	clauseStrings := make([]string, 0, len(td.alterClauses))
+	var partitionClauseString string
 	var err error
 	for _, clause := range td.alterClauses {
 		if err == nil && !mods.AllowUnsafe {
@@ -518,10 +569,23 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 			}
 		}
 		if clauseString := clause.Clause(mods); clauseString != "" {
-			clauseStrings = append(clauseStrings, clauseString)
+			switch clause.(type) {
+			case PartitionBy, RemovePartitioning:
+				// Adding or removing partitioning must occur at the end of the ALTER
+				// TABLE, and oddly *without* a preceeding comma
+				partitionClauseString = clauseString
+			case ModifyPartitions:
+				// Other partitioning-related clauses cannot appear alongside any other
+				// clauses, including ALGORITHM or LOCK clauses
+				mods.LockClause = ""
+				mods.AlgorithmClause = ""
+				clauseStrings = append(clauseStrings, clauseString)
+			default:
+				clauseStrings = append(clauseStrings, clauseString)
+			}
 		}
 	}
-	if len(clauseStrings) == 0 {
+	if len(clauseStrings) == 0 && partitionClauseString == "" {
 		return "", nil
 	}
 
@@ -534,7 +598,10 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 		clauseStrings = append([]string{algorithmClause}, clauseStrings...)
 	}
 
-	stmt := fmt.Sprintf("%s %s", td.From.AlterStatement(), strings.Join(clauseStrings, ", "))
+	if len(clauseStrings) > 0 && partitionClauseString != "" {
+		partitionClauseString = fmt.Sprintf(" %s", partitionClauseString)
+	}
+	stmt := fmt.Sprintf("%s %s%s", td.From.AlterStatement(), strings.Join(clauseStrings, ", "), partitionClauseString)
 	if fde, isForbiddenDiff := err.(*ForbiddenDiffError); isForbiddenDiff {
 		fde.Statement = stmt
 	}

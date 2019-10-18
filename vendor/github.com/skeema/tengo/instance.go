@@ -559,8 +559,9 @@ func (instance *Instance) AlterSchema(schema, newCharSet, newCollation string) e
 
 // BulkDropOptions controls how tables are dropped in bulk.
 type BulkDropOptions struct {
-	OnlyIfEmpty    bool // If true, error if any tables have rows
-	MaxConcurrency int  // Max tables to drop at once
+	OnlyIfEmpty     bool // If true, error if any tables have rows
+	MaxConcurrency  int  // Max tables to drop at once
+	PartitionsFirst bool // If true, drop RANGE/LIST partitioned tables one partition at a time
 }
 
 // Concurrency returns the concurrency, with a minimum value of 1.
@@ -579,41 +580,45 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 		return err
 	}
 
-	// Obtain table names directly; faster than going through instance.Schema(schema)
-	// since we don't need other info besides the names
-	var names []string
-	query := `
-		SELECT table_name
-		FROM   information_schema.tables
-		WHERE  table_schema = ?
-		AND    table_type = 'BASE TABLE'`
-	if err := db.Select(&names, query, schema); err != nil {
+	// Obtain table and partition names
+	tableMap, err := tablesToPartitions(db, schema)
+	if err != nil {
 		return err
-	} else if len(names) == 0 {
+	} else if len(tableMap) == 0 {
 		return nil
 	}
 
 	// If requested, confirm tables are empty
 	if opts.OnlyIfEmpty {
+		names := make([]string, 0, len(tableMap))
+		for tableName := range tableMap {
+			names = append(names, tableName)
+		}
 		if err := confirmTablesEmpty(db, names); err != nil {
 			return err
 		}
 	}
 
-	th := throttler.New(opts.Concurrency(), len(names))
-	retries := make(chan string, len(names))
-	for _, name := range names {
-		go func(name string) {
-			_, err := db.Exec(fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(name)))
-			// With the new data dictionary added in MySQL 8.0, attempting to
-			// concurrently drop two tables that have a foreign key constraint between
-			// them can deadlock.
-			if IsDatabaseError(err, mysqlerr.ER_LOCK_DEADLOCK) {
-				retries <- name
-				err = nil
+	th := throttler.New(opts.Concurrency(), len(tableMap))
+	retries := make(chan string, len(tableMap))
+	for name, partitions := range tableMap {
+		go func(name string, partitions []string) {
+			var err error
+			if len(partitions) > 1 && opts.PartitionsFirst {
+				err = dropPartitions(db, name, partitions[0:len(partitions)-1])
+			}
+			if err == nil {
+				_, err := db.Exec(fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(name)))
+				// With the new data dictionary added in MySQL 8.0, attempting to
+				// concurrently drop two tables that have a foreign key constraint between
+				// them can deadlock.
+				if IsDatabaseError(err, mysqlerr.ER_LOCK_DEADLOCK) {
+					retries <- name
+					err = nil
+				}
 			}
 			th.Done(err)
-		}(name)
+		}(name, partitions)
 		th.Throttle()
 	}
 	close(retries)
@@ -624,6 +629,60 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 	}
 	if errs := th.Errs(); len(errs) > 0 {
 		return errs[0]
+	}
+	return nil
+}
+
+// tablesToPartitions returns a map whose keys are all tables in the schema
+// (whether partitioned or not), and values are either nil (if unpartitioned or
+// partitioned in a way that doesn't support DROP PARTITION) or a slice of
+// partition names (if using RANGE or LIST partitioning). Views are excluded
+// from the result.
+func tablesToPartitions(db *sqlx.DB, schema string) (map[string][]string, error) {
+	// information_schema.partitions contains all tables (not just partitioned)
+	// and excludes views (which we don't want here anyway)
+	var rawNames []struct {
+		TableName     string         `db:"table_name"`
+		PartitionName sql.NullString `db:"partition_name"`
+		Method        sql.NullString `db:"partition_method"`
+		SubMethod     sql.NullString `db:"subpartition_method"`
+		Position      sql.NullInt64  `db:"partition_ordinal_position"`
+	}
+	// Explicit AS clauses needed for compatibility with MySQL 8 data dictionary,
+	// otherwise results come back with uppercase col names, breaking Select
+	query := `
+		SELECT   p.table_name AS table_name, p.partition_name AS partition_name,
+		         p.partition_method AS partition_method,
+		         p.subpartition_method AS subpartition_method,
+		         p.partition_ordinal_position AS partition_ordinal_position
+		FROM     information_schema.partitions p
+		WHERE    p.table_schema = ?
+		ORDER BY p.table_name, p.partition_ordinal_position`
+	if err := db.Select(&rawNames, query, schema); err != nil {
+		return nil, err
+	}
+
+	partitions := make(map[string][]string)
+	for _, rn := range rawNames {
+		if !rn.Position.Valid || rn.Position.Int64 == 1 {
+			partitions[rn.TableName] = nil
+		}
+		if rn.Method.Valid && !rn.SubMethod.Valid &&
+			(strings.HasPrefix(rn.Method.String, "RANGE") || strings.HasPrefix(rn.Method.String, "LIST")) {
+			partitions[rn.TableName] = append(partitions[rn.TableName], rn.PartitionName.String)
+		}
+	}
+	return partitions, nil
+}
+
+func dropPartitions(db *sqlx.DB, table string, partitions []string) error {
+	for _, partName := range partitions {
+		_, err := db.Exec(fmt.Sprintf("ALTER TABLE %s DROP PARTITION %s",
+			EscapeIdentifier(table),
+			EscapeIdentifier(partName)))
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -737,6 +796,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		return []*Table{}, nil
 	}
 	tables := make([]*Table, len(rawTables))
+	var havePartitions bool
 	for n, rawTable := range rawTables {
 		tables[n] = &Table{
 			Name:               rawTable.Name,
@@ -749,16 +809,16 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		if rawTable.AutoIncrement.Valid {
 			tables[n].NextAutoIncrement = uint64(rawTable.AutoIncrement.Int64)
 		}
-		if rawTable.CreateOptions.Valid && rawTable.CreateOptions.String != "" && rawTable.CreateOptions.String != "PARTITIONED" {
-			// information_schema.tables.create_options annoyingly contains "partitioned"
-			// if the table is partitioned, despite this not being present as-is in the
-			// table table definition. All other create_options are present verbatim.
-			// Currently in mysql-server/sql/sql_show.cc, it's always at the *end* of
-			// create_options... but just to code defensively we handle any location.
-			if strings.HasPrefix(rawTable.CreateOptions.String, "PARTITIONED ") {
-				tables[n].CreateOptions = strings.Replace(rawTable.CreateOptions.String, "PARTITIONED ", "", 1)
-			} else {
-				tables[n].CreateOptions = strings.Replace(rawTable.CreateOptions.String, " PARTITIONED", "", 1)
+		if rawTable.CreateOptions.Valid && rawTable.CreateOptions.String != "" {
+			tables[n].CreateOptions = rawTable.CreateOptions.String
+
+			// information_schema.tables.create_options contains "partitioned" if the
+			// table is partitioned, despite this not being present as-is in the table
+			// definition. All other create_options are present verbatim.
+			if strings.Contains(tables[n].CreateOptions, "PARTITIONED") {
+				tables[n].CreateOptions = strings.Replace(tables[n].CreateOptions, "PARTITIONED", "", 1)
+				tables[n].CreateOptions = strings.TrimSpace(strings.Replace(tables[n].CreateOptions, "  ", " ", 1))
+				havePartitions = true
 			}
 		}
 	}
@@ -980,6 +1040,68 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		t.ForeignKeys = foreignKeysByTableName[t.Name]
 	}
 
+	// Obtain partitioning information, if at least one table was partitioned
+	if havePartitions {
+		var rawPartitioning []struct {
+			TableName     string         `db:"table_name"`
+			PartitionName string         `db:"partition_name"`
+			SubName       sql.NullString `db:"subpartition_name"`
+			Method        string         `db:"partition_method"`
+			SubMethod     sql.NullString `db:"subpartition_method"`
+			Expression    sql.NullString `db:"partition_expression"`
+			SubExpression sql.NullString `db:"subpartition_expression"`
+			Values        sql.NullString `db:"partition_description"`
+			Comment       string         `db:"partition_comment"`
+		}
+		query := `
+			SELECT   p.table_name AS table_name, p.partition_name AS partition_name,
+			         p.subpartition_name AS subpartition_name,
+			         p.partition_method AS partition_method,
+			         p.subpartition_method AS subpartition_method,
+			         p.partition_expression AS partition_expression,
+			         p.subpartition_expression AS subpartition_expression,
+			         p.partition_description AS partition_description,
+			         p.partition_comment AS partition_comment
+			FROM     partitions p
+			WHERE    p.table_schema = ?
+			AND      p.partition_name IS NOT NULL
+			ORDER BY p.table_name, p.partition_ordinal_position,
+			         p.subpartition_ordinal_position`
+		if err := db.Select(&rawPartitioning, query, schema); err != nil {
+			return nil, fmt.Errorf("Error querying information_schema.partitions for schema %s: %s", schema, err)
+		}
+
+		partitioningByTableName := make(map[string]*TablePartitioning)
+		for _, rawPart := range rawPartitioning {
+			p, ok := partitioningByTableName[rawPart.TableName]
+			if !ok {
+				p = &TablePartitioning{
+					Method:        rawPart.Method,
+					SubMethod:     rawPart.SubMethod.String,
+					Expression:    rawPart.Expression.String,
+					SubExpression: rawPart.SubExpression.String,
+					Partitions:    make([]*Partition, 0),
+				}
+				partitioningByTableName[rawPart.TableName] = p
+			}
+			p.Partitions = append(p.Partitions, &Partition{
+				Name:    rawPart.PartitionName,
+				SubName: rawPart.SubName.String,
+				Values:  rawPart.Values.String,
+				Comment: rawPart.Comment,
+				method:  rawPart.Method,
+			})
+		}
+		for _, t := range tables {
+			if p, ok := partitioningByTableName[t.Name]; ok {
+				for _, part := range p.Partitions {
+					part.engine = t.Engine
+				}
+				t.Partitioning = p
+			}
+		}
+	}
+
 	// Obtain actual SHOW CREATE TABLE output and store in each table. Since
 	// there's no way in MySQL to bulk fetch this for multiple tables at once,
 	// use multiple goroutines to make this faster.
@@ -997,6 +1119,9 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			}
 			if t.Engine == "InnoDB" {
 				t.CreateStatement = NormalizeCreateOptions(t.CreateStatement)
+			}
+			if t.Partitioning != nil {
+				t.CreateStatement = NormalizePartitioning(t.CreateStatement, flavor)
 			}
 			// Index order is unpredictable with new MySQL 8 data dictionary, so reorder
 			// indexes based on parsing SHOW CREATE TABLE if needed

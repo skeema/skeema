@@ -1307,3 +1307,87 @@ END`
 		}
 	}
 }
+
+func (s SkeemaIntegrationSuite) TestPartitioning(t *testing.T) {
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+
+	contentsNoPart := fs.ReadTestFile(t, "mydb/analytics/activity.sql")
+	contents2Part := strings.Replace(contentsNoPart, ";\n",
+		"\nPARTITION BY RANGE (ts)\n(PARTITION p0 VALUES LESS THAN (1571678000),\n PARTITION pN VALUES LESS THAN MAXVALUE);\n",
+		1)
+	contents3Part := strings.Replace(contentsNoPart, ";\n",
+		"\nPARTITION BY RANGE (ts)\n(PARTITION p0 VALUES LESS THAN (1571678000),\n PARTITION p1 VALUES LESS THAN (1571679000),\n PARTITION pN VALUES LESS THAN MAXVALUE);\n",
+		1)
+	contents3PartPlusNewCol := strings.Replace(contents3Part, "  `target_id`", "  `somenewcol` int,\n  `target_id`", 1)
+	contentsHashPart := strings.Replace(contentsNoPart, ";\n",
+		"\nPARTITION BY HASH (action_id) PARTITIONS 4;\n",
+		1)
+
+	// Rewrite activity.sql to be partitioned by range with 2 partitions, and then
+	// test diff behavior with each value of partitioning option
+	fs.WriteTestFile(t, "mydb/analytics/activity.sql", contents2Part)
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff --partitioning=remove")
+	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --partitioning=keep")
+	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff") // default is keep
+	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --partitioning=modify")
+	s.handleCommand(t, CodeBadConfig, "mydb/analytics", "skeema diff --partitioning=invalid")
+
+	// Push to execute the ALTER to partition by range with 2 partitions.
+	// Confirm no differences with keep, but some differences with remove.
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema push") // default is keep
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff")
+	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --partitioning=remove")
+
+	// Rewrite activity.sql to now have 3 partitions, still by range. This should
+	// not show differences for keep or modify.
+	fs.WriteTestFile(t, "mydb/analytics/activity.sql", contents3Part)
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff --partitioning=keep")
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff --partitioning=modify")
+	// Note: didn't push the above change
+
+	// Rewrite activity.sql to be unpartitioned. This should not show differences
+	// for keep, but should for remove or modify.
+	fs.WriteTestFile(t, "mydb/analytics/activity.sql", contentsNoPart)
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff --partitioning=keep")
+	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --partitioning=remove")
+	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --partitioning=modify")
+	// Note: didn't push the above change
+
+	// Rewrite activity.sql to have 3 partitions, still by range, as well as a new
+	// column. Pushing this with remove should add the new column but remove the
+	// partitioning.
+	fs.WriteTestFile(t, "mydb/analytics/activity.sql", contents3PartPlusNewCol)
+	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --partitioning=remove")
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema push --partitioning=remove")
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull")
+	newContents := fs.ReadTestFile(t, "mydb/analytics/activity.sql")
+	if strings.Contains(newContents, "PARTITION BY") || !strings.Contains(newContents, "somenewcol") {
+		t.Errorf("Previous push did not have intended effect; current table structure: %s", newContents)
+	}
+
+	// Remove the new col and restore partitioning
+	fs.WriteTestFile(t, "mydb/analytics/activity.sql", contents3Part)
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema push --allow-unsafe --partitioning=keep")
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff --partitioning=keep")
+
+	// Rewrite activity.sql to be partitioned by hash. This should be ignored with
+	// keep, repartition with modify, or departition with remove. If pushed with
+	// remove and then pulled, files should be back to initial state.
+	fs.WriteTestFile(t, "mydb/analytics/activity.sql", contentsHashPart)
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff --partitioning=keep")
+	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --partitioning=modify")
+	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --partitioning=remove")
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema push --partitioning=remove")
+	cfg := s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull")
+	s.verifyFiles(t, cfg, "../golden/init")
+
+	// Repartition with 2 partitions and push. Confirm that dropping the table
+	// works correctly regardless of partitioning option.
+	for _, value := range []string{"keep", "modify", "remove"} {
+		fs.WriteTestFile(t, "mydb/analytics/activity.sql", contents2Part)
+		s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema push") // default is keep
+		fs.RemoveTestFile(t, "mydb/analytics/activity.sql")
+		s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --allow-unsafe --partitioning=%s", value)
+		s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema push --allow-unsafe --partitioning=%s", value)
+	}
+}
