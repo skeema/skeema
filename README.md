@@ -21,7 +21,7 @@ The `tengo.Instance` struct models a single database instance. It keeps track of
 
 ## Status
 
-This is beta software. The API is subject to change. Backwards-incompatible changes are generally avoided, but no guarantees are made yet. Documentation and usage examples have not yet been completed.
+This is package is intended for production use. The release numbering is still pre-1.0 though as the API is subject to minor changes. Backwards-incompatible changes are generally avoided whenever possible, but no guarantees are made yet.
 
 ### Supported databases
 
@@ -33,21 +33,29 @@ Tagged releases are tested against the following databases, all running on Linux
 
 Outside of a tagged release, every commit to the master branch is automatically tested against MySQL 5.6 and 5.7.
 
-### Unsupported in diffs
+### Unsupported in table diffs
 
 Go La Tengo **cannot** diff tables containing any of the following MySQL features yet:
 
-* partitioned tables
-* triggers
-* spatial types
-* special features of non-InnoDB storage engines
 * generated/virtual columns (MySQL 5.7+ / Percona Server 5.7+ / MariaDB 5.2+)
-* column-level compression, with or without predefined dictionary (Percona Server 5.6.33+)
+* spatial column types
+* sub-partitioning (two levels of partitioning in the same table)
 * CHECK constraints (MySQL 8.0.16+ / Percona Server 8.0.16+ / MariaDB 10.2+)
+* column-level compression, with or without predefined dictionary (Percona Server 5.6.33+)
+* special features of non-InnoDB storage engines
 
 This list is not necessarily exhaustive. Many of these will be implemented in subsequent releases.
 
 Go La Tengo also does not yet support rename operations, e.g. column renames or table renames.
+
+### Ignored object types
+
+The following object types are completely ignored by this package. Their presence won't break anything, but they will not be introspected or represented by the structs in this package.
+
+* views
+* triggers
+* events
+* grants / users / roles
 
 ## External Dependencies
 
@@ -70,6 +78,8 @@ Additional [contributions](https://github.com/skeema/tengo/graphs/contributors) 
 * [@thinQ-skeema](https://github.com/thinQ-skeema)
 
 Support for stored procedures and functions generously sponsored by [Psyonix](https://psyonix.com).
+
+Support for partitioned tables generously sponsored by [Etsy](https://www.etsy.com).
 
 ## License
 
