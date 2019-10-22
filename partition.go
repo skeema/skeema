@@ -81,14 +81,18 @@ func (tp *TablePartitioning) Diff(other *TablePartitioning) (clauses []TableAlte
 	if tp == nil && other == nil {
 		return nil, true
 	} else if tp == nil {
-		return []TableAlterClause{AddPartitioning{PartitionBy: other}}, true
+		return []TableAlterClause{PartitionBy{Partitioning: other}}, true
 	} else if other == nil {
 		return []TableAlterClause{RemovePartitioning{}}, true
 	}
 
-	// Modifications to partitioning method or expression: currently unsupported
+	// Modifications to partitioning method or expression: re-partition
 	if tp.Method != other.Method || tp.SubMethod != other.SubMethod || tp.Expression != other.Expression || tp.SubExpression != other.SubExpression {
-		return nil, false
+		clause := PartitionBy{
+			Partitioning: other,
+			RePartition:  true,
+		}
+		return []TableAlterClause{clause}, true
 	}
 
 	// Modifications to partition list: ignored for RANGE, RANGE COLUMNS, LIST,

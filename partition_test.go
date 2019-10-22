@@ -46,7 +46,7 @@ func TestTableAlterPartitioningStatus(t *testing.T) {
 		t.Error("ALTER to add partitioning unexpectedly unsupported")
 	} else if len(tableAlters) != 1 {
 		t.Errorf("Wrong number of alter clauses: expected 1, found %d: %+v", len(tableAlters), tableAlters)
-	} else if clause, ok := tableAlters[0].(AddPartitioning); !ok {
+	} else if clause, ok := tableAlters[0].(PartitionBy); !ok {
 		t.Errorf("Wrong type of alter clause: expected %T, found %T", clause, tableAlters[0])
 	} else {
 		mods := StatementModifiers{}
@@ -73,6 +73,31 @@ func TestTableAlterPartitioningStatus(t *testing.T) {
 		}
 		mods.Partitioning = PartitioningKeep
 		if expected, actual := "", clause.Clause(mods); expected != actual {
+			t.Errorf("Unexpected return from Clause(): expected %q, found %q", expected, actual)
+		}
+	}
+
+	repartitioned := partitionedTable(FlavorUnknown)
+	repartitioned.Partitioning.Expression = strings.Replace(repartitioned.Partitioning.Expression, "customer_", "", 1)
+	repartitioned.CreateStatement = repartitioned.GeneratedCreateStatement(FlavorUnknown)
+	tableAlters, supported = partitioned.Diff(&repartitioned)
+	if !supported {
+		t.Error("ALTER to change partitioning expression unexpectedly unsupported")
+	} else if len(tableAlters) != 1 {
+		t.Errorf("Wrong number of alter clauses: expected 1, found %d: %+v", len(tableAlters), tableAlters)
+	} else if clause, ok := tableAlters[0].(PartitionBy); !ok {
+		t.Errorf("Wrong type of alter clause: expected %T, found %T", clause, tableAlters[0])
+	} else {
+		mods := StatementModifiers{Partitioning: PartitioningKeep}
+		if expected, actual := "", clause.Clause(mods); expected != actual {
+			t.Errorf("Unexpected return from Clause(): expected %q, found %q", expected, actual)
+		}
+		mods.Partitioning = PartitioningRemove
+		if expected, actual := "", clause.Clause(mods); expected != actual {
+			t.Errorf("Unexpected return from Clause(): expected %q, found %q", expected, actual)
+		}
+		mods.Partitioning = PartitioningPermissive
+		if expected, actual := strings.TrimSpace(repartitioned.Partitioning.Definition(FlavorUnknown)), clause.Clause(mods); expected != actual {
 			t.Errorf("Unexpected return from Clause(): expected %q, found %q", expected, actual)
 		}
 	}
@@ -114,11 +139,6 @@ func TestTableAlterPartitioningOther(t *testing.T) {
 
 	// Changes to the partition list are unsupported for HASH partitioning
 	p1.Partitioning.Method, p2.Partitioning.Method = "HASH", "HASH"
-	assertUnsupported(&p1, &p2)
-	assertUnsupported(&p2, &p1)
-
-	// Changing the method of partitioning is unsupported
-	p1.Partitioning.Method = "RANGE"
 	assertUnsupported(&p1, &p2)
 	assertUnsupported(&p2, &p1)
 }
@@ -346,8 +366,27 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 		t.Fatalf("Statement %q did not have the intended effect", stmt)
 	}
 
-	// Now confirm combining ADD PARTITIONING with other clauses works properly,
+	// Now confirm combining PARTITION BY with other clauses works properly,
 	// again because the syntax is unusual (no comma before partitioning clause)
+	stmt, _ = NewAlterTable(tableFromDB, &tableFromUnitP).Statement(mods)
+	if _, err := db.Exec(stmt); err != nil {
+		t.Fatalf("Unexpected error running statement %q: %v", stmt, err)
+	}
+	tableFromDB = s.GetTable(t, "partitionparty", "prange")
+	if tableFromDB.CreateStatement != tableFromUnitP.CreateStatement {
+		t.Fatalf("Statement %q did not have the intended effect", stmt)
+	}
+
+	// Ditto but this time we're changing the partitioning expression
+	tableFromUnitP.Columns = append(tableFromUnitP.Columns,
+		&Column{
+			Name:     "foo2",
+			TypeInDB: "int(10) unsigned",
+			Default:  ColumnDefaultNull,
+		},
+	)
+	tableFromUnitP.Partitioning.Expression = strings.Replace(tableFromUnitP.Partitioning.Expression, "customer_", "", 1)
+	tableFromUnitP.CreateStatement = tableFromUnitP.GeneratedCreateStatement(flavor)
 	stmt, _ = NewAlterTable(tableFromDB, &tableFromUnitP).Statement(mods)
 	if _, err := db.Exec(stmt); err != nil {
 		t.Fatalf("Unexpected error running statement %q: %v", stmt, err)

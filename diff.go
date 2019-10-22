@@ -570,7 +570,7 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 		}
 		if clauseString := clause.Clause(mods); clauseString != "" {
 			switch clause.(type) {
-			case AddPartitioning, RemovePartitioning:
+			case PartitionBy, RemovePartitioning:
 				// Adding or removing partitioning must occur at the end of the ALTER
 				// TABLE, and oddly *without* a preceeding comma
 				partitionClauseString = clauseString

@@ -525,21 +525,23 @@ func (cse ChangeStorageEngine) Unsafe() bool {
 	return true
 }
 
-///// AddPartitioning //////////////////////////////////////////////////////////
+///// PartitionBy //////////////////////////////////////////////////////////////
 
-// AddPartitioning represents initially partitioning a previously-unpartitioned
-// table. It satisfies the TableAlterClause interface.
-type AddPartitioning struct {
-	PartitionBy *TablePartitioning
+// PartitionBy represents initially partitioning a previously-unpartitioned
+// table, or changing the partitioning method and/or expression on an already-
+// partitioned table. It satisfies the TableAlterClause interface.
+type PartitionBy struct {
+	Partitioning *TablePartitioning
+	RePartition  bool // true if changing partitioning on already-partitioned table
 }
 
 // Clause returns a clause of an ALTER TABLE statement that partitions a
 // previously-unpartitioned table.
-func (ap AddPartitioning) Clause(mods StatementModifiers) string {
-	if mods.Partitioning == PartitioningRemove {
+func (pb PartitionBy) Clause(mods StatementModifiers) string {
+	if mods.Partitioning == PartitioningRemove || (pb.RePartition && mods.Partitioning == PartitioningKeep) {
 		return ""
 	}
-	return strings.TrimSpace(ap.PartitionBy.Definition(mods.Flavor))
+	return strings.TrimSpace(pb.Partitioning.Definition(mods.Flavor))
 }
 
 ///// RemovePartitioning ///////////////////////////////////////////////////////
