@@ -467,6 +467,30 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesDeadlock(t *testing.T) {
 	}
 }
 
+func (s TengoIntegrationSuite) TestInstanceDropRoutinesInSchema(t *testing.T) {
+	// testing schema contains several routines in testdata/integration.sql
+	schema := s.GetSchema(t, "testing")
+	if len(schema.Routines) == 0 {
+		t.Fatal("Assertion failure: schema `testing` has no routines to start")
+	}
+	if err := s.d.DropRoutinesInSchema("testing"); err != nil {
+		t.Fatalf("Unexpected error from DropRoutinesInSchema: %v", err)
+	}
+	if schema = s.GetSchema(t, "testing"); len(schema.Routines) > 0 {
+		t.Errorf("Expected schema `testing` to have no routines after DropRoutinesInSchema, instead found %d", len(schema.Routines))
+	}
+
+	// Repeated calls should have no effect, no error.
+	if err := s.d.DropRoutinesInSchema("testing"); err != nil {
+		t.Errorf("Unexpected error from DropRoutinesInSchema: %v", err)
+	}
+
+	// Calling on a nonexistent schema name should return an error.
+	if err := s.d.DropRoutinesInSchema("doesntexist"); err == nil {
+		t.Error("Expected error from DropRoutinesInSchema on nonexistent schema; instead err was nil")
+	}
+}
+
 func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
 	assertNoError := func(schemaName, newCharSet, newCollation, expectCharSet, expectCollation string) {
 		t.Helper()

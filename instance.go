@@ -628,6 +628,43 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 	return nil
 }
 
+// DropRoutinesInSchema drops all stored procedures and functions in a schema.
+func (instance *Instance) DropRoutinesInSchema(schema string) error {
+	db, err := instance.Connect(schema, "")
+	if err != nil {
+		return err
+	}
+
+	// Obtain names and types directly; faster than going through
+	// instance.Schema(schema) since we don't need other introspection
+	var routineInfo []struct {
+		Name string `db:"routine_name"`
+		Type string `db:"routine_type"`
+	}
+	query := `
+		SELECT routine_name AS routine_name, UPPER(routine_type) AS routine_type
+		FROM   information_schema.routines
+		WHERE  routine_schema = ?`
+	if err := db.Select(&routineInfo, query, schema); err != nil {
+		return err
+	} else if len(routineInfo) == 0 {
+		return nil
+	}
+
+	th := throttler.New(10, len(routineInfo))
+	for _, ri := range routineInfo {
+		go func(name, typ string) {
+			_, err := db.Exec(fmt.Sprintf("DROP %s %s", typ, EscapeIdentifier(name)))
+			th.Done(err)
+		}(ri.Name, ri.Type)
+		th.Throttle()
+	}
+	if errs := th.Errs(); len(errs) > 0 {
+		return errs[0]
+	}
+	return nil
+}
+
 // DefaultCharSetAndCollation returns the instance's default character set and
 // collation
 func (instance *Instance) DefaultCharSetAndCollation() (serverCharSet, serverCollation string, err error) {
