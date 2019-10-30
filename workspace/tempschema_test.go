@@ -37,12 +37,17 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 	if has, err := ts.inst.HasSchema(opts.SchemaName); !has {
 		t.Fatalf("Schema did not persist despite CleanupActionNone: has=%t err=%s", has, err)
 	}
+	if schema, err := ts.inst.Schema(opts.SchemaName); err != nil {
+		t.Fatalf("Unexpectedly unable to obtain schema: %v", err)
+	} else if objCount := len(schema.ObjectDefinitions()); objCount > 0 {
+		t.Errorf("Expected temp schema to have 0 objects after cleanup, instead found %d", objCount)
+	}
 
 	// Cleanup should fail if a table has rows
 	if ts, err = NewTempSchema(opts); err != nil {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
 	}
-	if _, err := s.d.SourceSQL("../testdata/tempschema1.sql"); err != nil {
+	if _, err := s.d.SourceSQL("testdata/tempschema1.sql"); err != nil {
 		t.Fatalf("Unexpected SourceSQL error: %s", err)
 	}
 	if err := ts.Cleanup(); err == nil {
@@ -91,7 +96,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCleanupDrop(t *testing.T) {
 	if ts, err = NewTempSchema(opts); err != nil {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
 	}
-	if _, err := s.d.SourceSQL("../testdata/tempschema1.sql"); err != nil {
+	if _, err := s.d.SourceSQL("testdata/tempschema1.sql"); err != nil {
 		t.Fatalf("Unexpected SourceSQL error: %s", err)
 	}
 	if err := ts.Cleanup(); err == nil {

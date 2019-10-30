@@ -55,6 +55,12 @@ func NewTempSchema(opts Options) (ts *TempSchema, err error) {
 		if err := ts.inst.DropTablesInSchema(ts.schemaName, dropOpts); err != nil {
 			return ts, fmt.Errorf("Cannot drop existing temp schema tables on %s: %s", ts.inst, err)
 		}
+		if err := ts.inst.DropRoutinesInSchema(ts.schemaName); err != nil {
+			return ts, fmt.Errorf("Cannot drop existing temp schema routines on %s: %s", ts.inst, err)
+		}
+		if err := ts.inst.AlterSchema(ts.schemaName, opts.DefaultCharacterSet, opts.DefaultCollation); err != nil {
+			return ts, fmt.Errorf("Cannot alter existing temp schema charset and collation on %s: %s", ts.inst, err)
+		}
 	} else {
 		_, err = ts.inst.CreateSchema(ts.schemaName, opts.DefaultCharacterSet, opts.DefaultCollation)
 		if err != nil {
@@ -95,6 +101,9 @@ func (ts *TempSchema) Cleanup() error {
 	if ts.keepSchema {
 		if err := ts.inst.DropTablesInSchema(ts.schemaName, dropOpts); err != nil {
 			return fmt.Errorf("Cannot drop tables in temporary schema on %s: %s", ts.inst, err)
+		}
+		if err := ts.inst.DropRoutinesInSchema(ts.schemaName); err != nil {
+			return fmt.Errorf("Cannot drop routines in temporary schema on %s: %s", ts.inst, err)
 		}
 	} else if err := ts.inst.DropSchema(ts.schemaName, dropOpts); err != nil {
 		return fmt.Errorf("Cannot drop temporary schema on %s: %s", ts.inst, err)

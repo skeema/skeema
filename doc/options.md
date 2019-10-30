@@ -414,7 +414,7 @@ For `skeema add-environment`, specifies which directory's .skeema file to add th
 
 ### docker-cleanup
 
-Commands | diff, push, pull, lint
+Commands | diff, push, pull, lint, format
 --- | :---
 **Default** | "none"
 **Type** | enum
@@ -840,7 +840,7 @@ Specifies a nonstandard port to use when connecting to MySQL via TCP/IP.
 
 ### reuse-temp-schema
 
-Commands | diff, push, pull, lint
+Commands | diff, push, pull, lint, format
 --- | :---
 **Default** | false
 **Type** | boolean
@@ -848,9 +848,11 @@ Commands | diff, push, pull, lint
 
 When using the default of [workspace=temp-schema](#workspace), this option controls how to clean up temporary workspace schemas. See [the FAQ](faq.md#no-reliance-on-sql-parsing) for background on temporary workspace schemas.
 
-If false, the temporary workspace schema is dropped once it is no longer needed. If true, the schema will be kept in place, but will be emptied of tables.
+If false, the temporary workspace schema is dropped once it is no longer needed. If true, the schema will be kept in place, but will be emptied of tables and routines.
 
 This option has no effect with other values of the [workspace](#workspace) option, such as [workspace=docker](#workspace).
+
+This option is deprecated as of Skeema v1.4.0, since dropping the temporary workspace schema is a safer approach with no real drawbacks. Dropping the schema does not require any additional privilege grants, and is performed in a way that minimizes any potential performance impact.
 
 ### safe-below-size
 
@@ -920,7 +922,7 @@ When the [host option](#host) is "localhost", this option specifies the path to 
 
 ### temp-schema
 
-Commands | diff, push, pull, lint
+Commands | diff, push, pull, lint, format
 --- | :---
 **Default** | "_skeema_tmp"
 **Type** | string
@@ -968,7 +970,7 @@ In Skeema v1.2 the default value of this option was "bad-charset,bad-engine,no-p
 
 ### workspace
 
-Commands | diff, push, pull, lint
+Commands | diff, push, pull, lint, format
 --- | :---
 **Default** | "temp-schema"
 **Type** | enum
@@ -979,9 +981,10 @@ This option controls where workspace schemas are created. See [the FAQ](faq.md#n
 * `skeema diff`
 * `skeema push`
 * `skeema lint`
+* `skeema format`
 * `skeema pull` (only if [skip-format](#format) is used)
 
-With the default value of [workspace=temp-schema](#workspace), a temporary schema is created on each MySQL instance that Skeema interacts with. The schema name is configured by the [temp-schema](#temp-schema) option. When the schema is no longer needed, it is dropped, unless the [reuse-temp-schema](#reuse-temp-schema) option is enabled.
+With the default value of [workspace=temp-schema](#workspace), a temporary schema is created on each MySQL instance that Skeema interacts with. The schema name is configured by the [temp-schema](#temp-schema) option. When the schema is no longer needed, it is dropped, unless the deprecated [reuse-temp-schema](#reuse-temp-schema) option is enabled.
 
 With [workspace=docker](#workspace), a Docker container on localhost is used for the workspace instead. This can be advantageous for two reasons:
 

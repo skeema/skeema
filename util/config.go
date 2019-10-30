@@ -28,15 +28,17 @@ func AddGlobalOptions(cmd *mybase.Command) {
 	cmd.AddOption(mybase.StringOption("default-collation", 0, "", "Schema-level default collation").Hidden())
 	cmd.AddOption(mybase.StringOption("flavor", 0, "", "Database server expressed in format vendor:major.minor, for use in vendor/version specific syntax").Hidden())
 
+	// Deprecated options or deprecated aliases -- all hidden
+	cmd.AddOption(mybase.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done").Hidden())
+
 	// Visible global options
 	cmd.AddOption(mybase.StringOption("user", 'u', "root", "Username to connect to database host"))
 	cmd.AddOption(mybase.StringOption("password", 'p', "", "Password for database user; omit value to prompt from TTY (default no password)").ValueOptional())
 	cmd.AddOption(mybase.StringOption("host-wrapper", 'H', "", "External bin to shell out to for host lookup; see manual for template vars"))
-	cmd.AddOption(mybase.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema for intermediate operations, created and dropped each run unless --reuse-temp-schema"))
+	cmd.AddOption(mybase.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema for intermediate operations, created and dropped each run"))
 	cmd.AddOption(mybase.StringOption("connect-options", 'o', "", "Comma-separated session options to set upon connecting to each database instance"))
 	cmd.AddOption(mybase.StringOption("workspace", 'w', "temp-schema", `Specifies where to run intermediate operations (valid values: "temp-schema", "docker")`))
 	cmd.AddOption(mybase.StringOption("docker-cleanup", 0, "none", `With --workspace=docker, specifies how to clean up containers (valid values: "none", "stop", "destroy")`))
-	cmd.AddOption(mybase.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done"))
 	cmd.AddOption(mybase.BoolOption("debug", 0, false, "Enable debug logging"))
 	cmd.AddOption(mybase.BoolOption("my-cnf", 0, true, "Parse ~/.my.cnf for configuration"))
 }
