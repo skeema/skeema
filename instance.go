@@ -1024,7 +1024,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	if err != nil {
 		return nil, err
 	}
-	th := throttler.New(10, len(tables))
+	th := throttler.New(15, len(tables))
 	for _, t := range tables {
 		go func(t *Table) {
 			var err error
@@ -1241,10 +1241,11 @@ func (instance *Instance) querySchemaRoutines(schema string) ([]*Routine, error)
 			}
 		}
 	}
-	th := throttler.New(15, len(routines))
+	th := throttler.New(20, len(routines))
 	for _, r := range routines {
 		if r.CreateStatement != "" { // already hydrated from mysql.proc query above
 			th.Done(nil)
+			th.Throttle()
 			continue
 		}
 		go func(r *Routine) {
