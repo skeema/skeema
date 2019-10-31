@@ -17,6 +17,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerErrors(t *testing.T) {
 		DefaultCollation:    "latin1_swedish_ci",
 		RootPassword:        "",
 		LockWaitTimeout:     100 * time.Millisecond,
+		Concurrency:         10,
 	}
 
 	// FlavorUnknown should result in error
@@ -43,6 +44,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDocker(t *testing.T) {
 		DefaultConnParams:   "wait_timeout=123",
 		RootPassword:        "",
 		LockWaitTimeout:     100 * time.Millisecond,
+		Concurrency:         10,
 	}
 
 	ws, err := New(opts)
@@ -77,6 +79,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerShutdown(t *testing.T) {
 		DefaultCollation:    "latin1_swedish_ci",
 		RootPassword:        "",
 		LockWaitTimeout:     100 * time.Millisecond,
+		Concurrency:         10,
 	}
 
 	// Test with CleanupActionNone
@@ -153,6 +156,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerConnParams(t *testing.T) {
 		DefaultConnParams:   "wait_timeout=123",
 		RootPassword:        "",
 		LockWaitTimeout:     100 * time.Millisecond,
+		Concurrency:         10,
 	}
 
 	ws, err := New(opts)

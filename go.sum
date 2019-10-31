@@ -72,6 +72,8 @@ github.com/skeema/tengo v0.8.20-0.20191016162327-fa0750033735 h1:l8E4KqlQzMyxsny
 github.com/skeema/tengo v0.8.20-0.20191016162327-fa0750033735/go.mod h1:7ahmzzEKjeOzHEqq0okxccPFozsDyGmZORUfF25GRYc=
 github.com/skeema/tengo v0.8.20-0.20191029231824-0ca0bc975780 h1:tFfxpP0XydScyz7pPAdJOjt7fvl2AfeVjBecR4p2aFs=
 github.com/skeema/tengo v0.8.20-0.20191029231824-0ca0bc975780/go.mod h1:7ahmzzEKjeOzHEqq0okxccPFozsDyGmZORUfF25GRYc=
+github.com/skeema/tengo v0.8.20-0.20191031215956-075a9c3f9956 h1:cZg5ahgrZAXRH+UDHDVoBDY7JsqdLmlOwjPeFbalgyU=
+github.com/skeema/tengo v0.8.20-0.20191031215956-075a9c3f9956/go.mod h1:7ahmzzEKjeOzHEqq0okxccPFozsDyGmZORUfF25GRYc=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.1.1/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.2.2 h1:bSDNvY7ZPG5RlJ8otE/7V6gMiyenm9RtJ7IUVIAoJ1w=

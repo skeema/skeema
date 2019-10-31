@@ -85,6 +85,7 @@ type Options struct {
 	RootPassword        string    // only TypeLocalDocker
 	PrefabWorkspace     Workspace // only TypePrefab
 	LockWaitTimeout     time.Duration
+	Concurrency         int
 }
 
 // New returns a pointer to a ready-to-use Workspace, using the configuration
@@ -116,6 +117,7 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 		CleanupAction:   CleanupActionNone,
 		SchemaName:      dir.Config.Get("temp-schema"),
 		LockWaitTimeout: 30 * time.Second,
+		Concurrency:     10,
 	}
 	if requestedType == "docker" {
 		opts.Type = TypeLocalDocker
@@ -139,6 +141,13 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 		opts.Instance = instance
 		if !dir.Config.GetBool("reuse-temp-schema") {
 			opts.CleanupAction = CleanupActionDrop
+		}
+		if concurrency, err := dir.Config.GetInt("temp-schema-threads"); err != nil {
+			return Options{}, err
+		} else if concurrency < 1 {
+			return Options{}, errors.New("temp-schema-threads cannot be less than 1")
+		} else {
+			opts.Concurrency = concurrency
 		}
 		// Note: no support for opts.DefaultConnParams for temp-schema because the
 		// supplied instance already has default params
@@ -249,8 +258,8 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 		}
 	}()
 
-	// Run CREATEs in parallel, up to 10 at a time.
-	th := throttler.New(10, len(logicalSchema.Creates))
+	// Run CREATEs in parallel
+	th := throttler.New(opts.Concurrency, len(logicalSchema.Creates))
 	for _, stmt := range logicalSchema.Creates {
 		db, err := ws.ConnectionPool(paramsForStatement(stmt))
 		if err != nil {

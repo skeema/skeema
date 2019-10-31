@@ -275,7 +275,7 @@ Commands | diff, push
 **Type** | int
 **Restrictions** | Must be a positive integer
 
-By default, `skeema diff` and `skeema push` only operate on one instance at a time. To operate on multiple instances simultaneously, set [concurrent-instances](#concurrent-instances) to the number of database instances to run on concurrently. This is useful in an environment with multiple shards or pools.
+By default, `skeema diff` and `skeema push` only operate on one database server instance (mysqld process) at a time. To operate on multiple instances simultaneously, set [concurrent-instances](#concurrent-instances) to the number of database instances to run on concurrently. This is useful in an environment with multiple shards or pools.
 
 On each individual database instance, only one DDL operation will be run at a time by `skeema push`, regardless of [concurrent-instances](#concurrent-instances). Concurrency within an instance may be configurable in a future version of Skeema.
 
@@ -931,6 +931,22 @@ Commands | diff, push, pull, lint, format
 Specifies the name of the temporary schema used for Skeema workspace operations. See [the FAQ](faq.md#no-reliance-on-sql-parsing) for more information on how this schema is used.
 
 If using a non-default value for this option, it should not ever point at a schema containing real application data. Skeema will automatically detect this and abort in this situation, but may first drop any *empty* tables that it found in the schema.
+
+### temp-schema-threads
+
+Commands | diff, push, pull, lint, format
+--- | :---
+**Default** | 5
+**Type** | int
+**Restrictions** | Must be a positive integer
+
+With [workspace=temp-schema](#workspace), this option controls the concurrency level for CREATE queries when populating the workspace, as well as DROP queries when cleaning up the workspace.
+
+When using Skeema in situations involving high object counts (hundreds or thousands of tables and routines in a single schema) and/or nontrivial latency between Skeema and the database server (running Skeema locally against a database server in a remote data center), increasing this value may improve Skeema's performance.
+
+In other cases, it may be beneficial to *lower* this value. Some high-volume OLTP workloads are especially sensitive to contention for InnoDB's dict_sys mutex, meaning that the default concurrency level of 5 can cause other application queries to pile up or stall. This mutex contention is more prevalent in pre-MySQL 8.0 systems, especially if the combination of table count and connection count overwhelms the system's `table_open_cache`, and/or there are many INSERTs to table(s) lacking a primary key.
+
+In either situation, also consider use of [workspace=docker](#workspace) as an alternative solution.
 
 ### user
 

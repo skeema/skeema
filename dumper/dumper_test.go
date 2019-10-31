@@ -166,6 +166,7 @@ func (s *IntegrationSuite) BeforeTest(backend string) error {
 		CleanupAction:   workspace.CleanupActionDrop,
 		SchemaName:      "dumper_test",
 		LockWaitTimeout: 30 * time.Second,
+		Concurrency:     5,
 	}
 	wsSchema, err := workspace.ExecLogicalSchema(dir.LogicalSchemas[0], wsOpts)
 	s.schema, s.statementErrors = wsSchema.Schema, wsSchema.Failures

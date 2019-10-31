@@ -14,6 +14,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
 		LockWaitTimeout:     100 * time.Millisecond,
+		Concurrency:         5,
 	}
 	ts, err := NewTempSchema(opts)
 	if err != nil {
@@ -75,6 +76,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCleanupDrop(t *testing.T) {
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
 		LockWaitTimeout:     100 * time.Millisecond,
+		Concurrency:         5,
 	}
 	ts, err := NewTempSchema(opts)
 	if err != nil {
@@ -113,6 +115,7 @@ func TestTempSchemaNilInstance(t *testing.T) {
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
 		LockWaitTimeout:     100 * time.Millisecond,
+		Concurrency:         5,
 	}
 	if _, err := NewTempSchema(opts); err == nil {
 		t.Fatal("Expected non-nil error from NewTempSchema, but return was nil")

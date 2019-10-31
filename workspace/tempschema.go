@@ -14,6 +14,7 @@ import (
 type TempSchema struct {
 	schemaName  string
 	keepSchema  bool
+	concurrency int
 	inst        *tengo.Instance
 	releaseLock releaseFunc
 }
@@ -25,9 +26,10 @@ func NewTempSchema(opts Options) (ts *TempSchema, err error) {
 		return nil, errors.New("No instance defined in options")
 	}
 	ts = &TempSchema{
-		schemaName: opts.SchemaName,
-		keepSchema: opts.CleanupAction == CleanupActionNone,
-		inst:       opts.Instance,
+		schemaName:  opts.SchemaName,
+		keepSchema:  opts.CleanupAction == CleanupActionNone,
+		inst:        opts.Instance,
+		concurrency: opts.Concurrency,
 	}
 
 	lockName := fmt.Sprintf("skeema.%s", ts.schemaName)
@@ -49,7 +51,7 @@ func NewTempSchema(opts Options) (ts *TempSchema, err error) {
 		// Attempt to drop any tables already present in tempSchema, but fail if
 		// any of them actually have 1 or more rows
 		dropOpts := tengo.BulkDropOptions{
-			MaxConcurrency: 10,
+			MaxConcurrency: ts.concurrency,
 			OnlyIfEmpty:    true,
 		}
 		if err := ts.inst.DropTablesInSchema(ts.schemaName, dropOpts); err != nil {
@@ -95,7 +97,7 @@ func (ts *TempSchema) Cleanup() error {
 	}()
 
 	dropOpts := tengo.BulkDropOptions{
-		MaxConcurrency: 10,
+		MaxConcurrency: ts.concurrency,
 		OnlyIfEmpty:    true,
 	}
 	if ts.keepSchema {
