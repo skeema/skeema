@@ -31,6 +31,7 @@ type Instance struct {
 	*sync.RWMutex                      // protects connectionPool for concurrent operations
 	flavor         Flavor
 	version        [3]int
+	grants         []string
 }
 
 // NewInstance returns a pointer to a new Instance corresponding to the
@@ -255,6 +256,31 @@ func (instance *Instance) hydrateFlavorAndVersion() {
 	instance.flavor = ParseFlavor(versionString, versionComment)
 }
 
+var reSkipBinlog = regexp.MustCompile(`(?:ALL PRIVILEGES|SUPER|SESSION_VARIABLES_ADMIN|SYSTEM_VARIABLES_ADMIN)[,\s]`)
+
+// CanSkipBinlog returns true if instance.User has privileges necessary to
+// set sql_log_bin=0. If an error occurs in checking grants, this method returns
+// false as a safe fallback.
+func (instance *Instance) CanSkipBinlog() bool {
+	if instance.grants == nil {
+		instance.hydrateGrants()
+	}
+	for _, grant := range instance.grants {
+		if reSkipBinlog.MatchString(grant) {
+			return true
+		}
+	}
+	return false
+}
+
+func (instance *Instance) hydrateGrants() {
+	db, err := instance.Connect("", "")
+	if err != nil {
+		return
+	}
+	db.Select(&instance.grants, "SHOW GRANTS")
+}
+
 // SchemaNames returns a slice of all schema name strings on the instance
 // visible to the user. System schemas are excluded.
 func (instance *Instance) SchemaNames() ([]string, error) {
@@ -461,33 +487,48 @@ func confirmTablesEmpty(db *sqlx.DB, tables []string) error {
 	return nil
 }
 
+// SchemaCreationOptions specifies schema-level metadata when creating or
+// altering a database.
+type SchemaCreationOptions struct {
+	DefaultCharSet   string
+	DefaultCollation string
+	SkipBinlog       bool
+}
+
+func (opts SchemaCreationOptions) params() string {
+	if opts.SkipBinlog {
+		return "sql_log_bin=0"
+	}
+	return ""
+}
+
 // CreateSchema creates a new database schema with the supplied name, and
-// optionally the supplied default charSet and collation. (Leave charSet and
-// collation blank to use server defaults.)
-func (instance *Instance) CreateSchema(name, charSet, collation string) (*Schema, error) {
-	db, err := instance.Connect("", "")
+// optionally the supplied default CharSet and Collation. (Leave these fields
+// blank to use server defaults.)
+func (instance *Instance) CreateSchema(name string, opts SchemaCreationOptions) (*Schema, error) {
+	db, err := instance.Connect("", opts.params())
 	if err != nil {
 		return nil, err
 	}
 	// Technically the server defaults would be used anyway if these are left
 	// blank, but we need the returned Schema value to reflect the correct values,
 	// and we can avoid re-querying this way
-	if charSet == "" || collation == "" {
+	if opts.DefaultCharSet == "" || opts.DefaultCollation == "" {
 		defCharSet, defCollation, err := instance.DefaultCharSetAndCollation()
 		if err != nil {
 			return nil, err
 		}
-		if charSet == "" {
-			charSet = defCharSet
+		if opts.DefaultCharSet == "" {
+			opts.DefaultCharSet = defCharSet
 		}
-		if collation == "" {
-			collation = defCollation
+		if opts.DefaultCollation == "" {
+			opts.DefaultCollation = defCollation
 		}
 	}
 	schema := &Schema{
 		Name:      name,
-		CharSet:   charSet,
-		Collation: collation,
+		CharSet:   opts.DefaultCharSet,
+		Collation: opts.DefaultCollation,
 		Tables:    []*Table{},
 	}
 	_, err = db.Exec(schema.CreateStatement())
@@ -512,7 +553,7 @@ func (instance *Instance) DropSchema(schema string, opts BulkDropOptions) error 
 	s := &Schema{
 		Name: schema,
 	}
-	db, err := instance.Connect("", "")
+	db, err := instance.Connect("", opts.params())
 	if err != nil {
 		return err
 	}
@@ -534,20 +575,20 @@ func (instance *Instance) DropSchema(schema string, opts BulkDropOptions) error 
 }
 
 // AlterSchema changes the character set and/or collation of the supplied schema
-// on instance. Supply an empty string for newCharSet to only change the
-// collation, or supply an empty string for newCollation to use the default
-// collation of newCharSet. (Supplying an empty string for both is also allowed,
-// but is a no-op.)
-func (instance *Instance) AlterSchema(schema, newCharSet, newCollation string) error {
+// on instance. Supply an empty string for opts.DefaultCharSet to only change
+// the collation, or supply an empty string for opts.DefaultCollation to use the
+// default collation of opts.DefaultCharSet. (Supplying an empty string for both
+// is also allowed, but is a no-op.)
+func (instance *Instance) AlterSchema(schema string, opts SchemaCreationOptions) error {
 	s, err := instance.Schema(schema)
 	if err != nil {
 		return err
 	}
-	statement := s.AlterStatement(newCharSet, newCollation)
+	statement := s.AlterStatement(opts.DefaultCharSet, opts.DefaultCollation)
 	if statement == "" {
 		return nil
 	}
-	db, err := instance.Connect("", "")
+	db, err := instance.Connect("", opts.params())
 	if err != nil {
 		return err
 	}
@@ -557,10 +598,18 @@ func (instance *Instance) AlterSchema(schema, newCharSet, newCollation string) e
 	return nil
 }
 
-// BulkDropOptions controls how tables are dropped in bulk.
+// BulkDropOptions controls how objects are dropped in bulk.
 type BulkDropOptions struct {
-	OnlyIfEmpty    bool // If true, error if any tables have rows
-	MaxConcurrency int  // Max tables to drop at once
+	OnlyIfEmpty    bool // If true, when dropping tables, error if any have rows
+	MaxConcurrency int  // Max objects to drop at once
+	SkipBinlog     bool // If true, use session sql_log_bin=0 (requires superuser)
+}
+
+func (opts BulkDropOptions) params() string {
+	if opts.SkipBinlog {
+		return "foreign_key_checks=0&sql_log_bin=0"
+	}
+	return "foreign_key_checks=0"
 }
 
 // Concurrency returns the concurrency, with a minimum value of 1.
@@ -574,7 +623,7 @@ func (opts BulkDropOptions) Concurrency() int {
 // DropTablesInSchema drops all tables in a schema. If opts.OnlyIfEmpty==true,
 // returns an error if any of the tables have any rows.
 func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions) error {
-	db, err := instance.Connect(schema, "foreign_key_checks=0")
+	db, err := instance.Connect(schema, opts.params())
 	if err != nil {
 		return err
 	}
@@ -629,8 +678,8 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 }
 
 // DropRoutinesInSchema drops all stored procedures and functions in a schema.
-func (instance *Instance) DropRoutinesInSchema(schema string) error {
-	db, err := instance.Connect(schema, "")
+func (instance *Instance) DropRoutinesInSchema(schema string, opts BulkDropOptions) error {
+	db, err := instance.Connect(schema, opts.params())
 	if err != nil {
 		return err
 	}
@@ -651,7 +700,7 @@ func (instance *Instance) DropRoutinesInSchema(schema string) error {
 		return nil
 	}
 
-	th := throttler.New(10, len(routineInfo))
+	th := throttler.New(opts.Concurrency(), len(routineInfo))
 	for _, ri := range routineInfo {
 		go func(name, typ string) {
 			_, err := db.Exec(fmt.Sprintf("DROP %s %s", typ, EscapeIdentifier(name)))

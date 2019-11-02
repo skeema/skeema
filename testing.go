@@ -49,26 +49,17 @@ func RunSuite(suite IntegrationTestSuite, t *testing.T, backends []string) {
 			t.Skipf("RunSuite %s: Setup(%s) failed: %s", suiteName, backend, err)
 		}
 
-		// When using `go test -run ...`, some tests may be skipped, but the testing
-		// package does not directly expose this. We can detect it by toggling a var
-		// in the subtest closure.
-		needReset := true
-
 		// Run test methods
 		for n := 0; n < suiteType.NumMethod(); n++ {
 			method := suiteType.Method(n)
 			if strings.HasPrefix(method.Name, "Test") {
-				if needReset {
+				subtestName := fmt.Sprintf("%s.%s:%s", suiteName, method.Name, backend)
+				subtest := func(subt *testing.T) {
 					if err := suite.BeforeTest(backend); err != nil {
 						suite.Teardown(backend)
 						t.Fatalf("RunSuite %s: BeforeTest(%s) failed: %s", suiteName, backend, err)
 					}
-					needReset = false
-				}
-				subtestName := fmt.Sprintf("%s.%s:%s", suiteName, method.Name, backend)
-				subtest := func(t *testing.T) {
-					needReset = true
-					method.Func.Call([]reflect.Value{reflect.ValueOf(suite), reflect.ValueOf(t)})
+					method.Func.Call([]reflect.Value{reflect.ValueOf(suite), reflect.ValueOf(subt)})
 				}
 				t.Run(subtestName, subtest)
 			}

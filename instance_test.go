@@ -199,6 +199,8 @@ func (s TengoIntegrationSuite) TestInstanceCloseAll(t *testing.T) {
 		}
 	}
 
+	s.d.CloseAll()
+	assertPoolCount(0)
 	makePool("", "")
 	makePool("information_schema", "")
 	assertPoolCount(2)
@@ -261,6 +263,26 @@ func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
 	if err := s.d.SetFlavor(expected); err != nil || s.d.Flavor() != expected {
 		t.Errorf("Unexpected outcome from SetFlavor: error=%v, flavor=%s", err, s.d.Flavor())
 	}
+}
+
+func (s TengoIntegrationSuite) TestInstanceCanSkipBinlog(t *testing.T) {
+	// The dockerized instance in the test should always use root creds
+	if !s.d.CanSkipBinlog() {
+		t.Fatal("Expected all Dockerized instances to be able to skip binlogs, but CanSkipBinlogs returned false")
+	}
+	if _, err := s.d.Connect("", "sql_log_bin=0"); err != nil {
+		t.Errorf("Error connecting with sql_log_bin=0: %v", err)
+	}
+
+	// Hack up the hydrated grants and confirm the method now returns false
+	s.d.grants = []string{}
+	if s.d.CanSkipBinlog() {
+		t.Error("Expected empty grants to cause CanSkipBinlogs to return false, but it did not")
+	}
+
+	// Clean up previous hack, so that any future tests examining this field will
+	// re-hydrate it
+	s.d.grants = nil
 }
 
 func (s TengoIntegrationSuite) TestInstanceSchemas(t *testing.T) {
@@ -376,7 +398,12 @@ func (s TengoIntegrationSuite) TestInstanceTableHasRows(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestInstanceCreateSchema(t *testing.T) {
-	_, err := s.d.CreateSchema("foobar", "utf8mb4", "utf8mb4_unicode_ci")
+	opts := SchemaCreationOptions{
+		DefaultCharSet:   "utf8mb4",
+		DefaultCollation: "utf8mb4_unicode_ci",
+		SkipBinlog:       true,
+	}
+	_, err := s.d.CreateSchema("foobar", opts)
 	if err != nil {
 		t.Fatalf("CreateSchema returned unexpected error: %s", err)
 	}
@@ -387,7 +414,7 @@ func (s TengoIntegrationSuite) TestInstanceCreateSchema(t *testing.T) {
 	}
 
 	// Ensure creation of duplicate schema fails with error
-	if _, err := s.d.CreateSchema("foobar", "utf8mb4", "utf8mb4_unicode_ci"); err == nil {
+	if _, err := s.d.CreateSchema("foobar", opts); err == nil {
 		t.Error("Expected creation of duplicate schema to return an error, but it did not")
 	}
 
@@ -397,7 +424,7 @@ func (s TengoIntegrationSuite) TestInstanceCreateSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unable to obtain instance default charset and collation")
 	}
-	if schema, err := s.d.CreateSchema("barfoo", "", ""); err != nil {
+	if schema, err := s.d.CreateSchema("barfoo", SchemaCreationOptions{}); err != nil {
 		t.Errorf("Failed to create schema with default charset and collation: %s", err)
 	} else if schema.CharSet != defCharSet || schema.Collation != defCollation {
 		t.Errorf("Expected charset/collation to be %s/%s, instead found %s/%s", defCharSet, defCollation, schema.CharSet, schema.Collation)
@@ -452,7 +479,7 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesDeadlock(t *testing.T) {
 	// Add a FK relation, drop all tables in the schema, and then restore the
 	// test database to its previous state. Without the fix in DropTablesInSchema,
 	// this tends to hit a deadlock within just a few loop iterations.
-	opts := BulkDropOptions{MaxConcurrency: 10}
+	opts := BulkDropOptions{MaxConcurrency: 10, SkipBinlog: true}
 	for n := 0; n < 10; n++ {
 		_, err = db.Exec("ALTER TABLE testing.actor_in_film ADD CONSTRAINT actor FOREIGN KEY (actor_id) REFERENCES testing.actor (actor_id)")
 		if err != nil {
@@ -473,7 +500,11 @@ func (s TengoIntegrationSuite) TestInstanceDropRoutinesInSchema(t *testing.T) {
 	if len(schema.Routines) == 0 {
 		t.Fatal("Assertion failure: schema `testing` has no routines to start")
 	}
-	if err := s.d.DropRoutinesInSchema("testing"); err != nil {
+	opts := BulkDropOptions{
+		MaxConcurrency: 10,
+		SkipBinlog:     true,
+	}
+	if err := s.d.DropRoutinesInSchema("testing", opts); err != nil {
 		t.Fatalf("Unexpected error from DropRoutinesInSchema: %v", err)
 	}
 	if schema = s.GetSchema(t, "testing"); len(schema.Routines) > 0 {
@@ -481,12 +512,12 @@ func (s TengoIntegrationSuite) TestInstanceDropRoutinesInSchema(t *testing.T) {
 	}
 
 	// Repeated calls should have no effect, no error.
-	if err := s.d.DropRoutinesInSchema("testing"); err != nil {
+	if err := s.d.DropRoutinesInSchema("testing", opts); err != nil {
 		t.Errorf("Unexpected error from DropRoutinesInSchema: %v", err)
 	}
 
 	// Calling on a nonexistent schema name should return an error.
-	if err := s.d.DropRoutinesInSchema("doesntexist"); err == nil {
+	if err := s.d.DropRoutinesInSchema("doesntexist", opts); err == nil {
 		t.Error("Expected error from DropRoutinesInSchema on nonexistent schema; instead err was nil")
 	}
 }
@@ -494,7 +525,11 @@ func (s TengoIntegrationSuite) TestInstanceDropRoutinesInSchema(t *testing.T) {
 func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
 	assertNoError := func(schemaName, newCharSet, newCollation, expectCharSet, expectCollation string) {
 		t.Helper()
-		if err := s.d.AlterSchema(schemaName, newCharSet, newCollation); err != nil {
+		opts := SchemaCreationOptions{
+			DefaultCharSet:   newCharSet,
+			DefaultCollation: newCollation,
+		}
+		if err := s.d.AlterSchema(schemaName, opts); err != nil {
 			t.Errorf("Expected alter of %s to (%s,%s) would not error, but returned %s", schemaName, newCharSet, newCollation, err)
 		} else {
 			schema, err := s.d.Schema(schemaName)
@@ -511,7 +546,11 @@ func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
 	}
 	assertError := func(schemaName, newCharSet, newCollation string) {
 		t.Helper()
-		if err := s.d.AlterSchema(schemaName, newCharSet, newCollation); err == nil {
+		opts := SchemaCreationOptions{
+			DefaultCharSet:   newCharSet,
+			DefaultCollation: newCollation,
+		}
+		if err := s.d.AlterSchema(schemaName, opts); err == nil {
 			t.Errorf("Expected alter of %s to (%s,%s) would return error, but returned nil instead", schemaName, newCharSet, newCollation)
 		}
 	}
