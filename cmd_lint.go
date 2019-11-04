@@ -132,15 +132,17 @@ func lintDir(dir *fs.Dir) *linter.Result {
 
 	// Get workspace options for dir. This involves connecting to the first
 	// defined instance, unless configured to use local Docker.
-	var inst *tengo.Instance
-	if wsType, _ := dir.Config.GetEnum("workspace", "temp-schema", "docker"); wsType != "docker" || !dir.Config.Changed("flavor") {
-		if inst, err = dir.FirstInstance(); err != nil {
+	var wsOpts workspace.Options
+	if len(dir.LogicalSchemas) > 0 {
+		var inst *tengo.Instance
+		if wsType, _ := dir.Config.GetEnum("workspace", "temp-schema", "docker"); wsType != "docker" || !dir.Config.Changed("flavor") {
+			if inst, err = dir.FirstInstance(); err != nil {
+				return linter.BadConfigResult(dir, err)
+			}
+		}
+		if wsOpts, err = workspace.OptionsForDir(dir, inst); err != nil {
 			return linter.BadConfigResult(dir, err)
 		}
-	}
-	wsOpts, err := workspace.OptionsForDir(dir, inst)
-	if err != nil {
-		return linter.BadConfigResult(dir, err)
 	}
 
 	result := &linter.Result{}

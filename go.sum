@@ -68,12 +68,8 @@ github.com/sirupsen/logrus v1.4.2 h1:SPIRibHv4MatM3XXNO2BJeFLZwZ2LvZgfQ5+UNI2im4
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
 github.com/skeema/mybase v1.0.8 h1:eqtxi5FfphYhosEEeHBsYf/9oXfwjCZ8fMnpGJ+AdxI=
 github.com/skeema/mybase v1.0.8/go.mod h1:09Uz3MIoXTNCUZWBeKDeO8SUHlQNjIEocXbc1DFvEKQ=
-github.com/skeema/tengo v0.8.20-0.20191016162327-fa0750033735 h1:l8E4KqlQzMyxsny32GiaL4vJcTBBmaphR37ukyix8FE=
-github.com/skeema/tengo v0.8.20-0.20191016162327-fa0750033735/go.mod h1:7ahmzzEKjeOzHEqq0okxccPFozsDyGmZORUfF25GRYc=
-github.com/skeema/tengo v0.8.20-0.20191029231824-0ca0bc975780 h1:tFfxpP0XydScyz7pPAdJOjt7fvl2AfeVjBecR4p2aFs=
-github.com/skeema/tengo v0.8.20-0.20191029231824-0ca0bc975780/go.mod h1:7ahmzzEKjeOzHEqq0okxccPFozsDyGmZORUfF25GRYc=
-github.com/skeema/tengo v0.8.20-0.20191031215956-075a9c3f9956 h1:cZg5ahgrZAXRH+UDHDVoBDY7JsqdLmlOwjPeFbalgyU=
-github.com/skeema/tengo v0.8.20-0.20191031215956-075a9c3f9956/go.mod h1:7ahmzzEKjeOzHEqq0okxccPFozsDyGmZORUfF25GRYc=
+github.com/skeema/tengo v0.8.20-0.20191104213014-11b5a674b5f7 h1:WWPg56PiDX+buSwLVqIMGfAL+oiT3wUkqGpSjD+sb8g=
+github.com/skeema/tengo v0.8.20-0.20191104213014-11b5a674b5f7/go.mod h1:7ahmzzEKjeOzHEqq0okxccPFozsDyGmZORUfF25GRYc=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.1.1/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.2.2 h1:bSDNvY7ZPG5RlJ8otE/7V6gMiyenm9RtJ7IUVIAoJ1w=

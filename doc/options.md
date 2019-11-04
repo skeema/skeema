@@ -55,6 +55,8 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [schema](#schema)
 * [socket](#socket)
 * [temp-schema](#temp-schema)
+* [temp-schema-binlog](#temp-schema-binlog)
+* [temp-schema-threads](#temp-schema-threads)
 * [user](#user)
 * [verify](#verify)
 * [warnings](#warnings)
@@ -931,6 +933,28 @@ Commands | diff, push, pull, lint, format
 Specifies the name of the temporary schema used for Skeema workspace operations. See [the FAQ](faq.md#no-reliance-on-sql-parsing) for more information on how this schema is used.
 
 If using a non-default value for this option, it should not ever point at a schema containing real application data. Skeema will automatically detect this and abort in this situation, but may first drop any *empty* tables that it found in the schema.
+
+### temp-schema-binlog
+
+Commands | diff, push, pull, lint, format
+--- | :---
+**Default** | "auto"
+**Type** | enum
+**Restrictions** | Requires one of these values: "on", "off", "auto"
+
+With [workspace=temp-schema](#workspace), this option controls whether or not workspace operations are written to the database's binary log, which means they will be executed on replicas if replication is configured.
+
+If possible, it is generally preferable to avoid replication of workspace queries. The workspace schema is "cleaned up" (dropped in a safe manner) after processing each directory, and typically Skeema should be configured to only interact with master databases anyway, so replicating the workspace queries serves no purpose. However, the ability to selectively skip binary logging requires either the SUPER privilege or (in MySQL 8.0+) the SYSTEM_VARIABLES_ADMIN or SESSION_VARIABLES_ADMIN privileges. These superuser privileges may be unavailable in database-as-a-service environments, such as Amazon RDS.
+
+With a value of "on", Skeema will not do any special handling for workspace queries, meaning that they **will** be written to the binlog and be executed by replicas. This value is guaranteed to work regardless of user privileges.
+
+With a value of "off", Skeema will skip binary logging (via `SET SESSION sql_log_bin=0`) for workspace queries, meaning that they **will not** be written to the binlog or executed by replicas. If Skeema's user lacks sufficient superuser privileges, a fatal error will be returned.
+
+With the default value of "auto", Skeema will detect whether the configured user has sufficient privileges to skip binary logging of workspace queries, and will do so if available. In other words, "auto" functions as "off" if running as a privileged superuser, or "on" otherwise.
+
+This option has no effect if the database's binary log is already globally disabled.
+
+This option does *not* impact non-workspace-related queries executed by `skeema push`.
 
 ### temp-schema-threads
 

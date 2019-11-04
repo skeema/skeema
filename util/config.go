@@ -36,6 +36,7 @@ func AddGlobalOptions(cmd *mybase.Command) {
 	cmd.AddOption(mybase.StringOption("password", 'p', "", "Password for database user; omit value to prompt from TTY (default no password)").ValueOptional())
 	cmd.AddOption(mybase.StringOption("host-wrapper", 'H', "", "External bin to shell out to for host lookup; see manual for template vars"))
 	cmd.AddOption(mybase.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema for intermediate operations, created and dropped each run"))
+	cmd.AddOption(mybase.StringOption("temp-schema-binlog", 0, "auto", `Controls whether temp schema DDL operations are replicated (valid values: "on", "off", "auto")`))
 	cmd.AddOption(mybase.StringOption("temp-schema-threads", 0, "5", "Max number of concurrent CREATE/DROP with workspace=temp-schema"))
 	cmd.AddOption(mybase.StringOption("connect-options", 'o', "", "Comma-separated session options to set upon connecting to each database instance"))
 	cmd.AddOption(mybase.StringOption("workspace", 'w', "temp-schema", `Specifies where to run intermediate operations (valid values: "temp-schema", "docker")`))

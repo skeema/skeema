@@ -86,6 +86,7 @@ type Options struct {
 	PrefabWorkspace     Workspace // only TypePrefab
 	LockWaitTimeout     time.Duration
 	Concurrency         int
+	SkipBinlog          bool
 }
 
 // New returns a pointer to a ready-to-use Workspace, using the configuration
@@ -106,8 +107,8 @@ func New(opts Options) (Workspace, error) {
 // A non-nil instance should be supplied, unless the caller already knows the
 // workspace won't be temp-schema based.
 // This method relies on option definitions from util.AddGlobalOptions(),
-// including "workspace", "temp-schema", "flavor", "docker-cleanup", and
-// "reuse-temp-schema".
+// including "workspace", "temp-schema", "flavor", "docker-cleanup",
+// "reuse-temp-schema", "temp-schema-threads", "temp-schema-binlog"
 func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 	requestedType, err := dir.Config.GetEnum("workspace", "temp-schema", "docker")
 	if err != nil {
@@ -122,6 +123,7 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 	if requestedType == "docker" {
 		opts.Type = TypeLocalDocker
 		opts.Flavor = tengo.NewFlavor(dir.Config.Get("flavor"))
+		opts.SkipBinlog = true
 		if !opts.Flavor.Known() && instance != nil {
 			opts.Flavor = instance.Flavor()
 		}
@@ -149,6 +151,12 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 		} else {
 			opts.Concurrency = concurrency
 		}
+		binlogEnum, err := dir.Config.GetEnum("temp-schema-binlog", "on", "off", "auto")
+		if err != nil {
+			return Options{}, err
+		}
+		opts.SkipBinlog = (binlogEnum == "off" || (binlogEnum == "auto" && instance.CanSkipBinlog()))
+
 		// Note: no support for opts.DefaultConnParams for temp-schema because the
 		// supplied instance already has default params
 	}
@@ -261,7 +269,7 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 	// Run CREATEs in parallel
 	th := throttler.New(opts.Concurrency, len(logicalSchema.Creates))
 	for _, stmt := range logicalSchema.Creates {
-		db, err := ws.ConnectionPool(paramsForStatement(stmt))
+		db, err := ws.ConnectionPool(paramsForStatement(stmt, opts))
 		if err != nil {
 			fatalErr = fmt.Errorf("Cannot connect to workspace: %s", err)
 			return
@@ -298,7 +306,7 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 	sequentialStatements = append(sequentialStatements, logicalSchema.Alters...)
 
 	for _, statement := range sequentialStatements {
-		db, connErr := ws.ConnectionPool(paramsForStatement(statement))
+		db, connErr := ws.ConnectionPool(paramsForStatement(statement, opts))
 		if connErr != nil {
 			fatalErr = fmt.Errorf("Cannot connect to workspace: %s", connErr)
 			return
@@ -314,17 +322,24 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 
 // paramsForStatement returns the session settings for executing the supplied
 // statement in a workspace.
-func paramsForStatement(statement *fs.Statement) string {
+func paramsForStatement(statement *fs.Statement, opts Options) string {
+	var params []string
+
+	// Disable binlogging if requested
+	if opts.SkipBinlog {
+		params = append(params, "sql_log_bin=0")
+	}
+
 	// Disable FK checks when operating on tables, since otherwise DDL would
 	// need to be ordered to resolve dependencies, and circular references would
 	// be highly problematic
 	if statement.ObjectType == tengo.ObjectTypeTable {
-		return "foreign_key_checks=0"
+		params = append(params, "foreign_key_checks=0")
 	}
 
+	// Some object types "remember" their creation-time sql_mode, so we need to
+	// disable Skeema's usual sql_mode override before creating them
 	if statement.Type == fs.StatementTypeCreate {
-		// Some object types "remember" their creation-time sql_mode, so we need to
-		// disable Skeema's usual sql_mode override before creating them
 		rememberSQLMode := map[tengo.ObjectType]bool{
 			tengo.ObjectTypeFunc: true,
 			tengo.ObjectTypeProc: true,
@@ -332,11 +347,11 @@ func paramsForStatement(statement *fs.Statement) string {
 			//tengo.ObjectTypeTrigger: true, // not implemented yet
 		}
 		if rememberSQLMode[statement.ObjectType] {
-			return "sql_mode=@@GLOBAL.sql_mode"
+			params = append(params, "sql_mode=@@GLOBAL.sql_mode")
 		}
 	}
 
-	return ""
+	return strings.Join(params, "&")
 }
 
 func wrapFailure(statement *fs.Statement, err error) *StatementError {

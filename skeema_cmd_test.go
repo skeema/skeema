@@ -1307,3 +1307,77 @@ END`
 		}
 	}
 }
+
+func (s SkeemaIntegrationSuite) TestTempSchemaBinlog(t *testing.T) {
+	if !s.d.Flavor().MySQLishMinVersion(8, 0) {
+		t.Skip("Test only relevant for flavors that default to having binlog enabled")
+	}
+
+	getLogPos := func() string {
+		t.Helper()
+		db, err := s.d.Connect("", "")
+		if err != nil {
+			t.Fatalf("Unable to establish connection: %v", err)
+		}
+		var masterStatus []struct {
+			File     string `db:"File"`
+			Position string `db:"Position"`
+		}
+		if err := db.Select(&masterStatus, "SHOW MASTER STATUS"); err != nil {
+			t.Fatalf("Error running SHOW MASTER STATUS: %v", err)
+		}
+		if len(masterStatus) != 1 {
+			t.Fatalf("Wrong row count from SHOW MASTER STATUS: expected 1, found %d", len(masterStatus))
+		}
+		return fmt.Sprintf("%s %s", masterStatus[0].File, masterStatus[0].Position)
+	}
+	assertLogged := func(oldPos string) string {
+		t.Helper()
+		newPos := getLogPos()
+		if oldPos == newPos {
+			t.Errorf("Expected binary log to progress, but it did not; position remains %s", oldPos)
+		}
+		return newPos
+	}
+	assertNotLogged := func(oldPos string) string {
+		t.Helper()
+		newPos := getLogPos()
+		if oldPos != newPos {
+			t.Errorf("Expected binary logging to be skipped, but position moved from %s to %s", oldPos, newPos)
+		}
+		return newPos
+	}
+
+	pos := getLogPos()
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+	pos = assertNotLogged(pos)
+	s.dbExec(t, "analytics", "ALTER TABLE pageviews DROP COLUMN domain")
+	createRoutine := `CREATE definer=root@localhost FUNCTION routine1(a int,
+  b int)
+RETURNS int
+DETERMINISTIC
+BEGIN
+	return a * b;
+END`
+	fs.WriteTestFile(t, "mydb/product/routine1.sql", createRoutine)
+	pos = getLogPos()
+
+	// Default behavior is temp-schema-binlog=auto, which should skip binlogging
+	// since we connect to the Dockerized test db using a privileged account
+	s.handleCommand(t, CodeSuccess, ".", "skeema lint --skip-format")
+	pos = assertNotLogged(pos)
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
+	pos = assertNotLogged(pos)
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --temp-schema-binlog=off")
+	pos = assertNotLogged(pos)
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --temp-schema-binlog=off --reuse-temp-schema")
+	pos = assertNotLogged(pos)
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --temp-schema-binlog=OFF")
+	pos = assertNotLogged(pos)
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --temp-schema-binlog=ON")
+	pos = assertLogged(pos)
+
+	// Push-related writes should still advance the binlog position
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --temp-schema-binlog=off")
+	pos = assertLogged(pos)
+}

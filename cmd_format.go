@@ -96,15 +96,17 @@ func formatDir(dir *fs.Dir) error {
 
 	// Get workspace options for dir. This involves connecting to the first
 	// defined instance, unless configured to use local Docker.
-	var inst *tengo.Instance
-	if wsType, _ := dir.Config.GetEnum("workspace", "temp-schema", "docker"); wsType != "docker" || !dir.Config.Changed("flavor") {
-		if inst, err = dir.FirstInstance(); err != nil {
+	var wsOpts workspace.Options
+	if len(dir.LogicalSchemas) > 0 {
+		var inst *tengo.Instance
+		if wsType, _ := dir.Config.GetEnum("workspace", "temp-schema", "docker"); wsType != "docker" || !dir.Config.Changed("flavor") {
+			if inst, err = dir.FirstInstance(); err != nil {
+				return NewExitValue(CodeBadConfig, err.Error())
+			}
+		}
+		if wsOpts, err = workspace.OptionsForDir(dir, inst); err != nil {
 			return NewExitValue(CodeBadConfig, err.Error())
 		}
-	}
-	wsOpts, err := workspace.OptionsForDir(dir, inst)
-	if err != nil {
-		return NewExitValue(CodeBadConfig, err.Error())
 	}
 
 	var totalReformatCount int

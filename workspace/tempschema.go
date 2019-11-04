@@ -15,6 +15,7 @@ type TempSchema struct {
 	schemaName  string
 	keepSchema  bool
 	concurrency int
+	skipBinlog  bool
 	inst        *tengo.Instance
 	releaseLock releaseFunc
 }
@@ -30,6 +31,7 @@ func NewTempSchema(opts Options) (ts *TempSchema, err error) {
 		keepSchema:  opts.CleanupAction == CleanupActionNone,
 		inst:        opts.Instance,
 		concurrency: opts.Concurrency,
+		skipBinlog:  opts.SkipBinlog,
 	}
 
 	lockName := fmt.Sprintf("skeema.%s", ts.schemaName)
@@ -45,6 +47,11 @@ func NewTempSchema(opts Options) (ts *TempSchema, err error) {
 		}
 	}()
 
+	createOpts := tengo.SchemaCreationOptions{
+		DefaultCharSet:   opts.DefaultCharacterSet,
+		DefaultCollation: opts.DefaultCollation,
+		SkipBinlog:       opts.SkipBinlog,
+	}
 	if has, err := ts.inst.HasSchema(ts.schemaName); err != nil {
 		return ts, fmt.Errorf("Unable to check for existence of temp schema on %s: %s", ts.inst, err)
 	} else if has {
@@ -53,18 +60,19 @@ func NewTempSchema(opts Options) (ts *TempSchema, err error) {
 		dropOpts := tengo.BulkDropOptions{
 			MaxConcurrency: ts.concurrency,
 			OnlyIfEmpty:    true,
+			SkipBinlog:     opts.SkipBinlog,
 		}
 		if err := ts.inst.DropTablesInSchema(ts.schemaName, dropOpts); err != nil {
 			return ts, fmt.Errorf("Cannot drop existing temp schema tables on %s: %s", ts.inst, err)
 		}
-		if err := ts.inst.DropRoutinesInSchema(ts.schemaName); err != nil {
+		if err := ts.inst.DropRoutinesInSchema(ts.schemaName, dropOpts); err != nil {
 			return ts, fmt.Errorf("Cannot drop existing temp schema routines on %s: %s", ts.inst, err)
 		}
-		if err := ts.inst.AlterSchema(ts.schemaName, opts.DefaultCharacterSet, opts.DefaultCollation); err != nil {
+		if err := ts.inst.AlterSchema(ts.schemaName, createOpts); err != nil {
 			return ts, fmt.Errorf("Cannot alter existing temp schema charset and collation on %s: %s", ts.inst, err)
 		}
 	} else {
-		_, err = ts.inst.CreateSchema(ts.schemaName, opts.DefaultCharacterSet, opts.DefaultCollation)
+		_, err = ts.inst.CreateSchema(ts.schemaName, createOpts)
 		if err != nil {
 			return ts, fmt.Errorf("Cannot create temporary schema on %s: %s", ts.inst, err)
 		}
@@ -99,12 +107,13 @@ func (ts *TempSchema) Cleanup() error {
 	dropOpts := tengo.BulkDropOptions{
 		MaxConcurrency: ts.concurrency,
 		OnlyIfEmpty:    true,
+		SkipBinlog:     ts.skipBinlog,
 	}
 	if ts.keepSchema {
 		if err := ts.inst.DropTablesInSchema(ts.schemaName, dropOpts); err != nil {
 			return fmt.Errorf("Cannot drop tables in temporary schema on %s: %s", ts.inst, err)
 		}
-		if err := ts.inst.DropRoutinesInSchema(ts.schemaName); err != nil {
+		if err := ts.inst.DropRoutinesInSchema(ts.schemaName, dropOpts); err != nil {
 			return fmt.Errorf("Cannot drop routines in temporary schema on %s: %s", ts.inst, err)
 		}
 	} else if err := ts.inst.DropSchema(ts.schemaName, dropOpts); err != nil {
