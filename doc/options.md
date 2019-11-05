@@ -891,6 +891,7 @@ Aside from the special case of `skeema init`, the [schema](#schema) option shoul
 * A single schema name
 * Multiple schema names, separated by commas
 * A single asterisk character `*`
+* A forward-slash-wrapped regular expression
 * A backtick-wrapped command line to execute; the command's STDOUT will be split on a consistent delimiter (newline, tab, comma, or space) and each token will be treated as a schema name
 
 Most users will just use the first option, a single schema name.
@@ -899,7 +900,9 @@ The ability to specify multiple schema names is useful in sharded environments w
 
 Setting `schema=*` is a special value meaning "all non-system schemas on the database instance". This is the easiest choice for a multi-tenant sharded environment, where all non-system schemas have the exact same set of tables. The ignored system schemas include `information_schema`, `performance_schema`, `mysql`, `sys`, and `test`. Additional schemas may be ignored by using the [ignore-schema](#ignore-schema) option.
 
-Some sharded environments need more flexibility -- for example, where some schemas represent shards with common sets of tables but other schemas do not. In this case, set [schema](#schema) to a backtick-wrapped external command shellout. This permits the directory to be mapped to one or more schema names dynamically, based on the output of any arbitrary script or binary, such as a service discovery client. The command line may contain special variables, which Skeema will dynamically replace with appropriate values. See [options with variable interpolation](config.md#options-with-variable-interpolation) for more information. The following variables are supported for this option:
+In some sharded environments, it is easier to express a dynamic set of schema names to *include*, rather than exclude. Setting the schema value to a forward-slash-wrapped regular expression accomplishes this. For example, `schema=/^foo/` will map this directory to all schema names beginning with prefix "foo". This approach is useful when some schemas (with a common naming convention) represent shards with the same set of tables, while other special unsharded schemas are also present.
+
+Some sharded environments may need even more flexibility -- for example, when the sharding scheme does not follow a consistent naming pattern. In this case, set [schema](#schema) to a backtick-wrapped external command shellout. This permits the directory to be mapped to one or more schema names dynamically, based on the output of any arbitrary script or binary, such as a service discovery client. The command line may contain special variables, which Skeema will dynamically replace with appropriate values. See [options with variable interpolation](config.md#options-with-variable-interpolation) for more information. The following variables are supported for this option:
 
 * `{HOST}` -- hostname (or IP) for the database instance being processed
 * `{PORT}` -- port number for the database instance being processed
@@ -910,7 +913,7 @@ Some sharded environments need more flexibility -- for example, where some schem
 * `{DIRNAME}` -- The base name (last path element) of the directory being processed. May be useful as a key in a service discovery lookup.
 * `{DIRPATH}` -- The full (absolute) path of the directory being processed.
 
-Regardless of which form of the [schema](#schema) option is used, the [ignore-schema](#ignore-schema) option is applied as a regex "filter" against it, potentially removing some of the listed schema names based on the configuration.
+Regardless of which form of the [schema](#schema) option is used, the [ignore-schema](#ignore-schema) option is applied last as a regex "filter" against it, potentially removing some of the listed schema names based on the configuration.
 
 ### socket
 

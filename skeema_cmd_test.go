@@ -1096,9 +1096,25 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 	// Test combination of ignore-schema and schema=*
 	fs.WriteTestFile(t, "mydb/product/foo2.sql", "CREATE TABLE `foo2` (id int);\n")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --ignore-schema=2$")
+	s.assertTableExists(t, "analytics", "foo2", "")
 	s.assertTableExists(t, "product1", "foo2", "")
 	s.assertTableMissing(t, "product2", "foo2", "")
 	s.assertTableExists(t, "product3", "foo2", "")
+
+	// Test use of regex for schema name, again combined with ignore-schema
+	contents = strings.Replace(contents, "schema=*", "schema=/^product/", 1)
+	fs.WriteTestFile(t, "mydb/product/.skeema", contents)
+	fs.WriteTestFile(t, "mydb/product/foo3.sql", "CREATE TABLE `foo3` (id int);\n")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --ignore-schema=3$")
+	s.assertTableMissing(t, "analytics", "foo3", "")
+	s.assertTableExists(t, "product1", "foo3", "")
+	s.assertTableExists(t, "product2", "foo3", "")
+	s.assertTableMissing(t, "product3", "foo3", "")
+
+	// Test invalid regex
+	contents = strings.Replace(contents, "schema=/^product/", "schema=/+/", 1)
+	fs.WriteTestFile(t, "mydb/product/.skeema", contents)
+	s.handleCommand(t, CodeFatalError, ".", "skeema push")
 }
 
 func (s SkeemaIntegrationSuite) TestFlavorConfig(t *testing.T) {
