@@ -857,6 +857,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		IsNullable         string         `db:"is_nullable"`
 		Default            sql.NullString `db:"column_default"`
 		Extra              string         `db:"extra"`
+		GenerationExpr     sql.NullString `db:"generation_expression"`
 		Comment            string         `db:"column_comment"`
 		CharSet            sql.NullString `db:"character_set_name"`
 		Collation          sql.NullString `db:"collation_name"`
@@ -866,6 +867,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		SELECT    c.table_name AS table_name, c.column_name AS column_name,
 		          c.column_type AS column_type, c.is_nullable AS is_nullable,
 		          c.column_default AS column_default, c.extra AS extra,
+		          %s AS generation_expression,
 		          c.column_comment AS column_comment,
 		          c.character_set_name AS character_set_name,
 		          c.collation_name AS collation_name, co.is_default AS is_default
@@ -873,6 +875,11 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		LEFT JOIN collations co ON co.collation_name = c.collation_name
 		WHERE     c.table_schema = ?
 		ORDER BY  c.table_name, c.ordinal_position`
+	genExpr := "NULL"
+	if flavor.GeneratedColumns() {
+		genExpr = "c.generation_expression"
+	}
+	query = fmt.Sprintf(query, genExpr)
 	if err := db.Select(&rawColumns, query, schema); err != nil {
 		return nil, fmt.Errorf("Error querying information_schema.columns for schema %s: %s", schema, err)
 	}
@@ -914,6 +921,10 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			if openParen := strings.IndexByte(rawColumn.Type, '('); openParen > -1 && !strings.Contains(col.OnUpdate, "(") {
 				col.OnUpdate = fmt.Sprintf("%s%s", col.OnUpdate, rawColumn.Type[openParen:])
 			}
+		}
+		if rawColumn.GenerationExpr.Valid {
+			col.GenerationExpr = rawColumn.GenerationExpr.String
+			col.Virtual = strings.Contains(rawColumn.Extra, "VIRTUAL GENERATED")
 		}
 		if rawColumn.Collation.Valid { // only text-based column types have a notion of charset and collation
 			col.CharSet = rawColumn.CharSet.String
@@ -1095,8 +1106,10 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 				fixForeignKeyOrder(t)
 			}
 			// Create options order is unpredictable with the new MySQL 8 data dictionary
+			// Also need to fix generated column expression string literals
 			if flavor.HasDataDictionary() {
 				fixCreateOptionsOrder(t, flavor)
+				fixGenerationExpr(t, flavor)
 			}
 			// Compare what we expect the create DDL to be, to determine if we support
 			// diffing for the table. Ignore next-auto-increment differences in this
@@ -1185,6 +1198,33 @@ func fixCreateOptionsOrder(t *Table, flavor Flavor) {
 			if matches != nil {
 				t.CreateOptions = matches[1]
 				return
+			}
+		}
+	}
+}
+
+// MySQL 8 has nonsensical behavior regarding string literals in generated col
+// expressions: the literals are expressed using a different charset in SHOW
+// CREATE TABLE vs information_schema.columns.generation_expression. This method
+// modifies each generated Column.GenerationExpr to match SHOW CREATE's version.
+func fixGenerationExpr(t *Table, flavor Flavor) {
+	for _, col := range t.Columns {
+		if col.GenerationExpr != "" {
+			// Approach: dynamically build a regexp that captures the generation expr
+			// from the correct line of the full SHOW CREATE TABLE output
+			origExpr := col.GenerationExpr
+			col.GenerationExpr = "!!!GENEXPR!!!"
+			reTemplate := regexp.QuoteMeta(col.Definition(flavor, t))
+			reTemplate = strings.Replace(reTemplate, col.GenerationExpr, "(.*)", -1)
+			re := regexp.MustCompile(reTemplate)
+			matches := re.FindStringSubmatch(t.CreateStatement)
+			if matches == nil {
+				// If we somehow failed to match correctly, fall back to using the
+				// uncorrected value from information_schema; unsupported diff is
+				// preferable to a nil pointer panic
+				col.GenerationExpr = origExpr
+			} else {
+				col.GenerationExpr = matches[1]
 			}
 		}
 	}

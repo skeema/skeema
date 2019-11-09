@@ -315,6 +315,30 @@ func TestInnoRowFormatReqs(t *testing.T) {
 	}
 }
 
+func TestFlavorGeneratedColumns(t *testing.T) {
+	type testcase struct {
+		receiver Flavor
+		expected bool
+	}
+	cases := []testcase{
+		{FlavorMySQL55, false},
+		{FlavorMySQL56, false},
+		{FlavorMySQL57, true},
+		{FlavorMySQL80, true},
+		{FlavorMariaDB101, false},
+		{FlavorMariaDB102, true},
+		{FlavorPercona56, false},
+		{FlavorPercona57, true},
+		{FlavorUnknown, false},
+	}
+	for _, tc := range cases {
+		actual := tc.receiver.GeneratedColumns()
+		if actual != tc.expected {
+			t.Errorf("Expected %s.GeneratedColumns() to return %t, instead found %t", tc.receiver, tc.expected, actual)
+		}
+	}
+}
+
 func TestSortedForeignKeys(t *testing.T) {
 	type testcase struct {
 		receiver Flavor

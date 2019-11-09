@@ -722,6 +722,64 @@ func TestAlterTableStatementOnlineMods(t *testing.T) {
 	}
 }
 
+func TestAlterTableStatementVirtualColValidation(t *testing.T) {
+	from, to := aTable(1), aTable(1)
+
+	assertWithValidation := func(expected bool) {
+		t.Helper()
+		to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
+		alter := NewAlterTable(&from, &to)
+		mods := StatementModifiers{}
+		stmt, err := alter.Statement(mods)
+		if err != nil {
+			t.Fatalf("Unexpected error from Statement(): %v", err)
+		}
+		if strings.Contains(stmt, "WITH VALIDATION") {
+			t.Error("Statement unexpectedly contains WITH VALIDATION even without statement modifier?")
+			return
+		}
+		mods.VirtualColValidation = true
+		stmt, _ = alter.Statement(mods)
+		if actual := strings.Contains(stmt, "WITH VALIDATION"); actual != expected {
+			t.Errorf("Expected strings.Contains(%q, \"WITH VALIDATION\") to return %t, instead found %t", stmt, expected, actual)
+		}
+	}
+
+	// No clauses: VirtualColValidation has no effect
+	assertWithValidation(false)
+
+	// Adding a non-virtual column, even if generated: VirtualColValidation has
+	// no effect
+	col := &Column{
+		Name:               "full_name",
+		TypeInDB:           "varchar(100)",
+		Default:            ColumnDefaultNull,
+		Nullable:           true,
+		CharSet:            "utf8",
+		Collation:          "utf8_general_ci",
+		CollationIsDefault: true,
+		GenerationExpr:     "CONCAT(first_name, ' ', last_name)",
+	}
+	to.Columns = append(to.Columns, col)
+	assertWithValidation(false)
+
+	// Adding a virtual column: VirtualColValidation works as expected
+	col.Virtual = true
+	assertWithValidation(true)
+
+	// Modifying virtual column: VirtualColValidation works as expected
+	col.GenerationExpr = "CONCAT(first_name, ' ', IFNULL(last_name, ''))"
+	assertWithValidation(true)
+
+	// Modifying some other col: VirtualColValidation has no effect, even tho
+	// virtual col present
+	colCopy := *col
+	from.Columns = append(from.Columns, &colCopy)
+	from.CreateStatement = from.GeneratedCreateStatement(FlavorUnknown)
+	to.Columns[4].TypeInDB = "varchar(20)"
+	assertWithValidation(false)
+}
+
 func TestIgnoreTableMod(t *testing.T) {
 	from := anotherTable()
 	to := anotherTable()

@@ -636,7 +636,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	schema = s.GetSchema(t, "testcharcoll")
 	for _, table := range schema.Tables {
 		if table.UnsupportedDDL {
-			t.Errorf("Table %s unexpectedly not supported.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", table.Name, table.GeneratedCreateStatement(flavor), table.CreateStatement)
+			t.Errorf("Table %s unexpectedly not supported for diff.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", table.Name, table.GeneratedCreateStatement(flavor), table.CreateStatement)
 		}
 	}
 
@@ -685,6 +685,27 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		table := s.GetTable(t, "testing", "grab_bag")
 		if table.UnsupportedDDL {
 			t.Error("Use of default expression unexpectedly triggers UnsupportedDDL")
+		}
+	}
+
+	// Test introspection of generated columns, if flavor supports them
+	if flavor.GeneratedColumns() {
+		if _, err := s.d.SourceSQL("testdata/generatedcols.sql"); err != nil {
+			t.Fatalf("Unexpected error sourcing testdata/generatedcols.sql: %v", err)
+		}
+		table := s.GetTable(t, "testing", "staff")
+		if table.UnsupportedDDL {
+			t.Errorf("Expected table using generated columns to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
+		}
+		// Test generation expression fix, even if test image isn't MySQL 8
+		for _, col := range table.Columns {
+			if col.GenerationExpr != "" {
+				col.GenerationExpr = "length(_latin1\\'fixme\\')"
+			}
+		}
+		fixGenerationExpr(table, flavor)
+		if table.GeneratedCreateStatement(flavor) != table.CreateStatement {
+			t.Error("fixGenerationExpr did not behave as expected")
 		}
 	}
 }

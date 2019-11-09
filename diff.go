@@ -68,6 +68,7 @@ type StatementModifiers struct {
 	StrictIndexOrder       bool            // If true, maintain index order even in cases where there is no functional difference
 	StrictForeignKeyNaming bool            // If true, maintain foreign key names even if no functional difference in definition
 	CompareMetadata        bool            // If true, compare creation-time sql_mode and db collation for funcs, procs (and eventually events, triggers)
+	VirtualColValidation   bool            // If true, add WITH VALIDATION clause for ALTER TABLE affecting virtual columns
 	Flavor                 Flavor          // Adjust generated DDL to match vendor/version. Zero value is FlavorUnknown which makes no adjustments.
 }
 
@@ -532,6 +533,20 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 	if mods.AlgorithmClause != "" {
 		algorithmClause := fmt.Sprintf("ALGORITHM=%s", strings.ToUpper(mods.AlgorithmClause))
 		clauseStrings = append([]string{algorithmClause}, clauseStrings...)
+	}
+	if mods.VirtualColValidation {
+		var canValidate bool
+		for _, clause := range td.alterClauses {
+			switch clause := clause.(type) {
+			case AddColumn:
+				canValidate = canValidate || clause.Column.Virtual
+			case ModifyColumn:
+				canValidate = canValidate || clause.NewColumn.Virtual
+			}
+		}
+		if canValidate {
+			clauseStrings = append(clauseStrings, "WITH VALIDATION")
+		}
 	}
 
 	stmt := fmt.Sprintf("%s %s", td.From.AlterStatement(), strings.Join(clauseStrings, ", "))
