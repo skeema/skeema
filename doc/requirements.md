@@ -10,7 +10,7 @@ Skeema currently supports the following databases:
 
 Testing is performed with the database server running on Linux only. Other operating systems likely work without issue, although there is one [known incompatibility regarding case-insensitive filesystems](https://github.com/skeema/skeema/issues/65#issuecomment-478048414), e.g. when the database server is running on Windows or MacOS, if any schema names or table names use uppercase characters.
 
-Some MySQL features -- such as partitioned tables, spatial types, and generated/virtual columns -- are [not supported yet](requirements.md#unsupported-for-alter-table) in Skeema's diff operations. Additionally, only the InnoDB storage engine is primarily supported at this time. Other storage engines are often perfectly functional in Skeema, but it depends on whether any esoteric features of the engine are used.
+Some MySQL features -- such as partitioned tables and spatial types -- are [not supported yet](requirements.md#unsupported-for-alter-table) in Skeema's diff operations. Additionally, only the InnoDB storage engine is primarily supported at this time. Other storage engines are often perfectly functional in Skeema, but it depends on whether any esoteric features of the engine are used.
 
 In all cases, Skeema's safety mechanisms will detect when a table is using unsupported features, and will alert you to this fact in `skeema diff` or `skeema push`. There is no risk of generating or executing an incorrect diff. If Skeema does not yet support a table/column feature that you need, please [open a GitHub issue](https://github.com/skeema/skeema/issues/new) so that the work can be prioritized appropriately.
 
@@ -96,7 +96,6 @@ Skeema can CREATE or DROP tables using these features, but cannot ALTER them. Th
 * partitioned tables
 * some features of non-InnoDB storage engines
 * spatial types
-* generated/virtual columns
 * column-level compression, with or without predefined dictionary (Percona Server 5.6.33+)
 * CHECK constraints (MySQL 8.0.16+ / MariaDB 10.2+)
 

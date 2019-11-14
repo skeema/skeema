@@ -259,6 +259,13 @@ func (fl Flavor) HasInnoFileFormat() bool {
 	return !(fl.MySQLishMinVersion(8, 0) || fl.VendorMinVersion(VendorMariaDB, 10, 3))
 }
 
+// GeneratedColumns returns true if the flavor supports generated columns
+// using MySQL's native syntax. (Although MariaDB 10.1 has support for generated
+// columns, its syntax is borrowed from other DBMS, so false is returned.)
+func (fl Flavor) GeneratedColumns() bool {
+	return fl.MySQLishMinVersion(5, 7) || fl.VendorMinVersion(VendorMariaDB, 10, 2)
+}
+
 // InnoRowFormatReqs returns information on the flavor's requirements for
 // using the supplied row_format in InnoDB. If the first return value is true,
 // the flavor requires innodb_file_per_table=1. If the second return value is

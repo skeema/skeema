@@ -11,6 +11,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [allow-unsafe](#allow-unsafe)
 * [alter-algorithm](#alter-algorithm)
 * [alter-lock](#alter-lock)
+* [alter-validate-virtual](#alter-validate-virtual)
 * [alter-wrapper](#alter-wrapper)
 * [alter-wrapper-min-size](#alter-wrapper-min-size)
 * [brief](#brief)
@@ -179,6 +180,20 @@ The explicit value "default" is supported, and will add a "LOCK=DEFAULT" clause 
 MySQL 5.5 does not support the LOCK clause of ALTER TABLE, so use of this option will cause an error in that version.
 
 If [alter-wrapper](#alter-wrapper) is set to use an external online schema change tool such as pt-online-schema-change, [alter-lock](#alter-lock) should not be used unless [alter-wrapper-min-size](#alter-wrapper-min-size) is also in-use. This is to prevent sending ALTER statements containing LOCK clauses to the external OSC tool.
+
+### alter-validate-virtual
+
+Commands | diff, push
+--- | :---
+**Default** | false
+**Type** | bool
+**Restrictions** | none
+
+Adds a WITH VALIDATION clause to ALTER TABLEs affecting virtual generated columns, meaning that the database server will confirm that the calculated values fit into the designated data type of the new or modified virtual column(s), for all existing rows of the table. Note however that this can cause significantly slower ALTER TABLE execution. Refer to the MySQL manual for more information on the effect of this clause.
+
+Skeema will only ever apply a WITH VALIDATION clause to DDL adding or modifying a virtual generated column. This option has no effect in all other situations, meaning it is safe to enable permanently in a .skeema file if desired.
+
+This option has no effect in versions of MySQL and Percona Server prior to 5.7, when generated column support was added. This option may result in a syntax error when used in any version of MariaDB; even though MariaDB 10.2+ supports MySQL's syntax for generated columns, MariaDB does not support the WITH VALIDATION clause.
 
 ### alter-wrapper
 

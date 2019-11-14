@@ -41,7 +41,6 @@ Go La Tengo **cannot** diff tables containing any of the following MySQL feature
 * triggers
 * spatial types
 * special features of non-InnoDB storage engines
-* generated/virtual columns (MySQL 5.7+ / Percona Server 5.7+ / MariaDB 5.2+)
 * column-level compression, with or without predefined dictionary (Percona Server 5.6.33+)
 * CHECK constraints (MySQL 8.0.16+ / Percona Server 8.0.16+ / MariaDB 10.2+)
 

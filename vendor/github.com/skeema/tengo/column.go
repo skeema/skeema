@@ -36,7 +36,7 @@ func ColumnDefaultExpression(expression string) ColumnDefault {
 // Clause returns the DEFAULT clause for use in a DDL statement. If non-blank,
 // it will be prefixed with a space.
 func (cd ColumnDefault) Clause(flavor Flavor, col *Column) string {
-	if col.AutoIncrement {
+	if col.AutoIncrement || col.GenerationExpr != "" {
 		return ""
 	}
 	if !flavor.AllowBlobDefaults() && (strings.HasSuffix(col.TypeInDB, "blob") || strings.HasSuffix(col.TypeInDB, "text")) {
@@ -62,6 +62,8 @@ type Column struct {
 	AutoIncrement      bool
 	Default            ColumnDefault
 	OnUpdate           string
+	GenerationExpr     string // Only populated if generated column
+	Virtual            bool
 	CharSet            string // Only populated if textual type
 	Collation          string // Only populated if textual type
 	CollationIsDefault bool   // Only populated if textual type; indicates default for CharSet
@@ -73,7 +75,7 @@ type Column struct {
 // SET clause to be omitted if the table and column have the same *collation*
 // (mirroring the specific display logic used by SHOW CREATE TABLE)
 func (c *Column) Definition(flavor Flavor, table *Table) string {
-	var charSet, collation, nullability, autoIncrement, onUpdate, comment string
+	var charSet, collation, generated, nullability, autoIncrement, onUpdate, comment string
 	if c.CharSet != "" && (table == nil || c.Collation != table.Collation || c.CharSet != table.CharSet) {
 		charSet = fmt.Sprintf(" CHARACTER SET %s", c.CharSet)
 	}
@@ -81,6 +83,13 @@ func (c *Column) Definition(flavor Flavor, table *Table) string {
 	// 8.0 only: Collations are also displayed any time a charset is displayed
 	if c.Collation != "" && (!c.CollationIsDefault || (charSet != "" && flavor.HasDataDictionary())) {
 		collation = fmt.Sprintf(" COLLATE %s", c.Collation)
+	}
+	if c.GenerationExpr != "" {
+		genKind := "STORED"
+		if c.Virtual {
+			genKind = "VIRTUAL"
+		}
+		generated = fmt.Sprintf(" GENERATED ALWAYS AS (%s) %s", c.GenerationExpr, genKind)
 	}
 	if !c.Nullable {
 		nullability = " NOT NULL"
@@ -98,7 +107,10 @@ func (c *Column) Definition(flavor Flavor, table *Table) string {
 	if c.Comment != "" {
 		comment = fmt.Sprintf(" COMMENT '%s'", EscapeValueForCreateTable(c.Comment))
 	}
-	return fmt.Sprintf("%s %s%s%s%s%s%s%s%s", EscapeIdentifier(c.Name), c.TypeInDB, charSet, collation, nullability, autoIncrement, defaultValue, onUpdate, comment)
+	clauses := []string{
+		EscapeIdentifier(c.Name), " ", c.TypeInDB, charSet, collation, generated, nullability, autoIncrement, defaultValue, onUpdate, comment,
+	}
+	return strings.Join(clauses, "")
 }
 
 // Equals returns true if two columns are identical, false otherwise.
