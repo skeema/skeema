@@ -63,7 +63,7 @@ func (idx *Index) Equivalent(other *Index) bool {
 	if idx == nil || other == nil {
 		return idx == other // only equivalent if BOTH are nil
 	}
-	if idx.PrimaryKey != other.PrimaryKey || idx.Unique != other.Unique {
+	if idx.PrimaryKey != other.PrimaryKey || idx.Unique != other.Unique || idx.Type != other.Type {
 		return false
 	}
 	if len(idx.Columns) != len(other.Columns) {
@@ -87,10 +87,12 @@ func (idx *Index) RedundantTo(other *Index) bool {
 	if idx == nil || other == nil {
 		return false
 	}
-	if idx.PrimaryKey || (idx.Unique && !other.Unique) {
+	if idx.PrimaryKey || (idx.Unique && !other.Unique) || idx.Type != other.Type {
 		return false
 	}
-	if len(idx.Columns) > len(other.Columns) {
+	if idx.Type == "FULLTEXT" && len(idx.Columns) != len(other.Columns) {
+		return false // FT composite indexes don't behave like BTREE in terms of left-right prefixing
+	} else if len(idx.Columns) > len(other.Columns) {
 		return false // can't be redundant to an index with fewer cols
 	}
 	for n, col := range idx.Columns {
