@@ -293,6 +293,29 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 	if ta.Index != from.PrimaryKey {
 		t.Error("Pointer in table alter does not point to expected value")
 	}
+
+	// Start over; change a secondary index to FULLTEXT
+	to = aTable(1)
+	to.SecondaryIndexes[1].Type = "FULLTEXT"
+	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
+	tableAlters, supported = from.Diff(&to)
+	if len(tableAlters) != 2 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
+	}
+	ta2, ok = tableAlters[0].(DropIndex)
+	if !ok {
+		t.Fatalf("Incorrect type of table alter[0] returned: expected %T, found %T", ta2, tableAlters[0])
+	}
+	if ta2.Index != from.SecondaryIndexes[1] {
+		t.Error("Pointer in table alter[0] does not point to expected value")
+	}
+	ta, ok = tableAlters[1].(AddIndex)
+	if !ok {
+		t.Fatalf("Incorrect type of table alter[1] returned: expected %T, found %T", ta, tableAlters[1])
+	}
+	if ta.Index != to.SecondaryIndexes[1] {
+		t.Error("Pointer in table alter[1] does not point to expected value")
+	}
 }
 
 func TestTableAlterAddOrDropForeignKey(t *testing.T) {

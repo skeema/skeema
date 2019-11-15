@@ -59,6 +59,18 @@ func TestIndexRedundantTo(t *testing.T) {
 			SubParts: []uint16{0, 0, 0},
 			Type:     "BTREE",
 		},
+		{
+			Name:     "7_ft_first",
+			Columns:  []*Column{columns[0]},
+			SubParts: []uint16{0},
+			Type:     "FULLTEXT",
+		},
+		{
+			Name:     "8_ft_first_two",
+			Columns:  []*Column{columns[0], columns[1]},
+			SubParts: []uint16{0, 0},
+			Type:     "FULLTEXT",
+		},
 		nil,
 	}
 
@@ -81,8 +93,13 @@ func TestIndexRedundantTo(t *testing.T) {
 		{5, 3, true},
 		{5, 6, false},
 		{6, 5, false},
-		{7, 6, false},
-		{6, 7, false},
+		{0, 7, false},
+		{7, 0, false},
+		{7, 8, false},
+		{8, 7, false},
+		{8, 8, true},
+		{9, 6, false},
+		{6, 9, false},
 	}
 	for _, tc := range testCases {
 		actualRedundant := indexes[tc.receiver].RedundantTo(indexes[tc.other])
