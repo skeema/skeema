@@ -5,16 +5,29 @@ import (
 	"strings"
 )
 
+// partitionListMode enum values control edge-cases for how the list of
+// partitions is represented in SHOW CREATE TABLE.
+type partitionListMode int
+
+const (
+	partitionListDefault  partitionListMode = iota
+	partitionListExplicit                   // List each partition individually
+	partitionListCount                      // Just use a count of partitions
+	partitionListNone                       // Omit partition list and count, implying just 1 partition
+)
+
 // TablePartitioning stores partitioning configuration for a partitioned table.
 // Note that despite subpartitioning fields being present and possibly
 // populated, the rest of this package does not fully support subpartitioning
 // yet.
 type TablePartitioning struct {
-	Method        string // one of "RANGE", "RANGE COLUMNS", "LIST", "LIST COLUMNS", "HASH", "LINEAR HASH", "KEY", or "LINEAR KEY"
-	SubMethod     string // one of "" (no sub-partitioning), "HASH", "LINEAR HASH", "KEY", or "LINEAR KEY"; not fully supported yet
-	Expression    string
-	SubExpression string // empty string if no sub-partitioning; not fully supported yet
-	Partitions    []*Partition
+	Method             string // one of "RANGE", "RANGE COLUMNS", "LIST", "LIST COLUMNS", "HASH", "LINEAR HASH", "KEY", or "LINEAR KEY"
+	SubMethod          string // one of "" (no sub-partitioning), "HASH", "LINEAR HASH", "KEY", or "LINEAR KEY"; not fully supported yet
+	Expression         string
+	SubExpression      string // empty string if no sub-partitioning; not fully supported yet
+	Partitions         []*Partition
+	forcePartitionList partitionListMode
+	algoClause         string // full text of optional ALGORITHM clause for KEY or LINEAR KEY
 }
 
 // Definition returns the overall partitioning definition for a table.
@@ -23,35 +36,38 @@ func (tp *TablePartitioning) Definition(flavor Flavor) string {
 		return ""
 	}
 
-	var needPartitionList bool
-	for n, p := range tp.Partitions {
-		if p.Values != "" || p.Comment != "" || p.Name != fmt.Sprintf("p%d", n) {
-			needPartitionList = true
-			break
+	plMode := tp.forcePartitionList
+	if plMode == partitionListDefault {
+		plMode = partitionListCount
+		for n, p := range tp.Partitions {
+			if p.Values != "" || p.Comment != "" || p.dataDir != "" || p.Name != fmt.Sprintf("p%d", n) {
+				plMode = partitionListExplicit
+				break
+			}
 		}
 	}
 	var partitionsClause string
-	if needPartitionList {
+	if plMode == partitionListExplicit {
 		pdefs := make([]string, len(tp.Partitions))
 		for n, p := range tp.Partitions {
 			pdefs[n] = p.Definition(flavor)
 		}
-		partitionsClause = fmt.Sprintf("(%s)", strings.Join(pdefs, ",\n "))
-	} else {
-		partitionsClause = fmt.Sprintf("PARTITIONS %d", len(tp.Partitions))
+		partitionsClause = fmt.Sprintf("\n(%s)", strings.Join(pdefs, ",\n "))
+	} else if plMode == partitionListCount {
+		partitionsClause = fmt.Sprintf("\nPARTITIONS %d", len(tp.Partitions))
 	}
 
-	open, close := "/*!50100", " */"
+	opener, closer := "/*!50100", " */"
 	if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
 		// MariaDB stopped wrapping partitioning clauses in version-gated comments
 		// in 10.2.
-		open, close = "", ""
+		opener, closer = "", ""
 	} else if strings.HasSuffix(tp.Method, "COLUMNS") {
 		// RANGE COLUMNS and LIST COLUMNS were introduced in 5.5
-		open = "/*!50500"
+		opener = "/*!50500"
 	}
 
-	return fmt.Sprintf("\n%s PARTITION BY %s\n%s%s", open, tp.partitionBy(flavor), partitionsClause, close)
+	return fmt.Sprintf("\n%s PARTITION BY %s%s%s", opener, tp.partitionBy(flavor), partitionsClause, closer)
 }
 
 // partitionBy returns the partitioning method and expression, formatted to
@@ -69,7 +85,7 @@ func (tp *TablePartitioning) partitionBy(flavor Flavor) string {
 		expr = strings.Replace(expr, "`", "", -1)
 	}
 
-	return fmt.Sprintf("%s(%s)", method, expr)
+	return fmt.Sprintf("%s%s(%s)", method, tp.algoClause, expr)
 }
 
 // Diff returns a set of differences between this TablePartitioning and another
@@ -127,6 +143,7 @@ type Partition struct {
 	Comment string
 	method  string
 	engine  string
+	dataDir string
 }
 
 // Definition returns this partition's definition clause, for use as part of a
@@ -146,10 +163,15 @@ func (p *Partition) Definition(flavor Flavor) string {
 		values = fmt.Sprintf("VALUES IN (%s) ", p.Values)
 	}
 
+	var dataDir string
+	if p.dataDir != "" {
+		dataDir = fmt.Sprintf("DATA DIRECTORY = '%s' ", p.dataDir) // any necessary escaping is already present in p.dataDir
+	}
+
 	var comment string
 	if p.Comment != "" {
 		comment = fmt.Sprintf("COMMENT = '%s' ", EscapeValueForCreateTable(p.Comment))
 	}
 
-	return fmt.Sprintf("PARTITION %s %s%sENGINE = %s", name, values, comment, p.engine)
+	return fmt.Sprintf("PARTITION %s %s%s%sENGINE = %s", name, values, dataDir, comment, p.engine)
 }

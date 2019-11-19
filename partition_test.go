@@ -224,6 +224,22 @@ func TestSchemaDiffDropPartitionedTable(t *testing.T) {
 	}
 }
 
+// TestPartitioningDataDirectory handles the chunk of code in
+// fixPartitioningEdgeCases relating to data directory parsing. This isn't
+// handled by integration tests due to complexity of setup in containers.
+func TestPartitioningDataDirectory(t *testing.T) {
+	table := partitionedTable(FlavorUnknown)
+	table.CreateStatement = strings.Replace(table.CreateStatement, "LESS THAN (123)", "LESS THAN (123) DATA DIRECTORY = '/some/weird/dir'", 1)
+	table.CreateStatement = strings.Replace(table.CreateStatement, "LESS THAN MAXVALUE", "LESS THAN MAXVALUE DATA DIRECTORY = '/some/weirder/dir'", 1)
+	if table.CreateStatement == table.GeneratedCreateStatement(FlavorUnknown) {
+		t.Fatal("Failed to set up test properly: string replacements did not match")
+	}
+	fixPartitioningEdgeCases(&table, FlavorUnknown)
+	if table.CreateStatement != table.GeneratedCreateStatement(FlavorUnknown) {
+		t.Errorf("Failed to extract data directories; post-fix partitioning statement generated as %s", table.Partitioning.Definition(FlavorUnknown))
+	}
+}
+
 func (s TengoIntegrationSuite) TestPartitionedIntrospection(t *testing.T) {
 	if _, err := s.d.SourceSQL("testdata/partition.sql"); err != nil {
 		t.Fatalf("Unexpected error sourcing testdata/partition.sql: %v", err)

@@ -139,29 +139,6 @@ func NormalizeCreateOptions(createStmt string) string {
 	return createStmt
 }
 
-var reDataDirectory = regexp.MustCompile(` DATA DIRECTORY = '(\\\\|\\'|''|[^'])*'`)
-
-// NormalizePartitioning adjusts the supplied CREATE TABLE's partitioning clause
-// to remove any oddities that are not reflected in information_schema and/or
-// cannot be altered by this package, but are included in SHOW CREATE TABLE.
-func NormalizePartitioning(createStmt string, flavor Flavor) string {
-	if flavor.Major == 5 && flavor.Minor == 5 {
-		createStmt = strings.Replace(createStmt, "PARTITION BY KEY */ /*!50531 ALGORITHM = 1 */ /*!50100 ", "PARTITION BY KEY ", 1)
-	} else if flavor.MySQLishMinVersion(5, 6) || flavor == FlavorMariaDB101 {
-		createStmt = strings.Replace(createStmt, "PARTITION BY KEY */ /*!50611 ALGORITHM = 1 */ /*!50100 ", "PARTITION BY KEY ", 1)
-	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
-		createStmt = strings.Replace(createStmt, "PARTITION BY KEY ALGORITHM = 1 ", "PARTITION BY KEY ", 1)
-	}
-
-	// Ignore DATA DIRECTORY clauses for now. These only affect the partition list
-	// (which this package does not diff/alter yet), so no sense in doing extra
-	// queries to introspect them, which would require looking in nonstandard
-	// information_schema tables innodb_sys_datafiles and innodb_sys_tables.
-	createStmt = reDataDirectory.ReplaceAllString(createStmt, "")
-
-	return createStmt
-}
-
 // baseDSN returns a DSN with the database (schema) name and params stripped.
 // Currently only supports MySQL, via go-sql-driver/mysql's DSN format.
 func baseDSN(dsn string) string {
