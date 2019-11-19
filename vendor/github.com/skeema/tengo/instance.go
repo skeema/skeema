@@ -1121,7 +1121,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 				t.CreateStatement = NormalizeCreateOptions(t.CreateStatement)
 			}
 			if t.Partitioning != nil {
-				t.CreateStatement = NormalizePartitioning(t.CreateStatement, flavor)
+				fixPartitioningEdgeCases(t, flavor)
 			}
 			// Index order is unpredictable with new MySQL 8 data dictionary, so reorder
 			// indexes based on parsing SHOW CREATE TABLE if needed
@@ -1224,6 +1224,51 @@ func fixCreateOptionsOrder(t *Table, flavor Flavor) {
 			if matches != nil {
 				t.CreateOptions = matches[1]
 				return
+			}
+		}
+	}
+}
+
+// fixPartitioningEdgeCases handles situations that are reflected in SHOW CREATE
+// TABLE, but missing (or difficult to obtain) in information_schema.
+func fixPartitioningEdgeCases(t *Table, flavor Flavor) {
+	// Handle edge cases for how partitions are expressed in HASH or KEY methods:
+	// typically this will just be a PARTITIONS N clause, but it could also be
+	// nothing at all, or an explicit list of partitions, depending on how the
+	// partitioning was originally created.
+	if strings.HasSuffix(t.Partitioning.Method, "HASH") || strings.HasSuffix(t.Partitioning.Method, "KEY") {
+		countClause := fmt.Sprintf("\nPARTITIONS %d", len(t.Partitioning.Partitions))
+		if strings.Contains(t.CreateStatement, countClause) {
+			t.Partitioning.forcePartitionList = partitionListCount
+		} else if strings.Contains(t.CreateStatement, "\n(PARTITION ") {
+			t.Partitioning.forcePartitionList = partitionListExplicit
+		} else if len(t.Partitioning.Partitions) == 1 {
+			t.Partitioning.forcePartitionList = partitionListNone
+		}
+	}
+
+	// KEY methods support an optional ALGORITHM clause, which is present in SHOW
+	// CREATE TABLE but not anywhere in information_schema
+	if strings.HasSuffix(t.Partitioning.Method, "KEY") && strings.Contains(t.CreateStatement, "ALGORITHM") {
+		re := regexp.MustCompile(fmt.Sprintf(`PARTITION BY %s ([^(]*)\(`, t.Partitioning.Method))
+		if matches := re.FindStringSubmatch(t.CreateStatement); matches != nil {
+			t.Partitioning.algoClause = matches[1]
+		}
+	}
+
+	// Process DATA DIRECTORY clauses, which are easier to parse from SHOW CREATE
+	// TABLE instead of information_schema.innodb_sys_tablespaces.
+	if (t.Partitioning.forcePartitionList == partitionListDefault || t.Partitioning.forcePartitionList == partitionListExplicit) &&
+		strings.Contains(t.CreateStatement, " DATA DIRECTORY = ") {
+		for _, p := range t.Partitioning.Partitions {
+			name := p.Name
+			if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
+				name = EscapeIdentifier(name)
+			}
+			name = regexp.QuoteMeta(name)
+			re := regexp.MustCompile(fmt.Sprintf(`PARTITION %s .*DATA DIRECTORY = '((?:\\\\|\\'|''|[^'])*)'`, name))
+			if matches := re.FindStringSubmatch(t.CreateStatement); matches != nil {
+				p.dataDir = matches[1]
 			}
 		}
 	}

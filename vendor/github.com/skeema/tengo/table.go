@@ -93,8 +93,8 @@ func (t *Table) UnpartitionedCreateStatement(flavor Flavor) string {
 	}
 
 	// If our generated partitioning clause definition isn't 100% aligned with
-	// SHOW CREATE TABLE (due to unsupported features or due to adjustments made
-	// in NormalizePartitioning), just search for just the beginning of the clause.
+	// SHOW CREATE TABLE (e.g. due to unsupported features), just search for just
+	// the beginning of the clause.
 	partClause := t.Partitioning.Definition(flavor)
 	if t.UnsupportedDDL || !strings.Contains(t.CreateStatement, partClause) {
 		headerPos := strings.Index(partClause, " PARTITION BY ")
