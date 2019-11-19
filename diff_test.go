@@ -576,12 +576,12 @@ func TestTableDiffUnsupportedAlter(t *testing.T) {
 		// table was on the "to" or "from" side, the message should show what part
 		// of the unsupported table triggered the issue.
 		extended := err.(*UnsupportedDiffError).ExtendedError()
-		expected := strings.Replace(`--- Expected CREATE
+		expected := `--- Expected CREATE
 +++ MySQL-actual SHOW CREATE
-@@ -4 +4 @@
--  ~customer_code~ varchar(15) NOT NULL,
-+  ~customer_code~ varchar(15) AS concat('cust_', customer_id) VIRTUAL NOT NULL,
-`, "~", "`", -1)
+@@ -8,0 +9,2 @@
++SUBPARTITION BY HASH (post_id)
++SUBPARTITIONS 2
+`
 		if expected != extended {
 			t.Errorf("Output of ExtendedError() did not match expectation. Returned value:\n%s", extended)
 		}

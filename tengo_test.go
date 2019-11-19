@@ -316,12 +316,37 @@ func anotherTableForFlavor(flavor Flavor) Table {
 
 func unsupportedTable() Table {
 	t := supportedTable()
-	t.CreateStatement = strings.Replace(t.CreateStatement, "varchar(15) NOT NULL", "varchar(15) AS concat('cust_', customer_id) VIRTUAL NOT NULL", 1)
+	t.CreateStatement += `
+/*!50100 PARTITION BY RANGE (user_id)
+SUBPARTITION BY HASH (post_id)
+SUBPARTITIONS 2
+(PARTITION p0 VALUES LESS THAN (123) ENGINE = InnoDB,
+ PARTITION p1 VALUES LESS THAN MAXVALUE ENGINE = InnoDB) */`
+	t.Partitioning = &TablePartitioning{
+		Method:        "RANGE",
+		SubMethod:     "HASH",
+		Expression:    "user_id",
+		SubExpression: "post_id",
+		Partitions: []*Partition{
+			{
+				Name:   "p0",
+				Values: "123",
+				method: "RANGE",
+				engine: "InnoDB",
+			},
+			{
+				Name:   "p1",
+				Values: "MAXVALUE",
+				method: "RANGE",
+				engine: "InnoDB",
+			},
+		},
+	}
 	t.UnsupportedDDL = true
 	return t
 }
 
-// Returns the same as unsupportedTable() but without the generated modifier,
+// Returns the same as unsupportedTable() but without any partitioning,
 // so that the table is actually supported.
 func supportedTable() Table {
 	return supportedTableForFlavor(FlavorUnknown)
@@ -330,23 +355,23 @@ func supportedTable() Table {
 func supportedTableForFlavor(flavor Flavor) Table {
 	columns := []*Column{
 		{
-			Name:          "id",
-			TypeInDB:      "int(10) unsigned",
-			AutoIncrement: true,
-			Default:       ColumnDefaultNull,
+			Name:     "post_id",
+			TypeInDB: "bigint(20) unsigned",
+			Default:  ColumnDefaultNull,
 		},
 		{
-			Name:     "customer_id",
+			Name:     "user_id",
+			TypeInDB: "bigint(20) unsigned",
+			Default:  ColumnDefaultNull,
+		},
+		{
+			Name:     "subscribed_at",
 			TypeInDB: "int(10) unsigned",
 			Default:  ColumnDefaultNull,
+			Nullable: true,
 		},
 		{
-			Name:     "customer_code",
-			TypeInDB: "varchar(15)",
-			Default:  ColumnDefaultNull,
-		},
-		{
-			Name:               "info",
+			Name:               "metadata",
 			Nullable:           true,
 			TypeInDB:           "text",
 			CharSet:            "latin1",
@@ -355,19 +380,19 @@ func supportedTableForFlavor(flavor Flavor) Table {
 			Default:            ColumnDefaultNull,
 		},
 	}
-	stmt := strings.Replace(`CREATE TABLE ~orders~ (
-  ~id~ int(10) unsigned NOT NULL AUTO_INCREMENT,
-  ~customer_id~ int(10) unsigned NOT NULL,
-  ~customer_code~ varchar(15) NOT NULL,
-  ~info~ text,
-  PRIMARY KEY (~id~,~customer_id~)
+	stmt := strings.Replace(`CREATE TABLE ~followed_posts~ (
+  ~post_id~ bigint(20) unsigned NOT NULL,
+  ~user_id~ bigint(20) unsigned NOT NULL,
+  ~subscribed_at~ int(10) unsigned DEFAULT NULL,
+  ~metadata~ text,
+  PRIMARY KEY (~post_id~,~user_id~)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1`, "~", "`", -1)
 	if flavor.AllowBlobDefaults() {
 		stmt = strings.Replace(stmt, " text", " text DEFAULT NULL", 1)
 	}
 
 	return Table{
-		Name:               "orders",
+		Name:               "followed_posts",
 		Engine:             "InnoDB",
 		CharSet:            "latin1",
 		Collation:          "latin1_swedish_ci",
@@ -375,7 +400,6 @@ func supportedTableForFlavor(flavor Flavor) Table {
 		Columns:            columns,
 		PrimaryKey:         primaryKey(columns[0:2]...),
 		SecondaryIndexes:   []*Index{},
-		NextAutoIncrement:  1,
 		CreateStatement:    stmt,
 	}
 }
