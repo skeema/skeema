@@ -492,7 +492,7 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 
 	// Set overridable options
 	v.Set("timeout", "5s")
-	v.Set("readTimeout", "5s")
+	v.Set("readTimeout", "20s")
 	v.Set("writeTimeout", "5s")
 	v.Set("sql_mode", "'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'")
 	v.Set("innodb_strict_mode", "1")
