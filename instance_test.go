@@ -691,7 +691,11 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Test introspection of generated columns, if flavor supports them
 	if flavor.GeneratedColumns() {
-		if _, err := s.d.SourceSQL("testdata/generatedcols.sql"); err != nil {
+		sqlfile := "testdata/generatedcols.sql"
+		if flavor.Vendor == VendorMariaDB { // no support for NOT NULL generated cols
+			sqlfile = "testdata/generatedcols-maria.sql"
+		}
+		if _, err := s.d.SourceSQL(sqlfile); err != nil {
 			t.Fatalf("Unexpected error sourcing testdata/generatedcols.sql: %v", err)
 		}
 		table := s.GetTable(t, "testing", "staff")
