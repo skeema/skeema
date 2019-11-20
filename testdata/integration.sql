@@ -29,17 +29,19 @@ CREATE TABLE actor_in_film (
 	KEY film_name (film_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-# Keep this in sync with tengo_test.go's unsupportedTable(), or make that
-# function use a different unsupported feature once partitioning is supported
-CREATE TABLE orders (
-	id int unsigned NOT NULL AUTO_INCREMENT,
-	customer_id int unsigned NOT NULL,
-	info text,
-	PRIMARY KEY (id, customer_id)
-) ENGINE=InnoDB ROW_FORMAT=REDUNDANT PARTITION BY RANGE (customer_id) (
-	PARTITION p0 VALUES LESS THAN (123),
-	PARTITION p1 VALUES LESS THAN MAXVALUE
-);
+# Keep this in sync with tengo_test.go's unsupportedTable()
+CREATE TABLE `followed_posts` (
+  `post_id` bigint(20) unsigned NOT NULL,
+  `user_id` bigint(20) unsigned NOT NULL,
+  `subscribed_at` int(10) unsigned DEFAULT NULL,
+  `metadata` text,
+  PRIMARY KEY (`post_id`,`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+/*!50100 PARTITION BY RANGE (user_id)
+SUBPARTITION BY HASH (post_id)
+SUBPARTITIONS 2
+(PARTITION p0 VALUES LESS THAN (123) ENGINE = InnoDB,
+ PARTITION p1 VALUES LESS THAN MAXVALUE ENGINE = InnoDB) */;
 
 # Keep this table in sync with tengo_test.go's foreignKeyTable()
 CREATE TABLE warranties (

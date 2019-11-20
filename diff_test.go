@@ -578,12 +578,9 @@ func TestTableDiffUnsupportedAlter(t *testing.T) {
 		extended := err.(*UnsupportedDiffError).ExtendedError()
 		expected := `--- Expected CREATE
 +++ MySQL-actual SHOW CREATE
-@@ -6 +6,4 @@
--) ENGINE=InnoDB DEFAULT CHARSET=latin1
-+) ENGINE=InnoDB DEFAULT CHARSET=latin1 ROW_FORMAT=REDUNDANT
-+   /*!50100 PARTITION BY RANGE (customer_id)
-+   (PARTITION p0 VALUES LESS THAN (123) ENGINE = InnoDB,
-+    PARTITION p1 VALUES LESS THAN MAXVALUE ENGINE = InnoDB) */
+@@ -8,0 +9,2 @@
++SUBPARTITION BY HASH (post_id)
++SUBPARTITIONS 2
 `
 		if expected != extended {
 			t.Errorf("Output of ExtendedError() did not match expectation. Returned value:\n%s", extended)
