@@ -73,20 +73,33 @@ func SplitHostOptionalPort(hostaddr string) (string, int, error) {
 	return host, port, nil
 }
 
-var reParseCreate = regexp.MustCompile(`[)] ENGINE=\w+ (AUTO_INCREMENT=(\d+) )DEFAULT CHARSET=`)
+var reParseCreateAutoInc = regexp.MustCompile(`[)] ENGINE=\w+ (AUTO_INCREMENT=(\d+) )DEFAULT CHARSET=`)
 
 // ParseCreateAutoInc parses a CREATE TABLE statement, formatted in the same
 // manner as SHOW CREATE TABLE, and removes the table-level next-auto-increment
 // clause if present. The modified CREATE TABLE will be returned, along with
 // the next auto-increment value if one was found.
 func ParseCreateAutoInc(createStmt string) (string, uint64) {
-	matches := reParseCreate.FindStringSubmatch(createStmt)
+	matches := reParseCreateAutoInc.FindStringSubmatch(createStmt)
 	if matches == nil {
 		return createStmt, 0
 	}
 	nextAutoInc, _ := strconv.ParseUint(matches[2], 10, 64)
 	newStmt := strings.Replace(createStmt, matches[1], "", 1)
 	return newStmt, nextAutoInc
+}
+
+var reParseCreatePartitioning = regexp.MustCompile(`(?is)(\s*(?:/\*!?\d*)?\s*partition\s+by .*)$`)
+
+// ParseCreatePartitioning parses a CREATE TABLE statement, formatted in the
+// same manner as SHOW CREATE TABLE, and splits out the base CREATE clauses from
+// the partioning clause.
+func ParseCreatePartitioning(createStmt string) (base, partitionClause string) {
+	matches := reParseCreatePartitioning.FindStringSubmatch(createStmt)
+	if matches == nil {
+		return createStmt, ""
+	}
+	return createStmt[0 : len(createStmt)-len(matches[1])], matches[1]
 }
 
 var normalizeCreateRegexps = []struct {

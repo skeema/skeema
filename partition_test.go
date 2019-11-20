@@ -144,7 +144,7 @@ func TestTableAlterPartitioningOther(t *testing.T) {
 }
 
 func TestTableUnpartitionedCreateStatement(t *testing.T) {
-	flavors := []Flavor{FlavorUnknown, FlavorMySQL55, FlavorPercona56, FlavorMySQL80, FlavorMariaDB102}
+	flavors := []Flavor{FlavorMySQL55, FlavorPercona56, FlavorMySQL80, FlavorMariaDB102}
 	for _, flavor := range flavors {
 		unpartitioned := unpartitionedTable(flavor)
 		partitioned := partitionedTable(flavor)
@@ -153,18 +153,23 @@ func TestTableUnpartitionedCreateStatement(t *testing.T) {
 		if actual != expected {
 			t.Errorf("Unexpected return from UnpartitionedCreateStatement(%s): expected %q, found %q", flavor, expected, actual)
 		}
+		_, actualPartClause := ParseCreatePartitioning(partitioned.CreateStatement)
+		expectedPartClause := partitioned.Partitioning.Definition(flavor)
+		if actualPartClause != expectedPartClause {
+			t.Errorf("Unexpected 2nd return val from ParseCreatePartitioning with %s: expected %q, found %q", flavor, expectedPartClause, actualPartClause)
+		}
 
-		// Test separate code path for tables using unsupported features
-		partitioned.UnsupportedDDL = true
-		actual = partitioned.UnpartitionedCreateStatement(flavor)
-		if actual != expected {
-			t.Errorf("Unexpected return from UnpartitionedCreateStatement(%s): expected %q, found %q", flavor, expected, actual)
+		// Test separate code path for supplying FlavorUnknown to UnpartitionedCreateStatement
+		if actual := partitioned.UnpartitionedCreateStatement(FlavorUnknown); actual != expected {
+			t.Errorf("Unexpected return from UnpartitionedCreateStatement(FlavorUnknown): expected %q, found %q", expected, actual)
 		}
 
 		// Confirm correct return value for already-unpartitioned table
-		expected, actual = unpartitioned.CreateStatement, unpartitioned.UnpartitionedCreateStatement(flavor)
-		if actual != expected {
+		if actual := unpartitioned.UnpartitionedCreateStatement(flavor); actual != expected {
 			t.Errorf("Unexpected return from UnpartitionedCreateStatement(%s): expected %q, found %q", flavor, expected, actual)
+		}
+		if base, partClause := ParseCreatePartitioning(unpartitioned.CreateStatement); base != unpartitioned.CreateStatement || partClause != "" {
+			t.Errorf("Unexpected return from ParseCreatePartitioning on unpartitioned table: returned %q, %q", base, partClause)
 		}
 	}
 }

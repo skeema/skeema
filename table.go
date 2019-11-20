@@ -86,26 +86,17 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 }
 
 // UnpartitionedCreateStatement returns the table's CREATE statement without
-// its PARTITION BY clause.
+// its PARTITION BY clause. Supplying an accurate flavor improves performance,
+// but is not required; FlavorUnknown still works correctly.
 func (t *Table) UnpartitionedCreateStatement(flavor Flavor) string {
 	if t.Partitioning == nil {
 		return t.CreateStatement
 	}
-
-	// If our generated partitioning clause definition isn't 100% aligned with
-	// SHOW CREATE TABLE (e.g. due to unsupported features), just search for just
-	// the beginning of the clause.
-	partClause := t.Partitioning.Definition(flavor)
-	if t.UnsupportedDDL || !strings.Contains(t.CreateStatement, partClause) {
-		headerPos := strings.Index(partClause, " PARTITION BY ")
-		header := partClause[0 : headerPos+len(" PARTITION BY ")]
-		pos := strings.LastIndex(t.CreateStatement, header)
-		if pos < 0 {
-			pos = strings.LastIndex(t.CreateStatement, "PARTITION BY")
-		}
-		return t.CreateStatement[0:pos]
+	if partClause := t.Partitioning.Definition(flavor); strings.HasSuffix(t.CreateStatement, partClause) {
+		return t.CreateStatement[0 : len(t.CreateStatement)-len(partClause)]
 	}
-	return t.CreateStatement[0 : len(t.CreateStatement)-len(partClause)]
+	base, _ := ParseCreatePartitioning(t.CreateStatement)
+	return base
 }
 
 // ColumnsByName returns a mapping of column names to Column value pointers,
