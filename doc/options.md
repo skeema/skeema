@@ -50,6 +50,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [lint-pk](#lint-pk)
 * [my-cnf](#my-cnf)
 * [new-schemas](#new-schemas)
+* [partitioning](#partitioning)
 * [password](#password)
 * [port](#port)
 * [reuse-temp-schema](#reuse-temp-schema)
@@ -138,11 +139,11 @@ If set to the default of false, `skeema push` refuses to run any DDL on a databa
 The following operations are considered unsafe:
 
 * Dropping a table
-* Altering a table to drop a column
+* Altering a table to drop a normal column or stored (non-virtual) generated column
 * Altering a table to modify an existing column in a way that potentially causes data loss, length truncation, or reduction in precision
 * Altering a table to modify the character set of an existing column
 * Altering a table to change its storage engine
-* Dropping a stored procedure or function (even if just to [re-create it with a modified definition](requirements.md#edge-cases-for-routines))
+* Dropping a stored procedure or function (even if just to [re-create it with a modified definition](requirements.md#routines))
 
 If [allow-unsafe](#allow-unsafe) is set to true, these operations are fully permitted, for all tables. It is not recommended to enable this setting in an option file, especially in the production environment. It is safer to require users to supply it manually on the command-line on an as-needed basis, to serve as a confirmation step for unsafe operations.
 
@@ -843,6 +844,30 @@ Commands | pull
 If true, `skeema pull` will look for schemas (databases) that exist on the instance, but have no filesystem representation yet. It will then create and populate new directories for these schemas. If false, this step is skipped, and new schemas will not be pulled into the filesystem.
 
 When using a workflow that involves running `skeema pull development` regularly, it may be useful to disable this option. For example, if the development environment tends to contain various extra schemas for testing purposes, set `skip-new-schemas` in a global or top-level .skeema file's `[development]` section to avoid storing these testing schemas in the filesystem.
+
+### partitioning
+
+Commands | diff, push
+--- | :---
+**Default** | "keep"
+**Type** | enum
+**Restrictions** | Requires one of these values: "keep", "remove", "modify"
+
+Skeema v1.4.0 added diff support for partitioned tables. This option affects how DDL involving partitioned tables is generated or executed via `skeema diff` and `skeema push`.
+
+With the default value of "keep", tables may be partitioned (through the filesystem `CREATE TABLE` containing a `PARTITON BY` clause, either initially or one subsequently being added), but will never be de-partitioned or re-partitioned. In other words, once a table is partitioned in a database, with `partitioning=keep` Skeema suppresses further modifications to the partitioning clause for the table.
+
+With a value of "remove", tables will not be partitioned, and any already-partitioned tables will be de-partitioned. If any filesystem `CREATE TABLE` statements contain a `PARTITION BY` clause, it will effectively be ignored. Any already-partitioned tables in a database will automatically have DDL generated to de-partition them via `ALTER TABLE ... REMOVE PARTITIONING`.
+
+With a value of "modify", partitioning clauses are handled permissively. Tables will be partitioned, re-partitioned, or de-partitioned based on the presence of a `PARTITION BY` clause in the filesystem `CREATE TABLE` statement.
+
+Overall, the intended use of the [partitioning](#partitioning) option is as follows:
+
+* If you use partitioning in production but not in development (for example), place `partitioning=remove` in a `[development]` section of a top-level .skeema file. This will ensure that tables in your development databases are never partitioned, removing the need to run partition-management scripts in dev.
+* The default of `partitioning=keep` is useful in all environments where partitioning is actually in-use; it prevents accidental re-partitioning or de-partitioning. For example, if someone runs `skeema pull development` and development is using `partitioning=remove`, this will remove the PARTITION BY clause from the filesystem `CREATE TABLE` statements; nonetheless, a subsequent `skeema push production` won't remove partitioning from any already-partitioned tables as long as `partitioning=keep` is enabled there.
+* For one-off situations where you intentionally want to re-partition or de-partition an existing partitioned table, you can use `skeema push --partitioning=modify` as a command-line override.
+
+Regardless of this option, modifications to just the *partition list* of a partitioned table are always ignored for RANGE and LIST partitioning methods, and are unsupported for HASH and KEY methods. Skeema will not add or remove partitions from an already-partitioned table, regardless of differences between the filesystem `CREATE TABLE` and the table in a live database. The intended workflow is to use an external tool/cron for managing the partition list, e.g. to remove old time-based RANGE partitions and add new ones.
 
 ### password
 

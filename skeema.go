@@ -16,7 +16,7 @@ schema to the filesystem, and apply online schema changes by modifying files.`
 
 // Globals overridden by GoReleaser's ldflags
 var (
-	version = "1.3.1-dev"
+	version = "1.4.0"
 	commit  = "unknown"
 	date    = "unknown"
 )

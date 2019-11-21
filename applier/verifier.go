@@ -30,6 +30,7 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 		StrictIndexOrder:       true, // needed since we must get the SHOW CREATE TABLEs to match
 		StrictForeignKeyNaming: true, // ditto
 		AllowUnsafe:            true, // needed since we're just running against the temp schema
+		SkipPreDropAlters:      true, // needed to ignore DROP PARTITION generated just to speed up DROP TABLE
 		Flavor:                 t.Instance.Flavor(),
 	}
 	if major, minor, _ := t.Instance.Version(); major > 5 || minor > 5 {
@@ -78,10 +79,27 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 		return fmt.Errorf("Diff verification failure: %s", err.Error())
 	}
 
+	// Compare the create statements of the "to" side of the diff with the create
+	// statements from the workspace. In doing so we must ignore differences in
+	// next-auto-inc value (which intentionally is often not updated) as well as
+	// the entirety of the partitioning clause (since the partition list is
+	// intentionally never modified).
 	actualTables := wsSchema.TablesByName()
 	for name, toTable := range expected {
-		expectCreate, _ := tengo.ParseCreateAutoInc(toTable.CreateStatement)
-		actualCreate, _ := tengo.ParseCreateAutoInc(actualTables[name].CreateStatement)
+		// Simply compare partitioning *status*
+		expectPartitioned := (toTable.Partitioning != nil)
+		actualPartitioned := (actualTables[name].Partitioning != nil)
+		if expectPartitioned != actualPartitioned {
+			return fmt.Errorf("Diff verification failure on table %s\nEXPECTED PARTITIONING STATUS POST-ALTER: %t\nACTUAL PARTITIONING STATUS POST-ALTER: %t\nRun command again with --skip-verify if this discrepancy is safe to ignore", name, expectPartitioned, actualPartitioned)
+		}
+		expectCreate := toTable.CreateStatement
+		actualCreate := actualTables[name].CreateStatement
+		if expectPartitioned {
+			expectCreate = toTable.UnpartitionedCreateStatement(mods.Flavor)
+			actualCreate = actualTables[name].UnpartitionedCreateStatement(mods.Flavor)
+		}
+		expectCreate, _ = tengo.ParseCreateAutoInc(expectCreate)
+		actualCreate, _ = tengo.ParseCreateAutoInc(actualCreate)
 		if expectCreate != actualCreate {
 			return fmt.Errorf("Diff verification failure on table %s\n\nEXPECTED POST-ALTER:\n%s\n\nACTUAL POST-ALTER:\n%s\n\nRun command again with --skip-verify if this discrepancy is safe to ignore", name, expectCreate, actualCreate)
 		}

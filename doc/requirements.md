@@ -1,5 +1,7 @@
 ## Requirements
 
+This document contains important notes regarding which environments are supported by Skeema.
+
 ### MySQL version and flavor
 
 Skeema currently supports the following databases:
@@ -10,7 +12,7 @@ Skeema currently supports the following databases:
 
 Testing is performed with the database server running on Linux only. Other operating systems likely work without issue, although there is one [known incompatibility regarding case-insensitive filesystems](https://github.com/skeema/skeema/issues/65#issuecomment-478048414), e.g. when the database server is running on Windows or MacOS, if any schema names or table names use uppercase characters.
 
-Some MySQL features -- such as partitioned tables and spatial types -- are [not supported yet](requirements.md#unsupported-for-alter-table) in Skeema's diff operations. Additionally, only the InnoDB storage engine is primarily supported at this time. Other storage engines are often perfectly functional in Skeema, but it depends on whether any esoteric features of the engine are used.
+Some MySQL features -- such as spatial indexes and subpartitioning -- are [not supported yet](requirements.md#unsupported-for-alter-table) in Skeema's diff operations. Additionally, only the InnoDB storage engine is primarily supported at this time. Other storage engines are often perfectly functional in Skeema, but it depends on whether any esoteric features of the engine are used.
 
 In all cases, Skeema's safety mechanisms will detect when a table is using unsupported features, and will alert you to this fact in `skeema diff` or `skeema push`. There is no risk of generating or executing an incorrect diff. If Skeema does not yet support a table/column feature that you need, please [open a GitHub issue](https://github.com/skeema/skeema/issues/new) so that the work can be prioritized appropriately.
 
@@ -93,12 +95,11 @@ The following object types are completely ignored by Skeema. Their presence won'
 
 Skeema can CREATE or DROP tables using these features, but cannot ALTER them. The output of `skeema diff` and `skeema push` will note that it cannot generate or run ALTER TABLE for tables using these features, so the affected table(s) will be skipped, but the rest of the operation will proceed as normal. 
 
-* partitioned tables
+* sub-partitioning (two levels of partitioning in the same table)
 * some features of non-InnoDB storage engines
-* spatial types
+* spatial indexes
 * column-level compression, with or without predefined dictionary (Percona Server 5.6.33+)
-* CHECK constraints (MySQL 8.0.16+ / MariaDB 10.2+)
-
+* CHECK constraints (MySQL 8.0.16+ / Percona Server 8.0.16+ / MariaDB 10.2+)
 
 You can still ALTER these tables externally from Skeema (e.g., direct invocation of `ALTER TABLE` or `pt-online-schema-change`). Afterwards, you can update your schema repo using `skeema pull`, which will work properly even on these tables.
 
@@ -114,7 +115,9 @@ Note that for empty tables as a special-case, a rename is technically equivalent
 
 For tables with data, the work-around to handle renames is to run the appropriate `ALTER TABLE` manually (outside of Skeema) on all relevant databases. You can update your schema repo afterwards by running `skeema pull`.
 
-#### Edge-cases for routines
+### Implementation notes and special cases
+
+#### Routines
 
 Skeema v1.2.0 added support for MySQL routines (stored procedures and functions). This support generally handles all common usage patterns, but there a few edge-cases to be aware of:
 
@@ -125,4 +128,16 @@ Skeema v1.2.0 added support for MySQL routines (stored procedures and functions)
 * If you wish to manage stored procedures / functions that use a different `DEFINER` than Skeema's user, and/or impact binary logging, `SUPER` privileges may be necessary for Skeema's user. Consult the manual for your database version for more information.
 * Skeema does not support management of [native UDFs](https://dev.mysql.com/doc/refman/8.0/en/create-function-udf.html), which are typically written in C or C++ and compiled into shared libraries.
 * MariaDB 10.3's Oracle-style routine PACKAGEs are not supported.
+
+#### Partitioned tables
+
+Skeema v1.4.0 added support for partitioned tables. The diff/push functionality fully supports changes to partitioning *status*:  initially partitioning a previously-unpartitioned table; removing partitioning from an already-partitioned table; changing the partitioning method or expression of an already-partitioned table. The [partitioning option](options.md#partitioning) controls behavior of DDL involving these operations. With its default value of "keep", tables can be initially partitioned, but won't subsequently be de-partitioned or re-partitioned.
+
+Skeema intentionally ignores changes to the *list of partitions* for an already-partitioned table using RANGE or LIST partitioning methods; the assumption is that an external partition management script/cron is responsible for handling this, outside of the scope of the schema repository. Meanwhile, for HASH or KEY partitioning methods, attempting to change the partition count causes an unsupported diff error, skipping the affected table. Future versions of Skeema may add additional options controlling these behaviors.
+
+Whenever a RANGE or LIST partitioned table is being dropped, Skeema will generate a series of `ALTER TABLE ... DROP PARTITION` clauses to drop all but 1 partition prior to generating the `DROP TABLE`. This avoids having a single excessively-long `DROP TABLE` operation, which could be disruptive to other queries since it holds MySQL's dict_sys mutex.
+
+Sub-partitioning (two levels of partitioning in the same table) is not supported for diff operations yet, as this feature adds complexity and is infrequently used.
+
+When running `skeema pull` against an environment that uses `partitioning=remove`, please be aware that since the environment has no partitions, the *.sql files will be rewritten such that the `CREATE TABLE` statements lose their `PARTITION BY` clauses. By design this won't interfere with other environments that use `partitioning=keep`, however it is cosmetically undesirable and potentially confusing in SCM history.
 

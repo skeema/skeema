@@ -21,8 +21,9 @@ type Table struct {
 	ForeignKeys        []*ForeignKey
 	Comment            string
 	NextAutoIncrement  uint64
-	UnsupportedDDL     bool   // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
-	CreateStatement    string // complete SHOW CREATE TABLE obtained from an instance
+	Partitioning       *TablePartitioning // nil if table isn't partitioned
+	UnsupportedDDL     bool               // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
+	CreateStatement    string             // complete SHOW CREATE TABLE obtained from an instance
 }
 
 // AlterStatement returns the prefix to a SQL "ALTER TABLE" statement.
@@ -70,7 +71,7 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 	if t.Comment != "" {
 		comment = fmt.Sprintf(" COMMENT='%s'", EscapeValueForCreateTable(t.Comment))
 	}
-	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n) ENGINE=%s%s DEFAULT CHARSET=%s%s%s%s",
+	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n) ENGINE=%s%s DEFAULT CHARSET=%s%s%s%s%s",
 		EscapeIdentifier(t.Name),
 		strings.Join(defs, ",\n  "),
 		t.Engine,
@@ -79,8 +80,23 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 		collate,
 		createOptions,
 		comment,
+		t.Partitioning.Definition(flavor),
 	)
 	return result
+}
+
+// UnpartitionedCreateStatement returns the table's CREATE statement without
+// its PARTITION BY clause. Supplying an accurate flavor improves performance,
+// but is not required; FlavorUnknown still works correctly.
+func (t *Table) UnpartitionedCreateStatement(flavor Flavor) string {
+	if t.Partitioning == nil {
+		return t.CreateStatement
+	}
+	if partClause := t.Partitioning.Definition(flavor); strings.HasSuffix(t.CreateStatement, partClause) {
+		return t.CreateStatement[0 : len(t.CreateStatement)-len(partClause)]
+	}
+	base, _ := ParseCreatePartitioning(t.CreateStatement)
+	return base
 }
 
 // ColumnsByName returns a mapping of column names to Column value pointers,
@@ -315,6 +331,17 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// Compare comment
 	if from.Comment != to.Comment {
 		clauses = append(clauses, ChangeComment{NewComment: to.Comment})
+	}
+
+	// Compare partitioning. This must be performed last due to a MySQL requirement
+	// of PARTITION BY / REMOVE PARTITIONING occurring last in a multi-clause ALTER
+	// TABLE.
+	// Note that some partitioning differences aren't supported yet, and others are
+	// intentionally ignored.
+	partClauses, partSupported := from.Partitioning.Diff(to.Partitioning)
+	clauses = append(clauses, partClauses...)
+	if !partSupported {
+		return clauses, false
 	}
 
 	// If the SHOW CREATE TABLE output differed between the two tables, but we

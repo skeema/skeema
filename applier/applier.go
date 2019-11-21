@@ -75,10 +75,7 @@ func applyTarget(t *Target, printer *Printer) (Result, error) {
 	}
 
 	t.logApplyStart()
-	diff := tengo.NewSchemaDiff(schemaFromInstance, t.SchemaFromDir())
-	if err := VerifyDiff(diff, t); err != nil {
-		return result, err
-	}
+	schemaFromDir := t.SchemaFromDir()
 
 	// Obtain StatementModifiers based on the dir's config
 	mods, err := StatementModifiersForDir(t.Dir)
@@ -86,6 +83,24 @@ func applyTarget(t *Target, printer *Printer) (Result, error) {
 		return result, ConfigError(err.Error())
 	}
 	mods.Flavor = t.Instance.Flavor()
+	if mods.Partitioning == tengo.PartitioningRemove {
+		// With partitioning=remove, forcibly treat all filesystem definitions as if
+		// they didn't have a partitioning clause. This is designed to aid in the
+		// use-case of not running any partition management in a dev environment; if
+		// a table somehow manages to be partitioned there anyway by mistake, we
+		// intentionally want to de-partition it.
+		for _, table := range schemaFromDir.Tables {
+			if table.Partitioning != nil {
+				table.CreateStatement = table.UnpartitionedCreateStatement(mods.Flavor)
+				table.Partitioning = nil
+			}
+		}
+	}
+
+	diff := tengo.NewSchemaDiff(schemaFromInstance, schemaFromDir)
+	if err := VerifyDiff(diff, t); err != nil {
+		return result, err
+	}
 
 	// Build DDLStatements for each ObjectDiff, handling pre-execution errors
 	// accordingly. Also track ObjectKeys for modified objects, for subsequent
@@ -189,6 +204,16 @@ func StatementModifiersForDir(dir *fs.Dir) (mods tengo.StatementModifiers, err e
 	if mods.IgnoreTable, err = dir.Config.GetRegexp("ignore-table"); err != nil {
 		return
 	}
+	var partitioning string
+	if partitioning, err = dir.Config.GetEnum("partitioning", "keep", "remove", "modify"); err != nil {
+		return
+	}
+	partMap := map[string]tengo.PartitioningMode{
+		"keep":   tengo.PartitioningKeep,
+		"remove": tengo.PartitioningRemove,
+		"modify": tengo.PartitioningPermissive,
+	}
+	mods.Partitioning = partMap[partitioning]
 	return
 }
 

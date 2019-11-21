@@ -34,10 +34,11 @@ Destructive operations only occur when specifically requested via the [allow-uns
 The following operations are considered unsafe:
 
 * Dropping a table
-* Altering a table to drop an existing column
-* Altering a table to change the type of an existing column in a way that potentially causes data loss, length truncation, or reduction in precision
-* Altering a table to change the character set of an existing column
+* Altering a table to drop a normal column or stored (non-virtual) generated column
+* Altering a table to modify an existing column in a way that potentially causes data loss, length truncation, or reduction in precision
+* Altering a table to modify the character set of an existing column
 * Altering a table to change its storage engine
+* Dropping a stored procedure or function (even if just to [re-create it with a modified definition](requirements.md#routines))
 
 Note that `skeema diff` also has the same safety logic as `skeema push`, even though `skeema diff` never actually modifies tables. This behavior exists so that `skeema diff` can serve as a safe dry-run that exactly matches the logic for `skeema push`. If unsafe operations are not explicitly allowed, `skeema diff` will display unsafe operations as commented-out DDL.
 

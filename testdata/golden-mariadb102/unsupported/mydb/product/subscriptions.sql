@@ -8,5 +8,7 @@ CREATE TABLE `subscriptions` (
   KEY `sub_id_user` (`subscription_id`,`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1
  PARTITION BY RANGE (`user_id`)
+SUBPARTITION BY HASH (`post_id`)
+SUBPARTITIONS 2
 (PARTITION `p0` VALUES LESS THAN (123) ENGINE = InnoDB,
  PARTITION `p1` VALUES LESS THAN MAXVALUE ENGINE = InnoDB);

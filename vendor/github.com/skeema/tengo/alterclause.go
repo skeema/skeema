@@ -63,9 +63,10 @@ func (dc DropColumn) Clause(_ StatementModifiers) string {
 }
 
 // Unsafe returns true if this clause is potentially destructive of data.
-// DropColumn is always unsafe.
+// DropColumn is always unsafe, unless it's a virtual column (which is easy to
+// roll back; there's no inherent data loss from dropping a virtual column).
 func (dc DropColumn) Unsafe() bool {
-	return true
+	return !dc.Column.Virtual
 }
 
 ///// AddIndex /////////////////////////////////////////////////////////////////
@@ -199,6 +200,10 @@ func (mc ModifyColumn) Clause(mods StatementModifiers) string {
 // increasing the size of a varchar is safe, but changing decreasing the size or
 // changing the column type entirely is considered unsafe.
 func (mc ModifyColumn) Unsafe() bool {
+	if mc.OldColumn.Virtual {
+		return false
+	}
+
 	if mc.OldColumn.CharSet != mc.NewColumn.CharSet {
 		return true
 	}
@@ -523,4 +528,76 @@ func (cse ChangeStorageEngine) Clause(_ StatementModifiers) string {
 // complexity in converting a table's data to the new storage engine.
 func (cse ChangeStorageEngine) Unsafe() bool {
 	return true
+}
+
+///// PartitionBy //////////////////////////////////////////////////////////////
+
+// PartitionBy represents initially partitioning a previously-unpartitioned
+// table, or changing the partitioning method and/or expression on an already-
+// partitioned table. It satisfies the TableAlterClause interface.
+type PartitionBy struct {
+	Partitioning *TablePartitioning
+	RePartition  bool // true if changing partitioning on already-partitioned table
+}
+
+// Clause returns a clause of an ALTER TABLE statement that partitions a
+// previously-unpartitioned table.
+func (pb PartitionBy) Clause(mods StatementModifiers) string {
+	if mods.Partitioning == PartitioningRemove || (pb.RePartition && mods.Partitioning == PartitioningKeep) {
+		return ""
+	}
+	return strings.TrimSpace(pb.Partitioning.Definition(mods.Flavor))
+}
+
+///// RemovePartitioning ///////////////////////////////////////////////////////
+
+// RemovePartitioning represents de-partitioning a previously-partitioned table.
+// It satisfies the TableAlterClause interface.
+type RemovePartitioning struct{}
+
+// Clause returns a clause of an ALTER TABLE statement that partitions a
+// previously-unpartitioned table.
+func (rp RemovePartitioning) Clause(mods StatementModifiers) string {
+	if mods.Partitioning == PartitioningKeep {
+		return ""
+	}
+	return "REMOVE PARTITIONING"
+}
+
+///// ModifyPartitions /////////////////////////////////////////////////////////
+
+// ModifyPartitions represents a change to the partition list for a table using
+// RANGE, RANGE COLUMNS, LIST, or LIST COLUMNS partitioning. Generation of this
+// clause is only partially supported at this time.
+type ModifyPartitions struct {
+	Add          []*Partition
+	Drop         []*Partition
+	ForDropTable bool
+}
+
+// Clause currently returns an empty string when a partition list difference
+// is present in a table that exists in both "from" and "to" sides of the diff;
+// in that situation, ModifyPartitions is just used as a placeholder to indicate
+// that a difference was detected.
+// ModifyPartitions currently returns a non-empty clause string only for the
+// use-case of dropping individual partitions before dropping a table entirely,
+// which reduces the amount of time the dict_sys mutex is held when dropping the
+// table.
+func (mp ModifyPartitions) Clause(mods StatementModifiers) string {
+	if !mp.ForDropTable || len(mp.Drop) == 0 {
+		return ""
+	}
+	if mp.ForDropTable && mods.SkipPreDropAlters {
+		return ""
+	}
+	var names []string
+	for _, p := range mp.Drop {
+		names = append(names, p.Name)
+	}
+	return fmt.Sprintf("DROP PARTITION %s", strings.Join(names, ", "))
+}
+
+// Unsafe returns true if this clause is potentially destructive of data.
+func (mp ModifyPartitions) Unsafe() bool {
+	return len(mp.Drop) > 0
 }
