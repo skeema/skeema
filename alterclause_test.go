@@ -104,4 +104,18 @@ func TestModifyColumnUnsafe(t *testing.T) {
 	if mc.Unsafe() {
 		t.Error("For changing collation but not character set, expected unsafe=false, instead found unsafe=true")
 	}
+
+	// Special case: confirm changing the type of a column is safe for virtual
+	// generated columns but not stored generated columns
+	mc = ModifyColumn{
+		OldColumn: &Column{TypeInDB: "bigint(20)", GenerationExpr: "id * 2", Virtual: true},
+		NewColumn: &Column{TypeInDB: "int(11)", GenerationExpr: "id * 2", Virtual: true},
+	}
+	if mc.Unsafe() {
+		t.Error("Expected virtual column modification to be safe, but Unsafe() returned true")
+	}
+	mc.OldColumn.Virtual = false
+	if !mc.Unsafe() {
+		t.Error("Expected stored column modification to be unsafe, but Unsafe() returned false")
+	}
 }

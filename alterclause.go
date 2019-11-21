@@ -63,9 +63,10 @@ func (dc DropColumn) Clause(_ StatementModifiers) string {
 }
 
 // Unsafe returns true if this clause is potentially destructive of data.
-// DropColumn is always unsafe.
+// DropColumn is always unsafe, unless it's a virtual column (which is easy to
+// roll back; there's no inherent data loss from dropping a virtual column).
 func (dc DropColumn) Unsafe() bool {
-	return true
+	return !dc.Column.Virtual
 }
 
 ///// AddIndex /////////////////////////////////////////////////////////////////
@@ -199,6 +200,10 @@ func (mc ModifyColumn) Clause(mods StatementModifiers) string {
 // increasing the size of a varchar is safe, but changing decreasing the size or
 // changing the column type entirely is considered unsafe.
 func (mc ModifyColumn) Unsafe() bool {
+	if mc.OldColumn.Virtual {
+		return false
+	}
+
 	if mc.OldColumn.CharSet != mc.NewColumn.CharSet {
 		return true
 	}
