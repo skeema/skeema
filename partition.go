@@ -103,7 +103,9 @@ func (tp *TablePartitioning) Diff(other *TablePartitioning) (clauses []TableAlte
 	}
 
 	// Modifications to partitioning method or expression: re-partition
-	if tp.Method != other.Method || tp.SubMethod != other.SubMethod || tp.Expression != other.Expression || tp.SubExpression != other.SubExpression {
+	if tp.Method != other.Method || tp.SubMethod != other.SubMethod ||
+		tp.Expression != other.Expression || tp.SubExpression != other.SubExpression ||
+		tp.algoClause != other.algoClause {
 		clause := PartitionBy{
 			Partitioning: other,
 			RePartition:  true,
