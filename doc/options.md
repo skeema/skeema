@@ -337,7 +337,7 @@ In addition to setting MySQL session variables, you may also set any of these sp
 
 All six of these special variables are case-sensitive. Unlike session variables, their values should never be wrapped in quotes. These special non-MySQL variables are automatically stripped from `{CONNOPTS}`, so they won't be passed through to tools that don't understand them.
 
-The value of `readTimeout` applies to all queries made directly by Skeema, except for `ALTER TABLE` statements, which are exempted from timeouts entirely.
+The value of `readTimeout` applies to all queries made directly by Skeema, except for `ALTER TABLE` and `DROP TABLE` statements, which are exempted from timeouts entirely.
 
 ### ddl-wrapper
 
