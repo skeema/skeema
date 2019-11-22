@@ -138,6 +138,3 @@ Skeema intentionally ignores changes to the *list of partitions* for an already-
 Whenever a RANGE or LIST partitioned table is being dropped, Skeema will generate a series of `ALTER TABLE ... DROP PARTITION` clauses to drop all but 1 partition prior to generating the `DROP TABLE`. This avoids having a single excessively-long `DROP TABLE` operation, which could be disruptive to other queries since it holds MySQL's dict_sys mutex.
 
 Sub-partitioning (two levels of partitioning in the same table) is not supported for diff operations yet, as this feature adds complexity and is infrequently used.
-
-When running `skeema pull` against an environment that uses `partitioning=remove`, please be aware that since the environment has no partitions, the *.sql files will be rewritten such that the `CREATE TABLE` statements lose their `PARTITION BY` clauses. By design this won't interfere with other environments that use `partitioning=keep`, however it is cosmetically undesirable and potentially confusing in SCM history.
-

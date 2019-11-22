@@ -101,6 +101,16 @@ func getStatementMap(schema *tengo.Schema, dir *fs.Dir, opts Options) map[tengo.
 			}
 		}
 
+		// If requested, adjust the canonical create to add the partitioning clause
+		// from the filesystem create.
+		if opts.RetainPartitioning && key.Type == tengo.ObjectTypeTable && s.fsStatement != nil {
+			dbCreateBase, dbCreatePart := tengo.ParseCreatePartitioning(s.canonicalCreate)
+			_, fsCreatePart := tengo.ParseCreatePartitioning(s.filesystemCreate)
+			if dbCreatePart == "" && fsCreatePart != "" {
+				s.canonicalCreate = fmt.Sprintf("%s%s", dbCreateBase, fsCreatePart)
+			}
+		}
+
 		if ok, err := fs.CanParse(s.canonicalCreate); ok {
 			statementMap[key] = s
 		} else {

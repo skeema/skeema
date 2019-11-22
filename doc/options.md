@@ -847,7 +847,7 @@ When using a workflow that involves running `skeema pull development` regularly,
 
 ### partitioning
 
-Commands | diff, push
+Commands | diff, push, pull
 --- | :---
 **Default** | "keep"
 **Type** | enum
@@ -868,6 +868,8 @@ Overall, the intended use of the [partitioning](#partitioning) option is as foll
 * For one-off situations where you intentionally want to re-partition or de-partition an existing partitioned table, you can use `skeema push --partitioning=modify` as a command-line override.
 
 Regardless of this option, modifications to just the *partition list* of a partitioned table are always ignored for RANGE and LIST partitioning methods, and are unsupported for HASH and KEY methods. Skeema will not add or remove partitions from an already-partitioned table, regardless of differences between the filesystem `CREATE TABLE` and the table in a live database. The intended workflow is to use an external tool/cron for managing the partition list, e.g. to remove old time-based RANGE partitions and add new ones.
+
+When running `skeema pull` against an environment that uses `partitioning=remove`, the *.sql files will retain their previous `PARTITION BY` clauses as-is, despite the database tables lacking partitioning in such an environment. Aside from this, the [partitioning](#partitioning) option does not otherwise affect the behavior of `skeema pull`.
 
 ### password
 
