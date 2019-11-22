@@ -88,7 +88,12 @@ func (s *ApplierIntegrationSuite) Teardown(backend string) error {
 	for n := range s.d {
 		n := n
 		g.Go(func() error {
-			return s.d[n].Stop()
+			// Only keep the first container; destroy any additional, since the other
+			// subpackages only use 1 test container
+			if n == 0 {
+				return s.d[n].Stop()
+			}
+			return s.d[n].Destroy()
 		})
 	}
 	return g.Wait()
