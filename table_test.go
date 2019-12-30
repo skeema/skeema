@@ -187,10 +187,12 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 
 	// Add a secondary index
 	newSecondary := &Index{
-		Name:     "idx_alive_lastname",
-		Columns:  []*Column{to.Columns[5], to.Columns[2]},
-		SubParts: []uint16{0, 10},
-		Type:     "BTREE",
+		Name: "idx_alive_lastname",
+		Parts: []IndexPart{
+			{ColumnName: to.Columns[5].Name},
+			{ColumnName: to.Columns[2].Name, PrefixLength: 10},
+		},
+		Type: "BTREE",
 	}
 	to.SecondaryIndexes = append(to.SecondaryIndexes, newSecondary)
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
@@ -244,8 +246,7 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 
 	// Start over; change the primary key
 	to = aTable(1)
-	to.PrimaryKey.Columns = append(to.PrimaryKey.Columns, to.Columns[4])
-	to.PrimaryKey.SubParts = append(to.PrimaryKey.SubParts, 0)
+	to.PrimaryKey.Parts = append(to.PrimaryKey.Parts, IndexPart{ColumnName: to.Columns[4].Name})
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
 	tableAlters, supported = from.Diff(&to)
 	if len(tableAlters) != 2 || !supported {
@@ -325,7 +326,7 @@ func TestTableAlterAddOrDropForeignKey(t *testing.T) {
 	// Add the foreign key constraint
 	newFk := &ForeignKey{
 		Name:                  "actor_fk",
-		Columns:               to.Columns[0:1],
+		ColumnNames:           []string{to.Columns[0].Name},
 		ReferencedSchemaName:  "", // leave blank to signal its the same schema as the current table
 		ReferencedTableName:   "actor",
 		ReferencedColumnNames: []string{"actor_id"},
@@ -416,10 +417,9 @@ func TestTableAlterAddIndexOrder(t *testing.T) {
 	// Add 10 secondary indexes, and ensure their order is preserved
 	for n := 0; n < 10; n++ {
 		to.SecondaryIndexes = append(to.SecondaryIndexes, &Index{
-			Name:     fmt.Sprintf("newidx_%d", n),
-			Columns:  []*Column{to.Columns[0]},
-			SubParts: []uint16{0},
-			Type:     "BTREE",
+			Name:  fmt.Sprintf("newidx_%d", n),
+			Parts: []IndexPart{{ColumnName: to.Columns[0].Name}},
+			Type:  "BTREE",
 		})
 	}
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
@@ -440,7 +440,8 @@ func TestTableAlterAddIndexOrder(t *testing.T) {
 
 	// Also modify an existing index, and ensure its corresponding drop + re-add
 	// comes before the other 10 adds
-	to.SecondaryIndexes[1].SubParts[1] = 6
+	to.SecondaryIndexes[1].Parts[1].PrefixLength = 6
+	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
 	tableAlters, supported = from.Diff(&to)
 	if len(tableAlters) != 12 || !supported {
 		t.Fatalf("Incorrect number of table alters: expected 12, found %d, supported=%t", len(tableAlters), supported)
@@ -453,6 +454,50 @@ func TestTableAlterAddIndexOrder(t *testing.T) {
 	} else if ta.Index.Name != to.SecondaryIndexes[1].Name {
 		t.Errorf("Expected alters[1] to be on index %s, instead found %s", to.SecondaryIndexes[1].Name, ta.Index.Name)
 	}
+
+	// Revert previous change, and instead change visibility on first index. This
+	// should be handled by an ALTER INDEX clause, w/o any need to drop anything.
+	to.SecondaryIndexes[1].Parts[1].PrefixLength = from.SecondaryIndexes[1].Parts[1].PrefixLength
+	to.SecondaryIndexes[0].Invisible = true
+	to.CreateStatement = to.GeneratedCreateStatement(FlavorMySQL80)
+	tableAlters, supported = from.Diff(&to)
+	if len(tableAlters) != 11 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 11, found %d, supported=%t", len(tableAlters), supported)
+	}
+	expectClause := "ALTER INDEX `idx_ssn` INVISIBLE"
+	if ta, ok := tableAlters[0].(AlterIndex); !ok {
+		t.Errorf("Expected alters[0] to be an AlterIndex, instead found %T", ta)
+	} else if ta.Index.Name != to.SecondaryIndexes[0].Name || !ta.NewInvisible {
+		t.Errorf("Unexpected values in AlterIndex: %+v", ta)
+	} else if clauseWithoutFlavor := ta.Clause(StatementModifiers{}); clauseWithoutFlavor != "" {
+		t.Errorf("Unexpected result for AlterIndex.Clause() without a MySQLish 8.0+ flavor: %q", clauseWithoutFlavor)
+	} else if clauseWithFlavor := ta.Clause(StatementModifiers{Flavor: FlavorPercona80}); clauseWithFlavor != expectClause {
+		t.Errorf("Unexpected result for AlterIndex.Clause() with a MySQLish 8.0+ flavor: %q", clauseWithFlavor)
+	}
+
+	// Also change another aspect of the first index. Now this should be a DROP for
+	// index [0], DROP for index [1], re-ADD for [0], re-ADD for [1], followed by
+	// 10 ADDs for the 10 new indexes.
+	to.SecondaryIndexes[0].Parts = append(to.SecondaryIndexes[0].Parts, IndexPart{
+		ColumnName: "last_name",
+		Descending: true,
+	})
+	to.CreateStatement = to.GeneratedCreateStatement(FlavorMySQL80)
+	tableAlters, supported = from.Diff(&to)
+	if len(tableAlters) != 14 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 14, found %d, supported=%t", len(tableAlters), supported)
+	}
+	for n, ta := range tableAlters {
+		var ok bool
+		if n < 2 {
+			_, ok = ta.(DropIndex)
+		} else {
+			_, ok = ta.(AddIndex)
+		}
+		if !ok {
+			t.Errorf("Unexpected type of alter clause at position %d: %T", n, ta)
+		}
+	}
 }
 
 func TestTableAlterIndexReorder(t *testing.T) {
@@ -463,10 +508,12 @@ func TestTableAlterIndexReorder(t *testing.T) {
 	getTable := func() Table {
 		table := aTable(1)
 		table.SecondaryIndexes = append(table.SecondaryIndexes, &Index{
-			Name:     "idx_alive_lastname",
-			Columns:  []*Column{table.Columns[5], table.Columns[2]},
-			SubParts: []uint16{0, 10},
-			Type:     "BTREE",
+			Name: "idx_alive_lastname",
+			Parts: []IndexPart{
+				{ColumnName: table.Columns[5].Name},
+				{ColumnName: table.Columns[2].Name, PrefixLength: 10},
+			},
+			Type: "BTREE",
 		})
 		table.CreateStatement = table.GeneratedCreateStatement(FlavorUnknown)
 		return table
@@ -528,7 +575,7 @@ func TestTableAlterIndexReorder(t *testing.T) {
 	// [2]. Corresponding statement should only refer to [1] unless
 	// mods.StrictIndexOrder used.
 	to = getTable()
-	to.SecondaryIndexes[1].SubParts[1] = 8
+	to.SecondaryIndexes[1].Parts[1].PrefixLength = 8
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
 	tableAlters, _ = from.Diff(&to)
 	if len(tableAlters) != 4 {
@@ -544,7 +591,7 @@ func TestTableAlterIndexReorder(t *testing.T) {
 			if drop1.Index.Name == drop2.Index.Name {
 				t.Errorf("Both drops refer to same index %s", drop1.Index.Name)
 			}
-			if add3.Index.Name != orig[1].Name || add3.Index.SubParts[1] != 8 {
+			if add3.Index.Name != orig[1].Name || add3.Index.Parts[1].PrefixLength != 8 {
 				t.Errorf("tableAlters[2] does not match expectations; found %+v", add3.Index)
 			}
 			if !add4.Index.Equals(orig[2]) {
@@ -560,10 +607,11 @@ func TestTableAlterIndexReorder(t *testing.T) {
 	// only refer to adding the new index unless mods.StrictIndexOrder used.
 	to = getTable()
 	newIdx := &Index{
-		Name:     "idx_firstname",
-		Columns:  []*Column{to.Columns[1]},
-		SubParts: []uint16{0},
-		Type:     "BTREE",
+		Name: "idx_firstname",
+		Parts: []IndexPart{
+			{ColumnName: to.Columns[1].Name},
+		},
+		Type: "BTREE",
 	}
 	to.SecondaryIndexes = []*Index{to.SecondaryIndexes[0], newIdx, to.SecondaryIndexes[1], to.SecondaryIndexes[2]}
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)

@@ -263,6 +263,7 @@ func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
 	if err := s.d.SetFlavor(expected); err != nil || s.d.Flavor() != expected {
 		t.Errorf("Unexpected outcome from SetFlavor: error=%v, flavor=%s", err, s.d.Flavor())
 	}
+	s.d.ForceFlavor(FlavorUnknown) // Clean up
 }
 
 func (s TengoIntegrationSuite) TestInstanceCanSkipBinlog(t *testing.T) {
@@ -711,6 +712,27 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		fixGenerationExpr(table, flavor)
 		if table.GeneratedCreateStatement(flavor) != table.CreateStatement {
 			t.Error("fixGenerationExpr did not behave as expected")
+		}
+	}
+
+	// Test advanced index functionality in MySQL 8+
+	if flavor.MySQLishMinVersion(8, 0) {
+		if _, err := s.d.SourceSQL("testdata/index-mysql8.sql"); err != nil {
+			t.Fatalf("Unexpected error sourcing testdata/index-mysql8.sql: %v", err)
+		}
+		table := s.GetTable(t, "testing", "my8idx")
+		if table.UnsupportedDDL {
+			t.Errorf("Expected table using advanced index functionality to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
+		}
+		idx := table.SecondaryIndexes[0]
+		if !idx.Invisible {
+			t.Errorf("Expected index %s to be invisible, but it was not", idx.Name)
+		}
+		if idx.Parts[0].Descending || !idx.Parts[1].Descending {
+			t.Errorf("Unexpected index part collations found: [0].Descending=%t, [1].Descending=%t", idx.Parts[0].Descending, !idx.Parts[1].Descending)
+		}
+		if idx.Parts[0].Expression != "" || idx.Parts[1].Expression == "" {
+			t.Errorf("Unexpected index part expressions found: [0].Expression=%q, [1].Expression=%q", idx.Parts[0].Expression, idx.Parts[1].Expression)
 		}
 	}
 }

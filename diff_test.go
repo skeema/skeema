@@ -344,7 +344,7 @@ func TestSchemaDiffForeignKeys(t *testing.T) {
 	s2t1.ForeignKeys = []*ForeignKey{
 		{
 			Name:                  "actor_fk",
-			Columns:               s2t1.Columns[0:1],
+			ColumnNames:           []string{s2t1.Columns[0].Name},
 			ReferencedSchemaName:  "",
 			ReferencedTableName:   "actor",
 			ReferencedColumnNames: []string{"actor_id"},
@@ -364,7 +364,7 @@ func TestSchemaDiffForeignKeys(t *testing.T) {
 	s2t2 = foreignKeyTable()
 	s2t2.ForeignKeys[1] = &ForeignKey{
 		Name:                  "actor_fk",
-		Columns:               s2t2.Columns[0:1],
+		ColumnNames:           []string{s2t2.Columns[0].Name},
 		ReferencedSchemaName:  "",
 		ReferencedTableName:   "actor",
 		ReferencedColumnNames: []string{"actor_id"},
@@ -393,7 +393,7 @@ func TestSchemaDiffForeignKeys(t *testing.T) {
 	}
 
 	// Renaming an FK but also changing its definition: never blank statement
-	s2t2.ForeignKeys[1].Columns = s2t2.ForeignKeys[1].Columns[0:1]
+	s2t2.ForeignKeys[1].ColumnNames = s2t2.ForeignKeys[1].ColumnNames[0:1]
 	s2t2.ForeignKeys[1].ReferencedColumnNames = s2t2.ForeignKeys[1].ReferencedColumnNames[0:1]
 	s2t2.CreateStatement = s2t2.GeneratedCreateStatement(FlavorUnknown)
 	assertDiffs(&s1, &s2, 1, 1, 1, 1)

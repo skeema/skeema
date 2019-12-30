@@ -151,11 +151,12 @@ func (t *Table) ClusteredIndexKey() *Index {
 	if t.PrimaryKey != nil {
 		return t.PrimaryKey
 	}
+	cols := t.ColumnsByName()
 Outer:
 	for _, index := range t.SecondaryIndexes {
 		if index.Unique {
-			for _, col := range index.Columns {
-				if col.Nullable {
+			for _, part := range index.Parts {
+				if col := cols[part.ColumnName]; col == nil || col.Nullable {
 					continue Outer
 				}
 			}
@@ -235,26 +236,30 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 		}
 	}
 
-	// Compare secondary indexes. There is no way to modify an index without
-	// dropping and re-adding it. There's also no way to re-position an index
-	// without dropping and re-adding all preexisting indexes that now come after.
+	// Compare secondary indexes. Aside from visibility changes in MySQL 8+, there
+	// is no way to modify an index without dropping and re-adding it. There's also
+	// no way to re-position an index without dropping and re-adding all
+	// preexisting indexes that now come after.
 	toIndexes := to.SecondaryIndexesByName()
 	fromIndexes := from.SecondaryIndexesByName()
 	fromIndexStillExist := make([]*Index, 0) // ordered list of indexes from "from" that still exist in "to"
 	for _, fromIdx := range from.SecondaryIndexes {
-		if _, stillExists := toIndexes[fromIdx.Name]; stillExists {
+		if toIdx, stillExists := toIndexes[fromIdx.Name]; stillExists {
 			fromIndexStillExist = append(fromIndexStillExist, fromIdx)
+			if fromIdx.OnlyVisibilityDiffers(toIdx) {
+				clauses = append(clauses, AlterIndex{Index: fromIdx, NewInvisible: toIdx.Invisible})
+			}
 		} else {
 			clauses = append(clauses, DropIndex{Index: fromIdx})
 		}
 	}
 	var fromCursor int
 	for _, toIdx := range to.SecondaryIndexes {
-		for fromCursor < len(fromIndexStillExist) && !fromIndexStillExist[fromCursor].Equals(toIdx) {
+		for fromCursor < len(fromIndexStillExist) && !fromIndexStillExist[fromCursor].EqualsIgnoringVisibility(toIdx) {
 			stillIdx, stillExists := toIndexes[fromIndexStillExist[fromCursor].Name]
 			clauses = append(clauses, DropIndex{
 				Index:       fromIndexStillExist[fromCursor],
-				reorderOnly: stillExists && stillIdx.Equals(fromIndexStillExist[fromCursor]),
+				reorderOnly: stillExists && stillIdx.EqualsIgnoringVisibility(fromIndexStillExist[fromCursor]),
 			})
 			fromCursor++
 		}
@@ -264,7 +269,7 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 			prevIdx, prevExisted := fromIndexes[toIdx.Name]
 			clauses = append(clauses, AddIndex{
 				Index:       toIdx,
-				reorderOnly: prevExisted && prevIdx.Equals(toIdx),
+				reorderOnly: prevExisted && prevIdx.EqualsIgnoringVisibility(toIdx),
 			})
 		} else {
 			// Current position "to" matches cursor position "from"; nothing to add or drop

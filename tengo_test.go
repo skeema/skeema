@@ -139,10 +139,15 @@ func TestUnitTableFlavors(t *testing.T) {
 }
 
 func primaryKey(cols ...*Column) *Index {
+	parts := make([]IndexPart, len(cols))
+	for n := range cols {
+		parts[n] = IndexPart{
+			ColumnName: cols[n].Name,
+		}
+	}
 	return &Index{
 		Name:       "PRIMARY",
-		Columns:    cols,
-		SubParts:   make([]uint16, len(cols)),
+		Parts:      parts,
 		PrimaryKey: true,
 		Unique:     true,
 		Type:       "BTREE",
@@ -226,17 +231,20 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 	}
 	secondaryIndexes := []*Index{
 		{
-			Name:     "idx_ssn",
-			Columns:  []*Column{columns[4]},
-			SubParts: []uint16{0},
-			Unique:   true,
-			Type:     "BTREE",
+			Name: "idx_ssn",
+			Parts: []IndexPart{
+				{ColumnName: columns[4].Name},
+			},
+			Unique: true,
+			Type:   "BTREE",
 		},
 		{
-			Name:     "idx_actor_name",
-			Columns:  []*Column{columns[2], columns[1]},
-			SubParts: []uint16{10, 1},
-			Type:     "BTREE",
+			Name: "idx_actor_name",
+			Parts: []IndexPart{
+				{ColumnName: columns[2].Name, PrefixLength: 10},
+				{ColumnName: columns[1].Name, PrefixLength: 1},
+			},
+			Type: "BTREE",
 		},
 	}
 
@@ -291,10 +299,11 @@ func anotherTableForFlavor(flavor Flavor) Table {
 		},
 	}
 	secondaryIndex := &Index{
-		Name:     "film_name",
-		Columns:  []*Column{columns[1]},
-		SubParts: []uint16{0},
-		Type:     "BTREE",
+		Name: "film_name",
+		Parts: []IndexPart{
+			{ColumnName: columns[1].Name},
+		},
+		Type: "BTREE",
 	}
 	stmt := `CREATE TABLE ` + "`" + `actor_in_film` + "`" + ` (
   ` + "`" + `actor_id` + "`" + ` smallint(5) unsigned NOT NULL,
@@ -435,24 +444,27 @@ func foreignKeyTable() Table {
 
 	secondaryIndexes := []*Index{
 		{
-			Name:     "customer",
-			Columns:  []*Column{columns[1]},
-			SubParts: []uint16{0},
-			Type:     "BTREE",
+			Name: "customer",
+			Parts: []IndexPart{
+				{ColumnName: columns[1].Name},
+			},
+			Type: "BTREE",
 		},
 		{
-			Name:     "product",
-			Columns:  []*Column{columns[2], columns[3]},
-			Unique:   true,
-			SubParts: []uint16{0, 0},
-			Type:     "BTREE",
+			Name: "product",
+			Parts: []IndexPart{
+				{ColumnName: columns[2].Name},
+				{ColumnName: columns[3].Name},
+			},
+			Unique: true,
+			Type:   "BTREE",
 		},
 	}
 
 	foreignKeys := []*ForeignKey{
 		{
 			Name:                  "customer_fk",
-			Columns:               columns[1:2],
+			ColumnNames:           []string{columns[1].Name},
 			ReferencedSchemaName:  "purchasing",
 			ReferencedTableName:   "customers",
 			ReferencedColumnNames: []string{"id"},
@@ -461,7 +473,7 @@ func foreignKeyTable() Table {
 		},
 		{
 			Name:                  "product_fk",
-			Columns:               columns[2:4],
+			ColumnNames:           []string{columns[2].Name, columns[3].Name},
 			ReferencedSchemaName:  "", // same schema as this table
 			ReferencedTableName:   "products",
 			ReferencedColumnNames: []string{"line", "model"},
