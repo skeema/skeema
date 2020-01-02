@@ -527,6 +527,7 @@ func TestTableAlterIndexReorder(t *testing.T) {
 			var err error
 			clauses, err = td.Clauses(StatementModifiers{
 				StrictIndexOrder: strict,
+				Flavor:           FlavorMySQL80,
 			})
 			if err != nil {
 				t.Fatalf("Unexpected error result from Clauses(): %s", err)
@@ -570,36 +571,44 @@ func TestTableAlterIndexReorder(t *testing.T) {
 	assertClauses(&from, &to, false, "DROP PRIMARY KEY, DROP KEY `%s`, ADD %s", orig[1].Name, orig[1].Definition(FlavorUnknown))
 	assertClauses(&from, &to, true, "DROP PRIMARY KEY, DROP KEY `%s`, ADD %s", orig[1].Name, orig[1].Definition(FlavorUnknown))
 
-	// Restore to previous state, and then modify [1]. Resulting diff should drop
-	// [1] and [2], then re-add the modified [1], and then re-add the unmodified
-	// [2]. Corresponding statement should only refer to [1] unless
-	// mods.StrictIndexOrder used.
+	// Restore to previous state, and then modify definition of [1] and visibility
+	// of [2]. Resulting diff should:
+	// * modify visibility of [2] (suppressed if mods.StrictIndexOrder)
+	// * drop [1]
+	// * drop [2] (suppressed unless mods.StrictIndexOrder)
+	// * re-add the modified [1]
+	// * re-add [2] (suppressed unless mods.StrictIndexOrder)
 	to = getTable()
 	to.SecondaryIndexes[1].Parts[1].PrefixLength = 8
+	to.SecondaryIndexes[2].Invisible = true
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
 	tableAlters, _ = from.Diff(&to)
-	if len(tableAlters) != 4 {
-		t.Errorf("Expected 4 clauses, instead found %d", len(tableAlters))
+	if len(tableAlters) != 5 {
+		t.Errorf("Expected 5 clauses, instead found %d", len(tableAlters))
 	} else {
-		drop1, ok1 := tableAlters[0].(DropIndex)
-		drop2, ok2 := tableAlters[1].(DropIndex)
-		add3, ok3 := tableAlters[2].(AddIndex)
-		add4, ok4 := tableAlters[3].(AddIndex)
-		if !ok1 || !ok2 || !ok3 || !ok4 {
-			t.Errorf("One or more type mismatches; ok: %t %t %t %t", ok1, ok2, ok3, ok4)
+		alter0, ok0 := tableAlters[0].(AlterIndex)
+		drop1, ok1 := tableAlters[1].(DropIndex)
+		drop2, ok2 := tableAlters[2].(DropIndex)
+		add3, ok3 := tableAlters[3].(AddIndex)
+		add4, ok4 := tableAlters[4].(AddIndex)
+		if !ok0 || !ok1 || !ok2 || !ok3 || !ok4 {
+			t.Errorf("One or more type mismatches; ok: %t %t %t %t %t", ok0, ok1, ok2, ok3, ok4)
 		} else {
+			if !alter0.alsoReordering {
+				t.Error("Expected AlterIndex.alsoReordering to be true, but it was not")
+			}
 			if drop1.Index.Name == drop2.Index.Name {
 				t.Errorf("Both drops refer to same index %s", drop1.Index.Name)
 			}
 			if add3.Index.Name != orig[1].Name || add3.Index.Parts[1].PrefixLength != 8 {
-				t.Errorf("tableAlters[2] does not match expectations; found %+v", add3.Index)
+				t.Errorf("tableAlters[3] does not match expectations; found %+v", add3.Index)
 			}
-			if !add4.Index.Equals(orig[2]) {
-				t.Errorf("tableAlters[3] does not match expectations; found %+v", add4.Index)
+			if !add4.Index.EqualsIgnoringVisibility(orig[2]) {
+				t.Errorf("tableAlters[4] does not match expectations; found %+v", add4.Index)
 			}
 		}
-		assertClauses(&from, &to, false, "DROP KEY `%s`, ADD %s", orig[1].Name, to.SecondaryIndexes[1].Definition(FlavorUnknown))
-		assertClauses(&from, &to, true, "DROP KEY `%s`, DROP KEY `%s`, ADD %s, ADD %s", orig[1].Name, orig[2].Name, to.SecondaryIndexes[1].Definition(FlavorUnknown), orig[2].Definition(FlavorUnknown))
+		assertClauses(&from, &to, false, "ALTER INDEX `%s` INVISIBLE, DROP KEY `%s`, ADD %s", orig[2].Name, orig[1].Name, to.SecondaryIndexes[1].Definition(FlavorUnknown))
+		assertClauses(&from, &to, true, "DROP KEY `%s`, DROP KEY `%s`, ADD %s, ADD %s", orig[1].Name, orig[2].Name, to.SecondaryIndexes[1].Definition(FlavorUnknown), to.SecondaryIndexes[2].Definition(FlavorMySQL80))
 	}
 
 	// Adding a new index before [1] should also result in dropping the old [1]

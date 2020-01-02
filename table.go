@@ -243,11 +243,13 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	toIndexes := to.SecondaryIndexesByName()
 	fromIndexes := from.SecondaryIndexesByName()
 	fromIndexStillExist := make([]*Index, 0) // ordered list of indexes from "from" that still exist in "to"
+	visChanges := make(map[string]int)       // maps index name -> clause position of AlterIndex clauses
 	for _, fromIdx := range from.SecondaryIndexes {
 		if toIdx, stillExists := toIndexes[fromIdx.Name]; stillExists {
 			fromIndexStillExist = append(fromIndexStillExist, fromIdx)
 			if fromIdx.OnlyVisibilityDiffers(toIdx) {
 				clauses = append(clauses, AlterIndex{Index: fromIdx, NewInvisible: toIdx.Invisible})
+				visChanges[fromIdx.Name] = len(clauses) - 1
 			}
 		} else {
 			clauses = append(clauses, DropIndex{Index: fromIdx})
@@ -256,11 +258,18 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	var fromCursor int
 	for _, toIdx := range to.SecondaryIndexes {
 		for fromCursor < len(fromIndexStillExist) && !fromIndexStillExist[fromCursor].EqualsIgnoringVisibility(toIdx) {
+			clause := DropIndex{Index: fromIndexStillExist[fromCursor]}
 			stillIdx, stillExists := toIndexes[fromIndexStillExist[fromCursor].Name]
-			clauses = append(clauses, DropIndex{
-				Index:       fromIndexStillExist[fromCursor],
-				reorderOnly: stillExists && stillIdx.EqualsIgnoringVisibility(fromIndexStillExist[fromCursor]),
-			})
+			if stillExists && stillIdx.EqualsIgnoringVisibility(fromIndexStillExist[fromCursor]) {
+				clause.reorderOnly = true
+				if visChangePos, ok := visChanges[stillIdx.Name]; ok {
+					// suppress ALTER INDEX if doing an index reordering DROP + re-ADD
+					alterIndex := clauses[visChangePos].(AlterIndex)
+					alterIndex.alsoReordering = true
+					clauses[visChangePos] = alterIndex
+				}
+			}
+			clauses = append(clauses, clause)
 			fromCursor++
 		}
 		if fromCursor >= len(fromIndexStillExist) {
