@@ -1259,7 +1259,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	return tables, nil
 }
 
-var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE |FULLTEXT |SPATIAL )?KEY `((?:[^`]|``)+)` (?:USING \\w+ )?\\(`")
+var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE |FULLTEXT |SPATIAL )?KEY `((?:[^`]|``)+)` (?:USING \\w+ )?\\([`(]")
 
 // MySQL 8.0 uses a different index order in SHOW CREATE TABLE than in
 // information_schema. This function fixes the struct to match SHOW CREATE
