@@ -17,7 +17,7 @@ Skeema does not implement its own method for online schema changes, but it can b
 
 No. When using the Skeema CLI tool, schema changes only occur when you run `skeema push`.
 
-Separate from the CLI tool, optional products supporting continuous integration and continuous deployment are under development at [Skeema.io](https://www.skeema.io). The CI product is [currently in open beta testing](https://www.skeema.io/ci); it provides automatic linting of GitHub commits and pull requests. The corresponding CD product, providing an agent/daemon that can automatically push *safe* changes when a branch is merged to master, will be launched later in 2019.
+Separate from the CLI tool, optional products supporting continuous integration and continuous deployment are under development at [Skeema.io](https://www.skeema.io). The CI product is [currently in open beta testing](https://www.skeema.io/ci); it provides automatic linting of GitHub commits and pull requests. A corresponding CD product, providing an agent/daemon that can automatically push *safe* changes when a branch is merged to master, is currently under development.
 
 ### Is it safe?
 
