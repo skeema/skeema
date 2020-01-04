@@ -7,9 +7,9 @@ import (
 
 // ColumnDefault represents the default value for a column.
 type ColumnDefault struct {
-	Null   bool
-	Quoted bool
-	Value  string
+	Null   bool   `json:"null,omitempty"`
+	Quoted bool   `json:"quoted,omitempty"`
+	Value  string `json:"value,omitempty"`
 }
 
 // ColumnDefaultNull indicates a column has a default value of NULL.
@@ -56,18 +56,18 @@ func (cd ColumnDefault) Clause(flavor Flavor, col *Column) string {
 
 // Column represents a single column of a table.
 type Column struct {
-	Name               string
-	TypeInDB           string
-	Nullable           bool
-	AutoIncrement      bool
-	Default            ColumnDefault
-	OnUpdate           string
-	GenerationExpr     string // Only populated if generated column
-	Virtual            bool
-	CharSet            string // Only populated if textual type
-	Collation          string // Only populated if textual type
-	CollationIsDefault bool   // Only populated if textual type; indicates default for CharSet
-	Comment            string
+	Name               string        `json:"name"`
+	TypeInDB           string        `json:"type"`
+	Nullable           bool          `json:"nullable,omitempty"`
+	AutoIncrement      bool          `json:"autoIncrement,omitempty"`
+	Default            ColumnDefault `json:"default"`
+	OnUpdate           string        `json:"onUpdate,omitempty"`
+	GenerationExpr     string        `json:"generationExpression,omitempty"` // Only populated if generated column
+	Virtual            bool          `json:"virtual,omitempty"`
+	CharSet            string        `json:"charSet,omitempty"`            // Only populated if textual type
+	Collation          string        `json:"collation,omitempty"`          // Only populated if textual type
+	CollationIsDefault bool          `json:"collationIsDefault,omitempty"` // Only populated if textual type; indicates default for CharSet
+	Comment            string        `json:"comment,omitempty"`
 }
 
 // Definition returns this column's definition clause, for use as part of a DDL

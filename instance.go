@@ -1191,13 +1191,13 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 				SubName: rawPart.SubName.String,
 				Values:  rawPart.Values.String,
 				Comment: rawPart.Comment,
-				method:  rawPart.Method,
+				Method:  rawPart.Method,
 			})
 		}
 		for _, t := range tables {
 			if p, ok := partitioningByTableName[t.Name]; ok {
 				for _, part := range p.Partitions {
-					part.engine = t.Engine
+					part.Engine = t.Engine
 				}
 				t.Partitioning = p
 			}
@@ -1370,11 +1370,11 @@ func fixPartitioningEdgeCases(t *Table, flavor Flavor) {
 	if strings.HasSuffix(t.Partitioning.Method, "HASH") || strings.HasSuffix(t.Partitioning.Method, "KEY") {
 		countClause := fmt.Sprintf("\nPARTITIONS %d", len(t.Partitioning.Partitions))
 		if strings.Contains(t.CreateStatement, countClause) {
-			t.Partitioning.forcePartitionList = partitionListCount
+			t.Partitioning.ForcePartitionList = PartitionListCount
 		} else if strings.Contains(t.CreateStatement, "\n(PARTITION ") {
-			t.Partitioning.forcePartitionList = partitionListExplicit
+			t.Partitioning.ForcePartitionList = PartitionListExplicit
 		} else if len(t.Partitioning.Partitions) == 1 {
-			t.Partitioning.forcePartitionList = partitionListNone
+			t.Partitioning.ForcePartitionList = PartitionListNone
 		}
 	}
 
@@ -1383,13 +1383,13 @@ func fixPartitioningEdgeCases(t *Table, flavor Flavor) {
 	if strings.HasSuffix(t.Partitioning.Method, "KEY") && strings.Contains(t.CreateStatement, "ALGORITHM") {
 		re := regexp.MustCompile(fmt.Sprintf(`PARTITION BY %s ([^(]*)\(`, t.Partitioning.Method))
 		if matches := re.FindStringSubmatch(t.CreateStatement); matches != nil {
-			t.Partitioning.algoClause = matches[1]
+			t.Partitioning.AlgoClause = matches[1]
 		}
 	}
 
 	// Process DATA DIRECTORY clauses, which are easier to parse from SHOW CREATE
 	// TABLE instead of information_schema.innodb_sys_tablespaces.
-	if (t.Partitioning.forcePartitionList == partitionListDefault || t.Partitioning.forcePartitionList == partitionListExplicit) &&
+	if (t.Partitioning.ForcePartitionList == PartitionListDefault || t.Partitioning.ForcePartitionList == PartitionListExplicit) &&
 		strings.Contains(t.CreateStatement, " DATA DIRECTORY = ") {
 		for _, p := range t.Partitioning.Partitions {
 			name := p.Name
@@ -1399,7 +1399,7 @@ func fixPartitioningEdgeCases(t *Table, flavor Flavor) {
 			name = regexp.QuoteMeta(name)
 			re := regexp.MustCompile(fmt.Sprintf(`PARTITION %s .*DATA DIRECTORY = '((?:\\\\|\\'|''|[^'])*)'`, name))
 			if matches := re.FindStringSubmatch(t.CreateStatement); matches != nil {
-				p.dataDir = matches[1]
+				p.DataDir = matches[1]
 			}
 		}
 	}

@@ -11,13 +11,13 @@ import (
 // in a particular order. Also, the referenced side is not gauranteed to exist,
 // especially if foreign_key_checks=0 has been used at any point in the past.
 type ForeignKey struct {
-	Name                  string
-	ColumnNames           []string
-	ReferencedSchemaName  string // will be empty string if same schema
-	ReferencedTableName   string
-	ReferencedColumnNames []string // slice length always identical to len(ColumnNames)
-	UpdateRule            string
-	DeleteRule            string
+	Name                  string   `json:"name"`
+	ColumnNames           []string `json:"columnNames"`
+	ReferencedSchemaName  string   `json:"referencedSchemaName,omitempty"` // will be empty string if same schema
+	ReferencedTableName   string   `json:"referencedTableName"`
+	ReferencedColumnNames []string `json:"referencedColumnNames"` // slice length always identical to len(ColumnNames)
+	UpdateRule            string   `json:"updateRule"`
+	DeleteRule            string   `json:"deleteRule"`
 }
 
 // Definition returns this ForeignKey's definition clause, for use as part of a DDL

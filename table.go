@@ -9,21 +9,21 @@ import (
 
 // Table represents a single database table.
 type Table struct {
-	Name               string
-	Engine             string
-	CharSet            string
-	Collation          string
-	CollationIsDefault bool   // true if Collation is default for CharSet
-	CreateOptions      string // row_format, stats_persistent, stats_auto_recalc, etc
-	Columns            []*Column
-	PrimaryKey         *Index
-	SecondaryIndexes   []*Index
-	ForeignKeys        []*ForeignKey
-	Comment            string
-	NextAutoIncrement  uint64
-	Partitioning       *TablePartitioning // nil if table isn't partitioned
-	UnsupportedDDL     bool               // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
-	CreateStatement    string             // complete SHOW CREATE TABLE obtained from an instance
+	Name               string             `json:"name"`
+	Engine             string             `json:"storageEngine"`
+	CharSet            string             `json:"defaultCharSet"`
+	Collation          string             `json:"defaultCollation"`
+	CollationIsDefault bool               `json:"collationIsDefault"`      // true if Collation is default for CharSet
+	CreateOptions      string             `json:"createOptions,omitempty"` // row_format, stats_persistent, stats_auto_recalc, etc
+	Columns            []*Column          `json:"columns"`
+	PrimaryKey         *Index             `json:"primaryKey,omitempty"`
+	SecondaryIndexes   []*Index           `json:"secondaryIndexes,omitempty"`
+	ForeignKeys        []*ForeignKey      `json:"foreignKeys,omitempty"`
+	Comment            string             `json:"comment,omitempty"`
+	NextAutoIncrement  uint64             `json:"nextAutoIncrement,omitempty"`
+	Partitioning       *TablePartitioning `json:"partitioning,omitempty"`       // nil if table isn't partitioned
+	UnsupportedDDL     bool               `json:"unsupportedForDiff,omitempty"` // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
+	CreateStatement    string             `json:"showCreateTable"`              // complete SHOW CREATE TABLE obtained from an instance
 }
 
 // AlterStatement returns the prefix to a SQL "ALTER TABLE" statement.

@@ -9,22 +9,22 @@ import (
 // Index represents a single index (primary key, unique secondary index, or non-
 // unique secondard index) in a table.
 type Index struct {
-	Name       string
-	Parts      []IndexPart
-	PrimaryKey bool
-	Unique     bool
-	Invisible  bool
-	Comment    string
-	Type       string
+	Name       string      `json:"name"`
+	Parts      []IndexPart `json:"parts"`
+	PrimaryKey bool        `json:"primaryKey,omitempty"`
+	Unique     bool        `json:"unique,omitempty"`
+	Invisible  bool        `json:"invisible,omitempty"`
+	Comment    string      `json:"comment,omitempty"`
+	Type       string      `json:"type"`
 }
 
 // IndexPart represents an individual indexed column or expression. Each index
 // has one or more IndexPart values.
 type IndexPart struct {
-	ColumnName   string // name of column, or empty if expression
-	Expression   string // expression value (MySQL 8+), or empty if column
-	PrefixLength uint16 // nonzero if only a prefix of column is indexed
-	Descending   bool   // if true, collation is descending (MySQL 8+)
+	ColumnName   string `json:"columnName,omitempty"`   // name of column, or empty if expression
+	Expression   string `json:"expression,omitempty"`   // expression value (MySQL 8+), or empty if column
+	PrefixLength uint16 `json:"prefixLength,omitempty"` // nonzero if only a prefix of column is indexed
+	Descending   bool   `json:"descending,omitempty"`   // if true, collation is descending (MySQL 8+)
 }
 
 // Definition returns this index's definition clause, for use as part of a DDL
