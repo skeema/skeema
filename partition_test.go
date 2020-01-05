@@ -427,9 +427,9 @@ func partitionedTable(flavor Flavor) Table {
 		Method:     "RANGE",
 		Expression: expression,
 		Partitions: []*Partition{
-			{Name: "p0", Values: "123", Method: "RANGE", Engine: "InnoDB"},
-			{Name: "p1", Values: "456", Method: "RANGE", Engine: "InnoDB"},
-			{Name: "p2", Values: "MAXVALUE", Method: "RANGE", Engine: "InnoDB"},
+			{Name: "p0", Values: "123", Engine: "InnoDB"},
+			{Name: "p1", Values: "456", Engine: "InnoDB"},
+			{Name: "p2", Values: "MAXVALUE", Engine: "InnoDB"},
 		},
 	}
 	t.CreateStatement = t.GeneratedCreateStatement(flavor)

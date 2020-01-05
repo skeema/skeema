@@ -51,7 +51,7 @@ func (tp *TablePartitioning) Definition(flavor Flavor) string {
 	if plMode == PartitionListExplicit {
 		pdefs := make([]string, len(tp.Partitions))
 		for n, p := range tp.Partitions {
-			pdefs[n] = p.Definition(flavor)
+			pdefs[n] = p.Definition(flavor, tp.Method)
 		}
 		partitionsClause = fmt.Sprintf("\n(%s)", strings.Join(pdefs, ",\n "))
 	} else if plMode == PartitionListCount {
@@ -144,25 +144,24 @@ type Partition struct {
 	SubName string `json:"subName,omitempty"` // empty string if no sub-partitioning; not fully supported yet
 	Values  string `json:"values,omitempty"`  // only populated for RANGE or LIST
 	Comment string `json:"comment,omitempty"`
-	Method  string `json:"method"`
 	Engine  string `json:"engine"`
 	DataDir string `json:"dataDir,omitempty"`
 }
 
 // Definition returns this partition's definition clause, for use as part of a
-// DDL statement. This is only used for some partition methods.
-func (p *Partition) Definition(flavor Flavor) string {
+// DDL statement.
+func (p *Partition) Definition(flavor Flavor, method string) string {
 	name := p.Name
 	if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
 		name = EscapeIdentifier(name)
 	}
 
 	var values string
-	if p.Method == "RANGE" && p.Values == "MAXVALUE" {
+	if method == "RANGE" && p.Values == "MAXVALUE" {
 		values = "VALUES LESS THAN MAXVALUE "
-	} else if strings.Contains(p.Method, "RANGE") {
+	} else if strings.Contains(method, "RANGE") {
 		values = fmt.Sprintf("VALUES LESS THAN (%s) ", p.Values)
-	} else if strings.Contains(p.Method, "LIST") {
+	} else if strings.Contains(method, "LIST") {
 		values = fmt.Sprintf("VALUES IN (%s) ", p.Values)
 	}
 

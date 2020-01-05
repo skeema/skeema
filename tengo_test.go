@@ -336,13 +336,11 @@ SUBPARTITIONS 2
 			{
 				Name:   "p0",
 				Values: "123",
-				Method: "RANGE",
 				Engine: "InnoDB",
 			},
 			{
 				Name:   "p1",
 				Values: "MAXVALUE",
-				Method: "RANGE",
 				Engine: "InnoDB",
 			},
 		},

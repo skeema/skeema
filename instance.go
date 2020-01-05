@@ -1194,7 +1194,6 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 				SubName: rawPart.SubName.String,
 				Values:  rawPart.Values.String,
 				Comment: rawPart.Comment,
-				Method:  rawPart.Method,
 			})
 		}
 		for _, t := range tables {
