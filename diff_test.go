@@ -257,7 +257,6 @@ func TestSchemaDiffAlterTable(t *testing.T) {
 	t2.Columns = append(t2.Columns, &Column{
 		Name:     "something",
 		TypeInDB: "smallint(5) unsigned",
-		Default:  ColumnDefaultNull,
 	})
 	t2.CreateStatement = t2.GeneratedCreateStatement(FlavorUnknown)
 	alter, clause := getAlter(&s1, &s2)
@@ -682,7 +681,6 @@ func TestAlterTableStatementOnlineMods(t *testing.T) {
 	col := &Column{
 		Name:     "something",
 		TypeInDB: "smallint(5) unsigned",
-		Default:  ColumnDefaultNull,
 	}
 	to.Columns = append(to.Columns, col)
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
@@ -750,7 +748,6 @@ func TestAlterTableStatementVirtualColValidation(t *testing.T) {
 	col := &Column{
 		Name:               "full_name",
 		TypeInDB:           "varchar(100)",
-		Default:            ColumnDefaultNull,
 		Nullable:           true,
 		CharSet:            "utf8",
 		Collation:          "utf8_general_ci",
@@ -783,7 +780,6 @@ func TestIgnoreTableMod(t *testing.T) {
 	col := &Column{
 		Name:     "something",
 		TypeInDB: "smallint(5) unsigned",
-		Default:  ColumnDefaultNull,
 	}
 	to.Columns = append(to.Columns, col)
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)

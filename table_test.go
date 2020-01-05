@@ -96,7 +96,7 @@ func TestTableAlterAddOrDropColumn(t *testing.T) {
 		Name:     "age",
 		TypeInDB: "int unsigned",
 		Nullable: true,
-		Default:  ColumnDefaultNull,
+		Default:  "NULL",
 	}
 	to.Columns = append(to.Columns, newCol)
 	colCount := len(to.Columns)
@@ -136,7 +136,7 @@ func TestTableAlterAddOrDropColumn(t *testing.T) {
 		Name:     "net_worth",
 		TypeInDB: "decimal(9,2)",
 		Nullable: true,
-		Default:  ColumnDefaultNull,
+		Default:  "NULL",
 	}
 	to.Columns = []*Column{anotherCol}
 	to.Columns = append(to.Columns, hadColumns...)
@@ -161,7 +161,7 @@ func TestTableAlterAddOrDropColumn(t *testing.T) {
 		Name:     "awards_won",
 		TypeInDB: "int unsigned",
 		Nullable: false,
-		Default:  ColumnDefaultValue("0"),
+		Default:  "'0'",
 	}
 	to.Columns = append(to.Columns, anotherCol)
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
@@ -722,7 +722,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 		Name:     "age",
 		TypeInDB: "int unsigned",
 		Nullable: true,
-		Default:  ColumnDefaultNull,
+		Default:  "NULL",
 	}
 	to.Columns = append(to.Columns[0:3], to.Columns[5], to.Columns[6], newCol, to.Columns[4])
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
@@ -1181,7 +1181,7 @@ func TestTableAlterUnsupportedTable(t *testing.T) {
 		Name:     "age",
 		TypeInDB: "int(10) unsigned",
 		Nullable: true,
-		Default:  ColumnDefaultNull,
+		Default:  "NULL",
 	}
 	to.Columns = append(to.Columns, newCol)
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)

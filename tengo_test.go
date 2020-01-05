@@ -107,7 +107,7 @@ func TestUnitTableFlavors(t *testing.T) {
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 1 {
 		t.Errorf("MySQL 5.5: Expected 1 diff clause; instead found %d differences, supported=%t", len(clauses), supported)
 	}
-	for _, check := range []string{table.Columns[3].TypeInDB, table.Columns[3].OnUpdate, table.Columns[3].Default.Value} {
+	for _, check := range []string{table.Columns[3].TypeInDB, table.Columns[3].OnUpdate, table.Columns[3].Default} {
 		if strings.HasSuffix(check, ")") {
 			t.Error("MySQL 5.5: Expected all traces of fractional timestamp precision to be removed, but still present")
 		}
@@ -117,10 +117,10 @@ func TestUnitTableFlavors(t *testing.T) {
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 2 {
 		t.Errorf("MariaDB 10.3: Expected 2 diff clauses; instead found %d differences, supported=%t", len(clauses), supported)
 	}
-	if table.Columns[5].Default.Quoted {
+	if table.Columns[5].Default[0] == '\'' {
 		t.Error("MariaDB 10.3: Expected int column to not have quoted default, but it still does")
 	}
-	if table.Columns[3].OnUpdate != "current_timestamp(2)" || table.Columns[3].Default.Value != "current_timestamp(2)" {
+	if table.Columns[3].OnUpdate != "current_timestamp(2)" || table.Columns[3].Default != "current_timestamp(2)" {
 		t.Error("MariaDB 10.3: Expected current_timestamp to be lowercased, but it is not")
 	}
 	if table.GeneratedCreateStatement(FlavorMariaDB103) != table.CreateStatement {
@@ -132,8 +132,8 @@ func TestUnitTableFlavors(t *testing.T) {
 	if table2.GeneratedCreateStatement(FlavorMariaDB102) == orig2.GeneratedCreateStatement(FlavorUnknown) {
 		t.Errorf("MariaDB 10.2: Expected GeneratedCreateStatement to differ vs FlavorUnknown, but it did not")
 	}
-	defaultClause := table2.Columns[3].Default.Clause(FlavorMariaDB102, table2.Columns[3])
-	if !strings.Contains(defaultClause, "DEFAULT NULL") {
+	colClause := table2.Columns[3].Definition(FlavorMariaDB102, &table2)
+	if !strings.Contains(colClause, "DEFAULT NULL") {
 		t.Errorf("MariaDB 10.2: Expected text column to now emit a default value, but it did not")
 	}
 }
@@ -162,18 +162,18 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 	lastUpdateCol := &Column{
 		Name:     "last_update",
 		TypeInDB: "timestamp(2)",
-		Default:  ColumnDefaultExpression("CURRENT_TIMESTAMP(2)"),
+		Default:  "CURRENT_TIMESTAMP(2)",
 		OnUpdate: "CURRENT_TIMESTAMP(2)",
 	}
 	lastUpdateDef := "`last_update` timestamp(2) NOT NULL DEFAULT CURRENT_TIMESTAMP(2) ON UPDATE CURRENT_TIMESTAMP(2)"
 	if !flavor.FractionalTimestamps() {
 		lastUpdateCol.TypeInDB = "timestamp"
-		lastUpdateCol.Default = ColumnDefaultExpression("CURRENT_TIMESTAMP")
+		lastUpdateCol.Default = "CURRENT_TIMESTAMP"
 		lastUpdateCol.OnUpdate = "CURRENT_TIMESTAMP"
 		lastUpdateDef = "`last_update` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
 	}
 	if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
-		lastUpdateCol.Default.Value = strings.ToLower(lastUpdateCol.Default.Value)
+		lastUpdateCol.Default = strings.ToLower(lastUpdateCol.Default)
 		lastUpdateCol.OnUpdate = strings.ToLower(lastUpdateCol.OnUpdate)
 		lastUpdateDef = strings.Replace(lastUpdateDef, "CURRENT_TIMESTAMP", "current_timestamp", 2)
 	}
@@ -181,11 +181,11 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 	aliveCol := &Column{
 		Name:     "alive",
 		TypeInDB: "tinyint(1)",
-		Default:  ColumnDefaultValue("1"),
+		Default:  "'1'",
 	}
 	aliveDef := "`alive` tinyint(1) NOT NULL DEFAULT '1'"
 	if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
-		aliveCol.Default = ColumnDefaultExpression("1")
+		aliveCol.Default = "1"
 		aliveDef = "`alive` tinyint(1) NOT NULL DEFAULT 1"
 	}
 
@@ -194,12 +194,10 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 			Name:          "actor_id",
 			TypeInDB:      "smallint(5) unsigned",
 			AutoIncrement: true,
-			Default:       ColumnDefaultNull,
 		},
 		{
 			Name:               "first_name",
 			TypeInDB:           "varchar(45)",
-			Default:            ColumnDefaultNull,
 			CharSet:            "utf8",
 			Collation:          "utf8_general_ci",
 			CollationIsDefault: true,
@@ -208,7 +206,7 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 			Name:               "last_name",
 			Nullable:           true,
 			TypeInDB:           "varchar(45)",
-			Default:            ColumnDefaultNull,
+			Default:            "NULL",
 			CharSet:            "utf8",
 			Collation:          "utf8_general_ci",
 			CollationIsDefault: true,
@@ -217,7 +215,6 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 		{
 			Name:               "ssn",
 			TypeInDB:           "char(10)",
-			Default:            ColumnDefaultNull,
 			CharSet:            "utf8",
 			Collation:          "utf8_general_ci",
 			CollationIsDefault: true,
@@ -226,7 +223,7 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 		{
 			Name:     "alive_bit",
 			TypeInDB: "bit(1)",
-			Default:  ColumnDefaultExpression("b'1'"),
+			Default:  "b'1'",
 		},
 	}
 	secondaryIndexes := []*Index{
@@ -287,12 +284,10 @@ func anotherTableForFlavor(flavor Flavor) Table {
 		{
 			Name:     "actor_id",
 			TypeInDB: "smallint(5) unsigned",
-			Default:  ColumnDefaultNull,
 		},
 		{
 			Name:               "film_name",
 			TypeInDB:           "varchar(60)",
-			Default:            ColumnDefaultNull,
 			CharSet:            "latin1",
 			Collation:          "latin1_swedish_ci",
 			CollationIsDefault: true,
@@ -367,17 +362,15 @@ func supportedTableForFlavor(flavor Flavor) Table {
 		{
 			Name:     "post_id",
 			TypeInDB: "bigint(20) unsigned",
-			Default:  ColumnDefaultNull,
 		},
 		{
 			Name:     "user_id",
 			TypeInDB: "bigint(20) unsigned",
-			Default:  ColumnDefaultNull,
 		},
 		{
 			Name:     "subscribed_at",
 			TypeInDB: "int(10) unsigned",
-			Default:  ColumnDefaultNull,
+			Default:  "NULL",
 			Nullable: true,
 		},
 		{
@@ -387,7 +380,6 @@ func supportedTableForFlavor(flavor Flavor) Table {
 			CharSet:            "latin1",
 			Collation:          "latin1_swedish_ci",
 			CollationIsDefault: true,
-			Default:            ColumnDefaultNull,
 		},
 	}
 	stmt := strings.Replace(`CREATE TABLE ~followed_posts~ (
@@ -398,6 +390,7 @@ func supportedTableForFlavor(flavor Flavor) Table {
   PRIMARY KEY (~post_id~,~user_id~)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1`, "~", "`", -1)
 	if flavor.AllowBlobDefaults() {
+		columns[3].Default = "NULL"
 		stmt = strings.Replace(stmt, " text", " text DEFAULT NULL", 1)
 	}
 
@@ -419,12 +412,11 @@ func foreignKeyTable() Table {
 		{
 			Name:     "id",
 			TypeInDB: "int(10) unsigned",
-			Default:  ColumnDefaultNull,
 		},
 		{
 			Name:     "customer_id",
 			TypeInDB: "int(10) unsigned",
-			Default:  ColumnDefaultNull,
+			Default:  "NULL",
 			Nullable: true,
 		},
 		{
@@ -433,12 +425,10 @@ func foreignKeyTable() Table {
 			CharSet:            "latin1",
 			Collation:          "latin1_swedish_ci",
 			CollationIsDefault: true,
-			Default:            ColumnDefaultNull,
 		},
 		{
 			Name:     "model",
 			TypeInDB: "int(10) unsigned",
-			Default:  ColumnDefaultNull,
 		},
 	}
 

@@ -361,7 +361,7 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 	tableFromUnit := unpartitionedTable(flavor)
 	tableFromUnitP := partitionedTable(flavor)
 	if tableFromDB.CreateStatement != tableFromUnitP.CreateStatement {
-		t.Fatal("Test requires no drift between definition of unit test table and corresponding actual table")
+		t.Fatalf("Test requires no drift between definition of unit test table and corresponding actual table; found %q vs %q", tableFromDB.CreateStatement, tableFromUnitP.CreateStatement)
 	}
 	db, err := s.d.Connect("partitionparty", "")
 	if err != nil {
@@ -374,7 +374,6 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 		&Column{
 			Name:     "foo1",
 			TypeInDB: "int(10) unsigned",
-			Default:  ColumnDefaultNull,
 		},
 	)
 	tableFromUnit.CreateStatement = tableFromUnit.GeneratedCreateStatement(flavor)
@@ -403,7 +402,6 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 		&Column{
 			Name:     "foo2",
 			TypeInDB: "int(10) unsigned",
-			Default:  ColumnDefaultNull,
 		},
 	)
 	tableFromUnitP.Partitioning.Expression = strings.Replace(tableFromUnitP.Partitioning.Expression, "customer_", "", 1)
@@ -444,21 +442,22 @@ func unpartitionedTable(flavor Flavor) Table {
 			Name:          "id",
 			TypeInDB:      "int(10) unsigned",
 			AutoIncrement: true,
-			Default:       ColumnDefaultNull,
 		},
 		{
 			Name:     "customer_id",
 			TypeInDB: "int(10) unsigned",
-			Default:  ColumnDefaultNull,
 		},
 		{
-			Name:     "info",
-			TypeInDB: "text",
-			Nullable: true,
-			Default:  ColumnDefaultNull,
-			CharSet:  "latin1", Collation: "latin1_swedish_ci",
+			Name:               "info",
+			TypeInDB:           "text",
+			Nullable:           true,
+			CharSet:            "latin1",
+			Collation:          "latin1_swedish_ci",
 			CollationIsDefault: true,
 		},
+	}
+	if flavor.AllowBlobDefaults() {
+		columns[2].Default = "NULL"
 	}
 	t := Table{
 		Name:               "prange",

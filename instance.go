@@ -816,7 +816,7 @@ func (instance *Instance) StrictModeCompliant(schemas []*Schema) (bool, error) {
 		for _, t := range s.Tables {
 			for _, c := range t.Columns {
 				if strings.HasPrefix(c.TypeInDB, "timestamp") || strings.HasPrefix(c.TypeInDB, "date") {
-					if strings.HasPrefix(c.Default.Value, "0000-00-00") {
+					if strings.HasPrefix(c.Default, "'0000-00-00") {
 						return false, nil
 					}
 				}
@@ -953,26 +953,33 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			AutoIncrement: strings.Contains(rawColumn.Extra, "auto_increment"),
 			Comment:       rawColumn.Comment,
 		}
+		if rawColumn.GenerationExpr.Valid {
+			col.GenerationExpr = rawColumn.GenerationExpr.String
+			col.Virtual = strings.Contains(rawColumn.Extra, "VIRTUAL GENERATED")
+		}
 		if !rawColumn.Default.Valid {
-			col.Default = ColumnDefaultNull
+			allowNullDefault := col.Nullable && !col.AutoIncrement && col.GenerationExpr == ""
+			if !flavor.AllowBlobDefaults() && (strings.HasSuffix(col.TypeInDB, "blob") || strings.HasSuffix(col.TypeInDB, "text")) {
+				allowNullDefault = false
+			}
+			if allowNullDefault {
+				col.Default = "NULL"
+			}
 		} else if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
-			if rawColumn.Default.String[0] == '\'' {
-				col.Default = ColumnDefaultValue(strings.Trim(rawColumn.Default.String, "'"))
-			} else if rawColumn.Default.String == "NULL" {
-				col.Default = ColumnDefaultNull
-			} else {
-				col.Default = ColumnDefaultExpression(rawColumn.Default.String)
+			if !col.AutoIncrement && col.GenerationExpr == "" {
+				// MariaDB 10.2+ exposes defaults as expressions / quote-wrapped strings
+				col.Default = rawColumn.Default.String
 			}
 		} else if strings.HasPrefix(rawColumn.Default.String, "CURRENT_TIMESTAMP") && (strings.HasPrefix(rawColumn.Type, "timestamp") || strings.HasPrefix(rawColumn.Type, "datetime")) {
-			col.Default = ColumnDefaultExpression(rawColumn.Default.String)
+			col.Default = rawColumn.Default.String
 		} else if strings.HasPrefix(rawColumn.Type, "bit") && strings.HasPrefix(rawColumn.Default.String, "b'") {
-			col.Default = ColumnDefaultExpression(rawColumn.Default.String)
+			col.Default = rawColumn.Default.String
 		} else if strings.Contains(rawColumn.Extra, "DEFAULT_GENERATED") && strings.HasPrefix(rawColumn.Default.String, "(") {
 			// MySQL/Percona 8.0.13+ added default expressions, which are single-paren-
 			// wrapped in information_schema, but double-paren-wrapped in SHOW CREATE
-			col.Default = ColumnDefaultExpression(fmt.Sprintf("(%s)", rawColumn.Default.String))
+			col.Default = fmt.Sprintf("(%s)", rawColumn.Default.String)
 		} else {
-			col.Default = ColumnDefaultValue(rawColumn.Default.String)
+			col.Default = fmt.Sprintf("'%s'", EscapeValueForCreateTable(rawColumn.Default.String))
 		}
 		if matches := reExtraOnUpdate.FindStringSubmatch(rawColumn.Extra); matches != nil {
 			col.OnUpdate = matches[1]
@@ -981,10 +988,6 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			if openParen := strings.IndexByte(rawColumn.Type, '('); openParen > -1 && !strings.Contains(col.OnUpdate, "(") {
 				col.OnUpdate = fmt.Sprintf("%s%s", col.OnUpdate, rawColumn.Type[openParen:])
 			}
-		}
-		if rawColumn.GenerationExpr.Valid {
-			col.GenerationExpr = rawColumn.GenerationExpr.String
-			col.Virtual = strings.Contains(rawColumn.Extra, "VIRTUAL GENERATED")
 		}
 		if rawColumn.Collation.Valid { // only text-based column types have a notion of charset and collation
 			col.CharSet = rawColumn.CharSet.String
