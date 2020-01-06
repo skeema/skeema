@@ -6,11 +6,11 @@ import (
 
 // Schema represents a database schema.
 type Schema struct {
-	Name      string
-	CharSet   string
-	Collation string
-	Tables    []*Table
-	Routines  []*Routine
+	Name      string     `json:"databaseName"`
+	CharSet   string     `json:"defaultCharSet"`
+	Collation string     `json:"defaultCollation"`
+	Tables    []*Table   `json:"tables,omitempty"`
+	Routines  []*Routine `json:"routines,omitempty"`
 }
 
 // TablesByName returns a mapping of table names to Table struct pointers, for

@@ -11,21 +11,21 @@ import (
 // in a particular order. Also, the referenced side is not gauranteed to exist,
 // especially if foreign_key_checks=0 has been used at any point in the past.
 type ForeignKey struct {
-	Name                  string
-	Columns               []*Column
-	ReferencedSchemaName  string // will be empty string if same schema
-	ReferencedTableName   string
-	ReferencedColumnNames []string // slice length always identical to len(Columns)
-	UpdateRule            string
-	DeleteRule            string
+	Name                  string   `json:"name"`
+	ColumnNames           []string `json:"columnNames"`
+	ReferencedSchemaName  string   `json:"referencedSchemaName,omitempty"` // will be empty string if same schema
+	ReferencedTableName   string   `json:"referencedTableName"`
+	ReferencedColumnNames []string `json:"referencedColumnNames"` // slice length always identical to len(ColumnNames)
+	UpdateRule            string   `json:"updateRule"`
+	DeleteRule            string   `json:"deleteRule"`
 }
 
 // Definition returns this ForeignKey's definition clause, for use as part of a DDL
 // statement.
 func (fk *ForeignKey) Definition(flavor Flavor) string {
-	colParts := make([]string, len(fk.Columns))
-	for n, col := range fk.Columns {
-		colParts[n] = EscapeIdentifier(col.Name)
+	colParts := make([]string, len(fk.ColumnNames))
+	for n, colName := range fk.ColumnNames {
+		colParts[n] = EscapeIdentifier(colName)
 	}
 	childCols := strings.Join(colParts, ", ")
 
@@ -74,11 +74,11 @@ func (fk *ForeignKey) Equivalent(other *ForeignKey) bool {
 	if fk.UpdateRule != other.UpdateRule || fk.DeleteRule != other.DeleteRule {
 		return false
 	}
-	if len(fk.Columns) != len(other.Columns) {
+	if len(fk.ColumnNames) != len(other.ColumnNames) {
 		return false
 	}
-	for n := range fk.Columns {
-		if fk.Columns[n].Name != other.Columns[n].Name || fk.ReferencedColumnNames[n] != other.ReferencedColumnNames[n] {
+	for n := range fk.ColumnNames {
+		if fk.ColumnNames[n] != other.ColumnNames[n] || fk.ReferencedColumnNames[n] != other.ReferencedColumnNames[n] {
 			return false
 		}
 	}

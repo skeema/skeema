@@ -5,15 +5,16 @@ import (
 	"strings"
 )
 
-// partitionListMode enum values control edge-cases for how the list of
-// partitions is represented in SHOW CREATE TABLE.
-type partitionListMode int
+// PartitionListMode values control edge-cases for how the list of partitions
+// is represented in SHOW CREATE TABLE.
+type PartitionListMode string
 
+// Constants enumerating valid PartitionListMode values.
 const (
-	partitionListDefault  partitionListMode = iota
-	partitionListExplicit                   // List each partition individually
-	partitionListCount                      // Just use a count of partitions
-	partitionListNone                       // Omit partition list and count, implying just 1 partition
+	PartitionListDefault  PartitionListMode = ""          // Default behavior based on partitioning method
+	PartitionListExplicit PartitionListMode = "full"      // List each partition individually
+	PartitionListCount    PartitionListMode = "countOnly" // Just use a count of partitions
+	PartitionListNone     PartitionListMode = "omit"      // Omit partition list and count, implying just 1 partition
 )
 
 // TablePartitioning stores partitioning configuration for a partitioned table.
@@ -21,13 +22,13 @@ const (
 // populated, the rest of this package does not fully support subpartitioning
 // yet.
 type TablePartitioning struct {
-	Method             string // one of "RANGE", "RANGE COLUMNS", "LIST", "LIST COLUMNS", "HASH", "LINEAR HASH", "KEY", or "LINEAR KEY"
-	SubMethod          string // one of "" (no sub-partitioning), "HASH", "LINEAR HASH", "KEY", or "LINEAR KEY"; not fully supported yet
-	Expression         string
-	SubExpression      string // empty string if no sub-partitioning; not fully supported yet
-	Partitions         []*Partition
-	forcePartitionList partitionListMode
-	algoClause         string // full text of optional ALGORITHM clause for KEY or LINEAR KEY
+	Method             string            `json:"method"`              // one of "RANGE", "RANGE COLUMNS", "LIST", "LIST COLUMNS", "HASH", "LINEAR HASH", "KEY", or "LINEAR KEY"
+	SubMethod          string            `json:"subMethod,omitempty"` // one of "" (no sub-partitioning), "HASH", "LINEAR HASH", "KEY", or "LINEAR KEY"; not fully supported yet
+	Expression         string            `json:"expression"`
+	SubExpression      string            `json:"subExpression,omitempty"` // empty string if no sub-partitioning; not fully supported yet
+	Partitions         []*Partition      `json:"partitions"`
+	ForcePartitionList PartitionListMode `json:"forcePartitionList,omitempty"`
+	AlgoClause         string            `json:"algoClause,omitempty"` // full text of optional ALGORITHM clause for KEY or LINEAR KEY
 }
 
 // Definition returns the overall partitioning definition for a table.
@@ -36,24 +37,24 @@ func (tp *TablePartitioning) Definition(flavor Flavor) string {
 		return ""
 	}
 
-	plMode := tp.forcePartitionList
-	if plMode == partitionListDefault {
-		plMode = partitionListCount
+	plMode := tp.ForcePartitionList
+	if plMode == PartitionListDefault {
+		plMode = PartitionListCount
 		for n, p := range tp.Partitions {
-			if p.Values != "" || p.Comment != "" || p.dataDir != "" || p.Name != fmt.Sprintf("p%d", n) {
-				plMode = partitionListExplicit
+			if p.Values != "" || p.Comment != "" || p.DataDir != "" || p.Name != fmt.Sprintf("p%d", n) {
+				plMode = PartitionListExplicit
 				break
 			}
 		}
 	}
 	var partitionsClause string
-	if plMode == partitionListExplicit {
+	if plMode == PartitionListExplicit {
 		pdefs := make([]string, len(tp.Partitions))
 		for n, p := range tp.Partitions {
-			pdefs[n] = p.Definition(flavor)
+			pdefs[n] = p.Definition(flavor, tp.Method)
 		}
 		partitionsClause = fmt.Sprintf("\n(%s)", strings.Join(pdefs, ",\n "))
-	} else if plMode == partitionListCount {
+	} else if plMode == PartitionListCount {
 		partitionsClause = fmt.Sprintf("\nPARTITIONS %d", len(tp.Partitions))
 	}
 
@@ -85,7 +86,7 @@ func (tp *TablePartitioning) partitionBy(flavor Flavor) string {
 		expr = strings.Replace(expr, "`", "", -1)
 	}
 
-	return fmt.Sprintf("%s%s(%s)", method, tp.algoClause, expr)
+	return fmt.Sprintf("%s%s(%s)", method, tp.AlgoClause, expr)
 }
 
 // Diff returns a set of differences between this TablePartitioning and another
@@ -105,7 +106,7 @@ func (tp *TablePartitioning) Diff(other *TablePartitioning) (clauses []TableAlte
 	// Modifications to partitioning method or expression: re-partition
 	if tp.Method != other.Method || tp.SubMethod != other.SubMethod ||
 		tp.Expression != other.Expression || tp.SubExpression != other.SubExpression ||
-		tp.algoClause != other.algoClause {
+		tp.AlgoClause != other.AlgoClause {
 		clause := PartitionBy{
 			Partitioning: other,
 			RePartition:  true,
@@ -139,35 +140,34 @@ func (tp *TablePartitioning) Diff(other *TablePartitioning) (clauses []TableAlte
 
 // Partition stores information on a single partition.
 type Partition struct {
-	Name    string
-	SubName string // empty string if no sub-partitioning; not fully supported yet
-	Values  string // only populated for RANGE or LIST
-	Comment string
-	method  string
-	engine  string
-	dataDir string
+	Name    string `json:"name"`
+	SubName string `json:"subName,omitempty"` // empty string if no sub-partitioning; not fully supported yet
+	Values  string `json:"values,omitempty"`  // only populated for RANGE or LIST
+	Comment string `json:"comment,omitempty"`
+	Engine  string `json:"engine"`
+	DataDir string `json:"dataDir,omitempty"`
 }
 
 // Definition returns this partition's definition clause, for use as part of a
-// DDL statement. This is only used for some partition methods.
-func (p *Partition) Definition(flavor Flavor) string {
+// DDL statement.
+func (p *Partition) Definition(flavor Flavor, method string) string {
 	name := p.Name
 	if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
 		name = EscapeIdentifier(name)
 	}
 
 	var values string
-	if p.method == "RANGE" && p.Values == "MAXVALUE" {
+	if method == "RANGE" && p.Values == "MAXVALUE" {
 		values = "VALUES LESS THAN MAXVALUE "
-	} else if strings.Contains(p.method, "RANGE") {
+	} else if strings.Contains(method, "RANGE") {
 		values = fmt.Sprintf("VALUES LESS THAN (%s) ", p.Values)
-	} else if strings.Contains(p.method, "LIST") {
+	} else if strings.Contains(method, "LIST") {
 		values = fmt.Sprintf("VALUES IN (%s) ", p.Values)
 	}
 
 	var dataDir string
-	if p.dataDir != "" {
-		dataDir = fmt.Sprintf("DATA DIRECTORY = '%s' ", p.dataDir) // any necessary escaping is already present in p.dataDir
+	if p.DataDir != "" {
+		dataDir = fmt.Sprintf("DATA DIRECTORY = '%s' ", p.DataDir) // any necessary escaping is already present in p.DataDir
 	}
 
 	var comment string
@@ -175,5 +175,5 @@ func (p *Partition) Definition(flavor Flavor) string {
 		comment = fmt.Sprintf("COMMENT = '%s' ", EscapeValueForCreateTable(p.Comment))
 	}
 
-	return fmt.Sprintf("PARTITION %s %s%s%sENGINE = %s", name, values, dataDir, comment, p.engine)
+	return fmt.Sprintf("PARTITION %s %s%s%sENGINE = %s", name, values, dataDir, comment, p.Engine)
 }

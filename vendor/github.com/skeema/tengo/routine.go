@@ -7,19 +7,19 @@ import (
 
 // Routine represents a stored procedure or function.
 type Routine struct {
-	Name              string
-	Type              ObjectType // Will be ObjectTypeProcedure or ObjectTypeFunction
-	Body              string     // From information_schema; different char escaping vs CreateStatement
-	ParamString       string     // Formatted as per original CREATE
-	ReturnDataType    string     // Includes charset/collation when relevant
-	Definer           string
-	DatabaseCollation string // from creation time
-	Comment           string
-	Deterministic     bool
-	SQLDataAccess     string
-	SecurityType      string
-	SQLMode           string // sql_mode in effect at creation time
-	CreateStatement   string // complete SHOW CREATE obtained from an instance
+	Name              string     `json:"name"`
+	Type              ObjectType `json:"type"`                     // Will be ObjectTypeProcedure or ObjectTypeFunction
+	Body              string     `json:"body"`                     // From information_schema; different char escaping vs CreateStatement
+	ParamString       string     `json:"paramString"`              // Formatted as per original CREATE
+	ReturnDataType    string     `json:"returnDataType,omitempty"` // Includes charset/collation when relevant
+	Definer           string     `json:"definer"`
+	DatabaseCollation string     `json:"dbCollation"` // from creation time
+	Comment           string     `json:"comment,omitempty"`
+	Deterministic     bool       `json:"deterministic,omitempty"`
+	SQLDataAccess     string     `json:"sqlDataAccess,omitempty"`
+	SecurityType      string     `json:"securityType"`
+	SQLMode           string     `json:"sqlMode"`    // sql_mode in effect at creation time
+	CreateStatement   string     `json:"showCreate"` // complete SHOW CREATE obtained from an instance
 }
 
 // Definition generates and returns a canonical CREATE PROCEDURE or CREATE

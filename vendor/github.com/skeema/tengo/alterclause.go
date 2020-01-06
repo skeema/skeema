@@ -108,6 +108,31 @@ func (di DropIndex) Clause(mods StatementModifiers) string {
 	return fmt.Sprintf("DROP KEY %s", EscapeIdentifier(di.Index.Name))
 }
 
+///// AlterIndex ///////////////////////////////////////////////////////////////
+
+// AlterIndex represents a change in an index's visibility in MySQL 8+.
+type AlterIndex struct {
+	Index          *Index
+	NewInvisible   bool // true if index is being changed from visible to invisible
+	alsoReordering bool // true if index is also being reordered by subsequent DROP/re-ADD
+}
+
+// Clause returns an ALTER INDEX clause of an ALTER TABLE statement. It will be
+// suppressed if the flavor does not support invisible indexes, and/or if the
+// statement modifiers are respecting exact index order (in which case this
+// ALTER TABLE will also have DROP and re-ADD clauses for this index, which
+// prevents use of an ALTER INDEX clause.)
+func (ai AlterIndex) Clause(mods StatementModifiers) string {
+	if !mods.Flavor.MySQLishMinVersion(8, 0) || (ai.alsoReordering && mods.StrictIndexOrder) {
+		return ""
+	}
+	newVis := "VISIBLE"
+	if ai.NewInvisible {
+		newVis = "INVISIBLE"
+	}
+	return fmt.Sprintf("ALTER INDEX %s %s", EscapeIdentifier(ai.Index.Name), newVis)
+}
+
 ///// AddForeignKey ////////////////////////////////////////////////////////////
 
 // AddForeignKey represents a new foreign key that is present on the right-side

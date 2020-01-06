@@ -1133,11 +1133,11 @@ func (s SkeemaIntegrationSuite) TestFlavorConfig(t *testing.T) {
 
 	realFlavor := inst.Flavor()
 	badFlavor := tengo.Flavor{Vendor: tengo.VendorUnknown, Major: realFlavor.Major, Minor: realFlavor.Minor}
-	if realFlavor == tengo.FlavorMariaDB101 {
-		// Hack to avoid Unknown:10.1 being interpretted as having support for
-		// information_schema.columns.generation_expression since VendorUnknown is
-		// treated as MySQLish, but MariaDB 10.1 lacks this column
-		badFlavor.Major, badFlavor.Minor = 5, 5
+	if realFlavor.Vendor == tengo.VendorMariaDB {
+		// Hack to avoid Unknown:10.1 or higher being interpretted as having support
+		// for things in MySQL 5.7+ that aren't in MariaDB, since VendorUnknown is
+		// treated as MySQLish
+		badFlavor.Major, badFlavor.Minor = 5, 6
 	}
 	defer inst.ForceFlavor(realFlavor) // clean up in case test aborts
 

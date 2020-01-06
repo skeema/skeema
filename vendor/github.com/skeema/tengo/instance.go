@@ -816,7 +816,7 @@ func (instance *Instance) StrictModeCompliant(schemas []*Schema) (bool, error) {
 		for _, t := range s.Tables {
 			for _, c := range t.Columns {
 				if strings.HasPrefix(c.TypeInDB, "timestamp") || strings.HasPrefix(c.TypeInDB, "date") {
-					if strings.HasPrefix(c.Default.Value, "0000-00-00") {
+					if strings.HasPrefix(c.Default, "'0000-00-00") {
 						return false, nil
 					}
 				}
@@ -849,6 +849,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	// Obtain flavor and version info. MariaDB changed how default values are
 	// represented in information_schema in 10.2+.
 	flavor := instance.Flavor()
+	_, _, patch := instance.Version()
 
 	// Note on these queries: MySQL 8.0 changes information_schema column names to
 	// come back from queries in all caps, so we need to explicitly use AS clauses
@@ -944,7 +945,6 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		return nil, fmt.Errorf("Error querying information_schema.columns for schema %s: %s", schema, err)
 	}
 	columnsByTableName := make(map[string][]*Column)
-	columnsByTableAndName := make(map[string]*Column)
 	for _, rawColumn := range rawColumns {
 		col := &Column{
 			Name:          rawColumn.Name,
@@ -953,26 +953,33 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			AutoIncrement: strings.Contains(rawColumn.Extra, "auto_increment"),
 			Comment:       rawColumn.Comment,
 		}
+		if rawColumn.GenerationExpr.Valid {
+			col.GenerationExpr = rawColumn.GenerationExpr.String
+			col.Virtual = strings.Contains(rawColumn.Extra, "VIRTUAL GENERATED")
+		}
 		if !rawColumn.Default.Valid {
-			col.Default = ColumnDefaultNull
+			allowNullDefault := col.Nullable && !col.AutoIncrement && col.GenerationExpr == ""
+			if !flavor.AllowBlobDefaults() && (strings.HasSuffix(col.TypeInDB, "blob") || strings.HasSuffix(col.TypeInDB, "text")) {
+				allowNullDefault = false
+			}
+			if allowNullDefault {
+				col.Default = "NULL"
+			}
 		} else if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
-			if rawColumn.Default.String[0] == '\'' {
-				col.Default = ColumnDefaultValue(strings.Trim(rawColumn.Default.String, "'"))
-			} else if rawColumn.Default.String == "NULL" {
-				col.Default = ColumnDefaultNull
-			} else {
-				col.Default = ColumnDefaultExpression(rawColumn.Default.String)
+			if !col.AutoIncrement && col.GenerationExpr == "" {
+				// MariaDB 10.2+ exposes defaults as expressions / quote-wrapped strings
+				col.Default = rawColumn.Default.String
 			}
 		} else if strings.HasPrefix(rawColumn.Default.String, "CURRENT_TIMESTAMP") && (strings.HasPrefix(rawColumn.Type, "timestamp") || strings.HasPrefix(rawColumn.Type, "datetime")) {
-			col.Default = ColumnDefaultExpression(rawColumn.Default.String)
+			col.Default = rawColumn.Default.String
 		} else if strings.HasPrefix(rawColumn.Type, "bit") && strings.HasPrefix(rawColumn.Default.String, "b'") {
-			col.Default = ColumnDefaultExpression(rawColumn.Default.String)
+			col.Default = rawColumn.Default.String
 		} else if strings.Contains(rawColumn.Extra, "DEFAULT_GENERATED") && strings.HasPrefix(rawColumn.Default.String, "(") {
 			// MySQL/Percona 8.0.13+ added default expressions, which are single-paren-
 			// wrapped in information_schema, but double-paren-wrapped in SHOW CREATE
-			col.Default = ColumnDefaultExpression(fmt.Sprintf("(%s)", rawColumn.Default.String))
+			col.Default = fmt.Sprintf("(%s)", rawColumn.Default.String)
 		} else {
-			col.Default = ColumnDefaultValue(rawColumn.Default.String)
+			col.Default = fmt.Sprintf("'%s'", EscapeValueForCreateTable(rawColumn.Default.String))
 		}
 		if matches := reExtraOnUpdate.FindStringSubmatch(rawColumn.Extra); matches != nil {
 			col.OnUpdate = matches[1]
@@ -981,10 +988,6 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			if openParen := strings.IndexByte(rawColumn.Type, '('); openParen > -1 && !strings.Contains(col.OnUpdate, "(") {
 				col.OnUpdate = fmt.Sprintf("%s%s", col.OnUpdate, rawColumn.Type[openParen:])
 			}
-		}
-		if rawColumn.GenerationExpr.Valid {
-			col.GenerationExpr = rawColumn.GenerationExpr.String
-			col.Virtual = strings.Contains(rawColumn.Extra, "VIRTUAL GENERATED")
 		}
 		if rawColumn.Collation.Valid { // only text-based column types have a notion of charset and collation
 			col.CharSet = rawColumn.CharSet.String
@@ -995,8 +998,6 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			columnsByTableName[rawColumn.TableName] = make([]*Column, 0)
 		}
 		columnsByTableName[rawColumn.TableName] = append(columnsByTableName[rawColumn.TableName], col)
-		fullNameStr := fmt.Sprintf("%s.%s.%s", schema, rawColumn.TableName, rawColumn.Name)
-		columnsByTableAndName[fullNameStr] = col
 	}
 	for n, t := range tables {
 		// Put the columns into the table
@@ -1018,18 +1019,31 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		TableName  string         `db:"table_name"`
 		NonUnique  uint8          `db:"non_unique"`
 		SeqInIndex uint8          `db:"seq_in_index"`
-		ColumnName string         `db:"column_name"`
+		ColumnName sql.NullString `db:"column_name"`
 		SubPart    sql.NullInt64  `db:"sub_part"`
 		Comment    sql.NullString `db:"index_comment"`
 		Type       string         `db:"index_type"`
+		Collation  sql.NullString `db:"collation"`
+		Expression sql.NullString `db:"expression"`
+		Visible    string         `db:"is_visible"`
 	}
 	query = `
 		SELECT   index_name AS index_name, table_name AS table_name,
 		         non_unique AS non_unique, seq_in_index AS seq_in_index,
 		         column_name AS column_name, sub_part AS sub_part,
-		         index_comment AS index_comment, index_type AS index_type
+		         index_comment AS index_comment, index_type AS index_type,
+		         collation AS collation, %s AS expression, %s AS is_visible
 		FROM     statistics
 		WHERE    table_schema = ?`
+	exprSelect, visSelect := "NULL", "'YES'"
+	if flavor.MySQLishMinVersion(8, 0) {
+		// Index expressions added in 8.0.13
+		if patch >= 13 || flavor.MySQLishMinVersion(8, 1) {
+			exprSelect = "expression"
+		}
+		visSelect = "is_visible" // available in all 8.0
+	}
+	query = fmt.Sprintf(query, exprSelect, visSelect)
 	if err := db.Select(&rawIndexes, query, schema); err != nil {
 		return nil, fmt.Errorf("Error querying information_schema.statistics for schema %s: %s", schema, err)
 	}
@@ -1041,12 +1055,11 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			continue
 		}
 		index := &Index{
-			Name:     rawIndex.Name,
-			Unique:   rawIndex.NonUnique == 0,
-			Columns:  make([]*Column, 0),
-			SubParts: make([]uint16, 0),
-			Comment:  rawIndex.Comment.String,
-			Type:     rawIndex.Type,
+			Name:      rawIndex.Name,
+			Unique:    rawIndex.NonUnique == 0,
+			Comment:   rawIndex.Comment.String,
+			Type:      rawIndex.Type,
+			Invisible: (rawIndex.Visible == "NO"),
 		}
 		if strings.ToUpper(index.Name) == "PRIMARY" {
 			primaryKeyByTableName[rawIndex.TableName] = index
@@ -1066,18 +1079,14 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		if !ok {
 			panic(fmt.Errorf("Cannot find index %s", fullIndexNameStr))
 		}
-		fullColNameStr := fmt.Sprintf("%s.%s.%s", schema, rawIndex.TableName, rawIndex.ColumnName)
-		col, ok := columnsByTableAndName[fullColNameStr]
-		if !ok {
-			panic(fmt.Errorf("Cannot find indexed column %s for index %s", fullColNameStr, fullIndexNameStr))
+		for len(index.Parts) < int(rawIndex.SeqInIndex) {
+			index.Parts = append(index.Parts, IndexPart{})
 		}
-		for len(index.Columns) < int(rawIndex.SeqInIndex) {
-			index.Columns = append(index.Columns, new(Column))
-			index.SubParts = append(index.SubParts, 0)
-		}
-		index.Columns[rawIndex.SeqInIndex-1] = col
-		if rawIndex.SubPart.Valid {
-			index.SubParts[rawIndex.SeqInIndex-1] = uint16(rawIndex.SubPart.Int64)
+		index.Parts[rawIndex.SeqInIndex-1] = IndexPart{
+			ColumnName:   rawIndex.ColumnName.String,
+			Expression:   rawIndex.Expression.String,
+			PrefixLength: uint16(rawIndex.SubPart.Int64),
+			Descending:   (rawIndex.Collation.String == "D"),
 		}
 	}
 	for _, t := range tables {
@@ -1089,20 +1098,20 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	var rawForeignKeys []struct {
 		Name                 string `db:"constraint_name"`
 		TableName            string `db:"table_name"`
+		ColumnName           string `db:"column_name"`
 		UpdateRule           string `db:"update_rule"`
 		DeleteRule           string `db:"delete_rule"`
 		ReferencedTableName  string `db:"referenced_table_name"`
 		ReferencedSchemaName string `db:"referenced_schema"`
 		ReferencedColumnName string `db:"referenced_column_name"`
-		ColumnLookupKey      string `db:"col_lookup_key"`
 	}
 	query = `
 		SELECT   rc.constraint_name AS constraint_name, rc.table_name AS table_name,
+		         kcu.column_name AS column_name,
 		         rc.update_rule AS update_rule, rc.delete_rule AS delete_rule,
 		         rc.referenced_table_name AS referenced_table_name,
 		         IF(rc.constraint_schema=rc.unique_constraint_schema, '', rc.unique_constraint_schema) AS referenced_schema,
-		         kcu.referenced_column_name AS referenced_column_name,
-		         CONCAT(kcu.constraint_schema, '.', kcu.table_name, '.', kcu.column_name) AS col_lookup_key
+		         kcu.referenced_column_name AS referenced_column_name
 		FROM     referential_constraints rc
 		JOIN     key_column_usage kcu ON kcu.constraint_name = rc.constraint_name AND
 		                                 kcu.table_schema = ? AND
@@ -1115,9 +1124,8 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	foreignKeysByTableName := make(map[string][]*ForeignKey)
 	foreignKeysByName := make(map[string]*ForeignKey)
 	for _, rawForeignKey := range rawForeignKeys {
-		col := columnsByTableAndName[rawForeignKey.ColumnLookupKey]
 		if fk, already := foreignKeysByName[rawForeignKey.Name]; already {
-			fk.Columns = append(fk.Columns, col)
+			fk.ColumnNames = append(fk.ColumnNames, rawForeignKey.ColumnName)
 			fk.ReferencedColumnNames = append(fk.ReferencedColumnNames, rawForeignKey.ReferencedColumnName)
 		} else {
 			foreignKey := &ForeignKey{
@@ -1126,7 +1134,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 				ReferencedTableName:   rawForeignKey.ReferencedTableName,
 				UpdateRule:            rawForeignKey.UpdateRule,
 				DeleteRule:            rawForeignKey.DeleteRule,
-				Columns:               []*Column{col},
+				ColumnNames:           []string{rawForeignKey.ColumnName},
 				ReferencedColumnNames: []string{rawForeignKey.ReferencedColumnName},
 			}
 			foreignKeysByName[rawForeignKey.Name] = foreignKey
@@ -1186,13 +1194,12 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 				SubName: rawPart.SubName.String,
 				Values:  rawPart.Values.String,
 				Comment: rawPart.Comment,
-				method:  rawPart.Method,
 			})
 		}
 		for _, t := range tables {
 			if p, ok := partitioningByTableName[t.Name]; ok {
 				for _, part := range p.Partitions {
-					part.engine = t.Engine
+					part.Engine = t.Engine
 				}
 				t.Partitioning = p
 			}
@@ -1254,7 +1261,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	return tables, nil
 }
 
-var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE |FULLTEXT |SPATIAL )?KEY `((?:[^`]|``)+)` (?:USING \\w+ )?\\(`")
+var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE |FULLTEXT |SPATIAL )?KEY `((?:[^`]|``)+)` (?:USING \\w+ )?\\([`(]")
 
 // MySQL 8.0 uses a different index order in SHOW CREATE TABLE than in
 // information_schema. This function fixes the struct to match SHOW CREATE
@@ -1365,11 +1372,11 @@ func fixPartitioningEdgeCases(t *Table, flavor Flavor) {
 	if strings.HasSuffix(t.Partitioning.Method, "HASH") || strings.HasSuffix(t.Partitioning.Method, "KEY") {
 		countClause := fmt.Sprintf("\nPARTITIONS %d", len(t.Partitioning.Partitions))
 		if strings.Contains(t.CreateStatement, countClause) {
-			t.Partitioning.forcePartitionList = partitionListCount
+			t.Partitioning.ForcePartitionList = PartitionListCount
 		} else if strings.Contains(t.CreateStatement, "\n(PARTITION ") {
-			t.Partitioning.forcePartitionList = partitionListExplicit
+			t.Partitioning.ForcePartitionList = PartitionListExplicit
 		} else if len(t.Partitioning.Partitions) == 1 {
-			t.Partitioning.forcePartitionList = partitionListNone
+			t.Partitioning.ForcePartitionList = PartitionListNone
 		}
 	}
 
@@ -1378,13 +1385,13 @@ func fixPartitioningEdgeCases(t *Table, flavor Flavor) {
 	if strings.HasSuffix(t.Partitioning.Method, "KEY") && strings.Contains(t.CreateStatement, "ALGORITHM") {
 		re := regexp.MustCompile(fmt.Sprintf(`PARTITION BY %s ([^(]*)\(`, t.Partitioning.Method))
 		if matches := re.FindStringSubmatch(t.CreateStatement); matches != nil {
-			t.Partitioning.algoClause = matches[1]
+			t.Partitioning.AlgoClause = matches[1]
 		}
 	}
 
 	// Process DATA DIRECTORY clauses, which are easier to parse from SHOW CREATE
 	// TABLE instead of information_schema.innodb_sys_tablespaces.
-	if (t.Partitioning.forcePartitionList == partitionListDefault || t.Partitioning.forcePartitionList == partitionListExplicit) &&
+	if (t.Partitioning.ForcePartitionList == PartitionListDefault || t.Partitioning.ForcePartitionList == PartitionListExplicit) &&
 		strings.Contains(t.CreateStatement, " DATA DIRECTORY = ") {
 		for _, p := range t.Partitioning.Partitions {
 			name := p.Name
@@ -1394,7 +1401,7 @@ func fixPartitioningEdgeCases(t *Table, flavor Flavor) {
 			name = regexp.QuoteMeta(name)
 			re := regexp.MustCompile(fmt.Sprintf(`PARTITION %s .*DATA DIRECTORY = '((?:\\\\|\\'|''|[^'])*)'`, name))
 			if matches := re.FindStringSubmatch(t.CreateStatement); matches != nil {
-				p.dataDir = matches[1]
+				p.DataDir = matches[1]
 			}
 		}
 	}

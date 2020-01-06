@@ -9,21 +9,21 @@ import (
 
 // Table represents a single database table.
 type Table struct {
-	Name               string
-	Engine             string
-	CharSet            string
-	Collation          string
-	CollationIsDefault bool   // true if Collation is default for CharSet
-	CreateOptions      string // row_format, stats_persistent, stats_auto_recalc, etc
-	Columns            []*Column
-	PrimaryKey         *Index
-	SecondaryIndexes   []*Index
-	ForeignKeys        []*ForeignKey
-	Comment            string
-	NextAutoIncrement  uint64
-	Partitioning       *TablePartitioning // nil if table isn't partitioned
-	UnsupportedDDL     bool               // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
-	CreateStatement    string             // complete SHOW CREATE TABLE obtained from an instance
+	Name               string             `json:"name"`
+	Engine             string             `json:"storageEngine"`
+	CharSet            string             `json:"defaultCharSet"`
+	Collation          string             `json:"defaultCollation"`
+	CollationIsDefault bool               `json:"collationIsDefault"`      // true if Collation is default for CharSet
+	CreateOptions      string             `json:"createOptions,omitempty"` // row_format, stats_persistent, stats_auto_recalc, etc
+	Columns            []*Column          `json:"columns"`
+	PrimaryKey         *Index             `json:"primaryKey,omitempty"`
+	SecondaryIndexes   []*Index           `json:"secondaryIndexes,omitempty"`
+	ForeignKeys        []*ForeignKey      `json:"foreignKeys,omitempty"`
+	Comment            string             `json:"comment,omitempty"`
+	NextAutoIncrement  uint64             `json:"nextAutoIncrement,omitempty"`
+	Partitioning       *TablePartitioning `json:"partitioning,omitempty"`       // nil if table isn't partitioned
+	UnsupportedDDL     bool               `json:"unsupportedForDiff,omitempty"` // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
+	CreateStatement    string             `json:"showCreateTable"`              // complete SHOW CREATE TABLE obtained from an instance
 }
 
 // AlterStatement returns the prefix to a SQL "ALTER TABLE" statement.
@@ -151,11 +151,12 @@ func (t *Table) ClusteredIndexKey() *Index {
 	if t.PrimaryKey != nil {
 		return t.PrimaryKey
 	}
+	cols := t.ColumnsByName()
 Outer:
 	for _, index := range t.SecondaryIndexes {
 		if index.Unique {
-			for _, col := range index.Columns {
-				if col.Nullable {
+			for _, part := range index.Parts {
+				if col := cols[part.ColumnName]; col == nil || col.Nullable {
 					continue Outer
 				}
 			}
@@ -235,27 +236,40 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 		}
 	}
 
-	// Compare secondary indexes. There is no way to modify an index without
-	// dropping and re-adding it. There's also no way to re-position an index
-	// without dropping and re-adding all preexisting indexes that now come after.
+	// Compare secondary indexes. Aside from visibility changes in MySQL 8+, there
+	// is no way to modify an index without dropping and re-adding it. There's also
+	// no way to re-position an index without dropping and re-adding all
+	// preexisting indexes that now come after.
 	toIndexes := to.SecondaryIndexesByName()
 	fromIndexes := from.SecondaryIndexesByName()
 	fromIndexStillExist := make([]*Index, 0) // ordered list of indexes from "from" that still exist in "to"
+	visChanges := make(map[string]int)       // maps index name -> clause position of AlterIndex clauses
 	for _, fromIdx := range from.SecondaryIndexes {
-		if _, stillExists := toIndexes[fromIdx.Name]; stillExists {
+		if toIdx, stillExists := toIndexes[fromIdx.Name]; stillExists {
 			fromIndexStillExist = append(fromIndexStillExist, fromIdx)
+			if fromIdx.OnlyVisibilityDiffers(toIdx) {
+				clauses = append(clauses, AlterIndex{Index: fromIdx, NewInvisible: toIdx.Invisible})
+				visChanges[fromIdx.Name] = len(clauses) - 1
+			}
 		} else {
 			clauses = append(clauses, DropIndex{Index: fromIdx})
 		}
 	}
 	var fromCursor int
 	for _, toIdx := range to.SecondaryIndexes {
-		for fromCursor < len(fromIndexStillExist) && !fromIndexStillExist[fromCursor].Equals(toIdx) {
+		for fromCursor < len(fromIndexStillExist) && !fromIndexStillExist[fromCursor].EqualsIgnoringVisibility(toIdx) {
+			clause := DropIndex{Index: fromIndexStillExist[fromCursor]}
 			stillIdx, stillExists := toIndexes[fromIndexStillExist[fromCursor].Name]
-			clauses = append(clauses, DropIndex{
-				Index:       fromIndexStillExist[fromCursor],
-				reorderOnly: stillExists && stillIdx.Equals(fromIndexStillExist[fromCursor]),
-			})
+			if stillExists && stillIdx.EqualsIgnoringVisibility(fromIndexStillExist[fromCursor]) {
+				clause.reorderOnly = true
+				if visChangePos, ok := visChanges[stillIdx.Name]; ok {
+					// suppress ALTER INDEX if doing an index reordering DROP + re-ADD
+					alterIndex := clauses[visChangePos].(AlterIndex)
+					alterIndex.alsoReordering = true
+					clauses[visChangePos] = alterIndex
+				}
+			}
+			clauses = append(clauses, clause)
 			fromCursor++
 		}
 		if fromCursor >= len(fromIndexStillExist) {
@@ -264,7 +278,7 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 			prevIdx, prevExisted := fromIndexes[toIdx.Name]
 			clauses = append(clauses, AddIndex{
 				Index:       toIdx,
-				reorderOnly: prevExisted && prevIdx.Equals(toIdx),
+				reorderOnly: prevExisted && prevIdx.EqualsIgnoringVisibility(toIdx),
 			})
 		} else {
 			// Current position "to" matches cursor position "from"; nothing to add or drop
