@@ -735,6 +735,23 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 			t.Errorf("Unexpected index part expressions found: [0].Expression=%q, [1].Expression=%q", idx.Parts[0].Expression, idx.Parts[1].Expression)
 		}
 	}
+
+	// Test invisible column support in MariaDB 10.3+
+	if flavor.VendorMinVersion(VendorMariaDB, 10, 3) {
+		if _, err := s.d.SourceSQL("testdata/inviscols-maria.sql"); err != nil {
+			t.Fatalf("Unexpected error sourcing testdata/inviscols-maria.sql: %v", err)
+		}
+		table := s.GetTable(t, "testing", "invistest")
+		if table.UnsupportedDDL {
+			t.Errorf("Expected table using invisible columns to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
+		}
+		for n, col := range table.Columns {
+			expectInvis := (n == 0 || n == 4)
+			if col.Invisible != expectInvis {
+				t.Errorf("Expected Columns[%d].Invisible == %t, instead found %t", n, expectInvis, !expectInvis)
+			}
+		}
+	}
 }
 
 func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {

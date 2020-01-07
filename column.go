@@ -19,6 +19,7 @@ type Column struct {
 	Collation          string `json:"collation,omitempty"`          // Only populated if textual type
 	CollationIsDefault bool   `json:"collationIsDefault,omitempty"` // Only populated if textual type; indicates default for CharSet
 	Comment            string `json:"comment,omitempty"`
+	Invisible          bool   `json:"invisible,omitempty"` // True if a MariaDB 10.3+ invisible column
 }
 
 // Definition returns this column's definition clause, for use as part of a DDL
@@ -26,7 +27,7 @@ type Column struct {
 // SET clause to be omitted if the table and column have the same *collation*
 // (mirroring the specific display logic used by SHOW CREATE TABLE)
 func (c *Column) Definition(flavor Flavor, table *Table) string {
-	var charSet, collation, generated, nullability, autoIncrement, defaultValue, onUpdate, comment string
+	var charSet, collation, generated, nullability, visibility, autoIncrement, defaultValue, onUpdate, comment string
 	if c.CharSet != "" && (table == nil || c.Collation != table.Collation || c.CharSet != table.CharSet) {
 		charSet = fmt.Sprintf(" CHARACTER SET %s", c.CharSet)
 	}
@@ -48,6 +49,9 @@ func (c *Column) Definition(flavor Flavor, table *Table) string {
 		// Oddly the timestamp type always displays nullability
 		nullability = " NULL"
 	}
+	if c.Invisible {
+		visibility = " INVISIBLE"
+	}
 	if c.AutoIncrement {
 		autoIncrement = " AUTO_INCREMENT"
 	}
@@ -61,7 +65,7 @@ func (c *Column) Definition(flavor Flavor, table *Table) string {
 		comment = fmt.Sprintf(" COMMENT '%s'", EscapeValueForCreateTable(c.Comment))
 	}
 	clauses := []string{
-		EscapeIdentifier(c.Name), " ", c.TypeInDB, charSet, collation, generated, nullability, autoIncrement, defaultValue, onUpdate, comment,
+		EscapeIdentifier(c.Name), " ", c.TypeInDB, charSet, collation, generated, nullability, visibility, autoIncrement, defaultValue, onUpdate, comment,
 	}
 	return strings.Join(clauses, "")
 }
