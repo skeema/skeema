@@ -67,8 +67,6 @@ func NewInstance(driver, dsn string) (*Instance, error) {
 	case "unix":
 		instance.Host = "localhost"
 		instance.SocketPath = parsedConfig.Addr
-	case "cloudsql":
-		instance.Host = parsedConfig.Addr
 	default:
 		instance.Host, instance.Port, err = SplitHostOptionalPort(parsedConfig.Addr)
 		if err != nil {
