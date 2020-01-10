@@ -67,8 +67,6 @@ func NewInstance(driver, dsn string) (*Instance, error) {
 	case "unix":
 		instance.Host = "localhost"
 		instance.SocketPath = parsedConfig.Addr
-	case "cloudsql":
-		instance.Host = parsedConfig.Addr
 	default:
 		instance.Host, instance.Port, err = SplitHostOptionalPort(parsedConfig.Addr)
 		if err != nil {
@@ -952,6 +950,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			Nullable:      strings.ToUpper(rawColumn.IsNullable) == "YES",
 			AutoIncrement: strings.Contains(rawColumn.Extra, "auto_increment"),
 			Comment:       rawColumn.Comment,
+			Invisible:     strings.Contains(rawColumn.Extra, "INVISIBLE"),
 		}
 		if rawColumn.GenerationExpr.Valid {
 			col.GenerationExpr = rawColumn.GenerationExpr.String

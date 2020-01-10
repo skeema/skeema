@@ -44,11 +44,11 @@ github.com/docker/go-connections/nat
 github.com/docker/go-units
 # github.com/fsouza/go-dockerclient v1.2.1
 github.com/fsouza/go-dockerclient
-# github.com/go-sql-driver/mysql v1.4.1-0.20190510102335-877a9775f068
+# github.com/go-sql-driver/mysql v1.5.0
 github.com/go-sql-driver/mysql
 # github.com/gogo/protobuf v1.0.0
 github.com/gogo/protobuf/proto
-# github.com/jmoiron/sqlx v0.0.0-20180406164412-2aeb6a910c2b
+# github.com/jmoiron/sqlx v1.2.0
 github.com/jmoiron/sqlx
 github.com/jmoiron/sqlx/reflectx
 # github.com/konsorten/go-windows-terminal-sequences v1.0.1
@@ -75,7 +75,7 @@ github.com/pmezard/go-difflib/difflib
 github.com/sirupsen/logrus
 # github.com/skeema/mybase v1.0.8
 github.com/skeema/mybase
-# github.com/skeema/tengo v0.9.1-0.20200105062401-f86a21850a4c
+# github.com/skeema/tengo v0.9.1
 github.com/skeema/tengo
 # golang.org/x/crypto v0.0.0-20190701094942-4def268fd1a4
 golang.org/x/crypto/ssh/terminal
@@ -94,5 +94,3 @@ golang.org/x/tools/cover
 golang.org/x/tools/go/ast/astutil
 golang.org/x/tools/go/gcexportdata
 golang.org/x/tools/go/internal/gcimporter
-# google.golang.org/appengine v1.0.0
-google.golang.org/appengine/cloudsql

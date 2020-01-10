@@ -293,7 +293,6 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 	for _, host := range hosts {
 		var dsn string
 		thisPortValue := portValue
-		// TODO also support cloudsql DSNs
 		if host == "localhost" && (socketWasSupplied || !portWasSupplied) {
 			dsn = fmt.Sprintf("%s@unix(%s)/?%s", userAndPass, socketValue, params)
 		} else {
@@ -468,6 +467,7 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	banned := map[string]bool{
 		// go-sql-driver/mysql special params that should not be overridden
 		"allowallfiles":     true,
+		"checkconnliveness": true,
 		"clientfoundrows":   true,
 		"columnswithalias":  true,
 		"interpolateparams": true, // always enabled explicitly later in this method
