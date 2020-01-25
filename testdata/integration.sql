@@ -14,7 +14,7 @@ CREATE TABLE actor (
 	last_name varchar(45) DEFAULT NULL,
 	last_update timestamp/*!50601(2)*/ NOT NULL DEFAULT CURRENT_TIMESTAMP(/*!506012*/) ON UPDATE CURRENT_TIMESTAMP(/*!506012*/),
 	ssn char(10) NOT NULL,
-	alive tinyint(1) NOT NULL DEFAULT '1',
+	alive tinyint(1) unsigned NOT NULL DEFAULT '1',
 	alive_bit bit(1) NOT NULL DEFAULT b'1',
 	PRIMARY KEY (actor_id),
 	UNIQUE KEY idx_ssn (ssn),

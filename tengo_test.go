@@ -3,6 +3,7 @@ package tengo
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -180,13 +181,13 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 
 	aliveCol := &Column{
 		Name:     "alive",
-		TypeInDB: "tinyint(1)",
+		TypeInDB: "tinyint(1) unsigned",
 		Default:  "'1'",
 	}
-	aliveDef := "`alive` tinyint(1) NOT NULL DEFAULT '1'"
+	aliveDef := "`alive` tinyint(1) unsigned NOT NULL DEFAULT '1'"
 	if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
 		aliveCol.Default = "1"
-		aliveDef = "`alive` tinyint(1) NOT NULL DEFAULT 1"
+		aliveDef = "`alive` tinyint(1) unsigned NOT NULL DEFAULT 1"
 	}
 
 	columns := []*Column{
@@ -261,7 +262,7 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
   UNIQUE KEY `+"`"+`idx_ssn`+"`"+` (`+"`"+`ssn`+"`"+`),
   KEY `+"`"+`idx_actor_name`+"`"+` (`+"`"+`last_name`+"`"+`(10),`+"`"+`first_name`+"`"+`(1))
 ) ENGINE=InnoDB%s DEFAULT CHARSET=utf8`, autoIncClause)
-	return Table{
+	table := Table{
 		Name:               "actor",
 		Engine:             "InnoDB",
 		CharSet:            "utf8",
@@ -273,6 +274,10 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 		NextAutoIncrement:  nextAutoInc,
 		CreateStatement:    stmt,
 	}
+	if flavor.OmitIntDisplayWidth() {
+		stripIntDisplayWidths(&table)
+	}
+	return table
 }
 
 func anotherTable() Table {
@@ -306,7 +311,7 @@ func anotherTableForFlavor(flavor Flavor) Table {
   PRIMARY KEY (` + "`" + `actor_id` + "`" + `,` + "`" + `film_name` + "`" + `),
   KEY ` + "`" + `film_name` + "`" + ` (` + "`" + `film_name` + "`" + `)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1`
-	return Table{
+	table := Table{
 		Name:               "actor_in_film",
 		Engine:             "InnoDB",
 		CharSet:            "latin1",
@@ -317,6 +322,10 @@ func anotherTableForFlavor(flavor Flavor) Table {
 		SecondaryIndexes:   []*Index{secondaryIndex},
 		CreateStatement:    stmt,
 	}
+	if flavor.OmitIntDisplayWidth() {
+		stripIntDisplayWidths(&table)
+	}
+	return table
 }
 
 func unsupportedTable() Table {
@@ -392,7 +401,7 @@ func supportedTableForFlavor(flavor Flavor) Table {
 		stmt = strings.Replace(stmt, " text", " text DEFAULT NULL", 1)
 	}
 
-	return Table{
+	table := Table{
 		Name:               "followed_posts",
 		Engine:             "InnoDB",
 		CharSet:            "latin1",
@@ -403,6 +412,10 @@ func supportedTableForFlavor(flavor Flavor) Table {
 		SecondaryIndexes:   []*Index{},
 		CreateStatement:    stmt,
 	}
+	if flavor.OmitIntDisplayWidth() {
+		stripIntDisplayWidths(&table)
+	}
+	return table
 }
 
 func foreignKeyTable() Table {
@@ -473,7 +486,8 @@ func foreignKeyTable() Table {
 	// warning: haven't created Flavor-specific versions of this unit test fixture
 	// table yet because the need hasn't come up, but there are actual flavor-
 	// specific differences with FKs. In particular, MySQL 8+ squashes NO ACTION
-	// clauses from SHOW CREATE TABLE.
+	// clauses from SHOW CREATE TABLE; 8.0.19+ strips display widths; ordering of
+	// FKs is different in 5.5 as well as 8.0.19+.
 	stmt := strings.Replace(`CREATE TABLE ~warranties~ (
   ~id~ int(10) unsigned NOT NULL,
   ~customer_id~ int(10) unsigned DEFAULT NULL,
@@ -498,6 +512,15 @@ func foreignKeyTable() Table {
 		ForeignKeys:        foreignKeys,
 		CreateStatement:    stmt,
 	}
+}
+
+var reDisplayWidth = regexp.MustCompile(`(tinyint|smallint|mediumint|int|bigint)\((\d+)\)( unsigned)?( zerofill)?`)
+
+func stripIntDisplayWidths(table *Table) {
+	for _, col := range table.Columns {
+		col.TypeInDB = reDisplayWidth.ReplaceAllString(col.TypeInDB, "$1$3$4")
+	}
+	table.CreateStatement = reDisplayWidth.ReplaceAllString(table.CreateStatement, "$1$3$4")
 }
 
 func aSchema(name string, tables ...*Table) Schema {

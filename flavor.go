@@ -68,71 +68,93 @@ func ParseVersion(version string) (result [3]int) {
 }
 
 // Flavor represents a database server release, including vendor along with
-// major and minor version number.
+// major and minor version number, and optionally the patch number (or 0 if
+// unknown or irrelevant).
 type Flavor struct {
 	Vendor Vendor
 	Major  int
 	Minor  int
+	Patch  int
 }
 
 // FlavorUnknown represents a flavor that cannot be parsed. This is the zero
 // value for Flavor.
-var FlavorUnknown = Flavor{VendorUnknown, 0, 0}
+var FlavorUnknown = Flavor{VendorUnknown, 0, 0, 0}
 
-// FlavorMySQL55 represents MySQL 5.5.x
-var FlavorMySQL55 = Flavor{VendorMySQL, 5, 5}
+// FlavorMySQL55 represents MySQL 5.5.x. This constant omits a patch number;
+// avoid direct equality comparisons and ideally only use this in tests.
+var FlavorMySQL55 = Flavor{VendorMySQL, 5, 5, 0}
 
-// FlavorMySQL56 represents MySQL 5.6.x
-var FlavorMySQL56 = Flavor{VendorMySQL, 5, 6}
+// FlavorMySQL56 represents MySQL 5.6.x. This constant omits a patch number;
+// avoid direct equality comparisons and ideally only use this in tests.
+var FlavorMySQL56 = Flavor{VendorMySQL, 5, 6, 0}
 
-// FlavorMySQL57 represents MySQL 5.7.x
-var FlavorMySQL57 = Flavor{VendorMySQL, 5, 7}
+// FlavorMySQL57 represents MySQL 5.7.x. This constant omits a patch number;
+// avoid direct equality comparisons and ideally only use this in tests.
+var FlavorMySQL57 = Flavor{VendorMySQL, 5, 7, 0}
 
-// FlavorMySQL80 represents MySQL 8.0.x
-var FlavorMySQL80 = Flavor{VendorMySQL, 8, 0}
+// FlavorMySQL80 represents MySQL 8.0.x. This constant omits a patch number;
+// avoid direct equality comparisons and ideally only use this in tests.
+// Patch number is especially relevant in MySQL 8.0.x as functionality now
+// changes in patch releases.
+var FlavorMySQL80 = Flavor{VendorMySQL, 8, 0, 0}
 
-// FlavorPercona55 represents Percona Server 5.5.x
-var FlavorPercona55 = Flavor{VendorPercona, 5, 5}
+// FlavorPercona55 represents Percona Server 5.5.x. This constant omits a patch
+// number; avoid direct equality comparisons and ideally only use this in tests.
+var FlavorPercona55 = Flavor{VendorPercona, 5, 5, 0}
 
-// FlavorPercona56 represents Percona Server 5.6.x
-var FlavorPercona56 = Flavor{VendorPercona, 5, 6}
+// FlavorPercona56 represents Percona Server 5.6.x. This constant omits a patch
+// number; avoid direct equality comparisons and ideally only use this in tests.
+var FlavorPercona56 = Flavor{VendorPercona, 5, 6, 0}
 
-// FlavorPercona57 represents Percona Server 5.7.x
-var FlavorPercona57 = Flavor{VendorPercona, 5, 7}
+// FlavorPercona57 represents Percona Server 5.7.x. This constant omits a patch
+// number; avoid direct equality comparisons and ideally only use this in tests.
+var FlavorPercona57 = Flavor{VendorPercona, 5, 7, 0}
 
-// FlavorPercona80 represents Percona Server 8.0.x
-var FlavorPercona80 = Flavor{VendorPercona, 8, 0}
+// FlavorPercona80 represents Percona Server 8.0.x. This constant omits a patch
+// number; avoid direct equality comparisons and ideally only use this in tests.
+// Patch number is especially relevant in Percona Server 8.0.x as functionality
+// now changes in patch releases.
+var FlavorPercona80 = Flavor{VendorPercona, 8, 0, 0}
 
-// FlavorMariaDB101 represents MariaDB 10.1.x
-var FlavorMariaDB101 = Flavor{VendorMariaDB, 10, 1}
+// FlavorMariaDB101 represents MariaDB 10.1.x. This constant omits a patch
+// number; avoid direct equality comparisons and ideally only use this in tests.
+var FlavorMariaDB101 = Flavor{VendorMariaDB, 10, 1, 0}
 
-// FlavorMariaDB102 represents MariaDB 10.2.x
-var FlavorMariaDB102 = Flavor{VendorMariaDB, 10, 2}
+// FlavorMariaDB102 represents MariaDB 10.2.x. This constant omits a patch
+// number; avoid direct equality comparisons and ideally only use this in tests.
+var FlavorMariaDB102 = Flavor{VendorMariaDB, 10, 2, 0}
 
-// FlavorMariaDB103 represents MariaDB 10.3.x
-var FlavorMariaDB103 = Flavor{VendorMariaDB, 10, 3}
+// FlavorMariaDB103 represents MariaDB 10.3.x. This constant omits a patch
+// number; avoid direct equality comparisons and ideally only use this in tests.
+var FlavorMariaDB103 = Flavor{VendorMariaDB, 10, 3, 0}
 
-// FlavorMariaDB104 represents MariaDB 10.4.x
-var FlavorMariaDB104 = Flavor{VendorMariaDB, 10, 4}
+// FlavorMariaDB104 represents MariaDB 10.4.x. This constant omits a patch
+// number; avoid direct equality comparisons and ideally only use this in tests.
+var FlavorMariaDB104 = Flavor{VendorMariaDB, 10, 4, 0}
 
-// NewFlavor returns a Flavor value based on its inputs, which can either be
-// in the form of NewFlavor("vendor", major, minor) or
-// NewFlavor("vendor:major.minor").
+// NewFlavor returns a Flavor value based on its inputs, which should be
+// supplied in one of these forms:
+// NewFlavor("vendor", major, minor)
+// NewFlavor("vendor", major, minor, patch)
+// NewFlavor("vendor:major.minor")
+// NewFlavor("vendor:major.minor.patch")
 func NewFlavor(base string, versionParts ...int) Flavor {
 	if len(versionParts) == 0 {
-		versionParts = []int{0, 0}
+		versionParts = []int{0, 0, 0}
 		tokens := strings.Split(base, ":")
 		base = tokens[0]
 		if len(tokens) > 1 {
 			tokens = strings.Split(tokens[1], ".")
-			for n := 0; n < 2 && n < len(tokens); n++ {
+			for n := 0; n < 3 && n < len(tokens); n++ {
 				versionParts[n], _ = strconv.Atoi(tokens[n]) // no need to check error, 0 value is fine
 			}
 		}
-	} else if len(versionParts) == 1 {
-		versionParts = append(versionParts, 0)
+	} else if len(versionParts) < 3 {
+		// Append enough zeroes for length to be 3
+		versionParts = append(versionParts, make([]int, 3-len(versionParts))...)
 	}
-	return Flavor{ParseVendor(base), versionParts[0], versionParts[1]}
+	return Flavor{ParseVendor(base), versionParts[0], versionParts[1], versionParts[2]}
 }
 
 // ParseFlavor returns a Flavor value based on inputs obtained from server vars
@@ -166,44 +188,64 @@ func ParseFlavor(versionString, versionComment string) Flavor {
 		Vendor: vendor,
 		Major:  version[0],
 		Minor:  version[1],
+		Patch:  version[2],
 	}
 }
 
 func (fl Flavor) String() string {
+	if fl.Patch > 0 {
+		return fmt.Sprintf("%s:%d.%d.%d", fl.Vendor, fl.Major, fl.Minor, fl.Patch)
+	}
 	return fmt.Sprintf("%s:%d.%d", fl.Vendor, fl.Major, fl.Minor)
+}
+
+// Family returns a copy of the receiver with a zeroed-out patch version.
+func (fl Flavor) Family() Flavor {
+	fl.Patch = 0 // receiver is passed by value, so mutation is fine here
+	return fl
 }
 
 // VendorMinVersion returns true if this flavor matches the supplied vendor,
 // and has a version equal to or newer than the specified version.
-func (fl Flavor) VendorMinVersion(vendor Vendor, major, minor int) bool {
+func (fl Flavor) VendorMinVersion(vendor Vendor, versionParts ...int) bool {
 	if fl.Vendor != vendor {
 		return false
 	}
-	return fl.Major > major || (fl.Major == major && fl.Minor >= minor)
+	if len(versionParts) < 3 {
+		// Append enough zeroes for length to be 3
+		versionParts = append(versionParts, make([]int, 3-len(versionParts))...)
+	}
+	other := Flavor{vendor, versionParts[0], versionParts[1], versionParts[2]}
+	if fl.Major != other.Major {
+		return fl.Major > other.Major
+	}
+	if fl.Minor != other.Minor {
+		return fl.Minor > other.Minor
+	}
+	return fl.Patch >= other.Patch
 }
 
 // MySQLishMinVersion returns true if the vendor isn't VendorMariaDB, and this
 // flavor has a version equal to or newer than the specified version. Note that
 // this intentionally DOES consider VendorUnknown to be MySQLish.
-func (fl Flavor) MySQLishMinVersion(major, minor int) bool {
+func (fl Flavor) MySQLishMinVersion(versionParts ...int) bool {
 	if fl.Vendor == VendorMariaDB {
 		return false
 	}
-	return fl.Major > major || (fl.Major == major && fl.Minor >= minor)
+	return fl.VendorMinVersion(fl.Vendor, versionParts...)
 }
 
 // Supported returns true if package tengo officially supports this flavor
 func (fl Flavor) Supported() bool {
-	switch fl {
-	case FlavorMySQL55, FlavorMySQL56, FlavorMySQL57, FlavorMySQL80:
-		return true
-	case FlavorPercona55, FlavorPercona56, FlavorPercona57, FlavorPercona80:
-		return true
-	case FlavorMariaDB101, FlavorMariaDB102, FlavorMariaDB103, FlavorMariaDB104:
-		return true
-	default:
-		return false
+	switch fl.Vendor {
+	case VendorMySQL, VendorPercona:
+		// Currently support 5.5.0 through 8.0.x
+		return fl.MySQLishMinVersion(5, 5) && !fl.MySQLishMinVersion(8, 1)
+	case VendorMariaDB:
+		// Currently support 10.1.0 through 10.4.x
+		return fl.Major == 10 && fl.Minor >= 1 && fl.Minor <= 4
 	}
+	return false
 }
 
 // Known returns true if both the vendor and major version of this flavor were
@@ -279,10 +321,8 @@ func (fl Flavor) InnoRowFormatReqs(format string) (filePerTable, barracudaFormat
 		// Oddly, MariaDB 10.2 is more picky and requires Barracuda.
 		if fl.MySQLishMinVersion(5, 7) {
 			return false, false
-		} else if fl == FlavorMariaDB101 || fl.VendorMinVersion(VendorMariaDB, 10, 3) {
-			return false, false
-		} else if fl == FlavorMariaDB102 {
-			return false, true
+		} else if fl.VendorMinVersion(VendorMariaDB, 10, 1) {
+			return false, (fl.Major == 10 && fl.Minor == 2)
 		}
 		return true, true
 	case "COMPRESSED":
@@ -299,5 +339,18 @@ func (fl Flavor) InnoRowFormatReqs(format string) (filePerTable, barracudaFormat
 // SortedForeignKeys returns true if the flavor sorts foreign keys
 // lexicographically in SHOW CREATE TABLE.
 func (fl Flavor) SortedForeignKeys() bool {
+	// MySQL/Percona 8.0.19+ no longer sort lexicographically
+	if fl.MySQLishMinVersion(8, 0, 19) {
+		return false
+	}
+
+	// 5.5 did not sort lexicographically; other versions do
 	return fl.Major > 5 || (fl.Major == 5 && fl.Minor > 5)
+}
+
+// OmitIntDisplayWidth returns true if the flavor omits inclusion of display
+// widths from column types in the int family, aside from special cases like
+// tinyint(1).
+func (fl Flavor) OmitIntDisplayWidth() bool {
+	return fl.MySQLishMinVersion(8, 0, 19)
 }

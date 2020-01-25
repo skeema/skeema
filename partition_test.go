@@ -370,10 +370,14 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 
 	// Confirm that combining REMOVE PARTITIONING with other clauses works
 	// properly, since the syntax is unusual  (no comma before partitioning clause)
+	fooType := "int(10) unsigned"
+	if flavor.OmitIntDisplayWidth() {
+		fooType = "int unsigned"
+	}
 	tableFromUnit.Columns = append(tableFromUnit.Columns,
 		&Column{
 			Name:     "foo1",
-			TypeInDB: "int(10) unsigned",
+			TypeInDB: fooType,
 		},
 	)
 	tableFromUnit.CreateStatement = tableFromUnit.GeneratedCreateStatement(flavor)
@@ -401,7 +405,7 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 	tableFromUnitP.Columns = append(tableFromUnitP.Columns,
 		&Column{
 			Name:     "foo2",
-			TypeInDB: "int(10) unsigned",
+			TypeInDB: fooType,
 		},
 	)
 	tableFromUnitP.Partitioning.Expression = strings.Replace(tableFromUnitP.Partitioning.Expression, "customer_", "", 1)
@@ -473,5 +477,8 @@ func unpartitionedTable(flavor Flavor) Table {
 		NextAutoIncrement:  1,
 	}
 	t.CreateStatement = t.GeneratedCreateStatement(flavor)
+	if flavor.OmitIntDisplayWidth() {
+		stripIntDisplayWidths(&t)
+	}
 	return t
 }

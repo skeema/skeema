@@ -246,7 +246,7 @@ func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
 	if expected == FlavorUnknown {
 		t.Skip("No image map defined for", s.d.Image)
 	}
-	if actualFlavor := s.d.Flavor(); actualFlavor != expected {
+	if actualFlavor := s.d.Flavor().Family(); actualFlavor != expected {
 		t.Errorf("Expected image=%s to yield flavor=%s, instead found %s", s.d.Image, expected, actualFlavor)
 	}
 	if actualMajor, actualMinor, _ := s.d.Version(); actualMajor != expected.Major || actualMinor != expected.Minor {
@@ -352,7 +352,7 @@ func (s TengoIntegrationSuite) TestInstanceShowCreateTable(t *testing.T) {
 		t.Errorf("Mismatch for SHOW CREATE TABLE\nActual return from %s:\n%s\n----------\nExpected output: %s", s.d.Image, t1create, t1expected.CreateStatement)
 	}
 
-	t2expected := anotherTable()
+	t2expected := anotherTableForFlavor(s.d.Flavor())
 	if t2create != t2expected.CreateStatement {
 		t.Errorf("Mismatch for SHOW CREATE TABLE\nActual return from %s:\n%s\n----------\nExpected output: %s", s.d.Image, t2create, t2expected.CreateStatement)
 	}
@@ -597,7 +597,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	aTableFromDB = s.GetTable(t, "testing", "actor_in_film")
-	aTableFromUnit = anotherTable()
+	aTableFromUnit = anotherTableForFlavor(flavor)
 	aTableFromUnit.CreateStatement = "" // Prevent diff from short-circuiting on equivalent CREATEs
 	clauses, supported = aTableFromDB.Diff(&aTableFromUnit)
 	if !supported {
@@ -877,7 +877,7 @@ func (s TengoIntegrationSuite) TestInstanceStrictModeCompliant(t *testing.T) {
 	exec("CREATE TABLE comprtest1 (name varchar(30)) ROW_FORMAT=COMPRESSED")
 	exec("CREATE TABLE comprtest2 (name varchar(30)) ROW_FORMAT=COMPRESSED")
 	expect = true
-	if (major == 5 && minor <= 6) || s.d.Flavor() == FlavorMariaDB101 {
+	if (major == 5 && minor <= 6) || s.d.Flavor().Family() == FlavorMariaDB101 {
 		expect = false
 	}
 	assertCompliance(expect)
