@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -218,7 +219,7 @@ func (s *SkeemaIntegrationSuite) compareDirs(t *testing.T, a, b *fs.Dir) {
 
 	compareDirOptionFiles(t, a, b, s.d.Flavor())
 	compareDirSQLFiles(t, a, b)
-	compareDirLogicalSchemas(t, a, b)
+	compareDirLogicalSchemas(t, a, b, s.d.Flavor())
 
 	// Compare subdirs and walk them
 	aSubdirs, err := a.Subdirs()
@@ -242,10 +243,11 @@ func (s *SkeemaIntegrationSuite) compareDirs(t *testing.T, a, b *fs.Dir) {
 }
 
 // compareDirOptionFiles confirms that option files are nearly identical between
-// a and b. In the process we manipulate a few fields in a's option file to look
-// like b; this is to avoid false positives in fields that we expect to differ
-// based solely on the test environment itself (such as the random port number
-// of the Docker container).
+// a and b. Of these, a should be the expected (golden) dir, and b the dir
+// generated from the logic being tested. We manipulate a few fields in a's
+// option file to look like b; this is to avoid false positives in fields that
+// we expect to differ based solely on the test environment itself (such as the
+// random port number of the Docker container).
 func compareDirOptionFiles(t *testing.T, a, b *fs.Dir, flavor tengo.Flavor) {
 	t.Helper()
 	if (a.OptionFile == nil && b.OptionFile != nil) || (a.OptionFile != nil && b.OptionFile == nil) {
@@ -267,7 +269,7 @@ func compareDirOptionFiles(t *testing.T, a, b *fs.Dir, flavor tengo.Flavor) {
 		}
 		// Force flavor of a to match the DockerizedInstance's flavor
 		for _, section := range a.OptionFile.SectionsWithOption("flavor") {
-			a.OptionFile.SetOptionValue(section, "flavor", flavor.String())
+			a.OptionFile.SetOptionValue(section, "flavor", flavor.Family().String())
 		}
 
 		if !a.OptionFile.SameContents(b.OptionFile) {
@@ -278,7 +280,9 @@ func compareDirOptionFiles(t *testing.T, a, b *fs.Dir, flavor tengo.Flavor) {
 	}
 }
 
-// compareDirSQLFiles compares *.sql between a and b.
+// compareDirSQLFiles compares the existence of *.sql files between dirs a and
+// b. Does not compare the actual file contents, which is instead handled by
+// compareDirLogicalSchemas.
 func compareDirSQLFiles(t *testing.T, a, b *fs.Dir) {
 	t.Helper()
 	if len(a.SQLFiles) != len(b.SQLFiles) {
@@ -292,8 +296,13 @@ func compareDirSQLFiles(t *testing.T, a, b *fs.Dir) {
 	}
 }
 
-// compareDirLogicalSchemas compares LogicalSchemas between a and b.
-func compareDirLogicalSchemas(t *testing.T, a, b *fs.Dir) {
+var reDisplayWidth = regexp.MustCompile(`(tinyint|smallint|mediumint|int|bigint)\((\d+)\)( unsigned)?( zerofill)?`)
+
+// compareDirLogicalSchemas compares LogicalSchemas between a and b. Of these, a
+// should be the expected (golden) dir, and b the dir generated from the logic
+// being tested. Some flavor-specific adjustments are automatically made to the
+// statements in a.
+func compareDirLogicalSchemas(t *testing.T, a, b *fs.Dir, flavor tengo.Flavor) {
 	t.Helper()
 	if len(a.LogicalSchemas) != len(b.LogicalSchemas) {
 		t.Errorf("Mismatch between count of parsed logical schemas: %s=%d vs %s=%d", a, len(a.LogicalSchemas), b, len(b.LogicalSchemas))
@@ -304,8 +313,12 @@ func compareDirLogicalSchemas(t *testing.T, a, b *fs.Dir) {
 		} else {
 			for key, aStmt := range aCreates {
 				bStmt := bCreates[key]
-				if aStmt.Text != bStmt.Text {
-					t.Errorf("Mismatch for %s:\n%s:\n%s\n\n%s:\n%s\n", key, aStmt.Location(), aStmt.Text, bStmt.Location(), bStmt.Text)
+				aText, bText := aStmt.Text, bStmt.Text
+				if flavor.OmitIntDisplayWidth() {
+					aText = reDisplayWidth.ReplaceAllString(aText, "$1$3$4")
+				}
+				if aText != bText {
+					t.Errorf("Mismatch for %s:\n%s:\n%s\n\n%s:\n%s\n", key, aStmt.Location(), aText, bStmt.Location(), bText)
 				}
 			}
 		}

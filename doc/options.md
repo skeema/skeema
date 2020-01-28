@@ -512,7 +512,7 @@ Commands | *all*, as well as [CI](https://www.skeema.io/ci)
 **Type** | string
 **Restrictions** | Should only appear in a .skeema option file that also contains [host](#host)
 
-This option indicates the database server vendor and version corresponding to the first [host](#host) defined in this directory. The value is formatted as "vendor:major.minor", for example "mysql:5.6", "percona:5.7", or "mariadb:10.1".
+This option indicates the database server vendor and version corresponding to the first [host](#host) defined in this directory. The value is typically formatted as "vendor:major.minor", for example "mysql:5.6", "percona:5.7", or "mariadb:10.1". A patch number may optionally be included as well, for example "mysql:8.0.19".
 
 This option is automatically populated in host-level .skeema files by `skeema init`, `skeema pull`, and `skeema add-environment` beginning in Skeema v1.0.3.
 
@@ -730,6 +730,8 @@ There are only 3 cases where non-default display widths are relevant:
 * By convention, boolean columns are typically defined using `tinyint(1)` (or as `bool` which is just an alias for `tinyint(1)`). [lint-display-width](#lint-display-width) always ignores such columns.
 * Int-type columns using the `zerofill` modifier are padded with leading zeroes based on the display width. [lint-display-width](#lint-display-width) always ignores such columns.
 * Display widths are included in query result metadata, and in theory some applications may use this information programmatically, and intentionally have non-default display widths for this reason. This is quite rare, but in this situation it makes sense to use `lint-display-width=ignore`.
+
+MySQL 8.0.17 deprecated use of integer display widths, as well as the `zerofill` modifier. MySQL 8.0.19 removed display widths from appearance in `SHOW CREATE TABLE` and `information_schema` in most situations. As a result, [lint-display-width](#lint-display-width) has no effect in MySQL 8.0.19+ and Percona Server 8.0.19+.
 
 ### lint-dupe-index
 

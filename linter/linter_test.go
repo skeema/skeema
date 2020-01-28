@@ -67,7 +67,7 @@ func (s IntegrationSuite) TestCheckSchema(t *testing.T) {
 	}
 
 	result := CheckSchema(wsSchema, opts)
-	expected := expectedAnnotations(logicalSchema)
+	expected := expectedAnnotations(logicalSchema, s.d.Flavor())
 	compareAnnotations(t, expected, result)
 }
 
@@ -117,7 +117,7 @@ func getDir(t *testing.T, dirPath string, cliArgs ...string) *fs.Dir {
 // come BEFORE the closing delimiter (e.g. closing semicolon) in order for
 // this method to see it! Otherwise, the .sql file tokenizer will consider
 // the comment to be a separate fs.Statement.
-func expectedAnnotations(logicalSchema *fs.LogicalSchema) (annotations []*Annotation) {
+func expectedAnnotations(logicalSchema *fs.LogicalSchema, flavor tengo.Flavor) (annotations []*Annotation) {
 	re := regexp.MustCompile(`/\*[^*]*annotations:\s*([^*]+)\*/`)
 
 	for _, stmt := range logicalSchema.Creates {
@@ -127,8 +127,14 @@ func expectedAnnotations(logicalSchema *fs.LogicalSchema) (annotations []*Annota
 				continue
 			}
 			for _, ruleName := range strings.Split(matches[1], ",") {
+				ruleName := strings.TrimSpace(ruleName)
+				if ruleName == "display-width" && flavor.OmitIntDisplayWidth() {
+					// Special case: don't expect any display-width annotations in
+					// MySQL 8.0.19+, which omits them entirely in most cases
+					continue
+				}
 				annotations = append(annotations, &Annotation{
-					RuleName:  strings.TrimSpace(ruleName),
+					RuleName:  ruleName,
 					Statement: stmt,
 					Note:      Note{LineOffset: offset},
 				})

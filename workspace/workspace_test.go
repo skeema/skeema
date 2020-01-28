@@ -219,7 +219,7 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	// Test docker with defaults, which should have no cleanup action, and match
 	// flavor of suite's DockerizedInstance
 	opts = getOpts("--workspace=docker")
-	if opts.Type != TypeLocalDocker || opts.CleanupAction != CleanupActionNone || opts.Flavor != s.d.Flavor() {
+	if opts.Type != TypeLocalDocker || opts.CleanupAction != CleanupActionNone || opts.Flavor.String() != s.d.Flavor().Family().String() {
 		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
 	}
 

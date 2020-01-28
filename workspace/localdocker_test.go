@@ -26,7 +26,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerErrors(t *testing.T) {
 	}
 
 	// Valid flavor but invalid schema name should error
-	opts.Flavor = s.d.Flavor()
+	opts.Flavor = s.d.Flavor().Family()
 	opts.SchemaName = "mysql"
 	if _, err := New(opts); err == nil {
 		t.Fatal("Expected error from invalid schema name, but err was nil")
@@ -37,7 +37,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDocker(t *testing.T) {
 	opts := Options{
 		Type:                TypeLocalDocker,
 		CleanupAction:       CleanupActionNone,
-		Flavor:              s.d.Flavor(),
+		Flavor:              s.d.Flavor().Family(),
 		SchemaName:          "_skeema_tmp",
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
@@ -73,7 +73,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerShutdown(t *testing.T) {
 	opts := Options{
 		Type:                TypeLocalDocker,
 		CleanupAction:       CleanupActionNone,
-		Flavor:              s.d.Flavor(),
+		Flavor:              s.d.Flavor().Family(),
 		SchemaName:          "_skeema_tmp",
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
@@ -149,7 +149,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerConnParams(t *testing.T) {
 	opts := Options{
 		Type:                TypeLocalDocker,
 		CleanupAction:       CleanupActionNone,
-		Flavor:              s.d.Flavor(),
+		Flavor:              s.d.Flavor().Family(),
 		SchemaName:          "_skeema_tmp",
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",

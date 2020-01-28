@@ -3,6 +3,7 @@ package applier
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/skeema/mybase"
@@ -103,7 +104,7 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 		if !ddl.IsShellOut() {
 			t.Fatalf("Expected this configuration to result in all DDLs being shellouts, but %v is not", ddl)
 		}
-		expected := objectDiffExpected(t, diff, ddl, is55)
+		expected := objectDiffExpected(t, diff, ddl, s.d[0].Flavor())
 		if ddl.shellOut.Command != expected {
 			t.Errorf("Expected shellout:\n%s\nActual shellout:\n%s\n", expected, ddl.shellOut.Command)
 		}
@@ -115,7 +116,7 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 
 // helper for TestNewDDLStatement; return value is specific to the setup of
 // that test
-func objectDiffExpected(t *testing.T, diff tengo.ObjectDiff, ddl *DDLStatement, is55 bool) (expected string) {
+func objectDiffExpected(t *testing.T, diff tengo.ObjectDiff, ddl *DDLStatement, flavor tengo.Flavor) (expected string) {
 	switch diff := diff.(type) {
 	case *tengo.DatabaseDiff:
 		expected = "/bin/echo ddl-wrapper .analytics ALTER DATABASE"
@@ -132,8 +133,10 @@ func objectDiffExpected(t *testing.T, diff tengo.ObjectDiff, ddl *DDLStatement, 
 				// no rows, so ddl-wrapper used. verify the statement separately.
 				expected = "/bin/echo ddl-wrapper analytics.rollups ALTER TABLE"
 				expectedStmt := "ALTER TABLE `rollups` ALGORITHM=INPLACE, LOCK=NONE, ADD COLUMN `value` bigint(20) DEFAULT NULL"
-				if is55 {
+				if flavor.Major == 5 && flavor.Minor == 5 {
 					expectedStmt = "ALTER TABLE `rollups` ADD COLUMN `value` bigint(20) DEFAULT NULL"
+				} else if flavor.OmitIntDisplayWidth() {
+					expectedStmt = strings.Replace(expectedStmt, "bigint(20)", "bigint", -1)
 				}
 				if ddl.stmt != expectedStmt {
 					t.Errorf("Expected statement:\n%s\nActual statement:\n%s\n", expectedStmt, ddl.stmt)

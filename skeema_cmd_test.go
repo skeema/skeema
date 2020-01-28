@@ -179,7 +179,7 @@ func (s SkeemaIntegrationSuite) TestAddEnvHandler(t *testing.T) {
 	origFile.SetOptionValue("cloud", "port", fmt.Sprintf("%d", s.d.Instance.Port))
 	origFile.SetOptionValue("cloud", "ignore-schema", "^test")
 	origFile.SetOptionValue("cloud", "ignore-table", "^_")
-	origFile.SetOptionValue("cloud", "flavor", s.d.Flavor().String())
+	origFile.SetOptionValue("cloud", "flavor", s.d.Flavor().Family().String())
 	if !origFile.SameContents(file) {
 		t.Fatalf("File contents of %s do not match expectation", file.Path())
 	}
@@ -932,6 +932,10 @@ func (s SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 		"  KEY `idx1` (`name`) COMMENT 'lol',\n" +
 		"  KEY `idx2` (`num`)\n" +
 		") ENGINE=InnoDB DEFAULT CHARSET=latin1 KEY_BLOCK_SIZE=8;\n"
+	if s.d.Flavor().OmitIntDisplayWidth() {
+		withClauses = strings.Replace(withClauses, "int(10)", "int", -1)
+		withoutClauses = strings.Replace(withoutClauses, "int(10)", "int", -1)
+	}
 	assertFileNormalized := func() {
 		t.Helper()
 		if contents := fs.ReadTestFile(t, "mydb/product/problems.sql"); contents != withoutClauses {
@@ -1033,15 +1037,15 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 
 	// pull should still reflect changes properly, if made to the first sharded
 	// product schema or to the unsharded analytics schema
-	s.dbExec(t, "product", "ALTER TABLE comments ADD COLUMN `approved` tinyint(1) unsigned NOT NULL")
-	s.dbExec(t, "analytics", "ALTER TABLE activity ADD COLUMN `rolled_up` tinyint(1) unsigned NOT NULL")
+	s.dbExec(t, "product", "ALTER TABLE comments ADD COLUMN `approved` tinyint(1) NOT NULL")
+	s.dbExec(t, "analytics", "ALTER TABLE activity ADD COLUMN `rolled_up` tinyint(1) NOT NULL")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull --ignore-schema=4$")
 	sfContents := fs.ReadTestFile(t, "mydb/product/comments.sql")
-	if !strings.Contains(sfContents, "`approved` tinyint(1) unsigned") {
+	if !strings.Contains(sfContents, "`approved` tinyint(1)") {
 		t.Error("Pull did not update mydb/product/comments.sql as expected")
 	}
 	sfContents = fs.ReadTestFile(t, "mydb/analytics/activity.sql")
-	if !strings.Contains(sfContents, "`rolled_up` tinyint(1) unsigned") {
+	if !strings.Contains(sfContents, "`rolled_up` tinyint(1)") {
 		t.Error("Pull did not update mydb/analytics/activity.sql as expected")
 	}
 
@@ -1181,10 +1185,10 @@ func (s SkeemaIntegrationSuite) TestFlavorConfig(t *testing.T) {
 		newFlavor = tengo.FlavorMySQL57
 	}
 	contents = fs.ReadTestFile(t, "mydb/.skeema")
-	if !strings.Contains(contents, realFlavor.String()) {
+	if !strings.Contains(contents, realFlavor.Family().String()) {
 		t.Fatal("Could not find flavor line in mydb/.skeema")
 	}
-	contents = strings.Replace(contents, realFlavor.String(), newFlavor.String(), 1)
+	contents = strings.Replace(contents, realFlavor.Family().String(), newFlavor.Family().String(), 1)
 	fs.WriteTestFile(t, "mydb/.skeema", contents)
 	s.handleCommand(t, CodeSuccess, "mydb", "skeema diff --debug")
 

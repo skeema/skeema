@@ -125,7 +125,7 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 		opts.Flavor = tengo.NewFlavor(dir.Config.Get("flavor"))
 		opts.SkipBinlog = true
 		if !opts.Flavor.Known() && instance != nil {
-			opts.Flavor = instance.Flavor()
+			opts.Flavor = instance.Flavor().Family()
 		}
 		opts.ContainerName = fmt.Sprintf("skeema-%s", strings.Replace(opts.Flavor.String(), ":", "-", -1))
 		if cleanup, err := dir.Config.GetEnum("docker-cleanup", "none", "stop", "destroy"); err != nil {

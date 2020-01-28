@@ -151,15 +151,15 @@ func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int)
 
 // checkInstanceFlavor examines the actual flavor of the supplied instance,
 // and compares to the directory's configured flavor. If both are valid but
-// differ, log a warning. If the instance flavor cannot be detected but the
-// directory has a known flavor, override the instance to use the configured
-// dir flavor.
+// differ by more than just the patch version, log a warning. If the instance
+// flavor cannot be detected but the directory has a known flavor, override
+// the instance to use the configured dir flavor.
 func checkInstanceFlavor(instance *tengo.Instance, dir *fs.Dir) {
 	instFlavor := instance.Flavor()
 	confFlavor := tengo.NewFlavor(dir.Config.Get("flavor"))
 
 	if instFlavor.Known() {
-		if confFlavor != tengo.FlavorUnknown && instFlavor != confFlavor {
+		if confFlavor != tengo.FlavorUnknown && instFlavor.Family() != confFlavor.Family() {
 			log.Warnf("Instance %s actual flavor %s differs from dir %s configured flavor %s", instance, instFlavor, dir, confFlavor)
 		}
 	} else {

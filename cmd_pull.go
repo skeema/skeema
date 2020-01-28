@@ -286,14 +286,14 @@ func objectsInDiff(logicalSchema *fs.LogicalSchema, instSchema *tengo.Schema, op
 // undetectable flavor.
 func updateFlavor(dir *fs.Dir, instance *tengo.Instance) {
 	instFlavor := instance.Flavor()
-	if !instFlavor.Known() || instFlavor.String() == dir.Config.Get("flavor") {
+	if !instFlavor.Known() || instFlavor.Family().String() == dir.Config.Get("flavor") {
 		return
 	}
-	dir.OptionFile.SetOptionValue(dir.Config.Get("environment"), "flavor", instFlavor.String())
+	dir.OptionFile.SetOptionValue(dir.Config.Get("environment"), "flavor", instFlavor.Family().String())
 	if err := dir.OptionFile.Write(true); err != nil {
 		log.Warnf("Unable to update flavor in %s: %s", dir.OptionFile.Path(), err)
 	} else {
-		log.Infof("Wrote %s -- updated flavor to %s", dir.OptionFile.Path(), instFlavor.String())
+		log.Infof("Wrote %s -- updated flavor to %s", dir.OptionFile.Path(), instFlavor.Family().String())
 	}
 }
 

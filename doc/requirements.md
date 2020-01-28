@@ -8,7 +8,7 @@ Skeema currently supports the following databases:
 
 * MySQL 5.5, 5.6, 5.7, 8.0
 * Percona Server 5.5, 5.6, 5.7, 8.0
-* MariaDB 10.1, 10.2, 10.3
+* MariaDB 10.1, 10.2, 10.3, 10.4
 
 Testing is performed with the database server running on Linux only. Other operating systems likely work without issue, although there is one [known incompatibility regarding case-insensitive filesystems](https://github.com/skeema/skeema/issues/65#issuecomment-478048414), e.g. when the database server is running on Windows or MacOS, if any schema names or table names use uppercase characters.
 

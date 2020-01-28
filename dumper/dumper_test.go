@@ -2,9 +2,11 @@ package dumper
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -153,11 +155,30 @@ func (s *IntegrationSuite) BeforeTest(backend string) error {
 	if err := exec.Command("/bin/sh", "-c", cpCommand).Run(); err != nil {
 		return err
 	}
+
+	// Read the input files; make flavor-specific adjustments if needed
 	dir, err := getDir(s.scratchPath())
 	if err != nil {
 		return err
 	} else if len(dir.LogicalSchemas) != 1 {
 		return fmt.Errorf("Unexpected logical schema count for %s: %d", dir, len(dir.LogicalSchemas))
+	}
+	if s.d.Flavor().OmitIntDisplayWidth() {
+		for _, sqlFile := range dir.SQLFiles {
+			contents, err := ioutil.ReadFile(sqlFile.Path())
+			if err != nil {
+				return err
+			}
+			if newContents := stripDisplayWidth(string(contents)); newContents != string(contents) {
+				err := ioutil.WriteFile(sqlFile.Path(), []byte(newContents), 0777)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		if dir, err = getDir(s.scratchPath()); err != nil {
+			return err
+		}
 	}
 	s.scratchDir = dir
 	wsOpts := workspace.Options{
@@ -235,8 +256,12 @@ func (s *IntegrationSuite) verifyFormat(t *testing.T) {
 		} else {
 			for key, aStmt := range aCreates {
 				bStmt := bCreates[key]
-				if aStmt.Text != bStmt.Text {
-					t.Errorf("Mismatch for %s:\n%s:\n%s\n\n%s:\n%s\n", key, aStmt.Location(), aStmt.Text, bStmt.Location(), bStmt.Text)
+				bStmtText := bStmt.Text
+				if s.d.Flavor().OmitIntDisplayWidth() {
+					bStmtText = stripDisplayWidth(bStmtText)
+				}
+				if aStmt.Text != bStmtText {
+					t.Errorf("Mismatch for %s:\n%s:\n%s\n\n%s:\n%s\n", key, aStmt.Location(), aStmt.Text, bStmt.Location(), bStmtText)
 				}
 			}
 		}
@@ -251,4 +276,10 @@ func getDir(dirPath string) (*fs.Dir, error) {
 		CLI: &mybase.CommandLine{Command: cmd},
 	}
 	return fs.ParseDir(dirPath, cfg)
+}
+
+var reDisplayWidth = regexp.MustCompile(`(tinyint|smallint|mediumint|int|bigint)\((\d+)\)( unsigned)?( zerofill)?`)
+
+func stripDisplayWidth(input string) string {
+	return reDisplayWidth.ReplaceAllString(input, "$1$3$4")
 }
