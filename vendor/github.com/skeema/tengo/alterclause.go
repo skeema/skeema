@@ -205,8 +205,27 @@ type ModifyColumn struct {
 	PositionAfter *Column
 }
 
+var reDisplayWidth = regexp.MustCompile(`(tinyint|smallint|mediumint|int|bigint)\((\d+)\)( unsigned)?( zerofill)?`)
+
 // Clause returns a MODIFY COLUMN clause of an ALTER TABLE statement.
 func (mc ModifyColumn) Clause(mods StatementModifiers) string {
+	// Emit a no-op if the *only* difference is presence of int display width. This
+	// can come up if comparing a pre-8.0.19 version of a table to a post-8.0.19
+	// version.
+	if strings.Contains(mc.OldColumn.TypeInDB, "int(") && !strings.ContainsRune(mc.NewColumn.TypeInDB, '(') {
+		oldColCopy := *mc.OldColumn
+		oldColCopy.TypeInDB = reDisplayWidth.ReplaceAllString(oldColCopy.TypeInDB, "$1$3$4")
+		if oldColCopy.Equals(mc.NewColumn) {
+			return ""
+		}
+	} else if strings.Contains(mc.NewColumn.TypeInDB, "int(") && !strings.ContainsRune(mc.OldColumn.TypeInDB, '(') {
+		newColCopy := *mc.NewColumn
+		newColCopy.TypeInDB = reDisplayWidth.ReplaceAllString(newColCopy.TypeInDB, "$1$3$4")
+		if newColCopy.Equals(mc.OldColumn) {
+			return ""
+		}
+	}
+
 	var positionClause string
 	if mc.PositionFirst {
 		// Positioning variables are mutually exclusive
