@@ -3,7 +3,6 @@ package tengo
 import (
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -514,9 +513,8 @@ func foreignKeyTable() Table {
 	}
 }
 
-var reDisplayWidth = regexp.MustCompile(`(tinyint|smallint|mediumint|int|bigint)\((\d+)\)( unsigned)?( zerofill)?`)
-
 func stripIntDisplayWidths(table *Table) {
+	// See alterclause.go for definition of reDisplayWidth
 	for _, col := range table.Columns {
 		col.TypeInDB = reDisplayWidth.ReplaceAllString(col.TypeInDB, "$1$3$4")
 	}

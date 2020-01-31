@@ -4,6 +4,63 @@ import (
 	"testing"
 )
 
+// TestModifyColumnDisplayWidth provides coverage of edge cases relating to
+// one side having an int display width and the other missing one.
+func TestModifyColumnDisplayWidth(t *testing.T) {
+	mc := ModifyColumn{
+		Table: &Table{Name: "test"},
+		OldColumn: &Column{
+			Name:     "col",
+			TypeInDB: "bigint(20) unsigned",
+			Default:  "NULL",
+			Nullable: true,
+		},
+		NewColumn: &Column{
+			Name:     "col",
+			TypeInDB: "bigint unsigned",
+			Default:  "NULL",
+			Nullable: true,
+		},
+	}
+
+	assertNoOp := func() {
+		t.Helper()
+		if clause := mc.Clause(StatementModifiers{}); clause != "" {
+			t.Errorf("Expected Clause() to return an empty string, instead found %q", clause)
+		}
+	}
+	assertOp := func() {
+		t.Helper()
+		if mc.Clause(StatementModifiers{}) == "" {
+			t.Error("Expected Clause() to return a non-empty string, but it was empty")
+		}
+	}
+
+	assertNoOp() // starting setup just removes display width
+	mc.OldColumn, mc.NewColumn = mc.NewColumn, mc.OldColumn
+	assertNoOp()
+
+	mc.OldColumn.TypeInDB = "int unsigned"
+	assertOp()
+	mc.OldColumn, mc.NewColumn = mc.NewColumn, mc.OldColumn
+	assertOp()
+	mc.NewColumn.TypeInDB = "bigint(19) unsigned"
+	assertOp()
+	mc.NewColumn.TypeInDB = "bigint(20)"
+	assertOp()
+
+	mc.OldColumn.TypeInDB, mc.NewColumn.TypeInDB = "bigint(20) unsigned", "bigint unsigned"
+	assertNoOp()
+	mc.NewColumn.Nullable = false
+	mc.NewColumn.Default = ""
+	assertOp()
+
+	mc.OldColumn.TypeInDB, mc.NewColumn.TypeInDB = "timestamp(4)", "timestamp"
+	mc.OldColumn.Nullable, mc.NewColumn.Nullable = false, false
+	mc.OldColumn.Default, mc.NewColumn.Default = "", ""
+	assertOp()
+}
+
 func TestModifyColumnUnsafe(t *testing.T) {
 	assertUnsafe := func(type1, type2 string, expected bool) {
 		mc := ModifyColumn{
