@@ -1,6 +1,7 @@
 package tengo
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -174,5 +175,65 @@ func TestModifyColumnUnsafe(t *testing.T) {
 	mc.OldColumn.Virtual = false
 	if !mc.Unsafe() {
 		t.Error("Expected stored column modification to be unsafe, but Unsafe() returned false")
+	}
+}
+
+func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
+	flavor := s.d.Flavor()
+	// Skip test if flavor doesn't support page compression
+	// Note that although MariaDB 10.1 supports this feature, we exclude it here
+	// since it does not seem to work out-of-the-box in Docker images
+	if !flavor.MySQLishMinVersion(5, 7) && !flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
+		t.Skipf("InnoDB page compression not supported in flavor %s", flavor)
+	}
+
+	sqlPath := "testdata/pagecompression.sql"
+	if flavor.Vendor == VendorMariaDB {
+		sqlPath = "testdata/pagecompression-maria.sql"
+	}
+	if _, err := s.d.SourceSQL(sqlPath); err != nil {
+		t.Fatalf("Unexpected error sourcing %s: %v", sqlPath, err)
+	}
+	uncompTable := s.GetTable(t, "testing", "actor_in_film")
+
+	runAlter := func(clause TableAlterClause) {
+		t.Helper()
+		db, err := s.d.Connect("testing", "")
+		if err != nil {
+			t.Fatalf("Unable to connect to DockerizedInstance: %s", err)
+		}
+		tableName := uncompTable.Name
+		query := fmt.Sprintf("ALTER TABLE %s %s", EscapeIdentifier(tableName), clause.Clause(StatementModifiers{}))
+		if _, err := db.Exec(query); err != nil {
+			t.Fatalf("Unexpected error from query %q: %v", query, err)
+		}
+	}
+
+	compTable := s.GetTable(t, "testing", "actor_in_film_comp")
+	if compTable.UnsupportedDDL {
+		t.Fatal("Table with page compression is unexpectedly unsupported for diff")
+	}
+	compTable.Name = uncompTable.Name
+
+	// Test diff generation for uncompressed -> compressed
+	clauses, supported := uncompTable.Diff(compTable)
+	if len(clauses) != 1 || !supported {
+		t.Fatalf("Unexpected return from diff: %d clauses, supported=%t", len(clauses), supported)
+	}
+	runAlter(clauses[0])
+	refetchedTable := s.GetTable(t, "testing", "actor_in_film")
+	if refetchedTable.CreateOptions != compTable.CreateOptions {
+		t.Fatalf("Expected refetched table to have create options %q, instead found %q", compTable.CreateOptions, refetchedTable.CreateOptions)
+	}
+
+	// Test diff generation and execution for compressed -> uncompressed
+	clauses, supported = compTable.Diff(uncompTable)
+	if len(clauses) != 1 || !supported {
+		t.Fatalf("Unexpected return from diff: %d clauses, supported=%t", len(clauses), supported)
+	}
+	runAlter(clauses[0])
+	refetchedTable = s.GetTable(t, "testing", "actor_in_film")
+	if refetchedTable.CreateOptions != uncompTable.CreateOptions {
+		t.Fatalf("Expected refetched table to have create options %q, instead found %q", uncompTable.CreateOptions, refetchedTable.CreateOptions)
 	}
 }

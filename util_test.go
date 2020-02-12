@@ -65,6 +65,23 @@ func TestParseCreateAutoInc(t *testing.T) {
 	}
 }
 
+func TestReformatCreateOptions(t *testing.T) {
+	cases := map[string]string{
+		"":                                       "",
+		"partitioned":                            "",
+		"partitioned stats_persistent=1":         "STATS_PERSISTENT=1",
+		"stats_persistent=1 partitioned":         "STATS_PERSISTENT=1",
+		"row_format=DYNAMIC stats_auto_recalc=1": "ROW_FORMAT=DYNAMIC STATS_AUTO_RECALC=1",
+		"COMPRESSION=\"zLIB\"":                   "COMPRESSION='zLIB'", // MySQL style page compression
+		"`PAGE_compressed`=1 `page_compression_LEVEL`=9": "`PAGE_compressed`=1 `page_compression_LEVEL`=9", // MariaDB style page compression
+	}
+	for input, expected := range cases {
+		if actual := reformatCreateOptions(input); actual != expected {
+			t.Errorf("Expected reformatCreateOptions(%q) to yield %q, instead found %q", input, expected, actual)
+		}
+	}
+}
+
 func TestNormalizeCreateOptions(t *testing.T) {
 	input := "CREATE TABLE `problems` (\n" +
 		"  `name` varchar(30) CHARACTER SET latin1 COLLATE latin1_swedish_ci /*!50606 STORAGE MEMORY */ /*!50606 COLUMN_FORMAT DYNAMIC */ DEFAULT NULL,\n" +

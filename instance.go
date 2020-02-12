@@ -868,7 +868,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	query := `
 		SELECT t.table_name AS table_name, t.table_type AS table_type, t.engine AS engine,
 		       t.auto_increment AS auto_increment, t.table_collation AS table_collation,
-		       UPPER(t.create_options) AS create_options, t.table_comment AS table_comment,
+		       t.create_options AS create_options, t.table_comment AS table_comment,
 		       c.character_set_name AS character_set_name, c.is_default AS is_default
 		FROM   tables t
 		JOIN   collations c ON t.table_collation = c.collation_name
@@ -895,16 +895,10 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			tables[n].NextAutoIncrement = uint64(rawTable.AutoIncrement.Int64)
 		}
 		if rawTable.CreateOptions.Valid && rawTable.CreateOptions.String != "" {
-			tables[n].CreateOptions = rawTable.CreateOptions.String
-
-			// information_schema.tables.create_options contains "partitioned" if the
-			// table is partitioned, despite this not being present as-is in the table
-			// definition. All other create_options are present verbatim.
-			if strings.Contains(tables[n].CreateOptions, "PARTITIONED") {
-				tables[n].CreateOptions = strings.Replace(tables[n].CreateOptions, "PARTITIONED", "", 1)
-				tables[n].CreateOptions = strings.TrimSpace(strings.Replace(tables[n].CreateOptions, "  ", " ", 1))
+			if strings.Contains(strings.ToUpper(rawTable.CreateOptions.String), "PARTITIONED") {
 				havePartitions = true
 			}
+			tables[n].CreateOptions = reformatCreateOptions(rawTable.CreateOptions.String)
 		}
 	}
 

@@ -102,6 +102,42 @@ func ParseCreatePartitioning(createStmt string) (base, partitionClause string) {
 	return createStmt[0 : len(createStmt)-len(matches[1])], matches[1]
 }
 
+// reformatCreateOptions converts a value obtained from
+// information_schema.tables.create_options to the formatting used in SHOW
+// CREATE TABLE.
+func reformatCreateOptions(input string) string {
+	if input == "" {
+		return ""
+	}
+	options := strings.Split(input, " ")
+	result := make([]string, 0, len(options))
+
+	for _, kv := range options {
+		tokens := strings.SplitN(kv, "=", 2)
+		// Option name always all caps in SHOW CREATE TABLE, *except* for backtick-
+		// wrapped option names in MariaDB, which preserve the capitalization supplied
+		// by the user
+		if tokens[0][0] != '`' {
+			tokens[0] = strings.ToUpper(tokens[0])
+		}
+		if len(tokens) == 1 {
+			// Partitioned tables have "partitioned" in this field, but partitioning
+			// information is contained in a different spot in SHOW CREATE TABLE
+			if tokens[0] != "PARTITIONED" {
+				result = append(result, tokens[0])
+			}
+			continue
+		}
+
+		// Double quote wrapper changed to single quotes in SHOW CREATE TABLE
+		if tokens[1][0] == '"' && tokens[1][len(tokens[1])-1] == '"' {
+			tokens[1] = fmt.Sprintf("'%s'", tokens[1][1:len(tokens[1])-1])
+		}
+		result = append(result, fmt.Sprintf("%s=%s", tokens[0], tokens[1]))
+	}
+	return strings.Join(result, " ")
+}
+
 var normalizeCreateRegexps = []struct {
 	re          *regexp.Regexp
 	replacement string
