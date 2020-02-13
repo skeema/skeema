@@ -37,6 +37,8 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [ignore-schema](#ignore-schema)
 * [ignore-table](#ignore-table)
 * [include-auto-inc](#include-auto-inc)
+* [json-output](#json-output)
+* [json-output-include-password](#json-output-include-password)
 * [lint](#lint)
 * [lint-auto-inc](#lint-auto-inc)
 * [lint-charset](#lint-charset)
@@ -693,6 +695,26 @@ In `skeema init`, a false value omits AUTO_INCREMENT=X clauses in all table defi
 In `skeema pull`, a false value omits AUTO_INCREMENT=X clauses in any *newly-written* table files (tables were created outside of Skeema, which are now getting a \*.sql file written for the first time). Modified tables *that already had AUTO_INCREMENT=X clauses*, where X > 1, will have their AUTO_INCREMENT values updated; otherwise the clause will continue to be omitted in any file that previously omitted it. Meanwhile a true value causes all table files to now have AUTO_INCREMENT=X clauses.
 
 Only set this to true if you intentionally need to track auto_increment values in all tables. If only a few tables require nonstandard auto_increment, simply include the value manually in the CREATE TABLE statement in the *.sql file. Subsequent calls to `skeema pull` won't strip it, even if `include-auto-inc` is false.
+
+### json-output
+
+Commands | diff, push
+--- | :---
+**Default** | false
+**Type** | boolean
+**Restrictions** | Should only appear on command-line. Has no effect if [brief](#brief) is also set
+
+When enabled, replaces the standard SQL output with JSON output. The format consists of a JSON object stream, one object per DDL statement, with each object being a flat key-value map identical to what is available in [alter-wrapper](#alter-wrapper).
+
+### json-output-include-password
+
+Commands | diff, push
+--- | :---
+**Default** | false
+**Type** | boolean
+**Restrictions** | Has no effect unless [json-output](#json-output) also set
+
+By default, the JSON objects output by [json-output](#json-output) will _not_ include the MySQL password. This flag allows the password to also be returned in the JSON output.
 
 ### lint
 

@@ -11,6 +11,7 @@ import (
 // being called from multiple pushworker goroutines.
 type Printer struct {
 	briefOutput        bool
+	jsonOutput         bool
 	lastStdoutInstance string
 	lastStdoutSchema   string
 	seenInstance       map[string]bool
@@ -21,9 +22,12 @@ type Printer struct {
 // printer is used to print instance names ("host:port\n") of instances that
 // have one or more differences found. If briefMode is false, this printer is
 // used to print any arbitrary output specific to an instance and schema.
-func NewPrinter(briefMode bool) *Printer {
+// If jsonOutput is true, this printer will print encoded json objects instead
+// of its normal output, for easier consumption by other programs.
+func NewPrinter(briefMode bool, jsonOutput bool) *Printer {
 	return &Printer{
 		briefOutput:  briefMode,
+		jsonOutput:   jsonOutput,
 		seenInstance: make(map[string]bool),
 		Mutex:        new(sync.Mutex),
 	}
@@ -45,6 +49,15 @@ func (p *Printer) printDDL(ddl *DDLStatement) {
 			p.seenInstance[instString] = true
 		}
 		return
+	}
+	if p.jsonOutput {
+		json, err := ddl.Json()
+		if err != nil {
+			fmt.Printf("Error attempting to convert ddl variables to json: %s\n", err)
+		} else {
+			fmt.Println(json)
+			return
+		}
 	}
 
 	if instString != p.lastStdoutInstance {

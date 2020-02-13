@@ -29,6 +29,8 @@ top of the file. If no environment name is supplied, the default is
 	cmd.AddOption(mybase.BoolOption("verify", 0, true, "Test all generated ALTER statements on temp schema to verify correctness"))
 	cmd.AddOption(mybase.BoolOption("allow-unsafe", 0, false, "Permit running ALTER or DROP operations that are potentially destructive"))
 	cmd.AddOption(mybase.BoolOption("dry-run", 0, false, "Output DDL but don't run it; equivalent to `skeema diff`"))
+	cmd.AddOption(mybase.BoolOption("json-output", 0, false, "Output DDL statements as json instead of normal output."))
+	cmd.AddOption(mybase.BoolOption("json-output-include-password", 0, false, "Include password in the json output of ddl statements. Normal behaviour is to remove the password from the map before printing."))
 	cmd.AddOption(mybase.BoolOption("first-only", '1', false, "For dirs mapping to multiple instances or schemas, just run against the first per dir"))
 	cmd.AddOption(mybase.BoolOption("exact-match", 0, false, "Follow *.sql table definitions exactly, even for differences with no functional impact"))
 	cmd.AddOption(mybase.BoolOption("foreign-key-checks", 0, false, "Force the server to check referential integrity of any new foreign key"))
@@ -58,7 +60,8 @@ func PushHandler(cfg *mybase.Config) error {
 	}
 
 	briefMode := dir.Config.GetBool("dry-run") && dir.Config.GetBool("brief")
-	printer := applier.NewPrinter(briefMode)
+	jsonOutput := dir.Config.GetBool("json-output")
+	printer := applier.NewPrinter(briefMode, jsonOutput)
 	g, ctx := errgroup.WithContext(context.Background())
 	tgchan, skipCount := applier.TargetGroupChanForDir(dir)
 	results := make(chan applier.Result)

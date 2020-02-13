@@ -1,6 +1,7 @@
 package applier
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -23,6 +24,7 @@ type DDLStatement struct {
 	instance      *tengo.Instance
 	schemaName    string
 	connectParams string
+	variables     map[string]string
 }
 
 // NewDDLStatement creates and returns a DDLStatement. If the statement ends up
@@ -81,7 +83,8 @@ func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, targe
 
 	if wrapper == "" {
 		ddl.connectParams = getConnectParams(diff, target.Dir.Config)
-	} else {
+	}
+	if wrapper != "" || target.Dir.Config.GetBool("json-output") {
 		var socket, port, connOpts string
 		if ddl.instance.SocketPath != "" {
 			socket = ddl.instance.SocketPath
@@ -116,11 +119,17 @@ func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, targe
 			variables["TABLE"] = variables["NAME"]
 		}
 
-		if ddl.shellOut, err = util.NewInterpolatedShellOut(wrapper, variables); err != nil {
-			// Intentionally avoiding fmt.Errorf here to avoid golint complaining about capitalization
-			errorText := fmt.Sprintf("A fatal error occurred with pre-processing a DDL statement: %s.", err)
-			return nil, errors.New(errorText)
+		if wrapper != "" {
+			if ddl.shellOut, err = util.NewInterpolatedShellOut(wrapper, variables); err != nil {
+				// Intentionally avoiding fmt.Errorf here to avoid golint complaining about capitalization
+				errorText := fmt.Sprintf("A fatal error occurred with pre-processing a DDL statement: %s.", err)
+				return nil, errors.New(errorText)
+			}
 		}
+		if !target.Dir.Config.GetBool("json-output-include-password") {
+			delete(variables, "PASSWORD")
+		}
+		ddl.variables = variables
 	}
 
 	return ddl, nil
@@ -242,6 +251,11 @@ func (ddl *DDLStatement) String() string {
 		return fmt.Sprintf("\\! %s\n", ddl.shellOut)
 	}
 	return fs.AddDelimiter(ddl.stmt)
+}
+
+func (ddl *DDLStatement) Json() (string, error) {
+	b, err := json.Marshal(ddl.variables)
+	return string(b), err
 }
 
 // Execute runs the DDL statement, either by running a SQL query against a DB,
