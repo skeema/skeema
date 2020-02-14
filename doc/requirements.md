@@ -98,7 +98,6 @@ Skeema can CREATE or DROP tables using these features, but cannot ALTER them. Th
 * sub-partitioning (two levels of partitioning in the same table)
 * some features of non-InnoDB storage engines
 * spatial indexes
-* column-level compression, with or without predefined dictionary (Percona Server 5.6.33+)
 * CHECK constraints (MySQL 8.0.16+ / Percona Server 8.0.16+ / MariaDB 10.2+)
 
 You can still ALTER these tables externally from Skeema (e.g., direct invocation of `ALTER TABLE` or `pt-online-schema-change`). Afterwards, you can update your schema repo using `skeema pull`, which will work properly even on these tables.
