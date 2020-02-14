@@ -611,6 +611,10 @@ If ports are omitted, the [port](#port) option is used instead, which defaults t
 
 The external command should only return addresses of master instances, never replicas.
 
+The [host-wrapper](#host-wrapper) option is designed to be specified generically at a high level directory, such as a .skeema file at the repository root, or perhaps a [global option file](config.md#priority-of-options-set-in-multiple-places). This way, you may specify a single generic service discovery command-line usable across your infrastructure, rather than redundantly configuring a command-line for each database cluster.
+
+Setting or overriding [host-wrapper](#host-wrapper) in a subdirectory does not inherently cause the wrapper to be invoked upon processing that subdirectory; host-level subdirectories **must also still specify some value for the [host](#host) option** in order to be processed. If your [host-wrapper](#host-wrapper) command-line does not make use of the `{HOST}` variable, then just use a static value such as `host=1` in directories where the host-wrapper script should be invoked.
+
 ### ignore-schema
 
 Commands | init, pull, diff, push
