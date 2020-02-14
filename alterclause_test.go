@@ -195,6 +195,9 @@ func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
 		t.Fatalf("Unexpected error sourcing %s: %v", sqlPath, err)
 	}
 	uncompTable := s.GetTable(t, "testing", "actor_in_film")
+	if uncompTable.CreateOptions != "" {
+		t.Fatal("Fixture table has changed without test logic being updated")
+	}
 
 	runAlter := func(clause TableAlterClause) {
 		t.Helper()
@@ -222,7 +225,9 @@ func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
 	}
 	runAlter(clauses[0])
 	refetchedTable := s.GetTable(t, "testing", "actor_in_film")
-	if refetchedTable.CreateOptions != compTable.CreateOptions {
+	// Just comparing string length because the *order* of create options may
+	// randomly differ from what was specified in DDL
+	if len(refetchedTable.CreateOptions) != len(compTable.CreateOptions) {
 		t.Fatalf("Expected refetched table to have create options %q, instead found %q", compTable.CreateOptions, refetchedTable.CreateOptions)
 	}
 
@@ -233,7 +238,7 @@ func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
 	}
 	runAlter(clauses[0])
 	refetchedTable = s.GetTable(t, "testing", "actor_in_film")
-	if refetchedTable.CreateOptions != uncompTable.CreateOptions {
-		t.Fatalf("Expected refetched table to have create options %q, instead found %q", uncompTable.CreateOptions, refetchedTable.CreateOptions)
+	if refetchedTable.CreateOptions != "" {
+		t.Fatalf("Expected refetched table to have create options \"\", instead found %q", refetchedTable.CreateOptions)
 	}
 }
