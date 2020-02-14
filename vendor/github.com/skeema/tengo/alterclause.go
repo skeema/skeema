@@ -496,6 +496,7 @@ func (cco ChangeCreateOptions) Clause(_ StatementModifiers) string {
 		"DELAY_KEY_WRITE":    "0",
 		"ROW_FORMAT":         "DEFAULT",
 		"KEY_BLOCK_SIZE":     "0",
+		"COMPRESSION":        "''", // Undocumented way of removing clause entirely (vs "None" which sticks around)
 	}
 
 	splitOpts := func(full string) map[string]string {
