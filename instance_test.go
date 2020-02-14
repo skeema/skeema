@@ -882,3 +882,30 @@ func (s TengoIntegrationSuite) TestInstanceStrictModeCompliant(t *testing.T) {
 	}
 	assertCompliance(expect)
 }
+
+// TestFixColumnCompression confirms that CREATE TABLE parsing for Percona
+// Server's compressed column feature works properly.
+func TestFixColumnCompression(t *testing.T) {
+	table := supportedTableForFlavor(FlavorPercona57)
+	if table.Columns[3].Name != "metadata" || table.Columns[3].ColumnFormat != "" {
+		t.Fatal("Test fixture has changed without corresponding update to this test's logic")
+	}
+
+	table.CreateStatement = strings.Replace(table.CreateStatement, "`metadata` text", "`metadata` text /*!50633 COLUMN_FORMAT COMPRESSED */", 1)
+	fixColumnCompression(&table)
+	if table.Columns[3].ColumnFormat != "COMPRESSED" {
+		t.Errorf("Expected column's format to be %q, instead found %q", "COMPRESSED", table.Columns[3].ColumnFormat)
+	}
+	if table.GeneratedCreateStatement(FlavorPercona57) != table.CreateStatement {
+		t.Errorf("Unexpected mismatch in generated CREATE TABLE:\nGeneratedCreateStatement:\n%s\nCreateStatement:\n%s", table.GeneratedCreateStatement(FlavorPercona57), table.CreateStatement)
+	}
+
+	table.CreateStatement = strings.Replace(table.CreateStatement, "COMPRESSED */", "COMPRESSED WITH COMPRESSION_DICTIONARY `foobar` */", 1)
+	fixColumnCompression(&table)
+	if table.Columns[3].ColumnFormat != "COMPRESSED WITH COMPRESSION_DICTIONARY `foobar`" {
+		t.Errorf("Expected column's format to be %q, instead found %q", "COMPRESSED WITH COMPRESSION_DICTIONARY `foobar`", table.Columns[3].ColumnFormat)
+	}
+	if table.GeneratedCreateStatement(FlavorPercona57) != table.CreateStatement {
+		t.Errorf("Unexpected mismatch in generated CREATE TABLE:\nGeneratedCreateStatement:\n%s\nCreateStatement:\n%s", table.GeneratedCreateStatement(FlavorPercona57), table.CreateStatement)
+	}
+}

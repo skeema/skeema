@@ -40,10 +40,9 @@ Go La Tengo **cannot** diff tables containing any of the following MySQL feature
 * spatial indexes
 * sub-partitioning (two levels of partitioning in the same table)
 * CHECK constraints (MySQL 8.0.16+ / Percona Server 8.0.16+ / MariaDB 10.2+)
-* column-level compression, with or without predefined dictionary (Percona Server 5.6.33+)
 * special features of non-InnoDB storage engines
 
-This list is not necessarily exhaustive. Many of these will be implemented in subsequent releases.
+This list is not necessarily exhaustive. Some of these may be implemented in subsequent releases.
 
 Go La Tengo also does not yet support rename operations, e.g. column renames or table renames.
 

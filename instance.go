@@ -1236,6 +1236,13 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 				fixCreateOptionsOrder(t, flavor)
 				fixGenerationExpr(t, flavor)
 			}
+			// Percona Server column compression can only be parsed from SHOW CREATE
+			// TABLE. (Although it also has new I_S tables, their name differs pre-8.0
+			// vs post-8.0, and cols that aren't using a COMPRESSION_DICTIONARY are not
+			// even present there.)
+			if flavor.VendorMinVersion(VendorPercona, 5, 6, 33) && strings.Contains(t.CreateStatement, "COLUMN_FORMAT COMPRESSED") {
+				fixColumnCompression(t)
+			}
 			// Compare what we expect the create DDL to be, to determine if we support
 			// diffing for the table. Ignore next-auto-increment differences in this
 			// comparison, since the value may have changed between our previous
@@ -1397,6 +1404,22 @@ func fixPartitioningEdgeCases(t *Table, flavor Flavor) {
 				p.DataDir = matches[1]
 			}
 		}
+	}
+}
+
+var reColumnCompressionLine = regexp.MustCompile("^\\s+`((?:[^`]|``)+)` .* /\\*!50633 COLUMN_FORMAT ([^*]+) \\*/")
+
+// fixColumnCompression parses the table's CREATE string in order to populate
+// Column.ColumnFormat for columns that are using Percona Server's column
+// compression feature.
+func fixColumnCompression(t *Table) {
+	colsByName := t.ColumnsByName()
+	for _, line := range strings.Split(t.CreateStatement, "\n") {
+		matches := reColumnCompressionLine.FindStringSubmatch(line)
+		if matches == nil {
+			continue
+		}
+		colsByName[matches[1]].ColumnFormat = matches[2]
 	}
 }
 
