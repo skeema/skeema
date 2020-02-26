@@ -109,7 +109,7 @@ func isSystemSchema(name string) bool {
 		"performance_schema": true,
 		"sys":                true,
 	}
-	return systemSchemas[name]
+	return systemSchemas[strings.ToLower(name)]
 }
 
 func createHostDir(cfg *mybase.Config) (*fs.Dir, error) {

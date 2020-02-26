@@ -425,7 +425,7 @@ func (dir *Dir) SchemaNames(instance *tengo.Instance) (names []string, err error
 	for _, name := range names {
 		if ignoreSchema != nil && ignoreSchema.MatchString(name) {
 			log.Debugf("Skipping schema %s because ignore-schema='%s'", name, ignoreSchema)
-		} else if !systemSchemas[name] {
+		} else if !systemSchemas[strings.ToLower(name)] {
 			keepNames = append(keepNames, name)
 		}
 	}
