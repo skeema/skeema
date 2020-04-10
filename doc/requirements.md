@@ -10,14 +10,15 @@ Skeema currently supports the following databases:
 * Percona Server 5.5, 5.6, 5.7, 8.0
 * MariaDB 10.1, 10.2, 10.3, 10.4
 
-Testing is performed with the database server running on Linux only. Other operating systems likely work without issue, although there is one [known incompatibility regarding case-insensitive filesystems](https://github.com/skeema/skeema/issues/65#issuecomment-478048414), e.g. when the database server is running on Windows or MacOS, if any schema names or table names use uppercase characters.
+Testing is performed with the **database server running on Linux** only. Other operating systems likely work without issue, although there is one [known incompatibility regarding case-insensitive filesystems](https://github.com/skeema/skeema/issues/65#issuecomment-478048414), e.g. when the database server is running on Windows or MacOS, if any schema names or table names use uppercase characters.
 
-Some MySQL features -- such as spatial indexes and subpartitioning -- are [not supported yet](requirements.md#unsupported-for-alter-table) in Skeema's diff operations. Additionally, only the InnoDB storage engine is primarily supported at this time. Other storage engines are often perfectly functional in Skeema, but it depends on whether any esoteric features of the engine are used.
+Some MySQL features -- such as spatial indexes and subpartitioning -- are [not supported yet](requirements.md#unsupported-for-alter-table) in Skeema's diff operations. Additionally, **only the InnoDB storage engine is primarily supported** at this time. Other storage engines are often perfectly functional in Skeema, but it depends on whether any esoteric features of the engine are used.
 
 In all cases, Skeema's safety mechanisms will detect when a table is using unsupported features, and will alert you to this fact in `skeema diff` or `skeema push`. There is no risk of generating or executing an incorrect diff. If Skeema does not yet support a table/column feature that you need, please [open a GitHub issue](https://github.com/skeema/skeema/issues/new) so that the work can be prioritized appropriately.
 
 Skeema has not been tested yet on clustering technologies such as Galera Cluster, InnoDB Cluster, Vitess, etc. For clustering technologies that require special execution of DDL statements, Skeema's [alter-wrapper](options.md#alter-wrapper) and [ddl-wrapper](options.md#ddl-wrapper) options may provide a possible solution.
 
+Compatibility with **AWS Aurora is not guaranteed**, since Aurora is a proprietary commercial fork with substantial internal differences from corresponding MySQL versions. One known incompatibility is noted in [this issue report](https://github.com/skeema/skeema/issues/124).
 
 ### Privileges
 
