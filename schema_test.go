@@ -68,6 +68,13 @@ func (s TengoIntegrationSuite) TestSchemaJSON(t *testing.T) {
 		}
 	}
 
+	// Include coverage for fulltext parsers if MySQL 5.7+
+	if flavor.MySQLishMinVersion(5, 7) {
+		if _, err := s.d.SourceSQL("testdata/ft-parser.sql"); err != nil {
+			t.Fatalf("Unexpected error sourcing testdata/ft-parser.sql: %v", err)
+		}
+	}
+
 	// Include coverage for advanced index functionality if MySQL 8+
 	if flavor.MySQLishMinVersion(8, 0) {
 		if _, err := s.d.SourceSQL("testdata/index-mysql8.sql"); err != nil {

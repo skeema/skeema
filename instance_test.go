@@ -752,6 +752,28 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 			}
 		}
 	}
+
+	// Include coverage for fulltext parsers if MySQL 5.7+. (Although these are
+	// supported in other flavors too, no alternative parsers ship with them.)
+	if flavor.MySQLishMinVersion(5, 7) {
+		if _, err := s.d.SourceSQL("testdata/ft-parser.sql"); err != nil {
+			t.Fatalf("Unexpected error sourcing testdata/ft-parser.sql: %v", err)
+		}
+		table := s.GetTable(t, "testing", "ftparser")
+		if table.UnsupportedDDL {
+			t.Errorf("Expected table using ngram fulltext parser to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
+		}
+		indexes := table.SecondaryIndexesByName()
+		if idx := indexes["ftdesc"]; idx.FullTextParser != "ngram" || idx.Type != "FULLTEXT" {
+			t.Errorf("Expected index %s to be FULLTEXT with ngram parser, instead found type=%s / parser=%s", idx.Name, idx.Type, idx.FullTextParser)
+		}
+		if idx := indexes["ftbody"]; idx.FullTextParser != "" || idx.Type != "FULLTEXT" {
+			t.Errorf("Expected index %s to be FULLTEXT with no parser, instead found type=%s / parser=%s", idx.Name, idx.Type, idx.FullTextParser)
+		}
+		if idx := indexes["name"]; idx.FullTextParser != "" || idx.Type != "BTREE" {
+			t.Errorf("Expected index %s to be BTREE with no parser, instead found type=%s / parser=%s", idx.Name, idx.Type, idx.FullTextParser)
+		}
+	}
 }
 
 func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {

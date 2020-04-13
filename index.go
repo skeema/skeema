@@ -9,13 +9,14 @@ import (
 // Index represents a single index (primary key, unique secondary index, or non-
 // unique secondard index) in a table.
 type Index struct {
-	Name       string      `json:"name"`
-	Parts      []IndexPart `json:"parts"`
-	PrimaryKey bool        `json:"primaryKey,omitempty"`
-	Unique     bool        `json:"unique,omitempty"`
-	Invisible  bool        `json:"invisible,omitempty"`
-	Comment    string      `json:"comment,omitempty"`
-	Type       string      `json:"type"`
+	Name           string      `json:"name"`
+	Parts          []IndexPart `json:"parts"`
+	PrimaryKey     bool        `json:"primaryKey,omitempty"`
+	Unique         bool        `json:"unique,omitempty"`
+	Invisible      bool        `json:"invisible,omitempty"`
+	Comment        string      `json:"comment,omitempty"`
+	Type           string      `json:"type"`
+	FullTextParser string      `json:"parser,omitempty"`
 }
 
 // IndexPart represents an individual indexed column or expression. Each index
@@ -34,7 +35,7 @@ func (idx *Index) Definition(flavor Flavor) string {
 	for n := range idx.Parts {
 		parts[n] = idx.Parts[n].Definition(flavor)
 	}
-	var typeAndName, comment, invis string
+	var typeAndName, comment, invis, parser string
 	if idx.PrimaryKey {
 		if !idx.Unique {
 			panic(errors.New("Index is primary key, but isn't marked as unique"))
@@ -53,7 +54,12 @@ func (idx *Index) Definition(flavor Flavor) string {
 	if idx.Invisible {
 		invis = " /*!80000 INVISIBLE */"
 	}
-	return fmt.Sprintf("%s (%s)%s%s", typeAndName, strings.Join(parts, ","), comment, invis)
+	if idx.Type == "FULLTEXT" && idx.FullTextParser != "" {
+		// Note the trailing space here is intentional -- it's always present in SHOW
+		// CREATE TABLE for this particular clause
+		parser = fmt.Sprintf(" /*!50100 WITH PARSER `%s` */ ", idx.FullTextParser)
+	}
+	return fmt.Sprintf("%s (%s)%s%s%s", typeAndName, strings.Join(parts, ","), comment, invis, parser)
 }
 
 // Equals returns true if two indexes are completely identical, false otherwise.
@@ -89,7 +95,7 @@ func (idx *Index) Equivalent(other *Index) bool {
 	if idx == nil || other == nil {
 		return idx == other // only equivalent if BOTH are nil
 	}
-	if idx.PrimaryKey != other.PrimaryKey || idx.Unique != other.Unique || idx.Type != other.Type {
+	if idx.PrimaryKey != other.PrimaryKey || idx.Unique != other.Unique || idx.Type != other.Type || idx.FullTextParser != other.FullTextParser {
 		return false
 	}
 	if len(idx.Parts) != len(other.Parts) {
@@ -113,7 +119,7 @@ func (idx *Index) RedundantTo(other *Index) bool {
 	if idx == nil || other == nil {
 		return false
 	}
-	if idx.PrimaryKey || (idx.Unique && !other.Unique) || idx.Type != other.Type {
+	if idx.PrimaryKey || (idx.Unique && !other.Unique) || idx.Type != other.Type || idx.FullTextParser != other.FullTextParser {
 		return false
 	}
 	if !idx.Invisible && other.Invisible {

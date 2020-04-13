@@ -1243,6 +1243,10 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			if flavor.VendorMinVersion(VendorPercona, 5, 6, 33) && strings.Contains(t.CreateStatement, "COLUMN_FORMAT COMPRESSED") {
 				fixColumnCompression(t)
 			}
+			// FULLTEXT indexes may have a PARSER clause, which isn't exposed in I_S
+			if strings.Contains(t.CreateStatement, "WITH PARSER") {
+				fixFulltextIndexParsers(t, flavor)
+			}
 			// Compare what we expect the create DDL to be, to determine if we support
 			// diffing for the table. Ignore next-auto-increment differences in this
 			// comparison, since the value may have changed between our previous
@@ -1420,6 +1424,25 @@ func fixColumnCompression(t *Table) {
 			continue
 		}
 		colsByName[matches[1]].ColumnFormat = matches[2]
+	}
+}
+
+// fixFulltextIndexParsers parsers the table's CREATE string in order to
+// populate Index.FullTextParser for any fulltext indexes that specify a parser.
+func fixFulltextIndexParsers(t *Table, flavor Flavor) {
+	for _, idx := range t.SecondaryIndexes {
+		if idx.Type == "FULLTEXT" {
+			// Obtain properly-formatted index definition without parser clause, and
+			// then build a regex from this which captures the parser name.
+			template := fmt.Sprintf("%s /*!50100 WITH PARSER ", idx.Definition(flavor))
+			template = regexp.QuoteMeta(template)
+			template += "`([^`]+)`"
+			re := regexp.MustCompile(template)
+			matches := re.FindStringSubmatch(t.CreateStatement)
+			if matches != nil { // only matches if a parser is specified
+				idx.FullTextParser = matches[1]
+			}
+		}
 	}
 }
 
