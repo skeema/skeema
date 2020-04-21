@@ -931,3 +931,29 @@ func TestFixColumnCompression(t *testing.T) {
 		t.Errorf("Unexpected mismatch in generated CREATE TABLE:\nGeneratedCreateStatement:\n%s\nCreateStatement:\n%s", table.GeneratedCreateStatement(FlavorPercona57), table.CreateStatement)
 	}
 }
+
+// TestFixFulltextIndexParsers confirms CREATE TABLE parsing for WITH PARSER
+// clauses works properly.
+func TestFixFulltextIndexParsers(t *testing.T) {
+	table := anotherTableForFlavor(FlavorMySQL57)
+	if table.SecondaryIndexes[0].Type != "BTREE" || table.SecondaryIndexes[0].FullTextParser != "" {
+		t.Fatal("Test fixture has changed without corresponding update to this test's logic")
+	}
+
+	// Confirm no parser = no change from fix
+	table.SecondaryIndexes[0].Type = "FULLTEXT"
+	table.CreateStatement = table.GeneratedCreateStatement(FlavorMySQL57)
+	fixFulltextIndexParsers(&table, FlavorMySQL57)
+	if table.SecondaryIndexes[0].FullTextParser != "" {
+		t.Errorf("fixFulltextIndexParsers unexpectedly set parser to %q instead of %q", table.SecondaryIndexes[0].FullTextParser, "")
+	}
+
+	// Confirm parser extracted correctly from fix
+	table.SecondaryIndexes[0].FullTextParser = "ngram"
+	table.CreateStatement = table.GeneratedCreateStatement(FlavorMySQL57)
+	table.SecondaryIndexes[0].FullTextParser = ""
+	fixFulltextIndexParsers(&table, FlavorMySQL57)
+	if table.SecondaryIndexes[0].FullTextParser != "ngram" {
+		t.Errorf("fixFulltextIndexParsers unexpectedly set parser to %q instead of %q", table.SecondaryIndexes[0].FullTextParser, "ngram")
+	}
+}
