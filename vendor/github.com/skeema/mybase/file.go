@@ -56,8 +56,8 @@ func NewFile(paths ...string) *File {
 	}
 
 	return &File{
-		Dir:                path.Dir(pathAndName),
-		Name:               path.Base(pathAndName),
+		Dir:                filepath.Dir(pathAndName),
+		Name:               filepath.Base(pathAndName),
 		sections:           []*Section{defaultSection},
 		sectionIndex:       map[string]*Section{"": defaultSection},
 		ignoredOptionNames: make(map[string]bool),

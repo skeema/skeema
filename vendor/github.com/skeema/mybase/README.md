@@ -56,10 +56,11 @@ Created and maintained by [@evanelias](https://github.com/evanelias).
 Additional [contributions](https://github.com/skeema/mybase/graphs/contributors) by:
 
 * [@zls0424](https://github.com/zls0424)
+* [@gusgins](https://github.com/gusgins)
 
 ## License
 
-**Copyright 2019 Skeema LLC**
+**Copyright 2020 Skeema LLC**
 
 ```text
 Licensed under the Apache License, Version 2.0 (the "License");
