@@ -754,7 +754,7 @@ func (s SkeemaIntegrationSuite) TestUnsupportedAlter(t *testing.T) {
 
 	// apply change to db directly, and confirm pull still works
 	s.sourceSQL(t, "unsupported1.sql")
-	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull --debug")
+	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull --debug --update-partitioning")
 	s.verifyFiles(t, cfg, "../golden/unsupported")
 
 	// back to clean slate for db only
@@ -1410,6 +1410,8 @@ END`
 	pos = assertLogged(pos)
 }
 
+// TestPartitioning covers the diff/push commands' --partitioning option, as
+// well as the pull command's --update-partitioning option.
 func (s SkeemaIntegrationSuite) TestPartitioning(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
 
@@ -1434,16 +1436,16 @@ func (s SkeemaIntegrationSuite) TestPartitioning(t *testing.T) {
 	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --partitioning=modify")
 	s.handleCommand(t, CodeBadConfig, "mydb/analytics", "skeema diff --partitioning=invalid")
 
-	// At this point we haven't pushed yet, but pull --partitioning=remove should
-	// leave the file unchanged, regardless of --format vs --skip-format. Here we're
-	// simulating the situation of fs having partitioning but pulling from a dev
-	// environment which does not.
-	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull --partitioning=remove")
+	// At this point we haven't pushed yet, but pull should leave the file
+	// unchanged, regardless of --format vs --skip-format. Here we're simulating
+	// the situation of fs having partitioning but pulling from a dev environment
+	// which does not.
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull")
 	if newContents := fs.ReadTestFile(t, "mydb/analytics/activity.sql"); newContents != contents2Part {
 		t.Errorf("File contents modified unexpectedly by pull:\n%s", newContents)
 		fs.WriteTestFile(t, "mydb/analytics/activity.sql", contents2Part) // so that subsequent steps proceed normally
 	}
-	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull --partitioning=remove --skip-format")
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull --skip-format")
 	if newContents := fs.ReadTestFile(t, "mydb/analytics/activity.sql"); newContents != contents2Part {
 		t.Errorf("File contents modified unexpectedly by pull:\n%s", newContents)
 		fs.WriteTestFile(t, "mydb/analytics/activity.sql", contents2Part) // so that subsequent steps proceed normally
@@ -1455,13 +1457,14 @@ func (s SkeemaIntegrationSuite) TestPartitioning(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff")
 	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --partitioning=remove")
 
-	// pull --skip-format should keep the file's format unchanged; pull --format
-	// should format it
-	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull --skip-format")
+	// pull --update-partitioning --skip-format should keep the file's format
+	// unchanged, but just using --update-partitioning without --skip-format should
+	// format properly
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull --update-partitioning --skip-format")
 	if newContents := fs.ReadTestFile(t, "mydb/analytics/activity.sql"); newContents != contents2Part {
 		t.Errorf("File contents modified unexpectedly by pull:\n%s", newContents)
 	}
-	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull")
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull --update-partitioning")
 	if newContents := fs.ReadTestFile(t, "mydb/analytics/activity.sql"); !strings.Contains(newContents, ")\n(PARTITION ") {
 		t.Errorf("File contents not formatted as expected by pull:\n%s", newContents)
 	}
@@ -1473,17 +1476,24 @@ func (s SkeemaIntegrationSuite) TestPartitioning(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff --partitioning=modify")
 	// Note: didn't push the above change
 
-	// pull --skip-format shouldn't touch the file, despite the partition list
-	// difference. But normal pull should rewrite it to have 2 partitions.
+	// pull (with or without --skip-format) shouldn't touch the file, despite the
+	// partition list difference, unless --update-partitioning is used
 	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull --skip-format")
 	if newContents := fs.ReadTestFile(t, "mydb/analytics/activity.sql"); newContents != contents3Part {
 		t.Errorf("File contents modified unexpectedly by pull:\n%s", newContents)
 		fs.WriteTestFile(t, "mydb/analytics/activity.sql", contents3Part) // so that subsequent steps proceed normally
 	}
 	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull")
+	if newContents := fs.ReadTestFile(t, "mydb/analytics/activity.sql"); newContents != contents3Part {
+		t.Errorf("File contents modified unexpectedly by pull:\n%s", newContents)
+		fs.WriteTestFile(t, "mydb/analytics/activity.sql", contents3Part) // so that subsequent steps proceed normally
+	}
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull --update-partitioning")
 	if newContents := fs.ReadTestFile(t, "mydb/analytics/activity.sql"); newContents == contents3Part {
 		t.Errorf("File contents not formatted as expected by pull:\n%s", newContents)
 	}
+	// Note: no test for --update-partitioning --skip-format, as this does not
+	// properly update the partition list yet
 
 	// Rewrite activity.sql to be unpartitioned. This should not show differences
 	// for keep, but should for remove or modify.
@@ -1493,24 +1503,13 @@ func (s SkeemaIntegrationSuite) TestPartitioning(t *testing.T) {
 	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --partitioning=modify")
 	// Note: didn't push the above change
 
-	// pull should rewrite activity.sql to have 2 partitions, even with --skip-format --partitioning=remove
-	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull")
-	if newContents := fs.ReadTestFile(t, "mydb/analytics/activity.sql"); !strings.Contains(newContents, "PARTITION BY RANGE") {
-		t.Errorf("File contents not formatted as expected by pull:\n%s", newContents)
-	}
-	fs.WriteTestFile(t, "mydb/analytics/activity.sql", contentsNoPart)
-	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull --skip-format --partitioning=remove")
-	if newContents := fs.ReadTestFile(t, "mydb/analytics/activity.sql"); !strings.Contains(newContents, "PARTITION BY RANGE") {
-		t.Errorf("File contents not formatted as expected by pull:\n%s", newContents)
-	}
-
 	// Rewrite activity.sql to have 3 partitions, still by range, as well as a new
 	// column. Pushing this with remove should add the new column but remove the
 	// partitioning.
 	fs.WriteTestFile(t, "mydb/analytics/activity.sql", contents3PartPlusNewCol)
 	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --partitioning=remove")
 	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema push --partitioning=remove")
-	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull --skip-format")
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull --skip-format --update-partitioning")
 	newContents := fs.ReadTestFile(t, "mydb/analytics/activity.sql")
 	if strings.Contains(newContents, "PARTITION BY") || !strings.Contains(newContents, "somenewcol") {
 		t.Errorf("Previous push did not have intended effect; current table structure: %s", newContents)
@@ -1529,8 +1528,12 @@ func (s SkeemaIntegrationSuite) TestPartitioning(t *testing.T) {
 	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --partitioning=remove")
 	// Note: didn't push the above change yet
 
-	// pull should restore range partitioning, even with --skip-format
-	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull --skip-format")
+	// pull should restore range partitioning only if --update-partitioning is used
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull")
+	if newContents := fs.ReadTestFile(t, "mydb/analytics/activity.sql"); strings.Contains(newContents, "RANGE (") {
+		t.Errorf("File contents unexpectedly updated by pull:\n%s", newContents)
+	}
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull --update-partitioning")
 	if newContents := fs.ReadTestFile(t, "mydb/analytics/activity.sql"); !strings.Contains(newContents, "RANGE (") {
 		t.Errorf("File contents not formatted as expected by pull:\n%s", newContents)
 	}
@@ -1539,7 +1542,7 @@ func (s SkeemaIntegrationSuite) TestPartitioning(t *testing.T) {
 	// Files should be back to initial state.
 	fs.WriteTestFile(t, "mydb/analytics/activity.sql", contentsHashPart)
 	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema push --partitioning=remove")
-	cfg := s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull")
+	cfg := s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull --update-partitioning")
 	s.verifyFiles(t, cfg, "../golden/init")
 
 	// Repartition with 2 partitions and push. Confirm that dropping the table
@@ -1551,4 +1554,55 @@ func (s SkeemaIntegrationSuite) TestPartitioning(t *testing.T) {
 		s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --allow-unsafe --partitioning=%s", value)
 		s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema push --allow-unsafe --partitioning=%s", value)
 	}
+}
+
+// TestStripPartitioning covers the --strip-partitioning supported for several
+// commands.
+func (s SkeemaIntegrationSuite) TestStripPartitioning(t *testing.T) {
+	// Partition a table in the db directly
+	s.dbExec(t, "analytics", "ALTER TABLE activity PARTITION BY RANGE (ts) (PARTITION p0 VALUES LESS THAN (1571678000), PARTITION pN VALUES LESS THAN MAXVALUE)")
+
+	assertPartitioned := func() {
+		t.Helper()
+		contents := fs.ReadTestFile(t, "mydb/analytics/activity.sql")
+		if !strings.Contains(contents, "PARTITION BY") {
+			t.Fatalf("Table in filesystem unexpectedly lacks partitioning clause:\n%s", contents)
+		}
+	}
+	assertUnpartitioned := func(cfg *mybase.Config) {
+		t.Helper()
+		s.verifyFiles(t, cfg, "../golden/init")
+	}
+	reinitWithPartitions := func() {
+		t.Helper()
+		if err := os.RemoveAll("mydb"); err != nil {
+			t.Fatalf("Unable to clean directory: %s", err)
+		}
+		s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+		assertPartitioned()
+	}
+
+	// test init --strip-partitioning, which should leave files identical to
+	// golden/init/ since the only change made to the DB was the partitioning
+	s.reinitAndVerifyFiles(t, "--strip-partitioning", "../golden/init")
+
+	// Test behavior of format with and without --strip-partitioning
+	reinitWithPartitions()
+	s.handleCommand(t, CodeSuccess, ".", "skeema format")
+	assertPartitioned()
+	cfg := s.handleCommand(t, CodeDifferencesFound, ".", "skeema format --strip-partitioning")
+	assertUnpartitioned(cfg)
+	s.handleCommand(t, CodeSuccess, ".", "skeema format --strip-partitioning") // already stripped so nothing to change
+
+	// Ditto but for lint
+	reinitWithPartitions()
+	s.handleCommand(t, CodeSuccess, ".", "skeema lint")
+	assertPartitioned()
+	cfg = s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint --strip-partitioning")
+	assertUnpartitioned(cfg)
+
+	// Test behavior of skeema pull --strip-partitioning
+	reinitWithPartitions()
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --strip-partitioning")
+	assertUnpartitioned(cfg)
 }

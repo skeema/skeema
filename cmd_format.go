@@ -32,6 +32,7 @@ occurred.`
 
 	cmd := mybase.NewCommand("format", summary, desc, FormatHandler)
 	cmd.AddOption(mybase.BoolOption("write", 0, true, "Update files to correct format"))
+	cmd.AddOption(mybase.BoolOption("strip-partitioning", 0, false, "Remove PARTITION BY clauses from *.sql files"))
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
@@ -125,6 +126,9 @@ func formatDir(dir *fs.Dir) error {
 			IncludeAutoInc: true,
 			IgnoreTable:    ignoreTable,
 			CountOnly:      !dir.Config.GetBool("write"),
+		}
+		if dir.Config.GetBool("strip-partitioning") {
+			dumpOpts.Partitioning = tengo.PartitioningRemove
 		}
 		dumpOpts.IgnoreKeys(wsSchema.FailedKeys())
 		reformatCount, err := dumper.DumpSchema(wsSchema.Schema, dir, dumpOpts)

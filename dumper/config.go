@@ -8,12 +8,12 @@ import (
 
 // Options controls dumper behavior.
 type Options struct {
-	IncludeAutoInc     bool                     // if false, strip AUTO_INCREMENT clauses from CREATE TABLE
-	RetainPartitioning bool                     // if true, and fs stmt has partitioning, but db doesn't, retain fs partitioning clause
-	CountOnly          bool                     // if true, skip writing files, just report count of rewrites
-	IgnoreTable        *regexp.Regexp           // skip tables with names matching this regex
-	skipKeys           map[tengo.ObjectKey]bool // skip objects with true values
-	onlyKeys           map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
+	IncludeAutoInc bool                     // if false, strip AUTO_INCREMENT clauses from CREATE TABLE
+	Partitioning   tengo.PartitioningMode   // PartitioningKeep: retain previous FS partitioning clause; PartitioningRemove: strip partitioning clause
+	CountOnly      bool                     // if true, skip writing files, just report count of rewrites
+	IgnoreTable    *regexp.Regexp           // skip tables with names matching this regex
+	skipKeys       map[tengo.ObjectKey]bool // skip objects with true values
+	onlyKeys       map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
 }
 
 // OnlyKeys specifies a list of tengo.ObjectKeys that the dump should

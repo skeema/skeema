@@ -33,7 +33,8 @@ top of the file. If no environment name is supplied, the default is
 	cmd.AddOption(mybase.BoolOption("format", 0, true, "Reformat SQL statements to match canonical SHOW CREATE"))
 	cmd.AddOption(mybase.BoolOption("normalize", 0, true, "(deprecated alias for format)").Hidden())
 	cmd.AddOption(mybase.BoolOption("new-schemas", 0, true, "Detect any new schemas and populate new dirs for them"))
-	cmd.AddOption(mybase.StringOption("partitioning", 0, "keep", "(slight pull impact of having partitioning=remove in .skeema file for diff/push)").Hidden())
+	cmd.AddOption(mybase.BoolOption("update-partitioning", 0, false, "Update PARTITION BY clauses in existing table files"))
+	cmd.AddOption(mybase.BoolOption("strip-partitioning", 0, false, "Omit PARTITION BY clause when writing partitioned tables to filesystem").Hidden())
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
@@ -187,8 +188,15 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 	if dumpOpts.IgnoreTable, err = dir.Config.GetRegexp("ignore-table"); err != nil {
 		return nil, NewExitValue(CodeBadConfig, err.Error())
 	}
-	if partitioning, _ := dir.Config.GetEnum("partitioning", "keep", "remove", "modify"); partitioning == "remove" {
-		dumpOpts.RetainPartitioning = true
+	if !dir.Config.GetBool("update-partitioning") {
+		if dir.Config.GetBool("strip-partitioning") {
+			// Undocumented due to potential confusion, but supported just like in init
+			dumpOpts.Partitioning = tengo.PartitioningRemove
+		} else {
+			// Without --update-partitioning, retain whatever partitioning clause (or
+			// lack of clause) was already present in the *.sql files for existing tables.
+			dumpOpts.Partitioning = tengo.PartitioningKeep
+		}
 	}
 
 	// When --skip-format is in use, we only want to update objects that have
@@ -233,10 +241,11 @@ func statementModifiersForPull(config *mybase.Config, instance *tengo.Instance, 
 	} else {
 		mods.Flavor = instFlavor
 	}
-	// If pulling from an environment that uses partitioning=remove, apply a
-	// statement modifier to make tengo.RemovePartitioning.Clause return an empty
-	// string. Otherwise, every partitioned-in-fs will show up as having a diff!
-	if partitioning, _ := config.GetEnum("partitioning", "keep", "remove", "modify"); partitioning == "remove" {
+	// Unless user specifically wants to update partitioning clauses, apply a
+	// statement modifier to make some partitioning-related AlterClause types
+	// return an empty statement, to exclude them from being rewritten if their
+	// only differences are partitioning-related.
+	if !config.GetBool("update-partitioning") {
 		mods.Partitioning = tengo.PartitioningKeep
 	}
 	return mods

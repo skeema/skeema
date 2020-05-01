@@ -40,6 +40,7 @@ some files were reformatted; or 2+ if any errors were emitted for any reason.`
 	cmd := mybase.NewCommand("lint", summary, desc, LintHandler)
 	linter.AddCommandOptions(cmd)
 	cmd.AddOption(mybase.BoolOption("format", 0, true, "Reformat SQL statements to match canonical SHOW CREATE"))
+	cmd.AddOption(mybase.BoolOption("strip-partitioning", 0, false, "Remove PARTITION BY clauses from *.sql files").Hidden())
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }
@@ -162,6 +163,9 @@ func lintDir(dir *fs.Dir) *linter.Result {
 			dumpOpts := dumper.Options{
 				IncludeAutoInc: true,
 				IgnoreTable:    opts.IgnoreTable,
+			}
+			if dir.Config.GetBool("strip-partitioning") {
+				dumpOpts.Partitioning = tengo.PartitioningRemove
 			}
 			dumpOpts.IgnoreKeys(wsSchema.FailedKeys())
 			result.ReformatCount, err = dumper.DumpSchema(wsSchema.Schema, dir, dumpOpts)

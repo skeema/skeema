@@ -57,9 +57,11 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [safe-below-size](#safe-below-size)
 * [schema](#schema)
 * [socket](#socket)
+* [strip-partitioning](#strip-partitioning)
 * [temp-schema](#temp-schema)
 * [temp-schema-binlog](#temp-schema-binlog)
 * [temp-schema-threads](#temp-schema-threads)
+* [update-partitioning](#update-partitioning)
 * [user](#user)
 * [verify](#verify)
 * [warnings](#warnings)
@@ -853,7 +855,7 @@ When using a workflow that involves running `skeema pull development` regularly,
 
 ### partitioning
 
-Commands | diff, push, pull
+Commands | diff, push
 --- | :---
 **Default** | "keep"
 **Type** | enum
@@ -875,7 +877,7 @@ Overall, the intended use of the [partitioning](#partitioning) option is as foll
 
 Regardless of this option, modifications to just the *partition list* of a partitioned table are always ignored for RANGE and LIST partitioning methods, and are unsupported for HASH and KEY methods. Skeema will not add or remove partitions from an already-partitioned table, regardless of differences between the filesystem `CREATE TABLE` and the table in a live database. The intended workflow is to use an external tool/cron for managing the partition list, e.g. to remove old time-based RANGE partitions and add new ones.
 
-When running `skeema pull` against an environment that uses `partitioning=remove`, the *.sql files will retain their previous `PARTITION BY` clauses as-is, despite the database tables lacking partitioning in such an environment. Aside from this, the [partitioning](#partitioning) option does not otherwise affect the behavior of `skeema pull`.
+This option only affects database diff/manipulation behavior, meaning the `skeema diff` and `skeema push` commands. To control partitioning behavior of filesystem \*.sql dump/manipulation commands -- `skeema init`, `skeema pull`, `skeema format`, `skeema lint` -- see options [strip-partitioning](options.md#strip-partitioning) and [update-partitioning](options.md#update-partitioning). These options are intentionally distinct, to permit configuring different combinations of partitioning handling for diff vs dump behaviors, whether via ad hoc command-line use or permanent environment configuration in a .skeema file.
 
 ### password
 
@@ -988,6 +990,20 @@ Commands | *all*
 
 When the [host option](#host) is "localhost", this option specifies the path to a UNIX domain socket to connect to the local MySQL server. It is ignored if host isn't "localhost" and/or if the [port option](#port) is specified.
 
+### strip-partitioning
+
+Commands | init, format, pull, lint
+--- | :---
+**Default** | false
+**Type** | boolean
+**Restrictions** | none
+
+When enabled, this option strips `PARTITION BY` clauses from table definitions written to the filesystem. This is useful if you want to completely exclude partitioning-related clauses from version control, for example if external partitioning automation is completely responsible for partition management.
+
+To exclude `PARTITION BY` clauses when initializing a new directory, use `skeema init --strip-partitioning`. To strip `PARTITION BY` clauses from an existing repo, use `skeema format --strip-partitioning`.
+
+This option is also supported by `skeema lint` and `skeema pull` since these commands inherently [reformat files by default](#format). This option has no effect when using `skeema pull --skip-format` or `skeema lint --skip-format`. It also has no effect when using `skeema pull --update-partitioning`.
+
 ### temp-schema
 
 Commands | diff, push, pull, lint, format
@@ -1037,6 +1053,23 @@ When using Skeema in situations involving high object counts (hundreds or thousa
 In other cases, it may be beneficial to *lower* this value. Some high-volume OLTP workloads are especially sensitive to contention for InnoDB's dict_sys mutex, meaning that the default concurrency level of 5 can cause other application queries to pile up or stall. This mutex contention is more prevalent in pre-MySQL 8.0 systems, especially if the combination of table count and connection count overwhelms the system's `table_open_cache`, and/or there are many INSERTs to table(s) lacking a primary key.
 
 In either situation, also consider use of [workspace=docker](#workspace) as an alternative solution.
+
+### update-partitioning
+
+Commands | pull
+--- | :---
+**Default** | false
+**Type** | boolean
+**Restrictions** | none
+
+By default, when updating a CREATE TABLE statement that already exists in the filesystem, `skeema pull` ignores any database-side changes to the `PARTITION BY` clause of the table definition. This behavior is designed to help in these scenarios:
+
+* When running `skeema pull` against a production environment with external partition management automation/crons, it is undesirable to pollute the commit history with frequent changes to tables' partition lists. (This is conceptually similar to the default behavior of filtering out [changes to auto_increment counters](#include-auto-inc).)
+* When running `skeema pull` against a development environment that intentionally omits partitioning (via [partitioning=remove](#partitioning) in a .skeema file affecting diff/push), it is typically preferable to leave any `PARTITION BY` clauses from the *.sql files in-place, despite the development environment tables lacking partitioning.
+
+To override this default behavior for situations in which you *do* intentionally want to update `PARTITION BY` clauses in *.sql files, to literally reflect whatever is currently used in the database, enable [update-partitioning](#update-partitioning) for example via `skeema pull --update-partitioning`.
+
+This option may not work properly when combined with [--skip-format](#format); some tables that *only* have partitioning-related changes will not be updated when combining these options.
 
 ### user
 
