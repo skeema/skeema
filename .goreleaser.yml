@@ -32,7 +32,7 @@ changelog:
     - '(?i)^goreleaser:'
 nfpms:
   -
-    name_template: '{{ .ProjectName }}_{{ .Arch }}'
+    file_name_template: '{{ .ProjectName }}_{{ .Arch }}'
     homepage:  https://skeema.io
     description: Schema management CLI for MySQL
     maintainer: Evan Elias <evan@skeema.net>
