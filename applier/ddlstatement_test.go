@@ -133,7 +133,7 @@ func objectDiffExpected(t *testing.T, diff tengo.ObjectDiff, ddl *DDLStatement, 
 				// no rows, so ddl-wrapper used. verify the statement separately.
 				expected = "/bin/echo ddl-wrapper analytics.rollups ALTER TABLE"
 				expectedStmt := "ALTER TABLE `rollups` ALGORITHM=INPLACE, LOCK=NONE, ADD COLUMN `value` bigint(20) DEFAULT NULL"
-				if flavor.Major == 5 && flavor.Minor == 5 {
+				if strings.Contains(flavor.String(), ":5.5") {
 					expectedStmt = "ALTER TABLE `rollups` ADD COLUMN `value` bigint(20) DEFAULT NULL"
 				} else if flavor.OmitIntDisplayWidth() {
 					expectedStmt = strings.Replace(expectedStmt, "bigint(20)", "bigint", -1)

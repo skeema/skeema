@@ -3,6 +3,7 @@ package workspace
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -300,6 +301,16 @@ func (s *WorkspaceIntegrationSuite) Teardown(backend string) error {
 
 func (s *WorkspaceIntegrationSuite) BeforeTest(backend string) error {
 	return s.d.NukeData()
+}
+
+// sourceSQL wraps tengo.DockerizedInstance.SourceSQL. If an error occurs, it is
+// fatal to the test. filePath should be a relative path based from testdata/.
+func (s *WorkspaceIntegrationSuite) sourceSQL(t *testing.T, filePath string) {
+	t.Helper()
+	filePath = filepath.Join("testdata", filePath)
+	if _, err := s.d.SourceSQL(filePath); err != nil {
+		t.Fatalf("Unable to source %s: %s", filePath, err)
+	}
 }
 
 func (s *WorkspaceIntegrationSuite) getParsedDir(t *testing.T, dirPath, cliFlags string) *fs.Dir {

@@ -1378,7 +1378,7 @@ func (s SkeemaIntegrationSuite) TestTempSchemaBinlog(t *testing.T) {
 
 	pos := getLogPos()
 	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
-	pos = assertNotLogged(pos)
+	assertNotLogged(pos)
 	s.dbExec(t, "analytics", "ALTER TABLE pageviews DROP COLUMN domain")
 	createRoutine := `CREATE definer=root@localhost FUNCTION routine1(a int,
   b int)
@@ -1407,7 +1407,7 @@ END`
 
 	// Push-related writes should still advance the binlog position
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --temp-schema-binlog=off")
-	pos = assertLogged(pos)
+	assertLogged(pos)
 }
 
 // TestPartitioning covers the diff/push commands' --partitioning option, as

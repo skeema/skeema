@@ -89,12 +89,7 @@ func applyTarget(t *Target, printer *Printer) (Result, error) {
 		// use-case of not running any partition management in a dev environment; if
 		// a table somehow manages to be partitioned there anyway by mistake, we
 		// intentionally want to de-partition it.
-		for _, table := range schemaFromDir.Tables {
-			if table.Partitioning != nil {
-				table.CreateStatement = table.UnpartitionedCreateStatement(mods.Flavor)
-				table.Partitioning = nil
-			}
-		}
+		stripPartitionClauses(schemaFromDir.Tables, mods.Flavor)
 	}
 
 	diff := tengo.NewSchemaDiff(schemaFromInstance, schemaFromDir)
@@ -155,6 +150,15 @@ func applyTarget(t *Target, printer *Printer) (Result, error) {
 	result.SkipCount += t.processDDL(ddls, printer)
 	t.logApplyEnd(result)
 	return result, nil
+}
+
+func stripPartitionClauses(tables []*tengo.Table, flavor tengo.Flavor) {
+	for _, table := range tables {
+		if table.Partitioning != nil {
+			table.CreateStatement = table.UnpartitionedCreateStatement(flavor)
+			table.Partitioning = nil
+		}
+	}
 }
 
 // supply 1 noun if pluralization is just adding an s, or 2 nouns if using

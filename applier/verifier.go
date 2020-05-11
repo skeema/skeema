@@ -79,29 +79,13 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 		return fmt.Errorf("Diff verification failure: %s", err.Error())
 	}
 
-	// Compare the create statements of the "to" side of the diff with the create
-	// statements from the workspace. In doing so we must ignore differences in
-	// next-auto-inc value (which intentionally is often not updated) as well as
-	// the entirety of the partitioning clause (since the partition list is
-	// intentionally never modified).
+	// Compare the "expected" version of tables ("to" side of diff from the
+	// filesystem) with the "actual" version (from the workspace after the
+	// generated ALTERs were run there)
 	actualTables := wsSchema.TablesByName()
 	for name, toTable := range expected {
-		// Simply compare partitioning *status*
-		expectPartitioned := (toTable.Partitioning != nil)
-		actualPartitioned := (actualTables[name].Partitioning != nil)
-		if expectPartitioned != actualPartitioned {
-			return fmt.Errorf("Diff verification failure on table %s\nEXPECTED PARTITIONING STATUS POST-ALTER: %t\nACTUAL PARTITIONING STATUS POST-ALTER: %t\nRun command again with --skip-verify if this discrepancy is safe to ignore", name, expectPartitioned, actualPartitioned)
-		}
-		expectCreate := toTable.CreateStatement
-		actualCreate := actualTables[name].CreateStatement
-		if expectPartitioned {
-			expectCreate = toTable.UnpartitionedCreateStatement(mods.Flavor)
-			actualCreate = actualTables[name].UnpartitionedCreateStatement(mods.Flavor)
-		}
-		expectCreate, _ = tengo.ParseCreateAutoInc(expectCreate)
-		actualCreate, _ = tengo.ParseCreateAutoInc(actualCreate)
-		if expectCreate != actualCreate {
-			return fmt.Errorf("Diff verification failure on table %s\n\nEXPECTED POST-ALTER:\n%s\n\nACTUAL POST-ALTER:\n%s\n\nRun command again with --skip-verify if this discrepancy is safe to ignore", name, expectCreate, actualCreate)
+		if err := verifyTable(toTable, actualTables[name], mods.Flavor); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -109,4 +93,30 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 
 func wantVerify(diff *tengo.SchemaDiff, t *Target) bool {
 	return t.Dir.Config.GetBool("verify") && len(diff.TableDiffs) > 0 && !t.briefOutput()
+}
+
+// verifyTable confirms that a table has the expected CREATE TABLE statement
+// and expected partitioning status. In comparing the CREATE TABLE statement, we
+// must ignore differences in next-auto-inc value (which intentionally is often
+// not updated in the filesystem) as well as the entirety of the partitioning
+// clause (ditto).
+func verifyTable(expected, actual *tengo.Table, flavor tengo.Flavor) error {
+	// Simply compare partitioning *status*
+	expectPartitioned := (expected.Partitioning != nil)
+	actualPartitioned := (actual.Partitioning != nil)
+	if expectPartitioned != actualPartitioned {
+		return fmt.Errorf("Diff verification failure on table %s\nEXPECTED PARTITIONING STATUS POST-ALTER: %t\nACTUAL PARTITIONING STATUS POST-ALTER: %t\nRun command again with --skip-verify if this discrepancy is safe to ignore", expected.Name, expectPartitioned, actualPartitioned)
+	}
+	expectCreate := expected.CreateStatement
+	actualCreate := actual.CreateStatement
+	if expectPartitioned {
+		expectCreate = expected.UnpartitionedCreateStatement(flavor)
+		actualCreate = actual.UnpartitionedCreateStatement(flavor)
+	}
+	expectCreate, _ = tengo.ParseCreateAutoInc(expectCreate)
+	actualCreate, _ = tengo.ParseCreateAutoInc(actualCreate)
+	if expectCreate != actualCreate {
+		return fmt.Errorf("Diff verification failure on table %s\n\nEXPECTED POST-ALTER:\n%s\n\nACTUAL POST-ALTER:\n%s\n\nRun command again with --skip-verify if this discrepancy is safe to ignore", expected.Name, expectCreate, actualCreate)
+	}
+	return nil
 }

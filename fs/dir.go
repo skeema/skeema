@@ -415,6 +415,14 @@ func (dir *Dir) SchemaNames(instance *tengo.Instance) (names []string, err error
 	if err != nil {
 		return nil, err
 	}
+	return filterSchemaNames(names, ignoreSchema), nil
+}
+
+func looksLikeRegex(input string) bool {
+	return len(input) > 2 && input[0] == '/' && input[len(input)-1] == '/'
+}
+
+func filterSchemaNames(names []string, ignoreSchema *regexp.Regexp) []string {
 	systemSchemas := map[string]bool{
 		"information_schema": true,
 		"performance_schema": true,
@@ -429,11 +437,7 @@ func (dir *Dir) SchemaNames(instance *tengo.Instance) (names []string, err error
 			keepNames = append(keepNames, name)
 		}
 	}
-	return keepNames, nil
-}
-
-func looksLikeRegex(input string) bool {
-	return len(input) > 2 && input[0] == '/' && input[len(input)-1] == '/'
+	return keepNames
 }
 
 // HasSchema returns true if this dir maps to at least one schema, either by

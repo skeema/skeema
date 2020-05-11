@@ -173,13 +173,8 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 
 	// Handle changes in schema's default character set and/or collation by
 	// persisting changes to the dir's option file.
-	if dir.Config.Get("default-character-set") != instSchema.CharSet || dir.Config.Get("default-collation") != instSchema.Collation {
-		dir.OptionFile.SetOptionValue("", "default-character-set", instSchema.CharSet)
-		dir.OptionFile.SetOptionValue("", "default-collation", instSchema.Collation)
-		if err := dir.OptionFile.Write(true); err != nil {
-			return nil, fmt.Errorf("Unable to update character set and collation for %s: %s", dir.OptionFile.Path(), err)
-		}
-		log.Infof("Wrote %s -- updated schema-level default-character-set and default-collation", dir.OptionFile.Path())
+	if err := updateCharSetCollation(dir, instSchema); err != nil {
+		return nil, err
 	}
 
 	dumpOpts := dumper.Options{
@@ -304,6 +299,20 @@ func updateFlavor(dir *fs.Dir, instance *tengo.Instance) {
 	} else {
 		log.Infof("Wrote %s -- updated flavor to %s", dir.OptionFile.Path(), instFlavor.Family().String())
 	}
+}
+
+// updateCharSetCollation updates the dir's .skeema option file if the schema's
+// current default charset or collation does not match what's in the file.
+func updateCharSetCollation(dir *fs.Dir, instSchema *tengo.Schema) error {
+	if dir.Config.Get("default-character-set") != instSchema.CharSet || dir.Config.Get("default-collation") != instSchema.Collation {
+		dir.OptionFile.SetOptionValue("", "default-character-set", instSchema.CharSet)
+		dir.OptionFile.SetOptionValue("", "default-collation", instSchema.Collation)
+		if err := dir.OptionFile.Write(true); err != nil {
+			return fmt.Errorf("Unable to update character set and collation for %s: %s", dir.OptionFile.Path(), err)
+		}
+		log.Infof("Wrote %s -- updated schema-level default-character-set and default-collation", dir.OptionFile.Path())
+	}
+	return nil
 }
 
 func findNewSchemas(dir *fs.Dir, instance *tengo.Instance, seenNames []string) error {

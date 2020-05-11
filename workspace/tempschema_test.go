@@ -48,9 +48,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 	if ts, err = NewTempSchema(opts); err != nil {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
 	}
-	if _, err := s.d.SourceSQL("testdata/tempschema1.sql"); err != nil {
-		t.Fatalf("Unexpected SourceSQL error: %s", err)
-	}
+	s.sourceSQL(t, "tempschema1.sql")
 	if err := ts.Cleanup(); err == nil {
 		t.Error("Expected cleanup error since a table had rows, but err was nil")
 	}
@@ -98,9 +96,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCleanupDrop(t *testing.T) {
 	if ts, err = NewTempSchema(opts); err != nil {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
 	}
-	if _, err := s.d.SourceSQL("testdata/tempschema1.sql"); err != nil {
-		t.Fatalf("Unexpected SourceSQL error: %s", err)
-	}
+	s.sourceSQL(t, "tempschema1.sql")
 	if err := ts.Cleanup(); err == nil {
 		t.Error("Expected cleanup error since a table had rows, but err was nil")
 	}
