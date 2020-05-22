@@ -117,8 +117,8 @@ func (s IntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
 	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
 	if err != nil {
 		t.Fatalf("Unexpected error from workspace.ExecLogicalSchema: %v", err)
-	} else if len(wsSchema.Failures) != 2 {
-		t.Fatalf("Expected 2 StatementErrors from %s/*.sql, instead found %d", dir, len(wsSchema.Failures))
+	} else if len(wsSchema.Failures) != 3 {
+		t.Fatalf("Expected 3 StatementErrors from %s/*.sql, instead found %d", dir, len(wsSchema.Failures))
 	}
 
 	result := CheckSchema(wsSchema, opts)
@@ -127,17 +127,17 @@ func (s IntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
 	}
 
 	// Annotate the statement errors, and confirm the error count is now correct.
-	// Of the 2 statement errors, one was for an ignored table, so only one is
+	// Of the 3 statement errors, one was for an ignored table, so only 2 are
 	// annotated.
-	// Then find the specific annotation and confirm the line offset is correct.
+	// Then find the specific annotation and confirm the line offsets are correct.
 	result.AnnotateStatementErrors(wsSchema.Failures, opts)
-	if result.ErrorCount != 1 {
-		t.Fatalf("Expected 1 error after AnnotateStatementErrors(), instead found %d", result.ErrorCount)
+	if result.ErrorCount != 2 {
+		t.Fatalf("Expected 2 errors after AnnotateStatementErrors(), instead found %d", result.ErrorCount)
 	}
 	for _, a := range result.Annotations {
 		if a.Severity == SeverityError {
-			if a.LineOffset != 2 {
-				t.Errorf("Expected SQL syntax error with line offset 2, instead found line offset %d", a.LineOffset)
+			if ok := (a.LineOffset == 2 && a.RuleName == "sql-syntax") || (a.LineOffset == 0 && a.RuleName == "sql-1072"); !ok {
+				t.Errorf("Unexpected annotation: line offset %d, rule name %q, message %q", a.LineOffset, a.RuleName, a.MessageWithLocation())
 			}
 		}
 	}

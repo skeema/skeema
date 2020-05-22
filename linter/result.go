@@ -131,7 +131,10 @@ func (r *Result) Annotate(stmt *fs.Statement, sev Severity, ruleName string, not
 	r.Annotations = append(r.Annotations, annotation)
 }
 
-var reSyntaxErrorLine = regexp.MustCompile(`(?s) the right syntax to use near '.*' at line (\d+)`)
+var (
+	reSyntaxErrorLine = regexp.MustCompile(`(?s) the right syntax to use near '.*' at line (\d+)`)
+	reErrorNumber     = regexp.MustCompile(`^Error (\d+): `)
+)
 
 // AnnotateStatementErrors converts any supplied workspace.StatementError values
 // into annotations, unless the statement affects an object that the options
@@ -152,7 +155,13 @@ func (r *Result) AnnotateStatementErrors(statementErrors []*workspace.StatementE
 				note.LineOffset = lineNumber - 1 // convert from 1-based line number to 0-based offset
 			}
 		}
-		r.Annotate(stmtErr.Statement, SeverityError, "", note)
+		var ruleName string
+		if strings.Contains(note.Message, "syntax") {
+			ruleName = "sql-syntax"
+		} else if matches := reErrorNumber.FindStringSubmatch(note.Message); matches != nil {
+			ruleName = fmt.Sprintf("sql-%s", matches[1])
+		}
+		r.Annotate(stmtErr.Statement, SeverityError, ruleName, note)
 	}
 }
 
