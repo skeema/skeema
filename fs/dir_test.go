@@ -125,6 +125,88 @@ func TestParseDirSymlinks(t *testing.T) {
 	}
 }
 
+// TestParseDirNamedSchemas tests parsing of dirs that have explicit schema
+// names in the *.sql files, in various combinations.
+func TestParseDirNamedSchemas(t *testing.T) {
+	// named1 has one table in the nameless schema and one in a named schema
+	dir := getDir(t, "testdata/named1")
+	if len(dir.LogicalSchemas) != 2 {
+		t.Errorf("Expected 2 logical schemas in testdata/named1, instead found %d", len(dir.LogicalSchemas))
+	} else {
+		if dir.LogicalSchemas[0].Name != "" || dir.LogicalSchemas[0].CharSet != "latin1" || len(dir.LogicalSchemas[0].Creates) != 1 {
+			t.Errorf("Unexpected field values in dir.LogicalSchemas[0]: %+v", dir.LogicalSchemas[0])
+		}
+		if dir.LogicalSchemas[1].Name != "bar" || dir.LogicalSchemas[1].CharSet != "" || len(dir.LogicalSchemas[1].Creates) != 1 {
+			t.Errorf("Unexpected field values in dir.LogicalSchemas[1]: %+v", dir.LogicalSchemas[1])
+		}
+	}
+
+	// named2 has one table in the nameless schema, and one in each of two
+	// different named schemas
+	dir = getDir(t, "testdata/named2")
+	if len(dir.LogicalSchemas) != 3 {
+		t.Errorf("Expected 3 logical schemas in testdata/named2, instead found %d", len(dir.LogicalSchemas))
+	} else {
+		if dir.LogicalSchemas[0].Name != "" || dir.LogicalSchemas[0].CharSet != "latin1" || len(dir.LogicalSchemas[0].Creates) != 1 {
+			t.Errorf("Unexpected field values in dir.LogicalSchemas[0]: %+v", dir.LogicalSchemas[0])
+		}
+		if (dir.LogicalSchemas[1].Name != "bar" && dir.LogicalSchemas[1].Name != "glorp") || dir.LogicalSchemas[1].CharSet != "" || len(dir.LogicalSchemas[1].Creates) != 1 {
+			t.Errorf("Unexpected field values in dir.LogicalSchemas[1]: %+v", dir.LogicalSchemas[1])
+		}
+		if (dir.LogicalSchemas[2].Name != "bar" && dir.LogicalSchemas[2].Name != "glorp") || dir.LogicalSchemas[2].CharSet != "" || len(dir.LogicalSchemas[2].Creates) != 1 {
+			t.Errorf("Unexpected field values in dir.LogicalSchemas[2]: %+v", dir.LogicalSchemas[2])
+		}
+	}
+
+	// named3 has two different named schemas, each with one table. It has a
+	// .skeema file definining a schema name, but no CREATEs are put into the
+	// nameless schema.
+	dir = getDir(t, "testdata/named3")
+	if len(dir.LogicalSchemas) != 2 {
+		t.Errorf("Expected 2 logical schemas in testdata/named3, instead found %d", len(dir.LogicalSchemas))
+	} else {
+		if (dir.LogicalSchemas[0].Name != "bar" && dir.LogicalSchemas[0].Name != "glorp") || dir.LogicalSchemas[0].CharSet != "" || len(dir.LogicalSchemas[0].Creates) != 1 {
+			t.Errorf("Unexpected field values in dir.LogicalSchemas[0]: %+v", dir.LogicalSchemas[0])
+		}
+		if (dir.LogicalSchemas[1].Name != "bar" && dir.LogicalSchemas[1].Name != "glorp") || dir.LogicalSchemas[1].CharSet != "" || len(dir.LogicalSchemas[1].Creates) != 1 {
+			t.Errorf("Unexpected field values in dir.LogicalSchemas[1]: %+v", dir.LogicalSchemas[1])
+		}
+	}
+
+	// named4 has two different named schemas, each with one table. It has no
+	// .skeema file at all.
+	dir = getDir(t, "testdata/named4")
+	if len(dir.LogicalSchemas) != 2 {
+		t.Errorf("Expected 2 logical schemas in testdata/named4, instead found %d", len(dir.LogicalSchemas))
+	} else {
+		if (dir.LogicalSchemas[0].Name != "bar" && dir.LogicalSchemas[0].Name != "glorp") || dir.LogicalSchemas[0].CharSet != "" || len(dir.LogicalSchemas[0].Creates) != 1 {
+			t.Errorf("Unexpected field values in dir.LogicalSchemas[0]: %+v", dir.LogicalSchemas[0])
+		}
+		if (dir.LogicalSchemas[1].Name != "bar" && dir.LogicalSchemas[1].Name != "glorp") || dir.LogicalSchemas[1].CharSet != "" || len(dir.LogicalSchemas[1].Creates) != 1 {
+			t.Errorf("Unexpected field values in dir.LogicalSchemas[1]: %+v", dir.LogicalSchemas[1])
+		}
+	}
+}
+
+func TestParseDirNoSchemas(t *testing.T) {
+	// empty1 has no *.sql and no schema defined in the .skeema file
+	dir := getDir(t, "testdata/empty1")
+	if len(dir.LogicalSchemas) != 0 {
+		t.Errorf("Expected no logical schemas in testdata/empty1, instead found %d", len(dir.LogicalSchemas))
+	}
+
+	// empty2 has no *.sql, but does define a schema in the .skeema file, so it
+	// should have a single LogicalSchema with no CREATEs in it.
+	dir = getDir(t, "testdata/empty2")
+	if len(dir.LogicalSchemas) != 1 {
+		t.Errorf("Expected 1 logical schema in testdata/empty2, instead found %d", len(dir.LogicalSchemas))
+	} else {
+		if dir.LogicalSchemas[0].Name != "" || dir.LogicalSchemas[0].CharSet != "latin1" || len(dir.LogicalSchemas[0].Creates) != 0 {
+			t.Errorf("Unexpected field values in dir.LogicalSchemas[0]: %+v", dir.LogicalSchemas[0])
+		}
+	}
+}
+
 func TestDirBaseName(t *testing.T) {
 	dir := getDir(t, "../testdata/golden/init/mydb/product")
 	if bn := dir.BaseName(); bn != "product" {

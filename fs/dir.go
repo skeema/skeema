@@ -576,20 +576,29 @@ func (dir *Dir) parseContents() {
 	// empty LogicalSchema. This permits `skeema pull` to work properly on a
 	// formerly-empty schema, for example.
 	if len(logicalSchemasByName) == 0 && dir.HasSchema() {
-		logicalSchemasByName[""] = &LogicalSchema{
-			Creates: make(map[tengo.ObjectKey]*Statement),
+		dir.LogicalSchemas = []*LogicalSchema{
+			{
+				Creates:   make(map[tengo.ObjectKey]*Statement),
+				CharSet:   dir.Config.Get("default-character-set"),
+				Collation: dir.Config.Get("default-collation"),
+			},
 		}
+		return
 	}
 
+	// Put any non-empty logical schemas into the dir, with the blank-named one
+	// always in the first position
 	dir.LogicalSchemas = make([]*LogicalSchema, 0, len(logicalSchemasByName))
-	if ls, ok := logicalSchemasByName[""]; ok {
+	if ls, ok := logicalSchemasByName[""]; ok && len(ls.Creates) > 0 {
 		ls.CharSet = dir.Config.Get("default-character-set")
 		ls.Collation = dir.Config.Get("default-collation")
-		dir.LogicalSchemas = append([]*LogicalSchema{ls}, dir.LogicalSchemas...)
-		delete(logicalSchemasByName, "")
-	}
-	for _, ls := range logicalSchemasByName {
 		dir.LogicalSchemas = append(dir.LogicalSchemas, ls)
+	}
+	for name, ls := range logicalSchemasByName {
+		if name != "" && len(ls.Creates) > 0 {
+			ls.Name = name
+			dir.LogicalSchemas = append(dir.LogicalSchemas, ls)
+		}
 	}
 }
 

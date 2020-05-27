@@ -45,6 +45,11 @@ END
 //
 delimiter ;
 
+CREATE TABLE `uhoh` . tbl1 (id int unsigned not null primary key);
+CREATE TABLE uhoh.tbl2 (id int unsigned not null primary key);
+CREATE TABLE /*lol*/ uhoh  .  `tbl3` (id int unsigned not null primary key);
+create definer=foo@'localhost' /*lol*/ FUNCTION foo.funcdefquote3() RETURNS int RETURN 42;
+
 use /*wtf*/`analytics`;CREATE TABLE  if  NOT    eXiStS     `comments` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `post_id` bigint(20) unsigned NOT NULL,

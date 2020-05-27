@@ -2,6 +2,8 @@ package fs
 
 import (
 	"testing"
+
+	"github.com/skeema/tengo"
 )
 
 func TestStatementLocation(t *testing.T) {
@@ -65,6 +67,33 @@ func TestStatementSplitTextBody(t *testing.T) {
 		}
 		if stmt.Body() != actualBody {
 			t.Errorf("Body on %s returned different result than first returned value of SplitTextBody", input)
+		}
+	}
+}
+
+// TestStatementBody tests regex replacement of schema name qualifiers in Body().
+func TestStatementBody(t *testing.T) {
+	filePath := "testdata/statements.sql"
+	// extracted from relevant lines of sqlfile_test.go's expectedStatements()
+	statements := []*Statement{
+		{File: filePath, LineNo: 31, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeFunc, ObjectName: "funcdefquote2", ObjectQualifier: "analytics", Text: "create definer=foo@'localhost' /*lol*/ FUNCTION analytics.funcdefquote2() RETURNS int RETURN 42;\n"},
+		{File: filePath, LineNo: 48, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "tbl1", ObjectQualifier: "uhoh", Text: "CREATE TABLE `uhoh` . tbl1 (id int unsigned not null primary key);\n"},
+		{File: filePath, LineNo: 49, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "tbl2", ObjectQualifier: "uhoh", Text: "CREATE TABLE uhoh.tbl2 (id int unsigned not null primary key);\n"},
+		{File: filePath, LineNo: 50, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "tbl3", ObjectQualifier: "uhoh", Text: "CREATE TABLE /*lol*/ uhoh  .  `tbl3` (id int unsigned not null primary key);\n"},
+		{File: filePath, LineNo: 51, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeFunc, ObjectName: "funcdefquote3", ObjectQualifier: "foo", Text: "create definer=foo@'localhost' /*lol*/ FUNCTION foo.funcdefquote3() RETURNS int RETURN 42;\n"},
+	}
+	allowedBodies := map[string]bool{
+		"create definer=foo@'localhost' /*lol*/ FUNCTION funcdefquote2() RETURNS int RETURN 42": true,
+		"CREATE TABLE tbl1 (id int unsigned not null primary key)":                              true,
+		"CREATE TABLE tbl2 (id int unsigned not null primary key)":                              true,
+		"CREATE TABLE /*lol*/ `tbl3` (id int unsigned not null primary key)":                    true,
+		"create definer=foo@'localhost' /*lol*/ FUNCTION funcdefquote3() RETURNS int RETURN 42": true,
+	}
+	for n, stmt := range statements {
+		stmt.delimiter = ";"
+		body := stmt.Body()
+		if !allowedBodies[body] {
+			t.Errorf("Unexpected Body() result for statement[%d]: %q", n, body)
 		}
 	}
 }

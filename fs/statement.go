@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -76,9 +77,15 @@ func (stmt *Statement) Schema() string {
 	return stmt.DefaultDatabase
 }
 
-// Body returns Text with any trailing delimiter and whitespace removed.
+// Body returns the Statement's Text, without any trailing delimiter,
+// whitespace, or qualified schema name.
 func (stmt *Statement) Body() string {
 	body, _ := stmt.SplitTextBody()
+	if stmt.ObjectQualifier != "" {
+		pattern := fmt.Sprintf("(?is)^(.*?create.+?%s.*?)(`%s`|%s)(\\s*\\.\\s*)", string(stmt.ObjectType), stmt.ObjectQualifier, stmt.ObjectQualifier)
+		re := regexp.MustCompile(pattern)
+		body = re.ReplaceAllString(body, "$1")
+	}
 	return body
 }
 
