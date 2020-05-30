@@ -46,99 +46,94 @@ func PullHandler(cfg *mybase.Config) error {
 		return err
 	}
 
-	var skipCount int
-	if skipCount, err = pullWalker(dir, 5); err != nil {
-		return err
-	}
-	if skipCount == 0 {
-		return nil
-	}
-	var plural string
-	if skipCount > 1 {
-		plural = "s"
-	}
-	return NewExitValue(CodePartialError, "Skipped %d operation%s due to error%s", skipCount, plural, plural)
+	// pullWalker returns the "worst" (highest) exit code it encounters. We care
+	// about the exit code, but not the error message, since any error will already
+	// have been logged. (Multiple errors may have been encountered along the way,
+	// and it's simpler to log them when they occur, rather than needlessly
+	// collecting them.)
+	err = pullWalker(dir, 5)
+	return NewExitValue(ExitCode(err), "")
 }
 
-// pullWalker processes dir, and recursively calls itself on any subdirs. An
-// error is only returned if something fatal occurs. skipCount reflects the
-// number of non-fatal failed operations that were skipped for dir and its
-// subdirectories.
-func pullWalker(dir *fs.Dir, maxDepth int) (skipCount int, err error) {
+func pullWalker(dir *fs.Dir, maxDepth int) error {
+	if dir.ParseError != nil {
+		log.Warnf("Skipping %s: %s", dir, dir.ParseError)
+		return NewExitValue(CodeBadConfig, "")
+	}
+
 	var instance *tengo.Instance
+	var err error
 	if dir.Config.Changed("host") {
 		instance, err = dir.FirstInstance()
 		if err != nil {
 			log.Warnf("Skipping %s: %s", dir, err)
-			return 1, nil
+			return NewExitValue(CodePartialError, "")
 		}
 	}
 
 	// "flat" dir defining both host and schema
 	if instance != nil && dir.HasSchema() {
 		updateFlavor(dir, instance)
-		_, err = pullSchemaDir(dir, instance)
-		return skipCount, err
+		_, err := pullSchemaDir(dir, instance) // already logs err (if non-nil)
+		return err
 	}
 
 	subdirs, err := dir.Subdirs()
 	if err != nil {
 		log.Errorf("Cannot list subdirs of %s: %s", dir, err)
-		return skipCount + 1, nil
+		return NewExitValue(CodePartialError, "")
 	} else if len(subdirs) > 0 && maxDepth <= 0 {
-		log.Warnf("Not walking subdirs of %s: max depth reached", dir)
-		return skipCount + len(subdirs), nil
+		log.Errorf("Not walking subdirs of %s: max depth reached", dir)
+		return NewExitValue(CodePartialError, "")
 	}
 
-	wantNewSchemas := dir.Config.GetBool("new-schemas")
 	allSchemaNames := []string{}
 	for _, sub := range subdirs {
-		if sub.ParseError != nil {
-			log.Warnf("Skipping %s: %s", sub.Path, sub.ParseError)
-			skipCount++
-			wantNewSchemas = false // can't accurately detect bad subdir vs new schema
-			continue
-		}
-
 		// If dir does not define host, simply recurse into subdirs.
 		if instance == nil {
-			subSkipCount, subErr := pullWalker(sub, maxDepth-1)
-			skipCount += subSkipCount
-			if subErr != nil {
-				return skipCount, subErr
-			}
+			subErr := pullWalker(sub, maxDepth-1)
+			err = HighestExitCode(err, subErr)
 			continue
 		}
 
 		// Otherwise, dir defines host but not schema. Treat subdirs as schema dirs,
 		// and use the combined list of handled schemas to figure out whether any
 		// new schema dirs need to be created (if requested).
-		subSchemaNames, subErr := pullSchemaDir(sub, instance)
-		if subErr != nil {
-			return skipCount, subErr
-		}
+		subSchemaNames, subErr := pullSchemaDir(sub, instance) // already logs subErr (if non-nil)
+		err = HighestExitCode(err, subErr)
 		allSchemaNames = append(allSchemaNames, subSchemaNames...)
 	}
 
 	if instance != nil {
 		updateFlavor(dir, instance)
-		if wantNewSchemas {
-			err = findNewSchemas(dir, instance, allSchemaNames)
+		if dir.Config.GetBool("new-schemas") && err == nil {
+			if err = findNewSchemas(dir, instance, allSchemaNames); err != nil {
+				log.Warnf("Unable to populate new schemas from %s: %s", dir, err)
+				return NewExitValue(CodePartialError, "")
+			}
 		}
 	}
-	return skipCount, err
+	return err
 }
 
 // pullSchemaDir updates all logical schemas in dir to reflect the actual
 // definitions found in instance. A slice of handled schema names is returned,
 // along with any error encountered.
 func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance) (schemaNames []string, err error) {
-	for _, logicalSchema := range dir.LogicalSchemas {
-		names, err := pullLogicalSchema(dir, instance, logicalSchema)
-		if err != nil {
-			return nil, err
+	if dir.ParseError != nil {
+		log.Warnf("Skipping %s: %s", dir, dir.ParseError)
+		return nil, NewExitValue(CodePartialError, "")
+	}
+	if len(dir.LogicalSchemas) > 0 {
+		// TODO: support multiple logical schemas per dir
+		logicalSchema := dir.LogicalSchemas[0]
+		schemaNames, err = pullLogicalSchema(dir, instance, logicalSchema)
+	}
+	if err != nil {
+		log.Warnf("Skipping %s: %s", dir, err)
+		if _, ok := err.(*ExitValue); !ok {
+			err = NewExitValue(CodePartialError, "")
 		}
-		schemaNames = append(schemaNames, names...)
 	}
 	return
 }
@@ -148,13 +143,8 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance) (schemaNames []string,
 // error encountered.
 func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.LogicalSchema) (schemaNames []string, err error) {
 	if logicalSchema.Name != "" {
-		// TODO: support pull for case where multiple explicitly-named schemas per
-		// dir. For example, ability to convert a multi-schema single-file mysqldump
-		// into Skeema's usual multi-dir layout.
-		log.Warnf("Ignoring schema %s from directory %s -- multiple schemas per dir not supported yet", logicalSchema.Name, dir)
-		return []string{logicalSchema.Name}, nil
-	}
-	if schemaNames, err = dir.SchemaNames(instance); err != nil {
+		schemaNames = []string{logicalSchema.Name}
+	} else if schemaNames, err = dir.SchemaNames(instance); err != nil {
 		return nil, fmt.Errorf("%s: Unable to fetch schema names mapped by this dir: %s", dir, err)
 	}
 	if len(schemaNames) == 0 {

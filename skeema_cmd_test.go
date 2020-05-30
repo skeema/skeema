@@ -252,6 +252,27 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 		t.Errorf("Expected os.Stat to return IsNotExist error for mydb/archives; instead err=%v", err)
 	}
 
+	// Start over; Bad option file in a non-leaf dir should yield CodeBadConfig
+	// and no files should be updated
+	s.cleanData(t, "setup.sql")
+	s.reinitAndVerifyFiles(t, "", "")
+	origMydbConfig := fs.ReadTestFile(t, "mydb/.skeema")
+	fs.WriteTestFile(t, "mydb/.skeema", origMydbConfig+"\nbad config here")
+	contents = fs.ReadTestFile(t, "mydb/analytics/activity.sql")
+	fs.WriteTestFile(t, "mydb/analytics/activity.sql", strings.Replace(contents, "DEFAULT", "DEFALUT", 1))
+	s.handleCommand(t, CodeBadConfig, ".", "skeema pull")
+	if contents = fs.ReadTestFile(t, "mydb/analytics/activity.sql"); !strings.Contains(contents, "DEFALUT") {
+		t.Error("Unexpected behavior from pull with a non-leaf parse error")
+	}
+
+	// Ditto if non-leaf option file is valid but contains a problematic host list
+	// (but CodePartialError this time)
+	fs.WriteTestFile(t, "mydb/.skeema", origMydbConfig+"\nhost-wrapper=invalid-binary")
+	s.handleCommand(t, CodePartialError, ".", "skeema pull")
+	if contents = fs.ReadTestFile(t, "mydb/analytics/activity.sql"); !strings.Contains(contents, "DEFALUT") {
+		t.Error("Unexpected behavior from pull with a non-leaf parse error")
+	}
+
 	// Test pull behavior on a "flat" layout (single dir defining host and schema):
 	// ensure flavor updated; ensure deleted sql file brought back
 	s.handleCommand(t, CodeSuccess, ".", "skeema init --schema product --dir flat -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
@@ -838,7 +859,7 @@ func (s SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
 	s.handleCommand(t, CodeBadConfig, ".", "skeema lint --ignore-table='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema format --ignore-table='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema pull --ignore-table='+'")
-	s.handleCommand(t, CodeFatalError, ".", "skeema pull --ignore-schema='+'")
+	s.handleCommand(t, CodePartialError, ".", "skeema pull --ignore-schema='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema push --ignore-table='+'")
 	s.handleCommand(t, CodeFatalError, ".", "skeema push --ignore-schema='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir badre1 -h %s -P %d --ignore-schema='+'", s.d.Instance.Host, s.d.Instance.Port)

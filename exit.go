@@ -61,6 +61,19 @@ func ExitCode(err error) int {
 	return CodeFatalError
 }
 
+// HighestExitCode returns whichever arg has the highest exit code. In cases of
+// ties, earlier args take precedence over later args.
+func HighestExitCode(errs ...error) error {
+	var highestErr error
+	var highestCode int
+	for _, err := range errs {
+		if code := ExitCode(err); code > highestCode {
+			highestErr, highestCode = err, code
+		}
+	}
+	return highestErr
+}
+
 // Exit terminates the program with the appropriate exit code and log output.
 func Exit(err error) {
 	exitCode := ExitCode(err)

@@ -80,9 +80,7 @@ func formatWalker(dir *fs.Dir, maxDepth int) error {
 	}
 	for _, sub := range subdirs {
 		err := formatWalker(sub, maxDepth-1)
-		if ExitCode(err) > ExitCode(result) {
-			result = err
-		}
+		result = HighestExitCode(result, err)
 	}
 	return result
 }

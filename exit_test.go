@@ -32,3 +32,27 @@ func TestExitValueError(t *testing.T) {
 		t.Errorf("Found message %v, expected %v", actual, expected)
 	}
 }
+
+func TestHighestExitCode(t *testing.T) {
+	partialErr := NewExitValue(CodePartialError, "this is code 1")
+	implicitFatalErr := errors.New("This will be converted to CodeFatalError or code 2")
+	explicitFatalErr := NewExitValue(CodeFatalError, "this is code 2")
+	badConfigErr := NewExitValue(CodeBadConfig, "this is code 78")
+	cases := []struct {
+		input    []error
+		expected error
+	}{
+		{input: []error{}, expected: nil},
+		{input: []error{nil}, expected: nil},
+		{input: []error{nil, partialErr}, expected: partialErr},
+		{input: []error{partialErr, nil}, expected: partialErr},
+		{input: []error{implicitFatalErr, explicitFatalErr}, expected: implicitFatalErr},
+		{input: []error{partialErr, nil, badConfigErr}, expected: badConfigErr},
+		{input: []error{implicitFatalErr, partialErr}, expected: implicitFatalErr},
+	}
+	for _, testCase := range cases {
+		if actual := HighestExitCode(testCase.input...); actual != testCase.expected {
+			t.Errorf("HighestExitCode(%+v) returned %+v, expected %+v", testCase.input, actual, testCase.expected)
+		}
+	}
+}
