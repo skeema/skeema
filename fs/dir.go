@@ -462,6 +462,42 @@ func (dir *Dir) HasSchema() bool {
 	return false
 }
 
+var reUseStatement = regexp.MustCompile(`(?i)\bUSE\b`)
+
+// NamedSchemaStatements returns a slice of Statements in the dir that are
+// a USE command, or are a CREATE that specify a schema name. Such statements
+// are not yet fully supported by most Skeema packages.
+func (dir *Dir) NamedSchemaStatements() []*Statement {
+	result := make([]*Statement, 0)
+	checkFiles := make(map[*TokenizedSQLFile]bool, 0)
+	for _, ls := range dir.LogicalSchemas {
+		if ls.Name != "" {
+			for _, stmt := range ls.Creates {
+				if stmt.ObjectQualifier != "" {
+					result = append(result, stmt)
+				} else {
+					checkFiles[stmt.FromFile] = true
+				}
+			}
+			for _, stmt := range ls.Alters {
+				if stmt.ObjectQualifier != "" {
+					result = append(result, stmt)
+				} else {
+					checkFiles[stmt.FromFile] = true
+				}
+			}
+		}
+	}
+	for tokenizedFile := range checkFiles {
+		for _, stmt := range tokenizedFile.Statements {
+			if stmt.Type == StatementTypeCommand && reUseStatement.MatchString(stmt.Text) {
+				result = append(result, stmt)
+			}
+		}
+	}
+	return result
+}
+
 // InstanceDefaultParams returns a param string for use in constructing a
 // DSN. Any overrides specified in the config for this dir will be taken into
 // account. The returned string will already be in the correct format (HTTP

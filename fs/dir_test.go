@@ -188,6 +188,46 @@ func TestParseDirNamedSchemas(t *testing.T) {
 	}
 }
 
+func TestDirNamedSchemaStatements(t *testing.T) {
+	// Test against a dir that has no named-schema statements
+	dir := getDir(t, "../testdata/golden/init/mydb/product")
+	if stmts := dir.NamedSchemaStatements(); len(stmts) > 0 {
+		t.Errorf("Expected dir %s to have no named schema statements; instead found %d", dir, len(stmts))
+	}
+
+	// named1 has 2 USE statements, and no schema-qualified CREATEs
+	dir = getDir(t, "testdata/named1")
+	if stmts := dir.NamedSchemaStatements(); len(stmts) != 2 {
+		t.Errorf("Expected dir %s to have 2 named schema statements; instead found %d", dir, len(stmts))
+	} else if stmts[0].Type != StatementTypeCommand || stmts[1].Type != StatementTypeCommand {
+		t.Errorf("Unexpected statements found in result of NamedSchemaStatements: [0]=%+v, [1]=%+v", *stmts[0], *stmts[1])
+	}
+
+	// named2 has 1 schema-qualified CREATE, and 1 USE statement
+	dir = getDir(t, "testdata/named2")
+	if stmts := dir.NamedSchemaStatements(); len(stmts) != 2 {
+		t.Errorf("Expected dir %s to have 2 named schema statements; instead found %d", dir, len(stmts))
+	} else if stmts[0].Type != StatementTypeCreate || stmts[1].Type != StatementTypeCommand {
+		t.Errorf("Unexpected statements found in result of NamedSchemaStatements: [0]=%+v, [1]=%+v", *stmts[0], *stmts[1])
+	}
+
+	// named3 has 2 schema-qualified CREATEs
+	dir = getDir(t, "testdata/named3")
+	if stmts := dir.NamedSchemaStatements(); len(stmts) != 2 {
+		t.Errorf("Expected dir %s to have 2 named schema statements; instead found %d", dir, len(stmts))
+	} else if stmts[0].Type != StatementTypeCreate || stmts[1].Type != StatementTypeCreate {
+		t.Errorf("Unexpected statements found in result of NamedSchemaStatements: [0]=%+v, [1]=%+v", *stmts[0], *stmts[1])
+	}
+
+	// named4 has 2 USE statements, and no schema-qualified CREATEs
+	dir = getDir(t, "testdata/named4")
+	if stmts := dir.NamedSchemaStatements(); len(stmts) != 2 {
+		t.Errorf("Expected dir %s to have 2 named schema statements; instead found %d", dir, len(stmts))
+	} else if stmts[0].Type != StatementTypeCommand || stmts[1].Type != StatementTypeCommand {
+		t.Errorf("Unexpected statements found in result of NamedSchemaStatements: [0]=%+v, [1]=%+v", *stmts[0], *stmts[1])
+	}
+}
+
 func TestParseDirNoSchemas(t *testing.T) {
 	// empty1 has no *.sql and no schema defined in the .skeema file
 	dir := getDir(t, "testdata/empty1")

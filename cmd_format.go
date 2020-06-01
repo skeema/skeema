@@ -88,6 +88,8 @@ func formatWalker(dir *fs.Dir, maxDepth int) error {
 // formatDir reformats SQL statements in all logical schemas in dir. This
 // function does not recurse into subdirs.
 func formatDir(dir *fs.Dir) error {
+	var totalReformatCount int
+
 	ignoreTable, err := dir.Config.GetRegexp("ignore-table")
 	if err != nil {
 		return NewExitValue(CodeBadConfig, err.Error())
@@ -106,10 +108,9 @@ func formatDir(dir *fs.Dir) error {
 		if wsOpts, err = workspace.OptionsForDir(dir, inst); err != nil {
 			return NewExitValue(CodeBadConfig, err.Error())
 		}
-	}
 
-	var totalReformatCount int
-	for _, logicalSchema := range dir.LogicalSchemas {
+		// TODO: support multiple logical schemas per dir
+		logicalSchema := dir.LogicalSchemas[0]
 		wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
 		if err != nil {
 			return err
@@ -135,6 +136,7 @@ func formatDir(dir *fs.Dir) error {
 		}
 		totalReformatCount += reformatCount
 	}
+
 	for _, stmt := range dir.IgnoredStatements {
 		log.Debugf("%s: unable to parse statement", stmt.Location())
 	}

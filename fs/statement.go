@@ -27,7 +27,7 @@ const (
 	StatementTypeNoop                  // entirely whitespace and/or comments
 	StatementTypeCommand               // currently just USE or DELIMITER
 	StatementTypeCreate
-	StatementTypeAlter
+	StatementTypeAlter // not actually ever parsed yet
 	// Other types will be added once they are supported by the package
 )
 

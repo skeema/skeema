@@ -130,7 +130,7 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance) (schemaNames []string,
 		schemaNames, err = pullLogicalSchema(dir, instance, logicalSchema)
 	}
 	if err != nil {
-		log.Warnf("Skipping %s: %s", dir, err)
+		log.Warnf("Skipping %s: %s\n", dir, err)
 		if _, ok := err.(*ExitValue); !ok {
 			err = NewExitValue(CodePartialError, "")
 		}
@@ -145,7 +145,7 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 	if logicalSchema.Name != "" {
 		schemaNames = []string{logicalSchema.Name}
 	} else if schemaNames, err = dir.SchemaNames(instance); err != nil {
-		return nil, fmt.Errorf("%s: Unable to fetch schema names mapped by this dir: %s", dir, err)
+		return nil, fmt.Errorf("unable to fetch schema names mapped by this dir: %s", err)
 	}
 	if len(schemaNames) == 0 {
 		log.Warnf("Ignoring directory %s -- did not map to any schema names for environment \"%s\"\n", dir, dir.Config.Get("environment"))
@@ -156,7 +156,7 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 		log.Infof("Deleted directory %s -- schema %s no longer exists\n", dir, schemaNames[0])
 		return nil, dir.Delete()
 	} else if err != nil {
-		return nil, fmt.Errorf("%s: Unable to fetch schema %s from %s: %s", dir, schemaNames[0], instance, err)
+		return nil, fmt.Errorf("Unable to fetch schema %s from %s: %s", schemaNames[0], instance, err)
 	}
 
 	log.Infof("Updating %s to reflect %s %s", dir, instance, instSchema.Name)
@@ -202,7 +202,9 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 	}
 
 	_, err = dumper.DumpSchema(instSchema, dir, dumpOpts)
-	os.Stderr.WriteString("\n")
+	if err == nil {
+		os.Stderr.WriteString("\n")
+	}
 	return
 }
 

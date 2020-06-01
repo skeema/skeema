@@ -95,7 +95,7 @@ func (s IntegrationSuite) TestFormatPull(t *testing.T) {
 	opts.IgnoreKeys([]tengo.ObjectKey{s.statementErrors[0].ObjectKey()})
 
 	// In the fs, rename posts table and its file. Expectation is that
-	// FormatLogicalSchema will undo this action.
+	// DumpSchema will undo this action.
 	contents := fs.ReadTestFile(t, s.testdata(".scratch", "posts.sql"))
 	contents = strings.Replace(contents, "CREATE TABLE posts", "create table widgets", 1)
 	fs.WriteTestFile(t, s.testdata(".scratch", "widgets.sql"), contents)
@@ -121,6 +121,41 @@ func (s IntegrationSuite) TestFormatPull(t *testing.T) {
 		t.Errorf("Expected FormatLogicalSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
 	}
 	s.verifyFormat(t)
+}
+
+// TestFormatNamedSchemas confirms errors are returned when attempting to
+// format a dir containing either 'USE' commands or prefixed (dbname.objectname)
+// CREATE statements.
+func (s IntegrationSuite) TestFormatNamedSchemas(t *testing.T) {
+	var err error
+
+	// In the fs, add a dbname prefix before routine1
+	contents := fs.ReadTestFile(t, s.testdata(".scratch", "routine.sql"))
+	newContents := strings.Replace(contents, "function `routine1`", "function somedb.routine1", 1)
+	if contents == newContents {
+		t.Fatal("Unexpected problem with test setup; has testdata/input/routine.sql changed without updating this test?")
+	}
+	fs.WriteTestFile(t, s.testdata(".scratch", "routine.sql"), newContents)
+	if s.scratchDir, err = getDir(s.scratchPath()); err != nil {
+		t.Fatalf("Unexpected error from getDir: %+v", err)
+	}
+	if _, err := DumpSchema(s.schema, s.scratchDir, Options{}); err == nil {
+		t.Error("Expected error from DumpSchema on dir containing dbname-prefixed CREATE, but err was nil")
+	}
+
+	// Add a USE statement affecting tables multi1 and multi2
+	contents = fs.ReadTestFile(t, s.testdata(".scratch", "multi.sql"))
+	newContents = strings.Replace(contents, "\nCREATE TABLE multi2", "\nUSE foobar\nCREATE TABLE multi2", 1)
+	if contents == newContents {
+		t.Fatal("Unexpected problem with test setup; has testdata/input/multi.sql changed without updating this test?")
+	}
+	fs.WriteTestFile(t, s.testdata(".scratch", "multi.sql"), newContents)
+	if s.scratchDir, err = getDir(s.scratchPath()); err != nil {
+		t.Fatalf("Unexpected error from getDir: %+v", err)
+	}
+	if _, err := DumpSchema(s.schema, s.scratchDir, Options{}); err == nil {
+		t.Error("Expected error from DumpSchema on dir containing dbname-prefixed CREATE, but err was nil")
+	}
 }
 
 func (s *IntegrationSuite) Setup(backend string) (err error) {

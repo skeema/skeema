@@ -5,6 +5,7 @@
 package dumper
 
 import (
+	"errors"
 	"fmt"
 
 	log "github.com/sirupsen/logrus"
@@ -26,6 +27,19 @@ type statement struct {
 // statements is returned, along with any fatal write error. If opts.CountOnly
 // is true, no actual filesystem writes occur, but a count is still returned.
 func DumpSchema(schema *tengo.Schema, dir *fs.Dir, opts Options) (count int, err error) {
+	// Ensure that this dir does not reference any schemas by name, either via
+	// USE commands or CREATEs with schema name qualifiers
+	if namedSchemaStmts := dir.NamedSchemaStatements(); len(namedSchemaStmts) > 0 {
+		if len(namedSchemaStmts) == 1 {
+			log.Warnf("This directory contains a statement referencing a specific schema name at %s line %d.", namedSchemaStmts[0].File, namedSchemaStmts[0].LineNo)
+		} else {
+			log.Warnf("This directory contains %d statements referencing specific schema names, for example %s line %d.", len(namedSchemaStmts), namedSchemaStmts[0].File, namedSchemaStmts[0].LineNo)
+		}
+		log.Warn("Most Skeema commands do not support USE statements or schema-prefixed table names yet.")
+		log.Warn("Please configure schema names only in .skeema files.")
+		return 0, errors.New("unsupported format of .sql files")
+	}
+
 	filesToRewrite := make(map[*fs.TokenizedSQLFile]bool)
 	for key, s := range getStatementMap(schema, dir, opts) {
 		if opts.shouldIgnore(key) || s.canonicalCreate == s.filesystemCreate {

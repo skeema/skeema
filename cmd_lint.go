@@ -147,7 +147,7 @@ func lintDir(dir *fs.Dir) *linter.Result {
 	}
 
 	result := &linter.Result{}
-	for _, logicalSchema := range dir.LogicalSchemas {
+	for n, logicalSchema := range dir.LogicalSchemas {
 		// Convert the logical schema from the filesystem into a real schema, using a
 		// workspace
 		wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
@@ -159,7 +159,8 @@ func lintDir(dir *fs.Dir) *linter.Result {
 
 		// Reformat statements if requested. This must be done prior to checking for
 		// problems. Otherwise, the line offsets in annotations can be wrong.
-		if dir.Config.GetBool("format") {
+		// TODO: support format for multiple logical schemas per dir
+		if dir.Config.GetBool("format") && n == 0 {
 			dumpOpts := dumper.Options{
 				IncludeAutoInc: true,
 				IgnoreTable:    opts.IgnoreTable,
@@ -170,7 +171,7 @@ func lintDir(dir *fs.Dir) *linter.Result {
 			dumpOpts.IgnoreKeys(wsSchema.FailedKeys())
 			result.ReformatCount, err = dumper.DumpSchema(wsSchema.Schema, dir, dumpOpts)
 			if err != nil {
-				result.Fatal(err)
+				log.Errorf("Skipping format operation for %s: %s", dir, err)
 			}
 		}
 
