@@ -152,6 +152,48 @@ func (s ApplierIntegrationSuite) TestTargetsForDirMulti(t *testing.T) {
 	}
 }
 
+// TestTargetsForDirNamedSchema tests various combinations of using schema names
+// in *.sql files, via a mix of USE statements and db-prefixed table names.
+// This is only allowed in very limited circumstances, with respect to if/how a
+// schema name is also configured in the dir's .skeema file.
+func (s ApplierIntegrationSuite) TestTargetsForDirNamedSchema(t *testing.T) {
+	setupHostList(t, s.d[0].Instance)
+	defer cleanupHostList(t)
+
+	// Expected outcome per dir:
+	// multi:     2 successful targets
+	// namedonly: 1 successful target
+	// conflict1: 1 skip (there's no nameless logicalschema, despite .skeema defining a name)
+	// conflict2: 2 skips
+	// conflict3: 2 skips
+	dir := getDir(t, "testdata/named", "")
+	targets, skipCount := TargetsForDir(dir, 1)
+	if len(targets) != 3 || skipCount != 5 {
+		t.Fatalf("Unexpected result from TargetsForDir: %+v, %d", targets, skipCount)
+	}
+
+	// Expected schemas and table counts in the successful targets
+	expectedSchemas := map[string]int{
+		"multi1":    1,
+		"multi2":    1,
+		"namedonly": 3,
+	}
+
+	for _, target := range targets {
+		if inst, err := target.SchemaFromInstance(); inst != nil || err != nil {
+			t.Errorf("Expected SchemaFromInstance() to be nil, instead found %+v, %v", inst, err)
+		}
+		expectTableCount, ok := expectedSchemas[target.SchemaName]
+		if !ok || len(target.DesiredSchema.Tables) != expectTableCount {
+			t.Errorf("Expected DesiredSchema %s to have %d tables, instead found %d", target.SchemaName, expectTableCount, len(target.DesiredSchema.Tables))
+		}
+
+		// Delete the entry from the map to ensure we don't unexpectedly generate the
+		// same schema name twice
+		delete(expectedSchemas, target.SchemaName)
+	}
+}
+
 func (s ApplierIntegrationSuite) TestTargetsForDirError(t *testing.T) {
 	setupHostList(t, s.d[0].Instance, s.d[1].Instance)
 	defer cleanupHostList(t)

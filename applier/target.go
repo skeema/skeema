@@ -115,10 +115,17 @@ func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int)
 		// For each LogicalSchema, obtain a *tengo.Schema representation and then
 		// create a Target for each instance x schema combination
 		if len(instances) > 0 {
-			for _, logicalSchema := range dir.LogicalSchemas {
+			for n, logicalSchema := range dir.LogicalSchemas {
 				thisTargets, thisSkipCount := targetsForLogicalSchema(logicalSchema, dir, instances)
 				targets = append(targets, thisTargets...)
 				skipCount += thisSkipCount
+				if thisSkipCount > 0 {
+					// If something went wrong, stop processing any other LogicalSchemas and
+					// don't recurse into subdirs, since there's likely something fatally wrong
+					// with this dir's configuration
+					skipCount += len(dir.LogicalSchemas) - 1 - n
+					return
+				}
 			}
 		}
 	} else if dir.HasSchema() {
@@ -209,6 +216,17 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 }
 
 func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, instances []*tengo.Instance) (targets []*Target, skipCount int) {
+	// If there are multiple logical schemas defined in this directory, prohibit
+	// mixing configuration styles. Either all CREATEs should be in a single
+	// unnamed logical schema (with schema name controlled via .skeema file), OR
+	// all CREATEs should have prior USE commands or db name prefixes.
+	if logicalSchema.Name == "" && len(dir.LogicalSchemas) > 1 {
+		namedSchemaStmts := dir.NamedSchemaStatements()
+		log.Warnf("Skipping %s: some statements reference specific schema names, for example %s line %d.", dir, namedSchemaStmts[0].File, namedSchemaStmts[0].LineNo)
+		log.Warn("When configuring a schema name in .skeema, please omit schema names entirely from *.sql files.\n")
+		return nil, len(instances)
+	}
+
 	// Obtain a *tengo.Schema representation of the dir's *.sql files from a
 	// workspace
 	opts, err := workspace.OptionsForDir(dir, instances[0])
@@ -221,36 +239,42 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 		log.Warnf("Skipping %s: %s\n", dir, err)
 		return nil, len(instances)
 	}
-	for _, stmtErr := range wsSchema.Failures {
-		log.Error(stmtErr.Error())
-		if isStrictModeError(stmtErr) && !dir.Config.Changed("connect-options") {
-			log.Info("This may be caused by Skeema's default usage of strict-mode settings. To disable strict-mode, add this to a .skeema file:")
-			log.Info("connect-options=\"innodb_strict_mode=0,sql_mode='ONLY_FULL_GROUP_BY,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'\"\n")
-		}
-	}
-	if stmtErrCount := len(wsSchema.Failures); stmtErrCount > 0 {
-		noun := "errors"
-		if stmtErrCount == 1 {
-			noun = "error"
-		}
-		log.Warnf("Skipping %s due to %d SQL %s\n", dir, stmtErrCount, noun)
+	if len(wsSchema.Failures) > 0 {
+		logFailedStatements(dir, wsSchema.Failures)
 		return nil, len(instances)
 	}
 
 	// Create a Target for each instance x schema combination
 	for _, inst := range instances {
-		var schemaNames []string
+		// Obtain the list of schema names configured in .skeema
+		schemaNames, err := dir.SchemaNames(inst)
+		if err != nil {
+			log.Warnf("Skipping %s for %s: %s\n", inst, dir, err)
+			skipCount++
+			continue
+		}
+
+		// If this LogicalSchema has no name, it means use the list from the dir
+		// config. Otherwise, use the LogicalSchema's own name, but only if there
+		// isn't also a conflicting configuration in the .skeema file.
 		if logicalSchema.Name == "" { // blank means use the schema option from dir config
-			schemaNames, err = dir.SchemaNames(inst)
-			if err != nil {
-				log.Warnf("Skipping %s for %s: %s", inst, dir, err)
-				skipCount++
-				continue
-			}
-			if len(schemaNames) > 1 && dir.Config.GetBool("first-only") {
+			if len(schemaNames) == 0 {
+				log.Warnf("Skipping %s for %s: no schema names returned\n", inst, dir)
+			} else if dir.Config.GetBool("first-only") {
 				schemaNames = schemaNames[0:1]
 			}
 		} else {
+			// Prohibit conflicting configurations in .skeema + CREATE or USE statements.
+			// The only allowed cases are either NO schema name in .skeema, OR a single
+			// schema name in .skeema which exactly matches a single schema name used
+			// consistently throughout this dir's *.sql files.
+			if len(schemaNames) > 0 {
+				if len(schemaNames) > 1 || len(dir.LogicalSchemas) > 1 || schemaNames[0] != logicalSchema.Name {
+					log.Warnf("Skipping %s: This directory's .skeema file configures a different schema name than its *.sql files.", dir)
+					log.Warn("When configuring a schema name in .skeema, exclude schema names entirely from *.sql files.\n")
+					return nil, len(instances)
+				}
+			}
 			schemaNames = []string{logicalSchema.Name}
 		}
 		for _, schemaName := range schemaNames {
@@ -289,4 +313,19 @@ func TargetGroupChanForDir(dir *fs.Dir) (<-chan TargetGroup, int) {
 func isStrictModeError(err error) bool {
 	message := err.Error()
 	return strings.Contains(message, "Error 1031") || strings.Contains(message, "Error 1067")
+}
+
+func logFailedStatements(dir *fs.Dir, failures []*workspace.StatementError) {
+	for _, stmtErr := range failures {
+		log.Error(stmtErr.Error())
+		if isStrictModeError(stmtErr) && !dir.Config.Changed("connect-options") {
+			log.Info("This may be caused by Skeema's default usage of strict-mode settings. To disable strict-mode, add this to a .skeema file:")
+			log.Info("connect-options=\"innodb_strict_mode=0,sql_mode='ONLY_FULL_GROUP_BY,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'\"\n")
+		}
+	}
+	noun := "errors"
+	if len(failures) == 1 {
+		noun = "error"
+	}
+	log.Warnf("Skipping %s due to %d SQL %s\n", dir, len(failures), noun)
 }

@@ -1,0 +1,2 @@
+# This dir sets a schema name in .skeema that differs from one in tables.sql
+schema=conflict1

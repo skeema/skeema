@@ -1,0 +1,2 @@
+# This dir doesn't set a schema name here, but tables.sql includes CREATEs
+# without a database name

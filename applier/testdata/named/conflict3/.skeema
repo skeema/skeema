@@ -1,0 +1,2 @@
+# This matches one schema in tables.sql, but not the other
+schema=conflict3

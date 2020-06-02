@@ -70,7 +70,7 @@ func applyTarget(t *Target, printer *Printer) (Result, error) {
 	schemaFromInstance, err := t.SchemaFromInstance()
 	if err != nil {
 		result.SkipCount++
-		log.Errorf("Skipping %s schema %s for %s: %s", t.Instance, t.SchemaName, t.Dir, err)
+		log.Errorf("Skipping %s schema %s for %s: %s\n", t.Instance, t.SchemaName, t.Dir, err)
 		return result, err
 	}
 
@@ -120,7 +120,7 @@ func applyTarget(t *Target, printer *Printer) (Result, error) {
 			result.SkipCount += len(objDiffs)
 			log.Errorf(err.Error())
 			if len(objDiffs) > 1 {
-				log.Warnf("Skipping %d additional operations for %s %s due to previous error", len(objDiffs)-1, t.Instance, t.SchemaName)
+				log.Warnf("Skipping %d additional operations for %s %s due to previous error\n", len(objDiffs)-1, t.Instance, t.SchemaName)
 			}
 			return result, nil
 		}
@@ -141,7 +141,7 @@ func applyTarget(t *Target, printer *Printer) (Result, error) {
 		}
 		if lintResult.ErrorCount > 0 {
 			result.SkipCount += len(objDiffs)
-			log.Warnf("Skipping %s %s due to %s", t.Instance, t.SchemaName, countAndNoun(lintResult.ErrorCount, "linter error"))
+			log.Warnf("Skipping %s %s due to %s\n", t.Instance, t.SchemaName, countAndNoun(lintResult.ErrorCount, "linter error"))
 			return result, nil
 		}
 	}

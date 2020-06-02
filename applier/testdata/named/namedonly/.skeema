@@ -1,0 +1,2 @@
+# this sets a schema name here, but it is matched in tables.sql, so no error
+schema=namedonly
