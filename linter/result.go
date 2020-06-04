@@ -165,6 +165,37 @@ func (r *Result) AnnotateStatementErrors(statementErrors []*workspace.StatementE
 	}
 }
 
+// AnnotateMixedSchemaNames adds warnings for any unsupported combinations of
+// schema names within a directory, for example USE commands or dbname prefixes
+// in CREATEs in a dir that also configures a schema name in .skeema.
+func (r *Result) AnnotateMixedSchemaNames(dir *fs.Dir, opts Options) {
+	// Allow specific schema names if there's no .skeema file, or no configuration
+	// of schema name in .skeema
+	if dir.OptionFile == nil || len(dir.LogicalSchemas) == 0 {
+		return
+	}
+	if val, _ := dir.OptionFile.OptionValue("schema"); val == "" && dir.LogicalSchemas[0].Name != "" {
+		return
+	}
+
+	for _, stmt := range dir.NamedSchemaStatements() {
+		if opts.shouldIgnore(stmt.ObjectKey()) {
+			continue
+		}
+		var subject string
+		if stmt.Type == fs.StatementTypeCommand {
+			subject = "USE statement"
+		} else {
+			subject = "CREATE with schema name qualifier"
+		}
+		note := Note{
+			Summary: "Schema name referenced in .sql file",
+			Message: fmt.Sprintf("%s detected, despite schema name also being configured in .skeema file. Avoid defining schema names in multiple places.", subject),
+		}
+		r.Annotate(stmt, SeverityWarning, "schema-name", note)
+	}
+}
+
 // Debug logs a debug message, with args formatted like fmt.Printf.
 func (r *Result) Debug(format string, a ...interface{}) {
 	r.DebugLogs = append(r.DebugLogs, fmt.Sprintf(format, a...))

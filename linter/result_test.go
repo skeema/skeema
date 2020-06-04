@@ -142,3 +142,37 @@ func (s IntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
 		}
 	}
 }
+
+func (s IntegrationSuite) TestResultAnnotateMixedSchemaNames(t *testing.T) {
+	// Test on 3 dirs where we don't expect any annotations to be added:
+	// a dir that contains no named schemas in *.sql; a dir that contains no
+	// .skeema file; and a dir that has .skeema but without defining a schema name
+	// there
+	for _, testdir := range []string{"testdata/validcfg", "testdata/namedok1", "testdata/namedok2"} {
+		dir := getDir(t, testdir)
+		opts, err := OptionsForDir(dir)
+		if err != nil {
+			t.Fatalf("Unexpected error from OptionsForDir: %v", err)
+		}
+		result := &Result{}
+		result.AnnotateMixedSchemaNames(dir, opts)
+		if result.WarningCount > 0 || len(result.Annotations) > 0 {
+			t.Errorf("Unexpected outcome from AnnotateMixedSchemaNames: found %d warnings (%d total annotations)", result.WarningCount, len(result.Annotations))
+		}
+	}
+
+	// Test on a dir where we expect 2 annotations
+	dir := getDir(t, "testdata/namedconflict")
+	opts, err := OptionsForDir(dir)
+	if err != nil {
+		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
+	}
+	result := &Result{}
+	result.AnnotateMixedSchemaNames(dir, opts)
+	if result.WarningCount != 2 || len(result.Annotations) != 2 {
+		t.Errorf("Unexpected outcome from AnnotateMixedSchemaNames: found %d warnings (%d total annotations):", result.WarningCount, len(result.Annotations))
+		for _, a := range result.Annotations {
+			a.Log()
+		}
+	}
+}

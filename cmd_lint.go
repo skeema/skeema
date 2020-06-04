@@ -180,6 +180,11 @@ func lintDir(dir *fs.Dir) *linter.Result {
 		result.Merge(subresult)
 	}
 
+	// Add warnings for any unsupported combinations of schema names, for example
+	// USE commands or dbname prefixes in CREATEs in a dir that also configures
+	// schema name in .skeema
+	result.AnnotateMixedSchemaNames(dir, opts)
+
 	// Add warning annotations for unparseable statements (unless we hit an
 	// exception, in which case skip it to avoid extra noise!)
 	if len(result.Exceptions) == 0 {
