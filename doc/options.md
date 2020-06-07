@@ -715,9 +715,9 @@ Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 **Type** | enum
 **Restrictions** | Requires one of these values: "ignore", "warning", "error"
 
-This linter rule specifies the severity of non-whitelisted DEFINER values for stored procedures and functions. Unless set to "ignore", a warning or error will be emitted for any DEFINER not listed in option [allow-definer](#allow-definer).
+This linter rule specifies the severity of non-allowed DEFINER values for stored procedures and functions. Unless set to "ignore", a warning or error will be emitted for any DEFINER not listed in option [allow-definer](#allow-definer).
 
-Although this option defaults to "error" severity, please note that the default value of corresponding option [allow-definer](#allow-definer) is `%@%`, which intentionally permits all possible users. To enforce a restriction on definers, be sure to override [allow-definer](#allow-definer). Overriding [lint-definer](#lint-definer) only controls the *annotation severity* (e.g. warning vs error) for routines with non-whitelisted DEFINER users.
+Although this option defaults to "error" severity, please note that the default value of corresponding option [allow-definer](#allow-definer) is `%@%`, which intentionally permits all possible users. To enforce a restriction on definers, be sure to override [allow-definer](#allow-definer). Overriding [lint-definer](#lint-definer) only controls the *annotation severity* (e.g. warning vs error) for routines with non-allowed DEFINER users.
 
 This option may also affect other object types with definers (e.g. views) once they are supported in a future version of Skeema.
 

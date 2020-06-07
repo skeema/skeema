@@ -65,7 +65,7 @@ func (opts *Options) IsAllowed(ruleName, value string) bool {
 
 // OnlyKeys specifies a list of tengo.ObjectKeys that the linter should
 // operate on. (Objects with keys NOT in this list will be skipped.)
-// Repeated calls to this method add to the existing whitelist.
+// Repeated calls to this method add to the existing allowlist.
 func (opts *Options) OnlyKeys(keys []tengo.ObjectKey) {
 	if opts.onlyKeys == nil {
 		opts.onlyKeys = make(map[tengo.ObjectKey]bool, len(keys))

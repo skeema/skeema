@@ -18,7 +18,7 @@ type Options struct {
 
 // OnlyKeys specifies a list of tengo.ObjectKeys that the dump should
 // operate on. (Objects with keys NOT in this list will be skipped.)
-// Repeated calls to this method add to the existing whitelist.
+// Repeated calls to this method add to the existing allowlist.
 func (opts *Options) OnlyKeys(keys []tengo.ObjectKey) {
 	if opts.onlyKeys == nil {
 		opts.onlyKeys = make(map[tengo.ObjectKey]bool, len(keys))
@@ -29,9 +29,9 @@ func (opts *Options) OnlyKeys(keys []tengo.ObjectKey) {
 }
 
 // IgnoreKeys specifies a list of tengo.ObjectKeys that the dump should
-// ignore. Repeated calls to this method add to the existing blacklist.
-// If the same key was supplied to both OnlyKeys and IgnoreKeys, the latter
-// takes precedence, meaning the object will be skipped.
+// ignore. Repeated calls to this method add to the existing list of ignored
+// keys. If the same key was supplied to both OnlyKeys and IgnoreKeys, the
+// latter takes precedence, meaning the object will be skipped.
 func (opts *Options) IgnoreKeys(keys []tengo.ObjectKey) {
 	if opts.skipKeys == nil {
 		opts.skipKeys = make(map[tengo.ObjectKey]bool, len(keys))
