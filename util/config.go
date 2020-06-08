@@ -235,6 +235,7 @@ func RealConnectOptions(connectOpts string) (string, error) {
 		"allownativepasswords":    true,
 		"allowoldpasswords":       true,
 		"charset":                 true,
+		"checkconnliveness":       true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
 		"clientfoundrows":         true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
 		"collation":               true,
 		"columnswithalias":        true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
@@ -244,6 +245,7 @@ func RealConnectOptions(connectOpts string) (string, error) {
 		"multistatements":         true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
 		"parsetime":               true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
 		"readtimeout":             true,
+		"rejectreadonly":          true,
 		"strict":                  true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
 		"timeout":                 true,
 		"tls":                     true,
