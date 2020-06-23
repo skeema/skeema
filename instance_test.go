@@ -275,15 +275,46 @@ func (s TengoIntegrationSuite) TestInstanceCanSkipBinlog(t *testing.T) {
 		t.Errorf("Error connecting with sql_log_bin=0: %v", err)
 	}
 
-	// Hack up the hydrated grants and confirm the method now returns false
+	// Next, we'll manipulate the value of the hydrated grants. But first defer
+	// a func to nuke the cached grants, to ensure any future tests will re-hydrate
+	// the true value properly.
+	defer func() { s.d.grants = nil }()
+
+	// Empty grants should cause the method to return false
 	s.d.grants = []string{}
 	if s.d.CanSkipBinlog() {
 		t.Error("Expected empty grants to cause CanSkipBinlogs to return false, but it did not")
 	}
 
-	// Clean up previous hack, so that any future tests examining this field will
-	// re-hydrate it
-	s.d.grants = nil
+	// This set of grants should not contain anything causing the method to return true
+	noBinlogSkipGrants := []string{
+		"GRANT USAGE ON *.* TO `foo`@`%`",
+		"GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, RELOAD, SHUTDOWN, PROCESS, FILE, REFERENCES, INDEX, ALTER, SHOW DATABASES, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, REPLICATION SLAVE, REPLICATION CLIENT, CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, CREATE USER, EVENT, TRIGGER, CREATE TABLESPACE, CREATE ROLE, DROP ROLE ON *.* TO `foo`@`%`",
+		"GRANT APPLICATION_PASSWORD_ADMIN,AUDIT_ADMIN,BACKUP_ADMIN,BINLOG_ENCRYPTION_ADMIN,CLONE_ADMIN,CONNECTION_ADMIN,ENCRYPTION_KEY_ADMIN,GROUP_REPLICATION_ADMIN,INNODB_REDO_LOG_ARCHIVE,PERSIST_RO_VARIABLES_ADMIN,REPLICATION_APPLIER,REPLICATION_SLAVE_ADMIN,RESOURCE_GROUP_ADMIN,RESOURCE_GROUP_USER,ROLE_ADMIN,SERVICE_CONNECTION_ADMIN,SET_USER_ID,SYSTEM_USER,TABLE_ENCRYPTION_ADMIN,XA_RECOVER_ADMIN ON *.* TO `foo`@`%`",
+		"GRANT ALL PRIVILEGES ON `blarg`.* TO `foo`@`%`",
+		"GRANT PROXY ON ''@'' TO 'foo'@'%' WITH GRANT OPTION",
+	}
+
+	s.d.grants = noBinlogSkipGrants
+	if s.d.CanSkipBinlog() {
+		t.Fatal("Expected CanSkipBinlogs to return false with only noBinlogSkipGrants, but it did not")
+	}
+
+	// Any of these grants should be sufficient for the method to return true
+	binlogSkipGrants := []string{
+		"GRANT ALL PRIVILEGES ON *.* TO `foo`@`%`",
+		"GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, RELOAD, SHUTDOWN, PROCESS, FILE, REFERENCES, INDEX, ALTER, SHOW DATABASES, SUPER, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, REPLICATION SLAVE, REPLICATION CLIENT, CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, CREATE USER, EVENT, TRIGGER, CREATE TABLESPACE, CREATE ROLE, DROP ROLE ON *.* TO `foo`@`%`",
+		"GRANT APPLICATION_PASSWORD_ADMIN,AUDIT_ADMIN,BACKUP_ADMIN,BINLOG_ADMIN,BINLOG_ENCRYPTION_ADMIN,CLONE_ADMIN,CONNECTION_ADMIN,ENCRYPTION_KEY_ADMIN,GROUP_REPLICATION_ADMIN,INNODB_REDO_LOG_ARCHIVE,PERSIST_RO_VARIABLES_ADMIN,REPLICATION_APPLIER,REPLICATION_SLAVE_ADMIN,RESOURCE_GROUP_ADMIN,RESOURCE_GROUP_USER,ROLE_ADMIN,SERVICE_CONNECTION_ADMIN,SESSION_VARIABLES_ADMIN,SET_USER_ID,SYSTEM_USER,SYSTEM_VARIABLES_ADMIN,TABLE_ENCRYPTION_ADMIN,XA_RECOVER_ADMIN ON *.* TO `foo`@`%`",
+		"GRANT SUPER ON *.* TO 'foo'@'%'",
+	}
+	for n, grant := range binlogSkipGrants {
+		s.d.grants = []string{}
+		s.d.grants = append(s.d.grants, noBinlogSkipGrants...)
+		s.d.grants = append(s.d.grants, grant)
+		if !s.d.CanSkipBinlog() {
+			t.Errorf("Expected binlogSkipGrants[%d] to cause CanSkipBinlogs to return true, but it did not", n)
+		}
+	}
 }
 
 func (s TengoIntegrationSuite) TestInstanceSchemas(t *testing.T) {

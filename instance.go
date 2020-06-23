@@ -254,7 +254,7 @@ func (instance *Instance) hydrateFlavorAndVersion() {
 	instance.flavor = ParseFlavor(versionString, versionComment)
 }
 
-var reSkipBinlog = regexp.MustCompile(`(?:ALL PRIVILEGES|SUPER|SESSION_VARIABLES_ADMIN|SYSTEM_VARIABLES_ADMIN)[,\s]`)
+var reSkipBinlog = regexp.MustCompile(`(?:ALL PRIVILEGES ON \*\.\*|SUPER|SESSION_VARIABLES_ADMIN|SYSTEM_VARIABLES_ADMIN)[,\s]`)
 
 // CanSkipBinlog returns true if instance.User has privileges necessary to
 // set sql_log_bin=0. If an error occurs in checking grants, this method returns
