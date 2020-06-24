@@ -72,7 +72,7 @@ The `SHOW DATABASES` global privilege is recommended. Technically it should be r
 * Skeema does not automatically verify that there is sufficient free disk space to perform an ALTER operation.
 * External online schema change tools can, in theory, be buggy and cause data loss. Skeema does not endorse or guarantee any particular third-party tool.
 * There is no tracking of *in-flight* operations yet. This means in a large production environment where schema changes take a long time to run, it is the user's responsibility to ensure that Skeema is only run from one location in a manner that prevents concurrent execution. This will be improved in future releases.
-* Accidentally running schema changes against a replica directly, instead of the master, may break replication. It is the user's responsibility to ensure that the host and port options in each `.skeema` configuration file point only to masters.
+* Accidentally running Skeema on a replica may break replication. It is the user's responsibility to ensure that the host and port options in each `.skeema` configuration file do not ever point to replicas. Depending on the values of the [workspace](options.md#workspace) and [temp-schema-binlog](options.md#temp-schema-binlog) options, even "read-only" commands such as `skeema diff` or `skeema lint` may be detrimental to replicas that use MySQL's GTID functionality!
 * As with the vast majority of open source software, Skeema is distributed without warranties of any kind. See LICENSE.
 
 ### Unsupported features

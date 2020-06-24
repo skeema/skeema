@@ -17,7 +17,7 @@ Skeema does not implement its own method for online schema changes, but it can b
 
 No. When using the Skeema CLI tool, schema changes only occur when you run `skeema push`.
 
-Separate from the CLI tool, optional products supporting continuous integration and continuous deployment are under development at [Skeema.io](https://www.skeema.io). The CI product is [currently in open beta testing](https://www.skeema.io/ci); it provides automatic linting of GitHub commits and pull requests. A corresponding CD product, providing an agent/daemon that can automatically push *safe* changes when a branch is merged to master, is currently under development.
+Separate from the CLI tool, optional products supporting continuous integration and continuous deployment are under development at [Skeema.io](https://www.skeema.io). The CI product is [currently in open beta testing](https://www.skeema.io/ci); it provides automatic linting of GitHub commits and pull requests. A corresponding CD product, providing an agent/daemon that can automatically push *safe* changes when a pull request is merged, is currently under development.
 
 ### Is it safe?
 
@@ -86,7 +86,7 @@ The brace-wrapped variables will automatically be replaced with appropriate valu
 * The {CLAUSES} variable returns the portion of the DDL statement after the prefix, e.g. everything after `ALTER TABLE table_name `. You can also obtain the full DDL statement via {DDL}.
 * Variable values containing spaces or control characters will be escaped and wrapped in single-quotes, and then the entire command string is passed to `/bin/sh -c`.
 
-Currently this feature only works easily for `pt-online-schema-change`. Integration with `gh-ost` is more challenging, because its recommended execution mode requires passing it a *replica*, not the master; but meanwhile `.skeema` files should only refer to the master, since this is where `CREATE TABLE` and `DROP TABLE` statements need to be run. Similar problems exist with using `fb-osc`, which must be run on the master *and* all replicas individually. Better integration for these tools may be added in the future.
+Currently this feature only works easily for `pt-online-schema-change`. Integration with `gh-ost` is more challenging (but definitely possible), because its recommended execution mode requires passing it a *replica*, not the master; but meanwhile `.skeema` files should only refer to the master, since this is where `CREATE TABLE` and `DROP TABLE` statements need to be run. Similar problems exist with using `fb-osc`, which must be run on the master *and* all replicas individually.
 
 ### How do I force Skeema to use the online DDL from MySQL 5.6+?  (algorithm=inplace, lock=none)?
 

@@ -334,7 +334,7 @@ In addition to setting MySQL session variables, you may also set any of these sp
 * `collation=string` -- Collation used for client-server interaction
 * `maxAllowedPacket=int` -- Max allowed packet size, in bytes
 * `allowCleartextPasswords=bool` -- Allow use of cleartext auth methods such as auth_pam_compat or AWSAuthenticationPlugin; default false
-* `rejectReadOnly=bool` -- Throw an error if db is read-only; default false
+* `rejectReadOnly=bool` -- Reconnect upon a DBaaS returning read-only errors; default false
 * `tls=value` -- Configure SSL usage; value may be preferred (use SSL if available), skip-verify (require SSL), or false (disable SSL); default preferred
 * `readTimeout=duration` -- Query timeout; the value must be a float with a unit suffix ("ms" or "s"); default 20s
 * `timeout=duration` -- Connection timeout; the value must be a float with a unit suffix ("ms" or "s"); default 5s
@@ -579,7 +579,7 @@ For simple sharded environments with a small number of shards, you may optionall
 
 Skeema can optionally integrate with service discovery systems via the [host-wrapper option](#host-wrapper). In this situation, the purpose of [host](#host) changes: instead of specifying a hostname or address, [host](#host) is used for specifying a lookup key, which the service discovery system maps to one or more addresses. The lookup key may be inserted in the external command-line via the `{HOST}` placeholder variable. See the documentation for [host-wrapper](#host-wrapper) for more information. In this configuration [host](#host) should be just a single value, never a comma-separated list; in a sharded environment it is the service discovery system's responsibility to map a single lookup key to multiple addresses when appropriate. If all of your hosts are in the same group of shards and you have no need for a lookup key, you should still set [host](#host) to a placeholder/dummy value in order to indicate that [host-wrapper](#host-wrapper) should be applied to a given directory.
 
-In all cases, the specified host(s) should always be master instances, not replicas.
+In all cases, the specified host(s) should always be writable (master) instances, never replicas.
 
 ### host-wrapper
 
@@ -614,7 +614,7 @@ The command's STDOUT will be split on a consistent delimiter (newline, tab, comm
 
 If ports are omitted, the [port](#port) option is used instead, which defaults to MySQL's standard port 3306.
 
-The external command should only return addresses of master instances, never replicas.
+The external command should only return addresses of writable (master) instances, never replicas.
 
 The [host-wrapper](#host-wrapper) option is designed to be specified generically at a high level directory, such as a .skeema file at the repository root, or perhaps a [global option file](config.md#priority-of-options-set-in-multiple-places). This way, you may specify a single generic service discovery command-line usable across your infrastructure, rather than redundantly configuring a command-line for each database cluster.
 
@@ -1029,7 +1029,7 @@ Commands | diff, push, pull, lint, format
 
 With [workspace=temp-schema](#workspace), this option controls whether or not workspace operations are written to the database's binary log, which means they will be executed on replicas if replication is configured.
 
-If possible, it is generally preferable to avoid replication of workspace queries. The workspace schema is "cleaned up" (dropped in a safe manner) after processing each directory, and typically Skeema should be configured to only interact with master databases anyway, so replicating the workspace queries serves no purpose. However, the ability to selectively skip binary logging requires either the SUPER privilege or (in MySQL 8.0+) the SYSTEM_VARIABLES_ADMIN or SESSION_VARIABLES_ADMIN privileges. These superuser privileges may be unavailable in database-as-a-service environments, such as Amazon RDS.
+If possible, it is generally preferable to avoid replication of workspace queries. The workspace schema is "cleaned up" (dropped in a safe manner) after processing each directory, and typically Skeema should be configured to only interact with writable (master) databases anyway, so replicating the workspace queries serves no purpose. However, the ability to selectively skip binary logging requires either the SUPER privilege or (in MySQL 8.0+) the SYSTEM_VARIABLES_ADMIN or SESSION_VARIABLES_ADMIN privileges. These superuser privileges may be unavailable in database-as-a-service environments, such as Amazon RDS.
 
 With a value of "on", Skeema will not do any special handling for workspace queries, meaning that they **will** be written to the binlog and be executed by replicas. This value is guaranteed to work regardless of user privileges.
 
@@ -1139,6 +1139,7 @@ The containers have the following properties:
 * The container name follows a template based on the image. In the previous example, the container will be called "skeema-percona-5.7".
 * The containerized MySQL instance will only listen on the localhost loopback interface, to ensure that external machines cannot communicate with it. 
 * The containerized MySQL instance will have an empty root password.
+* The vast majority of global variables of the containerized MySQL instance are left at their defaults for the corresponding version/flavor. This may cause divergent behavior if your live databases configure non-default global settings that affect DDL, such as `explicit_defaults_for_timestamp`, `innodb_large_prefix`, `innodb_file_format`, among others. Many of these may be set at the session level via [connect-options](#connect-options); such settings will be used for Skeema's sessions on the workspace container as well as live databases.
 
 Skeema dynamically manages containers as needed: if a container with a specific image is required, but does not currently exist, it will be created on-the-fly. This may take 10-20 seconds upon first use of [workspace=docker](#workspace). By default, the containers remain running after Skeema exits (avoiding the performance hit of subsequent invocations), but this behavior is configurable using the [docker-cleanup](#docker-cleanup) option.
 
