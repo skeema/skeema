@@ -1,6 +1,6 @@
 # Go La Tengo
 
-[![build status](https://img.shields.io/travis/skeema/tengo/master.svg)](http://travis-ci.org/skeema/tengo)
+[![build status](https://img.shields.io/github/workflow/status/skeema/tengo/Tests/main)](https://github.com/skeema/tengo/actions)
 [![code coverage](https://img.shields.io/coveralls/skeema/tengo.svg)](https://coveralls.io/r/skeema/tengo)
 [![godoc](https://img.shields.io/badge/godoc-reference-blue.svg)](https://godoc.org/github.com/skeema/tengo)
 [![latest release](https://img.shields.io/github/release/skeema/tengo.svg)](https://github.com/skeema/tengo/releases)
@@ -31,7 +31,7 @@ Tagged releases are tested against the following databases, all running on Linux
 * Percona Server 5.5, 5.6, 5.7, 8.0
 * MariaDB 10.1, 10.2, 10.3, 10.4
 
-Outside of a tagged release, every commit to the master branch is automatically tested against MySQL 5.6 and 5.7.
+Outside of a tagged release, every commit to the main branch is automatically tested against MySQL 5.6 and 5.7.
 
 ### Unsupported in table diffs
 
