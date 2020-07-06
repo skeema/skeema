@@ -40,6 +40,7 @@ type Options struct {
 	RuleSeverity map[string]Severity
 	RuleConfig   map[string]interface{}
 	IgnoreTable  *regexp.Regexp
+	Flavor       tengo.Flavor
 	onlyKeys     map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
 }
 
@@ -110,6 +111,7 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 	opts := Options{
 		RuleSeverity: make(map[string]Severity),
 		RuleConfig:   make(map[string]interface{}),
+		Flavor:       tengo.NewFlavor(dir.Config.Get("flavor")),
 	}
 
 	var err error

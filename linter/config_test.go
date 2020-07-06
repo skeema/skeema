@@ -26,7 +26,7 @@ func TestOptionsForDir(t *testing.T) {
 
 		expectedIgnoreTable := regexp.MustCompile(`^_`)
 		if !reflect.DeepEqual(expectedIgnoreTable, opts.IgnoreTable) {
-			t.Errorf("IgnoreTable did not match expectation")
+			t.Error("IgnoreTable did not match expectation")
 		}
 
 		expectedAllowList := map[string]string{
@@ -51,6 +51,11 @@ func TestOptionsForDir(t *testing.T) {
 		actualDefinerConfig := opts.RuleConfig["definer"].(definerConfig)
 		if !reflect.DeepEqual(expectedDefinerConfig, actualDefinerConfig) {
 			t.Errorf("definerConfig did not match expectation")
+		}
+
+		// no flavor defined in dir's .skeema
+		if opts.Flavor != tengo.FlavorUnknown {
+			t.Errorf("Flavor did not match expectation: expected %s, found %s", tengo.FlavorUnknown, opts.Flavor)
 		}
 	}
 

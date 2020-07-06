@@ -56,6 +56,11 @@ func (s IntegrationSuite) TestCheckSchema(t *testing.T) {
 	}
 	forceRulesWarning(opts) // regardless of config, set everything to warning
 
+	// There's intentionally no hardcoded flavor value in testdata/validcfg/.skeema
+	// so that we can force the value corresponding to the current Dockerized
+	// test db here
+	opts.Flavor = s.d.Flavor()
+
 	logicalSchema := dir.LogicalSchemas[0]
 	wsOpts, err := workspace.OptionsForDir(dir, s.d.Instance)
 	if err != nil {
