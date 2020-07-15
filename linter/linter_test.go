@@ -76,6 +76,120 @@ func (s IntegrationSuite) TestCheckSchema(t *testing.T) {
 	compareAnnotations(t, expected, result)
 }
 
+// TestCheckSchemaCompression provides additional coverage for code paths and
+// helper functions in check_compression.go.
+func (s IntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
+	dir := getDir(t, "testdata/validcfg")
+	opts, err := OptionsForDir(dir)
+	if err != nil {
+		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
+	}
+	logicalSchema := dir.LogicalSchemas[0]
+	wsOpts, err := workspace.OptionsForDir(dir, s.d.Instance)
+	if err != nil {
+		t.Fatalf("Unexpected error from workspace.OptionsForDir: %v", err)
+	}
+	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
+	if err != nil {
+		t.Fatalf("Unexpected error from workspace.ExecLogicalSchema: %v", err)
+	}
+
+	// Ignore all linters except for the compression one
+	for key := range opts.RuleSeverity {
+		if key != "compression" {
+			opts.RuleSeverity[key] = SeverityIgnore
+		}
+	}
+
+	// Count the InnoDB tables in the dir, for use in computing the expected
+	// warning annotation count below
+	var innoTableCount int
+	for _, tbl := range wsSchema.Tables {
+		if tbl.Engine == "InnoDB" {
+			innoTableCount++
+		}
+	}
+
+	// Perform tests with various permutations of allow-list and flavor, and
+	// confirm the number of annotations matches expectations. Note that the only
+	// compressed tables in the dir are the two in testdata/validcfg/compression.sql;
+	// one uses KEY_BLOCK_SIZE=2, and the other effectively uses 8 by way of
+	// defaulting to half the page size.
+	cases := []struct {
+		allowList            []string
+		flavor               tengo.Flavor
+		expectedWarningCount int
+	}{
+		{[]string{"8kb"}, s.d.Flavor(), innoTableCount - 1},
+		{[]string{"page", "8kb"}, tengo.FlavorMySQL57, innoTableCount - 1},
+		{[]string{"page"}, tengo.FlavorMariaDB103, innoTableCount},
+		{[]string{"none"}, s.d.Flavor(), 2},
+		{[]string{"none", "4kb"}, s.d.Flavor(), 2},
+		{[]string{"none", "4kb", "page"}, s.d.Flavor(), 2},
+		{[]string{"none", "invalid-value"}, s.d.Flavor(), 2},
+		{[]string{"invalid-value"}, s.d.Flavor(), innoTableCount},
+	}
+	for n, c := range cases {
+		opts.RuleConfig["compression"] = c.allowList
+		opts.Flavor = c.flavor
+		result := CheckSchema(wsSchema, opts)
+		if result.WarningCount != c.expectedWarningCount {
+			t.Errorf("cases[%d] expected warning count %d, instead found %d", n, c.expectedWarningCount, result.WarningCount)
+		}
+	}
+
+	// If the Dockerized test instance's Flavor supports page compression, verify
+	// that the regexp used by tableCompressionMode() works properly.
+	// Store a mapping of table name -> expected 2nd return value of tableCompressionMode().
+	var tableExpectedClause map[string]string
+	if s.d.Flavor().MySQLishMinVersion(5, 7) {
+		dir = getDir(t, "testdata/pagecomprmysql")
+		tableExpectedClause = map[string]string{
+			"page_comp_zlib": "COMPRESSION='zlib'",
+			"page_comp_lz4":  "COMPRESSION='lz4'",
+			"page_comp_none": "",
+		}
+	} else if s.d.Flavor().VendorMinVersion(tengo.VendorMariaDB, 10, 2) {
+		dir = getDir(t, "testdata/pagecomprmaria")
+		tableExpectedClause = map[string]string{
+			"page_comp_1":   "`PAGE_COMPRESSED`=1",
+			"page_comp_on":  "`PAGE_COMPRESSED`='on'",
+			"page_comp_0":   "",
+			"page_comp_off": "",
+		}
+	}
+	if tableExpectedClause != nil {
+		logicalSchema := dir.LogicalSchemas[0]
+		wsOpts, err := workspace.OptionsForDir(dir, s.d.Instance)
+		if err != nil {
+			t.Fatalf("Unexpected error from workspace.OptionsForDir: %v", err)
+		}
+		wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
+		if err != nil {
+			t.Fatalf("Unexpected error from workspace.ExecLogicalSchema: %v", err)
+		}
+		if len(wsSchema.Failures) > 0 {
+			t.Fatalf("%d of the CREATEs in %s unexpectedly failed: %+v", len(wsSchema.Failures), dir, wsSchema.Failures)
+		}
+		for _, tbl := range wsSchema.Tables {
+			expectedClause, ok := tableExpectedClause[tbl.Name]
+			if !ok {
+				t.Fatalf("Unexpectedly found table %s in dir %s, not present in tableExpectedClause mapping for flavor %s", tbl.Name, dir, s.d.Flavor())
+			}
+			var expectedMode string
+			if expectedClause == "" {
+				expectedMode = "none"
+			} else {
+				expectedMode = "page"
+			}
+			actualMode, actualClause := tableCompressionMode(tbl)
+			if actualMode != expectedMode || actualClause != expectedClause {
+				t.Errorf("Unexpected return value from tableCompressionMode(%s): got %q,%q; expected %q,%q", tbl.Name, actualMode, actualClause, expectedMode, expectedClause)
+			}
+		}
+	}
+}
+
 func (s *IntegrationSuite) Setup(backend string) (err error) {
 	s.d, err = s.manager.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
 		Name:              fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1)),

@@ -14,10 +14,10 @@ CREATE TABLE `displaywidth` (
   defbigintu bigint unsigned,
 
   -- annotations expected here
-  badtinyint tinyint(2),            /* annotations: display-width */
+  badtinyint tinyint(2),              /* annotations: display-width */
   `badmedintu` mediumint(9) unsigned, /* annotations: display-width */
-  badint    int(100),                  /* annotations: display-width */
-  badbigintu bigint(15) unsigned,   /* annotations: display-width */
+  badint    int(100),                 /* annotations: display-width */
+  badbigintu bigint(15) unsigned,     /* annotations: display-width */
   
   -- confirm special-cases don't generate annotations
   booly bool,
