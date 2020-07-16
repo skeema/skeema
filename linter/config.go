@@ -28,6 +28,9 @@ func AddCommandOptions(cmd *mybase.Command) {
 	cmd.AddOption(mybase.StringOption("errors", 0, "", "Deprecated method of setting multiple linter options to error level").Hidden())
 	for _, r := range rulesByName {
 		opt := mybase.StringOption(r.optionName(), 0, string(r.DefaultSeverity), r.optionDescription())
+		if r.hidden() {
+			opt.Hidden()
+		}
 		cmd.AddOption(opt)
 		if r.RelatedOption != nil {
 			cmd.AddOption(r.RelatedOption)

@@ -3,7 +3,6 @@ package linter
 import (
 	"fmt"
 	"math"
-	"regexp"
 	"strings"
 
 	"github.com/skeema/tengo"
@@ -59,7 +58,6 @@ func autoIncChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 	if matches != nil {                                        // to remove the display width from the type
 		colType = fmt.Sprintf("%s%s", matches[1], matches[3])
 	}
-	re := regexp.MustCompile(fmt.Sprintf(`\b%s\b`, regexp.QuoteMeta(col.Name)))
 
 	// Return a Note if the auto-inc col's type not found in --allow-auto-inc
 	if !opts.IsAllowed("auto-inc", colType) {
@@ -78,7 +76,7 @@ func autoIncChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 			message += "\nIn general, auto_increment columns should use larger int types to avoid risk of integer overflow / exhausting the ID space."
 		}
 		return &Note{
-			LineOffset: FindFirstLineOffset(re, createStatement),
+			LineOffset: FindColumnLineOffset(col, createStatement),
 			Summary:    "Column data type not permitted for auto_increment",
 			Message:    message,
 		}
@@ -92,7 +90,7 @@ func autoIncChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 			col.Name, table.Name, table.NextAutoIncrement, float64(table.NextAutoIncrement)/float64(maxVal)*100.0, colType,
 		)
 		return &Note{
-			LineOffset: FindFirstLineOffset(re, createStatement),
+			LineOffset: FindColumnLineOffset(col, createStatement),
 			Summary:    "Approaching ID exhaustion for auto_increment column",
 			Message:    message,
 		}
