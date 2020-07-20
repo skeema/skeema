@@ -8,7 +8,7 @@ CREATE TABLE widget_counts (
   name varchar(40) NOT NULL,
   cnt int unsigned,
   PRIMARY KEY (name)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 ALTER DATABASE analytics CHARACTER SET utf8 COLLATE utf8_swedish_ci;
 
 CREATE DATABASE archives CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;

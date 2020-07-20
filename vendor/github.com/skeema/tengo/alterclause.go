@@ -395,6 +395,13 @@ func (mc ModifyColumn) Unsafe() bool {
 		return newStringSize < oldStringSize
 	}
 
+	// MariaDB 10.5+ conversions between the new inet6 type and binary(16) are
+	// always safe, as per manual description in
+	// https://mariadb.com/kb/en/inet6/#migration-between-binary16-and-inet6
+	if (oldType == "binary(16)" && newType == "inet6") || (oldType == "inet6" && newType == "binary(16)") {
+		return false
+	}
+
 	// Conversions between variable-length binary types (varbinary, *blob):
 	// unsafe if new size < old size
 	// Note: This logic intentionally does not handle fixed-length binary(x)

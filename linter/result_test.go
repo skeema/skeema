@@ -8,6 +8,7 @@ import (
 
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/skeema/workspace"
+	"github.com/skeema/tengo"
 )
 
 func TestFindFirstLineOffset(t *testing.T) {
@@ -134,9 +135,14 @@ func (s IntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
 	if result.ErrorCount != 2 {
 		t.Fatalf("Expected 2 errors after AnnotateStatementErrors(), instead found %d", result.ErrorCount)
 	}
+	expectBorked1Offset, expectBorked1Rule := 2, "sql-syntax"
+	if s.d.Flavor().VendorMinVersion(tengo.VendorMariaDB, 10, 5) {
+		// MariaDB 10.5+ parser changes result in different error code here
+		expectBorked1Offset, expectBorked1Rule = 0, "sql-4161"
+	}
 	for _, a := range result.Annotations {
 		if a.Severity == SeverityError {
-			if ok := (a.LineOffset == 2 && a.RuleName == "sql-syntax") || (a.LineOffset == 0 && a.RuleName == "sql-1072"); !ok {
+			if ok := (a.LineOffset == expectBorked1Offset && a.RuleName == expectBorked1Rule) || (a.LineOffset == 0 && a.RuleName == "sql-1072"); !ok {
 				t.Errorf("Unexpected annotation: line offset %d, rule name %q, message %q", a.LineOffset, a.RuleName, a.MessageWithLocation())
 			}
 		}

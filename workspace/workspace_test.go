@@ -44,11 +44,7 @@ type WorkspaceIntegrationSuite struct {
 
 func (s WorkspaceIntegrationSuite) TestExecLogicalSchema(t *testing.T) {
 	// Test with just valid CREATE TABLEs
-	dirPath := "../testdata/golden/init/mydb/product"
-	if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
-		dirPath = strings.Replace(dirPath, "golden", "golden-mysql55", 1)
-	}
-	dir := s.getParsedDir(t, dirPath, "")
+	dir := s.getParsedDir(t, "testdata/simple", "")
 	opts, err := OptionsForDir(dir, s.d.Instance)
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
@@ -86,11 +82,7 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchema(t *testing.T) {
 }
 
 func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaErrors(t *testing.T) {
-	dirPath := "../testdata/golden/init/mydb/product"
-	if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
-		dirPath = strings.Replace(dirPath, "golden", "golden-mysql55", 1)
-	}
-	dir := s.getParsedDir(t, dirPath, "")
+	dir := s.getParsedDir(t, "testdata/simple", "")
 	opts, err := OptionsForDir(dir, s.d.Instance)
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
@@ -182,7 +174,7 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaFK(t *testing.T) {
 func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	getOpts := func(cliFlags string) Options {
 		t.Helper()
-		dir := s.getParsedDir(t, "../testdata/golden/init/mydb/product", cliFlags)
+		dir := s.getParsedDir(t, "testdata/simple", cliFlags)
 		opts, err := OptionsForDir(dir, s.d.Instance)
 		if err != nil {
 			t.Fatalf("Unexpected error from OptionsForDir: %s", err)
@@ -191,7 +183,7 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	}
 	assertOptsError := func(cliFlags string) {
 		t.Helper()
-		dir := s.getParsedDir(t, "../testdata/golden/init/mydb/product", cliFlags)
+		dir := s.getParsedDir(t, "testdata/simple", cliFlags)
 		if _, err := OptionsForDir(dir, s.d.Instance); err == nil {
 			t.Errorf("Expected non-nil error from OptionsForDir with CLI flags %s, but err was nil", cliFlags)
 		}
@@ -242,11 +234,7 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 // pre-supplied workspace. This provides a way of using Workspace providers from
 // other packages with ExecLogicalSchema.
 func (s WorkspaceIntegrationSuite) TestPrefab(t *testing.T) {
-	dirPath := "../testdata/golden/init/mydb/product"
-	if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
-		dirPath = strings.Replace(dirPath, "golden", "golden-mysql55", 1)
-	}
-	dir := s.getParsedDir(t, dirPath, "")
+	dir := s.getParsedDir(t, "testdata/simple", "")
 	opts, err := OptionsForDir(dir, s.d.Instance)
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %s", err)

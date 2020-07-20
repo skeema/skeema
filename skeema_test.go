@@ -217,9 +217,9 @@ func (s *SkeemaIntegrationSuite) compareDirs(t *testing.T, a, b *fs.Dir) {
 		t.Fatalf("Dir parse error: %v", b.ParseError)
 	}
 
-	compareDirOptionFiles(t, a, b, s.d.Flavor())
-	compareDirSQLFiles(t, a, b)
-	compareDirLogicalSchemas(t, a, b, s.d.Flavor())
+	s.compareDirOptionFiles(t, a, b)
+	s.compareDirSQLFiles(t, a, b)
+	s.compareDirLogicalSchemas(t, a, b)
 
 	// Compare subdirs and walk them
 	aSubdirs, err := a.Subdirs()
@@ -248,7 +248,7 @@ func (s *SkeemaIntegrationSuite) compareDirs(t *testing.T, a, b *fs.Dir) {
 // option file to look like b; this is to avoid false positives in fields that
 // we expect to differ based solely on the test environment itself (such as the
 // random port number of the Docker container).
-func compareDirOptionFiles(t *testing.T, a, b *fs.Dir, flavor tengo.Flavor) {
+func (s *SkeemaIntegrationSuite) compareDirOptionFiles(t *testing.T, a, b *fs.Dir) {
 	t.Helper()
 	if (a.OptionFile == nil && b.OptionFile != nil) || (a.OptionFile != nil && b.OptionFile == nil) {
 		t.Errorf("Presence of option files does not match between %s and %s", a, b)
@@ -269,7 +269,21 @@ func compareDirOptionFiles(t *testing.T, a, b *fs.Dir, flavor tengo.Flavor) {
 		}
 		// Force flavor of a to match the DockerizedInstance's flavor
 		for _, section := range a.OptionFile.SectionsWithOption("flavor") {
-			a.OptionFile.SetOptionValue(section, "flavor", flavor.Family().String())
+			a.OptionFile.SetOptionValue(section, "flavor", s.d.Flavor().Family().String())
+		}
+		// Force charset/collation to match the DockerizedInstance's defaults, where requested
+		if sectionsWithSchema := a.OptionFile.SectionsWithOption("schema"); len(sectionsWithSchema) > 0 {
+			instDefCharSet, instDefCollation, err := s.d.DefaultCharSetAndCollation()
+			if err != nil {
+				t.Fatalf("Unexpected error querying Dockerized instance's default charset/collation: %v", err)
+			}
+			for _, section := range sectionsWithSchema {
+				a.OptionFile.UseSection(section)
+				if fileCharSet, ok := a.OptionFile.OptionValue("default-character-set"); ok && fileCharSet[0] == '{' {
+					a.OptionFile.SetOptionValue(section, "default-character-set", instDefCharSet)
+					a.OptionFile.SetOptionValue(section, "default-collation", instDefCollation)
+				}
+			}
 		}
 
 		if !a.OptionFile.SameContents(b.OptionFile) {
@@ -283,7 +297,7 @@ func compareDirOptionFiles(t *testing.T, a, b *fs.Dir, flavor tengo.Flavor) {
 // compareDirSQLFiles compares the existence of *.sql files between dirs a and
 // b. Does not compare the actual file contents, which is instead handled by
 // compareDirLogicalSchemas.
-func compareDirSQLFiles(t *testing.T, a, b *fs.Dir) {
+func (s *SkeemaIntegrationSuite) compareDirSQLFiles(t *testing.T, a, b *fs.Dir) {
 	t.Helper()
 	if len(a.SQLFiles) != len(b.SQLFiles) {
 		t.Errorf("Differing count of *.sql files between %s and %s", a, b)
@@ -302,7 +316,7 @@ var reDisplayWidth = regexp.MustCompile(`(tinyint|smallint|mediumint|int|bigint)
 // should be the expected (golden) dir, and b the dir generated from the logic
 // being tested. Some flavor-specific adjustments are automatically made to the
 // statements in a.
-func compareDirLogicalSchemas(t *testing.T, a, b *fs.Dir, flavor tengo.Flavor) {
+func (s *SkeemaIntegrationSuite) compareDirLogicalSchemas(t *testing.T, a, b *fs.Dir) {
 	t.Helper()
 	if len(a.LogicalSchemas) != len(b.LogicalSchemas) {
 		t.Errorf("Mismatch between count of parsed logical schemas: %s=%d vs %s=%d", a, len(a.LogicalSchemas), b, len(b.LogicalSchemas))
@@ -311,6 +325,7 @@ func compareDirLogicalSchemas(t *testing.T, a, b *fs.Dir, flavor tengo.Flavor) {
 		if len(aCreates) != len(bCreates) {
 			t.Errorf("Mismatch in CREATE count: %s=%d, %s=%d", a, len(aCreates), b, len(bCreates))
 		} else {
+			flavor := s.d.Flavor()
 			for key, aStmt := range aCreates {
 				bStmt := bCreates[key]
 				aText, bText := aStmt.Text, bStmt.Text

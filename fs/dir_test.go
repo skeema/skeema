@@ -14,7 +14,7 @@ import (
 )
 
 func TestParseDir(t *testing.T) {
-	dir := getDir(t, "../testdata/golden/init/mydb/product")
+	dir := getDir(t, "testdata/host/db")
 	if dir.Config.Get("default-collation") != "latin1_swedish_ci" {
 		t.Errorf("dir.Config not working as expected; default-collation is %s", dir.Config.Get("default-collation"))
 	}

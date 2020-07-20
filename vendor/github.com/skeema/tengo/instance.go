@@ -254,7 +254,13 @@ func (instance *Instance) hydrateFlavorAndVersion() {
 	instance.flavor = ParseFlavor(versionString, versionComment)
 }
 
-var reSkipBinlog = regexp.MustCompile(`(?:ALL PRIVILEGES ON \*\.\*|SUPER|SESSION_VARIABLES_ADMIN|SYSTEM_VARIABLES_ADMIN)[,\s]`)
+// Regular expression defining privileges that allow use of setting session
+// variable sql_log_bin. Note that SESSION_VARIABLES_ADMIN and
+// SYSTEM_VARIABLES_ADMIN are from MySQL 8.0+. Meanwhile BINLOG ADMIN is from
+// MariaDB 10.5+ as per https://jira.mariadb.org/browse/MDEV-21957; note the
+// space in the name (not to be confused with BINLOG_ADMIN with an underscore,
+// which is a MySQL 8.0 privilege which does NOT control sql_log_bin!)
+var reSkipBinlog = regexp.MustCompile(`(?:ALL PRIVILEGES ON \*\.\*|SUPER|SESSION_VARIABLES_ADMIN|SYSTEM_VARIABLES_ADMIN|BINLOG ADMIN)[,\s]`)
 
 // CanSkipBinlog returns true if instance.User has privileges necessary to
 // set sql_log_bin=0. If an error occurs in checking grants, this method returns
