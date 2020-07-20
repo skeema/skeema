@@ -105,6 +105,8 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		{"tinyblob", "longtext"},
 		{"binary(5)", "binary(10)"},
 		{"bit(10)", "bit(9)"},
+		{"binary(17)", "inet6"},
+		{"inet6", "varbinary(16)"},
 	}
 	for _, types := range expectUnsafe {
 		assertUnsafe(types[0], types[1], true)
@@ -143,6 +145,8 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		{"varchar(200)", "tinytext"},
 		{"char(30)", "varchar(30)"},
 		{"bit(10)", "bit(11)"},
+		{"binary(16)", "inet6"},
+		{"inet6", "binary(16)"},
 	}
 	for _, types := range expectSafe {
 		assertUnsafe(types[0], types[1], false)

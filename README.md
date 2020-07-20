@@ -29,7 +29,7 @@ Tagged releases are tested against the following databases, all running on Linux
 
 * MySQL 5.5, 5.6, 5.7, 8.0
 * Percona Server 5.5, 5.6, 5.7, 8.0
-* MariaDB 10.1, 10.2, 10.3, 10.4
+* MariaDB 10.1, 10.2, 10.3, 10.4, 10.5
 
 Outside of a tagged release, every commit to the main branch is automatically tested against MySQL 5.6 and 5.7.
 

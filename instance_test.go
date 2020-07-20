@@ -224,6 +224,7 @@ func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
 		"mariadb:10.2": FlavorMariaDB102,
 		"mariadb:10.3": FlavorMariaDB103,
 		"mariadb:10.4": FlavorMariaDB104,
+		"mariadb:10.5": FlavorMariaDB105,
 	}
 
 	// Determine expected Flavor value of the Dockerized instance being tested
@@ -244,7 +245,7 @@ func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
 		}
 	}
 	if expected == FlavorUnknown {
-		t.Skip("No image map defined for", s.d.Image)
+		t.Skip("SKIPPING TEST - no image map defined for", s.d.Image)
 	}
 	if actualFlavor := s.d.Flavor().Family(); actualFlavor != expected {
 		t.Errorf("Expected image=%s to yield flavor=%s, instead found %s", s.d.Image, expected, actualFlavor)
