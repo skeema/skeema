@@ -13,6 +13,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go/build"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -21,44 +22,59 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"golang.org/x/tools/cover"
+	"golang.org/x/tools/go/buildutil"
 )
 
 /*
 	https://coveralls.io/docs/api_reference
 */
 
+// Flags are extra flags to the tests
 type Flags []string
 
+// String implements flag.Value interface.
 func (a *Flags) String() string {
 	return strings.Join(*a, ",")
 }
 
+// Set implements flag.Value interface.
 func (a *Flags) Set(value string) error {
 	*a = append(*a, value)
 	return nil
 }
 
 var (
-	extraFlags Flags
-	pkg        = flag.String("package", "", "Go package")
-	verbose    = flag.Bool("v", false, "Pass '-v' argument to 'go test' and output to stdout")
-	race       = flag.Bool("race", false, "Pass '-race' argument to 'go test'")
-	debug      = flag.Bool("debug", false, "Enable debug output")
-	coverprof  = flag.String("coverprofile", "", "If supplied, use a go cover profile (comma separated)")
-	covermode  = flag.String("covermode", "count", "sent as covermode argument to go test")
-	repotoken  = flag.String("repotoken", os.Getenv("COVERALLS_TOKEN"), "Repository Token on coveralls")
-	parallel   = flag.Bool("parallel", os.Getenv("COVERALLS_PARALLEL") != "", "Submit as parallel")
-	endpoint   = flag.String("endpoint", "https://coveralls.io", "Hostname to submit Coveralls data to")
-	service    = flag.String("service", "travis-ci", "The CI service or other environment in which the test suite was run. ")
-	shallow    = flag.Bool("shallow", false, "Shallow coveralls internal server errors")
-	ignore     = flag.String("ignore", "", "Comma separated files to ignore")
-	insecure   = flag.Bool("insecure", false, "Set insecure to skip verification of certificates")
-	show       = flag.Bool("show", false, "Show which package is being tested")
+	extraFlags  Flags
+	pkg         = flag.String("package", "", "Go package")
+	verbose     = flag.Bool("v", false, "Pass '-v' argument to 'go test' and output to stdout")
+	race        = flag.Bool("race", false, "Pass '-race' argument to 'go test'")
+	debug       = flag.Bool("debug", false, "Enable debug output")
+	coverprof   = flag.String("coverprofile", "", "If supplied, use a go cover profile (comma separated)")
+	covermode   = flag.String("covermode", "count", "sent as covermode argument to go test")
+	repotoken   = flag.String("repotoken", os.Getenv("COVERALLS_TOKEN"), "Repository Token on coveralls")
+	reponame    = flag.String("reponame", "", "Repository name")
+	parallel    = flag.Bool("parallel", os.Getenv("COVERALLS_PARALLEL") != "", "Submit as parallel")
+	endpoint    = flag.String("endpoint", "https://coveralls.io", "Hostname to submit Coveralls data to")
+	service     = flag.String("service", "", "The CI service or other environment in which the test suite was run. ")
+	shallow     = flag.Bool("shallow", false, "Shallow coveralls internal server errors")
+	ignore      = flag.String("ignore", "", "Comma separated files to ignore")
+	insecure    = flag.Bool("insecure", false, "Set insecure to skip verification of certificates")
+	show        = flag.Bool("show", false, "Show which package is being tested")
+	customJobID = flag.String("jobid", "", "Custom set job token")
+	jobNumber   = flag.String("jobnumber", "", "Custom set job number")
+	flagName    = flag.String("flagname", os.Getenv("COVERALLS_FLAG_NAME"), "Job flag name, e.g. \"Unit\", \"Functional\", or \"Integration\". Will be shown in the Coveralls UI.")
+
+	parallelFinish = flag.Bool("parallel-finish", false, "finish parallel test")
 )
+
+func init() {
+	flag.Var((*buildutil.TagsFlag)(&build.Default.BuildTags), "tags", buildutil.TagsFlagDoc)
+}
 
 // usage supplants package flag's Usage variable
 var usage = func() {
@@ -80,9 +96,11 @@ type SourceFile struct {
 // A Job represents the coverage data from a single run of a test suite.
 type Job struct {
 	RepoToken          *string       `json:"repo_token,omitempty"`
-	ServiceJobId       string        `json:"service_job_id"`
+	ServiceJobID       string        `json:"service_job_id"`
+	ServiceJobNumber   string        `json:"service_job_number,omitempty"`
 	ServicePullRequest string        `json:"service_pull_request,omitempty"`
 	ServiceName        string        `json:"service_name"`
+	FlagName           string        `json:"flag_name,omitempty"`
 	SourceFiles        []*SourceFile `json:"source_files"`
 	Parallel           *bool         `json:"parallel,omitempty"`
 	Git                *Git          `json:"git,omitempty"`
@@ -96,7 +114,12 @@ type Response struct {
 	Error   bool   `json:"error"`
 }
 
-// getPkgs returns packages for mesuring coverage. Returned packages doesn't
+// A WebHookResponse is returned by the Coveralls.io WebHook.
+type WebHookResponse struct {
+	Done bool `json:"done"`
+}
+
+// getPkgs returns packages for measuring coverage. Returned packages doesn't
 // contain vendor packages.
 func getPkgs(pkg string) ([]string, error) {
 	if pkg == "" {
@@ -202,12 +225,56 @@ func findRepositoryRoot(dir string) (string, bool) {
 }
 
 func getCoverallsSourceFileName(name string) string {
-	if dir, ok := findRepositoryRoot(name); !ok {
-		return name
-	} else {
-		filename := strings.TrimPrefix(name, dir+string(os.PathSeparator))
-		return filename
+	if dir, ok := findRepositoryRoot(name); ok {
+		name = strings.TrimPrefix(name, dir+string(os.PathSeparator))
 	}
+	return filepath.ToSlash(name)
+}
+
+// processParallelFinish notifies coveralls that all jobs are completed
+// ref. https://docs.coveralls.io/parallel-build-webhook
+func processParallelFinish(jobID, token string) error {
+	var name string
+	if reponame != nil && *reponame != "" {
+		name = *reponame
+	} else if s := os.Getenv("GITHUB_REPOSITORY"); s != "" {
+		name = s
+	}
+
+	params := make(url.Values)
+	params.Set("repo_token", token)
+	params.Set("repo_name", name)
+	params.Set("payload[build_num]", jobID)
+	params.Set("payload[status]", "done")
+	res, err := http.PostForm(*endpoint+"/webhook", params)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	bodyBytes, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return fmt.Errorf("Unable to read response body from coveralls: %s", err)
+	}
+
+	if res.StatusCode >= http.StatusInternalServerError && *shallow {
+		fmt.Println("coveralls server failed internally")
+		return nil
+	}
+
+	if res.StatusCode != 200 {
+		return fmt.Errorf("Bad response status from coveralls: %d\n%s", res.StatusCode, bodyBytes)
+	}
+
+	var response WebHookResponse
+	if err = json.Unmarshal(bodyBytes, &response); err != nil {
+		return fmt.Errorf("Unable to unmarshal response JSON from coveralls: %s\n%s", err, bodyBytes)
+	}
+
+	if !response.Done {
+		return fmt.Errorf("jobs are not completed:\n%s", bodyBytes)
+	}
+
+	return nil
 }
 
 func process() error {
@@ -247,26 +314,45 @@ func process() error {
 	//
 	// Initialize Job
 	//
-	var jobId string
-	if travisJobId := os.Getenv("TRAVIS_JOB_ID"); travisJobId != "" {
-		jobId = travisJobId
-	} else if circleCiJobId := os.Getenv("CIRCLE_BUILD_NUM"); circleCiJobId != "" {
-		jobId = circleCiJobId
-	} else if appveyorJobId := os.Getenv("APPVEYOR_JOB_ID"); appveyorJobId != "" {
-		jobId = appveyorJobId
-	} else if semaphoreJobId := os.Getenv("SEMAPHORE_BUILD_NUMBER"); semaphoreJobId != "" {
-		jobId = semaphoreJobId
-	} else if jenkinsJobId := os.Getenv("BUILD_NUMBER"); jenkinsJobId != "" {
-		jobId = jenkinsJobId
+
+	// flags are never nil, so no nil check needed
+	githubEvent := getGithubEvent()
+	var jobID string
+	if *customJobID != "" {
+		jobID = *customJobID
+	} else if ServiceJobID := os.Getenv("COVERALLS_SERVICE_JOB_ID"); ServiceJobID != "" {
+		jobID = ServiceJobID
+	} else if travisjobID := os.Getenv("TRAVIS_JOB_ID"); travisjobID != "" {
+		jobID = travisjobID
+	} else if circleCIJobID := os.Getenv("CIRCLE_BUILD_NUM"); circleCIJobID != "" {
+		jobID = circleCIJobID
+	} else if appveyorJobID := os.Getenv("APPVEYOR_JOB_ID"); appveyorJobID != "" {
+		jobID = appveyorJobID
+	} else if semaphorejobID := os.Getenv("SEMAPHORE_BUILD_NUMBER"); semaphorejobID != "" {
+		jobID = semaphorejobID
+	} else if jenkinsjobID := os.Getenv("BUILD_NUMBER"); jenkinsjobID != "" {
+		jobID = jenkinsjobID
+	} else if buildID := os.Getenv("BUILDKITE_BUILD_ID"); buildID != "" {
+		jobID = buildID
 	} else if droneBuildNumber := os.Getenv("DRONE_BUILD_NUMBER"); droneBuildNumber != "" {
-		jobId = droneBuildNumber
+		jobID = droneBuildNumber
 	} else if buildkiteBuildNumber := os.Getenv("BUILDKITE_BUILD_NUMBER"); buildkiteBuildNumber != "" {
-		jobId = buildkiteBuildNumber
+		jobID = buildkiteBuildNumber
+	} else if codeshipjobID := os.Getenv("CI_BUILD_ID"); codeshipjobID != "" {
+		jobID = codeshipjobID
+	} else if githubRunID := os.Getenv("GITHUB_RUN_ID"); githubRunID != "" {
+		jobID = githubRunID
+	}
+
+	if *parallelFinish {
+		return processParallelFinish(jobID, *repotoken)
 	}
 
 	if *repotoken == "" {
 		repotoken = nil // remove the entry from json
 	}
+
+	head := "HEAD"
 	var pullRequest string
 	if prNumber := os.Getenv("CIRCLE_PR_NUMBER"); prNumber != "" {
 		// for Circle CI (pull request from forked repo)
@@ -280,10 +366,25 @@ func process() error {
 		pullRequest = prNumber
 	} else if prNumber := os.Getenv("PULL_REQUEST_NUMBER"); prNumber != "" {
 		pullRequest = prNumber
+	} else if prNumber := os.Getenv("BUILDKITE_PULL_REQUEST"); prNumber != "" {
+		pullRequest = prNumber
 	} else if prNumber := os.Getenv("DRONE_PULL_REQUEST"); prNumber != "" {
 		pullRequest = prNumber
 	} else if prNumber := os.Getenv("BUILDKITE_PULL_REQUEST"); prNumber != "" {
 		pullRequest = prNumber
+	} else if prNumber := os.Getenv("CI_PR_NUMBER"); prNumber != "" {
+		pullRequest = prNumber
+	} else if os.Getenv("GITHUB_EVENT_NAME") == "pull_request" {
+		number := githubEvent["number"].(float64)
+		pullRequest = strconv.Itoa(int(number))
+
+		ghPR := githubEvent["pull_request"].(map[string]interface{})
+		ghHead := ghPR["head"].(map[string]interface{})
+		head = ghHead["sha"].(string)
+	}
+
+	if *service == "" && os.Getenv("TRAVIS_JOB_ID") != "" {
+		*service = "travis-ci"
 	}
 
 	sourceFiles, err := getCoverage()
@@ -296,16 +397,18 @@ func process() error {
 		RepoToken:          repotoken,
 		ServicePullRequest: pullRequest,
 		Parallel:           parallel,
-		Git:                collectGitInfo(),
+		Git:                collectGitInfo(head),
 		SourceFiles:        sourceFiles,
 		ServiceName:        *service,
+		FlagName:           *flagName,
 	}
 
 	// Only include a job ID if it's known, otherwise, Coveralls looks
 	// for the job and can't find it.
-	if jobId != "" {
-		j.ServiceJobId = jobId
+	if jobID != "" {
+		j.ServiceJobID = jobID
 	}
+	j.ServiceJobNumber = *jobNumber
 
 	// Ignore files
 	if len(*ignore) > 0 {
@@ -374,6 +477,30 @@ func process() error {
 	fmt.Println(response.Message)
 	fmt.Println(response.URL)
 	return nil
+}
+
+func getGithubEvent() map[string]interface{} {
+	jsonFilePath := os.Getenv("GITHUB_EVENT_PATH")
+	if jsonFilePath == "" {
+		return nil
+	}
+
+	jsonFile, err := os.Open(jsonFilePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer jsonFile.Close()
+
+	jsonByte, _ := ioutil.ReadAll(jsonFile)
+
+	// unmarshal the json into a release event
+	var event map[string]interface{}
+	err = json.Unmarshal(jsonByte, &event)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return event
 }
 
 func main() {

@@ -6,15 +6,14 @@ require (
 	github.com/VividCortex/mysqlerr v0.0.0-20170204212430-6c6b55f8796f
 	github.com/alecthomas/participle v0.3.0
 	github.com/jmoiron/sqlx v1.2.0
-	github.com/mattn/goveralls v0.0.3-0.20190605103025-4d9899298d21
+	github.com/mattn/goveralls v0.0.6
 	github.com/mitchellh/go-wordwrap v1.0.0
 	github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
 	github.com/opencontainers/runc v1.0.0-rc5 // indirect
 	github.com/sirupsen/logrus v1.4.2
 	github.com/skeema/mybase v1.0.9
 	github.com/skeema/tengo v0.9.5-0.20200720192026-3f4cd9ae077a
-	golang.org/x/crypto v0.0.0-20190701094942-4def268fd1a4
+	golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550
 	golang.org/x/lint v0.0.0-20190409202823-959b441ac422
-	golang.org/x/sync v0.0.0-20190423024810-112230192c58
-	golang.org/x/tools v0.0.0-20190903163617-be0da057c5e3 // indirect
+	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
 )
