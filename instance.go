@@ -952,6 +952,11 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			Comment:       rawColumn.Comment,
 			Invisible:     strings.Contains(rawColumn.Extra, "INVISIBLE"),
 		}
+		if pos := strings.Index(col.TypeInDB, " /*!100301 COMPRESSED"); pos > -1 {
+			// MariaDB includes compression attribute in column type; remove it
+			col.Compression = "COMPRESSED"
+			col.TypeInDB = col.TypeInDB[0:pos]
+		}
 		if rawColumn.GenerationExpr.Valid {
 			col.GenerationExpr = rawColumn.GenerationExpr.String
 			col.Virtual = strings.Contains(rawColumn.Extra, "VIRTUAL GENERATED")
@@ -1247,7 +1252,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			// vs post-8.0, and cols that aren't using a COMPRESSION_DICTIONARY are not
 			// even present there.)
 			if flavor.VendorMinVersion(VendorPercona, 5, 6, 33) && strings.Contains(t.CreateStatement, "COLUMN_FORMAT COMPRESSED") {
-				fixColumnCompression(t)
+				fixPerconaColCompression(t)
 			}
 			// FULLTEXT indexes may have a PARSER clause, which isn't exposed in I_S
 			if strings.Contains(t.CreateStatement, "WITH PARSER") {
@@ -1417,19 +1422,19 @@ func fixPartitioningEdgeCases(t *Table, flavor Flavor) {
 	}
 }
 
-var reColumnCompressionLine = regexp.MustCompile("^\\s+`((?:[^`]|``)+)` .* /\\*!50633 COLUMN_FORMAT ([^*]+) \\*/")
+var rePerconaColCompressionLine = regexp.MustCompile("^\\s+`((?:[^`]|``)+)` .* /\\*!50633 COLUMN_FORMAT (COMPRESSED[^*]*) \\*/")
 
-// fixColumnCompression parses the table's CREATE string in order to populate
-// Column.ColumnFormat for columns that are using Percona Server's column
-// compression feature.
-func fixColumnCompression(t *Table) {
+// fixPerconaColCompression parses the table's CREATE string in order to
+// populate Column.Compression for columns that are using Percona Server's
+// column compression feature, which isn't reflected in information_schema.
+func fixPerconaColCompression(t *Table) {
 	colsByName := t.ColumnsByName()
 	for _, line := range strings.Split(t.CreateStatement, "\n") {
-		matches := reColumnCompressionLine.FindStringSubmatch(line)
+		matches := rePerconaColCompressionLine.FindStringSubmatch(line)
 		if matches == nil {
 			continue
 		}
-		colsByName[matches[1]].ColumnFormat = matches[2]
+		colsByName[matches[1]].Compression = matches[2]
 	}
 }
 

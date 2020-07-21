@@ -807,6 +807,31 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 			t.Errorf("Expected index %s to be BTREE with no parser, instead found type=%s / parser=%s", idx.Name, idx.Type, idx.FullTextParser)
 		}
 	}
+
+	// Coverage for column compression
+	if flavor.VendorMinVersion(VendorPercona, 5, 6, 33) {
+		if _, err := s.d.SourceSQL("testdata/colcompression-percona.sql"); err != nil {
+			t.Fatalf("Unexpected error sourcing testdata/colcompression-percona.sql: %v", err)
+		}
+		table := s.GetTable(t, "testing", "colcompr")
+		if table.UnsupportedDDL {
+			t.Errorf("Expected table using column compression to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
+		}
+		if table.Columns[1].Compression != "COMPRESSED" {
+			t.Errorf("Unexpected value for compression column attribute: found %q", table.Columns[1].Compression)
+		}
+	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 3) {
+		if _, err := s.d.SourceSQL("testdata/colcompression-maria.sql"); err != nil {
+			t.Fatalf("Unexpected error sourcing testdata/colcompression-maria.sql: %v", err)
+		}
+		table := s.GetTable(t, "testing", "colcompr")
+		if table.UnsupportedDDL {
+			t.Errorf("Expected table using column compression to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
+		}
+		if table.Columns[1].Compression != "COMPRESSED" {
+			t.Errorf("Unexpected value for compression column attribute: found %q", table.Columns[1].Compression)
+		}
+	}
 }
 
 func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
@@ -938,30 +963,40 @@ func (s TengoIntegrationSuite) TestInstanceStrictModeCompliant(t *testing.T) {
 	assertCompliance(expect)
 }
 
-// TestFixColumnCompression confirms that CREATE TABLE parsing for Percona
-// Server's compressed column feature works properly.
-func TestFixColumnCompression(t *testing.T) {
+// TestColumnCompression confirms that various logic around compressed columns
+// in Percona Server and MariaDB work properly. The syntax and functionality
+// differs between these two vendors, and meanwhile MySQL has no equivalent
+// feature yet at all.
+func TestColumnCompression(t *testing.T) {
 	table := supportedTableForFlavor(FlavorPercona57)
-	if table.Columns[3].Name != "metadata" || table.Columns[3].ColumnFormat != "" {
+	if table.Columns[3].Name != "metadata" || table.Columns[3].Compression != "" {
 		t.Fatal("Test fixture has changed without corresponding update to this test's logic")
 	}
 
 	table.CreateStatement = strings.Replace(table.CreateStatement, "`metadata` text", "`metadata` text /*!50633 COLUMN_FORMAT COMPRESSED */", 1)
-	fixColumnCompression(&table)
-	if table.Columns[3].ColumnFormat != "COMPRESSED" {
-		t.Errorf("Expected column's format to be %q, instead found %q", "COMPRESSED", table.Columns[3].ColumnFormat)
+	fixPerconaColCompression(&table)
+	if table.Columns[3].Compression != "COMPRESSED" {
+		t.Errorf("Expected column's compression to be %q, instead found %q", "COMPRESSED", table.Columns[3].Compression)
 	}
 	if table.GeneratedCreateStatement(FlavorPercona57) != table.CreateStatement {
 		t.Errorf("Unexpected mismatch in generated CREATE TABLE:\nGeneratedCreateStatement:\n%s\nCreateStatement:\n%s", table.GeneratedCreateStatement(FlavorPercona57), table.CreateStatement)
 	}
 
 	table.CreateStatement = strings.Replace(table.CreateStatement, "COMPRESSED */", "COMPRESSED WITH COMPRESSION_DICTIONARY `foobar` */", 1)
-	fixColumnCompression(&table)
-	if table.Columns[3].ColumnFormat != "COMPRESSED WITH COMPRESSION_DICTIONARY `foobar`" {
-		t.Errorf("Expected column's format to be %q, instead found %q", "COMPRESSED WITH COMPRESSION_DICTIONARY `foobar`", table.Columns[3].ColumnFormat)
+	fixPerconaColCompression(&table)
+	if table.Columns[3].Compression != "COMPRESSED WITH COMPRESSION_DICTIONARY `foobar`" {
+		t.Errorf("Expected column's compression to be %q, instead found %q", "COMPRESSED WITH COMPRESSION_DICTIONARY `foobar`", table.Columns[3].Compression)
 	}
 	if table.GeneratedCreateStatement(FlavorPercona57) != table.CreateStatement {
 		t.Errorf("Unexpected mismatch in generated CREATE TABLE:\nGeneratedCreateStatement:\n%s\nCreateStatement:\n%s", table.GeneratedCreateStatement(FlavorPercona57), table.CreateStatement)
+	}
+
+	// Now indirectly test Column.Definition() for MariaDB
+	table = supportedTableForFlavor(FlavorMariaDB103)
+	table.CreateStatement = strings.Replace(table.CreateStatement, "`metadata` text", "`metadata` text /*!100301 COMPRESSED*/", 1)
+	table.Columns[3].Compression = "COMPRESSED"
+	if table.GeneratedCreateStatement(FlavorMariaDB103) != table.CreateStatement {
+		t.Errorf("Unexpected mismatch in generated CREATE TABLE:\nGeneratedCreateStatement:\n%s\nCreateStatement:\n%s", table.GeneratedCreateStatement(FlavorMariaDB103), table.CreateStatement)
 	}
 }
 
