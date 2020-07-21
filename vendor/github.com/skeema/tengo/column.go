@@ -18,7 +18,7 @@ type Column struct {
 	CharSet            string `json:"charSet,omitempty"`            // Only populated if textual type
 	Collation          string `json:"collation,omitempty"`          // Only populated if textual type
 	CollationIsDefault bool   `json:"collationIsDefault,omitempty"` // Only populated if textual type; indicates default for CharSet
-	ColumnFormat       string `json:"columnFormat,omitempty"`       // Only non-empty if using Percona Server column compression
+	Compression        string `json:"compression,omitempty"`        // Only non-empty if using column compression in Percona Server or MariaDB
 	Comment            string `json:"comment,omitempty"`
 	Invisible          bool   `json:"invisible,omitempty"` // True if a MariaDB 10.3+ invisible column
 }
@@ -28,7 +28,11 @@ type Column struct {
 // SET clause to be omitted if the table and column have the same *collation*
 // (mirroring the specific display logic used by SHOW CREATE TABLE)
 func (c *Column) Definition(flavor Flavor, table *Table) string {
-	var charSet, collation, generated, nullability, visibility, autoIncrement, defaultValue, onUpdate, colFormat, comment string
+	var compression, charSet, collation, generated, nullability, visibility, autoIncrement, defaultValue, onUpdate, colFormat, comment string
+	if c.Compression != "" && flavor.Vendor == VendorMariaDB {
+		// MariaDB puts compression modifiers in a different place than Percona Server
+		compression = fmt.Sprintf(" /*!100301 %s*/", c.Compression)
+	}
 	if c.CharSet != "" && (table == nil || c.Collation != table.Collation || c.CharSet != table.CharSet) {
 		charSet = fmt.Sprintf(" CHARACTER SET %s", c.CharSet)
 	}
@@ -62,14 +66,14 @@ func (c *Column) Definition(flavor Flavor, table *Table) string {
 	if c.OnUpdate != "" {
 		onUpdate = fmt.Sprintf(" ON UPDATE %s", c.OnUpdate)
 	}
-	if c.ColumnFormat != "" {
-		colFormat = fmt.Sprintf(" /*!50633 COLUMN_FORMAT %s */", c.ColumnFormat)
+	if c.Compression != "" && flavor.Vendor == VendorPercona {
+		colFormat = fmt.Sprintf(" /*!50633 COLUMN_FORMAT %s */", c.Compression)
 	}
 	if c.Comment != "" {
 		comment = fmt.Sprintf(" COMMENT '%s'", EscapeValueForCreateTable(c.Comment))
 	}
 	clauses := []string{
-		EscapeIdentifier(c.Name), " ", c.TypeInDB, charSet, collation, generated, nullability, visibility, autoIncrement, defaultValue, onUpdate, colFormat, comment,
+		EscapeIdentifier(c.Name), " ", c.TypeInDB, compression, charSet, collation, generated, nullability, visibility, autoIncrement, defaultValue, onUpdate, colFormat, comment,
 	}
 	return strings.Join(clauses, "")
 }
