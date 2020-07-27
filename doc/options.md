@@ -6,6 +6,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 
 * [allow-auto-inc](#allow-auto-inc)
 * [allow-charset](#allow-charset)
+* [allow-compression](#allow-compression)
 * [allow-definer](#allow-definer)
 * [allow-engine](#allow-engine)
 * [allow-unsafe](#allow-unsafe)
@@ -39,6 +40,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 * [lint](#lint)
 * [lint-auto-inc](#lint-auto-inc)
 * [lint-charset](#lint-charset)
+* [lint-compression](#lint-compression)
 * [lint-definer](#lint-definer)
 * [lint-display-width](#lint-display-width)
 * [lint-dupe-index](#lint-dupe-index)
@@ -101,6 +103,30 @@ Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
 This option specifies which character sets are permitted by Skeema's linter. This option only has an effect if [lint-charset](#lint-charset) is set to "warning" (the default) or "error". If so, a warning or error (respectively) will be emitted for any table using a character set not included in this list.
 
 This option checks column character sets as well as table default character sets. It does not currently check any other object type besides tables.
+
+### allow-compression
+
+Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+--- | :---
+**Default** | "none,4kb,8kb"
+**Type** | string
+**Restrictions** | To specify multiple values, use a comma-separated list
+
+This option specifies which InnoDB table compression settings/modes are permitted by Skeema's linter. This option only has an effect if [lint-compression](#lint-compression) is set to "warning" (the default) or "error". If so, a warning or error (respectively) will be emitted for any InnoDB table using a compression setting not included in this list.
+
+The value of this option should be set to a comma-separated list of one or more of the following values:
+
+* `none`: Allow uncompressed tables
+* `1kb`: Allow tables using `KEY_BLOCK_SIZE=1`
+* `2kb`: Allow tables using `KEY_BLOCK_SIZE=2`
+* `4kb`: Allow tables using `KEY_BLOCK_SIZE=4`
+* `8kb`: Allow tables using `KEY_BLOCK_SIZE=8`
+* `16kb`: Allow tables using `KEY_BLOCK_SIZE=16`
+* `page`: Allow tables using transparent page compression (e.g. `COMPRESSION='zlib'` in MySQL, or `PAGE_COMPRESSED=1` in MariaDB)
+
+To prevent use of compressed tables, set only [allow-compression=none](#allow-compression). Conversely, to *require* compression, set [allow-compression](#allow-compression) to a list of values that *excludes* `none`.
+
+For the purposes of this option, InnoDB tables which specify `ROW_FORMAT=COMPRESSED` without a `KEY_BLOCK_SIZE` are treated by Skeema's linter as having `KEY_BLOCK_SIZE=8`, which is correct assuming the `innodb_page_size` on the server has not been modified from its default.
 
 ### allow-definer
 
@@ -697,6 +723,22 @@ This linter rule checks the data type used in auto_increment columns. Unless set
 The primary purpose of this linter rule is to avoid problematic auto_increment edge cases. Please refer to the manual entry for [allow-auto-inc](#allow-auto-inc) for usage recommendations.
 
 In addition to checking the type of the column, this linter rule also examines the next AUTO_INCREMENT value, if one is specifically defined in the filesystem (\*.sql) version of the CREATE TABLE statement. If the defined value exceeds 80% of the maximum storable value for the column type, a warning or error will be emitted, even if the column data type is allowed. However, please note that Skeema's linter **only examines \*.sql definitions, not live databases**, and by default Skeema does not automatically put next AUTO_INCREMENT values into \*.sql table definitions. You must regularly run `skeema pull --include-auto-inc` to put these values into \*.sql table definitions.
+
+### lint-compression
+
+Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+--- | :---
+**Default** | "warning"
+**Type** | enum
+**Restrictions** | Requires one of these values: "ignore", "warning", "error"
+
+This linter rule checks the compression settings for InnoDB tables. Unless set to "ignore", a warning or error will be emitted for any usage of compression settings not listed in option [allow-compression](#allow-compression). By default, this will allow uncompressed tables, as well as compressed tables using a `KEY_BLOCK_SIZE` of either 4 or 8 kilobytes.
+
+Please note that this linter rule does not examine server global variables such as `innodb_file_per_table`, `innodb_file_format`, or `innodb_page_size`. Certain combinations of these server-side settings may silently prevent the database from *actually* using compression; however, compression options like `KEY_BLOCK_SIZE` will still be visible in `SHOW CREATE TABLE` and `information_schema` regardless, and this linter rule's behavior is based on querying those sources. It is the user's responsibility to ensure that the database server is properly configured to permit use of compression if desired.
+
+This linter rule does not yet examine tables using non-InnoDB storage engines.
+
+*Column*-level compression (available in Percona Server and MariaDB) is not evaluated by this linter rule at this time, but this may change in future releases.
 
 ### lint-charset
 

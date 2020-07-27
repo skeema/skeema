@@ -42,9 +42,8 @@ func charsetChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 	var results []Note
 	for _, col := range table.Columns {
 		if col.CharSet != "" && !opts.IsAllowed("charset", col.CharSet) {
-			re := regexp.MustCompile(fmt.Sprintf(`\b%s\b`, regexp.QuoteMeta(col.Name)))
 			results = append(results, Note{
-				LineOffset: FindFirstLineOffset(re, createStatement),
+				LineOffset: FindColumnLineOffset(col, createStatement),
 				Summary:    "Character set not permitted",
 				Message:    makeCharsetMessage(table, col, opts),
 			})

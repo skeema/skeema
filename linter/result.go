@@ -11,6 +11,7 @@ import (
 
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/skeema/workspace"
+	"github.com/skeema/tengo"
 )
 
 // Note represents an individual problematic line of a statement, found by a
@@ -100,6 +101,15 @@ func FindLastLineOffset(re *regexp.Regexp, createStatement string) int {
 	}
 	lastLoc := locs[len(locs)-1]
 	return strings.Count(createStatement[0:lastLoc[0]], "\n")
+}
+
+// FindColumnLineOffset returns the line offset (i.e. line number starting at 0)
+// for the definition of the supplied Column within createStatement. If no
+// match occurs, 0 is returned.
+// This is useful for ObjectCheckers when populating Note.LineOffset.
+func FindColumnLineOffset(col *tengo.Column, createStatement string) int {
+	re := regexp.MustCompile(fmt.Sprintf(`\b%s\b`, regexp.QuoteMeta(col.Name)))
+	return FindFirstLineOffset(re, createStatement)
 }
 
 // Result is a combined set of linter annotations and/or Golang errors found

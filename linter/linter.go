@@ -147,7 +147,14 @@ func (r *Rule) optionName() string {
 }
 
 func (r *Rule) optionDescription() string {
+	if r.hidden() {
+		return "hidden/internal linter rule"
+	}
 	return fmt.Sprintf("%s (valid values: \"ignore\", \"warning\", \"error\")", r.Description)
+}
+
+func (r *Rule) hidden() bool {
+	return (r.Description == "")
 }
 
 var rulesByName = map[string]*Rule{}
@@ -156,5 +163,8 @@ var rulesByName = map[string]*Rule{}
 // Registered rules are automatically converted to Options in config.go's
 // AddCommandOptions, and are automatically tested by integration tests.
 func RegisterRule(rule Rule) {
+	if rule.Description == "" || rule.DefaultSeverity == Severity("") {
+		rule.DefaultSeverity = SeverityIgnore
+	}
 	rulesByName[rule.Name] = &rule
 }
