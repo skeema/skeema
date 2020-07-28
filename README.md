@@ -19,6 +19,14 @@ Skeema supports a pull-request-based workflow for schema change submission, revi
 
 Pre-built `skeema` binaries for Linux and macOS can be downloaded from the [releases](https://github.com/skeema/skeema/releases) page.
 
+### Homebrew on macOS
+
+If you are on macOS and using [Homebrew](https://brew.sh/) package manager, you can install skeema with Homebrew.
+
+```shell
+brew install skeema/tap/skeema
+```
+
 ## Compiling
 
 Compiling from scratch requires the [Go programming language toolchain](https://golang.org/dl/), version 1.13 or higher.
@@ -87,5 +95,3 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ```
-
-
