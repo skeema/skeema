@@ -155,7 +155,7 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 		if err != nil {
 			return Options{}, err
 		}
-		opts.SkipBinlog = (binlogEnum == "off" || (binlogEnum == "auto" && instance.CanSkipBinlog()))
+		opts.SkipBinlog = (binlogEnum == "off" || (binlogEnum == "auto" && instance != nil && instance.CanSkipBinlog()))
 
 		// Note: no support for opts.DefaultConnParams for temp-schema because the
 		// supplied instance already has default params

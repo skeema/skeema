@@ -139,6 +139,8 @@ func lintDir(dir *fs.Dir) *linter.Result {
 		if wsType, _ := dir.Config.GetEnum("workspace", "temp-schema", "docker"); wsType != "docker" || !dir.Config.Changed("flavor") {
 			if inst, err = dir.FirstInstance(); err != nil {
 				return linter.BadConfigResult(dir, err)
+			} else if inst == nil {
+				return linter.BadConfigResult(dir, fmt.Errorf("No host defined for environment %q", dir.Config.Get("environment")))
 			}
 		}
 		if wsOpts, err = workspace.OptionsForDir(dir, inst); err != nil {

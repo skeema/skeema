@@ -71,8 +71,17 @@ func pullWalker(dir *fs.Dir, maxDepth int) error {
 		}
 	}
 
-	// "flat" dir defining both host and schema
-	if instance != nil && dir.HasSchema() {
+	// dir defines a schema in .skeema, and/or has *.sql files
+	if dir.HasSchema() {
+		// If we cannot pull due to lack of an instance, make it clear to the user
+		if instance == nil {
+			log.Errorf("Skipping %s: No host defined for environment %q", dir, dir.Config.Get("environment"))
+			return NewExitValue(CodeBadConfig, "")
+		}
+
+		// Otherwise, we're in a "flat" dir that defines both host and schema: update
+		// the flavor if needed and process the pull operation on *.sql files, but no
+		// need to look for new schemas with this layout
 		updateFlavor(dir, instance)
 		_, err := pullSchemaDir(dir, instance) // already logs err (if non-nil)
 		return err
@@ -148,7 +157,7 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 		return nil, fmt.Errorf("unable to fetch schema names mapped by this dir: %s", err)
 	}
 	if len(schemaNames) == 0 {
-		log.Warnf("Ignoring directory %s -- did not map to any schema names for environment \"%s\"\n", dir, dir.Config.Get("environment"))
+		log.Warnf("Ignoring directory %s -- did not map to any schema names for environment %q\n", dir, dir.Config.Get("environment"))
 		return
 	}
 	instSchema, err := instance.Schema(schemaNames[0])

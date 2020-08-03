@@ -130,11 +130,11 @@ func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int)
 		}
 	} else if dir.HasSchema() {
 		// If we have a schema defined but no host, display a warning
-		log.Warnf("Skipping %s: no host defined for environment \"%s\"\n", dir, dir.Config.Get("environment"))
+		log.Warnf("Skipping %s: no host defined for environment %q\n", dir, dir.Config.Get("environment"))
 	} else if dir.OptionFile != nil && dir.OptionFile.SomeSectionHasOption("schema") {
 		// If we don't have a schema defined, but we would if some other environment
 		// had been selected, display a warning
-		log.Warnf("Skipping %s: no schema defined for environment \"%s\"\n", dir, dir.Config.Get("environment"))
+		log.Warnf("Skipping %s: no schema defined for environment %q\n", dir, dir.Config.Get("environment"))
 	}
 
 	subdirs, err := dir.Subdirs()

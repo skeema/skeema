@@ -103,6 +103,8 @@ func formatDir(dir *fs.Dir) error {
 		if wsType, _ := dir.Config.GetEnum("workspace", "temp-schema", "docker"); wsType != "docker" || !dir.Config.Changed("flavor") {
 			if inst, err = dir.FirstInstance(); err != nil {
 				return NewExitValue(CodeBadConfig, err.Error())
+			} else if inst == nil {
+				return NewExitValue(CodeBadConfig, "No host defined for environment %q", dir.Config.Get("environment"))
 			}
 		}
 		if wsOpts, err = workspace.OptionsForDir(dir, inst); err != nil {

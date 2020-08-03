@@ -891,6 +891,13 @@ func (s SkeemaIntegrationSuite) TestDirEdgeCases(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 	s.handleCommand(t, CodeSuccess, ".", "skeema lint")
 
+	// Referencing an undefined environment should fail gracefully, without panic
+	// on a nil instance, despite presence of *.sql files
+	s.handleCommand(t, CodeBadConfig, ".", "skeema format undefinedenv")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema lint undefinedenv")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema pull undefinedenv")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff undefinedenv")
+
 	// Extra subdirs with .skeema files and *.sql files don't inherit "schema"
 	// option value from parent dir, and are ignored by diff/push/pull as long
 	// as they don't specify a schema value directly. lint still works since its
