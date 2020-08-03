@@ -40,13 +40,11 @@ nfpms:
     - deb
     - rpm
 brews:
- -
-   name: skeema
-
-   tap:
-     owner: skeema
-     name: homebrew-tap
-
-   folder: Formula
-   homepage: https://www.skeema.io/
-   description: "Skeema is a tool for managing MySQL tables and schema changes in a declarative fashion using pure SQL."
+  -
+    name: skeema
+    tap:
+      owner: skeema
+      name: homebrew-tap
+    folder: Formula
+    homepage: https://www.skeema.io/
+    description: "Skeema is a tool for managing MySQL tables and schema changes in a declarative fashion using pure SQL."
