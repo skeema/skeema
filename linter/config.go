@@ -90,6 +90,9 @@ func (opts *Options) Equals(other *Options) bool {
 	if !reflect.DeepEqual(opts.onlyKeys, other.onlyKeys) {
 		return false
 	}
+	if opts.Flavor != other.Flavor {
+		return false
+	}
 	if opts.IgnoreTable == nil || other.IgnoreTable == nil {
 		return opts.IgnoreTable == other.IgnoreTable
 	}

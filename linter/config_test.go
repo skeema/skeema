@@ -170,4 +170,14 @@ func TestOptionsEquals(t *testing.T) {
 	if opts.Equals(&other) {
 		t.Error("Equals unexpectedly still returning true even after calling OnlyKeys")
 	}
+
+	other, _ = OptionsForDir(dir)
+	opts.Flavor, other.Flavor = tengo.FlavorMySQL80, tengo.FlavorMySQL80
+	if !opts.Equals(&other) {
+		t.Error("Equals returning wrong value with same flavor")
+	}
+	other.Flavor = tengo.FlavorPercona80
+	if opts.Equals(&other) {
+		t.Error("Equals returning wrong value with different flavor")
+	}
 }
