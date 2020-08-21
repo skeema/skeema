@@ -13,12 +13,6 @@ Skeema is designed to be a unified solution to the following common problems:
 
 Skeema does not implement its own method for online schema changes, but it can be configured to shell out to other arbitrary online schema change tools.
 
-### Do schema changes get pushed automatically when I change files?
-
-No. When using the Skeema CLI tool, schema changes only occur when you run `skeema push`.
-
-Separate from the CLI tool, optional products supporting continuous integration and continuous deployment are under development at [Skeema.io](https://www.skeema.io). The CI product is [currently in open beta testing](https://www.skeema.io/ci); it provides automatic linting of GitHub commits and pull requests. A corresponding CD product, providing an agent/daemon that can automatically push *safe* changes when a pull request is merged, is currently under development.
-
 ### Is it safe?
 
 Schema changes can be scary. Skeema includes a number of safety mechanisms to help ensure correct operation.
@@ -72,6 +66,12 @@ Skeema's author has been using MySQL extensively since 2003, and is a former mem
 
 Please see the [requirements doc](requirements.md#responsibilities-for-the-user) for important notes relating to running Skeema safely in your environment.
 
+### Do schema changes get pushed automatically when I change files?
+
+No; the Skeema CLI is not a daemon. When using the CLI tool, schema changes only occur when you run `skeema push`.
+
+To achieve automated deployment, you may optionally wrap `skeema push` in custom automation. The CLI is designed to be easy to integrate into a pipeline, in terms of exit codes and STDOUT vs STDERR. Additionally, the [Skeema Cloud Linter](https://www.skeema.io/cloud/) is designed to provide configurable guardrails around pull-request-driven automation pipelines.
+
 ### How do I configure Skeema to use online schema change tools?
 
 The [alter-wrapper option](options.md#alter-wrapper) for `skeema diff` and `skeema push` allows you to shell out to arbitrary external command(s) to perform ALTERs. You can set this option in `~/.skeema` or any other `.skeema` config file to automatically apply it every time. For example, to always use `pt-online-schema-change` to perform ALTERs, you might have a config file line of:
@@ -86,7 +86,7 @@ The brace-wrapped variables will automatically be replaced with appropriate valu
 * The {CLAUSES} variable returns the portion of the DDL statement after the prefix, e.g. everything after `ALTER TABLE table_name `. You can also obtain the full DDL statement via {DDL}.
 * Variable values containing spaces or control characters will be escaped and wrapped in single-quotes, and then the entire command string is passed to `/bin/sh -c`.
 
-Currently this feature only works easily for `pt-online-schema-change`. Integration with `gh-ost` is more challenging (but definitely possible), because its recommended execution mode requires passing it a *replica*, not the master; but meanwhile `.skeema` files should only refer to the master, since this is where `CREATE TABLE` and `DROP TABLE` statements need to be run. Similar problems exist with using `fb-osc`, which must be run on the master *and* all replicas individually.
+This feature works most easily for `pt-online-schema-change`. Integration with `gh-ost` can be more challenging (but definitely possible), because its recommended execution mode requires passing it a *replica*, not the master; but meanwhile `.skeema` files should only refer to the master, since this is where `CREATE TABLE` and `DROP TABLE` statements need to be run. Similar problems exist with using `fb-osc`, which must be run on the master *and* all replicas individually.
 
 ### How do I force Skeema to use the online DDL from MySQL 5.6+?  (algorithm=inplace, lock=none)?
 

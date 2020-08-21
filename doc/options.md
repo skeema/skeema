@@ -74,7 +74,7 @@ This document is a reference, describing all options supported by Skeema. To lea
 
 ### allow-auto-inc
 
-Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | "int unsigned, bigint unsigned"
 **Type** | string
@@ -94,7 +94,7 @@ Some companies ban use of auto_increment entirely. This can be enforced in Skeem
 
 ### allow-charset
 
-Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | "latin1,utf8mb4"
 **Type** | string
@@ -106,7 +106,7 @@ This option checks column character sets as well as table default character sets
 
 ### allow-compression
 
-Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | "none,4kb,8kb"
 **Type** | string
@@ -130,7 +130,7 @@ For the purposes of this option, InnoDB tables which specify `ROW_FORMAT=COMPRES
 
 ### allow-definer
 
-Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | "%@%"
 **Type** | string
@@ -146,7 +146,7 @@ This option may also affect other object types with definers (e.g. views) once t
 
 ### allow-engine
 
-Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | "innodb"
 **Type** | string
@@ -537,7 +537,7 @@ In a sharded environment, this option can be useful to examine or execute a chan
 
 ### flavor
 
-Commands | *all*, as well as [CI](https://www.skeema.io/ci)
+Commands | *all*, as well as [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | *empty string*
 **Type** | string
@@ -555,7 +555,7 @@ The notion of a database flavor affects various aspects of schema introspection 
 
 * With [workspace=docker](#workspace), the [flavor](#flavor) value controls what Docker image is used for workspace containers. If no flavor is specified, an error is generated.
 
-* In the [Skeema.io CI service](https://www.skeema.io/ci), the [flavor](#flavor) value controls what database vendor and version is used for purposes of linting this directory. If no flavor is specified, the CI default is currently `mysql:5.7`.
+* In the [Cloud Linter service](https://www.skeema.io/cloud/), the [flavor](#flavor) value controls what database vendor and version is used for purposes of linting this directory. If no flavor is specified, the Cloud Linter default is currently `mysql:5.7`.
 
 Note that the database server's *actual* auto-detected vendor and version take precedence over the [flavor](#flavor) option in all other cases not listed above.
 
@@ -712,7 +712,7 @@ This option is enabled by default. To disable linting of changed objects in `ske
 
 ### lint-auto-inc
 
-Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | "warning"
 **Type** | enum
@@ -726,7 +726,7 @@ In addition to checking the type of the column, this linter rule also examines t
 
 ### lint-compression
 
-Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | "warning"
 **Type** | enum
@@ -742,7 +742,7 @@ This linter rule does not yet examine tables using non-InnoDB storage engines.
 
 ### lint-charset
 
-Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | "warning"
 **Type** | enum
@@ -754,7 +754,7 @@ This rule does not currently check any other object type besides tables.
 
 ### lint-definer
 
-Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | "error"
 **Type** | enum
@@ -768,7 +768,7 @@ This option may also affect other object types with definers (e.g. views) once t
 
 ### lint-display-width
 
-Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | "warning"
 **Type** | enum
@@ -786,7 +786,7 @@ MySQL 8.0.17 deprecated use of integer display widths, as well as the `zerofill`
 
 ### lint-dupe-index
 
-Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | "warning"
 **Type** | enum
@@ -796,7 +796,7 @@ This linter rule checks each table for duplicate secondary indexes. Unless set t
 
 ### lint-engine
 
-Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | "warning"
 **Type** | enum
@@ -806,7 +806,7 @@ This linter rule checks each table's storage engine. Unless set to "ignore", a w
 
 ### lint-has-fk
 
-Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | "ignore"
 **Type** | enum
@@ -822,7 +822,7 @@ Companies that restrict foreign keys typically do so for these reasons:
 
 ### lint-has-float
 
-Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | "ignore"
 **Type** | enum
@@ -834,7 +834,7 @@ Some companies forbid use of floating-point types because they can only store ap
 
 ### lint-has-routine
 
-Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | "ignore"
 **Type** | enum
@@ -849,7 +849,7 @@ Companies that restrict use of routines typically do so for these reasons:
 
 ### lint-has-time
 
-Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | "ignore"
 **Type** | enum
@@ -864,7 +864,7 @@ As an alternative to temporal types, some companies instead opt to store time-re
 
 ### lint-pk
 
-Commands | diff, push, lint, [CI](https://www.skeema.io/ci)
+Commands | diff, push, lint, [Cloud Linter](https://www.skeema.io/cloud/)
 --- | :---
 **Default** | "warning"
 **Type** | enum

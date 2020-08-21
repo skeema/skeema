@@ -4,7 +4,7 @@
 
 Skeema is configured by setting options. These options may be provided to the Skeema CLI via the command-line and/or via option files. Handling and parsing of options is intentionally designed to be very similar to the MySQL client and server programs.
 
-This document is primarily geared towards the Skeema command-line tool, although much of the same behavior is matched in the [Skeema.io CI system](https://www.skeema.io/ci). See the [last section](#skeemaio-ci-configuration) of this doc for CI-specific instructions.
+This document is primarily geared towards the Skeema command-line tool, although much of the same behavior is matched in the [Skeema Cloud Linter](https://www.skeema.io/cloud/). The [last section](#cloud-linter-configuration) of this doc includes additional instructions for configuring that system.
 
 ### Option types
 
@@ -67,7 +67,7 @@ Values may optionally be wrapped in quotes, but this is not required, even for v
 
 Sections in option files are interpreted as environment names -- typically one of "production", "staging", or "development", but any arbitrary name is allowed. Every Skeema command takes an optional positional arg specifying an environment name, which will cause options in the corresponding section to be applied. Options that appear at the top of the file, prior to any environment name, are always applied; these may be overridden by options subsequently appearing in a selected environment. 
 
-If no environment name is supplied to the Skeema CLI, the default environment name is "production". The hosted [Skeema.io CI service](https://www.skeema.io/ci) also always operates using the "production" environment's configuration.
+If no environment name is supplied to the Skeema CLI, the default environment name is "production". The [Cloud Linter service](https://www.skeema.io/cloud/) also always operates using the "production" environment's configuration.
 
 Environment sections allow you to define different hosts, or even different schema names, for specific environments. You can also define configuration options that only affect one environment -- for example, loosening protections in development, or only using online schema change tools in production.
 
@@ -155,13 +155,13 @@ host-wrapper=/path/to/service_discovery_lookup.sh /databases/{ENVIRONMENT}/{HOST
 
 The placeholders are automatically replaced with the correct values for the current operation. Each option lists what variables it supports.
 
-### Skeema.io CI configuration
+### Cloud Linter configuration
 
-The [Skeema.io CI system](https://www.skeema.io/ci) uses the same configuration system as the CLI tool, with a few important differences to note:
+[Skeema Cloud Linter](https://www.skeema.io/cloud/) uses the same configuration system as the CLI tool, with a few important differences to note:
 
-* All configuration is supplied through .skeema files in directories of your GitHub repo. Since the CI system is a hosted SAAS product, there is no notion of command-line options, global option files, or env vars.
+* All configuration is supplied through .skeema files in directories of your GitHub repo. Since Cloud Linter is a hosted SaaS product, there is no notion of command-line options, global option files, or env vars.
 
-* The CI system operates under the `production` environment name. In terms of option file sections, this means any configuration at the top of the file ("above" any section) is applied, as is any configuration in a "[production]" section.
+* Cloud Linter operates under the `production` environment name. In terms of option file sections, this means any configuration at the top of the file ("above" any section) is applied, as is any configuration in a "[production]" section.
 
-* Many of the Skeema CLI's options have no effect on the CI system. For example, `host` and `schema` are irrelevant, since the CI system does not communicate with your actual database servers. Irrelevant options are silently ignored. Unlike in the CLI tool, unknown/invalid options are also silently ignored in the CI system.
+* Some of the Skeema CLI's options have no effect on Cloud Linter. For example, `host` and `schema` are irrelevant, since Cloud Linter does not communicate with your actual database servers. Irrelevant options are silently ignored. Unlike in the CLI tool, unknown/invalid options are also silently ignored by Cloud Linter.
 
