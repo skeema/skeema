@@ -45,6 +45,9 @@ brews:
     tap:
       owner: skeema
       name: homebrew-tap
+    commit_author:
+      name: goreleaser
+      email: bot@skeema.net
     folder: Formula
     homepage: https://www.skeema.io/
     description: "Skeema is a tool for managing MySQL tables and schema changes in a declarative fashion using pure SQL."
