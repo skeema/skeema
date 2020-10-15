@@ -51,7 +51,7 @@ func (p *Printer) printDDL(ddl *DDLStatement) {
 		return
 	}
 	if p.jsonOutput {
-		json, err := ddl.Json()
+		json, err := ddl.JSON()
 		if err != nil {
 			fmt.Printf("Error attempting to convert ddl variables to json: %s\n", err)
 		} else {

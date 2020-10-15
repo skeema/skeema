@@ -253,7 +253,9 @@ func (ddl *DDLStatement) String() string {
 	return fs.AddDelimiter(ddl.stmt)
 }
 
-func (ddl *DDLStatement) Json() (string, error) {
+// JSON returns the JSON represnetation of the ddl statement - specifically, its
+// variables field.
+func (ddl *DDLStatement) JSON() (string, error) {
 	b, err := json.Marshal(ddl.variables)
 	return string(b), err
 }
