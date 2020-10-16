@@ -50,18 +50,20 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 
 	// Hackily set up test args manually
 	configMap := map[string]string{
-		"user":                   "root",
-		"password":               s.d[0].Instance.Password,
-		"debug":                  "1",
-		"allow-unsafe":           "1",
-		"ddl-wrapper":            "/bin/echo ddl-wrapper {SCHEMA}.{NAME} {TYPE} {CLASS}",
-		"alter-wrapper":          "/bin/echo alter-wrapper {SCHEMA}.{TABLE} {TYPE} {CLAUSES}",
-		"alter-wrapper-min-size": "1",
-		"alter-algorithm":        "inplace",
-		"alter-lock":             "none",
-		"safe-below-size":        "0",
-		"connect-options":        "",
-		"environment":            "production",
+		"user":                         "root",
+		"password":                     s.d[0].Instance.Password,
+		"debug":                        "1",
+		"allow-unsafe":                 "1",
+		"ddl-wrapper":                  "/bin/echo ddl-wrapper {SCHEMA}.{NAME} {TYPE} {CLASS}",
+		"alter-wrapper":                "/bin/echo alter-wrapper {SCHEMA}.{TABLE} {TYPE} {CLAUSES}",
+		"alter-wrapper-min-size":       "1",
+		"alter-algorithm":              "inplace",
+		"alter-lock":                   "none",
+		"safe-below-size":              "0",
+		"connect-options":              "",
+		"environment":                  "production",
+		"json-output":                  "0",
+		"json-output-include-password": "0",
 	}
 	major, minor, _ := s.d[0].Version()
 	is55 := major == 5 && minor == 5

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -461,6 +462,66 @@ func (s SkeemaIntegrationSuite) TestDiffHandler(t *testing.T) {
 		}
 		if err := os.Remove("diff-brief.out"); err != nil {
 			t.Fatalf("Unable to delete diff-brief.out: %s", err)
+		}
+	}
+
+	// Confirm --json-output works as expected
+	if outFile, err := os.Create("diff-json-output.out"); err != nil {
+		t.Fatalf("Unable to redirect stdout to a file: %s", err)
+	} else {
+		os.Stdout = outFile
+		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --json-output")
+		outFile.Close()
+		os.Stdout = oldStdout
+		output := fs.ReadTestFile(t, "diff-json-output.out")
+		expectOut := struct {
+			CLASS  string
+			DDL    string
+			SCHEMA string
+			TYPE   string
+			TABLE  string
+		}{
+			CLASS:  "TABLE",
+			DDL:    "ALTER TABLE `pageviews` ADD COLUMN `domain` varchar(40) NOT NULL",
+			SCHEMA: "analytics",
+			TYPE:   "ALTER",
+			TABLE:  "pageviews",
+		}
+		actualOut := struct {
+			CLASS  string
+			DDL    string
+			SCHEMA string
+			TYPE   string
+			TABLE  string
+		}{}
+		if err := json.Unmarshal([]byte(output), &actualOut); err != nil {
+			t.Errorf("Invalid output from `skeema diff --json-output`: %s", output)
+		}
+		/* sample expected json output (actual output may differ because of DIRPATH or PORT, or new variables:
+		{
+			"CLASS":"TABLE",
+			"CLAUSES":"ADD COLUMN `domain` varchar(40) NOT NULL",
+			"CONNOPTS":"",
+			"DDL":"ALTER TABLE `pageviews` ADD COLUMN `domain` varchar(40) NOT NULL",
+			"DIRNAME":"analytics",
+			"DIRPATH":"/go/src/github.com/skeema/skeema/testdata/.scratch/mydb/analytics",
+			"ENVIRONMENT":"production",
+			"HOST":"127.0.0.1",
+			"NAME":"pageviews",
+			"PORT":"32815",
+			"SCHEMA":"analytics",
+			"SIZE":"0",
+			"SOCKET":"",
+			"TABLE":"pageviews",
+			"TYPE":"ALTER",
+			"USER":"root"
+		}
+		*/
+		if actualOut != expectOut {
+			t.Errorf("Unexpected output from `skeema diff --json-output`\nExpected:\n%+v\nActual:\n%+v", expectOut, actualOut)
+		}
+		if err := os.Remove("diff-json-output.out"); err != nil {
+			t.Fatalf("Unable to delete diff-json-output.out: %s", err)
 		}
 	}
 }
