@@ -1,9 +1,8 @@
 name: Tests
 on: [push, pull_request]
 env:
-  GOVERSION: "1.13"
-  GO111MODULE: "on"
-  SKEEMA_TEST_IMAGES: "mysql:5.6,mysql:5.7"
+  GOVERSION: "1.14"
+  SKEEMA_TEST_IMAGES: "mysql:5.7,mysql:8.0"
 jobs:
   test:
     name: Check code quality and run tests
