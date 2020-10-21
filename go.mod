@@ -1,6 +1,6 @@
 module github.com/skeema/skeema
 
-go 1.13
+go 1.14
 
 require (
 	github.com/VividCortex/mysqlerr v0.0.0-20170204212430-6c6b55f8796f

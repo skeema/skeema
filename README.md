@@ -29,7 +29,7 @@ brew install skeema/tap/skeema
 
 ## Compiling
 
-Compiling from scratch requires the [Go programming language toolchain](https://golang.org/dl/), version 1.13 or higher.
+Compiling from scratch requires the [Go programming language toolchain](https://golang.org/dl/), version 1.14 or higher.
 
 To download, build from main branch, and install (or upgrade) Skeema, run:
 
@@ -57,7 +57,7 @@ Tagged releases are tested against the following databases, all running on Linux
 * Percona Server 5.5, 5.6, 5.7, 8.0
 * MariaDB 10.1, 10.2, 10.3, 10.4, 10.5
 
-Outside of a tagged release, every commit to the main branch is automatically tested against MySQL 5.6 and 5.7.
+Outside of a tagged release, every commit to the main branch is automatically tested against MySQL 5.7 and 8.0.
 
 A few uncommon MySQL features -- such as spatial indexes and subpartitioning -- are not supported yet. Skeema is able to *create* or *drop* tables using these features, but not *alter* them. The output of `skeema diff` and `skeema push` clearly displays when this is the case. You may still make such alters directly/manually (outside of Skeema), and then update the corresponding CREATE TABLE files via `skeema pull`. Please see the [requirements doc](doc/requirements.md) for more information.
 

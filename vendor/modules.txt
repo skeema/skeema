@@ -6,8 +6,10 @@ github.com/Microsoft/go-winio
 # github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5
 github.com/Nvveen/Gotty
 # github.com/VividCortex/mysqlerr v0.0.0-20170204212430-6c6b55f8796f
+## explicit
 github.com/VividCortex/mysqlerr
 # github.com/alecthomas/participle v0.3.0
+## explicit
 github.com/alecthomas/participle
 github.com/alecthomas/participle/lexer
 # github.com/containerd/continuity v0.0.0-20180612233548-246e49050efd
@@ -49,15 +51,19 @@ github.com/go-sql-driver/mysql
 # github.com/gogo/protobuf v1.0.0
 github.com/gogo/protobuf/proto
 # github.com/jmoiron/sqlx v1.2.0
+## explicit
 github.com/jmoiron/sqlx
 github.com/jmoiron/sqlx/reflectx
 # github.com/konsorten/go-windows-terminal-sequences v1.0.1
 github.com/konsorten/go-windows-terminal-sequences
 # github.com/mattn/goveralls v0.0.6
+## explicit
 github.com/mattn/goveralls
 # github.com/mitchellh/go-wordwrap v1.0.0
+## explicit
 github.com/mitchellh/go-wordwrap
 # github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
+## explicit
 github.com/nozzle/throttler
 # github.com/opencontainers/go-digest v1.0.0-rc1
 github.com/opencontainers/go-digest
@@ -65,6 +71,7 @@ github.com/opencontainers/go-digest
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
 # github.com/opencontainers/runc v1.0.0-rc5
+## explicit
 github.com/opencontainers/runc/libcontainer/system
 github.com/opencontainers/runc/libcontainer/user
 # github.com/pkg/errors v0.8.0
@@ -72,19 +79,25 @@ github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
 # github.com/sirupsen/logrus v1.4.2
+## explicit
 github.com/sirupsen/logrus
 # github.com/skeema/mybase v1.0.9
+## explicit
 github.com/skeema/mybase
 # github.com/skeema/tengo v0.9.5
+## explicit
 github.com/skeema/tengo
 # golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550
+## explicit
 golang.org/x/crypto/ssh/terminal
 # golang.org/x/lint v0.0.0-20190409202823-959b441ac422
+## explicit
 golang.org/x/lint
 golang.org/x/lint/golint
 # golang.org/x/net v0.0.0-20200226121028-0de0cce0169b
 golang.org/x/net/context
 # golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
+## explicit
 golang.org/x/sync/errgroup
 # golang.org/x/sys v0.0.0-20190422165155-953cdadca894
 golang.org/x/sys/unix
