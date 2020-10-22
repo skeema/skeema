@@ -14,7 +14,6 @@ import (
 
 func (s ApplierIntegrationSuite) TestTargetsForDirSimple(t *testing.T) {
 	setupHostList(t, s.d[0].Instance)
-	defer cleanupHostList(t)
 
 	dir := getDir(t, "testdata/simple", "")
 	targets, skipCount := TargetsForDir(dir, 1)
@@ -59,7 +58,6 @@ func (s ApplierIntegrationSuite) TestTargetsForDirSimple(t *testing.T) {
 
 func (s ApplierIntegrationSuite) TestTargetsForDirSimpleFailure(t *testing.T) {
 	setupHostList(t, s.d[0].Instance)
-	defer cleanupHostList(t)
 
 	// Test with insufficient maxDepth: should return 0 targets, 2 skipped
 	dir := getDir(t, "testdata/simple", "")
@@ -93,7 +91,6 @@ func (s ApplierIntegrationSuite) TestTargetsForDirMulti(t *testing.T) {
 	}
 
 	setupHostList(t, s.d[0].Instance, s.d[1].Instance)
-	defer cleanupHostList(t)
 
 	// Parent dir maps to 2 instances, and schema dir maps to 2 schemas, so expect
 	// 4 targets
@@ -158,7 +155,6 @@ func (s ApplierIntegrationSuite) TestTargetsForDirMulti(t *testing.T) {
 // schema name is also configured in the dir's .skeema file.
 func (s ApplierIntegrationSuite) TestTargetsForDirNamedSchema(t *testing.T) {
 	setupHostList(t, s.d[0].Instance)
-	defer cleanupHostList(t)
 
 	// Expected outcome per dir:
 	// multi:     2 successful targets
@@ -196,7 +192,6 @@ func (s ApplierIntegrationSuite) TestTargetsForDirNamedSchema(t *testing.T) {
 
 func (s ApplierIntegrationSuite) TestTargetsForDirError(t *testing.T) {
 	setupHostList(t, s.d[0].Instance, s.d[1].Instance)
-	defer cleanupHostList(t)
 
 	// SQL syntax error in testdata/applier/sqlerror/one/bad.sql should cause one/
 	// dir to be skipped entirely for both hosts, so skipCount of 2. But other
@@ -236,7 +231,6 @@ func (s ApplierIntegrationSuite) TestTargetsForDirError(t *testing.T) {
 
 func (s ApplierIntegrationSuite) TestTargetGroupChanForDir(t *testing.T) {
 	setupHostList(t, s.d[0].Instance, s.d[1].Instance)
-	defer cleanupHostList(t)
 
 	// Parent dir maps to 2 instances, and schema dir maps to 2 schemas, so expect
 	// 4 targets split into 2 groups (by instance)
@@ -324,8 +318,9 @@ func setupHostList(t *testing.T, instances ...*tengo.Instance) {
 	}
 	contents := strings.Join(lines, "")
 	fs.WriteTestFile(t, "testdata/.scratch/applier-hosts", contents)
-}
 
-func cleanupHostList(t *testing.T) {
-	fs.RemoveTestDirectory(t, "testdata/.scratch")
+	// Upon completion of test (or subtest), remove the .scratch dir
+	t.Cleanup(func() {
+		fs.RemoveTestDirectory(t, "testdata/.scratch")
+	})
 }
