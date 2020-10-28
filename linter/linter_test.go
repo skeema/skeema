@@ -256,6 +256,7 @@ func getDir(t *testing.T, dirPath string, cliArgs ...string) *fs.Dir {
 	t.Helper()
 	cmd := mybase.NewCommand("lintertest", "", "", nil)
 	util.AddGlobalOptions(cmd)
+	workspace.AddCommandOptions(cmd)
 	AddCommandOptions(cmd)
 	cmd.AddArg("environment", "production", false)
 	commandLine := "lintertest"

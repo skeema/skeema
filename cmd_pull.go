@@ -16,17 +16,16 @@ import (
 
 func init() {
 	summary := "Update the filesystem representation of schemas and tables"
-	desc := `Updates the existing filesystem representation of the schemas and tables on a DB
-instance. Use this command when changes have been applied to the database
-without using skeema, and the filesystem representation needs to be updated to
-reflect those changes.
-
-You may optionally pass an environment name as a CLI option. This will affect
-which section of .skeema config files is used for processing. For example,
-running ` + "`" + `skeema pull staging` + "`" + ` will apply config directives from the
-[staging] section of config files, as well as any sectionless directives at the
-top of the file. If no environment name is supplied, the default is
-"production".`
+	desc := "Updates the existing filesystem representation of the schemas and tables on a DB " +
+		"instance. Use this command when changes have been applied to the database " +
+		"without using skeema, and the filesystem representation needs to be updated to " +
+		"reflect those changes.\n\n" +
+		"You may optionally pass an environment name as a CLI option. This will affect " +
+		"which section of .skeema config files is used for processing. For example, " +
+		"running `skeema pull staging` will apply config directives from the " +
+		"[staging] section of config files, as well as any sectionless directives at the " +
+		"top of the file. If no environment name is supplied, the default is " +
+		"\"production\"."
 
 	cmd := mybase.NewCommand("pull", summary, desc, PullHandler)
 	cmd.AddOption(mybase.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in new table files, and update in existing files"))
@@ -35,6 +34,7 @@ top of the file. If no environment name is supplied, the default is
 	cmd.AddOption(mybase.BoolOption("new-schemas", 0, true, "Detect any new schemas and populate new dirs for them"))
 	cmd.AddOption(mybase.BoolOption("update-partitioning", 0, false, "Update PARTITION BY clauses in existing table files"))
 	cmd.AddOption(mybase.BoolOption("strip-partitioning", 0, false, "Omit PARTITION BY clause when writing partitioned tables to filesystem").Hidden())
+	workspace.AddCommandOptions(cmd)
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }

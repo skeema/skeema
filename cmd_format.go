@@ -13,26 +13,24 @@ import (
 
 func init() {
 	summary := "Normalize format of filesystem representation of database objects"
-	desc := `Reformats the filesystem representation of database objects to match the canonical
-format shown in SHOW CREATE.
-
-This command relies on accessing database instances to test the SQL DDL in a
-temporary location. See the workspace option for more information.
-
-You may optionally pass an environment name as a CLI option. This will affect
-which section of .skeema config files is used for workspace selection. For
-example, running ` + "`" + `skeema format staging` + "`" + ` will
-apply config directives from the [staging] section of config files, as well as
-any sectionless directives at the top of the file. If no environment name is
-supplied, the default is "production".
-
-An exit code of 0 will be returned if all files were already formatted properly;
-1 if some files were not already in the correct format; or 2+ if any errors
-occurred.`
+	desc := "Reformats the filesystem representation of database objects to match the canonical " +
+		"format shown in SHOW CREATE.\n\n" +
+		"This command relies on accessing database instances to test the SQL DDL in a " +
+		"temporary location. See the workspace option for more information.\n\n" +
+		"You may optionally pass an environment name as a CLI option. This will affect " +
+		"which section of .skeema config files is used for workspace selection. For " +
+		"example, running `skeema format staging` will " +
+		"apply config directives from the [staging] section of config files, as well as " +
+		"any sectionless directives at the top of the file. If no environment name is " +
+		"supplied, the default is \"production\".\n\n" +
+		"An exit code of 0 will be returned if all files were already formatted properly; " +
+		"1 if some files were not already in the correct format; or 2+ if any errors " +
+		"occurred."
 
 	cmd := mybase.NewCommand("format", summary, desc, FormatHandler)
 	cmd.AddOption(mybase.BoolOption("write", 0, true, "Update files to correct format"))
 	cmd.AddOption(mybase.BoolOption("strip-partitioning", 0, false, "Remove PARTITION BY clauses from *.sql files"))
+	workspace.AddCommandOptions(cmd)
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }

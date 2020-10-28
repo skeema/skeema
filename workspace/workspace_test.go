@@ -305,6 +305,7 @@ func (s *WorkspaceIntegrationSuite) getParsedDir(t *testing.T, dirPath, cliFlags
 	t.Helper()
 	cmd := mybase.NewCommand("workspacetest", "", "", nil)
 	util.AddGlobalOptions(cmd)
+	AddCommandOptions(cmd)
 	cmd.AddArg("environment", "production", false)
 	commandLine := fmt.Sprintf("workspacetest --host=%s --port=%d --password=fakepw %s", s.d.Instance.Host, s.d.Instance.Port, cliFlags)
 	cfg := mybase.ParseFakeCLI(t, cmd, commandLine)

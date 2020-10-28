@@ -2,8 +2,12 @@ package mybase
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
+
+	"github.com/mitchellh/go-wordwrap"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 // CommandHandler is a function that can be associated with a Command as a
@@ -36,8 +40,10 @@ func NewCommand(name, summary, description string, handler CommandHandler) *Comm
 		Handler:     handler,
 	}
 
-	cmd.AddOption(StringOption("help", '?', "", "Display usage information for the specified command").ValueOptional())
-	cmd.AddOption(BoolOption("version", 0, false, "Display program version"))
+	cmd.AddOptions("global",
+		StringOption("help", '?', "", "Display usage information for the specified command").ValueOptional(),
+		BoolOption("version", 0, false, "Display program version"),
+	)
 
 	return cmd
 }
@@ -62,8 +68,6 @@ func NewCommandSuite(name, summary, description string) *Command {
 		Handler:     helpHandler,
 	}
 	helpCmd.AddArg("command", "", false)
-	cmd.AddSubCommand(helpCmd)
-	cmd.AddOption(StringOption("help", '?', "", "Display usage information for the specified command").ValueOptional())
 
 	// Add version subcommand, and equivalently as an option
 	versionCmd := &Command{
@@ -72,8 +76,13 @@ func NewCommandSuite(name, summary, description string) *Command {
 		Summary:     `Display program version`,
 		Handler:     versionHandler,
 	}
+
 	cmd.AddSubCommand(versionCmd)
-	cmd.AddOption(BoolOption("version", 0, false, "Display program version"))
+	cmd.AddSubCommand(helpCmd)
+	cmd.AddOptions("global",
+		BoolOption("version", 0, false, "Display program version"),
+		StringOption("help", '?', "", "Display usage information for the specified command").ValueOptional(),
+	)
 
 	return cmd
 }
@@ -126,6 +135,15 @@ func (cmd *Command) AddOption(opt *Option) {
 	cmd.options[opt.Name] = opt
 }
 
+// AddOptions adds any number of Options to a Command, also setting the Group
+// field of all the options to the supplied string.
+func (cmd *Command) AddOptions(group string, opts ...*Option) {
+	for _, opt := range opts {
+		opt.Group = group
+		cmd.AddOption(opt)
+	}
+}
+
 // Options returns a map of options for this command, recursively merged with
 // its parent command. In cases of conflicts, sub-command options override their
 // parents / grandparents / etc. The returned map is always a copy, so
@@ -167,16 +185,19 @@ func (cmd *Command) OptionValue(optionName string) (string, bool) {
 
 // Usage returns help instructions for a Command.
 func (cmd *Command) Usage() {
-	invocation := cmd.Name
-	current := cmd
-	for current.ParentCommand != nil {
-		current = current.ParentCommand
-		invocation = fmt.Sprintf("%s %s", current.Name, invocation)
+	fmt.Printf("\nUsage:  %s\n\n", cmd.Invocation())
+	lineLen := 80
+	if stdinFd := int(os.Stderr.Fd()); terminal.IsTerminal(stdinFd) {
+		lineLen, _, _ = terminal.GetSize(stdinFd)
+		if lineLen < 80 {
+			lineLen = 80
+		} else if lineLen > 180 {
+			lineLen = 160
+		} else if lineLen > 120 {
+			lineLen -= 20
+		}
 	}
-
-	fmt.Println(cmd.Description)
-	fmt.Println("\nUsage:")
-	fmt.Printf("      %s [<options>]%s\n", invocation, cmd.argUsage())
+	fmt.Printf("%s\n", wordwrap.WrapString(cmd.Description, uint(lineLen)))
 
 	if len(cmd.SubCommands) > 0 {
 		fmt.Println("\nCommands:")
@@ -192,26 +213,84 @@ func (cmd *Command) Usage() {
 		for _, name := range names {
 			fmt.Printf("      %*s  %s\n", -1*maxLen, name, cmd.SubCommands[name].Summary)
 		}
-
 	}
 
 	allOptions := cmd.Options()
-	if len(allOptions) > 0 {
-		fmt.Println("\nOptions:")
-		var maxLen int
-		names := make([]string, 0, len(allOptions))
-		for name, opt := range allOptions {
-			names = append(names, name)
-			if nameLen := len(opt.usageName()); nameLen > maxLen {
-				maxLen = nameLen
-			}
+	var maxLen int
+	for _, opt := range allOptions {
+		if nameLen := len(opt.usageName()); nameLen > maxLen {
+			maxLen = nameLen
 		}
-		sort.Strings(names)
-		for _, name := range names {
-			opt := allOptions[name]
+	}
+	for _, grp := range cmd.OptionGroups() {
+		groupName := grp.Name
+		if groupName == "" && cmd.ParentCommand != nil {
+			groupName = cmd.Name
+		}
+		title := fmt.Sprintf("%s Options", strings.Title(groupName))
+		fmt.Printf("\n%s:\n", strings.TrimSpace(title))
+		for _, opt := range grp.Options {
 			fmt.Print(opt.Usage(maxLen))
 		}
 	}
+}
+
+// Invocation returns command-line help for invoking a command with its args.
+func (cmd *Command) Invocation() string {
+	invocation := cmd.Name
+	current := cmd
+	for current.ParentCommand != nil {
+		current = current.ParentCommand
+		invocation = fmt.Sprintf("%s %s", current.Name, invocation)
+	}
+	return fmt.Sprintf("%s [<options>]%s", invocation, cmd.argUsage())
+}
+
+// OptionGroups is a helper to return a pre-sorted list of groups of options.
+// The groups are ordered such that the unnamed group is first, and globals are
+// last; any additional groups are in the middle, in alphabetical order. The
+// options within each group are also sorted in alphabetical order. Hidden
+// options are omitted, since OptionGroup values are intended only for
+// generation of usage/help text.
+func (cmd *Command) OptionGroups() []OptionGroup {
+	nameless := []*Option{}
+	global := []*Option{}
+	others := make(map[string][]*Option)
+
+	allOptions := cmd.Options()
+	for _, opt := range allOptions {
+		if opt.HiddenOnCLI {
+			continue
+		}
+		if opt.Group == "" {
+			nameless = append(nameless, opt)
+		} else if opt.Group == "global" {
+			global = append(global, opt)
+		} else {
+			if others[opt.Group] == nil {
+				others[opt.Group] = []*Option{opt}
+			} else {
+				others[opt.Group] = append(others[opt.Group], opt)
+			}
+		}
+	}
+
+	var ret []OptionGroup
+	if len(nameless) > 0 {
+		ret = append(ret, *newOptionGroup("", nameless))
+	}
+	otherNames := make([]string, 0, len(others))
+	for groupName := range others {
+		otherNames = append(otherNames, groupName)
+	}
+	sort.Strings(otherNames)
+	for _, groupName := range otherNames {
+		ret = append(ret, *newOptionGroup(groupName, others[groupName]))
+	}
+	if len(global) > 0 {
+		ret = append(ret, *newOptionGroup("global", global))
+	}
+	return ret
 }
 
 // Root returns the top-level ancestor of this cmd -- that is, it climbs the

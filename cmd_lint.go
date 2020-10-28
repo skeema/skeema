@@ -14,33 +14,30 @@ import (
 
 func init() {
 	summary := "Check for problems in filesystem representation of database objects"
-	desc := `Checks for problems in filesystem representation of database objects. A set of
-linter rules are run against all objects. Each rule may be configured to
-generate an error, a warning, or be ignored entirely. Statements that contain
-invalid SQL, or otherwise return an error from the database, are always flagged
-as linter errors.
-
-By default, this command also reformats statements to their canonical form,
-just like ` + "`skeema format`" + `.
-
-This command relies on accessing database instances to test the SQL DDL in a
-temporary location. See the workspace option for more information.
-
-You may optionally pass an environment name as a CLI option. This will affect
-which section of .skeema config files is used for linter configuration and
-workspace selection. For example, running ` + "`" + `skeema lint staging` + "`" + ` will
-apply config directives from the [staging] section of config files, as well as
-any sectionless directives at the top of the file. If no environment name is
-supplied, the default is "production".
-
-An exit code of 0 will be returned if no errors or warnings were emitted and all
-files were already formatted properly; 1 if any warnings were emitted and/or
-some files were reformatted; or 2+ if any errors were emitted for any reason.`
+	desc := "Checks for problems in filesystem representation of database objects. A set of " +
+		"linter rules are run against all objects. Each rule may be configured to " +
+		"generate an error, a warning, or be ignored entirely. Statements that contain " +
+		"invalid SQL, or otherwise return an error from the database, are always flagged " +
+		"as linter errors.\n\n" +
+		"By default, this command also reformats statements to their canonical form, " +
+		"just like `skeema format`.\n\n" +
+		"This command relies on accessing database instances to test the SQL DDL in a " +
+		"temporary location. See the workspace option for more information.\n\n" +
+		"You may optionally pass an environment name as a CLI option. This will affect " +
+		"which section of .skeema config files is used for linter configuration and " +
+		"workspace selection. For example, running `skeema lint staging` will " +
+		"apply config directives from the [staging] section of config files, as well as " +
+		"any sectionless directives at the top of the file. If no environment name is " +
+		"supplied, the default is \"production\".\n\n" +
+		"An exit code of 0 will be returned if no errors or warnings were emitted and all " +
+		"files were already formatted properly; 1 if any warnings were emitted and/or " +
+		"some files were reformatted; or 2+ if any errors were emitted for any reason."
 
 	cmd := mybase.NewCommand("lint", summary, desc, LintHandler)
 	linter.AddCommandOptions(cmd)
 	cmd.AddOption(mybase.BoolOption("format", 0, true, "Reformat SQL statements to match canonical SHOW CREATE"))
 	cmd.AddOption(mybase.BoolOption("strip-partitioning", 0, false, "Remove PARTITION BY clauses from *.sql files").Hidden())
+	workspace.AddCommandOptions(cmd)
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }

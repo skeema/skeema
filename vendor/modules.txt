@@ -81,7 +81,7 @@ github.com/pmezard/go-difflib/difflib
 # github.com/sirupsen/logrus v1.4.2
 ## explicit
 github.com/sirupsen/logrus
-# github.com/skeema/mybase v1.0.9
+# github.com/skeema/mybase v1.0.10
 ## explicit
 github.com/skeema/mybase
 # github.com/skeema/tengo v0.9.5

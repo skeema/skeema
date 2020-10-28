@@ -307,6 +307,7 @@ func (s *IntegrationSuite) verifyFormat(t *testing.T) {
 func getDir(dirPath string) (*fs.Dir, error) {
 	cmd := mybase.NewCommand("dumpertest", "", "", nil)
 	util.AddGlobalOptions(cmd)
+	workspace.AddCommandOptions(cmd)
 	cfg := &mybase.Config{
 		CLI: &mybase.CommandLine{Command: cmd},
 	}

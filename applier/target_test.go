@@ -8,6 +8,7 @@ import (
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/skeema/util"
+	"github.com/skeema/skeema/workspace"
 	"github.com/skeema/tengo"
 	"golang.org/x/sync/errgroup"
 )
@@ -299,6 +300,7 @@ func getBaseConfig(t *testing.T, cliFlags string) *mybase.Config {
 	cmd.AddOption(mybase.StringOption("concurrent-instances", 'c', "1", "Perform operations on this number of instances concurrently"))
 	cmd.AddArg("environment", "production", false)
 	util.AddGlobalOptions(cmd)
+	workspace.AddCommandOptions(cmd)
 	return mybase.ParseFakeCLI(t, cmd, fmt.Sprintf("appliertest %s", cliFlags))
 }
 

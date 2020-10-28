@@ -69,8 +69,8 @@ github.com/sirupsen/logrus v1.0.5 h1:8c8b5uO0zS4X6RPl/sd1ENwSkIc0/H2PaHxE3udaE8I
 github.com/sirupsen/logrus v1.0.5/go.mod h1:pMByvHTf9Beacp5x1UXfOR9xyW/9antXMhjMPG0dEzc=
 github.com/sirupsen/logrus v1.4.2 h1:SPIRibHv4MatM3XXNO2BJeFLZwZ2LvZgfQ5+UNI2im4=
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
-github.com/skeema/mybase v1.0.9 h1:Wu4AWiV3Q0EKs6l5k9zsMhBaN5P1IZUJJUQ7IcpZN5A=
-github.com/skeema/mybase v1.0.9/go.mod h1:09Uz3MIoXTNCUZWBeKDeO8SUHlQNjIEocXbc1DFvEKQ=
+github.com/skeema/mybase v1.0.10 h1:XO4ozHK55w+cNtZjf98Jpl2Ht0NOtYktZvwHMZ/yQPQ=
+github.com/skeema/mybase v1.0.10/go.mod h1:AwBbZ1+MMqovL9fjrxgd6fzapjwVNq/VMCwbBmVR+MU=
 github.com/skeema/tengo v0.9.5 h1:DYhO8+cLBeQh4ls9D9oHGMQplAH/VpfUOMNBNiA6m3I=
 github.com/skeema/tengo v0.9.5/go.mod h1:2DO0zUSjb9iItFrxplI1khgsV0FCuohx6xLcTwDtRM4=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=

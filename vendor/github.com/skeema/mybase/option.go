@@ -3,6 +3,7 @@ package mybase
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -35,6 +36,7 @@ type Option struct {
 	Description  string
 	RequireValue bool
 	HiddenOnCLI  bool
+	Group        string // Used in help information
 }
 
 // StringOption creates a string-type Option. By default, string options require
@@ -108,26 +110,29 @@ func (opt *Option) Usage(maxNameLength int) string {
 		}
 	}
 
-	var shorthand, def string
+	var shorthand string
 	if opt.Shorthand > 0 {
 		shorthand = fmt.Sprintf("-%c,", opt.Shorthand)
 	}
-	if opt.HasNonzeroDefault() {
-		if opt.Type == OptionTypeBool {
-			def = fmt.Sprintf(" (enabled by default; disable with --skip-%s)", opt.Name)
-		} else {
-			def = fmt.Sprintf(" (default %s)", opt.PrintableDefault())
-		}
-	}
-
 	head := fmt.Sprintf("  %3s --%*s  ", shorthand, -1*maxNameLength, opt.usageName())
-	desc := fmt.Sprintf("%s%s", opt.Description, def)
+	desc := fmt.Sprintf("%s%s", opt.Description, opt.DefaultUsage())
 	if len(desc)+len(head) > lineLen {
 		desc = wordwrap.WrapString(desc, uint(lineLen-len(head)))
 		spacer := fmt.Sprintf("\n%s", strings.Repeat(" ", len(head)))
 		desc = strings.Replace(desc, "\n", spacer, -1)
 	}
 	return fmt.Sprintf("%s%s\n", head, desc)
+}
+
+// DefaultUsage returns usage information relating to the Option's default
+// value.
+func (opt *Option) DefaultUsage() string {
+	if opt.HiddenOnCLI || !opt.HasNonzeroDefault() {
+		return ""
+	} else if opt.Type == OptionTypeBool {
+		return fmt.Sprintf(" (enabled by default; disable with --skip-%s)", opt.Name)
+	}
+	return fmt.Sprintf(" (default %s)", opt.PrintableDefault())
 }
 
 // usageName returns the option's name, potentially modified/annotated for
@@ -178,6 +183,28 @@ func (opt *Option) PrintableDefault() string {
 	default:
 		return fmt.Sprintf(`"%s"`, opt.Default)
 	}
+}
+
+// OptionGroup is a group of related Options, used in generation of usage
+// instructions for a Command.
+type OptionGroup struct {
+	Name    string
+	Options []*Option
+}
+
+func newOptionGroup(group string, options []*Option) *OptionGroup {
+	grp := &OptionGroup{Name: group}
+	lookup := make(map[string]*Option, len(options))
+	names := make([]string, 0, len(options))
+	for _, opt := range options {
+		lookup[opt.Name] = opt
+		names = append(names, opt.Name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		grp.Options = append(grp.Options, lookup[name])
+	}
+	return grp
 }
 
 // NormalizeOptionToken takes a string of form "foo=bar" or just "foo", and

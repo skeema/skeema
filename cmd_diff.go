@@ -6,22 +6,19 @@ import (
 
 func init() {
 	summary := "Compare a DB instance's schemas and tables to the filesystem"
-	desc := `Compares the schemas on database instance(s) to the corresponding filesystem
-representation of them. The output is a series of DDL commands that, if run on
-the instance, would cause the instances' schemas to now match the ones in the
-filesystem.
-
-You may optionally pass an environment name as a CLI option. This will affect
-which section of .skeema config files is used for processing. For example,
-running ` + "`" + `skeema diff staging` + "`" + ` will apply config directives from the
-[staging] section of config files, as well as any sectionless directives at the
-top of the file. If no environment name is supplied, the default is
-"production".
-
-The ` + "`" + `skeema diff` + "`" + ` command is equivalent to ` + "`" + `skeema push --dry-run` + "`" + `.
-
-An exit code of 0 will be returned if no differences were found, 1 if some
-differences were found, or 2+ if an error occurred.`
+	desc := "Compares the schemas on database instance(s) to the corresponding filesystem " +
+		"representation of them. The output is a series of DDL commands that, if run on " +
+		"the instance, would cause the instances' schemas to now match the ones in the " +
+		"filesystem.\n\n" +
+		"You may optionally pass an environment name as a CLI option. This will affect " +
+		"which section of .skeema config files is used for processing. For example, " +
+		"running `skeema diff staging` will apply config directives from the " +
+		"[staging] section of config files, as well as any sectionless directives at the " +
+		"top of the file. If no environment name is supplied, the default is " +
+		"\"production\".\n\n" +
+		"The `skeema diff` command is equivalent to `skeema push --dry-run`.\n\n" +
+		"An exit code of 0 will be returned if no differences were found; 1 if some " +
+		"differences were found; or 2+ if an error occurred."
 
 	cmd := mybase.NewCommand("diff", summary, desc, DiffHandler)
 	cmd.AddArg("environment", "production", false)

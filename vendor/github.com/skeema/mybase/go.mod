@@ -1,6 +1,6 @@
 module github.com/skeema/mybase
 
-go 1.12
+go 1.14
 
 require (
 	github.com/mitchellh/go-wordwrap v1.0.0

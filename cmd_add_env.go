@@ -13,15 +13,14 @@ import (
 
 func init() {
 	summary := "Add a new named environment to an existing host directory"
-	desc := `Modifies the .skeema file in an existing host directory to add a new named
-environment. For example, if ` + "`" + `skeema init` + "`" + ` was previously used to create a dir
-for a host with the default "production" environment, ` + "`" + `skeema add-environment` + "`" + `
-could be used to define a "staging" or "development" environment pointing at a
-different host and port, or perhaps a "local" environment pointing at localhost
-and a socket path.
-
-This command currently only handles very simple cases. For many situations,
-editing .skeema files directly is a better approach.`
+	desc := "Modifies the .skeema file in an existing host directory to add a new named " +
+		"environment. For example, if `skeema init` was previously used to create a dir " +
+		"for a host with the default \"production\" environment, `skeema add-environment` " +
+		"could be used to define a \"staging\" or \"development\" environment pointing at a " +
+		"different host and port, or perhaps a \"local\" environment pointing at localhost " +
+		"and a socket path.\n\n" +
+		"This command currently only handles very simple cases. For many situations, " +
+		"editing .skeema files directly is a better approach."
 
 	cmd := mybase.NewCommand("add-environment", summary, desc, AddEnvHandler)
 	cmd.AddOption(mybase.StringOption("host", 'h', "", "Database hostname or IP address"))

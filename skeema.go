@@ -11,8 +11,9 @@ import (
 	"github.com/skeema/skeema/workspace"
 )
 
-const rootDesc = `Skeema is a MySQL schema management tool. It allows you to export a database
-schema to the filesystem, and apply online schema changes by modifying files.`
+const rootDesc = "Skeema is a declarative schema management system for MySQL and MariaDB. " +
+	"It allows you to export a database schema to the filesystem, and apply online schema " +
+	"changes by modifying CREATE statements in .sql files."
 
 // Globals overridden by GoReleaser's ldflags
 var (

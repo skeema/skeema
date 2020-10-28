@@ -16,18 +16,17 @@ import (
 
 func init() {
 	summary := "Save a DB instance's schemas and tables to the filesystem"
-	desc := `Creates a filesystem representation of the schemas and tables on a db instance.
-For each schema on the instance (or just the single schema specified by
---schema), a subdir with a .skeema config file will be created. Each directory
-will be populated with .sql files containing CREATE TABLE statements for every
-table in the schema.
-
-You may optionally pass an environment name as a CLI option. This will affect
-which section of .skeema config files the host and schema names are written to.
-For example, running ` + "`" + `skeema init staging` + "`" + ` will add config directives to the
-[staging] section of config files. If no environment name is supplied, the
-default is "production", so directives will be written to the [production]
-section of the file.`
+	desc := "Creates a filesystem representation of the schemas and tables on a db instance. " +
+		"For each schema on the instance (or just the single schema specified by " +
+		"--schema), a subdir with a .skeema config file will be created. Each directory " +
+		"will be populated with .sql files containing CREATE TABLE statements for every " +
+		"table in the schema.\n\n" +
+		"You may optionally pass an environment name as a CLI option. This will affect " +
+		"which section of .skeema config files the host and schema names are written to. " +
+		"For example, running `skeema init staging` will add config directives to the " +
+		"[staging] section of config files. If no environment name is supplied, the " +
+		"default is \"production\", so directives will be written to the [production] " +
+		"section of the file."
 
 	cmd := mybase.NewCommand("init", summary, desc, InitHandler)
 	cmd.AddOption(mybase.StringOption("host", 'h', "", "Database hostname or IP address"))
@@ -39,6 +38,13 @@ section of the file.`
 	cmd.AddOption(mybase.StringOption("ignore-table", 0, "", "Ignore tables that match regex"))
 	cmd.AddOption(mybase.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in table files"))
 	cmd.AddOption(mybase.BoolOption("strip-partitioning", 0, false, "Omit PARTITION BY clause when writing partitioned tables to filesystem"))
+
+	// The temp-schema option is normally added via workspace.AddCommandOptions()
+	// only in subcommands that actually interact with workspaces. init doesn't use
+	// workspaces, but it just needs this one option to prevent accidental export
+	// of the temp-schema to the filesystem.
+	cmd.AddOption(mybase.StringOption("temp-schema", 't', "_skeema_tmp", "").Hidden())
+
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
 }

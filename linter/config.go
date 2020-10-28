@@ -24,16 +24,16 @@ const (
 // AddCommandOptions adds linting-related mybase options to the supplied
 // mybase.Command.
 func AddCommandOptions(cmd *mybase.Command) {
-	cmd.AddOption(mybase.StringOption("warnings", 0, "", "Deprecated method of setting multiple linter options to warning level").Hidden())
-	cmd.AddOption(mybase.StringOption("errors", 0, "", "Deprecated method of setting multiple linter options to error level").Hidden())
+	cmd.AddOptions("linter rule", mybase.StringOption("warnings", 0, "", "Deprecated method of setting multiple linter options to warning level").Hidden())
+	cmd.AddOptions("linter rule", mybase.StringOption("errors", 0, "", "Deprecated method of setting multiple linter options to error level").Hidden())
 	for _, r := range rulesByName {
 		opt := mybase.StringOption(r.optionName(), 0, string(r.DefaultSeverity), r.optionDescription())
 		if r.hidden() {
 			opt.Hidden()
 		}
-		cmd.AddOption(opt)
+		cmd.AddOptions("linter rule", opt)
 		if r.RelatedOption != nil {
-			cmd.AddOption(r.RelatedOption)
+			cmd.AddOptions("linter rule", r.RelatedOption)
 		}
 	}
 }

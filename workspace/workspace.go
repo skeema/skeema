@@ -17,6 +17,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/nozzle/throttler"
 	log "github.com/sirupsen/logrus"
+	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/fs"
 	"github.com/skeema/tengo"
 )
@@ -106,9 +107,8 @@ func New(opts Options) (Workspace, error) {
 // OptionsForDir returns Options based on the configuration in an fs.Dir.
 // A non-nil instance should be supplied, unless the caller already knows the
 // workspace won't be temp-schema based.
-// This method relies on option definitions from util.AddGlobalOptions(),
-// including "workspace", "temp-schema", "flavor", "docker-cleanup",
-// "reuse-temp-schema", "temp-schema-threads", "temp-schema-binlog"
+// This method relies on option definitions from AddCommandOptions(), as well
+// as the "flavor" option from util.AddGlobalOptions().
 func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 	requestedType, err := dir.Config.GetEnum("workspace", "temp-schema", "docker")
 	if err != nil {
@@ -161,6 +161,19 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 		// supplied instance already has default params
 	}
 	return opts, nil
+}
+
+// AddCommandOptions adds workspace-related option definitions to the supplied
+// mybase.Command.
+func AddCommandOptions(cmd *mybase.Command) {
+	cmd.AddOptions("workspace",
+		mybase.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema for intermediate operations, created and dropped each run"),
+		mybase.StringOption("temp-schema-binlog", 0, "auto", `Controls whether temp schema DDL operations are replicated (valid values: "on", "off", "auto")`),
+		mybase.StringOption("temp-schema-threads", 0, "5", "Max number of concurrent CREATE/DROP with workspace=temp-schema"),
+		mybase.StringOption("workspace", 'w', "temp-schema", `Specifies where to run intermediate operations (valid values: "temp-schema", "docker")`),
+		mybase.StringOption("docker-cleanup", 0, "none", `With --workspace=docker, specifies how to clean up containers (valid values: "none", "stop", "destroy")`),
+		mybase.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done").Hidden(), // DEPRECATED -- hidden for this reason
+	)
 }
 
 // ShutdownFunc is a function that manages final cleanup of a Workspace upon

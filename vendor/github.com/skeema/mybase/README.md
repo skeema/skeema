@@ -1,6 +1,6 @@
 # mybase
 
-[![build status](https://img.shields.io/travis/skeema/mybase/master.svg)](http://travis-ci.org/skeema/mybase)
+[![build status](https://img.shields.io/github/workflow/status/skeema/mybase/Tests/main)](https://github.com/skeema/mybase/actions)
 [![godoc](https://img.shields.io/badge/godoc-reference-blue.svg)](https://godoc.org/github.com/skeema/mybase)
 [![latest release](https://img.shields.io/github/release/skeema/mybase.svg)](https://github.com/skeema/mybase/releases)
 
