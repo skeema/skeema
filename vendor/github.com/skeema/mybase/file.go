@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"path"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -44,7 +43,7 @@ type File struct {
 // joined to create a single path, so it does not matter if the path is provided
 // in a way that separates the dir from the base filename or not.
 func NewFile(paths ...string) *File {
-	pathAndName := path.Join(paths...)
+	pathAndName := filepath.Join(paths...)
 	cleanPath, err := filepath.Abs(filepath.Clean(pathAndName))
 	if err == nil {
 		pathAndName = cleanPath
@@ -72,7 +71,7 @@ func (f *File) Exists() bool {
 
 // Path returns the file's full absolute path with filename.
 func (f *File) Path() string {
-	return path.Join(f.Dir, f.Name)
+	return filepath.Join(f.Dir, f.Name)
 }
 
 func (f *File) String() string {

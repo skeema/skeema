@@ -22,8 +22,8 @@ func init() {
 		"By default, this command also reformats statements to their canonical form, " +
 		"just like `skeema format`.\n\n" +
 		"This command relies on accessing database instances to test the SQL DDL in a " +
-		"temporary location. See the workspace option for more information.\n\n" +
-		"You may optionally pass an environment name as a CLI option. This will affect " +
+		"temporary location. See the --workspace option for more information.\n\n" +
+		"You may optionally pass an environment name as a CLI arg. This will affect " +
 		"which section of .skeema config files is used for linter configuration and " +
 		"workspace selection. For example, running `skeema lint staging` will " +
 		"apply config directives from the [staging] section of config files, as well as " +

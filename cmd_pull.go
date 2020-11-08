@@ -15,12 +15,12 @@ import (
 )
 
 func init() {
-	summary := "Update the filesystem representation of schemas and tables"
-	desc := "Updates the existing filesystem representation of the schemas and tables on a DB " +
+	summary := "Update the filesystem representation of schemas"
+	desc := "Updates the existing filesystem representation of the schemas on a DB " +
 		"instance. Use this command when changes have been applied to the database " +
-		"without using skeema, and the filesystem representation needs to be updated to " +
+		"manually or outside of Skeema, in order to make the filesystem representation " +
 		"reflect those changes.\n\n" +
-		"You may optionally pass an environment name as a CLI option. This will affect " +
+		"You may optionally pass an environment name as a CLI arg. This will affect " +
 		"which section of .skeema config files is used for processing. For example, " +
 		"running `skeema pull staging` will apply config directives from the " +
 		"[staging] section of config files, as well as any sectionless directives at the " +

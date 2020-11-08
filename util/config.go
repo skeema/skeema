@@ -22,8 +22,6 @@ func AddGlobalOptions(cmd *mybase.Command) {
 	cmd.AddOption(mybase.StringOption("port", 0, "3306", "Port to use for database host").Hidden())
 	cmd.AddOption(mybase.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix socket file used if host is localhost").Hidden())
 	cmd.AddOption(mybase.StringOption("schema", 0, "", "Database schema name").Hidden())
-	cmd.AddOption(mybase.StringOption("ignore-schema", 0, "", "Ignore schemas that match regex").Hidden())
-	cmd.AddOption(mybase.StringOption("ignore-table", 0, "", "Ignore tables that match regex").Hidden())
 	cmd.AddOption(mybase.StringOption("default-character-set", 0, "", "Schema-level default character set").Hidden())
 	cmd.AddOption(mybase.StringOption("default-collation", 0, "", "Schema-level default collation").Hidden())
 	cmd.AddOption(mybase.StringOption("flavor", 0, "", "Database server expressed in format vendor:major.minor, for use in vendor/version specific syntax").Hidden())
@@ -34,6 +32,8 @@ func AddGlobalOptions(cmd *mybase.Command) {
 		mybase.StringOption("password", 'p', "", "Password for database user; omit value to prompt from TTY (default no password)").ValueOptional(),
 		mybase.StringOption("host-wrapper", 'H', "", "External bin to shell out to for host lookup; see manual for template vars"),
 		mybase.StringOption("connect-options", 'o', "", "Comma-separated session options to set upon connecting to each database instance"),
+		mybase.StringOption("ignore-schema", 0, "", "Ignore schemas that match regex"),
+		mybase.StringOption("ignore-table", 0, "", "Ignore tables that match regex"),
 		mybase.BoolOption("debug", 0, false, "Enable debug logging"),
 		mybase.BoolOption("my-cnf", 0, true, "Parse ~/.my.cnf for configuration"),
 	)

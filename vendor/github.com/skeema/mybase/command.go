@@ -21,6 +21,7 @@ type Command struct {
 	Name          string              // Command name, as used in CLI
 	Summary       string              // Short description text. If ParentCommand is nil, represents version instead.
 	Description   string              // Long (multi-line) description/help text
+	WebDocURL     string              // Optional URL for online documentation for this specific command
 	SubCommands   map[string]*Command // Index of sub-commands
 	ParentCommand *Command            // What command this is a sub-command of, or nil if this is the top level
 	Handler       CommandHandler      // Callback for processing command. Ignored if len(SubCommands) > 0.
@@ -233,6 +234,10 @@ func (cmd *Command) Usage() {
 			fmt.Print(opt.Usage(maxLen))
 		}
 	}
+
+	if webDocs := cmd.WebDocText(); webDocs != "" {
+		fmt.Printf("\n%s\n\n", wordwrap.WrapString(webDocs, uint(lineLen)))
+	}
 }
 
 // Invocation returns command-line help for invoking a command with its args.
@@ -291,6 +296,30 @@ func (cmd *Command) OptionGroups() []OptionGroup {
 		ret = append(ret, *newOptionGroup("global", global))
 	}
 	return ret
+}
+
+// WebDocText returns a string with descriptive help text linking to the online
+// documentation for this command suite or subcommand. If this command doesn't
+// have a doc URL, but an ancestor command suite does, a URL will be constructed
+// incorporating this command's name into the URL path. If this command and its
+// ancestors all lack doc URLs, an empty string is returned.
+func (cmd *Command) WebDocText() string {
+	noun := "command"
+	if len(cmd.SubCommands) > 0 {
+		noun = "command suite"
+	}
+
+	var subPath string
+	cur := cmd
+	for cur.WebDocURL == "" && cur.ParentCommand != nil {
+		subPath = fmt.Sprintf("/%s%s", cur.Name, subPath)
+		cur = cur.ParentCommand
+	}
+	if cur.WebDocURL == "" {
+		return ""
+	}
+	fullURL := fmt.Sprintf("%s%s", cur.WebDocURL, subPath)
+	return fmt.Sprintf("Complete documentation for this %s is available online: %s", noun, fullURL)
 }
 
 // Root returns the top-level ancestor of this cmd -- that is, it climbs the

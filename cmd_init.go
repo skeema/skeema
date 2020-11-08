@@ -15,14 +15,14 @@ import (
 )
 
 func init() {
-	summary := "Save a DB instance's schemas and tables to the filesystem"
-	desc := "Creates a filesystem representation of the schemas and tables on a db instance. " +
+	summary := "Save a DB instance's schemas to the filesystem"
+	desc := "Creates a filesystem representation of the schemas on a DB instance. " +
 		"For each schema on the instance (or just the single schema specified by " +
 		"--schema), a subdir with a .skeema config file will be created. Each directory " +
-		"will be populated with .sql files containing CREATE TABLE statements for every " +
-		"table in the schema.\n\n" +
-		"You may optionally pass an environment name as a CLI option. This will affect " +
-		"which section of .skeema config files the host and schema names are written to. " +
+		"will be populated with .sql files containing CREATE statements for every " +
+		"table and routine in the schema.\n\n" +
+		"You may optionally pass an environment name as a CLI arg. This will affect " +
+		"which section of .skeema config files the host-related options are written to. " +
 		"For example, running `skeema init staging` will add config directives to the " +
 		"[staging] section of config files. If no environment name is supplied, the " +
 		"default is \"production\", so directives will be written to the [production] " +
@@ -34,8 +34,6 @@ func init() {
 	cmd.AddOption(mybase.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix socket file used if host is localhost"))
 	cmd.AddOption(mybase.StringOption("dir", 'd', "<hostname>", "Subdir name to use for this host's schemas"))
 	cmd.AddOption(mybase.StringOption("schema", 0, "", "Only import the one specified schema; skip creation of subdirs for each schema"))
-	cmd.AddOption(mybase.StringOption("ignore-schema", 0, "", "Ignore schemas that match regex"))
-	cmd.AddOption(mybase.StringOption("ignore-table", 0, "", "Ignore tables that match regex"))
 	cmd.AddOption(mybase.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in table files"))
 	cmd.AddOption(mybase.BoolOption("strip-partitioning", 0, false, "Omit PARTITION BY clause when writing partitioned tables to filesystem"))
 

@@ -27,6 +27,8 @@ var (
 var CommandSuite = mybase.NewCommandSuite("skeema", versionString(), rootDesc)
 
 func main() {
+	CommandSuite.WebDocURL = "https://www.skeema.io/docs/commands"
+
 	// Add global options. Sub-commands may override these when needed.
 	util.AddGlobalOptions(CommandSuite)
 

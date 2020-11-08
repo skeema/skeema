@@ -16,8 +16,8 @@ func init() {
 	desc := "Reformats the filesystem representation of database objects to match the canonical " +
 		"format shown in SHOW CREATE.\n\n" +
 		"This command relies on accessing database instances to test the SQL DDL in a " +
-		"temporary location. See the workspace option for more information.\n\n" +
-		"You may optionally pass an environment name as a CLI option. This will affect " +
+		"temporary location. See the --workspace option for more information.\n\n" +
+		"You may optionally pass an environment name as a CLI arg. This will affect " +
 		"which section of .skeema config files is used for workspace selection. For " +
 		"example, running `skeema format staging` will " +
 		"apply config directives from the [staging] section of config files, as well as " +

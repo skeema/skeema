@@ -13,12 +13,12 @@ import (
 )
 
 func init() {
-	summary := "Alter tables on DBs to reflect the filesystem representation"
+	summary := "Alter objects on DBs to reflect the filesystem representation"
 	desc := "Modifies the schemas on database instance(s) to match the corresponding " +
 		"filesystem representation of them. This essentially performs the same diff logic " +
 		"as `skeema diff`, but then actually runs the generated DDL. You should generally " +
 		"run `skeema diff` first to see what changes will be applied.\n\n" +
-		"You may optionally pass an environment name as a CLI option. This will affect " +
+		"You may optionally pass an environment name as a CLI arg. This will affect " +
 		"which section of .skeema config files is used for processing. For example, " +
 		"running `skeema push staging` will apply config directives from the " +
 		"[staging] section of config files, as well as any sectionless directives at the " +
@@ -29,11 +29,6 @@ func init() {
 		"occurred."
 
 	cmd := mybase.NewCommand("push", summary, desc, PushHandler)
-	cmd.AddOption(mybase.BoolOption("foreign-key-checks", 0, false, "Force the server to check referential integrity of any new foreign key"))
-	cmd.AddOption(mybase.BoolOption("brief", 'q', false, "<overridden by diff command>").Hidden())
-	cmd.AddOption(mybase.StringOption("alter-wrapper", 'x', "", "External bin to shell out to for ALTER TABLE; see manual for template vars"))
-	cmd.AddOption(mybase.StringOption("alter-wrapper-min-size", 0, "0", "Ignore --alter-wrapper for tables smaller than this size in bytes"))
-	cmd.AddOption(mybase.StringOption("ddl-wrapper", 'X', "", "Like --alter-wrapper, but applies to all DDL types (CREATE, DROP, ALTER)"))
 
 	cmd.AddOptions("DDL generation",
 		mybase.BoolOption("exact-match", 0, false, "Follow *.sql table definitions exactly, even for differences with no functional impact"),
@@ -42,6 +37,12 @@ func init() {
 		mybase.StringOption("alter-lock", 0, "", `Apply a LOCK clause to all ALTER TABLEs (valid values: "none", "shared", "exclusive")`),
 		mybase.StringOption("alter-algorithm", 0, "", `Apply an ALGORITHM clause to all ALTER TABLEs (valid values: "inplace", "copy", "instant")`),
 		mybase.StringOption("partitioning", 0, "keep", `Specify handling of partitioning status on the database side (valid values: "keep", "remove", "modify")`),
+	)
+
+	cmd.AddOptions("External tool",
+		mybase.StringOption("alter-wrapper", 'x', "", "External bin to shell out to for ALTER TABLE; see manual for template vars"),
+		mybase.StringOption("alter-wrapper-min-size", 0, "0", "Ignore --alter-wrapper for tables smaller than this size in bytes"),
+		mybase.StringOption("ddl-wrapper", 'X', "", "Like --alter-wrapper, but applies to all DDL types (CREATE, DROP, ALTER)"),
 	)
 
 	cmd.AddOptions("linter rule",
@@ -53,11 +54,13 @@ func init() {
 		mybase.BoolOption("verify", 0, true, "Test all generated ALTER statements on temp schema to verify correctness"),
 		mybase.BoolOption("allow-unsafe", 0, false, "Permit running ALTER or DROP operations that are potentially destructive"),
 		mybase.BoolOption("dry-run", 0, false, "Output DDL but don't run it; equivalent to `skeema diff`"),
+		mybase.BoolOption("foreign-key-checks", 0, false, "Force the server to check referential integrity of any new foreign key"),
 		mybase.StringOption("safe-below-size", 0, "0", "Always permit destructive operations for tables below this size in bytes"),
 	)
 
 	cmd.AddOptions("sharding",
 		mybase.BoolOption("first-only", '1', false, "For dirs mapping to multiple instances or schemas, just run against the first per dir"),
+		mybase.BoolOption("brief", 'q', false, "<overridden by diff command>").Hidden(),
 		mybase.StringOption("concurrent-instances", 'c', "1", "Perform operations on this number of instances concurrently"),
 	)
 
