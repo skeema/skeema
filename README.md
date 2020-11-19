@@ -37,12 +37,13 @@ To download, build from main branch, and install (or upgrade) Skeema, run:
 
 ## Documentation
 
-* [Getting started](doc/examples.md): usage examples and screencasts
-* [Recommended workflow](doc/workflow.md)
-* [Configuration how-to](doc/config.md)
-* [Options reference](doc/options.md)
-* [Requirements](doc/requirements.md)
-* [Frequently asked questions](doc/faq.md)
+* [Getting started](https://www.skeema.io/docs/examples/): usage examples and screencasts
+* [Requirements](https://www.skeema.io/docs/requirements/)
+* [Recommended workflow](https://www.skeema.io/docs/workflow/)
+* [Configuration guide](https://www.skeema.io/docs/config/)
+* [Command reference](https://www.skeema.io/docs/commands/)
+* [Options reference](https://www.skeema.io/docs/options/)
+* [Frequently asked questions](https://www.skeema.io/docs/faq/)
 * [Cloud Linter for GitHub](https://www.skeema.io/cloud/)
 
 ## Status
@@ -59,7 +60,7 @@ Tagged releases are tested against the following databases, all running on Linux
 
 Outside of a tagged release, every commit to the main branch is automatically tested against MySQL 5.7 and 8.0.
 
-A few uncommon MySQL features -- such as spatial indexes and subpartitioning -- are not supported yet. Skeema is able to *create* or *drop* tables using these features, but not *alter* them. The output of `skeema diff` and `skeema push` clearly displays when this is the case. You may still make such alters directly/manually (outside of Skeema), and then update the corresponding CREATE TABLE files via `skeema pull`. Please see the [requirements doc](doc/requirements.md) for more information.
+A few uncommon database features -- such as check constraints, spatial indexes, and subpartitioning -- are not supported yet. Skeema is able to *create* or *drop* tables using these features, but not *alter* them. The output of `skeema diff` and `skeema push` clearly displays when this is the case. You may still make such alters directly/manually (outside of Skeema), and then update the corresponding CREATE TABLE files via `skeema pull`. Please see the [requirements doc](https://www.skeema.io/docs/requirements/) for more information.
 
 ## Credits
 
