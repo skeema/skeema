@@ -202,6 +202,7 @@ func (di *DockerizedInstance) Start() error {
 // destroy the container. The connection pool will be removed. If the container
 // was not already running, nil will be returned.
 func (di *DockerizedInstance) Stop() error {
+	di.CloseAll()
 	err := di.Manager.client.StopContainer(di.container.ID, 10)
 	if _, ok := err.(*docker.ContainerNotRunning); !ok && err != nil {
 		return err
@@ -211,6 +212,7 @@ func (di *DockerizedInstance) Stop() error {
 
 // Destroy stops and deletes the corresponding containerized mysql-server.
 func (di *DockerizedInstance) Destroy() error {
+	di.CloseAll()
 	rcopts := docker.RemoveContainerOptions{
 		ID:            di.container.ID,
 		Force:         true,
@@ -292,6 +294,7 @@ func (di *DockerizedInstance) SourceSQL(filePath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("SourceSQL %s: Unable to open setup file %s: %s", di, filePath, err)
 	}
+	defer f.Close()
 	cmd := []string{"mysql", "-tvvv", "-u", "root"}
 	if di.RootPassword != "" {
 		cmd = append(cmd, fmt.Sprintf("-p%s", di.RootPassword))

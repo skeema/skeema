@@ -89,6 +89,9 @@ func (s *SkeemaIntegrationSuite) BeforeTest(backend string) error {
 
 	// Create or recreate scratch dir
 	if _, err := os.Stat(s.scratchPath()); err == nil { // dir exists
+		if err := os.Chdir(s.repoPath); err != nil {
+			return err
+		}
 		if err := os.RemoveAll(s.scratchPath()); err != nil {
 			return err
 		}
