@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -224,7 +224,7 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *fs.Dir, makeSubdir bool) erro
 	var dir *fs.Dir
 	var err error
 	if makeSubdir {
-		optionFile := mybase.NewFile(path.Join(parentDir.Path, s.Name), ".skeema")
+		optionFile := mybase.NewFile(filepath.Join(parentDir.Path, s.Name), ".skeema")
 		optionFile.SetOptionValue("", "schema", s.Name)
 		optionFile.SetOptionValue("", "default-character-set", s.CharSet)
 		optionFile.SetOptionValue("", "default-collation", s.Collation)

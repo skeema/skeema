@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -108,7 +107,7 @@ func (dir *Dir) String() string {
 
 // BaseName returns the name of the directory without the rest of its path.
 func (dir *Dir) BaseName() string {
-	return path.Base(dir.Path)
+	return filepath.Base(dir.Path)
 }
 
 // RelPath attempts to return the directory path relative to the dir's repoBase.
@@ -130,7 +129,7 @@ func (dir *Dir) Delete() error {
 
 // HasFile returns true if the specified filename exists in dir.
 func (dir *Dir) HasFile(name string) (bool, error) {
-	_, err := os.Lstat(path.Join(dir.Path, name))
+	_, err := os.Lstat(filepath.Join(dir.Path, name))
 	if err == nil {
 		return true, nil
 	} else if os.IsNotExist(err) {
@@ -153,7 +152,7 @@ func (dir *Dir) Subdirs() ([]*Dir, error) {
 	for _, fi := range fileInfos {
 		if fi.IsDir() && fi.Name()[0] != '.' {
 			sub := &Dir{
-				Path:     path.Join(dir.Path, fi.Name()),
+				Path:     filepath.Join(dir.Path, fi.Name()),
 				Config:   dir.Config.Clone(),
 				repoBase: dir.repoBase,
 			}
@@ -168,7 +167,7 @@ func (dir *Dir) Subdirs() ([]*Dir, error) {
 // config file. If the directory already exists, it is an error if it already
 // contains any *.sql files or a .skeema file.
 func (dir *Dir) CreateSubdir(name string, optionFile *mybase.File) (*Dir, error) {
-	dirPath := path.Join(dir.Path, name)
+	dirPath := filepath.Join(dir.Path, name)
 	if dir.OptionFile != nil && dir.OptionFile.SomeSectionHasOption("schema") {
 		return nil, fmt.Errorf("Cannot use dir %s: parent option file %s defines schema option", dirPath, dir.OptionFile)
 	} else if _, ok := dir.Config.Source("schema").(*mybase.File); ok {
@@ -661,7 +660,7 @@ func ParentOptionFiles(dirPath string, baseConfig *mybase.Config) ([]*mybase.Fil
 	components := strings.Split(cleaned, string(os.PathSeparator))
 	filePaths := make([]string, 0, len(components)-1)
 
-	home := filepath.Clean(os.Getenv("HOME"))
+	home, _ := os.UserHomeDir()
 	repoBase := cleaned
 
 	// Examine dirs, starting with dirPath and going up one level at a time,
@@ -669,7 +668,7 @@ func ParentOptionFiles(dirPath string, baseConfig *mybase.Config) ([]*mybase.Fil
 	// containing a .git subdir.
 	var atRepoBase bool
 	for n := len(components) - 1; n >= 0 && !atRepoBase; n-- {
-		curPath := "/" + path.Join(components[0:n+1]...)
+		curPath := "/" + filepath.Join(components[0:n+1]...)
 		if curPath == home {
 			// We already read ~/.skeema as a global file
 			break
@@ -721,7 +720,7 @@ func parseOptionFile(dirPath, repoBase string, baseConfig *mybase.Config) (*myba
 		}
 		dest = filepath.Clean(dest)
 		if !filepath.IsAbs(dest) {
-			if dest, err = filepath.Abs(path.Join(dirPath, dest)); err != nil {
+			if dest, err = filepath.Abs(filepath.Join(dirPath, dest)); err != nil {
 				return nil, err
 			}
 		}
@@ -762,13 +761,13 @@ func sqlFiles(dirPath, repoBase string) ([]SQLFile, error) {
 		// symlinks: verify it points to an existing file within repoBase. If it
 		// does not, or if any error occurs in any step in checking, skip it.
 		if fi.Mode()&os.ModeSymlink == os.ModeSymlink {
-			dest, err := os.Readlink(path.Join(dirPath, name))
+			dest, err := os.Readlink(filepath.Join(dirPath, name))
 			if err != nil {
 				continue
 			}
 			dest = filepath.Clean(dest)
 			if !filepath.IsAbs(dest) {
-				if dest, err = filepath.Abs(path.Join(dirPath, dest)); err != nil {
+				if dest, err = filepath.Abs(filepath.Join(dirPath, dest)); err != nil {
 					continue
 				}
 			}

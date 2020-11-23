@@ -331,7 +331,8 @@ func (s *SkeemaIntegrationSuite) compareDirLogicalSchemas(t *testing.T, a, b *fs
 			flavor := s.d.Flavor()
 			for key, aStmt := range aCreates {
 				bStmt := bCreates[key]
-				aText, bText := aStmt.Text, bStmt.Text
+				aText := strings.ReplaceAll(aStmt.Text, "\r\n", "\n")
+				bText := strings.ReplaceAll(bStmt.Text, "\r\n", "\n")
 				if flavor.OmitIntDisplayWidth() {
 					aText = reDisplayWidth.ReplaceAllString(aText, "$1$3$4")
 				}

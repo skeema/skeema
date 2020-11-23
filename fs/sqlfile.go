@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode"
@@ -25,7 +25,7 @@ type TokenizedSQLFile struct {
 
 // Path returns the full absolute path to a SQLFile.
 func (sf SQLFile) Path() string {
-	return path.Join(sf.Dir, sf.FileName)
+	return filepath.Join(sf.Dir, sf.FileName)
 }
 
 func (sf SQLFile) String() string {
@@ -160,7 +160,7 @@ func PathForObject(dirPath, objectName string) string {
 	if objectName == "" {
 		objectName = "symbols"
 	}
-	return path.Join(dirPath, fmt.Sprintf("%s.sql", objectName))
+	return filepath.Join(dirPath, fmt.Sprintf("%s.sql", objectName))
 }
 
 func removeSpecialChars(r rune) rune {

@@ -1254,8 +1254,10 @@ END`
 	routine1 = strings.Replace(routine1, "BEGIN\n", "BEGIN\r\n", 1)
 	fs.WriteTestFile(t, "mydb/product/routine1.sql", routine1)
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
-	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull")
-	s.verifyFiles(t, cfg, "../golden/routines")
+	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
+	if newContents := fs.ReadTestFile(t, "mydb/product/routine1.sql"); strings.Contains(newContents, "\r\n") {
+		t.Error("Expected UNIX-style line-ends to be restored after `skeema pull`, but they were not")
+	}
 
 	// Modify the db representation of the routine; diff/push should work, but only
 	// with --allow-unsafe (and not with --safe-below-size)

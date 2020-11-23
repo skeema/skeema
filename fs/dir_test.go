@@ -49,7 +49,7 @@ func TestParseDir(t *testing.T) {
 
 	// Confirm that parsing ~ should cause it to be its own repoBase, since we
 	// do not search beyond HOME for .skeema files or .git dirs
-	home := filepath.Clean(os.Getenv("HOME"))
+	home, _ := os.UserHomeDir()
 	dir = getDir(t, home)
 	if dir.repoBase != home {
 		t.Errorf("Unexpected repoBase for $HOME: expected %s, found %s", home, dir.repoBase)

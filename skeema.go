@@ -17,7 +17,7 @@ const rootDesc = "Skeema is a declarative schema management system for MySQL and
 
 // Globals overridden by GoReleaser's ldflags
 var (
-	version = "1.4.5"
+	version = "1.4.6"
 	commit  = "unknown"
 	date    = "unknown"
 )

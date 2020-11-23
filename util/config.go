@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -51,9 +50,8 @@ func AddGlobalConfigFiles(cfg *mybase.Config) {
 		globalFilePaths = append(globalFilePaths, "fake-etc/skeema", "fake-home/.my.cnf")
 	} else {
 		globalFilePaths = append(globalFilePaths, "/etc/skeema", "/usr/local/etc/skeema")
-		home := filepath.Clean(os.Getenv("HOME"))
-		if home != "" {
-			globalFilePaths = append(globalFilePaths, path.Join(home, ".my.cnf"), path.Join(home, ".skeema"))
+		if home, err := os.UserHomeDir(); home != "" && err == nil {
+			globalFilePaths = append(globalFilePaths, filepath.Join(home, ".my.cnf"), filepath.Join(home, ".skeema"))
 		}
 	}
 
