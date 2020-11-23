@@ -33,7 +33,7 @@ Compiling from scratch requires the [Go programming language toolchain](https://
 
 To download, build from main branch, and install (or upgrade) Skeema, run:
 
-`go get -u github.com/skeema/skeema`
+`go get github.com/skeema/skeema`
 
 ## Documentation
 
