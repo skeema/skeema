@@ -15,25 +15,9 @@ Skeema is a tool for managing MySQL tables and schema changes in a declarative f
 
 Skeema supports a pull-request-based workflow for schema change submission, review, and execution. This permits your team to manage schema changes in exactly the same way as you manage code changes. Our new companion [Cloud Linter for GitHub repos](https://www.skeema.io/cloud/) provides automatic linting of schema change commits and pull requests.
 
-## Downloading
+## Download and install
 
-Pre-built `skeema` binaries for Linux and macOS can be downloaded from the [releases](https://github.com/skeema/skeema/releases) page.
-
-### Homebrew on macOS
-
-If you are on macOS and using [Homebrew](https://brew.sh/) package manager, you can install skeema with Homebrew.
-
-```shell
-brew install skeema/tap/skeema
-```
-
-## Compiling
-
-Compiling from scratch requires the [Go programming language toolchain](https://golang.org/dl/), version 1.14 or higher.
-
-To download, build from main branch, and install (or upgrade) Skeema, run:
-
-`go get github.com/skeema/skeema`
+Download links and installation instructions are available on [Skeema's website](https://www.skeema.io/download/).
 
 ## Documentation
 
@@ -50,7 +34,7 @@ To download, build from main branch, and install (or upgrade) Skeema, run:
 
 The Skeema CLI tool is generally available, having reached the v1 release milestone in July 2018. Prior to that, it was in public beta since October 2016.
 
-The `skeema` binary is supported on macOS and Linux. No native Windows version is available yet, though the Linux binary works properly under WSL.
+The `skeema` binary is supported on macOS and Linux. No native Windows version is available yet, but the Linux binary works properly under WSL.
 
 Tagged releases are tested against the following databases, all running on Linux:
 
@@ -58,7 +42,7 @@ Tagged releases are tested against the following databases, all running on Linux
 * Percona Server 5.5, 5.6, 5.7, 8.0
 * MariaDB 10.1, 10.2, 10.3, 10.4, 10.5
 
-Outside of a tagged release, every commit to the main branch is automatically tested against MySQL 5.7 and 8.0.
+Outside of a tagged release, every commit is [automatically tested via GitHub Actions CI](https://github.com/skeema/skeema/actions) against MySQL 5.7 and 8.0.
 
 A few uncommon database features -- such as check constraints, spatial indexes, and subpartitioning -- are not supported yet. Skeema is able to *create* or *drop* tables using these features, but not *alter* them. The output of `skeema diff` and `skeema push` clearly displays when this is the case. You may still make such alters directly/manually (outside of Skeema), and then update the corresponding CREATE TABLE files via `skeema pull`. Please see the [requirements doc](https://www.skeema.io/docs/requirements/) for more information.
 
