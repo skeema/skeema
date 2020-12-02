@@ -105,7 +105,6 @@ github.com/skeema/mybase
 ## explicit
 github.com/skeema/tengo
 # golang.org/x/crypto v0.0.0-20200429183012-4b2356b1ed79
-## explicit
 golang.org/x/crypto/ssh/terminal
 # golang.org/x/lint v0.0.0-20190409202823-959b441ac422
 ## explicit

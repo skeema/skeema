@@ -200,3 +200,12 @@ func lintDir(dir *fs.Dir) *linter.Result {
 	result.SortByFile()
 	return result
 }
+
+func countAndNoun(n int, singular, plural string) string {
+	if n == 1 {
+		return fmt.Sprintf("1 %s", singular)
+	} else if n == 0 {
+		return fmt.Sprintf("no %s", plural)
+	}
+	return fmt.Sprintf("%d %s", n, plural)
+}

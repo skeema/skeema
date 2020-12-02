@@ -1,3 +1,7 @@
+// This file uses ANSI color codes, which do not work on Windows.
+
+// +build !windows
+
 package main
 
 import (
@@ -8,7 +12,7 @@ import (
 
 	"github.com/mitchellh/go-wordwrap"
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/crypto/ssh/terminal"
+	terminal "golang.org/x/term"
 )
 
 func init() {
@@ -73,13 +77,4 @@ func (f *customFormatter) Format(entry *log.Entry) ([]byte, error) {
 
 	fmt.Fprintf(b, "%s %s%s\n", entry.Time.Format("2006-01-02 15:04:05"), levelText, message)
 	return b.Bytes(), nil
-}
-
-func countAndNoun(n int, singular, plural string) string {
-	if n == 1 {
-		return fmt.Sprintf("1 %s", singular)
-	} else if n == 0 {
-		return fmt.Sprintf("no %s", plural)
-	}
-	return fmt.Sprintf("%d %s", n, plural)
 }

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -133,7 +134,12 @@ func (s *SkeemaIntegrationSuite) handleCommand(t *testing.T, expectedExitCode in
 	}
 
 	fullCommandLine := fmt.Sprintf(commandLine, a...)
-	fmt.Fprintf(os.Stderr, "\x1b[37;1m%s$\x1b[0m %s\n", filepath.Join("testdata", ".scratch", pwd), fullCommandLine)
+	if runtime.GOOS == "windows" {
+		// Omit ANSI color codes on Windows
+		fmt.Fprintf(os.Stderr, "%s$ %s\n", filepath.Join("testdata", ".scratch", pwd), fullCommandLine)
+	} else {
+		fmt.Fprintf(os.Stderr, "\x1b[37;1m%s$\x1b[0m %s\n", filepath.Join("testdata", ".scratch", pwd), fullCommandLine)
+	}
 	fakeFileSource := mybase.SimpleSource(map[string]string{"password": s.d.Instance.Password})
 	cfg := mybase.ParseFakeCLI(t, CommandSuite, fullCommandLine, fakeFileSource)
 	util.AddGlobalConfigFiles(cfg)

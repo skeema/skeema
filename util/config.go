@@ -10,7 +10,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
-	"golang.org/x/crypto/ssh/terminal"
+	terminal "golang.org/x/term"
 )
 
 // AddGlobalOptions adds Skeema global options to the supplied mybase.Command.
