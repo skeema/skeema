@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -49,7 +50,11 @@ func AddGlobalConfigFiles(cfg *mybase.Config) {
 	if cfg.IsTest {
 		globalFilePaths = append(globalFilePaths, "fake-etc/skeema", "fake-home/.my.cnf")
 	} else {
-		globalFilePaths = append(globalFilePaths, "/etc/skeema", "/usr/local/etc/skeema")
+		if runtime.GOOS == "windows" {
+			globalFilePaths = append(globalFilePaths, "C:\\Program Files\\Skeema\\skeema.cnf")
+		} else {
+			globalFilePaths = append(globalFilePaths, "/etc/skeema", "/usr/local/etc/skeema")
+		}
 		if home, err := os.UserHomeDir(); home != "" && err == nil {
 			globalFilePaths = append(globalFilePaths, filepath.Join(home, ".my.cnf"), filepath.Join(home, ".skeema"))
 		}

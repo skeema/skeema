@@ -3,6 +3,7 @@ package applier
 import (
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -68,6 +69,10 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 	if is55 {
 		delete(configMap, "alter-algorithm")
 		delete(configMap, "alter-lock")
+	}
+	if runtime.GOOS == "windows" {
+		configMap["ddl-wrapper"] = `echo "ddl-wrapper {SCHEMA}.{NAME} {TYPE} {CLASS}"`
+		configMap["alter-wrapper"] = `echo "alter-wrapper {SCHEMA}.{TABLE} {TYPE} {CLAUSES}"`
 	}
 	cfg := mybase.SimpleConfig(configMap)
 	dir := &fs.Dir{
@@ -146,8 +151,10 @@ func objectDiffExpected(t *testing.T, diff tengo.ObjectDiff, ddl *DDLStatement, 
 				// sanity-check the quoting rules.
 				expected = "/bin/echo alter-wrapper analytics.pageviews ALTER 'ADD COLUMN `domain` varchar(40) NOT NULL DEFAULT '\"'\"'skeema.io'\"'\"''"
 				expectedOutput := "alter-wrapper analytics.pageviews ALTER ADD COLUMN `domain` varchar(40) NOT NULL DEFAULT 'skeema.io'\n"
-				if actualOutput, err := ddl.shellOut.RunCapture(); err != nil || actualOutput != expectedOutput {
-					t.Errorf("Expected output:\n%sActual output:\n%sErr:\n%v\n", expectedOutput, actualOutput, err)
+				if runtime.GOOS != "windows" { // skipping on Windows due to quoting insanity / differences in how echo works
+					if actualOutput, err := ddl.shellOut.RunCapture(); err != nil || actualOutput != expectedOutput {
+						t.Errorf("Expected output:\n%sActual output:\n%sErr:\n%v\n", expectedOutput, actualOutput, err)
+					}
 				}
 			} else {
 				t.Fatalf("Unexpected AlterTable for %s; perhaps test fixture changed without updating this test?", diff.To.Name)
@@ -157,6 +164,11 @@ func objectDiffExpected(t *testing.T, diff tengo.ObjectDiff, ddl *DDLStatement, 
 		case tengo.DiffTypeCreate:
 			expected = "/bin/echo ddl-wrapper analytics.activity CREATE TABLE"
 		}
+	}
+	if runtime.GOOS == "windows" {
+		expected = fmt.Sprintf(`%s"`, strings.ReplaceAll(expected, "/bin/echo ", `echo "`))
+		expected = strings.ReplaceAll(expected, "`", "``")
+		expected = strings.ReplaceAll(expected, "'\"'\"'", "''")
 	}
 	return
 }

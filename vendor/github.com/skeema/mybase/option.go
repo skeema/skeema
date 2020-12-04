@@ -3,12 +3,13 @@ package mybase
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"sort"
 	"strings"
 	"unicode"
 
 	"github.com/mitchellh/go-wordwrap"
-	"golang.org/x/crypto/ssh/terminal"
+	terminal "golang.org/x/term"
 )
 
 // OptionType is an enum for representing the type of an option.
@@ -107,6 +108,10 @@ func (opt *Option) Usage(maxNameLength int) string {
 		lineLen, _, _ = terminal.GetSize(stdinFd)
 		if lineLen < 80 {
 			lineLen = 80
+		}
+		// Avoid extra blank lines on Windows when output matches full line length
+		if runtime.GOOS == "windows" {
+			lineLen--
 		}
 	}
 

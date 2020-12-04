@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -79,6 +80,10 @@ func TestParseDirErrors(t *testing.T) {
 }
 
 func TestParseDirSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Not testing symlink behavior on Windows")
+	}
+
 	dir := getDir(t, "testdata/sqlsymlinks")
 
 	// Confirm symlinks to dirs are ignored by Subdirs
@@ -256,7 +261,11 @@ func TestDirBaseName(t *testing.T) {
 
 func TestDirRelPath(t *testing.T) {
 	dir := getDir(t, "../testdata/golden/init/mydb/product")
-	if rel := dir.RelPath(); rel != "testdata/golden/init/mydb/product" {
+	expected := "testdata/golden/init/mydb/product"
+	if runtime.GOOS == "windows" {
+		expected = strings.ReplaceAll(expected, "/", `\`)
+	}
+	if rel := dir.RelPath(); rel != expected {
 		t.Errorf("Unexpected rel path: %s", rel)
 	}
 	dir = getDir(t, "..")
@@ -346,12 +355,21 @@ func TestDirInstances(t *testing.T) {
 	assertInstances(map[string]string{"host-wrapper": "`echo {INVALID_VAR}`", "host": "irrelevant"}, true)
 
 	// dynamic hosts via host-wrapper command execution
-	assertInstances(map[string]string{"host-wrapper": "/usr/bin/printf '{HOST}:3306'", "host": "some.db.host"}, false, "some.db.host:3306")
-	assertInstances(map[string]string{"host-wrapper": "`/usr/bin/printf '{HOST}\n'`", "host": "some.db.host:3306"}, false, "some.db.host:3306")
-	assertInstances(map[string]string{"host-wrapper": "/usr/bin/printf 'some.db.host\nother.db.host'", "host": "ignored", "port": "3333"}, false, "some.db.host:3333", "other.db.host:3333")
-	assertInstances(map[string]string{"host-wrapper": "/usr/bin/printf 'some.db.host\tother.db.host:3316'", "host": "ignored", "port": "3316"}, false, "some.db.host:3316", "other.db.host:3316")
-	assertInstances(map[string]string{"host-wrapper": "/usr/bin/printf 'localhost,remote.host:3307,other.host'", "host": "ignored", "socket": "/var/lib/mysql/mysql.sock"}, false, "localhost:/var/lib/mysql/mysql.sock", "remote.host:3307", "other.host:3306")
-	assertInstances(map[string]string{"host-wrapper": "/bin/echo -n", "host": "ignored"}, false)
+	if runtime.GOOS == "windows" {
+		assertInstances(map[string]string{"host-wrapper": "echo '{HOST}:3306'", "host": "some.db.host"}, false, "some.db.host:3306")
+		assertInstances(map[string]string{"host-wrapper": "echo \"{HOST}`r`n\"", "host": "some.db.host:3306"}, false, "some.db.host:3306")
+		assertInstances(map[string]string{"host-wrapper": "echo \"some.db.host`r`nother.db.host\"", "host": "ignored", "port": "3333"}, false, "some.db.host:3333", "other.db.host:3333")
+		assertInstances(map[string]string{"host-wrapper": "echo \"some.db.host`tother.db.host:3316\"", "host": "ignored", "port": "3316"}, false, "some.db.host:3316", "other.db.host:3316")
+		assertInstances(map[string]string{"host-wrapper": "echo \"localhost,remote.host:3307,other.host\"", "host": "ignored", "socket": "/var/lib/mysql/mysql.sock"}, false, "localhost:/var/lib/mysql/mysql.sock", "remote.host:3307", "other.host:3306")
+		assertInstances(map[string]string{"host-wrapper": "echo \" \"", "host": "ignored"}, false)
+	} else {
+		assertInstances(map[string]string{"host-wrapper": "/usr/bin/printf '{HOST}:3306'", "host": "some.db.host"}, false, "some.db.host:3306")
+		assertInstances(map[string]string{"host-wrapper": "`/usr/bin/printf '{HOST}\n'`", "host": "some.db.host:3306"}, false, "some.db.host:3306")
+		assertInstances(map[string]string{"host-wrapper": "/usr/bin/printf 'some.db.host\nother.db.host'", "host": "ignored", "port": "3333"}, false, "some.db.host:3333", "other.db.host:3333")
+		assertInstances(map[string]string{"host-wrapper": "/usr/bin/printf 'some.db.host\tother.db.host:3316'", "host": "ignored", "port": "3316"}, false, "some.db.host:3316", "other.db.host:3316")
+		assertInstances(map[string]string{"host-wrapper": "/usr/bin/printf 'localhost,remote.host:3307,other.host'", "host": "ignored", "socket": "/var/lib/mysql/mysql.sock"}, false, "localhost:/var/lib/mysql/mysql.sock", "remote.host:3307", "other.host:3306")
+		assertInstances(map[string]string{"host-wrapper": "/bin/echo -n", "host": "ignored"}, false)
+	}
 }
 
 func TestDirInstanceDefaultParams(t *testing.T) {
@@ -405,6 +423,60 @@ func TestDirInstanceDefaultParams(t *testing.T) {
 		dir := getDir(connOpts, "")
 		if _, err := dir.InstanceDefaultParams(); err == nil {
 			t.Errorf("Did not get expected error from connect-options=\"%s\"", connOpts)
+		}
+	}
+}
+
+func TestHostDefaultDirName(t *testing.T) {
+	cases := []struct {
+		Hostname string
+		Port     int
+		Expected string
+	}{
+		{"localhost", 3306, "localhost"},
+		{"localhost", 3307, "localhost:3307"},
+		{"1.2.3.4", 0, "1.2.3.4"},
+		{"1.2.3.4", 3333, "1.2.3.4:3333"},
+	}
+	for _, c := range cases {
+		if runtime.GOOS == "windows" {
+			c.Expected = strings.Replace(c.Expected, ":", "_", 1)
+		}
+		if actual := HostDefaultDirName(c.Hostname, c.Port); actual != c.Expected {
+			t.Errorf("Expected HostDefaultDirName(%q, %d) to return %q, instead found %q", c.Hostname, c.Port, c.Expected, actual)
+		}
+	}
+}
+
+func TestAncestorPaths(t *testing.T) {
+	type testcase struct {
+		input    string
+		expected []string
+	}
+	var cases []testcase
+	if runtime.GOOS == "windows" {
+		cases = []testcase{
+			{`C:\`, []string{`C:\`}},
+			{`Z:\foo`, []string{`Z:\foo`, `Z:\`}},
+			{`Z:\foo\`, []string{`Z:\foo`, `Z:\`}},
+			{`C:\foo\bar\baz`, []string{`C:\foo\bar\baz`, `C:\foo\bar`, `C:\foo`, `C:\`}},
+			{`\\host\share\`, []string{`\\host\share\`}},
+			{`\\host\share\dir`, []string{`\\host\share\dir`, `\\host\share\`}},
+			{`\\host\share\dir\subdir\`, []string{`\\host\share\dir\subdir`, `\\host\share\dir`, `\\host\share\`}},
+		}
+	} else {
+		cases = []testcase{
+			{"/", []string{"/"}},
+			{"///", []string{"/"}},
+			{"/foo", []string{"/foo", "/"}},
+			{"/foo/", []string{"/foo", "/"}},
+			{"/foo//bar/.", []string{"/foo/bar", "/foo", "/"}},
+			{"/foo/bar/baz/..", []string{"/foo/bar", "/foo", "/"}},
+		}
+	}
+	for _, c := range cases {
+		if actual := ancestorPaths(c.input); !reflect.DeepEqual(actual, c.expected) {
+			t.Errorf("Expected ancestorPaths(%q) to return %q, instead found %q", c.input, c.expected, actual)
 		}
 	}
 }

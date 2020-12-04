@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -651,44 +652,47 @@ func (dir *Dir) parseContents() {
 // typically be either a dir containing a .git subdir, or the rootmost dir
 // containing a .skeema file; failing that, it will be the supplied dirPath.
 func ParentOptionFiles(dirPath string, baseConfig *mybase.Config) ([]*mybase.File, string, error) {
-	cleaned, err := filepath.Abs(filepath.Clean(dirPath))
-	if err != nil {
-		return nil, "", err
+	// Obtain a list of directories to search for option files, starting with
+	// dirPath and then climbing the parent directory hierarchy to the root
+	dirs := ancestorPaths(dirPath)
+	if len(dirs) == 0 {
+		return nil, "", fmt.Errorf("Unable to search for option files in %s", dirPath)
 	}
-	cleaned = strings.TrimRight(cleaned, "/") // Prevent strings.Split from spitting out 2 blank strings for root dir
 
-	components := strings.Split(cleaned, string(os.PathSeparator))
-	filePaths := make([]string, 0, len(components)-1)
-
+	filePaths := make([]string, 0, len(dirs)-1)
 	home, _ := os.UserHomeDir()
-	repoBase := cleaned
+	repoBase := dirs[0] // Overridden below once we find a better candidate
 
 	// Examine dirs, starting with dirPath and going up one level at a time,
 	// stopping early if we hit either the user's home directory or a directory
 	// containing a .git subdir.
 	var atRepoBase bool
-	for n := len(components) - 1; n >= 0 && !atRepoBase; n-- {
-		curPath := "/" + filepath.Join(components[0:n+1]...)
+	for n, curPath := range dirs {
 		if curPath == home {
-			// We already read ~/.skeema as a global file
+			// We already read ~/.skeema as a global file, and don't climb beyond the
+			// home directory, so stop early if we're already there
 			break
 		}
 		fileInfos, err := ioutil.ReadDir(curPath)
-		// If we hit a dir we cannot read, halt early but don't consider this fatal
 		if err != nil {
+			// If we hit a dir we cannot read, halt early but don't consider this fatal
 			break
 		}
 		for _, fi := range fileInfos {
 			if fi.Name() == ".git" {
 				repoBase = curPath
 				atRepoBase = true
-			} else if fi.Name() == ".skeema" && n < len(components)-1 {
+			} else if fi.Name() == ".skeema" && n > 0 {
 				// The second part of the above conditional ensures we ignore dirPath's own
-				// .skeema file, since that is handled in Dir.parseContents() to save as
-				// dir.OptionFile.
+				// .skeema file, since that is handled separately in Dir.parseContents() in
+				// order to store it in dir.OptionFile
 				filePaths = append(filePaths, curPath)
 				repoBase = curPath
 			}
+		}
+		if atRepoBase {
+			// If we truly found the repo root, don't climb beyond it
+			break
 		}
 	}
 
@@ -706,6 +710,42 @@ func ParentOptionFiles(dirPath string, baseConfig *mybase.Config) ([]*mybase.Fil
 	}
 
 	return files, repoBase, nil
+}
+
+// HostDefaultDirName returns a default relative directory name to use for
+// the supplied instance host and port. Intended for use in situations where a
+// user can optionally supply an arbitrary name, but they have not done so.
+func HostDefaultDirName(hostname string, port int) string {
+	sep := ':'
+	if runtime.GOOS == "windows" {
+		sep = '_' // Can't use colon in subdir names on Windows
+	}
+	if port != 3306 && port != 0 {
+		return fmt.Sprintf("%s%c%d", hostname, sep, port)
+	}
+	return hostname
+}
+
+// ancestorPaths returns a slice of absolute paths of dirPath and all its
+// ancestor directories. The result is ordered such that dirPath is first,
+// followed by its parent dir, then grandparent, etc, with the root of the
+// filesystem or volume appearing last.
+func ancestorPaths(dirPath string) (result []string) {
+	dirPath = filepath.Clean(dirPath)
+	if abs, err := filepath.Abs(dirPath); err == nil {
+		dirPath = abs
+	}
+	root := fmt.Sprintf("%s%c", filepath.VolumeName(dirPath), os.PathSeparator)
+	for {
+		result = append(result, dirPath)
+		if dirPath == root {
+			return
+		}
+		dirPath, _ = filepath.Split(dirPath)
+		if dirPath != root {
+			dirPath = strings.TrimRight(dirPath, string(os.PathSeparator))
+		}
+	}
 }
 
 func parseOptionFile(dirPath, repoBase string, baseConfig *mybase.Config) (*mybase.File, error) {

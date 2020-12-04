@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -36,7 +37,7 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	s.handleCommand(t, CodeFatalError, ".", "skeema init --dir baddb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port-100)
 
 	// host-wrapper with no output should fail
-	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir baddb -h xyz --host-wrapper='echo'")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir baddb -h xyz --host-wrapper='echo \" \"'")
 
 	// Test successful init with --user specified on CLI, persisting to .skeema
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema init --dir withuser -h %s -P %d --user root", s.d.Instance.Host, s.d.Instance.Port)
@@ -76,7 +77,7 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	}
 
 	// Test successful init without a --dir. Also test persistence of --connect-options.
-	expectDir := fmt.Sprintf("%s:%d", s.d.Instance.Host, s.d.Instance.Port)
+	expectDir := fs.HostDefaultDirName(s.d.Instance.Host, s.d.Instance.Port)
 	if _, err = os.Stat(expectDir); err == nil {
 		t.Fatalf("Expected dir %s to not exist yet, but it does", expectDir)
 	}
@@ -1088,7 +1089,11 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 	// schema shellouts should also work properly. First get rid of product schema
 	// manually (since push won't ever drop a db) and then push should create
 	// product1 as a new schema.
-	contents = strings.Replace(contents, "schema=product,product2,product3,product4", "schema=`/usr/bin/printf 'product1 product2 product3 product4'`", 1)
+	shelloutSchema := "schema=`/usr/bin/printf 'product1 product2 product3 product4'`"
+	if runtime.GOOS == "windows" {
+		shelloutSchema = "schema=`echo \"product1 product2 product3 product4\"`"
+	}
+	contents = strings.Replace(contents, "schema=product,product2,product3,product4", shelloutSchema, 1)
 	fs.WriteTestFile(t, "mydb/product/.skeema", contents)
 	s.dbExec(t, "", "DROP DATABASE product")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --ignore-schema=4$")
@@ -1107,7 +1112,7 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 	if err := os.RemoveAll("mydb/analytics"); err != nil {
 		t.Fatalf("Unable to delete mydb/analytics/: %s", err)
 	}
-	contents = strings.Replace(contents, "schema=`/usr/bin/printf 'product1 product2 product3 product4'`", "schema=*", 1)
+	contents = strings.Replace(contents, shelloutSchema, "schema=*", 1)
 	fs.WriteTestFile(t, "mydb/product/.skeema", contents)
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
 	s.assertTableExists(t, "product1", "posts", "")

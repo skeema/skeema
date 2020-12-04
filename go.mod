@@ -11,9 +11,9 @@ require (
 	github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
 	github.com/opencontainers/runc v1.0.0-rc5 // indirect
 	github.com/sirupsen/logrus v1.4.2
-	github.com/skeema/mybase v1.0.11
+	github.com/skeema/mybase v1.0.12-0.20201218182149-9bf088e98525
 	github.com/skeema/tengo v0.9.7-0.20201215220818-6707a59a4c0f
 	golang.org/x/lint v0.0.0-20190409202823-959b441ac422
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
-	golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1
+	golang.org/x/term v0.0.0-20201210144234-2321bbc49cbf
 )

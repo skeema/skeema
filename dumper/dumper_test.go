@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -186,8 +185,11 @@ func (s *IntegrationSuite) BeforeTest(backend string) error {
 	if err := os.MkdirAll(s.scratchPath(), 0777); err != nil {
 		return err
 	}
-	cpCommand := fmt.Sprintf("cp %s/*.sql %s", s.testdata("input"), s.scratchPath())
-	if err := exec.Command("/bin/sh", "-c", cpCommand).Run(); err != nil {
+	shellout := util.ShellOut{
+		Dir:     s.testdata("input"),
+		Command: fmt.Sprintf("cp *.sql %s", s.scratchPath()),
+	}
+	if err := shellout.Run(); err != nil {
 		return err
 	}
 

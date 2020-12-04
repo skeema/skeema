@@ -1,6 +1,8 @@
 package fs
 
 import (
+	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -262,6 +264,12 @@ func TestPathForObject(t *testing.T) {
 		{"/var/schemas", "../../etc/passwd", "/var/schemas/etcpasswd.sql"},
 	}
 	for _, c := range cases {
+		if runtime.GOOS == "windows" {
+			if c.DirPath != "" {
+				c.DirPath = fmt.Sprintf("C:%s", strings.ReplaceAll(c.DirPath, "/", "\\"))
+				c.Expected = fmt.Sprintf("C:%s", strings.ReplaceAll(c.Expected, "/", "\\"))
+			}
+		}
 		if actual := PathForObject(c.DirPath, c.ObjectName); actual != c.Expected {
 			t.Errorf("Expected PathForObject(%q, %q) to return %q, instead found %q", c.DirPath, c.ObjectName, c.Expected, actual)
 		}

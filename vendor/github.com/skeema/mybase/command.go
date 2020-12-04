@@ -3,11 +3,12 @@ package mybase
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"sort"
 	"strings"
 
 	"github.com/mitchellh/go-wordwrap"
-	"golang.org/x/crypto/ssh/terminal"
+	terminal "golang.org/x/term"
 )
 
 // CommandHandler is a function that can be associated with a Command as a
@@ -197,6 +198,10 @@ func (cmd *Command) Usage() {
 		} else if lineLen > 120 {
 			lineLen -= 20
 		}
+	}
+	// Avoid extra blank lines on Windows when output matches full line length
+	if runtime.GOOS == "windows" {
+		lineLen--
 	}
 	fmt.Printf("%s\n", wordwrap.WrapString(cmd.Description, uint(lineLen)))
 

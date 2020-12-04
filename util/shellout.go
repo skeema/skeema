@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -28,15 +27,6 @@ func (s *ShellOut) String() string {
 	return s.Command
 }
 
-func (s *ShellOut) cmd() *exec.Cmd {
-	if s.Timeout > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), s.Timeout)
-		s.cancelFunc = cancel
-		return exec.CommandContext(ctx, "/bin/sh", "-c", s.Command)
-	}
-	return exec.Command("/bin/sh", "-c", s.Command)
-}
-
 // Run shells out to the external command and blocks until it completes. It
 // returns an error if one occurred. STDIN, STDOUT, and STDERR will be
 // redirected to those of the parent process.
@@ -44,7 +34,10 @@ func (s *ShellOut) Run() error {
 	if s.Command == "" {
 		return errors.New("Attempted to shell out to an empty command string")
 	}
-	cmd := s.cmd()
+	cmd, err := s.cmd()
+	if err != nil {
+		return err
+	}
 	if s.cancelFunc != nil {
 		defer s.cancelFunc()
 	}
@@ -67,7 +60,10 @@ func (s *ShellOut) RunCapture() (string, error) {
 	if s.Command == "" {
 		return "", errors.New("Attempted to shell out to an empty command string")
 	}
-	cmd := s.cmd()
+	cmd, err := s.cmd()
+	if err != nil {
+		return "", err
+	}
 	if s.cancelFunc != nil {
 		defer s.cancelFunc()
 	}
@@ -75,7 +71,6 @@ func (s *ShellOut) RunCapture() (string, error) {
 	cmd.Stdin = os.Stdin
 
 	var out []byte
-	var err error
 	if s.CombineOutput {
 		out, err = cmd.CombinedOutput()
 	} else {
@@ -164,19 +159,4 @@ func NewInterpolatedShellOut(command string, variables map[string]string) (*Shel
 		s.PrintableCommand = varPlaceholder.ReplaceAllStringFunc(command, replacer)
 	}
 	return s, err
-}
-
-// noQuotesNeeded is a regexp for detecting which variable values do not require
-// escaping and quote-wrapping in escapeVarValue()
-var noQuotesNeeded = regexp.MustCompile(`^[\w/@%=:.,+-]*$`)
-
-// escapeVarValue takes a string, and wraps it in single-quotes so that it will
-// be interpretted as a single arg in a shell-out command line. If the value
-// already contained any single-quotes, they will be escaped in a way that will
-// cause /bin/sh -c to still interpret them as part of a single arg.
-func escapeVarValue(value string) string {
-	if noQuotesNeeded.MatchString(value) {
-		return value
-	}
-	return fmt.Sprintf("'%s'", strings.Replace(value, "'", `'"'"'`, -1))
 }

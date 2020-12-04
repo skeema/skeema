@@ -98,14 +98,12 @@ github.com/pmezard/go-difflib/difflib
 # github.com/sirupsen/logrus v1.4.2
 ## explicit
 github.com/sirupsen/logrus
-# github.com/skeema/mybase v1.0.11
+# github.com/skeema/mybase v1.0.12-0.20201218182149-9bf088e98525
 ## explicit
 github.com/skeema/mybase
 # github.com/skeema/tengo v0.9.7-0.20201215220818-6707a59a4c0f
 ## explicit
 github.com/skeema/tengo
-# golang.org/x/crypto v0.0.0-20200429183012-4b2356b1ed79
-golang.org/x/crypto/ssh/terminal
 # golang.org/x/lint v0.0.0-20190409202823-959b441ac422
 ## explicit
 golang.org/x/lint
@@ -118,7 +116,7 @@ golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1
+# golang.org/x/term v0.0.0-20201210144234-2321bbc49cbf
 ## explicit
 golang.org/x/term
 # golang.org/x/tools v0.0.0-20200522201501-cb1345f3a375

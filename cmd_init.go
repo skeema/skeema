@@ -123,12 +123,7 @@ func createHostDir(cfg *mybase.Config) (*fs.Dir, error) {
 	}
 	hostDirName := cfg.Get("dir")
 	if !cfg.Changed("dir") { // default for dir is to base it on the hostname
-		port := cfg.GetIntOrDefault("port")
-		if port > 0 && cfg.Changed("port") {
-			hostDirName = fmt.Sprintf("%s:%d", cfg.Get("host"), port)
-		} else {
-			hostDirName = cfg.Get("host")
-		}
+		hostDirName = fs.HostDefaultDirName(cfg.Get("host"), cfg.GetIntOrDefault("port"))
 	}
 
 	dir, err := fs.ParseDir(".", cfg)
