@@ -404,6 +404,65 @@ func TestSchemaDiffForeignKeys(t *testing.T) {
 	}
 }
 
+func TestSchemaDiffMultiFulltext(t *testing.T) {
+	t1 := aTable(0)
+	t2 := aTable(0)
+	s1 := aSchema("s1", &t1)
+	s2 := aSchema("s2", &t2)
+
+	// Add one regular index and two fulltext indexes to s2t.
+	newIndexes := []*Index{
+		{
+			Name: "ft_last",
+			Parts: []IndexPart{
+				{ColumnName: "last_name"},
+			},
+			Type: "FULLTEXT",
+		},
+		{
+			Name: "idx_last_update",
+			Parts: []IndexPart{
+				{ColumnName: "last_update"},
+			},
+			Type: "BTREE",
+		},
+		{
+			Name: "ft_first",
+			Parts: []IndexPart{
+				{ColumnName: "first_name"},
+			},
+			Type: "FULLTEXT",
+		},
+	}
+	t2.SecondaryIndexes = append(t2.SecondaryIndexes, newIndexes...)
+	t2.CreateStatement = t2.GeneratedCreateStatement(FlavorUnknown)
+
+	assertClauses := func(td *TableDiff, expectAddFulltext, expectOther int) {
+		t.Helper()
+		var foundAddFulltext, foundOther int
+		for _, clause := range td.alterClauses {
+			if addIndex, ok := clause.(AddIndex); ok && addIndex.Index.Type == "FULLTEXT" {
+				foundAddFulltext++
+			} else {
+				foundOther++
+			}
+		}
+		if expectAddFulltext != foundAddFulltext || expectOther != foundOther {
+			t.Errorf("Expected to find %d ADD FULLTEXT KEY and %d other clauses, instead found %d ADD FULLTEXT KEY and %d other clauses", expectAddFulltext, expectOther, foundAddFulltext, foundOther)
+		}
+	}
+
+	// InnoDB doesn't support adding multiple fulltext indexes in a single ALTER.
+	// Confirm that the SchemaDiff splits this into two ALTERs.
+	sd := NewSchemaDiff(&s1, &s2)
+	if len(sd.TableDiffs) != 2 {
+		t.Errorf("Incorrect number of TableDiffs: expected 2 due to splitting out multiple ADD FULLTEXT KEY; instead found %d", len(sd.TableDiffs))
+	} else {
+		assertClauses(sd.TableDiffs[0], 1, 1)
+		assertClauses(sd.TableDiffs[1], 1, 0)
+	}
+}
+
 func TestSchemaDiffRoutines(t *testing.T) {
 	s1 := aSchema("s1")
 	s2 := aSchema("s2")
