@@ -12,7 +12,7 @@ require (
 	github.com/opencontainers/runc v1.0.0-rc5 // indirect
 	github.com/sirupsen/logrus v1.4.2
 	github.com/skeema/mybase v1.0.11
-	github.com/skeema/tengo v0.9.7-0.20201202164247-60d4a527e294
+	github.com/skeema/tengo v0.9.7-0.20201209002911-d21902f02541
 	golang.org/x/lint v0.0.0-20190409202823-959b441ac422
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
 	golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1
