@@ -165,13 +165,15 @@ func TestIndexRedundantTo(t *testing.T) {
 	}{
 		{0, 1, false},
 		{1, 0, true},
+		{1, 1, true},
 		{2, 0, true},
 		{2, 1, true},
 		{3, 2, true},
 		{3, 1, true},
 		{2, 3, false},
 		{4, 3, false},
-		{4, 1, true},
+		{4, 1, false}, // unique not redundant to larger index with same first cols, due to uniqueness constraint aspect
+		{4, 0, false}, // same as previous, but even when compared to the primary key
 		{1, 4, false},
 		{5, 4, false},
 		{5, 3, true},
