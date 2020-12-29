@@ -32,9 +32,9 @@ func (r Result) Summary() string {
 	if r.SkipCount == 0 {
 		reason = "unsupported feature"
 	} else if r.UnsupportedCount == 0 {
-		reason = "error"
+		reason = "problem"
 	} else {
-		reason = "unsupported features or error"
+		reason = "problems or unsupported feature"
 	}
 	return fmt.Sprintf("Skipped %d operation%s due to %s%s", r.SkipCount+r.UnsupportedCount, plural, reason, plural)
 }

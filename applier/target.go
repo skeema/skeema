@@ -105,7 +105,7 @@ type TargetGroup []*Target
 // fatal; a count of skipped dirs is returned instead.
 func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int) {
 	if dir.ParseError != nil {
-		log.Warnf("Skipping %s: %s\n", dir.Path, dir.ParseError)
+		log.Errorf("Skipping %s: %s\n", dir.Path, dir.ParseError)
 		return nil, 1
 	}
 	if dir.Config.Changed("host") && dir.HasSchema() {
@@ -186,7 +186,7 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 			log.Warnf("Skipping %s: dir maps to an empty list of instances\n", dir)
 			return nil, 0
 		} else if err != nil {
-			log.Warnf("Skipping %s: %s\n", dir, err)
+			log.Errorf("Skipping %s: %s\n", dir, err)
 			return nil, 1
 		}
 		// dir.FirstInstance already checks for connectivity, so no need to redo that here
@@ -196,7 +196,7 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 
 	rawInstances, err := dir.Instances()
 	if err != nil {
-		log.Warnf("Skipping %s: %s\n", dir, err)
+		log.Errorf("Skipping %s: %s\n", dir, err)
 		return nil, 1
 	} else if len(rawInstances) == 0 {
 		log.Warnf("Skipping %s: dir maps to an empty list of instances\n", dir)
@@ -205,7 +205,7 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 	// dir.Instances doesn't pre-check for connectivity problems, so do that now
 	for _, inst := range rawInstances {
 		if ok, err := inst.CanConnect(); !ok {
-			log.Warnf("Skipping %s for %s: %s", inst, dir, err)
+			log.Errorf("Skipping %s for %s: %s", inst, dir, err)
 			skipCount++
 		} else {
 			checkInstanceFlavor(inst, dir)
@@ -222,8 +222,8 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 	// all CREATEs should have prior USE commands or db name prefixes.
 	if logicalSchema.Name == "" && len(dir.LogicalSchemas) > 1 {
 		namedSchemaStmts := dir.NamedSchemaStatements()
-		log.Warnf("Skipping %s: some statements reference specific schema names, for example %s line %d.", dir, namedSchemaStmts[0].File, namedSchemaStmts[0].LineNo)
-		log.Warn("When configuring a schema name in .skeema, please omit schema names entirely from *.sql files.\n")
+		log.Errorf("Skipping %s: some statements reference specific schema names, for example %s line %d.", dir, namedSchemaStmts[0].File, namedSchemaStmts[0].LineNo)
+		log.Error("When configuring a schema name in .skeema, please omit schema names entirely from *.sql files.\n")
 		return nil, len(instances)
 	}
 
@@ -231,12 +231,12 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 	// workspace
 	opts, err := workspace.OptionsForDir(dir, instances[0])
 	if err != nil {
-		log.Warnf("Skipping %s: %s\n", dir, err)
+		log.Errorf("Skipping %s: %s\n", dir, err)
 		return nil, len(instances)
 	}
 	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, opts)
 	if err != nil {
-		log.Warnf("Skipping %s: %s\n", dir, err)
+		log.Errorf("Skipping %s: %s\n", dir, err)
 		return nil, len(instances)
 	}
 	if len(wsSchema.Failures) > 0 {
@@ -249,7 +249,7 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 		// Obtain the list of schema names configured in .skeema
 		schemaNames, err := dir.SchemaNames(inst)
 		if err != nil {
-			log.Warnf("Skipping %s for %s: %s\n", inst, dir, err)
+			log.Errorf("Skipping %s for %s: %s\n", inst, dir, err)
 			skipCount++
 			continue
 		}
@@ -270,8 +270,8 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 			// consistently throughout this dir's *.sql files.
 			if len(schemaNames) > 0 {
 				if len(schemaNames) > 1 || len(dir.LogicalSchemas) > 1 || schemaNames[0] != logicalSchema.Name {
-					log.Warnf("Skipping %s: This directory's .skeema file configures a different schema name than its *.sql files.", dir)
-					log.Warn("When configuring a schema name in .skeema, exclude schema names entirely from *.sql files.\n")
+					log.Errorf("Skipping %s: This directory's .skeema file configures a different schema name than its *.sql files.", dir)
+					log.Error("When configuring a schema name in .skeema, exclude schema names entirely from *.sql files.\n")
 					return nil, len(instances)
 				}
 			}
