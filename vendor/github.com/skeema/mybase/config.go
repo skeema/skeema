@@ -337,12 +337,7 @@ func (cfg *Config) GetSlice(name string, delimiter rune, unwrapFullValue bool) [
 // GetBool returns an option's value as a bool. If the option is not set, its
 // default value will be returned. Panics if the flag does not exist.
 func (cfg *Config) GetBool(name string) bool {
-	switch strings.ToLower(cfg.Get(name)) {
-	case "false", "off", "0", "":
-		return false
-	default:
-		return true
-	}
+	return BoolValue(cfg.Get(name))
 }
 
 // GetInt returns an option's value as an int. If an error occurs in parsing

@@ -20,7 +20,8 @@ import (
 // with a Name of "".
 type Section struct {
 	Name   string
-	Values map[string]string
+	Values map[string]string  // mapping of option name => value as string
+	opts   map[string]*Option // mapping of option name => option definition
 }
 
 // File represents a form of ini-style option file. Lines can contain
@@ -52,6 +53,7 @@ func NewFile(paths ...string) *File {
 	defaultSection := &Section{
 		Name:   "",
 		Values: make(map[string]string),
+		opts:   make(map[string]*Option),
 	}
 
 	return &File{
@@ -99,7 +101,15 @@ func (f *File) Write(overwrite bool) error {
 		}
 		sort.Strings(ks)
 		for _, k := range ks {
-			lines = append(lines, fmt.Sprintf("%s=%s", k, section.Values[k]))
+			opt := section.opts[k]
+			val := section.Values[k]
+			if opt == nil || opt.Type != OptionTypeBool {
+				lines = append(lines, fmt.Sprintf("%s=%s", k, val))
+			} else if !BoolValue(val) {
+				lines = append(lines, fmt.Sprintf("skip-%s", k))
+			} else {
+				lines = append(lines, k)
+			}
 		}
 
 		// Append a blank line after the section, unless it was the last one, or
@@ -209,6 +219,7 @@ func (f *File) Parse(cfg *Config) error {
 				parsedLine.value = "''"
 			}
 			section.Values[parsedLine.key] = parsedLine.value
+			section.opts[parsedLine.key] = opt
 		}
 	}
 
@@ -329,7 +340,20 @@ func (f *File) SameContents(other *File) bool {
 	if !f.parsed || !other.parsed {
 		panic(errors.New("File.SameContents called on a file that has not yet been parsed"))
 	}
-	return reflect.DeepEqual(f.sectionIndex, other.sectionIndex)
+	if len(f.sectionIndex) != len(other.sectionIndex) {
+		return false
+	}
+	for name := range f.sectionIndex {
+		a := f.sectionIndex[name]
+		b, ok := other.sectionIndex[name]
+		if !ok || a.Name != b.Name {
+			return false
+		}
+		if !reflect.DeepEqual(a.Values, b.Values) {
+			return false
+		}
+	}
+	return true
 }
 
 // IgnoreOptions causes the supplied option names to be ignored by a subsequent
@@ -354,6 +378,7 @@ func (f *File) getOrCreateSection(name string) *Section {
 	s := &Section{
 		Name:   name,
 		Values: make(map[string]string),
+		opts:   make(map[string]*Option),
 	}
 	f.sections = append(f.sections, s)
 	f.sectionIndex[name] = s

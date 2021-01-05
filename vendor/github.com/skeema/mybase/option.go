@@ -163,12 +163,7 @@ func (opt *Option) HasNonzeroDefault() bool {
 	case OptionTypeString:
 		return opt.Default != ""
 	case OptionTypeBool:
-		switch strings.ToLower(opt.Default) {
-		case "", "0", "off", "false":
-			return false
-		default:
-			return true
-		}
+		return BoolValue(opt.Default)
 	default:
 		return false
 	}
@@ -179,12 +174,10 @@ func (opt *Option) HasNonzeroDefault() bool {
 func (opt *Option) PrintableDefault() string {
 	switch opt.Type {
 	case OptionTypeBool:
-		switch strings.ToLower(opt.Default) {
-		case "", "0", "off", "false":
-			return "false"
-		default:
+		if BoolValue(opt.Default) {
 			return "true"
 		}
+		return "false"
 	default:
 		return fmt.Sprintf(`"%s"`, opt.Default)
 	}
@@ -248,11 +241,10 @@ func NormalizeOptionToken(arg string) (key, value string, hasValue, loose bool) 
 		// negated and value supplied: set to falsey value of "" UNLESS the value is
 		// also falsey, in which case we have a double-negative, meaning enable
 		if negated {
-			switch strings.ToLower(value) {
-			case "off", "false", "0":
-				value = "1"
-			default:
+			if BoolValue(value) {
 				value = ""
+			} else {
+				value = "1"
 			}
 		}
 	} else if negated {
@@ -263,6 +255,18 @@ func NormalizeOptionToken(arg string) (key, value string, hasValue, loose bool) 
 		hasValue = true
 	}
 	return
+}
+
+// BoolValue converts the supplied option value string to a boolean.
+// The case-insensitive values "", "off", "false", and "0" are considered false;
+// all other values are considered true.
+func BoolValue(input string) bool {
+	switch strings.ToLower(input) {
+	case "", "off", "false", "0":
+		return false
+	default:
+		return true
+	}
 }
 
 // NormalizeOptionName is a convenience function that only returns the "key"
