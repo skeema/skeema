@@ -7,7 +7,12 @@ import (
 	"github.com/skeema/tengo"
 )
 
-// Printer is capable of sending output to STDOUT in a readable manner despite
+// DDLHandler handles each of the DDL statements in a push/diff operation.
+type DDLHandler interface {
+	HandleDDL(ddl *DDLStatement)
+}
+
+// Printer implements DDLHandler and is capable of sending output to STDOUT in a readable manner despite
 // being called from multiple pushworker goroutines.
 type Printer struct {
 	briefOutput        bool
@@ -29,10 +34,10 @@ func NewPrinter(briefMode bool) *Printer {
 	}
 }
 
-// printDDL outputs DDLStatement values to STDOUT in a way that prevents
+// HandleDDL outputs DDLStatement values to STDOUT in a way that prevents
 // interleaving of output from multiple workers.
 // TODO: buffer output from external commands and also prevent interleaving there
-func (p *Printer) printDDL(ddl *DDLStatement) {
+func (p *Printer) HandleDDL(ddl *DDLStatement) {
 	p.Lock()
 	defer p.Unlock()
 	instString := ddl.instance.String()

@@ -73,9 +73,9 @@ func (t *Target) logApplyEnd(result Result) {
 	}
 }
 
-func (t *Target) processDDL(ddls []*DDLStatement, printer *Printer) (skipCount int) {
+func (t *Target) processDDL(ddls []*DDLStatement, handler DDLHandler) (skipCount int) {
 	for i, ddl := range ddls {
-		printer.printDDL(ddl)
+		handler.HandleDDL(ddl)
 		if !t.dryRun() {
 			if err := ddl.Execute(); err != nil {
 				log.Errorf("Error running DDL on %s %s: %s", t.Instance, t.SchemaName, err)

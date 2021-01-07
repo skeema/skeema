@@ -44,10 +44,10 @@ func (r Result) Summary() string {
 // TargetGroups to read, it writes its aggregate Result to the output channel.
 // If a fatal error occurs, it will be returned immediately; Worker is meant to
 // be called via an errgroup (see golang.org/x/sync/errgroup).
-func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<- Result, printer *Printer) error {
+func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<- Result, handler DDLHandler) error {
 	for tg := range targetGroups {
 		for _, t := range tg {
-			result, err := applyTarget(t, printer)
+			result, err := applyTarget(t, handler)
 			if err != nil {
 				return err
 			}
@@ -64,7 +64,7 @@ func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<-
 	return nil
 }
 
-func applyTarget(t *Target, printer *Printer) (Result, error) {
+func applyTarget(t *Target, handler DDLHandler) (Result, error) {
 	var result Result
 
 	schemaFromInstance, err := t.SchemaFromInstance()
@@ -147,7 +147,7 @@ func applyTarget(t *Target, printer *Printer) (Result, error) {
 	}
 
 	// Print DDL; if not dry-run, execute it; final logging; return result
-	result.SkipCount += t.processDDL(ddls, printer)
+	result.SkipCount += t.processDDL(ddls, handler)
 	t.logApplyEnd(result)
 	return result, nil
 }
