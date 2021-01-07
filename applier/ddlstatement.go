@@ -257,3 +257,8 @@ func (ddl *DDLStatement) Execute() error {
 	_, err = db.Exec(ddl.stmt)
 	return err
 }
+
+// Instance returns the tengo.Instance where this statement is supposed to run
+func (ddl *DDLStatement) Instance() *tengo.Instance {
+	return ddl.instance
+}
