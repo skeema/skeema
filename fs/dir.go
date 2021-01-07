@@ -528,6 +528,13 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	// Prefer TLS, but not during integration testing
+	defaultTLS := "preferred"
+	if dir.Config.IsTest {
+		defaultTLS = "false"
+	}
+
 	v := url.Values{}
 
 	// Set overridable options
@@ -536,7 +543,7 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	v.Set("writeTimeout", "5s")
 	v.Set("sql_mode", "'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'")
 	v.Set("innodb_strict_mode", "1")
-	v.Set("tls", "preferred")
+	v.Set("tls", defaultTLS)
 
 	// Set values from connect-options
 	for name, value := range options {

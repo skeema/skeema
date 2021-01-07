@@ -125,8 +125,12 @@ func (ld *LocalDocker) ConnectionPool(params string) (*sqlx.DB, error) {
 	// different sibling subdirectories with differing configurations).
 	// So, here we must merge the params arg (callsite-dependent) over top of the
 	// LocalDocker params (dir-dependent).
-	finalParams := ld.defaultConnParams
-	if params != "" {
+	var finalParams string
+	if ld.defaultConnParams == "" && params == "" {
+		// By default, disable TLS for connections to the DockerizedInstance, since
+		// we know it's on the local machine
+		finalParams = "tls=false"
+	} else {
 		v, err := url.ParseQuery(ld.defaultConnParams)
 		if err != nil {
 			return nil, err
@@ -137,6 +141,9 @@ func (ld *LocalDocker) ConnectionPool(params string) (*sqlx.DB, error) {
 		}
 		for name := range overrides {
 			v.Set(name, overrides.Get(name))
+		}
+		if v.Get("tls") == "" {
+			v.Set("tls", "false")
 		}
 		finalParams = v.Encode()
 	}
