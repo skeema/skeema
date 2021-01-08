@@ -135,15 +135,19 @@ func (ld *LocalDocker) ConnectionPool(params string) (*sqlx.DB, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		// Forcibly disable TLS, regardless of what was in ld.defaultConnParams.
+		// This is necessary since ld.defaultConnParams is typically populated using
+		// Dir.InstanceDefaultParams() which sets tls=preferred by default.
+		v.Set("tls", "false")
+
+		// Apply overrides from params arg
 		overrides, err := url.ParseQuery(params)
 		if err != nil {
 			return nil, err
 		}
 		for name := range overrides {
 			v.Set(name, overrides.Get(name))
-		}
-		if v.Get("tls") == "" {
-			v.Set("tls", "false")
 		}
 		finalParams = v.Encode()
 	}
