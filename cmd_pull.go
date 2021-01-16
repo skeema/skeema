@@ -8,9 +8,9 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
-	"github.com/skeema/skeema/dumper"
-	"github.com/skeema/skeema/fs"
-	"github.com/skeema/skeema/workspace"
+	"github.com/skeema/skeema/internal/dumper"
+	"github.com/skeema/skeema/internal/fs"
+	"github.com/skeema/skeema/internal/workspace"
 	"github.com/skeema/tengo"
 )
 

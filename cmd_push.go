@@ -5,10 +5,10 @@ import (
 	"fmt"
 
 	"github.com/skeema/mybase"
-	"github.com/skeema/skeema/applier"
-	"github.com/skeema/skeema/fs"
-	"github.com/skeema/skeema/linter"
-	"github.com/skeema/skeema/workspace"
+	"github.com/skeema/skeema/internal/applier"
+	"github.com/skeema/skeema/internal/fs"
+	"github.com/skeema/skeema/internal/linter"
+	"github.com/skeema/skeema/internal/workspace"
 	"golang.org/x/sync/errgroup"
 )
 

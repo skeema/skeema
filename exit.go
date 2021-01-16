@@ -5,7 +5,7 @@ import (
 	"os"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/skeema/skeema/util"
+	"github.com/skeema/skeema/internal/util"
 )
 
 // ExitValue represents an exit code for an operation. It satisfies the Error

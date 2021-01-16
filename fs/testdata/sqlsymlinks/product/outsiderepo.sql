@@ -1,1 +1,0 @@
-../../../../../tengo/testdata/integration.sql

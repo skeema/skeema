@@ -13,8 +13,8 @@ import (
 	"testing"
 
 	"github.com/skeema/mybase"
-	"github.com/skeema/skeema/fs"
-	"github.com/skeema/skeema/util"
+	"github.com/skeema/skeema/internal/fs"
+	"github.com/skeema/skeema/internal/util"
 	"github.com/skeema/tengo"
 )
 

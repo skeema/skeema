@@ -34,15 +34,17 @@ It is *your* responsibility to make a convincing case for merging your PR. Remem
 
 ### Things to avoid in PRs
 
+All of these situations can be avoided by having a full discussion on the issue *before* starting a PR.
+
 **Unsolicited code cleanups and unnecessary refactors:** Some existing parts of the codebase may be messy. This project was started over five years ago, and functionality has grown organically as the product has evolved. This is true in any codebase over time. Code cleanliness is quite subjective, and PRs that focus purely on clean-ups tend to involve time-consuming bikeshedding.
 
 **Excessive hand-holding:** You will need to already have some experience with both Golang and MySQL/MariaDB in order to successfully contribute to this project. If you are encountering repeated test suite failures or need help with Go language constructs, a better approach may be to have your company [sponsor the development](https://www.skeema.io/contact/) of your feature request, instead of submitting a pull request.
 
-**Reinventing wheels:** There may already be a pre-existing, idiomatic way of achieving your desired outcome with Skeema. If so, it's unlikely that a second way should be merged, especially if it relates to some arcane company-specific workflow that was devised without prior consultation.
+**Reinventing wheels:** There may already be a pre-existing, idiomatic way of achieving your desired outcome with Skeema. If so, it's unlikely that a second way should be merged.
+
+**Vague, unspecified, or company-specific use-cases:** The use-case motivating your PR should be clearly stated in the linked issue. It should be a general-purpose use-case that potentially benefits many users of Skeema, and not a change exclusively motivated by your company's specialized requirements.
 
 **Library use-cases:** Our lower-level [Go La Tengo](https://github.com/skeema/tengo) package is in a separate repo and is intended to be useful as a stand-alone library, but Skeema's internal subpackages (`applier`, `dumper`, `linter`, etc) are not. If you're building an internal system for your company requiring library usage of Skeema, please [reach out](https://www.skeema.io/contact/) regarding a paid consulting engagement.
-
-**Embedding Skeema in commercial DBaaS platforms:** If you're a cloud vendor or database-as-a-service platform, don't submit vague PRs that are designed to allow your company to more easily profit off of our hard work. This is completely unacceptable.
 
 ### Information about testing, code coverage, and CI
 

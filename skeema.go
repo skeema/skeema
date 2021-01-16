@@ -7,8 +7,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
-	"github.com/skeema/skeema/util"
-	"github.com/skeema/skeema/workspace"
+	"github.com/skeema/skeema/internal/util"
+	"github.com/skeema/skeema/internal/workspace"
 )
 
 const rootDesc = "Skeema is a declarative schema management system for MySQL and MariaDB. " +
