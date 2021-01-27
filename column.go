@@ -20,7 +20,7 @@ type Column struct {
 	CollationIsDefault bool   `json:"collationIsDefault,omitempty"` // Only populated if textual type; indicates default for CharSet
 	Compression        string `json:"compression,omitempty"`        // Only non-empty if using column compression in Percona Server or MariaDB
 	Comment            string `json:"comment,omitempty"`
-	Invisible          bool   `json:"invisible,omitempty"` // True if a MariaDB 10.3+ invisible column
+	Invisible          bool   `json:"invisible,omitempty"` // True if an invisible column (MariaDB 10.3+, MySQL 8.0.23+)
 }
 
 // Definition returns this column's definition clause, for use as part of a DDL
@@ -55,7 +55,11 @@ func (c *Column) Definition(flavor Flavor, table *Table) string {
 		nullability = " NULL"
 	}
 	if c.Invisible {
-		visibility = " INVISIBLE"
+		if flavor.Vendor == VendorMariaDB {
+			visibility = " INVISIBLE"
+		} else {
+			visibility = " /*!80023 INVISIBLE */"
+		}
 	}
 	if c.AutoIncrement {
 		autoIncrement = " AUTO_INCREMENT"
@@ -73,7 +77,12 @@ func (c *Column) Definition(flavor Flavor, table *Table) string {
 		comment = fmt.Sprintf(" COMMENT '%s'", EscapeValueForCreateTable(c.Comment))
 	}
 	clauses := []string{
-		EscapeIdentifier(c.Name), " ", c.TypeInDB, compression, charSet, collation, generated, nullability, visibility, autoIncrement, defaultValue, onUpdate, colFormat, comment,
+		EscapeIdentifier(c.Name), " ", c.TypeInDB, compression, charSet, collation, generated, nullability,
+	}
+	if flavor.Vendor == VendorMariaDB {
+		clauses = append(clauses, visibility, autoIncrement, defaultValue, onUpdate, colFormat, comment)
+	} else {
+		clauses = append(clauses, autoIncrement, defaultValue, onUpdate, visibility, colFormat, comment)
 	}
 	return strings.Join(clauses, "")
 }

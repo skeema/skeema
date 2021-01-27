@@ -759,17 +759,17 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		}
 	}
 
-	// Test invisible column support in MariaDB 10.3+
-	if flavor.VendorMinVersion(VendorMariaDB, 10, 3) {
-		if _, err := s.d.SourceSQL("testdata/inviscols-maria.sql"); err != nil {
-			t.Fatalf("Unexpected error sourcing testdata/inviscols-maria.sql: %v", err)
+	// Test invisible column support in flavors supporting it
+	if flavor.VendorMinVersion(VendorMariaDB, 10, 3) || flavor.MySQLishMinVersion(8, 0, 23) {
+		if _, err := s.d.SourceSQL("testdata/inviscols.sql"); err != nil {
+			t.Fatalf("Unexpected error sourcing testdata/inviscols.sql: %v", err)
 		}
 		table := s.GetTable(t, "testing", "invistest")
 		if table.UnsupportedDDL {
 			t.Errorf("Expected table using invisible columns to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
 		}
 		for n, col := range table.Columns {
-			expectInvis := (n == 0 || n == 4)
+			expectInvis := (n == 0 || n == 4 || n == 5)
 			if col.Invisible != expectInvis {
 				t.Errorf("Expected Columns[%d].Invisible == %t, instead found %t", n, expectInvis, !expectInvis)
 			}
