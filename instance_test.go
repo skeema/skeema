@@ -703,23 +703,13 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Test introspection of default expressions, if flavor supports them
-	hasDefaultExpressions := flavor.VendorMinVersion(VendorMariaDB, 10, 2)
-	if flavor.MySQLishMinVersion(8, 0) {
-		if _, _, patch := s.d.Version(); patch >= 13 { // 8.0.13 added default expressions
-			hasDefaultExpressions = true
+	if flavor.VendorMinVersion(VendorMariaDB, 10, 2) || flavor.MySQLishMinVersion(8, 0, 13) {
+		if _, err := s.d.SourceSQL("testdata/default-expr.sql"); err != nil {
+			t.Fatalf("Unexpected error sourcing testdata/default-expr.sql: %v", err)
 		}
-	}
-	if hasDefaultExpressions {
-		db, err := s.d.Connect("testing", "")
-		if err != nil {
-			t.Fatalf("Unexpected error from connect: %s", err)
-		}
-		if _, err := db.Exec("ALTER TABLE grab_bag ADD COLUMN expiration DATE DEFAULT (CURRENT_DATE + INTERVAL 1 YEAR)"); err != nil {
-			t.Fatalf("Unexpected error from ALTER: %s", err)
-		}
-		table := s.GetTable(t, "testing", "grab_bag")
+		table := s.GetTable(t, "testing", "testdefaults")
 		if table.UnsupportedDDL {
-			t.Error("Use of default expression unexpectedly triggers UnsupportedDDL")
+			t.Errorf("Use of default expression unexpectedly triggers UnsupportedDDL.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", table.GeneratedCreateStatement(flavor), table.CreateStatement)
 		}
 	}
 
@@ -1023,5 +1013,28 @@ func TestFixFulltextIndexParsers(t *testing.T) {
 	fixFulltextIndexParsers(&table, FlavorMySQL57)
 	if table.SecondaryIndexes[0].FullTextParser != "ngram" {
 		t.Errorf("fixFulltextIndexParsers unexpectedly set parser to %q instead of %q", table.SecondaryIndexes[0].FullTextParser, "ngram")
+	}
+}
+
+// TestFixBlobDefaultExpression confirms CREATE TABLE parsing works for blob/
+// text default expressions in versions which omit them from information_schema.
+func TestFixBlobDefaultExpression(t *testing.T) {
+	table := aTableForFlavor(FlavorMySQL80, 0)
+	defExpr := "(CONCAT('hello ', 'world'))"
+	table.Columns[1].Default = defExpr
+	table.CreateStatement = table.GeneratedCreateStatement(FlavorMySQL80)
+	table.Columns[1].Default = "!!!BLOBDEFAULT!!!"
+	fixBlobDefaultExpression(&table, FlavorMySQL80)
+	if table.Columns[1].Default != defExpr {
+		t.Errorf("fixBlobDefaultExpression did not work or set default to unexpected value %q", table.Columns[1].Default)
+	}
+
+	// Confirm regex still correct with stuff after the default
+	table.Columns[1].Comment = "hi i am a comment"
+	table.CreateStatement = table.GeneratedCreateStatement(FlavorMySQL80)
+	table.Columns[1].Default = "!!!BLOBDEFAULT!!!"
+	fixBlobDefaultExpression(&table, FlavorMySQL80)
+	if table.Columns[1].Default != defExpr {
+		t.Errorf("fixBlobDefaultExpression did not work after adding comment, default is unexpected value %q", table.Columns[1].Default)
 	}
 }

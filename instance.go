@@ -965,6 +965,12 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			allowNullDefault := col.Nullable && !col.AutoIncrement && col.GenerationExpr == ""
 			if !flavor.AllowBlobDefaults() && (strings.HasSuffix(col.TypeInDB, "blob") || strings.HasSuffix(col.TypeInDB, "text")) {
 				allowNullDefault = false
+				// MySQL 8.0.13-8.0.22 omits blob/text default expressions from
+				// information_schema due to a bug, so in this case flag the column to
+				// have its default parsed out from SHOW CREATE TABLE later
+				if strings.Contains(rawColumn.Extra, "DEFAULT_GENERATED") {
+					col.Default = "!!!BLOBDEFAULT!!!"
+				}
 			}
 			if allowNullDefault {
 				col.Default = "NULL"
@@ -978,10 +984,12 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			col.Default = rawColumn.Default.String
 		} else if strings.HasPrefix(rawColumn.Type, "bit") && strings.HasPrefix(rawColumn.Default.String, "b'") {
 			col.Default = rawColumn.Default.String
-		} else if strings.Contains(rawColumn.Extra, "DEFAULT_GENERATED") && strings.HasPrefix(rawColumn.Default.String, "(") {
-			// MySQL/Percona 8.0.13+ added default expressions, which are single-paren-
-			// wrapped in information_schema, but double-paren-wrapped in SHOW CREATE
-			col.Default = fmt.Sprintf("(%s)", rawColumn.Default.String)
+		} else if strings.Contains(rawColumn.Extra, "DEFAULT_GENERATED") {
+			// MySQL/Percona 8.0.13+ added default expressions, which are paren-wrapped
+			// in SHOW CREATE TABLE, possibly in addition to any paren-wrapping which
+			// is already in information_schema. However, quotes get oddly mangled in
+			// information_schema's representation.
+			col.Default = fmt.Sprintf("(%s)", strings.ReplaceAll(rawColumn.Default.String, "\\'", "'"))
 		} else {
 			col.Default = fmt.Sprintf("'%s'", EscapeValueForCreateTable(rawColumn.Default.String))
 		}
@@ -1258,6 +1266,10 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			if strings.Contains(t.CreateStatement, "WITH PARSER") {
 				fixFulltextIndexParsers(t, flavor)
 			}
+			// Fix blob/text default expressions in MySQL 8.0.13-8.0.22, missing from I_S
+			if flavor.MySQLishMinVersion(8, 0, 13) && !flavor.MySQLishMinVersion(8, 0, 23) {
+				fixBlobDefaultExpression(t, flavor)
+			}
 			// Compare what we expect the create DDL to be, to determine if we support
 			// diffing for the table. Ignore next-auto-increment differences in this
 			// comparison, since the value may have changed between our previous
@@ -1438,7 +1450,7 @@ func fixPerconaColCompression(t *Table) {
 	}
 }
 
-// fixFulltextIndexParsers parsers the table's CREATE string in order to
+// fixFulltextIndexParsers parses the table's CREATE string in order to
 // populate Index.FullTextParser for any fulltext indexes that specify a parser.
 func fixFulltextIndexParsers(t *Table, flavor Flavor) {
 	for _, idx := range t.SecondaryIndexes {
@@ -1452,6 +1464,25 @@ func fixFulltextIndexParsers(t *Table, flavor Flavor) {
 			matches := re.FindStringSubmatch(t.CreateStatement)
 			if matches != nil { // only matches if a parser is specified
 				idx.FullTextParser = matches[1]
+			}
+		}
+	}
+}
+
+// fixBlobDefaultExpression parses the table's CREATE string in order to
+// populate Column.Default for blob/text columns using a default expression
+// in MySQLish 8.0.13-8.0.22, which omits this from information_schema due
+// to a bug fixed in MySQL 8.0.23.
+func fixBlobDefaultExpression(t *Table, flavor Flavor) {
+	for _, col := range t.Columns {
+		if col.Default == "!!!BLOBDEFAULT!!!" {
+			template := col.Definition(flavor, t)
+			template = regexp.QuoteMeta(template)
+			template = fmt.Sprintf("%s,?\n", strings.Replace(template, col.Default, "(.+?)", 1))
+			re := regexp.MustCompile(template)
+			matches := re.FindStringSubmatch(t.CreateStatement)
+			if matches != nil {
+				col.Default = matches[1]
 			}
 		}
 	}

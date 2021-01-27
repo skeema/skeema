@@ -259,7 +259,8 @@ func (fl Flavor) Known() bool {
 }
 
 // AllowBlobDefaults returns true if the flavor permits blob and text types
-// to have default values.
+// to have literal default values. (Note that MySQL may permit these types to
+// have default *expressions* anyway.)
 func (fl Flavor) AllowBlobDefaults() bool {
 	return fl.VendorMinVersion(VendorMariaDB, 10, 2)
 }
