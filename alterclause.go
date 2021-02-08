@@ -212,15 +212,17 @@ func (mc ModifyColumn) Clause(mods StatementModifiers) string {
 	// Emit a no-op if the *only* difference is presence of int display width. This
 	// can come up if comparing a pre-8.0.19 version of a table to a post-8.0.19
 	// version.
-	if strings.Contains(mc.OldColumn.TypeInDB, "int(") && !strings.ContainsRune(mc.NewColumn.TypeInDB, '(') {
+	oldHasWidth := strings.Contains(mc.OldColumn.TypeInDB, "int(") || mc.OldColumn.TypeInDB == "year(4)"
+	newHasWidth := strings.Contains(mc.NewColumn.TypeInDB, "int(") || mc.NewColumn.TypeInDB == "year(4)"
+	if oldHasWidth && !newHasWidth {
 		oldColCopy := *mc.OldColumn
-		oldColCopy.TypeInDB = reDisplayWidth.ReplaceAllString(oldColCopy.TypeInDB, "$1$3$4")
+		oldColCopy.TypeInDB = StripDisplayWidth(oldColCopy.TypeInDB)
 		if oldColCopy.Equals(mc.NewColumn) {
 			return ""
 		}
-	} else if strings.Contains(mc.NewColumn.TypeInDB, "int(") && !strings.ContainsRune(mc.OldColumn.TypeInDB, '(') {
+	} else if newHasWidth && !oldHasWidth {
 		newColCopy := *mc.NewColumn
-		newColCopy.TypeInDB = reDisplayWidth.ReplaceAllString(newColCopy.TypeInDB, "$1$3$4")
+		newColCopy.TypeInDB = StripDisplayWidth(newColCopy.TypeInDB)
 		if newColCopy.Equals(mc.OldColumn) {
 			return ""
 		}

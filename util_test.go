@@ -1,6 +1,8 @@
 package tengo
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -99,5 +101,53 @@ func TestNormalizeCreateOptions(t *testing.T) {
 		") ENGINE=InnoDB DEFAULT CHARSET=latin1 KEY_BLOCK_SIZE=8;\n"
 	if actual := NormalizeCreateOptions(input); actual != expect {
 		t.Errorf("NormalizeCreateOptions returned unexpected value. Expected:\n%s\nActual:\n%s", expect, actual)
+	}
+}
+
+func TestStripDisplayWidth(t *testing.T) {
+	cases := map[string]string{
+		"tinyint(1)":          "tinyint(1)",
+		"tinyint(2)":          "tinyint",
+		"tinyint(1) unsigned": "tinyint unsigned",
+		"YEAR(4)":             "year",
+		"YEAR":                "YEAR",
+		"int(11)":             "int",
+		"int(11) zerofill":    "int(11) zerofill",
+		"int(10) unsigned":    "int unsigned",
+		"bigint(20)":          "bigint",
+	}
+	for input, expected := range cases {
+		if actual := StripDisplayWidth(input); actual != expected {
+			t.Errorf("Expected StripDisplayWidth(%q) to return %q, instead found %q", input, expected, actual)
+		}
+	}
+}
+
+func TestLongestIncreasingSubsequence(t *testing.T) {
+	cases := map[string]string{
+		"":            "",
+		"3":           "3",
+		"1 4":         "1 4",
+		"4 1":         "1",
+		"1 2 6 3 4":   "1 2 3 4",
+		"5 4 3 2 1":   "1",
+		"5 6 4 1 2 3": "1 2 3",
+	}
+	for inputStr, expectedStr := range cases {
+		var input []int
+		for _, inp := range strings.Split(inputStr, " ") {
+			if inp != "" {
+				i, _ := strconv.Atoi(inp)
+				input = append(input, i)
+			}
+		}
+		actual := longestIncreasingSubsequence(input)
+		var actualStrs []string
+		for _, out := range actual {
+			actualStrs = append(actualStrs, fmt.Sprintf("%d", out))
+		}
+		if actualStr := strings.Join(actualStrs, " "); actualStr != expectedStr {
+			t.Errorf("Expected longestIncreasingSubsequence(%s) to return %s, instead found %s", inputStr, expectedStr, actualStr)
+		}
 	}
 }

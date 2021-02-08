@@ -514,11 +514,13 @@ func foreignKeyTable() Table {
 }
 
 func stripIntDisplayWidths(table *Table) {
-	// See alterclause.go for definition of reDisplayWidth
 	for _, col := range table.Columns {
-		col.TypeInDB = reDisplayWidth.ReplaceAllString(col.TypeInDB, "$1$3$4")
+		if strings.Contains(col.TypeInDB, "int(") || col.TypeInDB == "year(4)" {
+			stripped := StripDisplayWidth(col.TypeInDB)
+			table.CreateStatement = strings.Replace(table.CreateStatement, col.TypeInDB, stripped, 1)
+			col.TypeInDB = stripped
+		}
 	}
-	table.CreateStatement = reDisplayWidth.ReplaceAllString(table.CreateStatement, "$1$3$4")
 }
 
 func aSchema(name string, tables ...*Table) Schema {
