@@ -376,24 +376,25 @@ func (t *Table) compareColumnExistence(other *Table) columnsComparison {
 		fromTable:           self,
 		toTable:             other,
 		fromColumnsByName:   self.ColumnsByName(),
-		toColumnsByName:     other.ColumnsByName(),
 		fromStillPresent:    make([]bool, len(self.Columns)),
 		toAlreadyExisted:    make([]bool, len(other.Columns)),
 		fromOrderCommonCols: make([]*Column, 0, len(self.Columns)),
 		toOrderCommonCols:   make([]*Column, 0, len(other.Columns)),
 	}
+	toColumnsByName := other.ColumnsByName()
 	for n, col := range self.Columns {
-		_, existsInOther := cc.toColumnsByName[col.Name]
-		cc.fromStillPresent[n] = existsInOther
-		if existsInOther {
+		if _, existsInOther := toColumnsByName[col.Name]; existsInOther {
+			cc.fromStillPresent[n] = true
 			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, col)
 		}
 	}
 	for n, col := range other.Columns {
-		_, existsInSelf := cc.fromColumnsByName[col.Name]
-		cc.toAlreadyExisted[n] = existsInSelf
-		if existsInSelf {
+		if _, existsInSelf := cc.fromColumnsByName[col.Name]; existsInSelf {
+			cc.toAlreadyExisted[n] = true
 			cc.toOrderCommonCols = append(cc.toOrderCommonCols, col)
+			if !cc.commonColumnsMoved && col.Name != cc.fromOrderCommonCols[len(cc.toOrderCommonCols)-1].Name {
+				cc.commonColumnsMoved = true
+			}
 		}
 	}
 	return cc
@@ -405,9 +406,9 @@ type columnsComparison struct {
 	fromStillPresent    []bool
 	fromOrderCommonCols []*Column
 	toTable             *Table
-	toColumnsByName     map[string]*Column
 	toAlreadyExisted    []bool
 	toOrderCommonCols   []*Column
+	commonColumnsMoved  bool
 }
 
 func (cc *columnsComparison) columnDrops() []TableAlterClause {
@@ -461,75 +462,51 @@ func (cc *columnsComparison) columnAdds() []TableAlterClause {
 func (cc *columnsComparison) columnModifications() []TableAlterClause {
 	clauses := make([]TableAlterClause, 0)
 	commonCount := len(cc.fromOrderCommonCols)
-	if commonCount == 0 { // no common cols = no possible MODIFY COLUMN clauses
+	if commonCount == 0 {
+		// no common cols = no possible MODIFY COLUMN clauses
 		return clauses
-	}
-
-	// Relative to the "to" side, efficiently identify the longest increasing
-	// subsequence in the "from" side, to determine which columns can stay put vs
-	// which ones need to be reordered.
-	// TODO: In cases of ties for longest increasing subsequence, we should prefer
-	// moving cols that have other modifications vs ones that don't, to minimize
-	// the number of MODIFY COLUMN clauses. (No functional difference either way,
-	// though.)
-	fromIndexToPos := make([]int, commonCount)
-	for fromPos, fromCol := range cc.fromOrderCommonCols {
-		for toPos := range cc.toOrderCommonCols {
-			if cc.toOrderCommonCols[toPos].Name == fromCol.Name {
-				fromIndexToPos[fromPos] = toPos
-				break
-			}
-		}
-	}
-	candidateLists := make([][]int, 1, commonCount)
-	candidateLists[0] = []int{fromIndexToPos[0]}
-	for i := 1; i < commonCount; i++ {
-		comp := fromIndexToPos[i]
-		if comp < candidateLists[0][0] {
-			candidateLists[0][0] = comp
-		} else if longestList := candidateLists[len(candidateLists)-1]; comp > longestList[len(longestList)-1] {
-			newList := make([]int, len(longestList)+1)
-			copy(newList, longestList)
-			newList[len(longestList)] = comp
-			candidateLists = append(candidateLists, newList)
-		} else {
-			for j := len(candidateLists) - 2; j >= 0; j-- {
-				if thisList, nextList := candidateLists[j], candidateLists[j+1]; comp > thisList[len(thisList)-1] {
-					copy(nextList, thisList)
-					nextList[len(nextList)-1] = comp
-					break
-				}
-				if j == 0 { // should break before getting here
-					panic(fmt.Errorf("Column reorder assertion failed! i=%d, comp=%d, candidateLists=%v", i, comp, candidateLists))
-				}
-			}
-		}
-	}
-	stayPut := make([]bool, commonCount)
-	for _, toPos := range candidateLists[len(candidateLists)-1] {
-		stayPut[toPos] = true
-	}
-
-	// For each common column (relative to the "to" order), emit a MODIFY COLUMN
-	// clause if the col stayed put but otherwise changed, OR if it was reordered.
-	for toPos, toCol := range cc.toOrderCommonCols {
-		fromCol := cc.fromColumnsByName[toCol.Name]
-		if stayPut[toPos] {
-			if !fromCol.Equals(toCol) {
+	} else if !cc.commonColumnsMoved {
+		// If all common cols are at same position, efficient comparison is simpler
+		for toPos, toCol := range cc.toOrderCommonCols {
+			if fromCol := cc.fromOrderCommonCols[toPos]; !fromCol.Equals(toCol) {
 				clauses = append(clauses, ModifyColumn{
 					Table:     cc.toTable,
 					OldColumn: fromCol,
 					NewColumn: toCol,
 				})
 			}
-		} else {
+		}
+		return clauses
+	}
+
+	// If one or more common columns were re-positioned, identify the longest
+	// increasing subsequence in the "from" side, to determine which columns can
+	// stay put vs which ones need to be repositioned.
+	toColPos := make(map[string]int, commonCount)
+	for toPos, col := range cc.toOrderCommonCols {
+		toColPos[col.Name] = toPos
+	}
+	fromIndexToPos := make([]int, commonCount)
+	for fromPos, fromCol := range cc.fromOrderCommonCols {
+		fromIndexToPos[fromPos] = toColPos[fromCol.Name]
+	}
+	stayPut := make([]bool, commonCount)
+	for _, toPos := range longestIncreasingSubsequence(fromIndexToPos) {
+		stayPut[toPos] = true
+	}
+
+	// For each common column (relative to the "to" order), emit a MODIFY COLUMN
+	// clause if the col was reordered or modified.
+	for toPos, toCol := range cc.toOrderCommonCols {
+		fromCol := cc.fromColumnsByName[toCol.Name]
+		if moved := !stayPut[toPos]; moved || !fromCol.Equals(toCol) {
 			modify := ModifyColumn{
 				Table:         cc.toTable,
 				OldColumn:     fromCol,
 				NewColumn:     toCol,
-				PositionFirst: toPos == 0,
+				PositionFirst: moved && toPos == 0,
 			}
-			if toPos > 0 {
+			if moved && toPos > 0 {
 				modify.PositionAfter = cc.toOrderCommonCols[toPos-1]
 			}
 			clauses = append(clauses, modify)

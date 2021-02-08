@@ -1199,3 +1199,25 @@ func TestTableAlterUnsupportedTable(t *testing.T) {
 		t.Fatalf("Expected diff of unsupported tables to yield no alters; instead found %d", len(tableAlters))
 	}
 }
+
+func BenchmarkColumnModifications(b *testing.B) {
+	// Create two tables: one with 199 cols, other with 200 cols, only differing by
+	// that last extra col
+	tbl1, tbl2 := &Table{Name: "one"}, &Table{Name: "two"}
+	for n := 1; n <= 200; n++ {
+		col1 := Column{
+			Name:     fmt.Sprintf("col_%d", n),
+			TypeInDB: "int",
+		}
+		col2 := col1
+		if n < 200 {
+			tbl1.Columns = append(tbl1.Columns, &col1)
+		}
+		tbl2.Columns = append(tbl2.Columns, &col2)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cc := tbl1.compareColumnExistence(tbl2)
+		cc.columnModifications()
+	}
+}

@@ -215,3 +215,33 @@ func paramMap(dsn string) map[string]string {
 	}
 	return result
 }
+
+// longestIncreasingSubsequence implements an algorithm useful in computing
+// diffs for column order or trigger order.
+func longestIncreasingSubsequence(input []int) []int {
+	if len(input) < 2 {
+		return input
+	}
+	candidateLists := make([][]int, 1, len(input))
+	candidateLists[0] = []int{input[0]}
+	for i := 1; i < len(input); i++ {
+		comp := input[i]
+		if comp < candidateLists[0][0] {
+			candidateLists[0][0] = comp
+		} else if longestList := candidateLists[len(candidateLists)-1]; comp > longestList[len(longestList)-1] {
+			newList := make([]int, len(longestList)+1)
+			copy(newList, longestList)
+			newList[len(longestList)] = comp
+			candidateLists = append(candidateLists, newList)
+		} else {
+			for j := len(candidateLists) - 2; j >= 0; j-- {
+				if thisList, nextList := candidateLists[j], candidateLists[j+1]; comp > thisList[len(thisList)-1] {
+					copy(nextList, thisList)
+					nextList[len(nextList)-1] = comp
+					break
+				}
+			}
+		}
+	}
+	return candidateLists[len(candidateLists)-1]
+}
