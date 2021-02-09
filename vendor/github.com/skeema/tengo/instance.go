@@ -850,10 +850,8 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		return nil, err
 	}
 
-	// Obtain flavor and version info. MariaDB changed how default values are
-	// represented in information_schema in 10.2+.
+	// Obtain flavor info
 	flavor := instance.Flavor()
-	_, _, patch := instance.Version()
 
 	// Note on these queries: MySQL 8.0 changes information_schema column names to
 	// come back from queries in all caps, so we need to explicitly use AS clauses
@@ -909,6 +907,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	}
 
 	// Obtain the columns in all tables in the schema
+	stripDisplayWidth := flavor.OmitIntDisplayWidth()
 	var rawColumns []struct {
 		Name               string         `db:"column_name"`
 		TableName          string         `db:"table_name"`
@@ -951,6 +950,13 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			AutoIncrement: strings.Contains(rawColumn.Extra, "auto_increment"),
 			Comment:       rawColumn.Comment,
 			Invisible:     strings.Contains(rawColumn.Extra, "INVISIBLE"),
+		}
+		// If db was upgraded from a pre-8.0.19 version (but still 8.0+) to 8.0.19+,
+		// I_S may still contain int display widths even though SHOW CREATE TABLE
+		// omits them. Strip to avoid incorrectly flagging the table as unsupported
+		// for diffs.
+		if stripDisplayWidth && (strings.Contains(col.TypeInDB, "int(") || col.TypeInDB == "year(4)") {
+			col.TypeInDB = StripDisplayWidth(col.TypeInDB)
 		}
 		if pos := strings.Index(col.TypeInDB, " /*!100301 COMPRESSED"); pos > -1 {
 			// MariaDB includes compression attribute in column type; remove it
@@ -1050,7 +1056,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	exprSelect, visSelect := "NULL", "'YES'"
 	if flavor.MySQLishMinVersion(8, 0) {
 		// Index expressions added in 8.0.13
-		if patch >= 13 || flavor.MySQLishMinVersion(8, 1) {
+		if flavor.MySQLishMinVersion(8, 0, 13) {
 			exprSelect = "expression"
 		}
 		visSelect = "is_visible" // available in all 8.0

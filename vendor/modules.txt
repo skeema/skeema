@@ -101,7 +101,7 @@ github.com/sirupsen/logrus
 # github.com/skeema/mybase v1.0.13
 ## explicit
 github.com/skeema/mybase
-# github.com/skeema/tengo v0.9.8-0.20210127212037-d3a60afab939
+# github.com/skeema/tengo v0.9.8-0.20210208232911-9027677c0e25
 ## explicit
 github.com/skeema/tengo
 # golang.org/x/lint v0.0.0-20190409202823-959b441ac422
