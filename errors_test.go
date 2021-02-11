@@ -23,7 +23,7 @@ func (s TengoIntegrationSuite) TestIsSyntaxError(t *testing.T) {
 		t.Errorf("IsSyntaxError unexpectedly returned true for non-database error type=%T", err)
 	}
 
-	db, err := s.d.Connect("testing", "")
+	db, err := s.d.ConnectionPool("testing", "")
 	if err != nil {
 		t.Fatalf("Unable to get connection")
 	}
@@ -48,26 +48,19 @@ func (s TengoIntegrationSuite) TestIsAccessError(t *testing.T) {
 		t.Errorf("IsAccessError unexpectedly returned true for non-database error type=%T", err)
 	}
 
-	inst := s.d.Instance
-	inst.Lock()
-	for key, connPool := range inst.connectionPool {
-		connPool.Close()
-		delete(inst.connectionPool, key)
-	}
-	inst.Unlock()
-
 	// Hack username in DSN to no longer be correct
+	inst := s.d.Instance
 	inst.BaseDSN = fmt.Sprintf("badname%s", inst.BaseDSN)
-	_, err = inst.Connect("", "")
+	_, err = inst.ConnectionPool("", "")
 	if err == nil {
-		t.Error("Connect unexpectedly returned nil error")
+		t.Error("ConnectionPool unexpectedly returned nil error")
 	} else if !IsAccessError(err) {
 		t.Errorf("Error of type %T %+v unexpectedly not considered access error", err, err)
 	}
 	inst.BaseDSN = inst.BaseDSN[7:]
-	db, err := inst.Connect("testing", "")
+	db, err := inst.ConnectionPool("testing", "")
 	if err != nil {
-		t.Errorf("Connect unexpectedly returned error: %s", err)
+		t.Errorf("ConnectionPool unexpectedly returned error: %s", err)
 	}
 	_, err = db.Exec("ALTER TABLE doesnt_exist ENGINE=InnoDB")
 	if err == nil {

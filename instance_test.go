@@ -28,7 +28,7 @@ func TestNewInstance(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Unexpectedly received error %s from NewInstance(\"mysql\", \"%s\")", err, dsn)
 		}
-		expectedInstance.RWMutex = instance.RWMutex // cheat to satisfy DeepEqual
+		expectedInstance.m = instance.m // cheat to satisfy DeepEqual
 		if !reflect.DeepEqual(expectedInstance, *instance) {
 			t.Errorf("NewInstance(\"mysql\", \"%s\"): Returned instance %#v does not match expected instance %#v", dsn, *instance, expectedInstance)
 		}
@@ -164,6 +164,9 @@ func (s TengoIntegrationSuite) TestInstanceCanConnect(t *testing.T) {
 	if ok, err := inst.CanConnect(); !ok || err != nil {
 		t.Fatalf("Unexpected return from CanConnect(): %t / %s", ok, err)
 	}
+	if ok, err := inst.Valid(); !ok || err != nil {
+		t.Fatalf("Unexpected return from Valid(): %t / %s", ok, err)
+	}
 
 	// Stop the DockerizedInstance and confirm CanConnect result matches
 	// expectation
@@ -171,6 +174,7 @@ func (s TengoIntegrationSuite) TestInstanceCanConnect(t *testing.T) {
 		t.Fatalf("Failed to Stop instance: %s", err)
 	}
 	ok, connErr := inst.CanConnect()
+	valid, validErr := inst.Valid()
 	if err := s.d.Start(); err != nil {
 		t.Fatalf("Failed to re-Start() instance: %s", err)
 	}
@@ -178,7 +182,33 @@ func (s TengoIntegrationSuite) TestInstanceCanConnect(t *testing.T) {
 		t.Fatalf("Failed to reconnect after restarting instance: %s", err)
 	}
 	if ok || connErr == nil {
-		t.Errorf("Unexpected return from CanConnect(): %t / %s", ok, connErr)
+		t.Errorf("Unexpected return from TryConnect(): %t / %s", ok, connErr)
+	}
+	if !valid || validErr != nil { // Instance is still considered Valid since it was reachable earlier
+		t.Errorf("Unexpected return from Valid(): %t / %s", ok, connErr)
+	}
+}
+
+func (s TengoIntegrationSuite) TestInstanceValid(t *testing.T) {
+	if ok, err := s.d.Valid(); !ok || err != nil {
+		t.Fatalf("Valid() unexpectedly returned %t / %v", ok, err)
+	}
+
+	dsn := s.d.DSN()
+	dsn = strings.Replace(dsn, s.d.Password, "wrongpass", 1)
+	inst, err := NewInstance("mysql", dsn)
+	if err != nil {
+		t.Fatalf("Unexpected error from NewInstance: %s", err)
+	}
+	if ok, err := inst.Valid(); ok || err == nil {
+		t.Fatalf("Valid() unexpectedly returned %t / %v despite wrong password", ok, err)
+	}
+	inst, err = NewInstance("mysql", s.d.DSN())
+	if err != nil {
+		t.Fatalf("Unexpected error from NewInstance: %s", err)
+	}
+	if ok, err := inst.Valid(); !ok || err != nil {
+		t.Fatalf("Valid() unexpectedly returned %t / %v", ok, err)
 	}
 }
 
@@ -247,8 +277,9 @@ func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
 	if expected == FlavorUnknown {
 		t.Skip("SKIPPING TEST - no image map defined for", s.d.Image)
 	}
-	if actualFlavor := s.d.Flavor().Family(); actualFlavor != expected {
-		t.Errorf("Expected image=%s to yield flavor=%s, instead found %s", s.d.Image, expected, actualFlavor)
+	actualFlavor := s.d.Flavor()
+	if actualFlavor.Family() != expected {
+		t.Errorf("Expected image=%s to yield flavor=%s, instead found %s", s.d.Image, expected, actualFlavor.Family())
 	}
 	if actualMajor, actualMinor, _ := s.d.Version(); actualMajor != expected.Major || actualMinor != expected.Minor {
 		t.Errorf("Expected image=%s to yield major=%d minor=%d, instead found major=%d minor=%d", s.d.Image, expected.Major, expected.Minor, actualMajor, actualMinor)
@@ -264,7 +295,7 @@ func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
 	if err := s.d.SetFlavor(expected); err != nil || s.d.Flavor() != expected {
 		t.Errorf("Unexpected outcome from SetFlavor: error=%v, flavor=%s", err, s.d.Flavor())
 	}
-	s.d.ForceFlavor(FlavorUnknown) // Clean up
+	s.d.ForceFlavor(actualFlavor)
 }
 
 func (s TengoIntegrationSuite) TestInstanceCanSkipBinlog(t *testing.T) {
@@ -861,16 +892,20 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 	// If this flavor supports using mysql.proc to bulk-fetch routines, confirm
 	// the result is identical to using the individual SHOW CREATE queries
 	if !s.d.Flavor().HasDataDictionary() {
-		fastResults, err := s.d.querySchemaRoutines("testing")
+		db, err := s.d.ConnectionPool("testing", "")
 		if err != nil {
-			t.Fatalf("Unexpected error from querySchemaRoutines: %s", err)
+			t.Fatalf("Unexpected error from ConnectionPool: %v", err)
+		}
+		fastResults, err := s.d.querySchemaRoutines(db, "testing")
+		if err != nil {
+			t.Fatalf("Unexpected error from querySchemaRoutines: %v", err)
 		}
 		oldFlavor := s.d.Flavor()
 		s.d.ForceFlavor(FlavorMySQL80)
-		slowResults, err := s.d.querySchemaRoutines("testing")
+		slowResults, err := s.d.querySchemaRoutines(db, "testing")
 		s.d.ForceFlavor(oldFlavor)
 		if err != nil {
-			t.Fatalf("Unexpected error from querySchemaRoutines: %s", err)
+			t.Fatalf("Unexpected error from querySchemaRoutines: %v", err)
 		}
 		for n, r := range fastResults {
 			if !r.Equals(slowResults[n]) {

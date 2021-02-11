@@ -1,7 +1,6 @@
 package tengo
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"net/url"
@@ -28,10 +27,13 @@ type Instance struct {
 	SocketPath     string
 	defaultParams  map[string]string
 	connectionPool map[string]*sqlx.DB // key is in format "schema?params"
-	*sync.RWMutex                      // protects connectionPool for concurrent operations
+	m              *sync.Mutex         // protects unexported fields for concurrent operations
 	flavor         Flavor
 	version        [3]int
 	grants         []string
+	waitTimeout    int
+	maxUserConns   int
+	valid          bool // true if any conn has ever successfully been made yet
 }
 
 // NewInstance returns a pointer to a new Instance corresponding to the
@@ -60,7 +62,7 @@ func NewInstance(driver, dsn string) (*Instance, error) {
 		defaultParams:  params,
 		connectionPool: make(map[string]*sqlx.DB),
 		flavor:         FlavorUnknown,
-		RWMutex:        new(sync.RWMutex),
+		m:              new(sync.Mutex),
 	}
 
 	switch parsedConfig.Net {
@@ -109,33 +111,67 @@ func (instance *Instance) buildParamString(params string) string {
 	return v.Encode()
 }
 
-// Connect returns a connection pool (sql.DB) for this instance's host/port/
-// user/pass with the supplied default schema and params string. If a connection
-// pool already exists for this combination, it will be returned; otherwise, one
-// will be initialized and a connection attempt is made to confirm access.
+// ConnectionPool returns a new sqlx.DB for this instance's host/port/user/pass
+// with the supplied default schema and params string. A connection attempt is
+// made, and an error will be returned if connection fails.
 // defaultSchema may be "" if it is not relevant.
 // params should be supplied in format "foo=bar&fizz=buzz" with URL escaping
 // already applied. Do not include a prefix of "?". params will be merged with
 // instance.defaultParams, with params supplied here taking precedence.
 // To avoid problems with unexpected disconnection, the connection pool will
 // automatically have a max conn lifetime of at most 30sec, or less if a lower
-// session-level wait_timeout was set in params or instance.defaultParams.
-func (instance *Instance) Connect(defaultSchema string, params string) (*sqlx.DB, error) {
+// session wait_timeout was set in params, instance.defaultParams, or the DB's
+// global wait_timeout variable.
+func (instance *Instance) ConnectionPool(defaultSchema, params string) (*sqlx.DB, error) {
+	fullParams := instance.buildParamString(params)
+	return instance.rawConnectionPool(defaultSchema, fullParams, false)
+}
+
+// CachedConnectionPool operates like ConnectionPool, except it caches
+// connection pools for reuse. When multiple requests are made for the same
+// combination of defaultSchema and params, a pre-existing connection pool will
+// be returned. See ConnectionPool for usage of the args for this method.
+func (instance *Instance) CachedConnectionPool(defaultSchema, params string) (*sqlx.DB, error) {
 	fullParams := instance.buildParamString(params)
 	key := fmt.Sprintf("%s?%s", defaultSchema, fullParams)
 
-	instance.RLock()
-	pool, ok := instance.connectionPool[key]
-	instance.RUnlock()
-
-	if ok {
+	instance.m.Lock()
+	defer instance.m.Unlock()
+	if pool, ok := instance.connectionPool[key]; ok {
 		return pool, nil
 	}
+	db, err := instance.rawConnectionPool(defaultSchema, fullParams, true)
+	if err == nil {
+		instance.connectionPool[key] = db
+	}
+	return db, err
+}
 
-	fullDSN := instance.BaseDSN + key
+// Connect is an alias for CachedConnectionPool.
+func (instance *Instance) Connect(defaultSchema string, params string) (*sqlx.DB, error) {
+	return instance.CachedConnectionPool(defaultSchema, params)
+}
+
+func (instance *Instance) rawConnectionPool(defaultSchema, fullParams string, alreadyLocked bool) (*sqlx.DB, error) {
+	fullDSN := fmt.Sprintf("%s%s?%s", instance.BaseDSN, defaultSchema, fullParams)
 	db, err := sqlx.Connect(instance.Driver, fullDSN)
 	if err != nil {
 		return nil, err
+	}
+	if !instance.valid {
+		instance.hydrateVars(db, !alreadyLocked)
+	}
+
+	// Set max concurrent connections, ensuring it is less than any limit set on
+	// the database side either globally or for this user. This does not completely
+	// eliminate max-conn problems, because each Instance can have many separate
+	// connection pools, but it may help.
+	if instance.maxUserConns > 0 {
+		if instance.maxUserConns < 12 {
+			db.SetMaxOpenConns(2)
+		} else {
+			db.SetMaxOpenConns(instance.maxUserConns - 10)
+		}
 	}
 
 	// Determine max conn lifetime, ensuring it is less than wait_timeout. If
@@ -146,8 +182,7 @@ func (instance *Instance) Connect(defaultSchema string, params string) (*sqlx.DB
 	parsedParams, _ := url.ParseQuery(fullParams)
 	waitTimeout, _ := strconv.Atoi(parsedParams.Get("wait_timeout"))
 	if waitTimeout == 0 {
-		// Ignoring errors here, since this will keep maxLifetime at 30s sane default
-		db.QueryRow("SELECT @@wait_timeout").Scan(&waitTimeout)
+		waitTimeout = instance.waitTimeout
 	}
 	if waitTimeout > 1 && waitTimeout <= 30 {
 		maxLifetime = time.Duration(waitTimeout-1) * time.Second
@@ -155,60 +190,57 @@ func (instance *Instance) Connect(defaultSchema string, params string) (*sqlx.DB
 		maxLifetime = 900 * time.Millisecond
 	}
 	db.SetConnMaxLifetime(maxLifetime)
-
-	instance.Lock()
-	defer instance.Unlock()
-	instance.connectionPool[key] = db.Unsafe()
-	return instance.connectionPool[key], nil
+	return db.Unsafe(), nil
 }
 
-// CanConnect verifies that the Instance can be connected to
+// CanConnect returns true if the Instance can currently be connected to, using
+// its configured User and Password. If a new connection cannot be made, the
+// return value will be false, along with an error expressing the reason.
 func (instance *Instance) CanConnect() (bool, error) {
+	// If we've already connected before, bypass the existing cached connection
+	// pools entirely to ensure we're not reusing an idle connection from a cached
+	// pool. Otherwise, it's safe to go through CachedConnectionPool and save this
+	// conn for future reuse for other purposes.
 	var err error
-	instance.Lock()
-
-	// To ensure we're initializing a new connection, if a conn pool already exists
-	// with the setup we want (no default db, only defaultParams for args), force
-	// it to close idle connections and then make an explicit Conn. Otherwise, go
-	// through Instance.Connect, which also verifies connectivity by making a new
-	// pool.
-	key := fmt.Sprintf("?%s", instance.buildParamString(""))
-	if db, ok := instance.connectionPool[key]; ok {
-		db.SetMaxIdleConns(0)
-		var conn *sql.Conn
-		conn, err = db.Conn(context.Background())
-		if conn != nil {
-			conn.Close()
-		}
-		db.SetMaxIdleConns(2) // default in database/sql, current as of Go 1.11
-		instance.Unlock()
+	if len(instance.connectionPool) > 0 {
+		_, err = instance.ConnectionPool("", "")
 	} else {
-		instance.Unlock()
-		_, err = instance.Connect("", "")
+		_, err = instance.CachedConnectionPool("", "")
 	}
-
 	return err == nil, err
 }
 
-// CloseAll closes all of instance's connection pools. This can be useful for
-// graceful shutdown, to avoid aborted-connection counters/logging in some
-// versions of MySQL.
+// Valid returns true if a successful connection can be made to the Instance,
+// or if a successful connection has already been made previously. This method
+// only returns false if no previous successful connection was ever made, and a
+// new attempt to establish one fails.
+func (instance *Instance) Valid() (bool, error) {
+	if instance.valid {
+		return true, nil
+	}
+	// CachedConnectionPool establishes one conn in the pool; if
+	// successful, this also calls hydrateVars which then sets valid to true
+	_, err := instance.CachedConnectionPool("", "")
+	return err == nil, err
+}
+
+// CloseAll closes all of instance's cached connection pools. This can be
+// useful for graceful shutdown, to avoid aborted-connection counters/logging
+// in some versions of MySQL.
 func (instance *Instance) CloseAll() {
-	instance.Lock()
+	instance.m.Lock()
 	for key, db := range instance.connectionPool {
 		db.Close()
 		delete(instance.connectionPool, key)
 	}
-	instance.Unlock()
+	instance.m.Unlock()
 }
 
 // Flavor returns this instance's flavor value, representing the database
 // distribution/fork/vendor as well as major and minor version. If this is
 // unable to be determined or an error occurs, FlavorUnknown will be returned.
 func (instance *Instance) Flavor() Flavor {
-	if instance.flavor == FlavorUnknown {
-		instance.hydrateFlavorAndVersion()
-	}
+	instance.Valid() // force an attempt to hydrate flavor, if not done already
 	return instance.flavor
 }
 
@@ -228,30 +260,54 @@ func (instance *Instance) SetFlavor(flavor Flavor) error {
 // check the error return value.
 func (instance *Instance) ForceFlavor(flavor Flavor) {
 	instance.flavor = flavor
-	instance.version = [3]int{flavor.Major, flavor.Minor, 0}
+	instance.version = [3]int{flavor.Major, flavor.Minor, flavor.Patch}
 }
 
 // Version returns three ints representing the database's major, minor, and
 // patch version, respectively. If this is unable to be determined, all 0's
 // will be returned.
 func (instance *Instance) Version() (int, int, int) {
-	if instance.version[0] == 0 {
-		instance.hydrateFlavorAndVersion()
-	}
+	instance.Valid() // force an attempt to hydrate version, if not done already
 	return instance.version[0], instance.version[1], instance.version[2]
 }
 
-func (instance *Instance) hydrateFlavorAndVersion() {
-	db, err := instance.Connect("", "")
-	if err != nil {
+// hydrateVars populates several non-exported Instance fields by querying
+// various global and session variables. Failures are ignored; these variables
+// are designed to help inform behavior but are not strictly mandatory.
+func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
+	var err error
+	if lock {
+		instance.m.Lock()
+		defer instance.m.Unlock()
+		if instance.valid {
+			return
+		}
+	}
+	var result struct {
+		VersionComment string
+		Version        string
+		WaitTimeout    int
+		MaxUserConns   int
+		MaxConns       int
+	}
+	query := `
+		SELECT @@global.version_comment AS versioncomment,
+		       @@global.version AS version,
+		       @@session.wait_timeout AS waittimeout,
+		       @@session.max_user_connections AS maxuserconns,
+		       @@global.max_connections AS maxconns`
+	if err = db.Get(&result, query); err != nil {
 		return
 	}
-	var versionComment, versionString string
-	if err = db.QueryRow("SELECT @@global.version_comment, @@global.version").Scan(&versionComment, &versionString); err != nil {
-		return
+	instance.valid = true
+	instance.version = ParseVersion(result.Version)
+	instance.flavor = ParseFlavor(result.Version, result.VersionComment)
+	instance.waitTimeout = result.WaitTimeout
+	if result.MaxUserConns > 0 {
+		instance.maxUserConns = result.MaxUserConns
+	} else {
+		instance.maxUserConns = result.MaxConns
 	}
-	instance.version = ParseVersion(versionString)
-	instance.flavor = ParseFlavor(versionString, versionComment)
 }
 
 // Regular expression defining privileges that allow use of setting session
@@ -278,24 +334,26 @@ func (instance *Instance) CanSkipBinlog() bool {
 }
 
 func (instance *Instance) hydrateGrants() {
-	db, err := instance.Connect("", "")
+	db, err := instance.CachedConnectionPool("", "")
 	if err != nil {
 		return
 	}
+	instance.m.Lock()
+	defer instance.m.Unlock()
 	db.Select(&instance.grants, "SHOW GRANTS")
 }
 
 // SchemaNames returns a slice of all schema name strings on the instance
 // visible to the user. System schemas are excluded.
 func (instance *Instance) SchemaNames() ([]string, error) {
-	db, err := instance.Connect("information_schema", "")
+	db, err := instance.CachedConnectionPool("", "")
 	if err != nil {
 		return nil, err
 	}
 	var result []string
 	query := `
 		SELECT schema_name
-		FROM   schemata
+		FROM   information_schema.schemata
 		WHERE  schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'test', 'sys')`
 	if err := db.Select(&result, query); err != nil {
 		return nil, err
@@ -308,7 +366,7 @@ func (instance *Instance) SchemaNames() ([]string, error) {
 // more schema names as args to filter the result to just those schemas.
 // Note that the ordering of the resulting slice is not guaranteed.
 func (instance *Instance) Schemas(onlyNames ...string) ([]*Schema, error) {
-	db, err := instance.Connect("information_schema", "")
+	db, err := instance.CachedConnectionPool("", "")
 	if err != nil {
 		return nil, err
 	}
@@ -328,13 +386,13 @@ func (instance *Instance) Schemas(onlyNames ...string) ([]*Schema, error) {
 		query = `
 			SELECT schema_name AS schema_name, default_character_set_name AS default_character_set_name,
 			       default_collation_name AS default_collation_name
-			FROM   schemata
+			FROM   information_schema.schemata
 			WHERE  schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'test', 'sys')`
 	} else {
 		query = `
 			SELECT schema_name AS schema_name, default_character_set_name AS default_character_set_name,
 			       default_collation_name AS default_collation_name
-			FROM   schemata
+			FROM   information_schema.schemata
 			WHERE  schema_name IN (?)`
 		query, args, err = sqlx.In(query, onlyNames)
 	}
@@ -349,12 +407,22 @@ func (instance *Instance) Schemas(onlyNames ...string) ([]*Schema, error) {
 			CharSet:   rawSchema.CharSet,
 			Collation: rawSchema.Collation,
 		}
-		if schemas[n].Tables, err = instance.querySchemaTables(rawSchema.Name); err != nil {
+		// Create a non-cached connection pool with this schema as the default
+		// database. The instance.querySchemaX calls below can establish a lot of
+		// connections, so we will explicitly close the pool afterwards, to avoid
+		// keeping a very large number of conns open. (Although idle conns eventually
+		// get closed automatically, this may take too long.)
+		schemaDB, err := instance.ConnectionPool(rawSchema.Name, "")
+		if err != nil {
 			return nil, err
 		}
-		if schemas[n].Routines, err = instance.querySchemaRoutines(rawSchema.Name); err != nil {
+		if schemas[n].Tables, err = instance.querySchemaTables(schemaDB, rawSchema.Name); err != nil {
 			return nil, err
 		}
+		if schemas[n].Routines, err = instance.querySchemaRoutines(schemaDB, rawSchema.Name); err != nil {
+			return nil, err
+		}
+		schemaDB.Close()
 	}
 	return schemas, nil
 }
@@ -391,14 +459,14 @@ func (instance *Instance) Schema(name string) (*Schema, error) {
 // returned if a connection or query failed entirely and we weren't able to
 // determine whether the schema exists.
 func (instance *Instance) HasSchema(name string) (bool, error) {
-	db, err := instance.Connect("information_schema", "")
+	db, err := instance.CachedConnectionPool("", "")
 	if err != nil {
 		return false, err
 	}
 	var exists int
 	query := `
 		SELECT 1
-		FROM   schemata
+		FROM   information_schema.schemata
 		WHERE  schema_name = ?`
 	err = db.Get(&exists, query, name)
 	if err == nil {
@@ -413,7 +481,7 @@ func (instance *Instance) HasSchema(name string) (bool, error) {
 // ShowCreateTable returns a string with a CREATE TABLE statement, representing
 // how the instance views the specified table as having been created.
 func (instance *Instance) ShowCreateTable(schema, table string) (string, error) {
-	db, err := instance.Connect(schema, "")
+	db, err := instance.CachedConnectionPool(schema, "")
 	if err != nil {
 		return "", err
 	}
@@ -421,18 +489,15 @@ func (instance *Instance) ShowCreateTable(schema, table string) (string, error) 
 }
 
 func showCreateTable(db *sqlx.DB, table string) (string, error) {
-	var createRows []struct {
+	var row struct {
 		TableName       string `db:"Table"`
 		CreateStatement string `db:"Create Table"`
 	}
 	query := fmt.Sprintf("SHOW CREATE TABLE %s", EscapeIdentifier(table))
-	if err := db.Select(&createRows, query); err != nil {
+	if err := db.Get(&row, query); err != nil {
 		return "", err
 	}
-	if len(createRows) != 1 {
-		return "", sql.ErrNoRows
-	}
-	return createRows[0].CreateStatement, nil
+	return row.CreateStatement, nil
 }
 
 // TableSize returns an estimate of the table's size on-disk, based on data in
@@ -442,13 +507,13 @@ func showCreateTable(db *sqlx.DB, table string) (string, error) {
 // accuracy. For example, see https://bugs.mysql.com/bug.php?id=75428.
 func (instance *Instance) TableSize(schema, table string) (int64, error) {
 	var result int64
-	db, err := instance.Connect("information_schema", "")
+	db, err := instance.CachedConnectionPool("", "")
 	if err != nil {
 		return 0, err
 	}
 	err = db.Get(&result, `
 		SELECT  data_length + index_length + data_free
-		FROM    tables
+		FROM    information_schema.tables
 		WHERE   table_schema = ? and table_name = ?`,
 		schema, table)
 	return result, err
@@ -458,7 +523,7 @@ func (instance *Instance) TableSize(schema, table string) (int64, error) {
 // occurs in querying, also returns true (along with the error) since a false
 // positive is generally less dangerous in this case than a false negative.
 func (instance *Instance) TableHasRows(schema, table string) (bool, error) {
-	db, err := instance.Connect(schema, "")
+	db, err := instance.CachedConnectionPool(schema, "")
 	if err != nil {
 		return true, err
 	}
@@ -510,7 +575,7 @@ func (opts SchemaCreationOptions) params() string {
 // optionally the supplied default CharSet and Collation. (Leave these fields
 // blank to use server defaults.)
 func (instance *Instance) CreateSchema(name string, opts SchemaCreationOptions) (*Schema, error) {
-	db, err := instance.Connect("", opts.params())
+	db, err := instance.CachedConnectionPool("", opts.params())
 	if err != nil {
 		return nil, err
 	}
@@ -557,7 +622,7 @@ func (instance *Instance) DropSchema(schema string, opts BulkDropOptions) error 
 	s := &Schema{
 		Name: schema,
 	}
-	db, err := instance.Connect("", opts.params())
+	db, err := instance.CachedConnectionPool("", opts.params())
 	if err != nil {
 		return err
 	}
@@ -567,14 +632,14 @@ func (instance *Instance) DropSchema(schema string, opts BulkDropOptions) error 
 	}
 
 	prefix := fmt.Sprintf("%s?", schema)
-	instance.Lock()
+	instance.m.Lock()
+	defer instance.m.Unlock()
 	for key, connPool := range instance.connectionPool {
 		if strings.HasPrefix(key, prefix) {
 			connPool.Close()
 			delete(instance.connectionPool, key)
 		}
 	}
-	instance.Unlock()
 	return nil
 }
 
@@ -592,7 +657,7 @@ func (instance *Instance) AlterSchema(schema string, opts SchemaCreationOptions)
 	if statement == "" {
 		return nil
 	}
-	db, err := instance.Connect("", opts.params())
+	db, err := instance.CachedConnectionPool("", opts.params())
 	if err != nil {
 		return err
 	}
@@ -628,7 +693,7 @@ func (opts BulkDropOptions) Concurrency() int {
 // DropTablesInSchema drops all tables in a schema. If opts.OnlyIfEmpty==true,
 // returns an error if any of the tables have any rows.
 func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions) error {
-	db, err := instance.Connect(schema, opts.params())
+	db, err := instance.CachedConnectionPool(schema, opts.params())
 	if err != nil {
 		return err
 	}
@@ -688,7 +753,7 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 
 // DropRoutinesInSchema drops all stored procedures and functions in a schema.
 func (instance *Instance) DropRoutinesInSchema(schema string, opts BulkDropOptions) error {
-	db, err := instance.Connect(schema, opts.params())
+	db, err := instance.CachedConnectionPool(schema, opts.params())
 	if err != nil {
 		return err
 	}
@@ -780,7 +845,7 @@ func dropPartitions(db *sqlx.DB, table string, partitions []string) error {
 // DefaultCharSetAndCollation returns the instance's default character set and
 // collation
 func (instance *Instance) DefaultCharSetAndCollation() (serverCharSet, serverCollation string, err error) {
-	db, err := instance.Connect("information_schema", "")
+	db, err := instance.CachedConnectionPool("", "")
 	if err != nil {
 		return
 	}
@@ -799,7 +864,7 @@ func (instance *Instance) StrictModeCompliant(schemas []*Schema) (bool, error) {
 		if alreadyPopulated {
 			return hasFilePerTable, hasBarracuda, nil
 		}
-		db, err := instance.Connect("", "")
+		db, err := instance.CachedConnectionPool("", "")
 		if err != nil {
 			return false, false, err
 		}
@@ -844,13 +909,7 @@ func (instance *Instance) StrictModeCompliant(schemas []*Schema) (bool, error) {
 
 var reExtraOnUpdate = regexp.MustCompile(`(?i)\bon update (current_timestamp(?:\(\d*\))?)`)
 
-func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
-	db, err := instance.Connect("information_schema", "")
-	if err != nil {
-		return nil, err
-	}
-
-	// Obtain flavor info
+func (instance *Instance) querySchemaTables(db *sqlx.DB, schema string) ([]*Table, error) {
 	flavor := instance.Flavor()
 
 	// Note on these queries: MySQL 8.0 changes information_schema column names to
@@ -874,8 +933,8 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		       t.auto_increment AS auto_increment, t.table_collation AS table_collation,
 		       t.create_options AS create_options, t.table_comment AS table_comment,
 		       c.character_set_name AS character_set_name, c.is_default AS is_default
-		FROM   tables t
-		JOIN   collations c ON t.table_collation = c.collation_name
+		FROM   information_schema.tables t
+		JOIN   information_schema.collations c ON t.table_collation = c.collation_name
 		WHERE  t.table_schema = ?
 		AND    t.table_type = 'BASE TABLE'`
 	if err := db.Select(&rawTables, query, schema); err != nil {
@@ -929,8 +988,8 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		          c.column_comment AS column_comment,
 		          c.character_set_name AS character_set_name,
 		          c.collation_name AS collation_name, co.is_default AS is_default
-		FROM      columns c
-		LEFT JOIN collations co ON co.collation_name = c.collation_name
+		FROM      information_schema.columns c
+		LEFT JOIN information_schema.collations co ON co.collation_name = c.collation_name
 		WHERE     c.table_schema = ?
 		ORDER BY  c.table_name, c.ordinal_position`
 	genExpr := "NULL"
@@ -1051,7 +1110,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		         column_name AS column_name, sub_part AS sub_part,
 		         index_comment AS index_comment, index_type AS index_type,
 		         collation AS collation, %s AS expression, %s AS is_visible
-		FROM     statistics
+		FROM     information_schema.statistics
 		WHERE    table_schema = ?`
 	exprSelect, visSelect := "NULL", "'YES'"
 	if flavor.MySQLishMinVersion(8, 0) {
@@ -1130,8 +1189,8 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 		         rc.referenced_table_name AS referenced_table_name,
 		         IF(rc.constraint_schema=rc.unique_constraint_schema, '', rc.unique_constraint_schema) AS referenced_schema,
 		         kcu.referenced_column_name AS referenced_column_name
-		FROM     referential_constraints rc
-		JOIN     key_column_usage kcu ON kcu.constraint_name = rc.constraint_name AND
+		FROM     information_schema.referential_constraints rc
+		JOIN     information_schema.key_column_usage kcu ON kcu.constraint_name = rc.constraint_name AND
 		                                 kcu.table_schema = ? AND
 		                                 kcu.referenced_column_name IS NOT NULL
 		WHERE    rc.constraint_schema = ?
@@ -1185,7 +1244,7 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 			         p.subpartition_expression AS subpartition_expression,
 			         p.partition_description AS partition_description,
 			         p.partition_comment AS partition_comment
-			FROM     partitions p
+			FROM     information_schema.partitions p
 			WHERE    p.table_schema = ?
 			AND      p.partition_name IS NOT NULL
 			ORDER BY p.table_name, p.partition_ordinal_position,
@@ -1227,10 +1286,6 @@ func (instance *Instance) querySchemaTables(schema string) ([]*Table, error) {
 	// Obtain actual SHOW CREATE TABLE output and store in each table. Since
 	// there's no way in MySQL to bulk fetch this for multiple tables at once,
 	// use multiple goroutines to make this faster.
-	db, err = instance.Connect(schema, "")
-	if err != nil {
-		return nil, err
-	}
 	th := throttler.New(15, len(tables))
 	for _, t := range tables {
 		go func(t *Table) {
@@ -1494,12 +1549,7 @@ func fixBlobDefaultExpression(t *Table, flavor Flavor) {
 	}
 }
 
-func (instance *Instance) querySchemaRoutines(schema string) ([]*Routine, error) {
-	db, err := instance.Connect("information_schema", "")
-	if err != nil {
-		return nil, err
-	}
-
+func (instance *Instance) querySchemaRoutines(db *sqlx.DB, schema string) ([]*Routine, error) {
 	// Obtain the routines in the schema
 	// We completely exclude routines that the user can call, but not examine --
 	// e.g. user has EXECUTE priv but missing other vital privs. In this case
@@ -1527,7 +1577,7 @@ func (instance *Instance) querySchemaRoutines(schema string) ([]*Routine, error)
 		       UPPER(r.security_type) AS security_type,
 		       r.sql_mode AS sql_mode, r.routine_comment AS routine_comment,
 		       r.definer AS definer, r.database_collation AS database_collation
-		FROM   routines r
+		FROM   information_schema.routines r
 		WHERE  r.routine_schema = ? AND routine_definition IS NOT NULL`
 	if err := db.Select(&rawRoutines, query, schema); err != nil {
 		return nil, fmt.Errorf("Error querying information_schema.routines for schema %s: %s", schema, err)
@@ -1566,10 +1616,6 @@ func (instance *Instance) querySchemaRoutines(schema string) ([]*Routine, error)
 	// a SHOW CREATE per routine.
 	// If mysql.proc doesn't exist or that query fails, we then run a SHOW CREATE
 	// per routine, using multiple goroutines for performance reasons.
-	db, err = instance.Connect(schema, "")
-	if err != nil {
-		return nil, err
-	}
 	if !instance.Flavor().HasDataDictionary() {
 		var rawRoutineMeta []struct {
 			Name      string `db:"name"`

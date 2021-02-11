@@ -333,8 +333,10 @@ type filteredLogger struct {
 
 func (fl filteredLogger) Print(v ...interface{}) {
 	for _, arg := range v {
-		if err, ok := arg.(error); ok && strings.Contains(err.Error(), "EOF") {
-			return
+		if err, ok := arg.(error); ok {
+			if msg := err.Error(); strings.Contains(msg, "EOF") || strings.Contains(msg, "unexpected read") {
+				return
+			}
 		}
 	}
 	fl.logger.Print(v...)
