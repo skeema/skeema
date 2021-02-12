@@ -10,7 +10,6 @@ import (
 	"github.com/skeema/skeema/internal/util"
 	"github.com/skeema/skeema/internal/workspace"
 	"github.com/skeema/tengo"
-	"golang.org/x/sync/errgroup"
 )
 
 func (s ApplierIntegrationSuite) TestTargetsForDirSimple(t *testing.T) {
@@ -112,42 +111,26 @@ func (s ApplierIntegrationSuite) TestTargetsForDirMulti(t *testing.T) {
 	setupHostList(t)
 	assertTargetsForDir(dir, 1, 0, 0)
 
-	// Shut down the first DockerizedInstance and confirm behavior: without
-	// --first-only, targets from the stopped host should be skipped and influence
-	// skipCount; with --first-only, the stopped host should be ignored
-	setupHostList(t, s.d[0].Instance, s.d[1].Instance)
-	if err := s.d[0].Stop(); err != nil {
-		t.Fatalf("Unexpected error from Stop(): %s", err)
-	}
+	// Adjust the port on the first DockerizedInstance and confirm behavior:
+	// without --first-only, targets from the invalid host should be skipped and
+	// influence skipCount; with --first-only, the invalid host should be ignored
+	badInst0 := *s.d[0].Instance
+	badInst0.Port += 10
+	setupHostList(t, &badInst0, s.d[1].Instance)
 	dir = getDir(t, "testdata/multi", "")
 	assertTargetsForDir(dir, 1, 2, 1)
 	dir = getDir(t, "testdata/multi", "--first-only")
 	assertTargetsForDir(dir, 1, 1, 0)
 
-	// Shut down the second DockerizedInstance and confirm behavior: no valid
-	// targets, and skipCount depends on --first-only
-	if err := s.d[1].Stop(); err != nil {
-		t.Fatalf("Unexpected error from Stop(): %s", err)
-	}
+	// Adjust the port on the second DockerizedInstance and confirm behavior: no
+	// valid targets, and skipCount depends on --first-only
+	badInst1 := *s.d[1].Instance
+	badInst1.Port += 10
+	setupHostList(t, &badInst0, &badInst1)
 	dir = getDir(t, "testdata/multi", "")
 	assertTargetsForDir(dir, 1, 0, 2)
 	dir = getDir(t, "testdata/multi", "--first-only")
 	assertTargetsForDir(dir, 1, 0, 1)
-
-	// Restore the DockerizedInstances
-	var g errgroup.Group
-	for n := range s.d {
-		n := n
-		g.Go(func() error {
-			if err := s.d[n].Start(); err != nil {
-				return err
-			}
-			return s.d[n].TryConnect()
-		})
-	}
-	if err := g.Wait(); err != nil {
-		t.Fatalf("Failed to bring databases back up: %s", err)
-	}
 }
 
 // TestTargetsForDirNamedSchema tests various combinations of using schema names
