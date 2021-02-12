@@ -9,7 +9,7 @@ import (
 type Routine struct {
 	Name              string     `json:"name"`
 	Type              ObjectType `json:"type"`                     // Will be ObjectTypeProcedure or ObjectTypeFunction
-	Body              string     `json:"body"`                     // From information_schema; different char escaping vs CreateStatement
+	Body              string     `json:"body"`                     // Has correct escaping despite I_S mutilating it
 	ParamString       string     `json:"paramString"`              // Formatted as per original CREATE
 	ReturnDataType    string     `json:"returnDataType,omitempty"` // Includes charset/collation when relevant
 	Definer           string     `json:"definer"`

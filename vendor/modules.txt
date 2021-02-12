@@ -48,7 +48,7 @@ github.com/docker/go-connections/nat
 github.com/docker/go-units
 # github.com/fsouza/go-dockerclient v1.6.6
 github.com/fsouza/go-dockerclient
-# github.com/go-sql-driver/mysql v1.5.0
+# github.com/go-sql-driver/mysql v1.5.1-0.20210202043019-fe2230a8b20c
 github.com/go-sql-driver/mysql
 # github.com/gogo/protobuf v1.3.1
 github.com/gogo/protobuf/proto
@@ -101,7 +101,7 @@ github.com/sirupsen/logrus
 # github.com/skeema/mybase v1.0.13
 ## explicit
 github.com/skeema/mybase
-# github.com/skeema/tengo v0.9.8-0.20210208232911-9027677c0e25
+# github.com/skeema/tengo v0.9.8-0.20210212004258-b67f0f82b909
 ## explicit
 github.com/skeema/tengo
 # golang.org/x/lint v0.0.0-20190409202823-959b441ac422

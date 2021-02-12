@@ -385,7 +385,7 @@ func wrapFailure(statement *fs.Statement, err error) *StatementError {
 type releaseFunc func()
 
 func getLock(instance *tengo.Instance, lockName string, maxWait time.Duration) (releaseFunc, error) {
-	db, err := instance.Connect("", "")
+	db, err := instance.CachedConnectionPool("", "")
 	if err != nil {
 		return nil, err
 	}

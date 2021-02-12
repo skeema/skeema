@@ -151,7 +151,7 @@ func (ld *LocalDocker) ConnectionPool(params string) (*sqlx.DB, error) {
 		}
 		finalParams = v.Encode()
 	}
-	return ld.d.Connect(ld.schemaName, finalParams)
+	return ld.d.CachedConnectionPool(ld.schemaName, finalParams)
 }
 
 // IntrospectSchema introspects and returns the temporary workspace schema.

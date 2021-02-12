@@ -1191,24 +1191,19 @@ func (s SkeemaIntegrationSuite) TestFlavorConfig(t *testing.T) {
 	s.verifyFiles(t, cfg, "../golden/init")
 
 	// Doing init again to new dir mydbnf, confirm no flavor in mydbnf/.skeema
-	inst.ForceFlavor(badFlavor)
-	var extraFlag string
-	if realFlavor.HasDataDictionary() {
-		// Very counter-intuitive, but we need to ensure init is reusing the
-		// cached Instance that has param information_schema_stats_expiry=0 in the
-		// DSN, since that's what "inst" points to! Supplying the flavor on the CLI
-		// won't otherwise affect anything in init except for this one piece of logic
-		// in fs.Dir.InstanceDefaultParams().
-		// Note that supplying flavor on the CLI is undocumented. Behavior changes
-		// may break this test in the future; find a less hacky solution here if so!
-		extraFlag = " --flavor mysql:8.0"
+	// Temporarily skipping this test for MySQL 8: because
+	// dir.InstanceDefaultParams sets information_schema_stats_expiry=0 in the
+	// DSN for MySQL 8, and util.NewInstance caches instances by DSN, we can't
+	// call ForceFlavor on the correct instance and still test the right behavior
+	if !realFlavor.HasDataDictionary() {
+		inst.ForceFlavor(badFlavor)
+		s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydbnf -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+		contents := fs.ReadTestFile(t, "mydbnf/.skeema")
+		if strings.Contains(contents, "flavor") {
+			t.Error("Expected init to skip flavor, but it was found")
+		}
+		fs.RemoveTestDirectory(t, "mydbnf")
 	}
-	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydbnf -h %s -P %d%s", s.d.Instance.Host, s.d.Instance.Port, extraFlag)
-	contents := fs.ReadTestFile(t, "mydbnf/.skeema")
-	if strings.Contains(contents, "flavor") {
-		t.Error("Expected init to skip flavor, but it was found")
-	}
-	fs.RemoveTestDirectory(t, "mydbnf")
 
 	// Restore the instance's correct flavor, and set a different flavor back in
 	// mydb/.skeema. Confirm diff behavior unaffected, meaning the instance flavor
@@ -1218,7 +1213,7 @@ func (s SkeemaIntegrationSuite) TestFlavorConfig(t *testing.T) {
 	if realFlavor.Vendor == tengo.VendorMariaDB {
 		newFlavor = tengo.FlavorMySQL57
 	}
-	contents = fs.ReadTestFile(t, "mydb/.skeema")
+	contents := fs.ReadTestFile(t, "mydb/.skeema")
 	if !strings.Contains(contents, realFlavor.Family().String()) {
 		t.Fatal("Could not find flavor line in mydb/.skeema")
 	}
@@ -1310,7 +1305,7 @@ END`
 		t.Fatal("Unable to locate routine2")
 	} else {
 		var serverSQLMode string
-		db, _ := s.d.Connect("", "")
+		db, _ := s.d.CachedConnectionPool("", "")
 		if err := db.QueryRow("SELECT @@global.sql_mode").Scan(&serverSQLMode); err != nil {
 			t.Fatalf("Unexpected error querying sql_mode: %s", err)
 		}
@@ -1378,7 +1373,7 @@ func (s SkeemaIntegrationSuite) TestTempSchemaBinlog(t *testing.T) {
 
 	getLogPos := func() string {
 		t.Helper()
-		db, err := s.d.Connect("", "")
+		db, err := s.d.CachedConnectionPool("", "")
 		if err != nil {
 			t.Fatalf("Unable to establish connection: %v", err)
 		}

@@ -22,7 +22,7 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 	}
 	dbExec := func(schemaName, query string, args ...interface{}) {
 		t.Helper()
-		db, err := s.d[0].Connect(schemaName, "")
+		db, err := s.d[0].CachedConnectionPool(schemaName, "")
 		if err != nil {
 			t.Fatalf("Unable to connect to DockerizedInstance: %s", err)
 		}

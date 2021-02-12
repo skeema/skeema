@@ -250,7 +250,7 @@ func (ddl *DDLStatement) Execute() error {
 	if ddl.IsShellOut() {
 		return ddl.shellOut.Run()
 	}
-	db, err := ddl.instance.Connect(ddl.schemaName, ddl.connectParams)
+	db, err := ddl.instance.CachedConnectionPool(ddl.schemaName, ddl.connectParams)
 	if err != nil {
 		return err
 	}

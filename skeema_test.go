@@ -450,7 +450,7 @@ func (s *SkeemaIntegrationSuite) dbExec(t *testing.T, schemaName, query string, 
 // it is fatal to the current test.
 func (s *SkeemaIntegrationSuite) dbExecWithParams(t *testing.T, schemaName, params, query string, args ...interface{}) {
 	t.Helper()
-	db, err := s.d.Connect(schemaName, params)
+	db, err := s.d.CachedConnectionPool(schemaName, params)
 	if err != nil {
 		t.Fatalf("Unable to connect to DockerizedInstance: %s", err)
 	}

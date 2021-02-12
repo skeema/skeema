@@ -336,8 +336,7 @@ func (dir *Dir) FirstInstance() (*tengo.Instance, error) {
 
 	var lastErr error
 	for _, instance := range instances {
-		var ok bool
-		if ok, lastErr = instance.CanConnect(); ok {
+		if lastErr = dir.ValidateInstance(instance); lastErr == nil {
 			return instance, nil
 		}
 	}
@@ -345,6 +344,32 @@ func (dir *Dir) FirstInstance() (*tengo.Instance, error) {
 		return nil, fmt.Errorf("Unable to connect to %s for %s: %s", instances[0], dir, lastErr)
 	}
 	return nil, fmt.Errorf("Unable to connect to any of %d instances for %s; last error %s", len(instances), dir, lastErr)
+}
+
+// ValidateInstance confirms the supplied instance is (or has been) reachable,
+// and applies any dir-configured Flavor override if the instance's flavor
+// cannot be auto-detected.
+// An error will be returned if the instance is not reachable. Otherwise, the
+// return value will be nil, but any flavor mismatches/problems will be logged.
+func (dir *Dir) ValidateInstance(instance *tengo.Instance) error {
+	ok, err := instance.Valid()
+	if !ok {
+		return err
+	}
+
+	instFlavor := instance.Flavor()
+	confFlavor := tengo.NewFlavor(dir.Config.Get("flavor"))
+	if instFlavor.Known() {
+		if confFlavor != tengo.FlavorUnknown && instFlavor.Family() != confFlavor.Family() {
+			log.Warnf("Instance %s actual flavor %s differs from dir %s configured flavor %s", instance, instFlavor, dir, confFlavor)
+		}
+	} else if confFlavor.Known() {
+		log.Debugf("Instance %s flavor cannot be parsed; using dir %s configured flavor %s instead", instance, dir, confFlavor)
+		instance.SetFlavor(confFlavor)
+	} else {
+		log.Warnf("Unable to determine database vendor/version of %s. To set manually, use the \"flavor\" option in %s", instance, filepath.Join(dir.Path, ".skeema"))
+	}
+	return nil
 }
 
 // SchemaNames interprets the value of the dir's "schema" option, returning one

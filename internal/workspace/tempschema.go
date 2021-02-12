@@ -83,7 +83,7 @@ func NewTempSchema(opts Options) (ts *TempSchema, err error) {
 // ConnectionPool returns a connection pool (*sqlx.DB) to the temporary
 // workspace schema, using the supplied connection params (which may be blank).
 func (ts *TempSchema) ConnectionPool(params string) (*sqlx.DB, error) {
-	return ts.inst.Connect(ts.schemaName, params)
+	return ts.inst.CachedConnectionPool(ts.schemaName, params)
 }
 
 // IntrospectSchema introspects and returns the temporary workspace schema.
