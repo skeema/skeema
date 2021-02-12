@@ -203,7 +203,11 @@ func (instance *Instance) CanConnect() (bool, error) {
 	// conn for future reuse for other purposes.
 	var err error
 	if len(instance.connectionPool) > 0 {
-		_, err = instance.ConnectionPool("", "")
+		var db *sqlx.DB
+		db, err = instance.ConnectionPool("", "")
+		if db != nil {
+			db.Close() // close immediately to avoid a buildup of sleeping idle conns
+		}
 	} else {
 		_, err = instance.CachedConnectionPool("", "")
 	}
