@@ -78,6 +78,7 @@ func TestNewInstance(t *testing.T) {
 
 func TestInstanceBuildParamString(t *testing.T) {
 	assertParamString := func(defaultOptions, addOptions, expectOptions string) {
+		t.Helper()
 		dsn := "username:password@tcp(1.2.3.4:3306)/"
 		if defaultOptions != "" {
 			dsn += "?" + defaultOptions
@@ -109,6 +110,40 @@ func TestInstanceBuildParamString(t *testing.T) {
 	assertParamString("param1=value1", "param1=hello", "param1=hello")
 	assertParamString("param1=value1&readTimeout=5s&interpolateParams=0", "param2=value2", "param1=value1&readTimeout=5s&interpolateParams=0&param2=value2")
 	assertParamString("param1=value1&readTimeout=5s&interpolateParams=0", "param1=value3", "param1=value3&readTimeout=5s&interpolateParams=0")
+}
+
+func TestInstanceIntrospectionParams(t *testing.T) {
+	instance, err := NewInstance("mysql", "username:password@tcp(1.2.3.4:3306)/")
+	instance.valid = true // prevent calls like Flavor() from actually attempting a conn
+	if err != nil {
+		t.Fatalf("NewInstance returned unexpected error: %v", err)
+	}
+	assertParams := func(flavor Flavor, sqlMode, expectOptions string) {
+		t.Helper()
+		instance.flavor = flavor
+		instance.sqlMode = strings.Split(sqlMode, ",")
+
+		// can't compare strings directly since order may be different
+		result := instance.introspectionParams()
+		parsedResult, err := url.ParseQuery(result)
+		if err != nil {
+			t.Fatalf("url.ParseQuery(\"%s\") returned error: %s", result, err)
+		}
+		parsedExpected, err := url.ParseQuery(expectOptions)
+		if err != nil {
+			t.Fatalf("url.ParseQuery(\"%s\") returned error: %s", expectOptions, err)
+		}
+		if !reflect.DeepEqual(parsedResult, parsedExpected) {
+			t.Errorf("Expected param map %v, instead found %v", parsedExpected, parsedResult)
+		}
+	}
+	assertParams(FlavorMySQL57, "", "sql_quote_show_create=1")
+	assertParams(FlavorMySQL80, "", "sql_quote_show_create=1&information_schema_stats_expiry=0")
+	assertParams(FlavorMySQL57, "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1")
+	assertParams(FlavorPercona80, "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1&information_schema_stats_expiry=0")
+	assertParams(FlavorMariaDB105, "ANSI_QUOTES", "sql_quote_show_create=1&sql_mode=%27%27")
+	assertParams(FlavorMySQL57, "REAL_AS_FLOAT,PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE,ONLY_FULL_GROUP_BY,ANSI", "sql_quote_show_create=1&sql_mode=%27REAL_AS_FLOAT%2CPIPES_AS_CONCAT%2CIGNORE_SPACE%2CONLY_FULL_GROUP_BY%27")
+	assertParams(FlavorMySQL80, "NO_FIELD_OPTIONS,NO_BACKSLASH_ESCAPES,NO_KEY_OPTIONS,NO_TABLE_OPTIONS", "sql_quote_show_create=1&information_schema_stats_expiry=0&sql_mode=%27NO_BACKSLASH_ESCAPES%27")
 }
 
 func (s TengoIntegrationSuite) TestInstanceConnect(t *testing.T) {
