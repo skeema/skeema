@@ -11,4 +11,5 @@ require (
 	github.com/mattn/go-sqlite3 v1.11.0 // indirect
 	github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
 	github.com/pmezard/go-difflib v1.0.0
+	golang.org/x/sync v0.0.0-20201207232520-09787c993a3a
 )
