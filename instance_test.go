@@ -1,6 +1,7 @@
 package tengo
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net/url"
@@ -931,13 +932,13 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Unexpected error from ConnectionPool: %v", err)
 		}
-		fastResults, err := s.d.querySchemaRoutines(db, "testing")
+		fastResults, err := querySchemaRoutines(context.Background(), db, "testing", s.d.Flavor())
 		if err != nil {
 			t.Fatalf("Unexpected error from querySchemaRoutines: %v", err)
 		}
 		oldFlavor := s.d.Flavor()
 		s.d.ForceFlavor(FlavorMySQL80)
-		slowResults, err := s.d.querySchemaRoutines(db, "testing")
+		slowResults, err := querySchemaRoutines(context.Background(), db, "testing", s.d.Flavor())
 		s.d.ForceFlavor(oldFlavor)
 		if err != nil {
 			t.Fatalf("Unexpected error from querySchemaRoutines: %v", err)
@@ -958,13 +959,13 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 	if actualFunc1.Equals(r) || !r.Equals(r) {
 		t.Error("Equals not behaving as expected")
 	}
-	if _, err = showCreateRoutine(db, actualProc1.Name, ObjectTypeFunc); err != sql.ErrNoRows {
+	if _, err = showCreateRoutine(context.Background(), db, actualProc1.Name, ObjectTypeFunc); err != sql.ErrNoRows {
 		t.Errorf("Unexpected error return from showCreateRoutine: expected sql.ErrNoRows, found %s", err)
 	}
-	if _, err = showCreateRoutine(db, actualFunc1.Name, ObjectTypeProc); err != sql.ErrNoRows {
+	if _, err = showCreateRoutine(context.Background(), db, actualFunc1.Name, ObjectTypeProc); err != sql.ErrNoRows {
 		t.Errorf("Unexpected error return from showCreateRoutine: expected sql.ErrNoRows, found %s", err)
 	}
-	if _, err = showCreateRoutine(db, actualFunc1.Name, ObjectTypeTable); err == nil {
+	if _, err = showCreateRoutine(context.Background(), db, actualFunc1.Name, ObjectTypeTable); err == nil {
 		t.Error("Expected non-nil error return from showCreateRoutine with invalid type, instead found nil")
 	}
 }

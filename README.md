@@ -57,12 +57,13 @@ The following object types are completely ignored by this package. Their presenc
 
 ## External Dependencies
 
-* http://github.com/go-sql-driver/mysql (Mozilla Public License 2.0)
-* http://github.com/jmoiron/sqlx (MIT License)
-* http://github.com/VividCortex/mysqlerr (MIT License)
-* http://github.com/fsouza/go-dockerclient (BSD License)
-* http://github.com/pmezard/go-difflib/difflib (BSD License)
-* http://github.com/nozzle/throttler (Apache License 2.0)
+* https://github.com/go-sql-driver/mysql (Mozilla Public License 2.0)
+* https://github.com/jmoiron/sqlx (MIT License)
+* https://github.com/VividCortex/mysqlerr (MIT License)
+* https://github.com/fsouza/go-dockerclient (BSD License)
+* https://github.com/pmezard/go-difflib/difflib (BSD License)
+* https://github.com/nozzle/throttler (Apache License 2.0)
+* https://golang.org/x/sync/errgroup (BSD License)
 
 ## Credits
 
@@ -73,7 +74,7 @@ Additional [contributions](https://github.com/skeema/tengo/graphs/contributors) 
 * [@tomkrouper](https://github.com/tomkrouper)
 * [@efixler](https://github.com/efixler)
 * [@chrisjpalmer](https://github.com/chrisjpalmer)
-* [@thinQ-skeema](https://github.com/thinQ-skeema)
+* [@alexandre-vaniachine](https://github.com/alexandre-vaniachine)
 
 Support for stored procedures and functions generously sponsored by [Psyonix](https://psyonix.com).
 
