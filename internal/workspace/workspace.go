@@ -350,20 +350,6 @@ func paramsForStatement(statement *fs.Statement, opts Options) string {
 		params = append(params, "foreign_key_checks=0")
 	}
 
-	// Some object types "remember" their creation-time sql_mode, so we need to
-	// disable Skeema's usual sql_mode override before creating them
-	if statement.Type == fs.StatementTypeCreate {
-		rememberSQLMode := map[tengo.ObjectType]bool{
-			tengo.ObjectTypeFunc: true,
-			tengo.ObjectTypeProc: true,
-			//tengo.ObjectTypeEvent: true,   // not implemented yet
-			//tengo.ObjectTypeTrigger: true, // not implemented yet
-		}
-		if rememberSQLMode[statement.ObjectType] {
-			params = append(params, "sql_mode=@@GLOBAL.sql_mode")
-		}
-	}
-
 	return strings.Join(params, "&")
 }
 

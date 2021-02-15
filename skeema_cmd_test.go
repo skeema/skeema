@@ -88,17 +88,6 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	mybase.AssertFileSetsOptions(t, dir.OptionFile, "host", "port", "connect-options")
 	mybase.AssertFileMissingOptions(t, dir.OptionFile, "schema", "default-character-set", "default-collation")
 
-	// Test successful init on a schema that isn't strict-mode compliant
-	s.dbExecWithParams(t, "product", "sql_mode=%27NO_ENGINE_SUBSTITUTION%27", "ALTER TABLE posts MODIFY COLUMN created_at datetime NOT NULL DEFAULT '0000-00-00 00:00:00'")
-	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema init -h %s -P %d --dir nonstrict", s.d.Instance.Host, s.d.Instance.Port)
-	if dir, err = fs.ParseDir("nonstrict", cfg); err != nil {
-		t.Fatalf("Unexpected error from ParseDir: %s", err)
-	}
-	value, _ := dir.OptionFile.OptionValue("connect-options")
-	if !strings.Contains(value, "innodb_strict_mode=0") {
-		t.Errorf("Expected non-strict-compliant schema to use relaxed connect-options; instead found connect-options=%s", value)
-	}
-
 	// init should fail if a parent dir has an invalid .skeema file
 	fs.MakeTestDirectory(t, "hasbadoptions")
 	fs.WriteTestFile(t, "hasbadoptions/.skeema", "invalid file will not parse")
@@ -942,14 +931,6 @@ func (s SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 		t.Skip("Test not relevant for 5.5-based image", s.d.Image)
 	}
 
-	// By default, Skeema uses innodb_strict_mode=1 in its connections. MySQL 5.6
-	// interprets that option to prevent use of KEY_BLOCK_SIZE in nonsensical ways,
-	// so we must disable it for this test.
-	var connectOpts string
-	if major, minor, _ := s.d.Version(); major == 5 && minor == 6 {
-		connectOpts = " --connect-options=\"innodb_strict_mode=0\""
-	}
-
 	withClauses := "CREATE TABLE `problems` (\n" +
 		"  `name` varchar(30) /*!50606 STORAGE MEMORY */ /*!50606 COLUMN_FORMAT DYNAMIC */ DEFAULT NULL,\n" +
 		"  `num` int(10) unsigned NOT NULL /*!50606 STORAGE DISK */ /*!50606 COLUMN_FORMAT FIXED */,\n" +
@@ -986,18 +967,18 @@ func (s SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 
 	// lint normalizes files to remove the clauses
 	fs.WriteTestFile(t, "mydb/product/problems.sql", withClauses)
-	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint%s --errors=''", connectOpts)
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint --errors=''")
 	assertFileNormalized()
 
 	// diff views the clauses as no-ops if present in file but not db, or vice versa
 	s.dbExec(t, "product", "DROP TABLE `problems`")
 	s.dbExec(t, "product", withoutClauses)
 	fs.WriteTestFile(t, "mydb/product/problems.sql", withClauses)
-	s.handleCommand(t, CodeSuccess, ".", "skeema diff%s", connectOpts)
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 	s.dbExec(t, "product", "DROP TABLE `problems`")
 	s.dbExec(t, "product", withClauses)
 	fs.WriteTestFile(t, "mydb/product/problems.sql", withoutClauses)
-	s.handleCommand(t, CodeSuccess, ".", "skeema diff%s", connectOpts)
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
 	// init strips the clauses when it writes files
 	// (current db state: file still has extra clauses from previous)
@@ -1011,12 +992,12 @@ func (s SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 	// validation, in either direction
 	newFileContents := strings.Replace(withoutClauses, "  KEY `idx1`", "  newcol int COLUMN_FORMAT FIXED,\n  KEY `idx1`", 1)
 	fs.WriteTestFile(t, "mydb/product/problems.sql", newFileContents)
-	s.handleCommand(t, CodeSuccess, ".", "skeema push%s", connectOpts)
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
 	s.dbExec(t, "product", "DROP TABLE `problems`")
 	s.dbExec(t, "product", withoutClauses)
 	s.dbExec(t, "product", "ALTER TABLE `problems` DROP KEY `idx2`")
 	fs.WriteTestFile(t, "mydb/product/problems.sql", withClauses)
-	s.handleCommand(t, CodeSuccess, ".", "skeema push%s", connectOpts)
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
 }
 
 func (s SkeemaIntegrationSuite) TestReuseTempSchema(t *testing.T) {
@@ -1191,19 +1172,13 @@ func (s SkeemaIntegrationSuite) TestFlavorConfig(t *testing.T) {
 	s.verifyFiles(t, cfg, "../golden/init")
 
 	// Doing init again to new dir mydbnf, confirm no flavor in mydbnf/.skeema
-	// Temporarily skipping this test for MySQL 8: because
-	// dir.InstanceDefaultParams sets information_schema_stats_expiry=0 in the
-	// DSN for MySQL 8, and util.NewInstance caches instances by DSN, we can't
-	// call ForceFlavor on the correct instance and still test the right behavior
-	if !realFlavor.HasDataDictionary() {
-		inst.ForceFlavor(badFlavor)
-		s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydbnf -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
-		contents := fs.ReadTestFile(t, "mydbnf/.skeema")
-		if strings.Contains(contents, "flavor") {
-			t.Error("Expected init to skip flavor, but it was found")
-		}
-		fs.RemoveTestDirectory(t, "mydbnf")
+	inst.ForceFlavor(badFlavor)
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydbnf -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+	contents := fs.ReadTestFile(t, "mydbnf/.skeema")
+	if strings.Contains(contents, "flavor") {
+		t.Error("Expected init to skip flavor, but it was found")
 	}
+	fs.RemoveTestDirectory(t, "mydbnf")
 
 	// Restore the instance's correct flavor, and set a different flavor back in
 	// mydb/.skeema. Confirm diff behavior unaffected, meaning the instance flavor
@@ -1213,7 +1188,7 @@ func (s SkeemaIntegrationSuite) TestFlavorConfig(t *testing.T) {
 	if realFlavor.Vendor == tengo.VendorMariaDB {
 		newFlavor = tengo.FlavorMySQL57
 	}
-	contents := fs.ReadTestFile(t, "mydb/.skeema")
+	contents = fs.ReadTestFile(t, "mydb/.skeema")
 	if !strings.Contains(contents, realFlavor.Family().String()) {
 		t.Fatal("Could not find flavor line in mydb/.skeema")
 	}

@@ -373,16 +373,16 @@ func TestDirInstances(t *testing.T) {
 }
 
 func TestDirInstanceDefaultParams(t *testing.T) {
-	getDir := func(connectOptions, flavor string) *Dir {
+	getFakeDir := func(connectOptions string) *Dir {
 		return &Dir{
 			Path:   "/tmp/dummydir",
-			Config: mybase.SimpleConfig(map[string]string{"connect-options": connectOptions, "flavor": flavor}),
+			Config: mybase.SimpleConfig(map[string]string{"connect-options": connectOptions}),
 		}
 	}
 
-	assertDefaultParams := func(connectOptions, flavor, expected string) {
+	assertDefaultParams := func(connectOptions, expected string) {
 		t.Helper()
-		dir := getDir(connectOptions, flavor)
+		dir := getFakeDir(connectOptions)
 		if parsed, err := url.ParseQuery(expected); err != nil {
 			t.Fatalf("Bad expected value \"%s\": %s", expected, err)
 		} else {
@@ -395,7 +395,7 @@ func TestDirInstanceDefaultParams(t *testing.T) {
 			t.Errorf("Expected connect-options=\"%s\" to yield default params \"%s\", instead found \"%s\"", connectOptions, expected, actual)
 		}
 	}
-	baseDefaults := "interpolateParams=true&foreign_key_checks=0&timeout=5s&writeTimeout=5s&readTimeout=20s&tls=preferred&innodb_strict_mode=1&default_storage_engine=%27InnoDB%27&sql_quote_show_create=1&sql_mode=%27ONLY_FULL_GROUP_BY%2CSTRICT_TRANS_TABLES%2CNO_ZERO_IN_DATE%2CNO_ZERO_DATE%2CERROR_FOR_DIVISION_BY_ZERO%2CNO_ENGINE_SUBSTITUTION%27"
+	baseDefaults := "interpolateParams=true&foreign_key_checks=0&timeout=5s&writeTimeout=5s&readTimeout=20s&tls=preferred&default_storage_engine=%27InnoDB%27"
 	expectParams := map[string]string{
 		"":                          baseDefaults,
 		"foo='bar'":                 baseDefaults + "&foo=%27bar%27",
@@ -405,22 +405,16 @@ func TestDirInstanceDefaultParams(t *testing.T) {
 		"ok=1,writeTimeout=12ms":                    strings.Replace(baseDefaults, "writeTimeout=5s", "writeTimeout=12ms&ok=1", 1),
 	}
 	for connOpts, expected := range expectParams {
-		assertDefaultParams(connOpts, "", expected)
+		assertDefaultParams(connOpts, expected)
 	}
-
-	// Test again with a flavor that has a data dictionary -- should see new stats expiry value being set
-	baseDefaults += "&information_schema_stats_expiry=0"
-	assertDefaultParams("", "mysql:8.0", baseDefaults)
 
 	expectError := []string{
 		"totally_benign=1,allowAllFiles=true",
 		"FOREIGN_key_CHECKS='on'",
 		"bad_parse",
-		"lock_wait_timeout=60,sql_mode='STRICT_ALL_TABLES,ANSI,ALLOW_INVALID_DATES',wait_timeout=86400",
-		"information_schema_stats_expiry=60",
 	}
 	for _, connOpts := range expectError {
-		dir := getDir(connOpts, "")
+		dir := getFakeDir(connOpts)
 		if _, err := dir.InstanceDefaultParams(); err == nil {
 			t.Errorf("Did not get expected error from connect-options=\"%s\"", connOpts)
 		}

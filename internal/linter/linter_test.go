@@ -238,7 +238,7 @@ func (s *IntegrationSuite) Setup(backend string) (err error) {
 		Name:              fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1)),
 		Image:             backend,
 		RootPassword:      "fakepw",
-		DefaultConnParams: "foreign_key_checks=0",
+		DefaultConnParams: "foreign_key_checks=0&sql_mode=%27NO_ENGINE_SUBSTITUTION%27", // disabling strict mode to allow zero dates in testdata
 	})
 	return err
 }

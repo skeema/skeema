@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +32,7 @@ type Instance struct {
 	grants         []string
 	waitTimeout    int
 	maxUserConns   int
+	sqlMode        []string
 	valid          bool // true if any conn has ever successfully been made yet
 }
 
@@ -174,19 +174,12 @@ func (instance *Instance) rawConnectionPool(defaultSchema, fullParams string, al
 		}
 	}
 
-	// Determine max conn lifetime, ensuring it is less than wait_timeout. If
-	// wait_timeout wasn't supplied explicitly in params, query it from the server.
-	// Then set conn lifetime to a value less than wait_timeout, but no less than
-	// 900ms and no more than 30s.
+	// Determine max conn lifetime, ensuring it is less than wait_timeout, and no
+	// more than 30s.
 	maxLifetime := 30 * time.Second
-	parsedParams, _ := url.ParseQuery(fullParams)
-	waitTimeout, _ := strconv.Atoi(parsedParams.Get("wait_timeout"))
-	if waitTimeout == 0 {
-		waitTimeout = instance.waitTimeout
-	}
-	if waitTimeout > 1 && waitTimeout <= 30 {
-		maxLifetime = time.Duration(waitTimeout-1) * time.Second
-	} else if waitTimeout == 1 {
+	if instance.waitTimeout > 1 && instance.waitTimeout <= 30 {
+		maxLifetime = time.Duration(instance.waitTimeout-1) * time.Second
+	} else if instance.waitTimeout == 1 {
 		maxLifetime = 900 * time.Millisecond
 	}
 	db.SetConnMaxLifetime(maxLifetime)
@@ -290,6 +283,7 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 	var result struct {
 		VersionComment string
 		Version        string
+		SQLMode        string
 		WaitTimeout    int
 		MaxUserConns   int
 		MaxConns       int
@@ -297,6 +291,7 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 	query := `
 		SELECT @@global.version_comment AS versioncomment,
 		       @@global.version AS version,
+		       @@session.sql_mode AS sqlmode,
 		       @@session.wait_timeout AS waittimeout,
 		       @@session.max_user_connections AS maxuserconns,
 		       @@global.max_connections AS maxconns`
@@ -306,6 +301,7 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 	instance.valid = true
 	instance.version = ParseVersion(result.Version)
 	instance.flavor = ParseFlavor(result.Version, result.VersionComment)
+	instance.sqlMode = strings.Split(result.SQLMode, ",")
 	instance.waitTimeout = result.WaitTimeout
 	if result.MaxUserConns > 0 {
 		instance.maxUserConns = result.MaxUserConns
@@ -416,7 +412,7 @@ func (instance *Instance) Schemas(onlyNames ...string) ([]*Schema, error) {
 		// connections, so we will explicitly close the pool afterwards, to avoid
 		// keeping a very large number of conns open. (Although idle conns eventually
 		// get closed automatically, this may take too long.)
-		schemaDB, err := instance.ConnectionPool(rawSchema.Name, "")
+		schemaDB, err := instance.ConnectionPool(rawSchema.Name, instance.introspectionParams())
 		if err != nil {
 			return nil, err
 		}
@@ -485,11 +481,38 @@ func (instance *Instance) HasSchema(name string) (bool, error) {
 // ShowCreateTable returns a string with a CREATE TABLE statement, representing
 // how the instance views the specified table as having been created.
 func (instance *Instance) ShowCreateTable(schema, table string) (string, error) {
-	db, err := instance.CachedConnectionPool(schema, "")
+	db, err := instance.CachedConnectionPool(schema, instance.introspectionParams())
 	if err != nil {
 		return "", err
 	}
 	return showCreateTable(db, table)
+}
+
+// introspectionParams returns a params string which ensures safe session
+// variables for use with SHOW CREATE as well as queries on information_schema
+func (instance *Instance) introspectionParams() string {
+	v := url.Values{}
+	v.Set("sql_quote_show_create", "1")
+
+	// In MySQL 8, ensure we get up-to-date values for table sizes as well as next
+	// auto_increment value
+	if instance.Flavor().HasDataDictionary() {
+		v.Set("information_schema_stats_expiry", "0")
+	}
+
+	keepMode := make([]string, 0, len(instance.sqlMode))
+	for _, mode := range instance.sqlMode {
+		// Strip out these problematic modes: ANSI, ANSI_QUOTES, NO_FIELD_OPTIONS, NO_KEY_OPTIONS, NO_TABLE_OPTIONS
+		if strings.HasPrefix(mode, "ANSI") || (strings.HasPrefix(mode, "NO_") && strings.HasSuffix(mode, "_OPTIONS")) {
+			continue
+		}
+		keepMode = append(keepMode, mode)
+	}
+	if len(keepMode) != len(instance.sqlMode) {
+		v.Set("sql_mode", fmt.Sprintf("'%s'", strings.Join(keepMode, ",")))
+	}
+
+	return v.Encode()
 }
 
 func showCreateTable(db *sqlx.DB, table string) (string, error) {
@@ -511,7 +534,7 @@ func showCreateTable(db *sqlx.DB, table string) (string, error) {
 // accuracy. For example, see https://bugs.mysql.com/bug.php?id=75428.
 func (instance *Instance) TableSize(schema, table string) (int64, error) {
 	var result int64
-	db, err := instance.CachedConnectionPool("", "")
+	db, err := instance.CachedConnectionPool("", instance.introspectionParams())
 	if err != nil {
 		return 0, err
 	}

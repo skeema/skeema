@@ -243,7 +243,6 @@ func RealConnectOptions(connectOpts string) (string, error) {
 		"parsetime":               true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
 		"readtimeout":             true,
 		"rejectreadonly":          true,
-		"strict":                  true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
 		"timeout":                 true,
 		"tls":                     true,
 		"writetimeout":            true,

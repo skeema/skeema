@@ -2,7 +2,6 @@ package applier
 
 import (
 	"database/sql"
-	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/fs"
@@ -286,18 +285,9 @@ func TargetGroupChanForDir(dir *fs.Dir) (<-chan TargetGroup, int) {
 	return groups, skipCount
 }
 
-func isStrictModeError(err error) bool {
-	message := err.Error()
-	return strings.Contains(message, "Error 1031") || strings.Contains(message, "Error 1067")
-}
-
 func logFailedStatements(dir *fs.Dir, failures []*workspace.StatementError) {
 	for _, stmtErr := range failures {
 		log.Error(stmtErr.Error())
-		if isStrictModeError(stmtErr) && !dir.Config.Changed("connect-options") {
-			log.Info("This may be caused by Skeema's default usage of strict-mode settings. To disable strict-mode, add this to a .skeema file:")
-			log.Info("connect-options=\"innodb_strict_mode=0,sql_mode='ONLY_FULL_GROUP_BY,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'\"\n")
-		}
 	}
 	noun := "errors"
 	if len(failures) == 1 {

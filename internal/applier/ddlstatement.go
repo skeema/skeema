@@ -216,14 +216,6 @@ func getConnectParams(diff tengo.ObjectDiff, config *mybase.Config) string {
 	} else if ok && td.Type == tengo.DiffTypeDrop {
 		return "readTimeout=0"
 	}
-
-	// If creating a routine, use the server's global sql_mode instead of Skeema's
-	// normal built-in override
-	otype := diff.ObjectKey().Type
-	if diff.DiffType() == tengo.DiffTypeCreate && (otype == tengo.ObjectTypeProc || otype == tengo.ObjectTypeFunc) {
-		return "sql_mode=@@GLOBAL.sql_mode"
-	}
-
 	return ""
 }
 

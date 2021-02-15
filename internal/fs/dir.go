@@ -528,6 +528,10 @@ func (dir *Dir) NamedSchemaStatements() []*Statement {
 // account. The returned string will already be in the correct format (HTTP
 // query string). An error will be returned if the configuration tried
 // manipulating params that should not be user-specified.
+// Note that these vars are used as the *default* params for an Instance, but
+// individual callsites can still override things as needed. For example, Tengo
+// will automatically manipulate a few params whenever querying
+// information_schema or running SHOW CREATE.
 func (dir *Dir) InstanceDefaultParams() (string, error) {
 	banned := map[string]bool{
 		// go-sql-driver/mysql special params that should not be overridden
@@ -539,14 +543,11 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 		"loc":               true,
 		"multistatements":   true,
 		"parsetime":         true,
-		"strict":            true,
 
 		// mysql session options that should not be overridden
-		"autocommit":                      true, // always enabled by default in MySQL
-		"foreign_key_checks":              true, // always disabled explicitly later in this method
-		"information_schema_stats_expiry": true, // always set for flavors that support it
-		"default_storage_engine":          true, // always set to InnoDB later in this method
-		"sql_quote_show_create":           true, // always enabled later in this method
+		"autocommit":             true, // always enabled by default in MySQL
+		"foreign_key_checks":     true, // always disabled explicitly later in this method
+		"default_storage_engine": true, // always set to InnoDB later in this method
 	}
 
 	options, err := util.SplitConnectOptions(dir.Config.Get("connect-options"))
@@ -566,8 +567,6 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	v.Set("timeout", "5s")
 	v.Set("readTimeout", "20s")
 	v.Set("writeTimeout", "5s")
-	v.Set("sql_mode", "'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'")
-	v.Set("innodb_strict_mode", "1")
 	v.Set("tls", defaultTLS)
 
 	// Set values from connect-options
@@ -575,12 +574,6 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 		if banned[strings.ToLower(name)] {
 			return "", fmt.Errorf("connect-options is not allowed to contain %s", name)
 		}
-		// Special case: never allow ANSI or ANSI_QUOTES in sql_mode, since this alters
-		// how identifiers are escaped in SHOW CREATE TABLES, utterly breaking Skeema
-		if strings.ToLower(name) == "sql_mode" && strings.Contains(strings.ToLower(value), "ansi") {
-			return "", fmt.Errorf("Skeema does not support use of the ANSI_QUOTES sql_mode")
-		}
-
 		v.Set(name, value)
 	}
 
@@ -588,13 +581,6 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	v.Set("interpolateParams", "true")
 	v.Set("foreign_key_checks", "0")
 	v.Set("default_storage_engine", "'InnoDB'")
-	v.Set("sql_quote_show_create", "1")
-
-	flavorFromConfig := tengo.NewFlavor(dir.Config.Get("flavor"))
-	if flavorFromConfig.HasDataDictionary() {
-		v.Set("information_schema_stats_expiry", "0")
-	}
-
 	return v.Encode(), nil
 }
 

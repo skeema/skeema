@@ -220,7 +220,7 @@ func TestRealConnectOptions(t *testing.T) {
 	assertResult("allowAllFiles=true", "")
 	assertResult("foo='ok,cool',multiStatements=true", "foo='ok,cool'")
 	assertResult("timeout=1s,bar=123", "bar=123")
-	assertResult("strict=1,foo=2,charset='utf8mb4,utf8'", "foo=2")
+	assertResult("allowCleartextPasswords=1,foo=2,charset='utf8mb4,utf8'", "foo=2")
 	assertResult("timeout=10ms,TIMEOUT=20ms,timeOut=30ms", "")
 
 	// Ensure errors from SplitConnectOptions are passed through
