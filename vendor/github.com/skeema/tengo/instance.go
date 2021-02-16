@@ -419,6 +419,11 @@ func (instance *Instance) Schemas(onlyNames ...string) ([]*Schema, error) {
 			return nil, err
 		}
 		flavor := instance.Flavor()
+		if instance.maxUserConns >= 30 {
+			// Limit concurrency to 20, unless limit is already lower than this due to
+			// having a low maxUserConns (see logic in Instance.rawConnectionPool)
+			schemaDB.SetMaxOpenConns(20)
+		}
 		g, ctx := errgroup.WithContext(context.Background())
 		g.Go(func() (err error) {
 			schemas[n].Tables, err = querySchemaTables(ctx, schemaDB, rawSchema.Name, flavor)
