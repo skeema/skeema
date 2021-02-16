@@ -9,7 +9,6 @@ import (
 
 	"github.com/VividCortex/mysqlerr"
 	"github.com/jmoiron/sqlx"
-	"github.com/nozzle/throttler"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -23,113 +22,125 @@ import (
 var reExtraOnUpdate = regexp.MustCompile(`(?i)\bon update (current_timestamp(?:\(\d*\))?)`)
 
 func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) ([]*Table, error) {
-	var tables []*Table
-	var columnsByTableName map[string][]*Column
-	var primaryKeyByTableName map[string]*Index
-	var secondaryIndexesByTableName map[string][]*Index
-	var foreignKeysByTableName map[string][]*ForeignKey
+	tables, havePartitions, err := queryTablesInSchema(ctx, db, schema, flavor)
+	if err != nil {
+		return nil, err
+	}
 
 	g, subCtx := errgroup.WithContext(ctx)
-	g.Go(func() (err error) {
-		tables, err = queryTablesInSchema(subCtx, db, schema, flavor)
-		return err
-	})
+
+	for n := range tables {
+		t := tables[n] // avoid issues with goroutines and loop iterator values
+		g.Go(func() (err error) {
+			t.CreateStatement, err = showCreateTable(subCtx, db, t.Name)
+			if err != nil {
+				err = fmt.Errorf("Error executing SHOW CREATE TABLE for %s.%s: %s", EscapeIdentifier(schema), EscapeIdentifier(t.Name), err)
+			}
+			return err
+		})
+	}
+
+	var columnsByTableName map[string][]*Column
 	g.Go(func() (err error) {
 		columnsByTableName, err = queryColumnsInSchema(subCtx, db, schema, flavor)
 		return err
 	})
+
+	var primaryKeyByTableName map[string]*Index
+	var secondaryIndexesByTableName map[string][]*Index
 	g.Go(func() (err error) {
 		primaryKeyByTableName, secondaryIndexesByTableName, err = queryIndexesInSchema(subCtx, db, schema, flavor)
 		return err
 	})
+
+	var foreignKeysByTableName map[string][]*ForeignKey
 	g.Go(func() (err error) {
 		foreignKeysByTableName, err = queryForeignKeysInSchema(subCtx, db, schema, flavor)
 		return err
 	})
+
+	var partitioningByTableName map[string]*TablePartitioning
+	if havePartitions {
+		g.Go(func() (err error) {
+			partitioningByTableName, err = queryPartitionsInSchema(subCtx, db, schema, flavor)
+			return err
+		})
+	}
+
+	// Await all of the async queries
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 
-	// Assemble all the data
+	// Assemble all the data, fix edge cases, and determine if SHOW CREATE TABLE
+	// matches expectation
 	for _, t := range tables {
 		t.Columns = columnsByTableName[t.Name]
 		t.PrimaryKey = primaryKeyByTableName[t.Name]
 		t.SecondaryIndexes = secondaryIndexesByTableName[t.Name]
 		t.ForeignKeys = foreignKeysByTableName[t.Name]
 
+		if p, ok := partitioningByTableName[t.Name]; ok {
+			for _, part := range p.Partitions {
+				part.Engine = t.Engine
+			}
+			t.Partitioning = p
+			fixPartitioningEdgeCases(t, flavor)
+		}
+
 		// Avoid issues from data dictionary weirdly caching a NULL next auto-inc
 		if t.NextAutoIncrement == 0 && t.HasAutoIncrement() {
 			t.NextAutoIncrement = 1
 		}
-	}
-
-	// Obtain actual SHOW CREATE TABLE output and store in each table. Since
-	// there's no way in MySQL to bulk fetch this for multiple tables at once,
-	// use multiple goroutines to make this faster.
-	th := throttler.New(15, len(tables))
-	for _, t := range tables {
-		go func(t *Table) {
-			var err error
-			if t.CreateStatement, err = showCreateTable(ctx, db, t.Name); err != nil {
-				th.Done(fmt.Errorf("Error executing SHOW CREATE TABLE for %s.%s: %s", EscapeIdentifier(schema), EscapeIdentifier(t.Name), err))
-				return
-			}
-			if t.Engine == "InnoDB" {
-				t.CreateStatement = NormalizeCreateOptions(t.CreateStatement)
-			}
-			if t.Partitioning != nil {
-				fixPartitioningEdgeCases(t, flavor)
-			}
-			// Index order is unpredictable with new MySQL 8 data dictionary, so reorder
-			// indexes based on parsing SHOW CREATE TABLE if needed
-			if flavor.HasDataDictionary() && len(t.SecondaryIndexes) > 1 {
-				fixIndexOrder(t)
-			}
-			// Foreign keys order is unpredictable in MySQL before 5.6, so reorder
-			// foreign keys based on parsing SHOW CREATE TABLE if needed
-			if !flavor.SortedForeignKeys() && len(t.ForeignKeys) > 1 {
-				fixForeignKeyOrder(t)
-			}
-			// Create options order is unpredictable with the new MySQL 8 data dictionary
-			// Also need to fix generated column expression string literals
-			if flavor.HasDataDictionary() {
-				fixCreateOptionsOrder(t, flavor)
-				fixGenerationExpr(t, flavor)
-			}
-			// Percona Server column compression can only be parsed from SHOW CREATE
-			// TABLE. (Although it also has new I_S tables, their name differs pre-8.0
-			// vs post-8.0, and cols that aren't using a COMPRESSION_DICTIONARY are not
-			// even present there.)
-			if flavor.VendorMinVersion(VendorPercona, 5, 6, 33) && strings.Contains(t.CreateStatement, "COLUMN_FORMAT COMPRESSED") {
-				fixPerconaColCompression(t)
-			}
-			// FULLTEXT indexes may have a PARSER clause, which isn't exposed in I_S
-			if strings.Contains(t.CreateStatement, "WITH PARSER") {
-				fixFulltextIndexParsers(t, flavor)
-			}
-			// Fix blob/text default expressions in MySQL 8.0.13-8.0.22, missing from I_S
-			if flavor.MySQLishMinVersion(8, 0, 13) && !flavor.MySQLishMinVersion(8, 0, 23) {
-				fixBlobDefaultExpression(t, flavor)
-			}
-			// Compare what we expect the create DDL to be, to determine if we support
-			// diffing for the table. Ignore next-auto-increment differences in this
-			// comparison, since the value may have changed between our previous
-			// information_schema introspection and our current SHOW CREATE TABLE call!
-			actual, _ := ParseCreateAutoInc(t.CreateStatement)
-			expected, _ := ParseCreateAutoInc(t.GeneratedCreateStatement(flavor))
-			if actual != expected {
-				t.UnsupportedDDL = true
-			}
-			th.Done(nil)
-		}(t)
-		if th.Throttle() > 0 {
-			return tables, th.Errs()[0]
+		// Remove create options which don't affect InnoDB
+		if t.Engine == "InnoDB" {
+			t.CreateStatement = NormalizeCreateOptions(t.CreateStatement)
+		}
+		// Index order is unpredictable with new MySQL 8 data dictionary, so reorder
+		// indexes based on parsing SHOW CREATE TABLE if needed
+		if flavor.HasDataDictionary() && len(t.SecondaryIndexes) > 1 {
+			fixIndexOrder(t)
+		}
+		// Foreign keys order is unpredictable in MySQL before 5.6, so reorder
+		// foreign keys based on parsing SHOW CREATE TABLE if needed
+		if !flavor.SortedForeignKeys() && len(t.ForeignKeys) > 1 {
+			fixForeignKeyOrder(t)
+		}
+		// Create options order is unpredictable with the new MySQL 8 data dictionary
+		// Also need to fix generated column expression string literals
+		if flavor.HasDataDictionary() {
+			fixCreateOptionsOrder(t, flavor)
+			fixGenerationExpr(t, flavor)
+		}
+		// Percona Server column compression can only be parsed from SHOW CREATE
+		// TABLE. (Although it also has new I_S tables, their name differs pre-8.0
+		// vs post-8.0, and cols that aren't using a COMPRESSION_DICTIONARY are not
+		// even present there.)
+		if flavor.VendorMinVersion(VendorPercona, 5, 6, 33) && strings.Contains(t.CreateStatement, "COLUMN_FORMAT COMPRESSED") {
+			fixPerconaColCompression(t)
+		}
+		// FULLTEXT indexes may have a PARSER clause, which isn't exposed in I_S
+		if strings.Contains(t.CreateStatement, "WITH PARSER") {
+			fixFulltextIndexParsers(t, flavor)
+		}
+		// Fix blob/text default expressions in MySQL 8.0.13-8.0.22, missing from I_S
+		if flavor.MySQLishMinVersion(8, 0, 13) && !flavor.MySQLishMinVersion(8, 0, 23) {
+			fixBlobDefaultExpression(t, flavor)
+		}
+		// Compare what we expect the create DDL to be, to determine if we support
+		// diffing for the table. Ignore next-auto-increment differences in this
+		// comparison, since the value may have changed between our previous
+		// information_schema introspection and our current SHOW CREATE TABLE call!
+		actual, _ := ParseCreateAutoInc(t.CreateStatement)
+		expected, _ := ParseCreateAutoInc(t.GeneratedCreateStatement(flavor))
+		if actual != expected {
+			t.UnsupportedDDL = true
 		}
 	}
 	return tables, nil
 }
 
-func queryTablesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) ([]*Table, error) {
+func queryTablesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) ([]*Table, bool, error) {
 	var rawTables []struct {
 		Name               string         `db:"table_name"`
 		Type               string         `db:"table_type"`
@@ -151,10 +162,10 @@ func queryTablesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor
 		WHERE  t.table_schema = ?
 		AND    t.table_type = 'BASE TABLE'`
 	if err := db.SelectContext(ctx, &rawTables, query, schema); err != nil {
-		return nil, fmt.Errorf("Error querying information_schema.tables for schema %s: %s", schema, err)
+		return nil, false, fmt.Errorf("Error querying information_schema.tables for schema %s: %s", schema, err)
 	}
 	if len(rawTables) == 0 {
-		return []*Table{}, nil
+		return []*Table{}, false, nil
 	}
 	tables := make([]*Table, len(rawTables))
 	var havePartitions bool
@@ -177,69 +188,7 @@ func queryTablesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor
 			tables[n].CreateOptions = reformatCreateOptions(rawTable.CreateOptions.String)
 		}
 	}
-
-	// Obtain partitioning information, if at least one table was partitioned
-	if havePartitions {
-		var rawPartitioning []struct {
-			TableName     string         `db:"table_name"`
-			PartitionName string         `db:"partition_name"`
-			SubName       sql.NullString `db:"subpartition_name"`
-			Method        string         `db:"partition_method"`
-			SubMethod     sql.NullString `db:"subpartition_method"`
-			Expression    sql.NullString `db:"partition_expression"`
-			SubExpression sql.NullString `db:"subpartition_expression"`
-			Values        sql.NullString `db:"partition_description"`
-			Comment       string         `db:"partition_comment"`
-		}
-		query := `
-			SELECT   p.table_name AS table_name, p.partition_name AS partition_name,
-			         p.subpartition_name AS subpartition_name,
-			         p.partition_method AS partition_method,
-			         p.subpartition_method AS subpartition_method,
-			         p.partition_expression AS partition_expression,
-			         p.subpartition_expression AS subpartition_expression,
-			         p.partition_description AS partition_description,
-			         p.partition_comment AS partition_comment
-			FROM     information_schema.partitions p
-			WHERE    p.table_schema = ?
-			AND      p.partition_name IS NOT NULL
-			ORDER BY p.table_name, p.partition_ordinal_position,
-			         p.subpartition_ordinal_position`
-		if err := db.SelectContext(ctx, &rawPartitioning, query, schema); err != nil {
-			return nil, fmt.Errorf("Error querying information_schema.partitions for schema %s: %s", schema, err)
-		}
-
-		partitioningByTableName := make(map[string]*TablePartitioning)
-		for _, rawPart := range rawPartitioning {
-			p, ok := partitioningByTableName[rawPart.TableName]
-			if !ok {
-				p = &TablePartitioning{
-					Method:        rawPart.Method,
-					SubMethod:     rawPart.SubMethod.String,
-					Expression:    rawPart.Expression.String,
-					SubExpression: rawPart.SubExpression.String,
-					Partitions:    make([]*Partition, 0),
-				}
-				partitioningByTableName[rawPart.TableName] = p
-			}
-			p.Partitions = append(p.Partitions, &Partition{
-				Name:    rawPart.PartitionName,
-				SubName: rawPart.SubName.String,
-				Values:  rawPart.Values.String,
-				Comment: rawPart.Comment,
-			})
-		}
-		for _, t := range tables {
-			if p, ok := partitioningByTableName[t.Name]; ok {
-				for _, part := range p.Partitions {
-					part.Engine = t.Engine
-				}
-				t.Partitioning = p
-			}
-		}
-	}
-
-	return tables, nil
+	return tables, havePartitions, nil
 }
 
 func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) (map[string][]*Column, error) {
@@ -490,6 +439,59 @@ func queryForeignKeysInSchema(ctx context.Context, db *sqlx.DB, schema string, f
 		}
 	}
 	return foreignKeysByTableName, nil
+}
+
+func queryPartitionsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) (map[string]*TablePartitioning, error) {
+	var rawPartitioning []struct {
+		TableName     string         `db:"table_name"`
+		PartitionName string         `db:"partition_name"`
+		SubName       sql.NullString `db:"subpartition_name"`
+		Method        string         `db:"partition_method"`
+		SubMethod     sql.NullString `db:"subpartition_method"`
+		Expression    sql.NullString `db:"partition_expression"`
+		SubExpression sql.NullString `db:"subpartition_expression"`
+		Values        sql.NullString `db:"partition_description"`
+		Comment       string         `db:"partition_comment"`
+	}
+	query := `
+		SELECT   p.table_name AS table_name, p.partition_name AS partition_name,
+		         p.subpartition_name AS subpartition_name,
+		         p.partition_method AS partition_method,
+		         p.subpartition_method AS subpartition_method,
+		         p.partition_expression AS partition_expression,
+		         p.subpartition_expression AS subpartition_expression,
+		         p.partition_description AS partition_description,
+		         p.partition_comment AS partition_comment
+		FROM     information_schema.partitions p
+		WHERE    p.table_schema = ?
+		AND      p.partition_name IS NOT NULL
+		ORDER BY p.table_name, p.partition_ordinal_position,
+		         p.subpartition_ordinal_position`
+	if err := db.SelectContext(ctx, &rawPartitioning, query, schema); err != nil {
+		return nil, fmt.Errorf("Error querying information_schema.partitions for schema %s: %s", schema, err)
+	}
+
+	partitioningByTableName := make(map[string]*TablePartitioning)
+	for _, rawPart := range rawPartitioning {
+		p, ok := partitioningByTableName[rawPart.TableName]
+		if !ok {
+			p = &TablePartitioning{
+				Method:        rawPart.Method,
+				SubMethod:     rawPart.SubMethod.String,
+				Expression:    rawPart.Expression.String,
+				SubExpression: rawPart.SubExpression.String,
+				Partitions:    make([]*Partition, 0),
+			}
+			partitioningByTableName[rawPart.TableName] = p
+		}
+		p.Partitions = append(p.Partitions, &Partition{
+			Name:    rawPart.PartitionName,
+			SubName: rawPart.SubName.String,
+			Values:  rawPart.Values.String,
+			Comment: rawPart.Comment,
+		})
+	}
+	return partitioningByTableName, nil
 }
 
 var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE |FULLTEXT |SPATIAL )?KEY `((?:[^`]|``)+)` (?:USING \\w+ )?\\([`(]")
@@ -756,6 +758,7 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 	// a SHOW CREATE per routine.
 	// If mysql.proc doesn't exist or that query fails, we then run a SHOW CREATE
 	// per routine, using multiple goroutines for performance reasons.
+	var alreadyObtained int
 	if !flavor.HasDataDictionary() {
 		var rawRoutineMeta []struct {
 			Name      string `db:"name"`
@@ -777,30 +780,33 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 				routine.ReturnDataType = meta.Returns
 				routine.Body = strings.Replace(meta.Body, "\r\n", "\n", -1)
 				routine.CreateStatement = routine.Definition(flavor)
+				alreadyObtained++
 			}
 		}
 	}
-	th := throttler.New(20, len(routines))
-	for _, r := range routines {
-		if r.CreateStatement != "" { // already hydrated from mysql.proc query above
-			th.Done(nil)
-			th.Throttle()
-			continue
-		}
-		go func(r *Routine) {
-			var err error
-			if r.CreateStatement, err = showCreateRoutine(ctx, db, r.Name, r.Type); err != nil {
-				th.Done(fmt.Errorf("Error executing SHOW CREATE %s for %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), err))
-			} else {
-				r.CreateStatement = strings.Replace(r.CreateStatement, "\r\n", "\n", -1)
-				th.Done(r.parseCreateStatement(flavor, schema))
+
+	var err error
+	if alreadyObtained < len(routines) {
+		g, subCtx := errgroup.WithContext(ctx)
+		for n := range routines {
+			r := routines[n] // avoid issues with goroutines and loop iterator values
+			if r.CreateStatement == "" {
+				g.Go(func() (err error) {
+					r.CreateStatement, err = showCreateRoutine(subCtx, db, r.Name, r.Type)
+					if err == nil {
+						r.CreateStatement = strings.Replace(r.CreateStatement, "\r\n", "\n", -1)
+						err = r.parseCreateStatement(flavor, schema)
+					} else {
+						err = fmt.Errorf("Error executing SHOW CREATE %s for %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), err)
+					}
+					return err
+				})
 			}
-		}(r)
-		if th.Throttle() > 0 {
-			return routines, th.Errs()[0]
 		}
+		err = g.Wait()
 	}
-	return routines, nil
+
+	return routines, err
 }
 
 func showCreateRoutine(ctx context.Context, db *sqlx.DB, routine string, ot ObjectType) (create string, err error) {
