@@ -19,6 +19,7 @@ type Table struct {
 	PrimaryKey         *Index             `json:"primaryKey,omitempty"`
 	SecondaryIndexes   []*Index           `json:"secondaryIndexes,omitempty"`
 	ForeignKeys        []*ForeignKey      `json:"foreignKeys,omitempty"`
+	Checks             []*Check           `json:"checks,omitempty"`
 	Comment            string             `json:"comment,omitempty"`
 	NextAutoIncrement  uint64             `json:"nextAutoIncrement,omitempty"`
 	Partitioning       *TablePartitioning `json:"partitioning,omitempty"`       // nil if table isn't partitioned
@@ -42,7 +43,7 @@ func (t *Table) DropStatement() string {
 // is true, this means the table uses MySQL features that Tengo does not yet
 // support, and so the output of this method will differ from MySQL.
 func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
-	defs := make([]string, len(t.Columns), len(t.Columns)+len(t.SecondaryIndexes)+len(t.ForeignKeys)+1)
+	defs := make([]string, len(t.Columns), len(t.Columns)+len(t.SecondaryIndexes)+len(t.ForeignKeys)+len(t.Checks)+1)
 	for n, c := range t.Columns {
 		defs[n] = c.Definition(flavor, t)
 	}
@@ -54,6 +55,9 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 	}
 	for _, fk := range t.ForeignKeys {
 		defs = append(defs, fk.Definition(flavor))
+	}
+	for _, cc := range t.Checks {
+		defs = append(defs, cc.Definition(flavor))
 	}
 	var autoIncClause string
 	if t.NextAutoIncrement > 1 {
@@ -125,6 +129,16 @@ func (t *Table) foreignKeysByName() map[string]*ForeignKey {
 	result := make(map[string]*ForeignKey, len(t.ForeignKeys))
 	for _, fk := range t.ForeignKeys {
 		result[fk.Name] = fk
+	}
+	return result
+}
+
+// checksByName returns a mapping of check constraint names to Check value
+// pointers, for all check constraints in the table.
+func (t *Table) checksByName() map[string]*Check {
+	result := make(map[string]*Check, len(t.Checks))
+	for _, cc := range t.Checks {
+		result[cc.Name] = cc
 	}
 	return result
 }
@@ -316,6 +330,25 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 			drop := DropForeignKey{ForeignKey: fromFk}
 			add := AddForeignKey{ForeignKey: toFk}
 			clauses = append(clauses, drop, add)
+		}
+	}
+
+	// Compare check constraints
+	fromChecks := from.checksByName()
+	toChecks := to.checksByName()
+	for _, fromCheck := range fromChecks {
+		toCheck, stillExists := toChecks[fromCheck.Name]
+		if !stillExists {
+			clauses = append(clauses, DropCheck{Check: fromCheck})
+		} else if fromCheck.Clause != toCheck.Clause {
+			clauses = append(clauses, DropCheck{Check: fromCheck}, AddCheck{Check: toCheck})
+		} else if fromCheck.Enforced != toCheck.Enforced {
+			clauses = append(clauses, AlterCheck{Check: fromCheck, NewEnforcement: toCheck.Enforced})
+		}
+	}
+	for _, toCheck := range toChecks {
+		if _, existedBefore := fromChecks[toCheck.Name]; !existedBefore {
+			clauses = append(clauses, AddCheck{Check: toCheck})
 		}
 	}
 

@@ -359,3 +359,12 @@ func (fl Flavor) SortedForeignKeys() bool {
 func (fl Flavor) OmitIntDisplayWidth() bool {
 	return fl.MySQLishMinVersion(8, 0, 19)
 }
+
+// HasCheckConstraints returns true if the flavor supports check constraints
+// and exposes them in information_schema.
+func (fl Flavor) HasCheckConstraints() bool {
+	if fl.MySQLishMinVersion(8, 0, 16) || fl.VendorMinVersion(VendorMariaDB, 10, 3, 10) {
+		return true
+	}
+	return fl.Family() == FlavorMariaDB102 && fl.VendorMinVersion(VendorMariaDB, 10, 2, 22)
+}

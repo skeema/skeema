@@ -170,6 +170,60 @@ func (dfk DropForeignKey) Clause(mods StatementModifiers) string {
 	return fmt.Sprintf("DROP FOREIGN KEY %s", EscapeIdentifier(dfk.ForeignKey.Name))
 }
 
+///// AddCheck /////////////////////////////////////////////////////////////////
+
+// AddCheck represents a new check constraint that is present on the right-side
+// ("to") schema version of the table, but not the left-side ("from") version.
+// It satisfies the TableAlterClause interface.
+type AddCheck struct {
+	Check *Check
+}
+
+// Clause returns an ADD CONSTRAINT ... CHECK clause of an ALTER TABLE
+// statement.
+func (acc AddCheck) Clause(mods StatementModifiers) string {
+	return fmt.Sprintf("ADD %s", acc.Check.Definition(mods.Flavor))
+}
+
+///// DropCheck ////////////////////////////////////////////////////////////////
+
+// DropCheck represents a check constraint that was present on the left-side
+// ("from") schema version of the table, but not the right-side ("to") version.
+// It satisfies the TableAlterClause interface.
+type DropCheck struct {
+	Check *Check
+}
+
+// Clause returns a DROP CHECK or DROP CONSTRAINT clause of an ALTER TABLE
+// statement, depending on the flavor.
+func (dcc DropCheck) Clause(mods StatementModifiers) string {
+	noun := "CHECK"
+	if mods.Flavor.Vendor == VendorMariaDB {
+		noun = "CONSTRAINT"
+	}
+	return fmt.Sprintf("DROP %s %s", noun, EscapeIdentifier(dcc.Check.Name))
+}
+
+///// AlterCheck ///////////////////////////////////////////////////////////////
+
+// AlterCheck represents a change in a check's enforcement status in MySQL 8+.
+// It satisfies the TableAlterClause interface.
+type AlterCheck struct {
+	Check          *Check
+	NewEnforcement bool
+}
+
+// Clause returns an ALTER CHECK clause of an ALTER TABLE statement.
+func (alcc AlterCheck) Clause(mods StatementModifiers) string {
+	var status string
+	if alcc.NewEnforcement {
+		status = "ENFORCED"
+	} else {
+		status = "NOT ENFORCED"
+	}
+	return fmt.Sprintf("ALTER CHECK %s %s", EscapeIdentifier(alcc.Check.Name), status)
+}
+
 ///// RenameColumn /////////////////////////////////////////////////////////////
 
 // RenameColumn represents a column that exists in both versions of the table,
