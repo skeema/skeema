@@ -848,7 +848,8 @@ func tablesToPartitions(db *sqlx.DB, schema string) (map[string][]string, error)
 	// Explicit AS clauses needed for compatibility with MySQL 8 data dictionary,
 	// otherwise results come back with uppercase col names, breaking Select
 	query := `
-		SELECT   p.table_name AS table_name, p.partition_name AS partition_name,
+		SELECT   SQL_BUFFER_RESULT
+		         p.table_name AS table_name, p.partition_name AS partition_name,
 		         p.partition_method AS partition_method,
 		         p.subpartition_method AS subpartition_method,
 		         p.partition_ordinal_position AS partition_ordinal_position
