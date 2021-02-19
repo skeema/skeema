@@ -42,3 +42,12 @@ func CloseCachedConnectionPools() {
 		inst.CloseAll()
 	}
 }
+
+// FlushInstanceCache closes all connection pools in all cached Instances
+// that were created via NewInstance, and then flushes the cache entirely.
+func FlushInstanceCache() {
+	instanceCache.Lock()
+	defer instanceCache.Unlock()
+	CloseCachedConnectionPools()
+	instanceCache.instanceMap = make(map[string]*tengo.Instance)
+}

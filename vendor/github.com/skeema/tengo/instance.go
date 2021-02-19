@@ -192,19 +192,9 @@ func (instance *Instance) rawConnectionPool(defaultSchema, fullParams string, al
 // its configured User and Password. If a new connection cannot be made, the
 // return value will be false, along with an error expressing the reason.
 func (instance *Instance) CanConnect() (bool, error) {
-	// If we've already connected before, bypass the existing cached connection
-	// pools entirely to ensure we're not reusing an idle connection from a cached
-	// pool. Otherwise, it's safe to go through CachedConnectionPool and save this
-	// conn for future reuse for other purposes.
-	var err error
-	if len(instance.connectionPool) > 0 {
-		var db *sqlx.DB
-		db, err = instance.ConnectionPool("", "")
-		if db != nil {
-			db.Close() // close immediately to avoid a buildup of sleeping idle conns
-		}
-	} else {
-		_, err = instance.CachedConnectionPool("", "")
+	db, err := instance.ConnectionPool("", "")
+	if db != nil {
+		db.Close() // close immediately to avoid a buildup of sleeping idle conns
 	}
 	return err == nil, err
 }

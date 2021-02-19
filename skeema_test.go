@@ -76,6 +76,7 @@ func (s *SkeemaIntegrationSuite) Teardown(backend string) error {
 	if err := os.RemoveAll(s.scratchPath()); err != nil {
 		return err
 	}
+	util.FlushInstanceCache()
 	return nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/skeema/skeema/internal/util"
 	"github.com/skeema/tengo"
 	"golang.org/x/sync/errgroup"
 )
@@ -96,7 +97,9 @@ func (s *ApplierIntegrationSuite) Teardown(backend string) error {
 			return s.d[n].Destroy()
 		})
 	}
-	return g.Wait()
+	err := g.Wait()
+	util.FlushInstanceCache()
+	return err
 }
 
 func (s *ApplierIntegrationSuite) BeforeTest(backend string) error {
