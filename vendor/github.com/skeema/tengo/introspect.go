@@ -153,7 +153,8 @@ func queryTablesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor
 		CollationIsDefault string         `db:"is_default"`
 	}
 	query := `
-		SELECT t.table_name AS table_name, t.table_type AS table_type, t.engine AS engine,
+		SELECT SQL_BUFFER_RESULT
+		       t.table_name AS table_name, t.table_type AS table_type, t.engine AS engine,
 		       t.auto_increment AS auto_increment, t.table_collation AS table_collation,
 		       t.create_options AS create_options, t.table_comment AS table_comment,
 		       c.character_set_name AS character_set_name, c.is_default AS is_default
@@ -207,7 +208,8 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 		CollationIsDefault sql.NullString `db:"is_default"`
 	}
 	query := `
-		SELECT    c.table_name AS table_name, c.column_name AS column_name,
+		SELECT    SQL_BUFFER_RESULT
+		          c.table_name AS table_name, c.column_name AS column_name,
 		          c.column_type AS column_type, c.is_nullable AS is_nullable,
 		          c.column_default AS column_default, c.extra AS extra,
 		          %s AS generation_expression,
@@ -320,7 +322,8 @@ func queryIndexesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 		Visible    string         `db:"is_visible"`
 	}
 	query := `
-		SELECT   index_name AS index_name, table_name AS table_name,
+		SELECT   SQL_BUFFER_RESULT
+		         index_name AS index_name, table_name AS table_name,
 		         non_unique AS non_unique, seq_in_index AS seq_in_index,
 		         column_name AS column_name, sub_part AS sub_part,
 		         index_comment AS index_comment, index_type AS index_type,
@@ -403,7 +406,8 @@ func queryForeignKeysInSchema(ctx context.Context, db *sqlx.DB, schema string, f
 		ReferencedColumnName string `db:"referenced_column_name"`
 	}
 	query := `
-		SELECT   rc.constraint_name AS constraint_name, rc.table_name AS table_name,
+		SELECT   SQL_BUFFER_RESULT
+		         rc.constraint_name AS constraint_name, rc.table_name AS table_name,
 		         kcu.column_name AS column_name,
 		         rc.update_rule AS update_rule, rc.delete_rule AS delete_rule,
 		         rc.referenced_table_name AS referenced_table_name,
@@ -454,7 +458,8 @@ func queryPartitionsInSchema(ctx context.Context, db *sqlx.DB, schema string, fl
 		Comment       string         `db:"partition_comment"`
 	}
 	query := `
-		SELECT   p.table_name AS table_name, p.partition_name AS partition_name,
+		SELECT   SQL_BUFFER_RESULT
+		         p.table_name AS table_name, p.partition_name AS partition_name,
 		         p.subpartition_name AS subpartition_name,
 		         p.partition_method AS partition_method,
 		         p.subpartition_method AS subpartition_method,
@@ -712,7 +717,8 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 		DatabaseCollation string         `db:"database_collation"`
 	}
 	query := `
-		SELECT r.routine_name AS routine_name, UPPER(r.routine_type) AS routine_type,
+		SELECT SQL_BUFFER_RESULT
+		       r.routine_name AS routine_name, UPPER(r.routine_type) AS routine_type,
 		       r.routine_definition AS routine_definition,
 		       UPPER(r.is_deterministic) AS is_deterministic,
 		       UPPER(r.sql_data_access) AS sql_data_access,
