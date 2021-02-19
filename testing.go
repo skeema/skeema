@@ -2,7 +2,6 @@ package tengo
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"reflect"
 	"strings"
@@ -45,8 +44,7 @@ func RunSuite(suite IntegrationTestSuite, t *testing.T, backends []string) {
 
 	for _, backend := range backends {
 		if err := suite.Setup(backend); err != nil {
-			log.Printf("Skipping integration test suite %s due to setup failure: %s", suiteName, err)
-			t.Skipf("RunSuite %s: Setup(%s) failed: %s", suiteName, backend, err)
+			t.Fatalf("RunSuite %s: Setup(%s) failed: %s", suiteName, backend, err)
 		}
 
 		// Run test methods
