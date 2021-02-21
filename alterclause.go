@@ -176,12 +176,16 @@ func (dfk DropForeignKey) Clause(mods StatementModifiers) string {
 // ("to") schema version of the table, but not the left-side ("from") version.
 // It satisfies the TableAlterClause interface.
 type AddCheck struct {
-	Check *Check
+	Check       *Check
+	reorderOnly bool // true if check is being dropped and re-added just to re-order
 }
 
 // Clause returns an ADD CONSTRAINT ... CHECK clause of an ALTER TABLE
 // statement.
 func (acc AddCheck) Clause(mods StatementModifiers) string {
+	if acc.reorderOnly && !(mods.StrictCheckOrder && mods.Flavor.Vendor == VendorMariaDB) {
+		return ""
+	}
 	return fmt.Sprintf("ADD %s", acc.Check.Definition(mods.Flavor))
 }
 
@@ -191,12 +195,16 @@ func (acc AddCheck) Clause(mods StatementModifiers) string {
 // ("from") schema version of the table, but not the right-side ("to") version.
 // It satisfies the TableAlterClause interface.
 type DropCheck struct {
-	Check *Check
+	Check       *Check
+	reorderOnly bool // true if index is being dropped and re-added just to re-order
 }
 
 // Clause returns a DROP CHECK or DROP CONSTRAINT clause of an ALTER TABLE
 // statement, depending on the flavor.
 func (dcc DropCheck) Clause(mods StatementModifiers) string {
+	if dcc.reorderOnly && !(mods.StrictCheckOrder && mods.Flavor.Vendor == VendorMariaDB) {
+		return ""
+	}
 	noun := "CHECK"
 	if mods.Flavor.Vendor == VendorMariaDB {
 		noun = "CONSTRAINT"
@@ -215,6 +223,8 @@ type AlterCheck struct {
 
 // Clause returns an ALTER CHECK clause of an ALTER TABLE statement.
 func (alcc AlterCheck) Clause(mods StatementModifiers) string {
+	// Note: if MariaDB ever supports NOT ENFORCED, this will need an extra check
+	// similar to how AlterIndex.alsoReordering works
 	var status string
 	if alcc.NewEnforcement {
 		status = "ENFORCED"

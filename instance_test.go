@@ -2,6 +2,7 @@ package tengo
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"reflect"
@@ -406,6 +407,10 @@ func (s TengoIntegrationSuite) TestInstanceSchemas(t *testing.T) {
 		}
 		seen[schema.Name] = true
 		if !reflect.DeepEqual(schema, byName[schema.Name]) {
+			// Trying to get more insight into rare flaky failures in mysql 8
+			jsonBytes1, _ := json.Marshal(schema)
+			jsonBytes2, _ := json.Marshal(byName[schema.Name])
+			fmt.Printf("%s\n\n-------------\n\n%s\n", jsonBytes1, jsonBytes2)
 			t.Errorf("Mismatch for schema %s between Schemas and SchemasByName", schema.Name)
 		}
 		if schema2, err := s.d.Schema(schema.Name); err != nil || !reflect.DeepEqual(schema2, schema) {

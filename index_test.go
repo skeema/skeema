@@ -217,12 +217,6 @@ func TestIndexComparisonNil(t *testing.T) {
 	if !idx1.EqualsIgnoringVisibility(idx1) {
 		t.Error("Expected nil.EqualsIgnoringVisibility(nil) to return true, but it returned false")
 	}
-	if idx1.OnlyVisibilityDiffers(idx2) {
-		t.Error("Expected nil.OnlyVisibilityDiffers(non-nil) to return false, but it returned true")
-	}
-	if idx1.OnlyVisibilityDiffers(idx1) {
-		t.Error("Expected nil.OnlyVisibilityDiffers(nil) to return false, but it returned true")
-	}
 	if idx1.Equivalent(idx2) {
 		t.Error("Expected nil.Equivalent(non-nil) to return false, but it returned true")
 	}

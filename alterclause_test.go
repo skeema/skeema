@@ -292,21 +292,37 @@ func TestAlterCheckConstraints(t *testing.T) {
 		}
 	}
 
-	// Test change in check clause
+	// Test change in check clause on first check. This should result in 4 clauses:
+	// drop and re-add the first check to modify it, and drop and re-add the second
+	// check but only for ordering (which is typically ignored)
 	tableChecks2 := aTableForFlavor(flavor, 1)
 	tableChecks2.Checks = []*Check{
 		{Name: "alivecheck", Clause: "alive = 1", Enforced: true},
 		{Name: "stringythings", Clause: "ssn <> '000000000'", Enforced: true},
 	}
+	tableChecks2.CreateStatement = tableChecks2.GeneratedCreateStatement(flavor)
 	td = NewAlterTable(&tableChecks, &tableChecks2)
-	if len(td.alterClauses) != 2 {
-		t.Errorf("Expected 2 alterClauses, instead found %d", len(td.alterClauses))
+	if len(td.alterClauses) != 4 {
+		t.Errorf("Expected 4 alterClauses, instead found %d", len(td.alterClauses))
 	} else {
-		if _, ok := td.alterClauses[0].(DropCheck); !ok {
-			t.Errorf("Found unexpected type %T", td.alterClauses[0])
+		if dcc, ok := td.alterClauses[0].(DropCheck); !ok || dcc.Check != tableChecks.Checks[0] || dcc.reorderOnly {
+			t.Errorf("Found unexpected alterClause %+v", td.alterClauses[0])
 		}
-		if _, ok := td.alterClauses[1].(AddCheck); !ok {
-			t.Errorf("Found unexpected type %T", td.alterClauses[1])
+		if acc, ok := td.alterClauses[1].(AddCheck); !ok || acc.Check != tableChecks2.Checks[0] || acc.reorderOnly {
+			t.Errorf("Found unexpected alterClause %+v", td.alterClauses[1])
+		}
+		if dcc, ok := td.alterClauses[2].(DropCheck); !ok || dcc.Check != tableChecks.Checks[1] || !dcc.reorderOnly {
+			t.Errorf("Found unexpected alterClause %+v", td.alterClauses[2])
+		}
+		if acc, ok := td.alterClauses[3].(AddCheck); !ok || acc.Check != tableChecks2.Checks[1] || !acc.reorderOnly {
+			t.Errorf("Found unexpected alterClause %+v", td.alterClauses[3])
+		}
+		for n, alterClause := range td.alterClauses {
+			expectBlank := n > 1
+			actualBlank := alterClause.Clause(mods) == ""
+			if expectBlank != actualBlank {
+				t.Errorf("Unexpected result from Clause() at n=%d", n)
+			}
 		}
 	}
 
@@ -315,6 +331,7 @@ func TestAlterCheckConstraints(t *testing.T) {
 		{Name: "alivecheck", Clause: "alive != 0", Enforced: true},
 		{Name: "stringythings", Clause: "ssn <> '000000000'", Enforced: false},
 	}
+	tableChecks2.CreateStatement = tableChecks2.GeneratedCreateStatement(flavor)
 	td = NewAlterTable(&tableChecks, &tableChecks2)
 	if len(td.alterClauses) != 1 {
 		t.Errorf("Expected 1 alterClause, instead found %d", len(td.alterClauses))
@@ -322,6 +339,46 @@ func TestAlterCheckConstraints(t *testing.T) {
 		str := td.alterClauses[0].Clause(mods)
 		if _, ok := td.alterClauses[0].(AlterCheck); !ok || !strings.Contains(str, "ALTER CHECK") {
 			t.Errorf("Found unexpected type %T", td.alterClauses[0])
+		}
+	}
+
+	// Create a table with 5 checks. Reorder one of them and confirm result.
+	flavor = FlavorMariaDB105
+	tableChecks, tableChecks2 = aTableForFlavor(flavor, 1), aTableForFlavor(flavor, 1)
+	tableChecks.Checks = []*Check{
+		{Name: "check1", Clause: "ssn <> '111111111'", Enforced: true},
+		{Name: "check2", Clause: "ssn <> '222222222'", Enforced: true},
+		{Name: "check3", Clause: "ssn <> '333333333'", Enforced: true},
+		{Name: "check4", Clause: "ssn <> '444444444'", Enforced: true},
+		{Name: "check5", Clause: "ssn <> '555555555'", Enforced: true},
+	}
+	tableChecks.CreateStatement = tableChecks.GeneratedCreateStatement(flavor)
+	tableChecks2.Checks = []*Check{
+		{Name: "check1", Clause: "ssn <> '111111111'", Enforced: true},
+		{Name: "check2", Clause: "ssn <> '222222222'", Enforced: true},
+		{Name: "check4", Clause: "ssn <> '444444444'", Enforced: true},
+		{Name: "check3", Clause: "ssn <> '333333333'", Enforced: true},
+		{Name: "check5", Clause: "ssn <> '555555555'", Enforced: true},
+	}
+	tableChecks2.CreateStatement = tableChecks2.GeneratedCreateStatement(flavor)
+	td = NewAlterTable(&tableChecks, &tableChecks2)
+	modsStrict := StatementModifiers{Flavor: flavor, StrictCheckOrder: true}
+	if len(td.alterClauses) != 4 {
+		t.Errorf("Expected 4 alterClauses, instead found %d", len(td.alterClauses))
+	}
+	for n, alterClause := range td.alterClauses {
+		str, strStrict := alterClause.Clause(mods), alterClause.Clause(modsStrict)
+		if str != "" || strStrict == "" {
+			t.Errorf("Clauses don't match expectations: %q / %q", str, strStrict)
+		}
+		if n%2 == 0 {
+			if _, ok := alterClause.(DropCheck); !ok {
+				t.Errorf("Unexpected type at clause[%d]: %T", n, alterClause)
+			}
+		} else {
+			if _, ok := alterClause.(AddCheck); !ok {
+				t.Errorf("Unexpected type at clause[%d]: %T", n, alterClause)
+			}
 		}
 	}
 }

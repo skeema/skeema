@@ -254,49 +254,43 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// is no way to modify an index without dropping and re-adding it. There's also
 	// no way to re-position an index without dropping and re-adding all
 	// preexisting indexes that now come after.
-	toIndexes := to.SecondaryIndexesByName()
 	fromIndexes := from.SecondaryIndexesByName()
-	fromIndexStillExist := make([]*Index, 0) // ordered list of indexes from "from" that still exist in "to"
-	visChanges := make(map[string]int)       // maps index name -> clause position of AlterIndex clauses
-	for _, fromIdx := range from.SecondaryIndexes {
-		if toIdx, stillExists := toIndexes[fromIdx.Name]; stillExists {
-			fromIndexStillExist = append(fromIndexStillExist, fromIdx)
-			if fromIdx.OnlyVisibilityDiffers(toIdx) {
-				clauses = append(clauses, AlterIndex{Index: fromIdx, NewInvisible: toIdx.Invisible})
-				visChanges[fromIdx.Name] = len(clauses) - 1
-			}
+	toIndexes := to.SecondaryIndexesByName()
+	var fromIndexStillExist []*Index // ordered list of indexes from "from" that still exist in "to"
+	for _, fromIndex := range from.SecondaryIndexes {
+		if _, stillExists := toIndexes[fromIndex.Name]; stillExists {
+			fromIndexStillExist = append(fromIndexStillExist, fromIndex)
 		} else {
-			clauses = append(clauses, DropIndex{Index: fromIdx})
+			clauses = append(clauses, DropIndex{Index: fromIndex})
 		}
 	}
-	var fromCursor int
-	for _, toIdx := range to.SecondaryIndexes {
-		for fromCursor < len(fromIndexStillExist) && !fromIndexStillExist[fromCursor].EqualsIgnoringVisibility(toIdx) {
-			clause := DropIndex{Index: fromIndexStillExist[fromCursor]}
-			stillIdx, stillExists := toIndexes[fromIndexStillExist[fromCursor].Name]
-			if stillExists && stillIdx.EqualsIgnoringVisibility(fromIndexStillExist[fromCursor]) {
-				clause.reorderOnly = true
-				if visChangePos, ok := visChanges[stillIdx.Name]; ok {
-					// suppress ALTER INDEX if doing an index reordering DROP + re-ADD
-					alterIndex := clauses[visChangePos].(AlterIndex)
-					alterIndex.alsoReordering = true
-					clauses[visChangePos] = alterIndex
-				}
-			}
-			clauses = append(clauses, clause)
-			fromCursor++
-		}
-		if fromCursor >= len(fromIndexStillExist) {
-			// Already went through everything in the "from" list, so all remaining "to"
-			// indexes are adds
-			prevIdx, prevExisted := fromIndexes[toIdx.Name]
-			clauses = append(clauses, AddIndex{
-				Index:       toIdx,
-				reorderOnly: prevExisted && prevIdx.EqualsIgnoringVisibility(toIdx),
-			})
+	var reorderIndexes bool
+	for n, toIndex := range to.SecondaryIndexes {
+		if fromIndex, existedBefore := fromIndexes[toIndex.Name]; !existedBefore {
+			clauses = append(clauses, AddIndex{Index: toIndex})
+			reorderIndexes = true
+		} else if !fromIndex.EqualsIgnoringVisibility(toIndex) {
+			clauses = append(clauses, DropIndex{Index: fromIndex}, AddIndex{Index: toIndex})
+			reorderIndexes = true
 		} else {
-			// Current position "to" matches cursor position "from"; nothing to add or drop
-			fromCursor++
+			if fromIndex.Invisible != toIndex.Invisible {
+				clauses = append(clauses, AlterIndex{
+					Index:          fromIndex,
+					NewInvisible:   toIndex.Invisible,
+					alsoReordering: reorderIndexes,
+				})
+			}
+			if reorderIndexes {
+				clauses = append(clauses,
+					DropIndex{Index: fromIndex, reorderOnly: true},
+					AddIndex{Index: toIndex, reorderOnly: true},
+				)
+			} else if fromIndexStillExist[n].Name != toIndex.Name {
+				// If we get here, reorderIndexes was previously false, meaning anything
+				// *before* this position was identical on both sides. We can therefore leave
+				// *this* index alone and just reorder anything that now comes *after* it.
+				reorderIndexes = true
+			}
 		}
 	}
 
@@ -333,22 +327,40 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 		}
 	}
 
-	// Compare check constraints
+	// Compare check constraints. Although the order of check constraints has no
+	// functional impact, ordering changes must nonetheless must be detected, as
+	// MariaDB lists checks in creation order for I_S and SHOW CREATE.
 	fromChecks := from.checksByName()
 	toChecks := to.checksByName()
-	for _, fromCheck := range fromChecks {
-		toCheck, stillExists := toChecks[fromCheck.Name]
-		if !stillExists {
+	var fromCheckStillExist []*Check // ordered list of checks from "from" that still exist in "to"
+	for _, fromCheck := range from.Checks {
+		if _, stillExists := toChecks[fromCheck.Name]; stillExists {
+			fromCheckStillExist = append(fromCheckStillExist, fromCheck)
+		} else {
 			clauses = append(clauses, DropCheck{Check: fromCheck})
-		} else if fromCheck.Clause != toCheck.Clause {
-			clauses = append(clauses, DropCheck{Check: fromCheck}, AddCheck{Check: toCheck})
-		} else if fromCheck.Enforced != toCheck.Enforced {
-			clauses = append(clauses, AlterCheck{Check: fromCheck, NewEnforcement: toCheck.Enforced})
 		}
 	}
-	for _, toCheck := range toChecks {
-		if _, existedBefore := fromChecks[toCheck.Name]; !existedBefore {
+	var reorderChecks bool
+	for n, toCheck := range to.Checks {
+		if fromCheck, existedBefore := fromChecks[toCheck.Name]; !existedBefore {
 			clauses = append(clauses, AddCheck{Check: toCheck})
+			reorderChecks = true
+		} else if fromCheck.Clause != toCheck.Clause {
+			clauses = append(clauses, DropCheck{Check: fromCheck}, AddCheck{Check: toCheck})
+			reorderChecks = true
+		} else if fromCheck.Enforced != toCheck.Enforced {
+			// Note: if MariaDB ever supports NOT ENFORCED, this will need extra logic
+			// similar to how AlterIndex.alsoReordering works!
+			clauses = append(clauses, AlterCheck{Check: fromCheck, NewEnforcement: toCheck.Enforced})
+		} else if reorderChecks {
+			clauses = append(clauses,
+				DropCheck{Check: fromCheck, reorderOnly: true},
+				AddCheck{Check: toCheck, reorderOnly: true})
+		} else if fromCheckStillExist[n].Name != toCheck.Name {
+			// If we get here, reorderChecks was previously false, meaning anything
+			// *before* this position was identical on both sides. We can therefore leave
+			// *this* check alone and just reorder anything that now comes *after* it.
+			reorderChecks = true
 		}
 	}
 
