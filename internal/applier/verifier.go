@@ -28,6 +28,7 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 	mods := tengo.StatementModifiers{
 		NextAutoInc:            tengo.NextAutoIncIgnore,
 		StrictIndexOrder:       true, // needed since we must get the SHOW CREATE TABLEs to match
+		StrictCheckOrder:       true, // ditto
 		StrictForeignKeyNaming: true, // ditto
 		AllowUnsafe:            true, // needed since we're just running against the temp schema
 		SkipPreDropAlters:      true, // needed to ignore DROP PARTITION generated just to speed up DROP TABLE

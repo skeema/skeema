@@ -59,6 +59,14 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 		return err
 	})
 
+	var checksByTableName map[string][]*Check
+	if flavor.HasCheckConstraints() {
+		g.Go(func() (err error) {
+			checksByTableName, err = queryChecksInSchema(subCtx, db, schema, flavor)
+			return err
+		})
+	}
+
 	var partitioningByTableName map[string]*TablePartitioning
 	if havePartitions {
 		g.Go(func() (err error) {
@@ -79,6 +87,7 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 		t.PrimaryKey = primaryKeyByTableName[t.Name]
 		t.SecondaryIndexes = secondaryIndexesByTableName[t.Name]
 		t.ForeignKeys = foreignKeysByTableName[t.Name]
+		t.Checks = checksByTableName[t.Name]
 
 		if p, ok := partitioningByTableName[t.Name]; ok {
 			for _, part := range p.Partitions {
@@ -126,6 +135,10 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 		// Fix blob/text default expressions in MySQL 8.0.13-8.0.22, missing from I_S
 		if flavor.MySQLishMinVersion(8, 0, 13) && !flavor.MySQLishMinVersion(8, 0, 23) {
 			fixBlobDefaultExpression(t, flavor)
+		}
+		// Fix shortcoming in I_S data for check constraints
+		if len(t.Checks) > 0 {
+			fixChecks(t, flavor)
 		}
 		// Compare what we expect the create DDL to be, to determine if we support
 		// diffing for the table. Ignore next-auto-increment differences in this
@@ -445,6 +458,57 @@ func queryForeignKeysInSchema(ctx context.Context, db *sqlx.DB, schema string, f
 	return foreignKeysByTableName, nil
 }
 
+func queryChecksInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) (map[string][]*Check, error) {
+	checksByTableName := make(map[string][]*Check)
+	var rawChecks []struct {
+		Name      string `db:"constraint_name"`
+		Clause    string `db:"check_clause"`
+		TableName string `db:"table_name"`
+		Enforced  string `db:"enforced"`
+	}
+
+	// With MariaDB, information_schema.check_constraints has what we need. But
+	// nothing in I_S reveals differences between inline-column checks and regular
+	// checks, so that is handled separately by parsing SHOW CREATE TABLE later in
+	// a fixup function. Also intentionally no ORDER BY in this query; the returned
+	// order matches that of SHOW CREATE TABLE (which isn't usually alphabetical).
+	//
+	// With MySQL, we need to get table names and enforcement status from
+	// information_schema.table_constraints. We don't even bother querying
+	// information_schema.check_constraints because the clause value there has
+	// broken double-escaping logic. Instead we parse bodies from SHOW CREATE
+	// TABLE separately in a fixup function.
+	var query string
+	if flavor.Vendor == VendorMariaDB {
+		query = `
+			SELECT   SQL_BUFFER_RESULT
+			         constraint_name AS constraint_name, check_clause AS check_clause,
+			         table_name AS table_name, 'YES' AS enforced
+			FROM     information_schema.check_constraints
+			WHERE    constraint_schema = ?`
+	} else {
+		query = `
+			SELECT   SQL_BUFFER_RESULT
+			         constraint_name AS constraint_name, '' AS check_clause,
+			         table_name AS table_name, enforced AS enforced
+			FROM     information_schema.table_constraints
+			WHERE    table_schema = ? AND constraint_type = 'CHECK'
+			ORDER BY table_name, constraint_name`
+	}
+	if err := db.SelectContext(ctx, &rawChecks, query, schema); err != nil {
+		return nil, fmt.Errorf("Error querying check constraints for schema %s: %s", schema, err)
+	}
+	for _, rawCheck := range rawChecks {
+		check := &Check{
+			Name:     rawCheck.Name,
+			Clause:   rawCheck.Clause,
+			Enforced: strings.ToUpper(rawCheck.Enforced) != "NO",
+		}
+		checksByTableName[rawCheck.TableName] = append(checksByTableName[rawCheck.TableName], check)
+	}
+	return checksByTableName, nil
+}
+
 func queryPartitionsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) (map[string]*TablePartitioning, error) {
 	var rawPartitioning []struct {
 		TableName     string         `db:"table_name"`
@@ -695,6 +759,42 @@ func fixBlobDefaultExpression(t *Table, flavor Flavor) {
 			if matches != nil {
 				col.Default = matches[1]
 			}
+		}
+	}
+}
+
+// fixChecks handles the problematic information_schema data for check
+// constraints, which is faulty in both MySQL and MariaDB but in different ways.
+func fixChecks(t *Table, flavor Flavor) {
+	// MariaDB handles CHECKs differently when they're defined inline in a column
+	// definition: in this case I_S shows them having a name equal to the column
+	// name, but cannot be manipulated using this name directly, nor does this
+	// prevent explicitly-named checks from also having that same name.
+	if flavor.Vendor == VendorMariaDB {
+		colsByName := t.ColumnsByName()
+		var keep []*Check
+		for _, cc := range t.Checks {
+			if col, ok := colsByName[cc.Name]; ok && !strings.Contains(t.CreateStatement, cc.Definition(flavor)) {
+				col.CheckClause = cc.Clause
+			} else {
+				keep = append(keep, cc)
+			}
+		}
+		t.Checks = keep
+		return
+	}
+
+	// Meanwhile, MySQL butchers the escaping of special characters in check
+	// clauses I_S, so we parse them from SHOW CREATE TABLE instead
+	for _, cc := range t.Checks {
+		cc.Clause = "!!!CHECKCLAUSE!!!"
+		template := cc.Definition(flavor)
+		template = regexp.QuoteMeta(template)
+		template = fmt.Sprintf("%s,?\n", strings.Replace(template, cc.Clause, "(.+?)", 1))
+		re := regexp.MustCompile(template)
+		matches := re.FindStringSubmatch(t.CreateStatement)
+		if matches != nil {
+			cc.Clause = matches[1]
 		}
 	}
 }

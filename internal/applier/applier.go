@@ -197,6 +197,7 @@ func StatementModifiersForDir(dir *fs.Dir) (mods tengo.StatementModifiers, err e
 	mods.VirtualColValidation = dir.Config.GetBool("alter-validate-virtual")
 	if dir.Config.GetBool("exact-match") {
 		mods.StrictIndexOrder = true
+		mods.StrictCheckOrder = true // only affects MariaDB
 		mods.StrictForeignKeyNaming = true
 	}
 	if mods.AlgorithmClause, err = dir.Config.GetEnum("alter-algorithm", "inplace", "copy", "instant", "default"); err != nil {

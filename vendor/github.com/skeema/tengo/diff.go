@@ -78,6 +78,7 @@ type StatementModifiers struct {
 	AlgorithmClause        string           // Include an ALGORITHM=[value] clause in generated ALTER TABLE
 	IgnoreTable            *regexp.Regexp   // Generate blank DDL if table name matches this regexp
 	StrictIndexOrder       bool             // If true, maintain index order even in cases where there is no functional difference
+	StrictCheckOrder       bool             // If true, maintain check constraint order even though it never has a functional difference
 	StrictForeignKeyNaming bool             // If true, maintain foreign key names even if no functional difference in definition
 	CompareMetadata        bool             // If true, compare creation-time sql_mode and db collation for funcs, procs (and eventually events, triggers)
 	VirtualColValidation   bool             // If true, add WITH VALIDATION clause for ALTER TABLE affecting virtual columns

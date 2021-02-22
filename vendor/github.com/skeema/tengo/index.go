@@ -79,15 +79,6 @@ func (idx *Index) EqualsIgnoringVisibility(other *Index) bool {
 	return idx.Name == other.Name && idx.Comment == other.Comment && idx.Equivalent(other)
 }
 
-// OnlyVisibilityDiffers returns true if idx and other have different values
-// for Invisible, but otherwise are equal.
-func (idx *Index) OnlyVisibilityDiffers(other *Index) bool {
-	if idx == nil || other == nil {
-		return false
-	}
-	return idx.Invisible != other.Invisible && idx.EqualsIgnoringVisibility(other)
-}
-
 // sameParts returns true if two Indexes' Parts slices are identical.
 func (idx *Index) sameParts(other *Index) bool {
 	if len(idx.Parts) != len(other.Parts) {

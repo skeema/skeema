@@ -21,6 +21,7 @@ type Column struct {
 	Compression        string `json:"compression,omitempty"`        // Only non-empty if using column compression in Percona Server or MariaDB
 	Comment            string `json:"comment,omitempty"`
 	Invisible          bool   `json:"invisible,omitempty"` // True if an invisible column (MariaDB 10.3+, MySQL 8.0.23+)
+	CheckClause        string `json:"check,omitempty"`     // Only non-empty for MariaDB inline check constraint clause
 }
 
 // Definition returns this column's definition clause, for use as part of a DDL
@@ -28,7 +29,7 @@ type Column struct {
 // SET clause to be omitted if the table and column have the same *collation*
 // (mirroring the specific display logic used by SHOW CREATE TABLE)
 func (c *Column) Definition(flavor Flavor, table *Table) string {
-	var compression, charSet, collation, generated, nullability, visibility, autoIncrement, defaultValue, onUpdate, colFormat, comment string
+	var compression, charSet, collation, generated, nullability, visibility, autoIncrement, defaultValue, onUpdate, colFormat, comment, check string
 	if c.Compression != "" && flavor.Vendor == VendorMariaDB {
 		// MariaDB puts compression modifiers in a different place than Percona Server
 		compression = fmt.Sprintf(" /*!100301 %s*/", c.Compression)
@@ -76,11 +77,14 @@ func (c *Column) Definition(flavor Flavor, table *Table) string {
 	if c.Comment != "" {
 		comment = fmt.Sprintf(" COMMENT '%s'", EscapeValueForCreateTable(c.Comment))
 	}
+	if c.CheckClause != "" {
+		check = fmt.Sprintf(" CHECK (%s)", c.CheckClause)
+	}
 	clauses := []string{
 		EscapeIdentifier(c.Name), " ", c.TypeInDB, compression, charSet, collation, generated, nullability,
 	}
 	if flavor.Vendor == VendorMariaDB {
-		clauses = append(clauses, visibility, autoIncrement, defaultValue, onUpdate, colFormat, comment)
+		clauses = append(clauses, visibility, autoIncrement, defaultValue, onUpdate, colFormat, comment, check)
 	} else {
 		clauses = append(clauses, autoIncrement, defaultValue, onUpdate, visibility, colFormat, comment)
 	}

@@ -44,7 +44,7 @@ Tagged releases are tested against the following databases, all running on Linux
 
 Outside of a tagged release, every commit is [automatically tested via GitHub Actions CI](https://github.com/skeema/skeema/actions) against MySQL 5.7 and 8.0.
 
-A few uncommon database features -- such as check constraints, spatial indexes, and subpartitioning -- are not supported yet. Skeema is able to *create* or *drop* tables using these features, but not *alter* them. The output of `skeema diff` and `skeema push` clearly displays when this is the case. You may still make such alters directly/manually (outside of Skeema), and then update the corresponding CREATE TABLE files via `skeema pull`. Please see the [requirements doc](https://www.skeema.io/docs/requirements/) for more information.
+A few uncommon database features -- such as spatial indexes and subpartitioning -- are not supported yet. Skeema is able to *create* or *drop* tables using these features, but not *alter* them. The output of `skeema diff` and `skeema push` clearly displays when this is the case. You may still make such alters directly/manually (outside of Skeema), and then update the corresponding CREATE TABLE files via `skeema pull`. Please see the [requirements doc](https://www.skeema.io/docs/requirements/) for more information.
 
 ## Credits
 
