@@ -34,6 +34,7 @@ type Instance struct {
 	grants         []string
 	waitTimeout    int
 	maxUserConns   int
+	bufferPoolSize int64
 	sqlMode        []string
 	valid          bool // true if any conn has ever successfully been made yet
 }
@@ -279,12 +280,14 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 		WaitTimeout    int
 		MaxUserConns   int
 		MaxConns       int
+		BufferPoolSize int64
 	}
 	query := `
 		SELECT @@global.version_comment AS versioncomment,
 		       @@global.version AS version,
 		       @@session.sql_mode AS sqlmode,
 		       @@session.wait_timeout AS waittimeout,
+		       @@global.innodb_buffer_pool_size AS bufferpoolsize,
 		       @@session.max_user_connections AS maxuserconns,
 		       @@global.max_connections AS maxconns`
 	if err = db.Get(&result, query); err != nil {
@@ -295,6 +298,7 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 	instance.flavor = ParseFlavor(result.Version, result.VersionComment)
 	instance.sqlMode = strings.Split(result.SQLMode, ",")
 	instance.waitTimeout = result.WaitTimeout
+	instance.bufferPoolSize = result.BufferPoolSize
 	if result.MaxUserConns > 0 {
 		instance.maxUserConns = result.MaxUserConns
 	} else {
@@ -749,7 +753,13 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 		}
 	}
 
-	th := throttler.New(opts.Concurrency(), len(tableMap))
+	// If buffer pool is over 32GB and flavor doesn't have optimized DROP TABLE,
+	// reduce drop concurrency to 1 to reduce risk of stalls
+	concurrency := opts.Concurrency()
+	if instance.bufferPoolSize >= (32*1024*1024*1024) && !instance.flavor.MySQLishMinVersion(8, 0, 23) {
+		concurrency = 1
+	}
+	th := throttler.New(concurrency, len(tableMap))
 	retries := make(chan string, len(tableMap))
 	for name, partitions := range tableMap {
 		go func(name string, partitions []string) {
