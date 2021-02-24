@@ -422,7 +422,7 @@ func stripAnyQuote(input string) string {
 // as delimiters (via the delimiter command).
 var (
 	sqlLexer = lexer.Must(lexer.Regexp(`(#[^\n]*(?:\n|$))` +
-		`|(--\s[^\n]*(?:\n|$))` +
+		`|(--(\s[^\n]*)??(?:\n|$))` +
 		`|(/\*(.|\n)*?\*/)` +
 		`|(\s+)` +
 		"|(?P<Word>[0-9a-zA-Z$_]+|`(?:[^`]|``)+`)" +
