@@ -1,7 +1,6 @@
 package tengo
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -240,91 +239,6 @@ func TestFlavorAlwaysShowTableCollation(t *testing.T) {
 
 }
 
-func TestFlavorHasInnoFileFormat(t *testing.T) {
-	type testcase struct {
-		receiver Flavor
-		expected bool
-	}
-	cases := []testcase{
-		{FlavorMySQL55, true},
-		{FlavorMySQL57, true},
-		{FlavorMySQL80, false},
-		{FlavorMariaDB102, true},
-		{FlavorMariaDB103, false},
-		{FlavorPercona57, true},
-		{FlavorPercona80, false},
-		{FlavorUnknown, true},
-	}
-	for _, tc := range cases {
-		actual := tc.receiver.HasInnoFileFormat()
-		if actual != tc.expected {
-			t.Errorf("Expected %s.HasInnoFileFormat() to return %t, instead found %t", tc.receiver, tc.expected, actual)
-		}
-	}
-}
-
-func (s TengoIntegrationSuite) TestFlavorHasInnoFileFormat(t *testing.T) {
-	flavor := s.d.Flavor()
-	db, err := s.d.Connect("", "")
-	if err != nil {
-		t.Fatalf("Unexpected error from Connect: %s", err)
-	}
-	var innoFileFormat string
-	err = db.QueryRow("SELECT @@global.innodb_file_format").Scan(&innoFileFormat)
-	expected := flavor.HasInnoFileFormat()
-	actual := (err == nil)
-	if expected != actual {
-		t.Errorf("Flavor %s expected existence of innodb_file_format is %t, instead found %t", flavor, expected, actual)
-	}
-}
-
-func TestInnoRowFormatReqs(t *testing.T) {
-	type testcase struct {
-		receiver           Flavor
-		format             string
-		expectFilePerTable bool
-		expectBarracuda    bool
-	}
-	cases := []testcase{
-		{FlavorMySQL55, "DYNAMIC", true, true},
-		{FlavorMySQL56, "DYNAMIC", true, true},
-		{FlavorMySQL57, "DYNAMIC", false, false},
-		{FlavorMySQL57, "COMPRESSED", true, true},
-		{FlavorMySQL57, "COMPACT", false, false},
-		{FlavorMySQL80, "DYNAMIC", false, false},
-		{FlavorMySQL80, "COMPRESSED", true, false},
-		{FlavorPercona56, "COMPRESSED", true, true},
-		{FlavorPercona57, "DYNAMIC", false, false},
-		{FlavorMariaDB101, "DYNAMIC", false, false},
-		{FlavorMariaDB101, "REDUNDANT", false, false},
-		{FlavorMariaDB102, "DYNAMIC", false, true},
-		{FlavorMariaDB102, "COMPRESSED", true, true},
-		{FlavorMariaDB103, "DYNAMIC", false, false},
-		{FlavorMariaDB103, "COMPRESSED", true, false},
-		{NewFlavor("mariadb:5.5"), "DYNAMIC", true, true},
-		{FlavorUnknown, "DYNAMIC", true, true},
-		{FlavorUnknown, "COMPRESSED", true, true},
-		{FlavorUnknown, "COMPACT", false, false},
-	}
-	for _, tc := range cases {
-		actualFilePerTable, actualBarracuda := tc.receiver.InnoRowFormatReqs(tc.format)
-		if actualFilePerTable != tc.expectFilePerTable || actualBarracuda != tc.expectBarracuda {
-			t.Errorf("Expected %s.InnoRowFormatReqs(%s) to return %t,%t; instead found %t,%t", tc.receiver, tc.format, tc.expectFilePerTable, tc.expectBarracuda, actualFilePerTable, actualBarracuda)
-		}
-	}
-
-	var didPanic bool
-	defer func() {
-		if recover() != nil {
-			didPanic = true
-		}
-	}()
-	FlavorMySQL80.InnoRowFormatReqs("SUPER-DUPER-FORMAT")
-	if !didPanic {
-		t.Errorf("Expected InnoRowFormatReqs to panic on invalid format, but it did not")
-	}
-}
-
 func TestFlavorGeneratedColumns(t *testing.T) {
 	type testcase struct {
 		receiver Flavor
@@ -373,59 +287,6 @@ func TestSortedForeignKeys(t *testing.T) {
 			t.Errorf("Expected %s.SortedForeignKeys() to return %t, instead found %t", tc.receiver, tc.expected, actual)
 		}
 	}
-}
-
-func (s TengoIntegrationSuite) TestInnoRowFormatReqs(t *testing.T) {
-	// Connect using innodb_strict_mode, which causes CREATE TABLE to fail if the
-	// ROW_FORMAT clause isn't allowed with current settings
-	db, err := s.d.Connect("testing", "innodb_strict_mode=1")
-	if err != nil {
-		t.Fatalf("Unexpected error from connect: %s", err)
-	}
-
-	exec := func(statement string) {
-		t.Helper()
-		if _, err := db.Exec(statement); err != nil {
-			t.Fatalf("Unexpected error from Exec: %s", err)
-		}
-	}
-	assertCanExec := func(expected bool, rowFormat string) {
-		t.Helper()
-		_, err := db.Exec(fmt.Sprintf("CREATE TABLE reqtest (id int unsigned) ROW_FORMAT=%s", rowFormat))
-		result := err == nil
-		if result != expected {
-			t.Errorf("assertCanExec failed: Expected %t, found %t", expected, result)
-		}
-		if result {
-			if _, err = db.Exec("DROP TABLE reqtest"); err != nil {
-				t.Fatalf("Unexpected error from Exec: %s", err)
-			}
-		}
-	}
-
-	// Confirm the flavor's actual requirements match InnoRowFormatReqs:
-	// Try creating table with each format under combinations of
-	// innodb_file_per_table and innodb_file_format, and confirm ability to create
-	// the table (under strict mode) matches expectation from return value of
-	// InnoRowFormatReqs.
-	for _, format := range []string{"DYNAMIC", "COMPRESSED"} {
-		needFPT, needBarracuda := s.d.Flavor().InnoRowFormatReqs(format)
-
-		exec("SET GLOBAL innodb_file_per_table=0")
-		db.Exec("SET GLOBAL innodb_file_format=Antelope") // ignore errors, var may not exist
-		assertCanExec(!needFPT && !needBarracuda, format)
-
-		exec("SET GLOBAL innodb_file_per_table=1")
-		assertCanExec(!needBarracuda, format)
-
-		exec("SET GLOBAL innodb_file_per_table=0")
-		db.Exec("SET GLOBAL innodb_file_format=Barracuda") // ignore errors, var may not exist
-		assertCanExec(!needFPT, format)
-	}
-
-	// Clean up globals
-	exec("SET GLOBAL innodb_file_per_table=DEFAULT")
-	db.Exec("SET GLOBAL innodb_file_format=DEFAULT") // ignore errors, var may not exist
 }
 
 func TestOmitIntDisplayWidth(t *testing.T) {
