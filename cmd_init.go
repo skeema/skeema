@@ -145,6 +145,9 @@ func createHostOptionFile(cfg *mybase.Config, hostDir *fs.Dir, inst *tengo.Insta
 	} else {
 		hostOptionFile.SetOptionValue(environment, "port", strconv.Itoa(inst.Port))
 	}
+	if !cfg.Changed("generator") {
+		hostOptionFile.SetOptionValue("", "generator", generatorString())
+	}
 	if flavor := inst.Flavor(); flavor.Known() {
 		hostOptionFile.SetOptionValue(environment, "flavor", flavor.Family().String())
 	}
@@ -175,6 +178,10 @@ func createHostOptionFile(cfg *mybase.Config, hostDir *fs.Dir, inst *tengo.Insta
 	}
 	log.Infof("Using host dir %s for %s%s\n", hostDir.Path, inst, suffix)
 	return nil
+}
+
+func generatorString() string {
+	return "skeema:" + versionString()
 }
 
 // PopulateSchemaDir writes out *.sql files for all tables in the specified

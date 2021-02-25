@@ -193,6 +193,20 @@ func TestParseDirNamedSchemas(t *testing.T) {
 	}
 }
 
+func TestDirGenerator(t *testing.T) {
+	dir := getDir(t, "testdata/host/db")
+	major, minor, patch, edition := dir.Generator()
+	if major != 1 || minor != 5 || patch != 0 || edition != "community" {
+		t.Errorf("Incorrect result from Generator: %d, %d, %d, %q", major, minor, patch, edition)
+	}
+
+	dir = getDir(t, "testdata/named1")
+	major, minor, patch, edition = dir.Generator()
+	if major != 0 || minor != 0 || patch != 0 || edition != "" {
+		t.Errorf("Incorrect result from Generator: %d, %d, %d, %q", major, minor, patch, edition)
+	}
+}
+
 func TestDirNamedSchemaStatements(t *testing.T) {
 	// Test against a dir that has no named-schema statements
 	dir := getDir(t, "../../testdata/golden/init/mydb/product")
@@ -483,6 +497,7 @@ func getValidConfig(t *testing.T) *mybase.Config {
 	cmd.AddOption(mybase.StringOption("host", 0, "", "Database hostname or IP address").Hidden())
 	cmd.AddOption(mybase.StringOption("port", 0, "3306", "Port to use for database host").Hidden())
 	cmd.AddOption(mybase.StringOption("flavor", 0, "", "Database server expressed in format vendor:major.minor, for use in vendor/version specific syntax").Hidden())
+	cmd.AddOption(mybase.StringOption("generator", 0, "", "Version of Skeema used for `skeema init` or most recent `skeema pull`").Hidden())
 	cmd.AddArg("environment", "production", false)
 	return mybase.ParseFakeCLI(t, cmd, "fstest")
 }

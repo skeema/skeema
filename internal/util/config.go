@@ -25,6 +25,7 @@ func AddGlobalOptions(cmd *mybase.Command) {
 	cmd.AddOption(mybase.StringOption("default-character-set", 0, "", "Schema-level default character set").Hidden())
 	cmd.AddOption(mybase.StringOption("default-collation", 0, "", "Schema-level default collation").Hidden())
 	cmd.AddOption(mybase.StringOption("flavor", 0, "", "Database server expressed in format vendor:major.minor, for use in vendor/version specific syntax").Hidden())
+	cmd.AddOption(mybase.StringOption("generator", 0, "", "Version of Skeema used for `skeema init` or most recent `skeema pull`").Hidden())
 
 	// Visible global options
 	cmd.AddOptions("global",

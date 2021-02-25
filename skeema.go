@@ -17,14 +17,16 @@ const rootDesc = "Skeema is a declarative schema management system for MySQL and
 
 // Globals overridden by GoReleaser's ldflags
 var (
-	version = "1.4.7"
+	version = "1.5.0"
 	commit  = "unknown"
 	date    = "unknown"
 )
 
+var edition = "community"
+
 // CommandSuite is the root command. It is global so that subcommands can be
 // added to it via init() functions in each subcommand's source file.
-var CommandSuite = mybase.NewCommandSuite("skeema", versionString(), rootDesc)
+var CommandSuite = mybase.NewCommandSuite("skeema", extendedVersionString(), rootDesc)
 
 func main() {
 	CommandSuite.WebDocURL = "https://www.skeema.io/docs/commands"
@@ -59,8 +61,12 @@ func main() {
 }
 
 func versionString() string {
+	return fmt.Sprintf("%s-%s", version, edition)
+}
+
+func extendedVersionString() string {
 	if commit == "unknown" {
-		return fmt.Sprintf("%s (snapshot build from source)", version)
+		return fmt.Sprintf("%s (snapshot build from source)", versionString())
 	}
-	return fmt.Sprintf("%s, commit %s, released %s", version, commit, date)
+	return fmt.Sprintf("%s, commit %s, released %s", versionString(), commit, date)
 }

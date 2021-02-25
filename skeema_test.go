@@ -281,6 +281,11 @@ func (s *SkeemaIntegrationSuite) compareDirOptionFiles(t *testing.T, a, b *fs.Di
 		for _, section := range a.OptionFile.SectionsWithOption("flavor") {
 			a.OptionFile.SetOptionValue(section, "flavor", s.d.Flavor().Family().String())
 		}
+		// If b sets a generator, force generator of a to be correct value for current
+		// version/edition
+		for _, section := range b.OptionFile.SectionsWithOption("generator") {
+			a.OptionFile.SetOptionValue(section, "generator", generatorString())
+		}
 		// Force charset/collation to match the DockerizedInstance's defaults, where requested
 		if sectionsWithSchema := a.OptionFile.SectionsWithOption("schema"); len(sectionsWithSchema) > 0 {
 			instDefCharSet, instDefCollation, err := s.d.DefaultCharSetAndCollation()

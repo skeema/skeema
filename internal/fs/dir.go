@@ -584,6 +584,30 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	return v.Encode(), nil
 }
 
+// Generator returns the version and edition of Skeema used to init or most
+// most recently pull this dir's contents. If this cannot be determined, all
+// results will be zero values.
+func (dir *Dir) Generator() (major, minor, patch int, edition string) {
+	generator := dir.Config.Get("generator")
+	if !strings.HasPrefix(generator, "skeema:") {
+		return 0, 0, 0, ""
+	}
+	generator = generator[7:]
+	parts := strings.SplitN(generator, "-", 2)
+	if len(parts) > 1 {
+		edition = parts[1]
+	}
+	tokens := strings.Split(parts[0], ".")
+	major, _ = strconv.Atoi(tokens[0]) // no need to check error, 0 value is fine
+	if len(tokens) > 1 {
+		minor, _ = strconv.Atoi(tokens[1])
+	}
+	if len(tokens) > 2 {
+		patch, _ = strconv.Atoi(tokens[2])
+	}
+	return
+}
+
 // parseContents reads the .skeema and *.sql files in the dir, populating
 // fields of dir accordingly. This method modifies dir in-place. Any fatal
 // error will populate dir.ParseError.

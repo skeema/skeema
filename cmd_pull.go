@@ -83,6 +83,7 @@ func pullWalker(dir *fs.Dir, maxDepth int) error {
 		// the flavor if needed and process the pull operation on *.sql files, but no
 		// need to look for new schemas with this layout
 		updateFlavor(dir, instance)
+		updateGenerator(dir)
 		_, err := pullSchemaDir(dir, instance) // already logs err (if non-nil)
 		return err
 	}
@@ -115,6 +116,7 @@ func pullWalker(dir *fs.Dir, maxDepth int) error {
 
 	if instance != nil {
 		updateFlavor(dir, instance)
+		updateGenerator(dir)
 		if dir.Config.GetBool("new-schemas") && err == nil {
 			if err = findNewSchemas(dir, instance, allSchemaNames); err != nil {
 				log.Warnf("Unable to populate new schemas from %s: %s", dir, err)
@@ -299,6 +301,18 @@ func updateFlavor(dir *fs.Dir, instance *tengo.Instance) {
 		log.Warnf("Unable to update flavor in %s: %s", dir.OptionFile.Path(), err)
 	} else {
 		log.Infof("Wrote %s -- updated flavor to %s", dir.OptionFile.Path(), instFlavor.Family().String())
+	}
+}
+
+func updateGenerator(dir *fs.Dir) {
+	currentGenerator := generatorString() // see cmd_init.go
+	if dir.Config.Get("generator") == currentGenerator {
+		return
+	}
+	dir.OptionFile.SetOptionValue("", "generator", currentGenerator)
+	// ignoring errors; failure not terribly important
+	if err := dir.OptionFile.Write(true); err == nil {
+		log.Infof("Wrote %s -- updated generator to %s", dir.OptionFile.Path(), currentGenerator)
 	}
 }
 

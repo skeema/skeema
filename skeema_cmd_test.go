@@ -201,7 +201,7 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	// before/after the CREATE TABLE should remain as-is, regardless of whether
 	// there were other changes triggering a file rewrite. Files containing
 	// commands plus a table that doesn't exist should be deleted, instead of
-	// leaving a file with lingering commands.
+	// leaving a file with lingering commands. Generator string should be updated.
 	contents := fs.ReadTestFile(t, "mydb/analytics/activity.sql")
 	fs.WriteTestFile(t, "mydb/analytics/activity.sql", strings.Replace(contents, "DEFAULT", "DEFALUT", 1))
 	s.dbExec(t, "product", "INSERT INTO comments (post_id, user_id) VALUES (555, 777)")
@@ -210,6 +210,8 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	contents = fs.ReadTestFile(t, "mydb/product/posts.sql")
 	fs.WriteTestFile(t, "mydb/product/posts.sql", fmt.Sprintf("# random comment\n%s", contents))
 	fs.WriteTestFile(t, "mydb/product/noexist.sql", "DELIMITER //\nCREATE TABLE noexist (id int)//\nDELIMITER ;\n")
+	contents = fs.ReadTestFile(t, "mydb/.skeema")
+	fs.WriteTestFile(t, "mydb/.skeema", strings.Replace(contents, generatorString(), "skeema:1.4.7-community", 1))
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --debug")
 	s.verifyFiles(t, cfg, "../golden/init")
 	contents = fs.ReadTestFile(t, "mydb/product/posts.sql")
