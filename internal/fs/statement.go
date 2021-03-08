@@ -38,7 +38,7 @@ type Statement struct {
 	File            string
 	LineNo          int
 	CharNo          int
-	Text            string
+	Text            string // includes trailing Delimiter and newline
 	DefaultDatabase string // only populated if an explicit USE command was encountered
 	Type            StatementType
 	ObjectType      tengo.ObjectType

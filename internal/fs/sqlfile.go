@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/skeema/tengo"
 )
 
 // SQLFile represents a file containing zero or more SQL statements.
@@ -151,16 +153,24 @@ func (tsf *TokenizedSQLFile) Rewrite() (int, error) {
 	return 0, tsf.Delete()
 }
 
+// FileNameForObject returns a string containing the filename to use for the
+// SQLFile representing the supplied object name. Special characters in the
+// objectName will be removed; however, there is no risk of "conflicts" since
+// a single SQLFile can store definitions for multiple objects.
+func FileNameForObject(objectName string) string {
+	objectName = strings.Map(removeSpecialChars, objectName)
+	if objectName == "" {
+		objectName = "symbols"
+	}
+	return fmt.Sprintf("%s.sql", objectName)
+}
+
 // PathForObject returns a string containing a path to use for the SQLFile
 // representing the supplied object name. Special characters in the objectName
 // will be removed; however, there is no risk of "conflicts" since a single
 // SQLFile can store definitions for multiple objects.
 func PathForObject(dirPath, objectName string) string {
-	objectName = strings.Map(removeSpecialChars, objectName)
-	if objectName == "" {
-		objectName = "symbols"
-	}
-	return filepath.Join(dirPath, fmt.Sprintf("%s.sql", objectName))
+	return filepath.Join(dirPath, FileNameForObject(objectName))
 }
 
 func removeSpecialChars(r rune) rune {
@@ -206,6 +216,12 @@ func AppendToFile(filePath, contents string) (bytesWritten int, created bool, er
 }
 
 var reIsMultiStatement = regexp.MustCompile(`(?is)begin.*;.*end`)
+
+// NeedSpecialDelimiter returns true if the statement requires used of a
+// nonstandard delimiter.
+func NeedSpecialDelimiter(key tengo.ObjectKey, stmt string) bool {
+	return key.Type != tengo.ObjectTypeTable && reIsMultiStatement.MatchString(stmt)
+}
 
 // AddDelimiter takes the supplied string and appends a delimiter to the end.
 // If the supplied string is a multi-statement routine, delimiter commands will

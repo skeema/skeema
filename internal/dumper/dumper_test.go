@@ -48,10 +48,11 @@ type IntegrationSuite struct {
 	statementErrors []*workspace.StatementError
 }
 
-// TestFormatSimple tests simple reformatting, where the filesystem and schema
+// TestDumperFormat tests simple reformatting, where the filesystem and schema
 // match aside from formatting differences and statement errors. This is similar
 // to the usage pattern of `skeema format` or `skeema lint --format`.
-func (s IntegrationSuite) TestFormatSimple(t *testing.T) {
+func (s IntegrationSuite) TestDumperFormat(t *testing.T) {
+	s.setupDirAndDB(t, "basic")
 	opts := Options{
 		IncludeAutoInc: true,
 		CountOnly:      true,
@@ -61,9 +62,9 @@ func (s IntegrationSuite) TestFormatSimple(t *testing.T) {
 	}
 	opts.IgnoreKeys([]tengo.ObjectKey{s.statementErrors[0].ObjectKey()})
 	count, err := DumpSchema(s.schema, s.scratchDir, opts)
-	expected := len(s.scratchDir.LogicalSchemas[0].Creates) - 2 // no reformat needed for table fine, plus one statementerror
+	expected := 4 // multi.sql, posts.sql, routine.sql, users.sql
 	if count != expected || err != nil {
-		t.Errorf("Expected FormatLogicalSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
+		t.Errorf("Expected DumpSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
 	}
 
 	// Since above run enabled opts.CountOnly, repeated run with it disabled
@@ -71,19 +72,20 @@ func (s IntegrationSuite) TestFormatSimple(t *testing.T) {
 	opts.CountOnly = false
 	count, err = DumpSchema(s.schema, s.scratchDir, opts)
 	if count != expected || err != nil {
-		t.Errorf("Expected FormatLogicalSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
+		t.Errorf("Expected DumpSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
 	}
 	count, err = DumpSchema(s.schema, s.scratchDir, opts)
 	if expected = 0; count != expected || err != nil {
-		t.Errorf("Expected FormatLogicalSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
+		t.Errorf("Expected DumpSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
 	}
-	s.verifyFormat(t)
+	s.verifyDumperResult(t, "basic")
 }
 
-// TestFormatPull tests a use-case closer to `skeema pull`, where in addition
+// TestDumperPull tests a use-case closer to `skeema pull`, where in addition
 // to files being reformatted, there are also objects that only exist in the
 // filesystem or only exist in the database.
-func (s IntegrationSuite) TestFormatPull(t *testing.T) {
+func (s IntegrationSuite) TestDumperPull(t *testing.T) {
+	s.setupDirAndDB(t, "basic")
 	opts := Options{
 		IncludeAutoInc: true,
 		CountOnly:      true,
@@ -93,18 +95,18 @@ func (s IntegrationSuite) TestFormatPull(t *testing.T) {
 	}
 	opts.IgnoreKeys([]tengo.ObjectKey{s.statementErrors[0].ObjectKey()})
 
-	// In the fs, rename posts table and its file. Expectation is that
+	// In the fs, rename users table and its file. Expectation is that
 	// DumpSchema will undo this action.
-	contents := fs.ReadTestFile(t, s.testdata(".scratch", "posts.sql"))
-	contents = strings.Replace(contents, "CREATE TABLE posts", "create table widgets", 1)
+	contents := fs.ReadTestFile(t, s.testdata(".scratch", "users.sql"))
+	contents = strings.Replace(contents, "create table users", "CREATE table widgets", 1)
 	fs.WriteTestFile(t, s.testdata(".scratch", "widgets.sql"), contents)
-	fs.RemoveTestFile(t, s.testdata(".scratch", "posts.sql"))
+	fs.RemoveTestFile(t, s.testdata(".scratch", "users.sql"))
 	s.reparseScratchDir(t)
 
 	count, err := DumpSchema(s.schema, s.scratchDir, opts)
-	expected := len(s.scratchDir.LogicalSchemas[0].Creates) - 1 // no reformat needed for fine.sql or invalid.sql, but 1 extra from above manipulations
+	expected := 5 // no reformat needed for fine.sql or invalid.sql, but do for other 4 files, + 1 extra from above manipulations
 	if count != expected || err != nil {
-		t.Errorf("Expected FormatLogicalSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
+		t.Errorf("Expected DumpSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
 	}
 
 	// Since above run enabled opts.CountOnly, repeated run with it disabled
@@ -112,20 +114,21 @@ func (s IntegrationSuite) TestFormatPull(t *testing.T) {
 	opts.CountOnly = false
 	count, err = DumpSchema(s.schema, s.scratchDir, opts)
 	if count != expected || err != nil {
-		t.Errorf("Expected FormatLogicalSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
+		t.Errorf("Expected DumpSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
 	}
 	s.reparseScratchDir(t)
 	count, err = DumpSchema(s.schema, s.scratchDir, opts)
 	if expected = 0; count != expected || err != nil {
-		t.Errorf("Expected FormatLogicalSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
+		t.Errorf("Expected DumpSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
 	}
-	s.verifyFormat(t)
+	s.verifyDumperResult(t, "basic")
 }
 
-// TestFormatNamedSchemas confirms errors are returned when attempting to
+// TestDumperNamedSchemas confirms errors are returned when attempting to
 // format a dir containing either 'USE' commands or prefixed (dbname.objectname)
 // CREATE statements.
-func (s IntegrationSuite) TestFormatNamedSchemas(t *testing.T) {
+func (s IntegrationSuite) TestDumperNamedSchemas(t *testing.T) {
+	s.setupDirAndDB(t, "basic")
 	var err error
 
 	// In the fs, add a dbname prefix before routine1
@@ -158,11 +161,12 @@ func (s IntegrationSuite) TestFormatNamedSchemas(t *testing.T) {
 }
 
 func (s *IntegrationSuite) Setup(backend string) (err error) {
-	s.d, err = s.manager.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
+	opts := tengo.DockerizedInstanceOptions{
 		Name:         fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1)),
 		Image:        backend,
 		RootPassword: "fakepw",
-	})
+	}
+	s.d, err = s.manager.GetOrCreateInstance(opts)
 	return err
 }
 
@@ -185,39 +189,28 @@ func (s *IntegrationSuite) BeforeTest(backend string) error {
 	if err := os.MkdirAll(s.scratchPath(), 0777); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (s *IntegrationSuite) setupScratchDir(t *testing.T, subdir string) {
+	t.Helper()
 	shellout := util.ShellOut{
-		Dir:     s.testdata("input"),
+		Dir:     s.testdata(subdir, "input"),
 		Command: fmt.Sprintf("cp *.sql %s", s.scratchPath()),
 	}
 	if err := shellout.Run(); err != nil {
-		return err
+		t.Fatalf("Unexpected error from shellout: %v", err)
 	}
 
 	// Read the input files; make flavor-specific adjustments if needed
-	dir, err := getDir(s.scratchPath())
-	if err != nil {
-		return err
-	} else if len(dir.LogicalSchemas) != 1 {
-		return fmt.Errorf("Unexpected logical schema count for %s: %d", dir, len(dir.LogicalSchemas))
-	}
-	if s.d.Flavor().OmitIntDisplayWidth() {
-		for _, sqlFile := range dir.SQLFiles {
-			contents, err := ioutil.ReadFile(sqlFile.Path())
-			if err != nil {
-				return err
-			}
-			if newContents := stripDisplayWidth(string(contents)); newContents != string(contents) {
-				err := ioutil.WriteFile(sqlFile.Path(), []byte(newContents), 0777)
-				if err != nil {
-					return err
-				}
-			}
-		}
-		if dir, err = getDir(s.scratchPath()); err != nil {
-			return err
-		}
-	}
-	s.scratchDir = dir
+	s.reparseScratchDir(t)
+}
+
+func (s *IntegrationSuite) setupDirAndDB(t *testing.T, subdir string) {
+	t.Helper()
+
+	s.setupScratchDir(t, subdir)
+
 	wsOpts := workspace.Options{
 		Type:            workspace.TypeTempSchema,
 		Instance:        s.d.Instance,
@@ -226,9 +219,11 @@ func (s *IntegrationSuite) BeforeTest(backend string) error {
 		LockWaitTimeout: 30 * time.Second,
 		Concurrency:     5,
 	}
-	wsSchema, err := workspace.ExecLogicalSchema(dir.LogicalSchemas[0], wsOpts)
+	wsSchema, err := workspace.ExecLogicalSchema(s.scratchDir.LogicalSchemas[0], wsOpts)
+	if err != nil {
+		t.Fatalf("Unexpected error from ExecLogicalSchema: %v", err)
+	}
 	s.schema, s.statementErrors = wsSchema.Schema, wsSchema.Failures
-	return err
 }
 
 // testdata returns the absolute path of the testdata dir, or a file or dir
@@ -254,20 +249,37 @@ func (s *IntegrationSuite) reparseScratchDir(t *testing.T) {
 	t.Helper()
 	dir, err := getDir(s.scratchPath())
 	if err != nil {
-		t.Fatalf("Unexpected error parsing scratch dir: %v", err)
+		t.Fatalf("Unexpected error from getDir: %v", err)
 	} else if len(dir.LogicalSchemas) != 1 {
 		t.Fatalf("Unexpected logical schema count for %s: %d", dir, len(dir.LogicalSchemas))
+	}
+	if s.d.Flavor().OmitIntDisplayWidth() {
+		for _, sqlFile := range dir.SQLFiles {
+			contents, err := ioutil.ReadFile(sqlFile.Path())
+			if err != nil {
+				t.Fatalf("Unexpected error from ReadFile: %v", err)
+			}
+			if newContents := stripDisplayWidth(string(contents)); newContents != string(contents) {
+				err := ioutil.WriteFile(sqlFile.Path(), []byte(newContents), 0777)
+				if err != nil {
+					t.Fatalf("Unexpected error from WriteFile: %v", err)
+				}
+			}
+		}
+		if dir, err = getDir(s.scratchPath()); err != nil {
+			t.Fatalf("Unexpected error from getDir: %v", err)
+		}
 	}
 	s.scratchDir = dir
 }
 
-// verifyFormat confirms that the SQL files in the scratch directory match
+// verifyDumperResult confirms that the SQL files in the scratch directory match
 // those in the golden directory.
-func (s *IntegrationSuite) verifyFormat(t *testing.T) {
+func (s *IntegrationSuite) verifyDumperResult(t *testing.T, subdir string) {
 	t.Helper()
 
 	s.reparseScratchDir(t)
-	goldenDir, err := getDir(s.testdata("golden"))
+	goldenDir, err := getDir(s.testdata(subdir, "golden"))
 	if err != nil {
 		t.Fatalf("Unable to obtain golden dir: %v", err)
 	}
@@ -279,27 +291,15 @@ func (s *IntegrationSuite) verifyFormat(t *testing.T) {
 		for n := range s.scratchDir.SQLFiles {
 			if s.scratchDir.SQLFiles[n].FileName != goldenDir.SQLFiles[n].FileName {
 				t.Errorf("Differing file name at position[%d]: %s vs %s", n, s.scratchDir.SQLFiles[n].FileName, goldenDir.SQLFiles[n].FileName)
+				break
 			}
-		}
-	}
-
-	// Compare parsed CREATEs
-	if len(s.scratchDir.LogicalSchemas) != len(goldenDir.LogicalSchemas) {
-		t.Errorf("Mismatch between count of parsed logical schemas: %s=%d vs %s=%d", s.scratchDir, len(s.scratchDir.LogicalSchemas), goldenDir, len(goldenDir.LogicalSchemas))
-	} else if len(s.scratchDir.LogicalSchemas) > 0 {
-		aCreates, bCreates := s.scratchDir.LogicalSchemas[0].Creates, goldenDir.LogicalSchemas[0].Creates
-		if len(aCreates) != len(bCreates) {
-			t.Errorf("Mismatch in CREATE count: %s=%d, %s=%d", s.scratchDir, len(aCreates), goldenDir, len(bCreates))
-		} else {
-			for key, aStmt := range aCreates {
-				bStmt := bCreates[key]
-				bStmtText := bStmt.Text
-				if s.d.Flavor().OmitIntDisplayWidth() {
-					bStmtText = stripDisplayWidth(bStmtText)
-				}
-				if aStmt.Text != bStmtText {
-					t.Errorf("Mismatch for %s:\n%s:\n%s\n\n%s:\n%s\n", key, aStmt.Location(), aStmt.Text, bStmt.Location(), bStmtText)
-				}
+			actualContents := fs.ReadTestFile(t, s.scratchDir.SQLFiles[n].Path())
+			expectContents := fs.ReadTestFile(t, goldenDir.SQLFiles[n].Path())
+			if s.d.Flavor().OmitIntDisplayWidth() {
+				expectContents = stripDisplayWidth(expectContents)
+			}
+			if actualContents != expectContents {
+				t.Errorf("Mismatch for contents of %s:\n%s:\n%s\n\n%s:\n%s\n", s.scratchDir.SQLFiles[n].FileName, s.scratchDir, actualContents, goldenDir, expectContents)
 			}
 		}
 	}
