@@ -24,7 +24,7 @@ As Skeema is a bootstrapped project, the amount of free support we can offer is 
 
 In your PR description, be sure to link to an open issue describing a *confirmed* bug. Before you start coding, comment on the issue to ensure that no one else starts working on it redundantly.
 
-Bug fix PRs should generally include test coverage for the bug condition. This will help confirm that your PR fixes the bug, and prevent risk of future regressions.
+Bug fix PRs should include test coverage for the bug condition. This will help confirm that your PR fixes the bug, and prevent risk of future regressions.
 
 ### Enhancements / feature implementation PRs
 
@@ -44,7 +44,7 @@ All of these situations can be avoided by having a full discussion on the issue 
 
 **Vague, unspecified, or company-specific use-cases:** The use-case motivating your PR should be clearly stated in the linked issue. It should be a general-purpose use-case that potentially benefits many users of Skeema, and not a change exclusively motivated by your company's specialized requirements.
 
-**Library use-cases:** Our lower-level [Go La Tengo](https://github.com/skeema/tengo) package is in a separate repo and is intended to be useful as a stand-alone library, but Skeema's internal subpackages (`applier`, `dumper`, `linter`, etc) are not. If you're building an internal system for your company requiring library usage of Skeema, please [reach out](https://www.skeema.io/contact/) regarding a paid consulting engagement.
+**Library use-cases:** Our lower-level [Go La Tengo](https://github.com/skeema/tengo) package is in a separate repo and is intended to be useful as a stand-alone library, but Skeema's internal subpackages (`applier`, `dumper`, `linter`, etc) are not. If you're building an internal system for your company requiring library-like usage of Skeema, for official support please [reach out](https://www.skeema.io/contact/) regarding a paid consulting engagement.
 
 ### Information about testing, code coverage, and CI
 
@@ -52,7 +52,7 @@ All of these situations can be avoided by having a full discussion on the issue 
 
 * CI is currently using GitHub Actions. CI ensures that all tests pass, all files are formatted according to `gofmt`, and all lint checks in `golint` pass as well.
 
-* Code coverage is tracked via Coveralls, which will automatically comment on PRs with the coverage delta. Ideally each PR should maintain or improve the current coverage percentage, unless there's a compelling reason otherwise.
+* Code coverage is tracked via Coveralls, which will automatically comment on PRs with the coverage delta. Each PR should maintain or improve the current coverage percentage, unless there's a compelling reason otherwise.
 
 * Tests can be run locally as well, no need to wait for CI. By default, `go test` will run Skeema's unit tests, but not integration tests. The integration tests require Docker, and you can use the `SKEEMA_TEST_IMAGES` env var to control which DBMS flavors/versions are tested against. Some examples of local test invocations:
   * Run unit tests, and integration tests against MySQL 5.7, for the package in the current directory: `SKEEMA_TEST_IMAGES=mysql:5.7 go test -v`

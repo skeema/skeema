@@ -11,8 +11,8 @@ assignees: ''
 *A clear and concise description of what the bug is.*
 
 **Environment**
-- Skeema version: *[e.g. v1.4.7]*
-- Database vendor, version, OS/platform: *[e.g. MySQL 8.0.19 running on Linux]*
+- Skeema version: *[e.g. v1.5.0]*
+- Database vendor, version, OS/platform: *[e.g. MySQL 8.0.23 running on Linux]*
 - Any other environmental notes or special configuration:
 
 **To Reproduce**

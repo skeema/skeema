@@ -7,5 +7,5 @@ assignees: ''
 
 ---
 
-*Please refer to the contributing guidelines linked in the sidebar for guidance.*
+*Please refer to the Contributing link in the sidebar for guidance.*
 
