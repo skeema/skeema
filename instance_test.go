@@ -607,6 +607,67 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesDeadlock(t *testing.T) {
 	}
 }
 
+// TestInstanceDropTablesSkipsViews tests the behavior of
+// Instance.DropTablesInSchema when views are present in the schema. Although
+// this package does not support views, presence of them should not break
+// behavior. This test also confirms some assumptions regarding views and
+// information_schema.partitions for the current flavor.
+func (s TengoIntegrationSuite) TestInstanceDropTablesSkipsViews(t *testing.T) {
+	// Create two views, including one with an invalid DEFINER, which intentionally
+	// prevents queries on the view from working.
+	if _, err := s.d.SourceSQL("testdata/views.sql"); err != nil {
+		t.Fatalf("Unexpected error sourcing testdata/views.sql: %v", err)
+	}
+
+	// Confirm I_S assumptions present in logic similar to tablesToPartitions:
+	// no views there except in MySQL 8 / PS 8; if views are there, they have
+	// data_length 0.
+	// Explicit AS clauses needed for compatibility with MySQL 8 data dictionary,
+	// otherwise results come back with uppercase col names, breaking Select
+	var partitions []struct {
+		TableName  string `db:"table_name"`
+		DataLength int64  `db:"data_length"`
+	}
+	query := `
+		SELECT   p.table_name AS table_name,
+		         p.data_length AS data_length
+		FROM     information_schema.partitions p
+		WHERE    p.table_schema = 'testing' AND
+		         p.table_name LIKE 'view%'`
+	db, err := s.d.Connect("", "")
+	if err != nil {
+		t.Fatalf("Unexpected error obtaining connection pool: %v", err)
+	}
+	if err := db.Select(&partitions, query); err != nil {
+		t.Fatalf("Unexpected error querying information_schema.partitions: %v", err)
+	}
+	if flavor := s.d.Flavor(); flavor.HasDataDictionary() {
+		if len(partitions) != 2 {
+			t.Fatalf("Expected flavor %s to have 2 views present in information_schema.partitions; instead found %d", flavor, len(partitions))
+		}
+		for _, part := range partitions {
+			if part.DataLength != 0 {
+				t.Fatalf("Expected view %s to have data_length of 0, instead found %d", part.TableName, part.DataLength)
+			}
+		}
+	} else if len(partitions) != 0 {
+		t.Fatalf("Expected flavor %s to have no views present in information_schema.partitions; instead found %d", flavor, len(partitions))
+	}
+
+	// Now drop all tables in testing, and confirm this does not return an error.
+	// If views weren't ignored, there are two ways this could error: DROP TABLE
+	// will error on a view; and even before that, since we use OnlyIfEmpty, the
+	// SELECT on a view with a bad definer will also error.
+	opts := BulkDropOptions{
+		MaxConcurrency:  10,
+		OnlyIfEmpty:     true,
+		PartitionsFirst: true,
+	}
+	if err := s.d.DropTablesInSchema("testing", opts); err != nil {
+		t.Errorf("Unexpected error from DropTablesInSchema with views present: %v", err)
+	}
+}
+
 func (s TengoIntegrationSuite) TestInstanceDropRoutinesInSchema(t *testing.T) {
 	// testing schema contains several routines in testdata/integration.sql
 	schema := s.GetSchema(t, "testing")
