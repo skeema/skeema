@@ -576,6 +576,30 @@ func (s TengoIntegrationSuite) TestInstanceDropSchema(t *testing.T) {
 	}
 }
 
+func (s TengoIntegrationSuite) TestInstanceDropTablesInSchemaByRef(t *testing.T) {
+	schema := s.GetSchema(t, "testing")
+	if len(schema.Tables) == 0 {
+		t.Fatal("Assertion failure: schema `testing` has no tables to start")
+	}
+	opts := BulkDropOptions{
+		MaxConcurrency: 10,
+		SkipBinlog:     true,
+		Schema:         schema,
+	}
+	if err := s.d.DropTablesInSchema("testing", opts); err != nil {
+		t.Fatalf("Unexpected error from DropTablesInSchema: %v", err)
+	}
+	if schema = s.GetSchema(t, "testing"); len(schema.Tables) > 0 {
+		t.Errorf("Expected schema `testing` to have no tables after DropTablesInSchema, instead found %d", len(schema.Tables))
+	}
+
+	// Repeated call SHOULD error, because the tables in schema.Tables no
+	// longer exist!
+	if err := s.d.DropTablesInSchema("testing", opts); err == nil {
+		t.Error("Expected error from DropTablesInSchema, but return was nil")
+	}
+}
+
 func (s TengoIntegrationSuite) TestInstanceDropTablesDeadlock(t *testing.T) {
 	// With the new data dictionary, attempting to drop 2 tables concurrently can
 	// deadlock if the tables have a foreign key constraint between them. This
@@ -693,6 +717,31 @@ func (s TengoIntegrationSuite) TestInstanceDropRoutinesInSchema(t *testing.T) {
 	// Calling on a nonexistent schema name should return an error.
 	if err := s.d.DropRoutinesInSchema("doesntexist", opts); err == nil {
 		t.Error("Expected error from DropRoutinesInSchema on nonexistent schema; instead err was nil")
+	}
+}
+
+func (s TengoIntegrationSuite) TestInstanceDropRoutinesInSchemaByRef(t *testing.T) {
+	// testing schema contains several routines in testdata/integration.sql
+	schema := s.GetSchema(t, "testing")
+	if len(schema.Routines) == 0 {
+		t.Fatal("Assertion failure: schema `testing` has no routines to start")
+	}
+	opts := BulkDropOptions{
+		MaxConcurrency: 10,
+		SkipBinlog:     true,
+		Schema:         schema,
+	}
+	if err := s.d.DropRoutinesInSchema("testing", opts); err != nil {
+		t.Fatalf("Unexpected error from DropRoutinesInSchema: %v", err)
+	}
+	if schema = s.GetSchema(t, "testing"); len(schema.Routines) > 0 {
+		t.Errorf("Expected schema `testing` to have no routines after DropRoutinesInSchema, instead found %d", len(schema.Routines))
+	}
+
+	// Repeated call SHOULD error, because the routines in schema.Routines no
+	// longer exist!
+	if err := s.d.DropRoutinesInSchema("testing", opts); err == nil {
+		t.Error("Expected error from DropRoutinesInSchema, but return was nil")
 	}
 }
 

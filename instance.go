@@ -705,10 +705,11 @@ func (instance *Instance) AlterSchema(schema string, opts SchemaCreationOptions)
 
 // BulkDropOptions controls how objects are dropped in bulk.
 type BulkDropOptions struct {
-	OnlyIfEmpty     bool // If true, when dropping tables, error if any have rows
-	MaxConcurrency  int  // Max objects to drop at once
-	SkipBinlog      bool // If true, use session sql_log_bin=0 (requires superuser)
-	PartitionsFirst bool // If true, drop RANGE/LIST partitioned tables one partition at a time
+	OnlyIfEmpty     bool    // If true, when dropping tables, error if any have rows
+	MaxConcurrency  int     // Max objects to drop at once
+	SkipBinlog      bool    // If true, use session sql_log_bin=0 (requires superuser)
+	PartitionsFirst bool    // If true, drop RANGE/LIST partitioned tables one partition at a time
+	Schema          *Schema // If non-nil, obtain object lists from Schema instead of running I_S queries
 }
 
 func (opts BulkDropOptions) params() string {
@@ -735,10 +736,16 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 	}
 
 	// Obtain table and partition names
-	tableMap, err := tablesToPartitions(db, schema, instance.Flavor())
-	if err != nil {
-		return err
-	} else if len(tableMap) == 0 {
+	var tableMap map[string][]string
+	if opts.Schema != nil {
+		tableMap = opts.Schema.tablesToPartitions()
+	} else {
+		tableMap, err = tablesToPartitions(db, schema, instance.Flavor())
+		if err != nil {
+			return err
+		}
+	}
+	if len(tableMap) == 0 {
 		return nil
 	}
 
@@ -802,17 +809,27 @@ func (instance *Instance) DropRoutinesInSchema(schema string, opts BulkDropOptio
 
 	// Obtain names and types directly; faster than going through
 	// instance.Schema(schema) since we don't need other introspection
-	var routineInfo []struct {
+	type nameAndType struct {
 		Name string `db:"routine_name"`
 		Type string `db:"routine_type"`
 	}
-	query := `
-		SELECT routine_name AS routine_name, UPPER(routine_type) AS routine_type
-		FROM   information_schema.routines
-		WHERE  routine_schema = ?`
-	if err := db.Select(&routineInfo, query, schema); err != nil {
-		return err
-	} else if len(routineInfo) == 0 {
+	var routineInfo []nameAndType
+	if opts.Schema != nil {
+		routineInfo = make([]nameAndType, len(opts.Schema.Routines))
+		for n, routine := range opts.Schema.Routines {
+			routineInfo[n].Name = routine.Name
+			routineInfo[n].Type = string(routine.Type)
+		}
+	} else {
+		query := `
+			SELECT routine_name AS routine_name, UPPER(routine_type) AS routine_type
+			FROM   information_schema.routines
+			WHERE  routine_schema = ?`
+		if err := db.Select(&routineInfo, query, schema); err != nil {
+			return err
+		}
+	}
+	if len(routineInfo) == 0 {
 		return nil
 	}
 

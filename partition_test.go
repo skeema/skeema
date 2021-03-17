@@ -2,6 +2,7 @@ package tengo
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -261,6 +262,21 @@ func (s TengoIntegrationSuite) TestPartitionedIntrospection(t *testing.T) {
 		t.Error("Diff unexpectedly not supported for unit test partitioned table")
 	} else if len(clauses) > 0 {
 		t.Errorf("Diff of partitioned table unexpectedly found %d clauses; expected 0. Clauses: %+v", len(clauses), clauses)
+	}
+
+	// Ensure that instance.go's tablesToPartitions() returns the same result as
+	// Schema.tablesToPartitions() on the introspected schema.
+	db, err := s.d.Connect("partitionparty", "")
+	if err != nil {
+		t.Fatalf("Unable to connect to db: %v", err)
+	}
+	ttp1, err := tablesToPartitions(db, "partitionparty", flavor)
+	if err != nil {
+		t.Fatalf("Unexpected error from tablesToPartitions: %v", err)
+	}
+	ttp2 := schema.tablesToPartitions()
+	if !reflect.DeepEqual(ttp1, ttp2) {
+		t.Errorf("Results of tablesToPartitions methods not equal to each other: %+v vs %+v", ttp1, ttp2)
 	}
 
 	// ensure partitioned tables are introspected correctly by confirming that
