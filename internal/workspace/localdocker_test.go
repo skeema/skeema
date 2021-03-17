@@ -63,8 +63,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDocker(t *testing.T) {
 	}
 	if schema, err := ws.IntrospectSchema(); err != nil || schema.Name != opts.SchemaName || len(schema.Tables) > 0 {
 		t.Errorf("Unexpected result from IntrospectSchema(): %+v / %v", schema, err)
-	}
-	if err := ws.Cleanup(); err != nil {
+	} else if err := ws.Cleanup(schema); err != nil {
 		t.Errorf("Unexpected error from cleanup: %s", err)
 	}
 }
@@ -88,10 +87,10 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerShutdown(t *testing.T) {
 		t.Fatalf("Unexpected error from New(): %s", err)
 	}
 	ld := ws.(*LocalDocker)
-	if err := ws.Cleanup(); err != nil {
+	if err := ws.Cleanup(nil); err != nil {
 		t.Errorf("Unexpected error from cleanup: %s", err)
 	}
-	if err := ws.Cleanup(); err == nil {
+	if err := ws.Cleanup(nil); err == nil {
 		t.Error("Expected repeated calls to Cleanup() to error, but err was nil")
 	}
 	if has, err := ld.d.HasSchema(opts.SchemaName); has || err != nil {
@@ -131,7 +130,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerShutdown(t *testing.T) {
 	if _, err := ld.d.SourceSQL("testdata/tempschema1.sql"); err != nil {
 		t.Fatalf("Unexpected SourceSQL error: %s", err)
 	}
-	if err := ld.Cleanup(); err == nil {
+	if err := ld.Cleanup(nil); err == nil {
 		t.Error("Expected cleanup error since a table had rows, but err was nil")
 	}
 	Shutdown("no-match") // intentionally should have no effect, container name doesn't match supplied prefix
@@ -191,7 +190,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerConnParams(t *testing.T) {
 	ws.(*LocalDocker).defaultConnParams = "%%%%"
 	assertWaitTimeout("wait_timeout=456", 0, true)
 
-	if err := ws.Cleanup(); err != nil {
+	if err := ws.Cleanup(nil); err != nil {
 		t.Errorf("Unexpected error from cleanup: %s", err)
 	}
 }

@@ -705,10 +705,11 @@ func (instance *Instance) AlterSchema(schema string, opts SchemaCreationOptions)
 
 // BulkDropOptions controls how objects are dropped in bulk.
 type BulkDropOptions struct {
-	OnlyIfEmpty     bool // If true, when dropping tables, error if any have rows
-	MaxConcurrency  int  // Max objects to drop at once
-	SkipBinlog      bool // If true, use session sql_log_bin=0 (requires superuser)
-	PartitionsFirst bool // If true, drop RANGE/LIST partitioned tables one partition at a time
+	OnlyIfEmpty     bool    // If true, when dropping tables, error if any have rows
+	MaxConcurrency  int     // Max objects to drop at once
+	SkipBinlog      bool    // If true, use session sql_log_bin=0 (requires superuser)
+	PartitionsFirst bool    // If true, drop RANGE/LIST partitioned tables one partition at a time
+	Schema          *Schema // If non-nil, obtain object lists from Schema instead of running I_S queries
 }
 
 func (opts BulkDropOptions) params() string {
@@ -735,10 +736,16 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 	}
 
 	// Obtain table and partition names
-	tableMap, err := tablesToPartitions(db, schema)
-	if err != nil {
-		return err
-	} else if len(tableMap) == 0 {
+	var tableMap map[string][]string
+	if opts.Schema != nil {
+		tableMap = opts.Schema.tablesToPartitions()
+	} else {
+		tableMap, err = tablesToPartitions(db, schema, instance.Flavor())
+		if err != nil {
+			return err
+		}
+	}
+	if len(tableMap) == 0 {
 		return nil
 	}
 
@@ -768,7 +775,7 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 				err = dropPartitions(db, name, partitions[0:len(partitions)-1])
 			}
 			if err == nil {
-				_, err := db.Exec(fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(name)))
+				_, err = db.Exec(fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(name)))
 				// With the new data dictionary added in MySQL 8.0, attempting to
 				// concurrently drop two tables that have a foreign key constraint between
 				// them can deadlock.
@@ -802,17 +809,27 @@ func (instance *Instance) DropRoutinesInSchema(schema string, opts BulkDropOptio
 
 	// Obtain names and types directly; faster than going through
 	// instance.Schema(schema) since we don't need other introspection
-	var routineInfo []struct {
+	type nameAndType struct {
 		Name string `db:"routine_name"`
 		Type string `db:"routine_type"`
 	}
-	query := `
-		SELECT routine_name AS routine_name, UPPER(routine_type) AS routine_type
-		FROM   information_schema.routines
-		WHERE  routine_schema = ?`
-	if err := db.Select(&routineInfo, query, schema); err != nil {
-		return err
-	} else if len(routineInfo) == 0 {
+	var routineInfo []nameAndType
+	if opts.Schema != nil {
+		routineInfo = make([]nameAndType, len(opts.Schema.Routines))
+		for n, routine := range opts.Schema.Routines {
+			routineInfo[n].Name = routine.Name
+			routineInfo[n].Type = string(routine.Type)
+		}
+	} else {
+		query := `
+			SELECT routine_name AS routine_name, UPPER(routine_type) AS routine_type
+			FROM   information_schema.routines
+			WHERE  routine_schema = ?`
+		if err := db.Select(&routineInfo, query, schema); err != nil {
+			return err
+		}
+	}
+	if len(routineInfo) == 0 {
 		return nil
 	}
 
@@ -835,15 +852,16 @@ func (instance *Instance) DropRoutinesInSchema(schema string, opts BulkDropOptio
 // partitioned in a way that doesn't support DROP PARTITION) or a slice of
 // partition names (if using RANGE or LIST partitioning). Views are excluded
 // from the result.
-func tablesToPartitions(db *sqlx.DB, schema string) (map[string][]string, error) {
+func tablesToPartitions(db *sqlx.DB, schema string, flavor Flavor) (map[string][]string, error) {
 	// information_schema.partitions contains all tables (not just partitioned)
-	// and excludes views (which we don't want here anyway)
+	// and excludes views (which we don't want here anyway) in non-MySQL8+ flavors
 	var rawNames []struct {
 		TableName     string         `db:"table_name"`
 		PartitionName sql.NullString `db:"partition_name"`
 		Method        sql.NullString `db:"partition_method"`
 		SubMethod     sql.NullString `db:"subpartition_method"`
 		Position      sql.NullInt64  `db:"partition_ordinal_position"`
+		DataLength    int64          `db:"data_length"`
 	}
 	// Explicit AS clauses needed for compatibility with MySQL 8 data dictionary,
 	// otherwise results come back with uppercase col names, breaking Select
@@ -852,7 +870,8 @@ func tablesToPartitions(db *sqlx.DB, schema string) (map[string][]string, error)
 		         p.table_name AS table_name, p.partition_name AS partition_name,
 		         p.partition_method AS partition_method,
 		         p.subpartition_method AS subpartition_method,
-		         p.partition_ordinal_position AS partition_ordinal_position
+		         p.partition_ordinal_position AS partition_ordinal_position,
+		         p.data_length AS data_length
 		FROM     information_schema.partitions p
 		WHERE    p.table_schema = ?
 		ORDER BY p.table_name, p.partition_ordinal_position`
@@ -860,6 +879,7 @@ func tablesToPartitions(db *sqlx.DB, schema string) (map[string][]string, error)
 		return nil, err
 	}
 
+	var checkViews bool
 	partitions := make(map[string][]string)
 	for _, rn := range rawNames {
 		if !rn.Position.Valid || rn.Position.Int64 == 1 {
@@ -869,7 +889,32 @@ func tablesToPartitions(db *sqlx.DB, schema string) (map[string][]string, error)
 			(strings.HasPrefix(rn.Method.String, "RANGE") || strings.HasPrefix(rn.Method.String, "LIST")) {
 			partitions[rn.TableName] = append(partitions[rn.TableName], rn.PartitionName.String)
 		}
+		// In MySQL 8, views are present here with a data_length of 0. Although InnoDB
+		// tables likely always have nonzero data_length, non-InnoDB tables do show up
+		// here with data_length of 0, so this alone isn't sufficient to identify
+		// specific views. However, if all rows have nonzero data_length, we know
+		// there are no views and can skip the query.
+		if rn.DataLength == 0 {
+			checkViews = true
+		}
 	}
+
+	// MySQL 8's new data dictionary actually includes views in
+	// information_schema.partitions, so remove them explicitly.
+	if checkViews && flavor.HasDataDictionary() {
+		var viewNames []string
+		query := `
+				SELECT table_name
+				FROM   information_schema.views
+				WHERE  table_schema = ?`
+		if err := db.Select(&viewNames, query, schema); err != nil {
+			return nil, err
+		}
+		for _, name := range viewNames {
+			delete(partitions, name)
+		}
+	}
+
 	return partitions, nil
 }
 

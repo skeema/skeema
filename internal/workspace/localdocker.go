@@ -165,7 +165,7 @@ func (ld *LocalDocker) IntrospectSchema() (*tengo.Schema, error) {
 // Cleanup does not handle stopping or destroying the container. If requested,
 // that is handled by Shutdown() instead, so that containers aren't needlessly
 // created and stopped/destroyed multiple times during a program's execution.
-func (ld *LocalDocker) Cleanup() error {
+func (ld *LocalDocker) Cleanup(schema *tengo.Schema) error {
 	if ld.releaseLock == nil {
 		return errors.New("Cleanup() called multiple times on same LocalDocker")
 	}
@@ -178,6 +178,7 @@ func (ld *LocalDocker) Cleanup() error {
 		MaxConcurrency: 10,
 		OnlyIfEmpty:    true,
 		SkipBinlog:     true,
+		Schema:         schema, // may be nil, not a problem
 	}
 	if err := ld.d.DropSchema(ld.schemaName, dropOpts); err != nil {
 		return fmt.Errorf("Cannot drop temporary schema on %s: %s", ld.d.Instance, err)

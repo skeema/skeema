@@ -36,7 +36,9 @@ type Workspace interface {
 
 	// Cleanup cleans up the workspace, leaving it in a state where it could be
 	// re-used/re-initialized as needed. Repeated calls to Cleanup() may error.
-	Cleanup() error
+	// The arg may be nil, and/or the implementation may ignore the arg; it is
+	// supplied to optionally improve performance where relevant.
+	Cleanup(schema *tengo.Schema) error
 }
 
 // Type represents a kind of workspace to use.
@@ -273,8 +275,13 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 	if fatalErr != nil {
 		return
 	}
+	wsSchema = &Schema{
+		LogicalSchema: logicalSchema,
+		Failures:      []*StatementError{},
+	}
+
 	defer func() {
-		if cleanupErr := ws.Cleanup(); fatalErr == nil {
+		if cleanupErr := ws.Cleanup(wsSchema.Schema); fatalErr == nil {
 			fatalErr = cleanupErr
 		}
 	}()
@@ -297,13 +304,9 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 		th.Throttle()
 	}
 
-	// Construct the workspace.Schema and then examine statement errors. If any
-	// deadlocks occurred, retry them sequentially, since some deadlocks are
-	// expected from concurrent CREATEs in MySQL 8+ if FKs are present.
-	wsSchema = &Schema{
-		LogicalSchema: logicalSchema,
-		Failures:      []*StatementError{},
-	}
+	// Examine statement errors. If any deadlocks occurred, retry them
+	// sequentially, since some deadlocks are expected from concurrent CREATEs in
+	// MySQL 8+ if FKs are present.
 	sequentialStatements := []*fs.Statement{}
 	for _, err := range th.Errs() {
 		stmterr := err.(*StatementError)

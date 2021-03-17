@@ -29,10 +29,10 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 	if has, err := ts.inst.HasSchema(opts.SchemaName); !has {
 		t.Errorf("Instance does not have expected schema: has=%t err=%s", has, err)
 	}
-	if err := ts.Cleanup(); err != nil {
+	if err := ts.Cleanup(nil); err != nil {
 		t.Errorf("Unexpected error from cleanup: %s", err)
 	}
-	if err := ts.Cleanup(); err == nil {
+	if err := ts.Cleanup(nil); err == nil {
 		t.Error("Expected repeated calls to Cleanup() to error, but err was nil")
 	}
 	if has, err := ts.inst.HasSchema(opts.SchemaName); !has {
@@ -49,7 +49,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
 	}
 	s.sourceSQL(t, "tempschema1.sql")
-	if err := ts.Cleanup(); err == nil {
+	if err := ts.Cleanup(nil); err == nil {
 		t.Error("Expected cleanup error since a table had rows, but err was nil")
 	}
 
@@ -85,7 +85,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCleanupDrop(t *testing.T) {
 	}
 
 	// Coverage for successful CleanupActionDrop
-	if err := ts.Cleanup(); err != nil {
+	if err := ts.Cleanup(nil); err != nil {
 		t.Errorf("Unexpected error from cleanup: %s", err)
 	}
 	if has, err := ts.inst.HasSchema(opts.SchemaName); has || err != nil {
@@ -97,7 +97,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCleanupDrop(t *testing.T) {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
 	}
 	s.sourceSQL(t, "tempschema1.sql")
-	if err := ts.Cleanup(); err == nil {
+	if err := ts.Cleanup(nil); err == nil {
 		t.Error("Expected cleanup error since a table had rows, but err was nil")
 	}
 }

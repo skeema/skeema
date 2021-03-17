@@ -2,6 +2,7 @@ package tengo
 
 import (
 	"fmt"
+	"strings"
 )
 
 // Schema represents a database schema.
@@ -131,4 +132,23 @@ func (s *Schema) AlterStatement(charSet, collation string) string {
 		return ""
 	}
 	return fmt.Sprintf("ALTER DATABASE %s%s%s", EscapeIdentifier(s.Name), charSetClause, collateClause)
+}
+
+// tablesToPartitions returns a map whose keys are all tables in the schema
+// (whether partitioned or not), and values are either nil (if unpartitioned or
+// partitioned in a way that doesn't support DROP PARTITION) or a slice of
+// partition names (if using RANGE or LIST partitioning). Views are excluded
+// from the result.
+func (s *Schema) tablesToPartitions() map[string][]string {
+	result := make(map[string][]string, len(s.Tables))
+	for _, table := range s.Tables {
+		result[table.Name] = nil
+		if table.Partitioning != nil && table.Partitioning.SubMethod == "" &&
+			(strings.HasPrefix(table.Partitioning.Method, "RANGE") || strings.HasPrefix(table.Partitioning.Method, "LIST")) {
+			for _, p := range table.Partitioning.Partitions {
+				result[table.Name] = append(result[table.Name], p.Name)
+			}
+		}
+	}
+	return result
 }

@@ -58,9 +58,10 @@ func NewTempSchema(opts Options) (ts *TempSchema, err error) {
 		// Attempt to drop any tables already present in tempSchema, but fail if
 		// any of them actually have 1 or more rows
 		dropOpts := tengo.BulkDropOptions{
-			MaxConcurrency: ts.concurrency,
-			OnlyIfEmpty:    true,
-			SkipBinlog:     opts.SkipBinlog,
+			MaxConcurrency:  ts.concurrency,
+			OnlyIfEmpty:     true,
+			SkipBinlog:      opts.SkipBinlog,
+			PartitionsFirst: true,
 		}
 		if err := ts.inst.DropTablesInSchema(ts.schemaName, dropOpts); err != nil {
 			return ts, fmt.Errorf("Cannot drop existing temp schema tables on %s: %s", ts.inst, err)
@@ -95,7 +96,7 @@ func (ts *TempSchema) IntrospectSchema() (*tengo.Schema, error) {
 // or just drops all tables in the schema (if using reuse-temp-schema). If any
 // tables have any rows in the temp schema, the cleanup aborts and an error is
 // returned.
-func (ts *TempSchema) Cleanup() error {
+func (ts *TempSchema) Cleanup(schema *tengo.Schema) error {
 	if ts.releaseLock == nil {
 		return errors.New("Cleanup() called multiple times on same TempSchema")
 	}
@@ -105,9 +106,11 @@ func (ts *TempSchema) Cleanup() error {
 	}()
 
 	dropOpts := tengo.BulkDropOptions{
-		MaxConcurrency: ts.concurrency,
-		OnlyIfEmpty:    true,
-		SkipBinlog:     ts.skipBinlog,
+		MaxConcurrency:  ts.concurrency,
+		OnlyIfEmpty:     true,
+		SkipBinlog:      ts.skipBinlog,
+		PartitionsFirst: true,
+		Schema:          schema, // may be nil, not a problem
 	}
 	if ts.keepSchema {
 		if err := ts.inst.DropTablesInSchema(ts.schemaName, dropOpts); err != nil {
