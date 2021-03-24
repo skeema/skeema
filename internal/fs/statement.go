@@ -82,7 +82,7 @@ func (stmt *Statement) Schema() string {
 func (stmt *Statement) Body() string {
 	body, _ := stmt.SplitTextBody()
 	if stmt.ObjectQualifier != "" {
-		pattern := fmt.Sprintf("(?is)^(.*?create.+?%s.*?)(`%s`|%s)(\\s*\\.\\s*)", string(stmt.ObjectType), stmt.ObjectQualifier, stmt.ObjectQualifier)
+		pattern := fmt.Sprintf("(?is)^(.*?create.+?%s.*?)(`%s`|%s)([\\s\\p{Zs}]*\\.[\\s\\p{Zs}]*)", string(stmt.ObjectType), stmt.ObjectQualifier, stmt.ObjectQualifier)
 		re := regexp.MustCompile(pattern)
 		body = re.ReplaceAllString(body, "$1")
 	}
@@ -422,9 +422,9 @@ func stripAnyQuote(input string) string {
 // as delimiters (via the delimiter command).
 var (
 	sqlLexer = lexer.Must(lexer.Regexp(`(#[^\n]*(?:\n|$))` +
-		`|(--(\s[^\n]*)??(?:\n|$))` +
+		`|(--([\s\p{Zs}][^\n]*)??(?:\n|$))` +
 		`|(/\*(.|\n)*?\*/)` +
-		`|(\s+)` +
+		`|([\s\p{Zs}]+)` +
 		"|(?P<Word>[0-9a-zA-Z$_]+|`(?:[^`]|``)+`)" +
 		`|(?P<String>('(\\\\|\\'|''|[^'])*')|("(\\\\|\\"|""|[^"])*"))` +
 		`|(?P<Number>[-+]?\d*\.?\d+([eE][-+]?\d+)?)` +

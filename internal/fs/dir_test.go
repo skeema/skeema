@@ -491,6 +491,8 @@ func TestAncestorPaths(t *testing.T) {
 
 func getValidConfig(t *testing.T) *mybase.Config {
 	cmd := mybase.NewCommand("fstest", "", "", nil)
+	cmd.AddOption(mybase.StringOption("user", 'u', "root", "Username to connect to database host"))
+	cmd.AddOption(mybase.StringOption("password", 'p', "", "Password for database user; omit value to prompt from TTY (default no password)").ValueOptional())
 	cmd.AddOption(mybase.StringOption("schema", 0, "", "Database schema name").Hidden())
 	cmd.AddOption(mybase.StringOption("default-character-set", 0, "", "Schema-level default character set").Hidden())
 	cmd.AddOption(mybase.StringOption("default-collation", 0, "", "Schema-level default collation").Hidden())
