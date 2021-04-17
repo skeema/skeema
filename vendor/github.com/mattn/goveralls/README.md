@@ -30,7 +30,7 @@ not have to specify it at each invocation.
 
 You can also run this reporter for multiple passes with the flag `-parallel` or
 by setting the environment variable `COVERALLS_PARALLEL=true` (see [coveralls
-docs](https://docs.coveralls.io/parallel-build-webhook) for more details.
+docs](https://docs.coveralls.io/parallel-build-webhook) for more details).
 
 
 # Continuous Integration
@@ -62,18 +62,20 @@ jobs:
         go mod download
     - name: Run Unit tests
       run: |
-        go test -race -covermode atomic -coverprofile=profile.cov ./...
+        go test -race -covermode atomic -coverprofile=covprofile ./...
+    - name: Install goveralls
+      env:
+        GO111MODULE: off
+      run: go get github.com/mattn/goveralls
     - name: Send coverage
       env:
         COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        GO111MODULE=off go get github.com/mattn/goveralls
-        $(go env GOPATH)/bin/goveralls -coverprofile=profile.cov -service=github
+      run: goveralls -coverprofile=covprofile -service=github
     # or use shogo82148/actions-goveralls
     # - name: Send coverage
     #   uses: shogo82148/actions-goveralls@v1
     #   with:
-    #     path-to-profile: profile.cov
+    #     path-to-profile: covprofile
 ```
 
 ### Test with Legacy GOPATH mode
@@ -91,32 +93,34 @@ jobs:
     name: Test with Coverage
     runs-on: ubuntu-latest
     steps:
-    - name: Set up Go
-      uses: actions/setup-go@v1
-      with:
-        go-version: '1.10'
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '1.10'
 
-    # add this step
-    - name: Set up GOPATH
-      run: |
-        echo "::set-env name=GOPATH::${{ github.workspace }}"
-        echo "::add-path::${{ github.workspace }}/bin"
+      # add this step
+      - name: Set up GOPATH
+        run: |
+          echo "GOPATH=${{ github.workspace }}" >> "$GITHUB_ENV"
+          echo "${{ github.workspace }}/bin" >> "$GITHUB_PATH"
 
-    - name: Check out code
-      uses: actions/checkout@v2
-      with:
-        path: src/example.com/owner/repo # add this
-    - name: Run Unit tests
-      run: |
-        go test -race -covermode atomic -coverprofile=profile.cov ./...
-      working-directory: src/example.com/owner/repo # add this
-    - name: Send coverage
-      env:
-        COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        GO111MODULE=off go get github.com/mattn/goveralls
-        $(go env GOPATH)/bin/goveralls -coverprofile=profile.cov -service=github
-      working-directory: src/example.com/owner/repo # add this
+      - name: Check out code
+        uses: actions/checkout@v2
+        with:
+          path: src/example.com/owner/repo # add this
+      - name: Run Unit tests
+        run: |
+          go test -race -covermode atomic -coverprofile=covprofile ./...
+        working-directory: src/example.com/owner/repo # add this
+      - name: Install goveralls
+        env:
+          GO111MODULE: off
+        run: go get github.com/mattn/goveralls
+      - name: Send coverage
+        env:
+          COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: goveralls -coverprofile=covprofile -service=github
+        working-directory: src/example.com/owner/repo # add this
 ```
 
 ## Travis CI
@@ -246,6 +250,78 @@ You can use the `-v` flag to see verbose output from the test suite:
 
 ```
 $ goveralls -v -service semaphore
+```
+
+## Jenkins CI
+
+Add your Coveralls API token as a credential in Jenkins (see [Jenkins documentation](https://www.jenkins.io/doc/book/using/using-credentials/#configuring-credentials)).
+
+Then declare it as the environment variable `COVERALLS_TOKEN`:
+```groovy
+pipeline {
+    agent any
+    stages {
+        stage('Test with coverage') {
+            steps {
+                sh 'go test ./... -coverprofile=coverage.txt -covermode=atomic'
+            }
+        }
+        stage('Upload to coveralls.io') {
+            environment {
+                COVERALLS_TOKEN     = credentials('coveralls-token')
+            }
+            steps {
+                sh 'goveralls -coverprofile=coverage.txt'
+            }
+        }
+    }
+}
+```
+
+See also [related Jenkins documentation](https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#for-secret-text-usernames-and-passwords-and-secret-files).
+
+It is also possible to let goveralls run the code coverage on its own without providing a coverage profile file.
+
+## TeamCity
+
+Store your Coveralls API token in `Environment Variables`:
+
+```
+COVERALLS_TOKEN=your_token_goes_here
+```
+
+Setup build steps:
+
+```
+$ go get github.com/mattn/goveralls
+$ export PULL_REQUEST_NUMBER=%teamcity.build.branch%
+$ goveralls -service teamcity -jobid %teamcity.build.id% -jobnumber %build.number%
+```
+
+`goveralls` will automatically use the environment variable `COVERALLS_TOKEN` as the
+default value for `-repotoken`.
+
+You can use the `-v` flag to see verbose output.
+
+
+## Gitlab CI
+
+Store your Coveralls API token as an [Environment Variable](https://docs.gitlab.com/ee/ci/variables/#create-a-custom-variable-in-the-ui) named `COVERALLS_TOKEN`.
+
+```yml
+test:
+  timeout: 30m
+  stage: test
+  artifacts:
+    paths:
+      - coverage.txt
+  dependencies:
+    - build:env
+  when: always
+  script:
+    - go test -covermode atomic -coverprofile=coverage.txt ./...
+    - go get github.com/mattn/goveralls
+    - goveralls -service=gitlab -coverprofile=coverage.txt
 ```
 
 ## Coveralls Enterprise

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -24,37 +25,58 @@ type Git struct {
 	Branch string `json:"branch"`
 }
 
-// collectGitInfo runs several git commands to compose a Git object.
-func collectGitInfo(ref string) *Git {
+// collectGitInfo uses either environment variables or git commands to compose a Git metadata object.
+func collectGitInfo(ref string) (*Git, error) {
 	gitCmds := map[string][]string{
-		"id":      {"rev-parse", ref},
-		"branch":  {"branch", "--format", "%(refname:short)", "--contains", ref},
-		"aname":   {"show", "-s", "--format=%aN", ref},
-		"aemail":  {"show", "-s", "--format=%aE", ref},
-		"cname":   {"show", "-s", "--format=%cN", ref},
-		"cemail":  {"show", "-s", "--format=%cE", ref},
-		"message": {"show", "-s", "--format=%s", ref},
-	}
-	results := map[string]string{}
-	gitPath, err := exec.LookPath("git")
-	if err != nil {
-		log.Printf("fail to look path of git: %v", err)
-		log.Print("git information is omitted")
-		return nil
+		"GIT_ID":              {"rev-parse", ref},
+		"GIT_BRANCH":          {"branch", "--format", "%(refname:short)", "--contains", ref},
+		"GIT_AUTHOR_NAME":     {"show", "-s", "--format=%aN", ref},
+		"GIT_AUTHOR_EMAIL":    {"show", "-s", "--format=%aE", ref},
+		"GIT_COMMITTER_NAME":  {"show", "-s", "--format=%cN", ref},
+		"GIT_COMMITTER_EMAIL": {"show", "-s", "--format=%cE", ref},
+		"GIT_MESSAGE":         {"show", "-s", "--format=%s", ref},
 	}
 
-	if ref != "HEAD" {
+	var gitPath string
+
+	if *allowGitFetch && ref != "HEAD" {
+		var err error
+		gitPath, err = exec.LookPath("git")
+		if err != nil {
+			return nil, fmt.Errorf("failed to look path of git: %v", err)
+		}
+
 		// make sure that the commit is in the local
 		// e.g. shallow cloned repository
-		_, _ = runCommand(gitPath, "fetch", "--depth=1", "origin", ref)
-		// ignore errors because we don't have enough information about the origin.
+		_, err = runCommand(gitPath, "fetch", "--depth=1", "origin", ref)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch git ref %q: %v", ref, err)
+		}
 	}
 
 	for key, args := range gitCmds {
-		if key == "branch" {
+		// special case for the git branch name: load from multiple environment variables
+		if key == "GIT_BRANCH" {
 			if envBranch := loadBranchFromEnv(); envBranch != "" {
-				results[key] = envBranch
+				err := os.Setenv(key, envBranch)
+				if err != nil {
+					return nil, err
+				}
 				continue
+			}
+		}
+		if os.Getenv(key) != "" {
+			// metadata already available via environment variable
+			continue
+		}
+
+		if gitPath == "" {
+			var err error
+			gitPath, err = exec.LookPath("git")
+			if err != nil {
+				log.Printf("fail to look path of git: %v", err)
+				log.Print("git information is omitted")
+				return nil, nil
 			}
 		}
 
@@ -62,23 +84,29 @@ func collectGitInfo(ref string) *Git {
 		if err != nil {
 			log.Printf(`fail to run "%s %s": %v`, gitPath, strings.Join(args, " "), err)
 			log.Print("git information is omitted")
-			return nil
+			return nil, nil
 		}
-		results[key] = ret
+
+		err = os.Setenv(key, ret)
+		if err != nil {
+			return nil, err
+		}
 	}
+
 	h := Head{
-		ID:             firstLine(results["id"]),
-		AuthorName:     firstLine(results["aname"]),
-		AuthorEmail:    firstLine(results["aemail"]),
-		CommitterName:  firstLine(results["cname"]),
-		CommitterEmail: firstLine(results["cemail"]),
-		Message:        results["message"],
+		ID:             os.Getenv("GIT_ID"),
+		AuthorName:     os.Getenv("GIT_AUTHOR_NAME"),
+		AuthorEmail:    os.Getenv("GIT_AUTHOR_EMAIL"),
+		CommitterName:  os.Getenv("GIT_COMMITTER_NAME"),
+		CommitterEmail: os.Getenv("GIT_COMMITTER_EMAIL"),
+		Message:        os.Getenv("GIT_MESSAGE"),
 	}
 	g := &Git{
 		Head:   h,
-		Branch: firstLine(results["branch"]),
+		Branch: os.Getenv("GIT_BRANCH"),
 	}
-	return g
+
+	return g, nil
 }
 
 func runCommand(gitPath string, args ...string) (string, error) {
@@ -108,6 +136,7 @@ var varNames = [...]string{
 	"CI_BRANCH", "APPVEYOR_REPO_BRANCH",
 	"WERCKER_GIT_BRANCH", "DRONE_BRANCH",
 	"BUILDKITE_BRANCH", "BRANCH_NAME",
+	"CI_COMMIT_REF_NAME",
 }
 
 func loadBranchFromEnv() string {

@@ -11,7 +11,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -25,18 +24,8 @@ import (
 	"github.com/docker/docker/pkg/pools"
 	"github.com/docker/docker/pkg/system"
 	"github.com/sirupsen/logrus"
+	exec "golang.org/x/sys/execabs"
 )
-
-var unpigzPath string
-
-func init() {
-	if path, err := exec.LookPath("unpigz"); err != nil {
-		logrus.Debug("unpigz binary not found in PATH, falling back to go gzip library")
-	} else {
-		logrus.Debugf("Using unpigz binary found at path %s", path)
-		unpigzPath = path
-	}
-}
 
 type (
 	// Compression is the state represents if compressed or not.
@@ -158,18 +147,29 @@ func xzDecompress(ctx context.Context, archive io.Reader) (io.ReadCloser, error)
 }
 
 func gzDecompress(ctx context.Context, buf io.Reader) (io.ReadCloser, error) {
-	if unpigzPath == "" {
+	noPigzEnv := os.Getenv("MOBY_DISABLE_PIGZ")
+	var noPigz bool
+
+	if noPigzEnv != "" {
+		var err error
+		noPigz, err = strconv.ParseBool(noPigzEnv)
+		if err != nil {
+			logrus.WithError(err).Warn("invalid value in MOBY_DISABLE_PIGZ env var")
+		}
+	}
+
+	if noPigz {
+		logrus.Debugf("Use of pigz is disabled due to MOBY_DISABLE_PIGZ=%s", noPigzEnv)
 		return gzip.NewReader(buf)
 	}
 
-	disablePigzEnv := os.Getenv("MOBY_DISABLE_PIGZ")
-	if disablePigzEnv != "" {
-		if disablePigz, err := strconv.ParseBool(disablePigzEnv); err != nil {
-			return nil, err
-		} else if disablePigz {
-			return gzip.NewReader(buf)
-		}
+	unpigzPath, err := exec.LookPath("unpigz")
+	if err != nil {
+		logrus.Debugf("unpigz binary not found, falling back to go gzip library")
+		return gzip.NewReader(buf)
 	}
+
+	logrus.Debugf("Using %s to decompress", unpigzPath)
 
 	return cmdStream(exec.CommandContext(ctx, unpigzPath, "-d", "-c"), buf)
 }
@@ -402,10 +402,24 @@ func fillGo18FileTypeBits(mode int64, fi os.FileInfo) int64 {
 // ReadSecurityXattrToTarHeader reads security.capability xattr from filesystem
 // to a tar header
 func ReadSecurityXattrToTarHeader(path string, hdr *tar.Header) error {
+	const (
+		// Values based on linux/include/uapi/linux/capability.h
+		xattrCapsSz2    = 20
+		versionOffset   = 3
+		vfsCapRevision2 = 2
+		vfsCapRevision3 = 3
+	)
 	capability, _ := system.Lgetxattr(path, "security.capability")
 	if capability != nil {
+		length := len(capability)
+		if capability[versionOffset] == vfsCapRevision3 {
+			// Convert VFS_CAP_REVISION_3 to VFS_CAP_REVISION_2 as root UID makes no
+			// sense outside the user namespace the archive is built in.
+			capability[versionOffset] = vfsCapRevision2
+			length = xattrCapsSz2
+		}
 		hdr.Xattrs = make(map[string]string)
-		hdr.Xattrs["security.capability"] = string(capability)
+		hdr.Xattrs["security.capability"] = string(capability[:length])
 	}
 	return nil
 }
@@ -915,6 +929,12 @@ loop:
 		}
 		if err != nil {
 			return err
+		}
+
+		// ignore XGlobalHeader early to avoid creating parent directories for them
+		if hdr.Typeflag == tar.TypeXGlobalHeader {
+			logrus.Debugf("PAX Global Extended Headers found for %s and ignored", hdr.Name)
+			continue
 		}
 
 		// Normalize name, for safety and for a simple is-root check

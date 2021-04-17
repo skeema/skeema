@@ -1,26 +1,48 @@
 # github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78
 github.com/Azure/go-ansiterm
 github.com/Azure/go-ansiterm/winterm
-# github.com/Microsoft/go-winio v0.4.15-0.20200113171025-3fe6c5262873
+# github.com/Microsoft/go-winio v0.4.16
 github.com/Microsoft/go-winio
 github.com/Microsoft/go-winio/pkg/guid
-# github.com/Microsoft/hcsshim v0.8.9
+github.com/Microsoft/go-winio/pkg/security
+github.com/Microsoft/go-winio/vhd
+# github.com/Microsoft/hcsshim v0.8.14
+github.com/Microsoft/hcsshim
+github.com/Microsoft/hcsshim/computestorage
+github.com/Microsoft/hcsshim/internal/cow
+github.com/Microsoft/hcsshim/internal/hcs
+github.com/Microsoft/hcsshim/internal/hcserror
+github.com/Microsoft/hcsshim/internal/hns
+github.com/Microsoft/hcsshim/internal/interop
+github.com/Microsoft/hcsshim/internal/log
+github.com/Microsoft/hcsshim/internal/logfields
+github.com/Microsoft/hcsshim/internal/longpath
+github.com/Microsoft/hcsshim/internal/mergemaps
+github.com/Microsoft/hcsshim/internal/oc
+github.com/Microsoft/hcsshim/internal/safefile
+github.com/Microsoft/hcsshim/internal/schema1
+github.com/Microsoft/hcsshim/internal/schema2
+github.com/Microsoft/hcsshim/internal/timeout
+github.com/Microsoft/hcsshim/internal/vmcompute
+github.com/Microsoft/hcsshim/internal/wclayer
+github.com/Microsoft/hcsshim/internal/winapi
 github.com/Microsoft/hcsshim/osversion
-# github.com/VividCortex/mysqlerr v0.0.0-20170204212430-6c6b55f8796f
+# github.com/VividCortex/mysqlerr v0.0.0-20201215173831-4c396ae82aac
 ## explicit
 github.com/VividCortex/mysqlerr
 # github.com/alecthomas/participle v0.3.0
 ## explicit
 github.com/alecthomas/participle
 github.com/alecthomas/participle/lexer
-# github.com/containerd/containerd v1.3.4
-github.com/containerd/containerd/errdefs
-# github.com/containerd/continuity v0.0.0-20200413184840-d3ef23f19fbb
+# github.com/containerd/cgroups v0.0.0-20200531161412-0dbf7f05ba59
+github.com/containerd/cgroups/stats/v1
+# github.com/containerd/containerd v1.4.3
+github.com/containerd/containerd/log
+github.com/containerd/containerd/sys
+# github.com/containerd/continuity v0.0.0-20210208174643-50096c924a4e
 github.com/containerd/continuity/fs
 github.com/containerd/continuity/sysx
-# github.com/docker/distribution v2.7.1+incompatible
-github.com/docker/distribution/registry/api/errcode
-# github.com/docker/docker v17.12.0-ce-rc1.0.20200505174321-1655290016ac+incompatible
+# github.com/docker/docker v20.10.3-0.20210216175712-646072ed6524+incompatible
 github.com/docker/docker/api/types/blkiodev
 github.com/docker/docker/api/types/container
 github.com/docker/docker/api/types/filters
@@ -31,7 +53,6 @@ github.com/docker/docker/api/types/strslice
 github.com/docker/docker/api/types/swarm
 github.com/docker/docker/api/types/swarm/runtime
 github.com/docker/docker/api/types/versions
-github.com/docker/docker/errdefs
 github.com/docker/docker/pkg/archive
 github.com/docker/docker/pkg/fileutils
 github.com/docker/docker/pkg/homedir
@@ -46,35 +67,31 @@ github.com/docker/docker/pkg/system
 github.com/docker/go-connections/nat
 # github.com/docker/go-units v0.4.0
 github.com/docker/go-units
-# github.com/fsouza/go-dockerclient v1.6.6
+# github.com/fsouza/go-dockerclient v1.7.2
 github.com/fsouza/go-dockerclient
-# github.com/go-sql-driver/mysql v1.5.1-0.20210202043019-fe2230a8b20c
+# github.com/go-sql-driver/mysql v1.6.0
 github.com/go-sql-driver/mysql
-# github.com/gogo/protobuf v1.3.1
+# github.com/gogo/protobuf v1.3.2
+github.com/gogo/protobuf/gogoproto
 github.com/gogo/protobuf/proto
-# github.com/golang/protobuf v1.3.3
-github.com/golang/protobuf/proto
-github.com/golang/protobuf/ptypes
-github.com/golang/protobuf/ptypes/any
-github.com/golang/protobuf/ptypes/duration
-github.com/golang/protobuf/ptypes/timestamp
-# github.com/jmoiron/sqlx v1.2.0
+github.com/gogo/protobuf/protoc-gen-gogo/descriptor
+# github.com/hashicorp/golang-lru v0.5.1
+github.com/hashicorp/golang-lru/simplelru
+# github.com/jmoiron/sqlx v1.3.3
 ## explicit
 github.com/jmoiron/sqlx
 github.com/jmoiron/sqlx/reflectx
-# github.com/konsorten/go-windows-terminal-sequences v1.0.1
-github.com/konsorten/go-windows-terminal-sequences
-# github.com/mattn/goveralls v0.0.6
+# github.com/mattn/goveralls v0.0.8
 ## explicit
 github.com/mattn/goveralls
 # github.com/mitchellh/go-wordwrap v1.0.0
 ## explicit
 github.com/mitchellh/go-wordwrap
-# github.com/moby/sys/mount v0.1.0
+# github.com/moby/sys/mount v0.2.0
 github.com/moby/sys/mount
-# github.com/moby/sys/mountinfo v0.1.0
+# github.com/moby/sys/mountinfo v0.4.0
 github.com/moby/sys/mountinfo
-# github.com/moby/term v0.0.0-20200429084858-129dac9f73f6
+# github.com/moby/term v0.0.0-20201216013528-df9cb8a40635
 github.com/moby/term
 github.com/moby/term/windows
 # github.com/morikuni/aec v1.0.0
@@ -82,36 +99,43 @@ github.com/morikuni/aec
 # github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
 ## explicit
 github.com/nozzle/throttler
-# github.com/opencontainers/go-digest v1.0.0-rc1
+# github.com/opencontainers/go-digest v1.0.0
 github.com/opencontainers/go-digest
 # github.com/opencontainers/image-spec v1.0.1
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
 # github.com/opencontainers/runc v1.0.0-rc5
 ## explicit
-github.com/opencontainers/runc/libcontainer/system
 github.com/opencontainers/runc/libcontainer/user
 # github.com/pkg/errors v0.9.1
 github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
-# github.com/sirupsen/logrus v1.4.2
+# github.com/sirupsen/logrus v1.8.1
 ## explicit
 github.com/sirupsen/logrus
 # github.com/skeema/mybase v1.0.13
 ## explicit
 github.com/skeema/mybase
-# github.com/skeema/tengo v0.10.1-0.20210317044944-10153c06ec9c
+# github.com/skeema/tengo v0.10.1-0.20210417062145-7406ea7297ea
 ## explicit
 github.com/skeema/tengo
-# golang.org/x/lint v0.0.0-20190409202823-959b441ac422
+# go.opencensus.io v0.22.0
+go.opencensus.io
+go.opencensus.io/internal
+go.opencensus.io/trace
+go.opencensus.io/trace/internal
+go.opencensus.io/trace/tracestate
+# golang.org/x/lint v0.0.0-20201208152925-83fdc39ff7b5
 ## explicit
 golang.org/x/lint
 golang.org/x/lint/golint
 # golang.org/x/sync v0.0.0-20201207232520-09787c993a3a
 ## explicit
 golang.org/x/sync/errgroup
-# golang.org/x/sys v0.0.0-20201119102817-f84b799fce68
+# golang.org/x/sys v0.0.0-20210415045647-66c3f260301c
+## explicit
+golang.org/x/sys/execabs
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
@@ -119,15 +143,9 @@ golang.org/x/sys/windows
 # golang.org/x/term v0.0.0-20201210144234-2321bbc49cbf
 ## explicit
 golang.org/x/term
-# golang.org/x/tools v0.0.0-20200522201501-cb1345f3a375
+# golang.org/x/tools v0.0.0-20210106214847-113979e3529a
 golang.org/x/tools/cover
 golang.org/x/tools/go/ast/astutil
 golang.org/x/tools/go/buildutil
 golang.org/x/tools/go/gcexportdata
 golang.org/x/tools/go/internal/gcimporter
-# google.golang.org/genproto v0.0.0-20190819201941-24fa4b261c55
-google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.29.1
-google.golang.org/grpc/codes
-google.golang.org/grpc/internal/status
-google.golang.org/grpc/status
