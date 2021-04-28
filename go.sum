@@ -122,8 +122,8 @@ github.com/sirupsen/logrus v1.8.1 h1:dJKuHgqk1NNQlqoA6BTlM1Wf9DOH3NBjQyu0h9+AZZE
 github.com/sirupsen/logrus v1.8.1/go.mod h1:yWOB1SBYBC5VeMP7gHvWumXLIWorT60ONWic61uBYv0=
 github.com/skeema/mybase v1.0.13 h1:0wO6MyVexyvyRzghOaYpJaHnqoGbrTETpzeK0+W47Kk=
 github.com/skeema/mybase v1.0.13/go.mod h1:QIVXHvABKRem2FHkOv5lP8uQlQyc2x9GV4vIqq6tBcY=
-github.com/skeema/tengo v0.10.1-0.20210417062145-7406ea7297ea h1:ESF732ApBrcInaHqi6BY0n99I0xc+aEID5mVV6PI3g0=
-github.com/skeema/tengo v0.10.1-0.20210417062145-7406ea7297ea/go.mod h1:IRwNn7/Or1GtKktVwQg2If5DYG1/v2hPCcwNOiC0iTA=
+github.com/skeema/tengo v0.10.1-0.20210428170629-390129adcdf3 h1:U/Ypbb32HQvMgpPr0OGIELjieYRzUVAhqvzVXcvF1UQ=
+github.com/skeema/tengo v0.10.1-0.20210428170629-390129adcdf3/go.mod h1:IRwNn7/Or1GtKktVwQg2If5DYG1/v2hPCcwNOiC0iTA=
 github.com/spf13/cobra v0.0.2-0.20171109065643-2da4a54c5cee/go.mod h1:1l0Ry5zgKvJasoi3XT1TypsSe7PqH0Sj9dhYf7v3XqQ=
 github.com/spf13/pflag v1.0.1-0.20171106142849-4c012f6dcd95/go.mod h1:DYY7MBk1bdzusC3SYhjObp+wFpr4gzcvqqNjLnInEg4=
 github.com/spf13/pflag v1.0.3/go.mod h1:DYY7MBk1bdzusC3SYhjObp+wFpr4gzcvqqNjLnInEg4=

@@ -194,6 +194,16 @@ func (di *DockerizedInstance) Start() error {
 	err := di.Manager.client.StartContainer(di.container.ID, nil)
 	if _, ok := err.(*docker.ContainerAlreadyRunning); err == nil || ok {
 		di.container, err = di.Manager.client.InspectContainer(di.container.ID)
+
+		// In some cases it appears StartContainer returns prior to the port mapping
+		// being in place. Retry the inspection up to 5 more times if so.
+		for n := 1; err == nil && di.Port() == 0; n++ {
+			if n >= 6 {
+				return fmt.Errorf("Unable to find port mapping for container %s", di.Name)
+			}
+			time.Sleep(time.Duration(n) * time.Millisecond)
+			di.container, err = di.Manager.client.InspectContainer(di.container.ID)
+		}
 	}
 	return err
 }
