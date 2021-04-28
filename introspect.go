@@ -154,6 +154,7 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 }
 
 func queryTablesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) ([]*Table, bool, error) {
+	convertUTF8ToMB3 := flavor.MySQLishMinVersion(8, 0, 24)
 	var rawTables []struct {
 		Name               string         `db:"table_name"`
 		Type               string         `db:"table_type"`
@@ -184,6 +185,9 @@ func queryTablesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor
 	tables := make([]*Table, len(rawTables))
 	var havePartitions bool
 	for n, rawTable := range rawTables {
+		if rawTable.CharSet == "utf8" && convertUTF8ToMB3 {
+			rawTable.CharSet = "utf8mb3" // 8.0.24+ uses "utf8mb3" in SHOW CREATE, but "utf8" in I_S
+		}
 		tables[n] = &Table{
 			Name:               rawTable.Name,
 			Engine:             rawTable.Engine.String,
@@ -207,6 +211,7 @@ func queryTablesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor
 
 func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) (map[string][]*Column, error) {
 	stripDisplayWidth := flavor.OmitIntDisplayWidth()
+	convertUTF8ToMB3 := flavor.MySQLishMinVersion(8, 0, 24)
 	var rawColumns []struct {
 		Name               string         `db:"column_name"`
 		TableName          string         `db:"table_name"`
@@ -308,6 +313,9 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 			}
 		}
 		if rawColumn.Collation.Valid { // only text-based column types have a notion of charset and collation
+			if rawColumn.CharSet.String == "utf8" && convertUTF8ToMB3 {
+				rawColumn.CharSet.String = "utf8mb3" // 8.0.24+ uses "utf8mb3" in SHOW CREATE, but "utf8" in I_S
+			}
 			col.CharSet = rawColumn.CharSet.String
 			col.Collation = rawColumn.Collation.String
 			col.CollationIsDefault = (rawColumn.CollationIsDefault.String != "")

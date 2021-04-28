@@ -159,6 +159,10 @@ func aTable(nextAutoInc uint64) Table {
 }
 
 func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
+	utf8mb3 := "utf8"
+	if flavor.MySQLishMinVersion(8, 0, 24) {
+		utf8mb3 = "utf8mb3"
+	}
 	lastUpdateCol := &Column{
 		Name:     "last_update",
 		TypeInDB: "timestamp(2)",
@@ -198,7 +202,7 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 		{
 			Name:               "first_name",
 			TypeInDB:           "varchar(45)",
-			CharSet:            "utf8",
+			CharSet:            utf8mb3,
 			Collation:          "utf8_general_ci",
 			CollationIsDefault: true,
 		},
@@ -207,7 +211,7 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 			Nullable:           true,
 			TypeInDB:           "varchar(45)",
 			Default:            "NULL",
-			CharSet:            "utf8",
+			CharSet:            utf8mb3,
 			Collation:          "utf8_general_ci",
 			CollationIsDefault: true,
 		},
@@ -215,7 +219,7 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 		{
 			Name:               "ssn",
 			TypeInDB:           "char(10)",
-			CharSet:            "utf8",
+			CharSet:            utf8mb3,
 			Collation:          "utf8_general_ci",
 			CollationIsDefault: true,
 		},
@@ -260,11 +264,11 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
   PRIMARY KEY (`+"`"+`actor_id`+"`"+`),
   UNIQUE KEY `+"`"+`idx_ssn`+"`"+` (`+"`"+`ssn`+"`"+`),
   KEY `+"`"+`idx_actor_name`+"`"+` (`+"`"+`last_name`+"`"+`(10),`+"`"+`first_name`+"`"+`(1))
-) ENGINE=InnoDB%s DEFAULT CHARSET=utf8`, autoIncClause)
+) ENGINE=InnoDB%s DEFAULT CHARSET=%s`, autoIncClause, utf8mb3)
 	table := Table{
 		Name:               "actor",
 		Engine:             "InnoDB",
-		CharSet:            "utf8",
+		CharSet:            utf8mb3,
 		Collation:          "utf8_general_ci",
 		CollationIsDefault: true,
 		Columns:            columns,
