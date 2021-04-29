@@ -147,44 +147,14 @@ var normalizeCreateRegexps = []struct {
 	{re: regexp.MustCompile("`\\) KEY_BLOCK_SIZE=\\d+"), replacement: "`)"},
 }
 
-var reFindTableCharSet = regexp.MustCompile(`\n\).* DEFAULT CHARSET=(\w+)(?: COLLATE=(\w+))?`)
-
 // NormalizeCreateOptions adjusts the supplied CREATE TABLE statement to remove
 // any no-op table options that are persisted in SHOW CREATE TABLE, but not
 // reflected in information_schema and serve no purpose for InnoDB tables.
 // This function is not guaranteed to be safe for non-InnoDB tables.
 func NormalizeCreateOptions(createStmt string) string {
-	// Regex replacements
 	for _, entry := range normalizeCreateRegexps {
 		createStmt = entry.re.ReplaceAllString(createStmt, entry.replacement)
 	}
-
-	// Retained character set clauses: MySQL 8.0+ "remembers" column-level charset
-	// and collation when specified, even when equal to the table's default. We
-	// strip these because they're no-ops that aren't otherwise exposed in
-	// information_schema.
-	if matches := reFindTableCharSet.FindStringSubmatch(createStmt); matches != nil {
-		tableCharSet, tableCollation := matches[1], matches[2]
-		replace := ""
-		// If table collation is the default, we don't have enough information from
-		// just the CREATE TABLE to know what to strip. We hard-code the 3 most
-		// common cases though.
-		if tableCollation == "" {
-			commonDefaults := map[string]string{
-				"latin1":  "latin1_swedish_ci",
-				"utf8":    "utf8_general_ci",
-				"utf8mb4": "utf8mb4_0900_ai_ci", // No need to care about pre-8.0 different default in this situation!
-			}
-			tableCollation = commonDefaults[tableCharSet]
-		} else {
-			replace = fmt.Sprintf(" COLLATE %s", tableCollation)
-		}
-		if tableCollation != "" {
-			find := fmt.Sprintf(" CHARACTER SET %s COLLATE %s", tableCharSet, tableCollation)
-			createStmt = strings.Replace(createStmt, find, replace, -1)
-		}
-	}
-
 	return createStmt
 }
 
