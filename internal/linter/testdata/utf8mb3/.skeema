@@ -1,0 +1,4 @@
+schema=whatever
+default-character-set=latin1
+default-collation=latin1_swedish_ci
+allow-charset=utf8mb3

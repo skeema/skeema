@@ -25,6 +25,14 @@ func init() {
 }
 
 func charsetChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts Options) []Note {
+	// If utf8mb3 is on the allow-list, ensure its alias utf8 is as well, since
+	// that's what tables and columns will actually show up as
+	if opts.IsAllowed("charset", "utf8mb3") && !opts.IsAllowed("charset", "utf8") {
+		allowList := opts.AllowList("charset")
+		allowList = append(allowList, "utf8")
+		opts.RuleConfig["charset"] = allowList
+	}
+
 	// Check the table's default charset. If it fails, return a single
 	// Note without checking individual columns, as we don't want a bunch
 	// of redundant messages for columns using the table default charset.

@@ -233,6 +233,40 @@ func (s IntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 	}
 }
 
+// TestCheckSchemaUTF8MB3 provides additional coverage for using utf8mb3 on
+// allow-charset as an alias for utf8.
+func (s IntegrationSuite) TestCheckSchemaUTF8MB3(t *testing.T) {
+	dir := getDir(t, "testdata/utf8mb3")
+	opts, err := OptionsForDir(dir)
+	if err != nil {
+		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
+	}
+
+	logicalSchema := dir.LogicalSchemas[0]
+	wsOpts, err := workspace.OptionsForDir(dir, s.d.Instance)
+	if err != nil {
+		t.Fatalf("Unexpected error from workspace.OptionsForDir: %v", err)
+	}
+	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
+	if err != nil {
+		t.Fatalf("Unexpected error from workspace.ExecLogicalSchema: %v", err)
+	} else if len(wsSchema.Failures) != 0 {
+		t.Fatalf("Unexpectedly found %d workspace failures", len(wsSchema.Failures))
+	}
+
+	// Ignore all linters except for lint-charset
+	forceOnlyRulesWarning(opts, "charset")
+
+	// There's intentionally no hardcoded flavor value in testdata/validcfg/.skeema
+	// so that we can force the value corresponding to the current Dockerized
+	// test db here
+	opts.Flavor = s.d.Flavor()
+
+	result := CheckSchema(wsSchema, opts)
+	expected := expectedAnnotations(logicalSchema, s.d.Flavor())
+	compareAnnotations(t, expected, result)
+}
+
 func (s *IntegrationSuite) Setup(backend string) (err error) {
 	s.d, err = s.manager.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
 		Name:              fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1)),
