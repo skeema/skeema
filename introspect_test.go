@@ -313,3 +313,89 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 		t.Error("Expected non-nil error return from showCreateRoutine with invalid type, instead found nil")
 	}
 }
+
+// TestColumnCompression confirms that various logic around compressed columns
+// in Percona Server and MariaDB work properly. The syntax and functionality
+// differs between these two vendors, and meanwhile MySQL has no equivalent
+// feature yet at all.
+func TestColumnCompression(t *testing.T) {
+	table := supportedTableForFlavor(FlavorPercona57)
+	if table.Columns[3].Name != "metadata" || table.Columns[3].Compression != "" {
+		t.Fatal("Test fixture has changed without corresponding update to this test's logic")
+	}
+
+	table.CreateStatement = strings.Replace(table.CreateStatement, "`metadata` text", "`metadata` text /*!50633 COLUMN_FORMAT COMPRESSED */", 1)
+	fixPerconaColCompression(&table)
+	if table.Columns[3].Compression != "COMPRESSED" {
+		t.Errorf("Expected column's compression to be %q, instead found %q", "COMPRESSED", table.Columns[3].Compression)
+	}
+	if table.GeneratedCreateStatement(FlavorPercona57) != table.CreateStatement {
+		t.Errorf("Unexpected mismatch in generated CREATE TABLE:\nGeneratedCreateStatement:\n%s\nCreateStatement:\n%s", table.GeneratedCreateStatement(FlavorPercona57), table.CreateStatement)
+	}
+
+	table.CreateStatement = strings.Replace(table.CreateStatement, "COMPRESSED */", "COMPRESSED WITH COMPRESSION_DICTIONARY `foobar` */", 1)
+	fixPerconaColCompression(&table)
+	if table.Columns[3].Compression != "COMPRESSED WITH COMPRESSION_DICTIONARY `foobar`" {
+		t.Errorf("Expected column's compression to be %q, instead found %q", "COMPRESSED WITH COMPRESSION_DICTIONARY `foobar`", table.Columns[3].Compression)
+	}
+	if table.GeneratedCreateStatement(FlavorPercona57) != table.CreateStatement {
+		t.Errorf("Unexpected mismatch in generated CREATE TABLE:\nGeneratedCreateStatement:\n%s\nCreateStatement:\n%s", table.GeneratedCreateStatement(FlavorPercona57), table.CreateStatement)
+	}
+
+	// Now indirectly test Column.Definition() for MariaDB
+	table = supportedTableForFlavor(FlavorMariaDB103)
+	table.CreateStatement = strings.Replace(table.CreateStatement, "`metadata` text", "`metadata` text /*!100301 COMPRESSED*/", 1)
+	table.Columns[3].Compression = "COMPRESSED"
+	if table.GeneratedCreateStatement(FlavorMariaDB103) != table.CreateStatement {
+		t.Errorf("Unexpected mismatch in generated CREATE TABLE:\nGeneratedCreateStatement:\n%s\nCreateStatement:\n%s", table.GeneratedCreateStatement(FlavorMariaDB103), table.CreateStatement)
+	}
+}
+
+// TestFixFulltextIndexParsers confirms CREATE TABLE parsing for WITH PARSER
+// clauses works properly.
+func TestFixFulltextIndexParsers(t *testing.T) {
+	table := anotherTableForFlavor(FlavorMySQL57)
+	if table.SecondaryIndexes[0].Type != "BTREE" || table.SecondaryIndexes[0].FullTextParser != "" {
+		t.Fatal("Test fixture has changed without corresponding update to this test's logic")
+	}
+
+	// Confirm no parser = no change from fix
+	table.SecondaryIndexes[0].Type = "FULLTEXT"
+	table.CreateStatement = table.GeneratedCreateStatement(FlavorMySQL57)
+	fixFulltextIndexParsers(&table, FlavorMySQL57)
+	if table.SecondaryIndexes[0].FullTextParser != "" {
+		t.Errorf("fixFulltextIndexParsers unexpectedly set parser to %q instead of %q", table.SecondaryIndexes[0].FullTextParser, "")
+	}
+
+	// Confirm parser extracted correctly from fix
+	table.SecondaryIndexes[0].FullTextParser = "ngram"
+	table.CreateStatement = table.GeneratedCreateStatement(FlavorMySQL57)
+	table.SecondaryIndexes[0].FullTextParser = ""
+	fixFulltextIndexParsers(&table, FlavorMySQL57)
+	if table.SecondaryIndexes[0].FullTextParser != "ngram" {
+		t.Errorf("fixFulltextIndexParsers unexpectedly set parser to %q instead of %q", table.SecondaryIndexes[0].FullTextParser, "ngram")
+	}
+}
+
+// TestFixBlobDefaultExpression confirms CREATE TABLE parsing works for blob/
+// text default expressions in versions which omit them from information_schema.
+func TestFixBlobDefaultExpression(t *testing.T) {
+	table := aTableForFlavor(FlavorMySQL80, 0)
+	defExpr := "(CONCAT('hello ', 'world'))"
+	table.Columns[1].Default = defExpr
+	table.CreateStatement = table.GeneratedCreateStatement(FlavorMySQL80)
+	table.Columns[1].Default = "!!!BLOBDEFAULT!!!"
+	fixBlobDefaultExpression(&table, FlavorMySQL80)
+	if table.Columns[1].Default != defExpr {
+		t.Errorf("fixBlobDefaultExpression did not work or set default to unexpected value %q", table.Columns[1].Default)
+	}
+
+	// Confirm regex still correct with stuff after the default
+	table.Columns[1].Comment = "hi i am a comment"
+	table.CreateStatement = table.GeneratedCreateStatement(FlavorMySQL80)
+	table.Columns[1].Default = "!!!BLOBDEFAULT!!!"
+	fixBlobDefaultExpression(&table, FlavorMySQL80)
+	if table.Columns[1].Default != defExpr {
+		t.Errorf("fixBlobDefaultExpression did not work after adding comment, default is unexpected value %q", table.Columns[1].Default)
+	}
+}

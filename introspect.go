@@ -117,9 +117,11 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 		}
 		// Create options order is unpredictable with the new MySQL 8 data dictionary
 		// Also need to fix generated column expression string literals
+		// Also need to fix superfluous column charsets and utf8mb3->utf8 change
 		if flavor.HasDataDictionary() {
 			fixCreateOptionsOrder(t, flavor)
 			fixGenerationExpr(t, flavor)
+			fixShowCreateCharSets(t, flavor)
 		}
 		// Percona Server column compression can only be parsed from SHOW CREATE
 		// TABLE. (Although it also has new I_S tables, their name differs pre-8.0
@@ -634,6 +636,30 @@ func fixCreateOptionsOrder(t *Table, flavor Flavor) {
 				return
 			}
 		}
+	}
+}
+
+// MySQL 8.0 includes column-level character sets and collations whenever
+// specified explicitly in the original CREATE, even when equal to the table's
+// defaults. Additionally, 8.0.24+ uses "utf8mb3" for table-level default
+// in place of "utf8", but doesn't do this for columns. This function
+// manipulates the SHOW CREATE text to normalize these problems.
+func fixShowCreateCharSets(t *Table, flavor Flavor) {
+	// Find columns with unnecessary charset/collation clause, and replace with
+	// either blank string (if collation is default for the charset) or just the
+	// collation; this matches SHOW CREATE behavior for columns that didn't have
+	// the superfluous clauses
+	find := fmt.Sprintf(" CHARACTER SET %s COLLATE %s", t.CharSet, t.Collation)
+	var replace string
+	if !t.CollationIsDefault {
+		replace = fmt.Sprintf(" COLLATE %s", t.Collation)
+	}
+	t.CreateStatement = strings.ReplaceAll(t.CreateStatement, find, replace)
+
+	// If table-level default is utf8 according to I_S, fix the SHOW CREATE in
+	// 8.0.24+ to match
+	if t.CharSet == "utf8" && flavor.MySQLishMinVersion(8, 0, 24) {
+		t.CreateStatement = strings.Replace(t.CreateStatement, "DEFAULT CHARSET=utf8mb3", "DEFAULT CHARSET=utf8", 1)
 	}
 }
 
