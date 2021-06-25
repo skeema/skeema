@@ -2,6 +2,7 @@ package applier
 
 import (
 	"database/sql"
+	"os"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/fs"
@@ -51,9 +52,9 @@ func (t *Target) briefOutput() bool {
 
 func (t *Target) logApplyStart() {
 	if t.dryRun() {
-		log.Infof("Generating diff of %s %s vs %s/*.sql", t.Instance, t.SchemaName, t.Dir)
+		log.Infof("Generating diff of %s %s vs %s%c*.sql", t.Instance, t.SchemaName, t.Dir, os.PathSeparator)
 	} else {
-		log.Infof("Pushing changes from %s/*.sql to %s %s", t.Dir, t.Instance, t.SchemaName)
+		log.Infof("Pushing changes from %s%c*.sql to %s %s", t.Dir, os.PathSeparator, t.Instance, t.SchemaName)
 	}
 	if len(t.Dir.IgnoredStatements) > 0 {
 		log.Warnf("Ignoring %d unsupported or unparseable statements found in this directory's *.sql files; run `skeema lint` for more info", len(t.Dir.IgnoredStatements))

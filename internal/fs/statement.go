@@ -280,8 +280,11 @@ func (st *statementTokenizer) processLine(line string, eof bool) {
 					ls.nextRune()
 				}
 			}
-			// Slurp up a single trailing newline, if present
+			// Slurp up a single trailing newline (LF or CRLF) if present
 			if ls.peekRune() == '\n' {
+				ls.nextRune()
+			} else if ls.peekRunes(2) == "\r\n" {
+				ls.nextRune()
 				ls.nextRune()
 			}
 			ls.doneStatement(0)

@@ -54,7 +54,7 @@ func TestSQLFileTokenizeSuccess(t *testing.T) {
 	}
 	tokenizedFile, err := sf.Tokenize()
 	if err != nil {
-		t.Fatalf("Unexpected error from Tokenize(): %s", err)
+		t.Fatalf("Unexpected error from Tokenize(): %v", err)
 	}
 	expected := expectedStatements(sf.String())
 	if len(tokenizedFile.Statements) != len(expected) {
@@ -62,37 +62,63 @@ func TestSQLFileTokenizeSuccess(t *testing.T) {
 	} else {
 		for n := range tokenizedFile.Statements {
 			actual, expect := tokenizedFile.Statements[n], expected[n]
-			if actual.File != expect.File {
-				t.Errorf("statement[%d]: Expected file %s, instead found %s", n, expect.File, actual.File)
-			}
-			if actual.LineNo != expect.LineNo {
-				t.Errorf("statement[%d]: Expected line %d, instead found %d", n, expect.LineNo, actual.LineNo)
-			}
-			if actual.CharNo != expect.CharNo {
-				t.Errorf("statement[%d]: Expected char %d, instead found %d", n, expect.CharNo, actual.CharNo)
-			}
-			if actual.Text != expect.Text {
-				t.Errorf("statement[%d]: Expected text %s, instead found %s", n, expect.Text, actual.Text)
-			}
-			if actual.DefaultDatabase != expect.DefaultDatabase {
-				t.Errorf("statement[%d]: Expected default db %s, instead found %s", n, expect.DefaultDatabase, actual.DefaultDatabase)
-			}
-			if actual.Type != expect.Type {
-				t.Errorf("statement[%d]: Expected statement type %d, instead found %d", n, expect.Type, actual.Type)
-			}
-			if actual.ObjectType != expect.ObjectType {
-				t.Errorf("statement[%d]: Expected object type %s, instead found %s", n, expect.ObjectType, actual.ObjectType)
-			}
-			if actual.ObjectQualifier != expect.ObjectQualifier {
-				t.Errorf("statement[%d]: Expected object qualifier %s, instead found %s", n, expect.ObjectQualifier, actual.ObjectQualifier)
-			}
-			if actual.ObjectName != expect.ObjectName {
-				t.Errorf("statement[%d]: Expected object name %s, instead found %s", n, expect.ObjectName, actual.ObjectName)
-			}
+			compareStatements(t, n, actual, expect)
 			if actual.FromFile != tokenizedFile {
 				t.Errorf("statement[%d]: Expected FromFile %p, instead found %p", n, tokenizedFile, actual.FromFile)
 			}
 		}
+	}
+
+	// Test again, this time with CRLF line-ends in the .sql file
+	contents := ReadTestFile(t, sf.Path())
+	contents = strings.ReplaceAll(contents, "\n", "\r\n")
+	sf.FileName = "statements_crlf.sql"
+	WriteTestFile(t, sf.Path(), contents)
+	defer RemoveTestFile(t, sf.Path())
+	tokenizedFile, err = sf.Tokenize()
+	if err != nil {
+		t.Fatalf("Unexpected error from Tokenize(): %v", err)
+	}
+	if len(tokenizedFile.Statements) != len(expected) {
+		t.Errorf("Expected %d statements, instead found %d", len(expected), len(tokenizedFile.Statements))
+	} else {
+		for n := range tokenizedFile.Statements {
+			actual, expect := tokenizedFile.Statements[n], expected[n]
+			expect.File = sf.Path()
+			expect.Text = strings.ReplaceAll(expect.Text, "\n", "\r\n")
+			compareStatements(t, n, actual, expect)
+		}
+	}
+}
+
+func compareStatements(t *testing.T, n int, actual, expect *Statement) {
+	t.Helper()
+	if actual.File != expect.File {
+		t.Errorf("statement[%d]: Expected file %s, instead found %s", n, expect.File, actual.File)
+	}
+	if actual.LineNo != expect.LineNo {
+		t.Errorf("statement[%d]: Expected line %d, instead found %d", n, expect.LineNo, actual.LineNo)
+	}
+	if actual.CharNo != expect.CharNo {
+		t.Errorf("statement[%d]: Expected char %d, instead found %d", n, expect.CharNo, actual.CharNo)
+	}
+	if actual.Text != expect.Text {
+		t.Errorf("statement[%d]: Expected text %s, instead found %s", n, expect.Text, actual.Text)
+	}
+	if actual.DefaultDatabase != expect.DefaultDatabase {
+		t.Errorf("statement[%d]: Expected default db %s, instead found %s", n, expect.DefaultDatabase, actual.DefaultDatabase)
+	}
+	if actual.Type != expect.Type {
+		t.Errorf("statement[%d]: Expected statement type %d, instead found %d", n, expect.Type, actual.Type)
+	}
+	if actual.ObjectType != expect.ObjectType {
+		t.Errorf("statement[%d]: Expected object type %s, instead found %s", n, expect.ObjectType, actual.ObjectType)
+	}
+	if actual.ObjectQualifier != expect.ObjectQualifier {
+		t.Errorf("statement[%d]: Expected object qualifier %s, instead found %s", n, expect.ObjectQualifier, actual.ObjectQualifier)
+	}
+	if actual.ObjectName != expect.ObjectName {
+		t.Errorf("statement[%d]: Expected object name %s, instead found %s", n, expect.ObjectName, actual.ObjectName)
 	}
 }
 
