@@ -59,6 +59,7 @@ Additional [contributions](https://github.com/skeema/skeema/graphs/contributors)
 * [@blueish](https://github.com/blueish)
 * [@alexandre-vaniachine](https://github.com/alexandre-vaniachine)
 * [@estahn](https://github.com/estahn)
+* [@tonyqiu2020](https://github.com/tonyqiu2020)
 
 Support for stored procedures and functions generously sponsored by [Psyonix](https://psyonix.com).
 
