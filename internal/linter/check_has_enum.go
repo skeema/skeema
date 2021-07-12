@@ -21,7 +21,7 @@ func hasEnumChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 	for _, col := range table.Columns {
 		if strings.Contains(col.TypeInDB, "enum") {
 			message := fmt.Sprintf(
-				"Column %s of table %s is using type %s. ENUM is not a recommanded type.",
+				"Column %s of table %s is using type %s. ENUM is not a recommended type.",
 				col.Name, table.Name, col.TypeInDB,
 			)
 			results = append(results, Note{
