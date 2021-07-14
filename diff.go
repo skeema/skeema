@@ -604,7 +604,7 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 
 	// Force StrictIndexOrder to be enabled for InnoDB tables that have no primary
 	// key and at least one unique index with non-nullable columns
-	if !mods.StrictIndexOrder && td.To.ClusteredIndexKey() != td.To.PrimaryKey {
+	if !mods.StrictIndexOrder && td.To.Engine == "InnoDB" && td.To.ClusteredIndexKey() != td.To.PrimaryKey {
 		mods.StrictIndexOrder = true
 	}
 
