@@ -5,46 +5,36 @@
 [![downloads](https://img.shields.io/github/downloads/skeema/skeema/total.svg)](https://github.com/skeema/skeema/releases)
 [![latest release](https://img.shields.io/github/release/skeema/skeema.svg)](https://github.com/skeema/skeema/releases)
 
-Skeema is a tool for managing MySQL tables and schema changes in a declarative fashion using pure SQL. It provides a CLI tool allowing you to:
+Skeema is a tool for managing MySQL and MariaDB schema changes in a declarative fashion using pure SQL. The Skeema CLI tool allows you to:
 
 * Export CREATE TABLE statements to the filesystem, for tracking in a repo (git, hg, svn, etc)
 * Diff changes in the schema repo against live DBs to automatically generate DDL
 * Manage multiple environments (e.g. dev, staging, prod) and keep them in sync with ease
 * Configure use of online schema change tools, such as pt-online-schema-change, for performing ALTERs
-* Convert non-online migrations from frameworks like Rails or Django into online schema changes in production
+* Apply configurable linter rules to proactively catch schema design problems and enforce company policies
 
-Skeema supports a pull-request-based workflow for schema change submission, review, and execution. This permits your team to manage schema changes in exactly the same way as you manage code changes. Our new companion [Cloud Linter for GitHub repos](https://www.skeema.io/cloud/) provides automatic linting of schema change commits and pull requests.
+Skeema supports a pull-request-based workflow for schema change submission, review, and execution. This permits your team to manage schema changes in exactly the same way as you manage code changes.
 
-## Download and install
+## Products and downloads
 
-Download links and installation instructions are available on [Skeema's website](https://www.skeema.io/download/).
+This repo is the free open source Community edition of the Skeema CLI. The Community edition supports management of **tables** and **routines** (procs/funcs). Builds are provided for Linux and MacOS.
+
+The paid [Premium edition](https://www.skeema.io/download/) of the Skeema CLI adds support for managing **views** and **triggers**, and also includes a native Windows build, among other improvements.
+
+A companion SaaS product, [Skeema Cloud Linter](https://www.skeema.io/docs/install/cloud/), is also available to simplify CI setup for schema repos stored on GitHub.
+
+For download links and more information, visit [skeema.io](https://www.skeema.io/download/).
 
 ## Documentation
 
+* [Installation](https://www.skeema.io/docs/install/)
 * [Getting started](https://www.skeema.io/docs/examples/): usage examples and screencasts
-* [Requirements](https://www.skeema.io/docs/requirements/)
-* [Recommended workflow](https://www.skeema.io/docs/workflow/)
-* [Configuration guide](https://www.skeema.io/docs/config/)
-* [Command reference](https://www.skeema.io/docs/commands/)
-* [Options reference](https://www.skeema.io/docs/options/)
+* [Requirements](https://www.skeema.io/docs/requirements/): supported database versions, required privileges, supported DB features, and edge cases
+* [Recommended workflow](https://www.skeema.io/docs/workflow/): recommended flow from development to production deployments
+* [Configuration guide](https://www.skeema.io/docs/config/): option handling, config file format, and command-line option usage
+* [Command reference](https://www.skeema.io/docs/commands/): usage instructions for each command in the Skeema CLI
+* [Options reference](https://www.skeema.io/docs/options/): detailed information on every Skeema option
 * [Frequently asked questions](https://www.skeema.io/docs/faq/)
-* [Cloud Linter for GitHub](https://www.skeema.io/cloud/)
-
-## Status
-
-The Skeema CLI tool is generally available, having reached the v1 release milestone in July 2018. Prior to that, it was in public beta since October 2016.
-
-The `skeema` binary is supported on macOS and Linux. No native Windows version is available yet, but the Linux binary works properly under WSL.
-
-Tagged releases are tested against the following databases, all running on Linux:
-
-* MySQL 5.5, 5.6, 5.7, 8.0
-* Percona Server 5.5, 5.6, 5.7, 8.0
-* MariaDB 10.1, 10.2, 10.3, 10.4, 10.5
-
-Outside of a tagged release, every commit is [automatically tested via GitHub Actions CI](https://github.com/skeema/skeema/actions) against MySQL 5.7 and 8.0.
-
-A few uncommon database features -- such as spatial indexes and subpartitioning -- are not supported yet. Skeema is able to *create* or *drop* tables using these features, but not *alter* them. The output of `skeema diff` and `skeema push` clearly displays when this is the case. You may still make such alters directly/manually (outside of Skeema), and then update the corresponding CREATE TABLE files via `skeema pull`. Please see the [requirements doc](https://www.skeema.io/docs/requirements/) for more information.
 
 ## Credits
 
