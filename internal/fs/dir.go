@@ -593,7 +593,7 @@ func (dir *Dir) Generator() (major, minor, patch int, edition string) {
 		return 0, 0, 0, ""
 	}
 	generator = generator[7:]
-	parts := strings.SplitN(generator, "-", 2)
+	parts := strings.Split(generator, "-")
 	if len(parts) > 1 {
 		edition = parts[1]
 	}

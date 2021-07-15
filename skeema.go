@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"runtime/debug"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
@@ -61,6 +62,11 @@ func main() {
 }
 
 func versionString() string {
+	// For beta or rc versions, put the edition *before* the beta/rc tag, since
+	// logic in internal/fs/dir.go's GeneratorString expects this ordering
+	if parts := strings.SplitN(version, "-", 2); len(parts) > 1 {
+		return fmt.Sprintf("%s-%s-%s", parts[0], edition, parts[1])
+	}
 	return fmt.Sprintf("%s-%s", version, edition)
 }
 
