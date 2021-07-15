@@ -796,10 +796,22 @@ func fixChecks(t *Table, flavor Flavor) {
 	// definition: in this case I_S shows them having a name equal to the column
 	// name, but cannot be manipulated using this name directly, nor does this
 	// prevent explicitly-named checks from also having that same name.
+	// MariaDB also truncates the check clause at 64 bytes in I_S, so we must
+	// parse longer checks from SHOW CREATE TABLE.
 	if flavor.Vendor == VendorMariaDB {
 		colsByName := t.ColumnsByName()
 		var keep []*Check
 		for _, cc := range t.Checks {
+			if len(cc.Clause) == 64 {
+				// This regex is designed to match regular checks as well as inline-column
+				template := fmt.Sprintf(`%s[^\n]+CHECK \((%s[^\n]*)\),?\n`,
+					regexp.QuoteMeta(EscapeIdentifier(cc.Name)),
+					regexp.QuoteMeta(cc.Clause))
+				re := regexp.MustCompile(template)
+				if matches := re.FindStringSubmatch(t.CreateStatement); matches != nil {
+					cc.Clause = matches[1]
+				}
+			}
 			if col, ok := colsByName[cc.Name]; ok && !strings.Contains(t.CreateStatement, cc.Definition(flavor)) {
 				col.CheckClause = cc.Clause
 			} else {
