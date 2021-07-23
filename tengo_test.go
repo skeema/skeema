@@ -159,6 +159,12 @@ func aTable(nextAutoInc uint64) Table {
 }
 
 func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
+	utf8mb3 := "utf8"
+	utf8mb3DefaultCollation := "utf8_general_ci"
+	if flavor.VendorMinVersion(VendorMariaDB, 10, 6) {
+		utf8mb3 = "utf8mb3"
+		utf8mb3DefaultCollation = "utf8mb3_general_ci"
+	}
 	lastUpdateCol := &Column{
 		Name:     "last_update",
 		TypeInDB: "timestamp(2)",
@@ -198,8 +204,8 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 		{
 			Name:               "first_name",
 			TypeInDB:           "varchar(45)",
-			CharSet:            "utf8",
-			Collation:          "utf8_general_ci",
+			CharSet:            utf8mb3,
+			Collation:          utf8mb3DefaultCollation,
 			CollationIsDefault: true,
 		},
 		{
@@ -207,16 +213,16 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 			Nullable:           true,
 			TypeInDB:           "varchar(45)",
 			Default:            "NULL",
-			CharSet:            "utf8",
-			Collation:          "utf8_general_ci",
+			CharSet:            utf8mb3,
+			Collation:          utf8mb3DefaultCollation,
 			CollationIsDefault: true,
 		},
 		lastUpdateCol,
 		{
 			Name:               "ssn",
 			TypeInDB:           "char(10)",
-			CharSet:            "utf8",
-			Collation:          "utf8_general_ci",
+			CharSet:            utf8mb3,
+			Collation:          utf8mb3DefaultCollation,
 			CollationIsDefault: true,
 		},
 		aliveCol,
@@ -260,12 +266,12 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
   PRIMARY KEY (`+"`"+`actor_id`+"`"+`),
   UNIQUE KEY `+"`"+`idx_ssn`+"`"+` (`+"`"+`ssn`+"`"+`),
   KEY `+"`"+`idx_actor_name`+"`"+` (`+"`"+`last_name`+"`"+`(10),`+"`"+`first_name`+"`"+`(1))
-) ENGINE=InnoDB%s DEFAULT CHARSET=utf8`, autoIncClause)
+) ENGINE=InnoDB%s DEFAULT CHARSET=%s`, autoIncClause, utf8mb3)
 	table := Table{
 		Name:               "actor",
 		Engine:             "InnoDB",
-		CharSet:            "utf8",
-		Collation:          "utf8_general_ci",
+		CharSet:            utf8mb3,
+		Collation:          utf8mb3DefaultCollation,
 		CollationIsDefault: true,
 		Columns:            columns,
 		PrimaryKey:         primaryKey(columns[0]),
