@@ -27,9 +27,9 @@ This is package is intended for production use. The release numbering is still p
 
 Tagged releases are tested against the following databases, all running on Linux:
 
-* MySQL 5.5, 5.6, 5.7, 8.0
-* Percona Server 5.5, 5.6, 5.7, 8.0
-* MariaDB 10.1, 10.2, 10.3, 10.4, 10.5
+* MySQL 5.5 - 8.0
+* Percona Server 5.5 - 8.0
+* MariaDB 10.1 - 10.6
 
 Outside of a tagged release, every commit to the main branch is automatically tested against MySQL 5.7 and 8.0.
 
