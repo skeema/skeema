@@ -75,10 +75,14 @@ func (s TengoIntegrationSuite) TestSchemaJSON(t *testing.T) {
 		}
 	}
 
-	// Include coverage for advanced index functionality if MySQL 8+
+	// Include coverage for advanced index functionality if flavor has it
 	if flavor.MySQLishMinVersion(8, 0) {
 		if _, err := s.d.SourceSQL("testdata/index-mysql8.sql"); err != nil {
 			t.Fatalf("Unexpected error sourcing testdata/index-mysql8.sql: %v", err)
+		}
+	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 6) {
+		if _, err := s.d.SourceSQL("testdata/index-maria106.sql"); err != nil {
+			t.Fatalf("Unexpected error sourcing testdata/index-maria106.sql: %v", err)
 		}
 	}
 

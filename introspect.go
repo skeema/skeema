@@ -352,6 +352,9 @@ func queryIndexesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 			exprSelect = "expression"
 		}
 		visSelect = "is_visible" // available in all 8.0
+	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 6) {
+		// MariaDB I_S uses the inverse: YES for ignored (invisible), NO for visible
+		visSelect = "IF(ignored = 'YES', 'NO', 'YES')"
 	}
 	query = fmt.Sprintf(query, exprSelect, visSelect)
 	if err := db.SelectContext(ctx, &rawIndexes, query, schema); err != nil {

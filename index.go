@@ -13,7 +13,7 @@ type Index struct {
 	Parts          []IndexPart `json:"parts"`
 	PrimaryKey     bool        `json:"primaryKey,omitempty"`
 	Unique         bool        `json:"unique,omitempty"`
-	Invisible      bool        `json:"invisible,omitempty"`
+	Invisible      bool        `json:"invisible,omitempty"` // MySQL 8+, also used for MariaDB 10.6's IGNORED indexes
 	Comment        string      `json:"comment,omitempty"`
 	Type           string      `json:"type"`
 	FullTextParser string      `json:"parser,omitempty"`
@@ -52,7 +52,11 @@ func (idx *Index) Definition(flavor Flavor) string {
 		comment = fmt.Sprintf(" COMMENT '%s'", EscapeValueForCreateTable(idx.Comment))
 	}
 	if idx.Invisible {
-		invis = " /*!80000 INVISIBLE */"
+		if flavor.Vendor == VendorMariaDB {
+			invis = " IGNORED"
+		} else {
+			invis = " /*!80000 INVISIBLE */"
+		}
 	}
 	if idx.Type == "FULLTEXT" && idx.FullTextParser != "" {
 		// Note the trailing space here is intentional -- it's always present in SHOW

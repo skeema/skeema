@@ -110,7 +110,8 @@ func (di DropIndex) Clause(mods StatementModifiers) string {
 
 ///// AlterIndex ///////////////////////////////////////////////////////////////
 
-// AlterIndex represents a change in an index's visibility in MySQL 8+.
+// AlterIndex represents a change in an index's visibility in MySQL 8+ or
+// MariaDB 10.6+.
 type AlterIndex struct {
 	Index          *Index
 	NewInvisible   bool // true if index is being changed from visible to invisible
@@ -118,19 +119,27 @@ type AlterIndex struct {
 }
 
 // Clause returns an ALTER INDEX clause of an ALTER TABLE statement. It will be
-// suppressed if the flavor does not support invisible indexes, and/or if the
-// statement modifiers are respecting exact index order (in which case this
-// ALTER TABLE will also have DROP and re-ADD clauses for this index, which
+// suppressed if the flavor does not support invisible/ignored indexes, and/or
+// if the statement modifiers are respecting exact index order (in which case
+// this ALTER TABLE will also have DROP and re-ADD clauses for this index, which
 // prevents use of an ALTER INDEX clause.)
 func (ai AlterIndex) Clause(mods StatementModifiers) string {
-	if !mods.Flavor.MySQLishMinVersion(8, 0) || (ai.alsoReordering && mods.StrictIndexOrder) {
+	if ai.alsoReordering && mods.StrictIndexOrder {
 		return ""
 	}
-	newVis := "VISIBLE"
-	if ai.NewInvisible {
-		newVis = "INVISIBLE"
+	clause := fmt.Sprintf("ALTER INDEX %s ", EscapeIdentifier(ai.Index.Name))
+	if mods.Flavor.MySQLishMinVersion(8, 0) {
+		if ai.NewInvisible {
+			return clause + "INVISIBLE"
+		}
+		return clause + "VISIBLE"
+	} else if mods.Flavor.VendorMinVersion(VendorMariaDB, 10, 6) {
+		if ai.NewInvisible {
+			return clause + "IGNORED"
+		}
+		return clause + "NOT IGNORED"
 	}
-	return fmt.Sprintf("ALTER INDEX %s %s", EscapeIdentifier(ai.Index.Name), newVis)
+	return "" // Flavor without invisible/ignored index support
 }
 
 ///// AddForeignKey ////////////////////////////////////////////////////////////

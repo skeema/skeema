@@ -148,6 +148,18 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		if idx.Parts[0].Expression != "" || idx.Parts[1].Expression == "" {
 			t.Errorf("Unexpected index part expressions found: [0].Expression=%q, [1].Expression=%q", idx.Parts[0].Expression, idx.Parts[1].Expression)
 		}
+	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 6) {
+		if _, err := s.d.SourceSQL("testdata/index-maria106.sql"); err != nil {
+			t.Fatalf("Unexpected error sourcing testdata/index-maria106.sql: %v", err)
+		}
+		table := s.GetTable(t, "testing", "maria106idx")
+		if table.UnsupportedDDL {
+			t.Errorf("Expected table using ignored index to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
+		}
+		idx := table.SecondaryIndexes[0]
+		if !idx.Invisible {
+			t.Errorf("Expected index %s to be ignored, but it was not", idx.Name)
+		}
 	}
 
 	// Test invisible column support in flavors supporting it

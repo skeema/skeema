@@ -473,6 +473,8 @@ func TestTableAlterAddIndexOrder(t *testing.T) {
 		t.Errorf("Unexpected result for AlterIndex.Clause() without a MySQLish 8.0+ flavor: %q", clauseWithoutFlavor)
 	} else if clauseWithFlavor := ta.Clause(StatementModifiers{Flavor: FlavorPercona80}); clauseWithFlavor != expectClause {
 		t.Errorf("Unexpected result for AlterIndex.Clause() with a MySQLish 8.0+ flavor: %q", clauseWithFlavor)
+	} else if clauseWithFlavor := ta.Clause(StatementModifiers{Flavor: FlavorMariaDB106}); clauseWithFlavor != strings.ReplaceAll(expectClause, "INVISIBLE", "IGNORED") {
+		t.Errorf("Unexpected result for AlterIndex.Clause() with a MariaDB 10.6 flavor: %q", clauseWithFlavor)
 	}
 
 	// Also change another aspect of the first index. Now this should be a DROP for
