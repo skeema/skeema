@@ -25,11 +25,18 @@ func init() {
 }
 
 func charsetChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts Options) []Note {
-	// If utf8mb3 is on the allow-list, ensure its alias utf8 is as well, since
-	// that's what tables and columns will actually show up as
-	if opts.IsAllowed("charset", "utf8mb3") && !opts.IsAllowed("charset", "utf8") {
+	// If utf8mb3 is on the allow-list, ensure its alias utf8 is as well, and vice
+	// versa. This is intended to handle MySQL 8.0.24+ and MariaDB 10.6+ which have
+	// started to change how these aliases work.
+	allowUTF8 := opts.IsAllowed("charset", "utf8")
+	allowUTF8mb3 := opts.IsAllowed("charset", "utf8mb3")
+	if (allowUTF8 && !allowUTF8mb3) || (allowUTF8mb3 && !allowUTF8) {
 		allowList := opts.AllowList("charset")
-		allowList = append(allowList, "utf8")
+		if !allowUTF8 {
+			allowList = append(allowList, "utf8")
+		} else {
+			allowList = append(allowList, "utf8mb3")
+		}
 		opts.RuleConfig["charset"] = allowList
 	}
 
@@ -77,8 +84,8 @@ func makeCharsetMessage(table *tengo.Table, column *tengo.Column, opts Options) 
 	} else {
 		allowedList = fmt.Sprintf(" The following character sets are listed in option allow-charset: %s.", strings.Join(allowedCharSets, ", "))
 	}
-	if charSet == "utf8" && opts.IsAllowed("charset", "utf8mb4") {
-		moreInfo = "\nTo permit storage of all valid four-byte UTF-8 characters, use the utf8mb4 character set instead of the legacy three-byte utf8 character set."
+	if (charSet == "utf8" || charSet == "utf8mb3") && opts.IsAllowed("charset", "utf8mb4") {
+		moreInfo = fmt.Sprintf("\nTo permit storage of all valid four-byte UTF-8 characters, use the utf8mb4 character set instead of the legacy three-byte %s character set.", charSet)
 	} else if charSet == "binary" {
 		moreInfo = "\nUsing equivalent binary column types (e.g. BINARY, VARBINARY, BLOB) is preferred for readability."
 	}

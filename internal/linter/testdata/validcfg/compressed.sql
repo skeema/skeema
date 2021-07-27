@@ -1,3 +1,8 @@
+# These two tables use traditional InnoDB compression.
+#
+# MariaDB 10.6+ note: these will error due to deprecation of InnoDB compression
+# in this flavor.
+
 CREATE TABLE `innoblock` (
   `id` int(10) unsigned NOT NULL,
   `name` varchar(30) DEFAULT NULL,

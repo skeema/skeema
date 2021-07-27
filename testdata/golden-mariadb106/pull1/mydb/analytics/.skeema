@@ -1,0 +1,3 @@
+schema=analytics
+default-character-set=utf8mb3
+default-collation=utf8mb3_swedish_ci

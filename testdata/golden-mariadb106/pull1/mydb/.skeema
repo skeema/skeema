@@ -1,0 +1,4 @@
+[production]
+host=127.0.0.1
+port={DYNAMICALLY INSERTED BY TEST}
+flavor={DYNAMICALLY INSERTED BY TEST}

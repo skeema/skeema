@@ -137,6 +137,10 @@ var FlavorMariaDB104 = Flavor{VendorMariaDB, 10, 4, 0}
 // number; avoid direct equality comparisons and ideally only use this in tests.
 var FlavorMariaDB105 = Flavor{VendorMariaDB, 10, 5, 0}
 
+// FlavorMariaDB106 represents MariaDB 10.6.x. This constant omits a patch
+// number; avoid direct equality comparisons and ideally only use this in tests.
+var FlavorMariaDB106 = Flavor{VendorMariaDB, 10, 6, 0}
+
 // NewFlavor returns a Flavor value based on its inputs, which should be
 // supplied in one of these forms:
 // NewFlavor("vendor", major, minor)
@@ -246,8 +250,8 @@ func (fl Flavor) Supported() bool {
 		// Currently support 5.5.0 through 8.0.x
 		return fl.MySQLishMinVersion(5, 5) && !fl.MySQLishMinVersion(8, 1)
 	case VendorMariaDB:
-		// Currently support 10.1.0 through 10.5.x
-		return fl.Major == 10 && fl.Minor >= 1 && fl.Minor <= 5
+		// Currently support 10.1.0 through 10.6.x
+		return fl.Major == 10 && fl.Minor >= 1 && fl.Minor <= 6
 	}
 	return false
 }

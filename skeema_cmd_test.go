@@ -494,8 +494,12 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 	if product, err := s.d.Schema("product"); err != nil || product == nil {
 		t.Fatalf("Unexpected error obtaining schema: %s", err)
 	} else {
-		if product.CharSet != "utf8" || product.Collation != "utf8_swedish_ci" {
-			t.Errorf("Expected schema should have charset/collation=utf8/utf8_swedish_ci from push1.sql, instead found %s/%s", product.CharSet, product.Collation)
+		expectCharSet, expectCollation := "utf8", "utf8_swedish_ci"
+		if s.d.Flavor().VendorMinVersion(tengo.VendorMariaDB, 10, 6) {
+			expectCharSet, expectCollation = "utf8mb3", "utf8mb3_swedish_ci"
+		}
+		if product.CharSet != expectCharSet || product.Collation != expectCollation {
+			t.Errorf("Expected schema should have charset/collation=%s/%s from push1.sql, instead found %s/%s", expectCharSet, expectCollation, product.CharSet, product.Collation)
 		}
 	}
 
