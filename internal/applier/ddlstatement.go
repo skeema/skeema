@@ -3,6 +3,7 @@ package applier
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -68,9 +69,10 @@ func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, targe
 
 	// Get the raw DDL statement as a string, handling errors and noops correctly
 	if ddl.stmt, err = diff.Statement(mods); tengo.IsForbiddenDiff(err) {
-		// Intentionally avoiding fmt.Errorf here to avoid golint complaining about capitalization
-		errorText := fmt.Sprintf("Destructive statement /* %s */ is considered unsafe. Use --allow-unsafe or --safe-below-size to permit this operation; see --help for more information.", ddl.stmt)
-		return nil, errors.New(errorText)
+		terminalWidth, _ := util.TerminalWidth(int(os.Stderr.Fd()))
+		commentedOutStmt := "  # " + util.WrapStringWithPadding(ddl.stmt, terminalWidth-29, "  # ")
+		errorText := fmt.Sprintf("Preventing execution of unsafe or potentially destructive statement:\n%s\nUse --allow-unsafe or --safe-below-size to permit this operation. For more information, see Safety Options section of --help.", commentedOutStmt)
+		return nil, errors.New(errorText) // Intentionally avoiding fmt.Errorf here to avoid golint complaining about capitalization
 	} else if err != nil {
 		// Leave the error untouched/unwrapped to allow caller to handle appropriately
 		return nil, err

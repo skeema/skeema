@@ -114,7 +114,7 @@ func applyTarget(t *Target, printer *Printer) (Result, error) {
 			keys = append(keys, objDiff.ObjectKey())
 		} else if unsupportedErr, ok := err.(*tengo.UnsupportedDiffError); ok {
 			result.UnsupportedCount++
-			log.Warnf("Skipping %s: unable to generate DDL due to use of unsupported features. Use --debug for more information.", unsupportedErr.ObjectKey)
+			log.Warnf("Skipping %s: Skeema does not support generating a diff of this table. Use --debug to see which properties of this table are not supported.", unsupportedErr.ObjectKey)
 			DebugLogUnsupportedDiff(unsupportedErr)
 		} else {
 			result.SkipCount += len(objDiffs)

@@ -10,18 +10,17 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mitchellh/go-wordwrap"
 	log "github.com/sirupsen/logrus"
-	terminal "golang.org/x/term"
+	"github.com/skeema/skeema/internal/util"
 )
 
 func init() {
-	stderr := int(os.Stderr.Fd())
 	formatter := &customFormatter{}
-	if terminal.IsTerminal(stderr) {
+	stderr := int(os.Stderr.Fd())
+	if width, err := util.TerminalWidth(stderr); err == nil {
 		formatter.isTerminal = true
-		formatter.width, _, _ = terminal.GetSize(stderr)
-		if formatter.width > 0 && formatter.width < 80 {
+		formatter.width = width
+		if width > 0 && width < 80 {
 			formatter.width = 80
 		}
 	} else if strings.HasSuffix(os.Args[0], ".test") {
@@ -67,14 +66,19 @@ func (f *customFormatter) Format(entry *log.Entry) ([]byte, error) {
 		spacing = " "
 	}
 	levelText := fmt.Sprintf("[%s%s%s]%s ", startColor, levelName, endColor, spacing)
-	message := entry.Message
-	if f.isTerminal && f.width > 0 {
-		headerLen := 28 // length of line header, e.g. "2019-08-20 16:53:57 [INFO]  "
-		message = wordwrap.WrapString(message, uint(f.width-headerLen))
-		spacer := fmt.Sprintf("\n%*s", headerLen, " ")
-		message = strings.Replace(message, "\n", spacer, -1)
+
+	// If writing to a terminal, apply word-wrapping and indent subsequent lines
+	// with space padding equal in length to the log header, e.g.    "2019-08-20 16:53:57 [INFO]  "
+	// If not a terminal, don't word-wrap, but do add the log header to each line
+	// of a multi-line log message.
+	if f.isTerminal {
+		message := util.WrapStringWithPadding(entry.Message, f.width, "                            ")
+		fmt.Fprintf(b, "%s %s%s\n", entry.Time.Format("2006-01-02 15:04:05"), levelText, message)
+	} else {
+		for _, message := range strings.Split(strings.TrimSpace(entry.Message), "\n") {
+			fmt.Fprintf(b, "%s %s%s\n", entry.Time.Format("2006-01-02 15:04:05"), levelText, message)
+		}
 	}
 
-	fmt.Fprintf(b, "%s %s%s\n", entry.Time.Format("2006-01-02 15:04:05"), levelText, message)
 	return b.Bytes(), nil
 }
