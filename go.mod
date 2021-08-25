@@ -9,5 +9,5 @@ require (
 	github.com/jmoiron/sqlx v1.3.4
 	github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
 	github.com/pmezard/go-difflib v1.0.0
-	golang.org/x/sync v0.0.0-20201207232520-09787c993a3a
+	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 )
