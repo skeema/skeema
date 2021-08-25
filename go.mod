@@ -1,6 +1,6 @@
 module github.com/skeema/tengo
 
-go 1.14
+go 1.15
 
 require (
 	github.com/VividCortex/mysqlerr v1.0.0
