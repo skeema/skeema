@@ -121,10 +121,8 @@ func (instance *Instance) buildParamString(params string) string {
 // params should be supplied in format "foo=bar&fizz=buzz" with URL escaping
 // already applied. Do not include a prefix of "?". params will be merged with
 // instance.defaultParams, with params supplied here taking precedence.
-// To avoid problems with unexpected disconnection, the connection pool will
-// automatically have a max conn lifetime of at most 30sec, or less if a lower
-// session wait_timeout was set in params, instance.defaultParams, or the DB's
-// global wait_timeout variable.
+// The connection pool's max size, max conn lifetime, and max idle time are all
+// tuned automatically to intelligent defaults based on auto-discovered limits.
 func (instance *Instance) ConnectionPool(defaultSchema, params string) (*sqlx.DB, error) {
 	fullParams := instance.buildParamString(params)
 	return instance.rawConnectionPool(defaultSchema, fullParams, false)
@@ -177,15 +175,15 @@ func (instance *Instance) rawConnectionPool(defaultSchema, fullParams string, al
 		}
 	}
 
-	// Determine max conn lifetime, ensuring it is less than wait_timeout, and no
-	// more than 30s.
-	maxLifetime := 30 * time.Second
-	if instance.waitTimeout > 1 && instance.waitTimeout <= 30 {
-		maxLifetime = time.Duration(instance.waitTimeout-1) * time.Second
-	} else if instance.waitTimeout == 1 {
-		maxLifetime = 900 * time.Millisecond
+	// Set max conn reuse lifetime to 1 minute, and set max idle time based on
+	// the session wait_timeout or 10s max.
+	db.SetConnMaxLifetime(time.Minute)
+	if instance.waitTimeout <= 10 {
+		db.SetConnMaxIdleTime((time.Duration(instance.waitTimeout) * time.Second) - (250 * time.Millisecond))
+	} else {
+		db.SetConnMaxIdleTime(10 * time.Second)
 	}
-	db.SetConnMaxLifetime(maxLifetime)
+
 	return db.Unsafe(), nil
 }
 
@@ -417,6 +415,10 @@ func (instance *Instance) Schemas(onlyNames ...string) ([]*Schema, error) {
 			// Limit concurrency to 20, unless limit is already lower than this due to
 			// having a low maxUserConns (see logic in Instance.rawConnectionPool)
 			schemaDB.SetMaxOpenConns(20)
+
+			// Also increase max idle conns above the Golang default of 2, to ensure
+			// concurrent introspection queries reuse conns more effectively.
+			schemaDB.SetMaxIdleConns(20)
 		}
 		g, ctx := errgroup.WithContext(context.Background())
 		g.Go(func() (err error) {
