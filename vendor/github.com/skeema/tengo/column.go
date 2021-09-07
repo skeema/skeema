@@ -39,6 +39,8 @@ func (c *Column) Definition(flavor Flavor, table *Table) string {
 	}
 	// Any flavor: Collations are displayed if not the default for the charset
 	// 8.0 only: Collations are also displayed any time a charset is displayed
+	// (except if the table was upgraded from pre-8.0, in which case it may not be;
+	// this can only be fixed up hackily post-introspection though)
 	if c.Collation != "" && (!c.CollationIsDefault || (charSet != "" && flavor.HasDataDictionary())) {
 		collation = fmt.Sprintf(" COLLATE %s", c.Collation)
 	}
