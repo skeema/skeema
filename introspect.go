@@ -642,11 +642,14 @@ func fixCreateOptionsOrder(t *Table, flavor Flavor) {
 	}
 }
 
-// MySQL 8.0 includes column-level character sets and collations whenever
-// specified explicitly in the original CREATE, even when equal to the table's
-// defaults. Additionally, 8.0.24+ uses "utf8mb3" for table-level default
-// in place of "utf8", but doesn't do this for columns. This function
-// manipulates the SHOW CREATE text to normalize these problems.
+// This function manipulates the SHOW CREATE text to normalize some weirdness
+// from MySQL 8.0:
+// * 8.0 includes column-level character sets and collations whenever specified
+//   explicitly in the original CREATE, even when equal to the table's defaults
+// * Tables upgraded from pre-8.0 may omit default COLLATION if not originally
+//   specified, while tables created in 8.0 will include it
+// * 8.0.24+ uses "utf8mb3" for table-level default in place of "utf8", but
+//   doesn't do this for columns
 func fixShowCreateCharSets(t *Table, flavor Flavor) {
 	// Find columns with unnecessary charset/collation clause, and replace with
 	// either blank string (if collation is default for the charset) or just the
@@ -658,6 +661,17 @@ func fixShowCreateCharSets(t *Table, flavor Flavor) {
 		replace = fmt.Sprintf(" COLLATE %s", t.Collation)
 	}
 	t.CreateStatement = strings.ReplaceAll(t.CreateStatement, find, replace)
+
+	// Find columns upgraded from pre-8.0 with different charset than table but
+	// default collation for that charset; these may be missing collation clauses
+	for _, col := range t.Columns {
+		if col.CharSet != t.CharSet && col.CollationIsDefault {
+			if colDefExpected := col.Definition(flavor, t); !strings.Contains(t.CreateStatement, colDefExpected) {
+				colDefNoCollate := strings.Replace(colDefExpected, " COLLATE "+col.Collation, "", 1)
+				t.CreateStatement = strings.Replace(t.CreateStatement, colDefNoCollate, colDefExpected, 1)
+			}
+		}
+	}
 
 	// If table-level default is utf8 according to I_S, fix the SHOW CREATE in
 	// 8.0.24+ to match
