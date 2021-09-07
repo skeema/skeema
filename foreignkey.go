@@ -39,14 +39,19 @@ func (fk *ForeignKey) Definition(flavor Flavor) string {
 	}
 	parentCols := strings.Join(colParts, ", ")
 
-	// MySQL does not output ON DELETE RESTRICT or ON UPDATE RESTRICT in its table
-	// create syntax. Ditto for the completely-equivalent ON DELETE NO ACTION or ON
-	// UPDATE NO ACTION in MySQL 8+, but other flavors still display them.
-	var deleteRule, updateRule string
-	if fk.DeleteRule != "RESTRICT" && (fk.DeleteRule != "NO ACTION" || !flavor.HasDataDictionary()) {
+	// MySQL 8 omits NO ACTION clauses, but includes RESTRICT clauses. In all other
+	// flavors the opposite is true. (Even though NO ACTION and RESTRICT are
+	// completely equivalent...)
+	var hiddenRule, deleteRule, updateRule string
+	if flavor.HasDataDictionary() {
+		hiddenRule = "NO ACTION"
+	} else {
+		hiddenRule = "RESTRICT"
+	}
+	if fk.DeleteRule != hiddenRule {
 		deleteRule = fmt.Sprintf(" ON DELETE %s", fk.DeleteRule)
 	}
-	if fk.UpdateRule != "RESTRICT" && (fk.UpdateRule != "NO ACTION" || !flavor.HasDataDictionary()) {
+	if fk.UpdateRule != hiddenRule {
 		updateRule = fmt.Sprintf(" ON UPDATE %s", fk.UpdateRule)
 	}
 

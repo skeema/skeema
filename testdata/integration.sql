@@ -102,8 +102,8 @@ CREATE TABLE grab_bag (
 	CONSTRAINT Ab FOREIGN KEY (id, code) REFERENCES sometable1 (somecol1a, somecol1b),
 	CONSTRAINT _aa FOREIGN KEY (updated_at, created_at) REFERENCES sometable2 (somecol2a, somecol2b),
 	CONSTRAINT cc FOREIGN KEY (name) REFERENCES sometable3 (somecol3),
-	CONSTRAINT aa FOREIGN KEY (name) REFERENCES sometable3 (somecol3),
-	CONSTRAINT bb FOREIGN KEY (name) REFERENCES sometable3 (somecol3)
+	CONSTRAINT aa FOREIGN KEY (name) REFERENCES sometable3 (somecol3) ON UPDATE RESTRICT,
+	CONSTRAINT bb FOREIGN KEY (name) REFERENCES sometable3 (somecol3) ON DELETE NO ACTION
 ) AUTO_INCREMENT=123 ROW_FORMAT=COMPACT CHECKSUM=1 DELAY_KEY_WRITE=1 COMMENT='hello';
 
 CREATE TABLE ft_test (
