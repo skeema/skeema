@@ -411,3 +411,82 @@ func TestFixBlobDefaultExpression(t *testing.T) {
 		t.Errorf("fixBlobDefaultExpression did not work after adding comment, default is unexpected value %q", table.Columns[1].Default)
 	}
 }
+
+func TestFixShowCreateCharSets(t *testing.T) {
+	stmt := strings.ReplaceAll(`CREATE TABLE ~many_permutations~ (
+  ~a~ char(10) COLLATE utf8_unicode_ci DEFAULT NULL,
+  ~b~ char(10) CHARACTER SET latin1 DEFAULT NULL,
+  ~c~ char(10) CHARACTER SET latin1 COLLATE latin1_swedish_ci DEFAULT NULL,
+  ~d~ char(10) CHARACTER SET latin1 COLLATE latin1_bin DEFAULT NULL,
+  ~e~ char(10) CHARACTER SET utf8 DEFAULT NULL,
+  ~f~ char(10) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL,
+  ~g~ char(10) CHARACTER SET utf8 COLLATE utf8_unicode_ci DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8_unicode_ci`, "~", "`")
+	table := &Table{
+		Name:               "many_permutations",
+		Engine:             "InnoDB",
+		CharSet:            "utf8",
+		Collation:          "utf8_unicode_ci",
+		CollationIsDefault: false,
+		Columns: []*Column{
+			{Name: "a", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_unicode_ci", CollationIsDefault: false},
+			{Name: "b", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", CollationIsDefault: true},
+			{Name: "c", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", CollationIsDefault: true},
+			{Name: "d", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_bin", CollationIsDefault: false},
+			{Name: "e", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", CollationIsDefault: true},
+			{Name: "f", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", CollationIsDefault: true},
+			{Name: "g", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_unicode_ci", CollationIsDefault: false},
+		},
+		CreateStatement: stmt,
+	}
+
+	fixShowCreateCharSets(table, NewFlavor("mysql:8.0.24"))
+	expectCreate := strings.ReplaceAll(`CREATE TABLE ~many_permutations~ (
+  ~a~ char(10) COLLATE utf8_unicode_ci DEFAULT NULL,
+  ~b~ char(10) CHARACTER SET latin1 COLLATE latin1_swedish_ci DEFAULT NULL,
+  ~c~ char(10) CHARACTER SET latin1 COLLATE latin1_swedish_ci DEFAULT NULL,
+  ~d~ char(10) CHARACTER SET latin1 COLLATE latin1_bin DEFAULT NULL,
+  ~e~ char(10) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL,
+  ~f~ char(10) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL,
+  ~g~ char(10) COLLATE utf8_unicode_ci DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci`, "~", "`")
+	if table.CreateStatement != expectCreate {
+		t.Errorf("Incorrect result from fixShowCreateCharSets. Expected:\n%s\nActual:\n%s", expectCreate, table.CreateStatement)
+	}
+
+	table.CreateStatement = strings.ReplaceAll(`CREATE TABLE ~many_permutations~ (
+  ~a~ char(10) CHARACTER SET latin1 COLLATE latin1_bin DEFAULT NULL,
+  ~b~ char(10) CHARACTER SET latin1 DEFAULT NULL,
+  ~c~ char(10) CHARACTER SET latin1 COLLATE latin1_swedish_ci DEFAULT NULL,
+  ~d~ char(10) CHARACTER SET latin1 COLLATE latin1_bin DEFAULT NULL,
+  ~e~ char(10) CHARACTER SET utf8 DEFAULT NULL,
+  ~f~ char(10) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL,
+  ~g~ char(10) CHARACTER SET utf8 COLLATE utf8_unicode_ci DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1`, "~", "`")
+	table.CharSet = "latin1"
+	table.Collation = "latin1_swedish_ci"
+	table.CollationIsDefault = true
+	table.Columns = []*Column{
+		{Name: "a", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_bin", CollationIsDefault: false},
+		{Name: "b", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", CollationIsDefault: true},
+		{Name: "c", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", CollationIsDefault: true},
+		{Name: "d", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_bin", CollationIsDefault: false},
+		{Name: "e", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", CollationIsDefault: true},
+		{Name: "f", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", CollationIsDefault: true},
+		{Name: "g", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_unicode_ci", CollationIsDefault: false},
+	}
+
+	fixShowCreateCharSets(table, NewFlavor("mysql:8.0.24"))
+	expectCreate = strings.ReplaceAll(`CREATE TABLE ~many_permutations~ (
+  ~a~ char(10) CHARACTER SET latin1 COLLATE latin1_bin DEFAULT NULL,
+  ~b~ char(10) DEFAULT NULL,
+  ~c~ char(10) DEFAULT NULL,
+  ~d~ char(10) CHARACTER SET latin1 COLLATE latin1_bin DEFAULT NULL,
+  ~e~ char(10) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL,
+  ~f~ char(10) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL,
+  ~g~ char(10) CHARACTER SET utf8 COLLATE utf8_unicode_ci DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1`, "~", "`")
+	if table.CreateStatement != expectCreate {
+		t.Errorf("Incorrect result from fixShowCreateCharSets. Expected:\n%s\nActual:\n%s", expectCreate, table.CreateStatement)
+	}
+}
