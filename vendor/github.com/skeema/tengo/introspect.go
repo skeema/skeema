@@ -642,16 +642,18 @@ func fixCreateOptionsOrder(t *Table, flavor Flavor) {
 	}
 }
 
+var reColumnNameFromLine = regexp.MustCompile("^\\s*`((?:[^`]|``)+)`")
+
 // This function manipulates the SHOW CREATE text to normalize some weirdness
 // from MySQL 8.0:
 // * 8.0 includes column-level character sets and collations whenever specified
 //   explicitly in the original CREATE, even when equal to the table's defaults
-// * Tables upgraded from pre-8.0 may omit default COLLATION if not originally
-//   specified, while tables created in 8.0 will include it
+// * Tables upgraded from pre-8.0 may omit COLLATE if it's the default for the
+//   charset, while tables created in 8.0 will include it
 // * 8.0.24+ uses "utf8mb3" for table-level default in place of "utf8", but
 //   doesn't do this for columns
 func fixShowCreateCharSets(t *Table, flavor Flavor) {
-	// Find columns with unnecessary charset/collation clause, and replace with
+	// Find columns with unnecessary charset+collation clause, and replace with
 	// either blank string (if collation is default for the charset) or just the
 	// collation; this matches SHOW CREATE behavior for columns that didn't have
 	// the superfluous clauses
@@ -662,15 +664,28 @@ func fixShowCreateCharSets(t *Table, flavor Flavor) {
 	}
 	t.CreateStatement = strings.ReplaceAll(t.CreateStatement, find, replace)
 
-	// Find columns upgraded from pre-8.0 with different charset than table but
-	// default collation for that charset; these may be missing collation clauses
-	for _, col := range t.Columns {
-		if col.CharSet != t.CharSet && col.CollationIsDefault {
-			if colDefExpected := col.Definition(flavor, t); !strings.Contains(t.CreateStatement, colDefExpected) {
-				colDefNoCollate := strings.Replace(colDefExpected, " COLLATE "+col.Collation, "", 1)
-				t.CreateStatement = strings.Replace(t.CreateStatement, colDefNoCollate, colDefExpected, 1)
-			}
+	// Fix columns created pre-8.0-upgrade which have CHARACTER SET but no COLLATE
+	// clause: if collation matches table default, remove CHARACTER SET entirely,
+	// otherwise add the missing COLLATE
+	var colsByName map[string]*Column // populated lazily only if needed
+	for _, line := range strings.Split(t.CreateStatement, "\n") {
+		if !strings.Contains(line, "CHARACTER SET") || strings.Contains(line, "COLLATE") {
+			continue
 		}
+		if colsByName == nil {
+			colsByName = t.ColumnsByName()
+		}
+		// Intentionally no nil guards here -- regex should always match and col should always be found -- if not, panic is appropriate!
+		matches := reColumnNameFromLine.FindStringSubmatch(line)
+		col := colsByName[matches[1]]
+		charSetClause, collateClause := " CHARACTER SET "+col.CharSet, " COLLATE "+col.Collation
+		var fixedLine string
+		if col.Collation == t.Collation {
+			fixedLine = strings.Replace(line, charSetClause, "", 1)
+		} else {
+			fixedLine = strings.Replace(line, charSetClause, charSetClause+collateClause, 1)
+		}
+		t.CreateStatement = strings.Replace(t.CreateStatement, line, fixedLine, 1)
 	}
 
 	// If table-level default is utf8 according to I_S, fix the SHOW CREATE in
