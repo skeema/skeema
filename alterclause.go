@@ -148,14 +148,14 @@ func (ai AlterIndex) Clause(mods StatementModifiers) string {
 // ("to") schema version of the table, but not the left-side ("from") version.
 // It satisfies the TableAlterClause interface.
 type AddForeignKey struct {
-	ForeignKey *ForeignKey
-	renameOnly bool // true if this FK is being dropped and re-added just to change name
+	ForeignKey   *ForeignKey
+	cosmeticOnly bool // true if this FK is being dropped and re-added just to change name or other cosmetic aspect
 }
 
 // Clause returns an ADD CONSTRAINT ... FOREIGN KEY clause of an ALTER TABLE
 // statement.
 func (afk AddForeignKey) Clause(mods StatementModifiers) string {
-	if !mods.StrictForeignKeyNaming && afk.renameOnly {
+	if !mods.StrictForeignKeyNaming && afk.cosmeticOnly {
 		return ""
 	}
 	return fmt.Sprintf("ADD %s", afk.ForeignKey.Definition(mods.Flavor))
@@ -167,13 +167,13 @@ func (afk AddForeignKey) Clause(mods StatementModifiers) string {
 // ("from") schema version of the table, but not the right-side ("to") version.
 // It satisfies the TableAlterClause interface.
 type DropForeignKey struct {
-	ForeignKey *ForeignKey
-	renameOnly bool // true if this FK is being dropped and re-added just to change name
+	ForeignKey   *ForeignKey
+	cosmeticOnly bool // true if this FK is being dropped and re-added just to change name or other cosmetic aspect
 }
 
 // Clause returns a DROP FOREIGN KEY clause of an ALTER TABLE statement.
 func (dfk DropForeignKey) Clause(mods StatementModifiers) string {
-	if !mods.StrictForeignKeyNaming && dfk.renameOnly {
+	if !mods.StrictForeignKeyNaming && dfk.cosmeticOnly {
 		return ""
 	}
 	return fmt.Sprintf("DROP FOREIGN KEY %s", EscapeIdentifier(dfk.ForeignKey.Name))

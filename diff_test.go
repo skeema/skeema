@@ -391,7 +391,40 @@ func TestSchemaDiffForeignKeys(t *testing.T) {
 		}
 	}
 
+	// Changing between RESTRICT and NO ACTION:
+	// still blank without StatementModifiers.StrictForeignKeyNaming
+	s1t2.ForeignKeys[1].DeleteRule = "RESTRICT"
+	s1t2.CreateStatement = s1t2.GeneratedCreateStatement(FlavorUnknown)
+	s2t2 = foreignKeyTable()
+	s2t2.ForeignKeys[1].UpdateRule = "RESTRICT"
+	s2t2.ForeignKeys[1].DeleteRule = "NO ACTION"
+	s2t2.CreateStatement = s2t2.GeneratedCreateStatement(FlavorUnknown)
+	assertDiffs(&s1, &s2, 1, 1, 1, 1)
+	for n, td := range NewSchemaDiff(&s1, &s2).TableDiffs {
+		mods := StatementModifiers{}
+		if actual, _ := td.Statement(mods); actual != "" {
+			t.Errorf("Expected blank ALTER without StrictForeignKeyNaming, instead found %s", actual)
+		}
+		mods.StrictForeignKeyNaming = true
+		actual, _ := td.Statement(mods)
+		if (n == 0 && !strings.Contains(actual, "DROP FOREIGN KEY")) || (n == 1 && !strings.Contains(actual, "ADD CONSTRAINT")) {
+			t.Errorf("Unexpected statement with StrictForeignKeyNaming for tablediff[%d]: returned %s", n, actual)
+		}
+	}
+
+	// Renaming an FK but also changing a rule to one that isn't equivalent: never blank statement
+	s1t2.ForeignKeys[1].DeleteRule = "CASCADE"
+	s1t2.CreateStatement = s2t1.GeneratedCreateStatement(FlavorUnknown)
+	assertDiffs(&s1, &s2, 1, 1, 1, 1)
+	for n, td := range NewSchemaDiff(&s1, &s2).TableDiffs {
+		actual, _ := td.Statement(StatementModifiers{})
+		if (n == 0 && !strings.Contains(actual, "DROP FOREIGN KEY")) || (n == 1 && !strings.Contains(actual, "ADD CONSTRAINT")) {
+			t.Errorf("Unexpected statement with StrictForeignKeyNaming for tablediff[%d]: returned %s", n, actual)
+		}
+	}
+
 	// Renaming an FK but also changing its definition: never blank statement
+	s2t2.ForeignKeys[1].UpdateRule = "CASCADE"
 	s2t2.ForeignKeys[1].ColumnNames = s2t2.ForeignKeys[1].ColumnNames[0:1]
 	s2t2.ForeignKeys[1].ReferencedColumnNames = s2t2.ForeignKeys[1].ReferencedColumnNames[0:1]
 	s2t2.CreateStatement = s2t2.GeneratedCreateStatement(FlavorUnknown)
