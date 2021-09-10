@@ -114,7 +114,7 @@ github.com/sirupsen/logrus
 # github.com/skeema/mybase v1.0.13
 ## explicit
 github.com/skeema/mybase
-# github.com/skeema/tengo v0.10.4-0.20210909045627-ce9fff1dc19d
+# github.com/skeema/tengo v0.10.4-0.20210910193113-d16462327208
 ## explicit
 github.com/skeema/tengo
 # go.opencensus.io v0.22.3

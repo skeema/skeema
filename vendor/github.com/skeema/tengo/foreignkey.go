@@ -58,12 +58,13 @@ func (fk *ForeignKey) Definition(flavor Flavor) string {
 	return fmt.Sprintf("CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)%s%s", EscapeIdentifier(fk.Name), childCols, referencedTable, parentCols, deleteRule, updateRule)
 }
 
-// Equals returns true if two ForeignKeys are identical, false otherwise.
+// Equals returns true if two ForeignKeys are completely identical (even in
+// terms of cosmetic differences), false otherwise.
 func (fk *ForeignKey) Equals(other *ForeignKey) bool {
 	if fk == nil || other == nil {
 		return fk == other // only equal if BOTH are nil
 	}
-	return fk.Name == other.Name && fk.Equivalent(other)
+	return fk.Name == other.Name && fk.UpdateRule == other.UpdateRule && fk.DeleteRule == other.DeleteRule && fk.Equivalent(other)
 }
 
 // Equivalent returns true if two ForeignKeys are functionally equivalent,
@@ -76,7 +77,7 @@ func (fk *ForeignKey) Equivalent(other *ForeignKey) bool {
 	if fk.ReferencedSchemaName != other.ReferencedSchemaName || fk.ReferencedTableName != other.ReferencedTableName {
 		return false
 	}
-	if fk.UpdateRule != other.UpdateRule || fk.DeleteRule != other.DeleteRule {
+	if fk.normalizedUpdateRule() != other.normalizedUpdateRule() || fk.normalizedDeleteRule() != other.normalizedDeleteRule() {
 		return false
 	}
 	if len(fk.ColumnNames) != len(other.ColumnNames) {
@@ -88,4 +89,22 @@ func (fk *ForeignKey) Equivalent(other *ForeignKey) bool {
 		}
 	}
 	return true
+}
+
+func (fk *ForeignKey) normalizedUpdateRule() string {
+	// MySQL and MariaDB both treat RESTRICT, NO ACTION, and lack of a rule
+	// equivalently in terms of functionality.
+	if fk.UpdateRule == "RESTRICT" || fk.UpdateRule == "NO ACTION" {
+		return ""
+	}
+	return fk.UpdateRule
+}
+
+func (fk *ForeignKey) normalizedDeleteRule() string {
+	// MySQL and MariaDB both treat RESTRICT, NO ACTION, and lack of a rule
+	// equivalently in terms of functionality.
+	if fk.DeleteRule == "RESTRICT" || fk.DeleteRule == "NO ACTION" {
+		return ""
+	}
+	return fk.DeleteRule
 }

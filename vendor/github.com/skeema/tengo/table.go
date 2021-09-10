@@ -297,7 +297,7 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// Compare foreign keys
 	fromForeignKeys := from.foreignKeysByName()
 	toForeignKeys := to.foreignKeysByName()
-	isRename := func(fk *ForeignKey, others []*ForeignKey) bool {
+	fkChangeCosmeticOnly := func(fk *ForeignKey, others []*ForeignKey) bool {
 		for _, other := range others {
 			if fk.Equivalent(other) {
 				return true
@@ -308,8 +308,8 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	for _, toFk := range toForeignKeys {
 		if _, existedBefore := fromForeignKeys[toFk.Name]; !existedBefore {
 			clauses = append(clauses, AddForeignKey{
-				ForeignKey: toFk,
-				renameOnly: isRename(toFk, from.ForeignKeys),
+				ForeignKey:   toFk,
+				cosmeticOnly: fkChangeCosmeticOnly(toFk, from.ForeignKeys),
 			})
 		}
 	}
@@ -317,12 +317,19 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 		toFk, stillExists := toForeignKeys[fromFk.Name]
 		if !stillExists {
 			clauses = append(clauses, DropForeignKey{
-				ForeignKey: fromFk,
-				renameOnly: isRename(fromFk, to.ForeignKeys),
+				ForeignKey:   fromFk,
+				cosmeticOnly: fkChangeCosmeticOnly(fromFk, to.ForeignKeys),
 			})
 		} else if !fromFk.Equals(toFk) {
-			drop := DropForeignKey{ForeignKey: fromFk}
-			add := AddForeignKey{ForeignKey: toFk}
+			cosmeticOnly := fromFk.Equivalent(toFk) // e.g. just changes between RESTRICT and NO ACTION
+			drop := DropForeignKey{
+				ForeignKey:   fromFk,
+				cosmeticOnly: cosmeticOnly,
+			}
+			add := AddForeignKey{
+				ForeignKey:   toFk,
+				cosmeticOnly: cosmeticOnly,
+			}
 			clauses = append(clauses, drop, add)
 		}
 	}
