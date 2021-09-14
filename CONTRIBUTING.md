@@ -8,43 +8,21 @@ Thank you for your interest in contributing to Skeema! This document provides gu
 
 Please provide as much information as possible about reproduction steps, as well as your environment (Skeema version, database version/vendor/OS/platform). Feel free to redact private company information from pastes or screenshots. If needed, additional information can be submitted privately [by email](https://www.skeema.io/contact/), but please still open an issue first.
 
+Skeema is a completely bootstrapped effort, and our ability to support free Skeema Community edition users is extremely limited. If your company depends on Skeema, please consider subscribing to a paid [Premium](https://www.skeema.io/download/) product to support Skeema's continued development. Bug reports from paying customers are prioritized above all other work.
+
 ### Feature requests
 
-If your idea is potentially large or complex, please indicate if your company would be interested in contributing towards its implementation, either with code (pull request submission) or financing (paid development contract).
+Feel free to make feature requests, but please understand only the [Premium](https://www.skeema.io/download/) products are being actively developed at this time. Hopefully open source development can resume in the future, if the Premium products are successful enough to support additional open source feature development.
 
 ### Questions
 
 Kindly [search existing issues](https://github.com/skeema/skeema/search?type=issues) and [documentation](https://www.google.com/search?q=documentation+site%3Awww.skeema.io) before opening a new Question issue.
 
-As Skeema is a bootstrapped project, the amount of free support we can offer is limited. As a general guideline, high-level questions about Skeema's functionality are absolutely fine for GitHub issues. If however you have detailed questions relating to your company's specific workflow, a paid support retainer or consulting engagement may be more appropriate. Please [reach out](https://www.skeema.io/contact/) to learn more.
+As Skeema is a bootstrapped project, the amount of free support we can offer is limited. As a general guideline, brief high-level questions about Skeema's functionality are fine for GitHub issues. If however you have detailed questions relating to your company's specific workflow, a paid support retainer or consulting engagement is more appropriate. Please [reach out](https://www.skeema.io/contact/) to learn more.
 
 ## Pull requests
 
-### Bug fix PRs
-
-In your PR description, be sure to link to an open issue describing a *confirmed* bug. Before you start coding, comment on the issue to ensure that no one else starts working on it redundantly.
-
-Bug fix PRs should include test coverage for the bug condition. This will help confirm that your PR fixes the bug, and prevent risk of future regressions.
-
-### Enhancements / feature implementation PRs
-
-Always link to an existing feature request issue, containing a discussion about the feature. Please discuss your use-case, solution, and implementation approach -- and get feedback *before* you start coding.
-
-It is *your* responsibility to make a convincing case for merging your PR. Remember, "yes is forever" in open source: since we strive to ensure backwards compatibility, the code for any merged features must essentially be *maintained* by us in perpetuity.
-
-### Things to avoid in PRs
-
-All of these situations can be avoided by having a full discussion on the issue *before* starting a PR.
-
-**Unsolicited code cleanups and unnecessary refactors:** Some existing parts of the codebase may be messy. This project was started over five years ago, and functionality has grown organically as the product has evolved. This is true in any codebase over time. Code cleanliness is quite subjective, and PRs that focus purely on clean-ups tend to involve time-consuming bikeshedding.
-
-**Excessive hand-holding:** You will need to already have some experience with both Golang and MySQL/MariaDB in order to successfully contribute to this project. If you are encountering repeated test suite failures or need help with Go language constructs, a better approach may be to have your company [sponsor the development](https://www.skeema.io/contact/) of your feature request, instead of submitting a pull request.
-
-**Reinventing wheels:** There may already be a pre-existing, idiomatic way of achieving your desired outcome with Skeema. If so, it's unlikely that a second way should be merged.
-
-**Vague, unspecified, or company-specific use-cases:** The use-case motivating your PR should be clearly stated in the linked issue. It should be a general-purpose use-case that potentially benefits many users of Skeema, and not a change exclusively motivated by your company's specialized requirements.
-
-**Library use-cases:** Our lower-level [Go La Tengo](https://github.com/skeema/tengo) package is in a separate repo and is intended to be useful as a stand-alone library, but Skeema's internal subpackages (`applier`, `dumper`, `linter`, etc) are not. If you're building an internal system for your company requiring library-like usage of Skeema, for official support please [reach out](https://www.skeema.io/contact/) regarding a paid consulting engagement.
+Unfortunately it is no longer feasible to accept and review pull requests for this repo. Only the [Premium](https://www.skeema.io/download/) products are being actively developed as of September 2021. Hopefully this will change in the future if/when the Premium products are able to provide enough funding for open source development to continue.
 
 ### Information about testing, code coverage, and CI
 

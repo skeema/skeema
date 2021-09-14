@@ -1,1 +1,1 @@
-*Thank you for your interest. Please refer to the Contributing link in the sidebar for guidance. Be sure to reference an existing issue number in your pull request description.*
+*Thank you for your interest. Pull request reviews are currently frozen for this repo. Please refer to the Contributing link in the sidebar for more information.*
