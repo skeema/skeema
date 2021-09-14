@@ -5,13 +5,11 @@
 [![godoc](https://img.shields.io/badge/godoc-reference-blue.svg)](https://godoc.org/github.com/skeema/tengo)
 [![latest release](https://img.shields.io/github/release/skeema/tengo.svg)](https://github.com/skeema/tengo/releases)
 
-Golang library for MySQL database automation
+Golang library for MySQL and MariaDB database automation
 
 ## Features
 
-Most of Go La Tengo's current functionality is focused on MySQL schema introspection and diff'ing. Future releases will add more general-purpose automation features.
-
-### Schema introspection
+### Schema introspection and diff
 
 Go La Tengo examines several `information_schema` tables in order to build Go struct values representing schemas (databases), tables, columns, indexes, foreign key constraints, stored procedures, and functions. These values can be diff'ed to generate corresponding DDL statements.
 
@@ -21,7 +19,9 @@ The `tengo.Instance` struct models a single database instance. It keeps track of
 
 ## Status
 
-This is package is intended for production use. The release numbering is still pre-1.0 though as the API is subject to minor changes. Backwards-incompatible changes are generally avoided whenever possible, but no guarantees are made yet.
+This is package is battle-tested from years of production use at many companies. The release numbering is still pre-1.0 though as the API is subject to minor changes. Backwards-incompatible changes are generally avoided whenever possible, but no guarantees are made. 
+
+As of September 2021, open source development of this repo is mostly frozen until further notice.
 
 ### Supported databases
 
@@ -35,13 +35,11 @@ Outside of a tagged release, every commit to the main branch is automatically te
 
 ### Unsupported in table diffs
 
-Go La Tengo **cannot** diff tables containing any of the following MySQL features yet:
+Go La Tengo **cannot** diff tables containing any of the following MySQL features:
 
 * spatial indexes
 * sub-partitioning (two levels of partitioning in the same table)
 * special features of non-InnoDB storage engines
-
-This list is not necessarily exhaustive. Some of these may be implemented in subsequent releases.
 
 Go La Tengo also does not yet support rename operations, e.g. column renames or table renames.
 
