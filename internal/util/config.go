@@ -35,6 +35,7 @@ func AddGlobalOptions(cmd *mybase.Command) {
 		mybase.StringOption("connect-options", 'o', "", "Comma-separated session options to set upon connecting to each database instance"),
 		mybase.StringOption("ignore-schema", 0, "", "Ignore schemas that match regex"),
 		mybase.StringOption("ignore-table", 0, "", "Ignore tables that match regex"),
+		mybase.StringOption("ssl-mode", 0, "preferred", `Specify desired connection security SSL/TLS usage (valid values: "disabled", "preferred", "required")`),
 		mybase.BoolOption("debug", 0, false, "Enable debug logging"),
 		mybase.BoolOption("my-cnf", 0, true, "Parse ~/.my.cnf for configuration"),
 	)

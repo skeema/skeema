@@ -555,24 +555,33 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 		return "", err
 	}
 
-	// Prefer TLS, but not during integration testing
-	defaultTLS := "preferred"
-	if dir.Config.IsTest {
-		defaultTLS = "false"
-	}
-
 	v := url.Values{}
 
 	// Set overridable options
 	v.Set("timeout", "5s")
 	v.Set("readTimeout", "20s")
 	v.Set("writeTimeout", "5s")
-	v.Set("tls", defaultTLS)
+
+	// Prefer TLS, but not during integration testing
+	sslMode, err := dir.Config.GetEnum("ssl-mode", "disabled", "preferred", "required")
+	if err != nil {
+		return "", err
+	}
+	if sslMode == "disabled" || (dir.Config.IsTest && !dir.Config.Supplied("ssl-mode")) {
+		v.Set("tls", "false")
+	} else if sslMode == "required" {
+		v.Set("tls", "skip-verify")
+	} else {
+		v.Set("tls", sslMode)
+	}
 
 	// Set values from connect-options
 	for name, value := range options {
 		if banned[strings.ToLower(name)] {
 			return "", fmt.Errorf("connect-options is not allowed to contain %s", name)
+		}
+		if name == "tls" && dir.Config.Supplied("ssl-mode") {
+			return "", fmt.Errorf("connect-options is not allowed to contain %s; use only the newer ssl-mode option instead", name)
 		}
 		v.Set(name, value)
 	}

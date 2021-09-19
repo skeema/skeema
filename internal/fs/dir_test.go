@@ -390,7 +390,7 @@ func TestDirInstanceDefaultParams(t *testing.T) {
 	getFakeDir := func(connectOptions string) *Dir {
 		return &Dir{
 			Path:   "/tmp/dummydir",
-			Config: mybase.SimpleConfig(map[string]string{"connect-options": connectOptions}),
+			Config: mybase.SimpleConfig(map[string]string{"connect-options": connectOptions, "ssl-mode": "preferred"}),
 		}
 	}
 
@@ -432,6 +432,36 @@ func TestDirInstanceDefaultParams(t *testing.T) {
 		if _, err := dir.InstanceDefaultParams(); err == nil {
 			t.Errorf("Did not get expected error from connect-options=\"%s\"", connOpts)
 		}
+	}
+
+	// Test valid ssl-mode values, along with an invalid one and then an invalid combination with tls in connect-options
+	expectTLS := map[string]string{
+		"disabled":  strings.Replace(baseDefaults, "tls=preferred", "tls=false", 1),
+		"preferred": baseDefaults,
+		"required":  strings.Replace(baseDefaults, "tls=preferred", "tls=skip-verify", 1),
+	}
+	dir := getFakeDir("")
+	for sslMode, expected := range expectTLS {
+		dir.Config = mybase.SimpleConfig(map[string]string{"connect-options": "", "ssl-mode": sslMode})
+		if parsed, err := url.ParseQuery(expected); err != nil {
+			t.Fatalf("Bad expected value %q: %s", expected, err)
+		} else {
+			expected = parsed.Encode() // re-sort expected so we can just compare strings
+		}
+		actual, err := dir.InstanceDefaultParams()
+		if err != nil {
+			t.Errorf("Unexpected error from ssl-mode=%q: %s", sslMode, err)
+		} else if actual != expected {
+			t.Errorf("Expected ssl-mode=%q to yield default params %q, instead found %q", sslMode, expected, actual)
+		}
+	}
+	dir.Config = mybase.SimpleConfig(map[string]string{"connect-options": "", "ssl-mode": "invalid-enum"})
+	if _, err := dir.InstanceDefaultParams(); err == nil {
+		t.Error("Expected an error from dir.InstanceDefaultParams() with invalid ssl-mode, but err was nil")
+	}
+	dir.Config = mybase.SimpleConfig(map[string]string{"connect-options": "tls=preferred", "ssl-mode": "required"})
+	if _, err := dir.InstanceDefaultParams(); err == nil {
+		t.Error("Expected an error from dir.InstanceDefaultParams() with tls in connect-options while also setting ssl-mode, but err was nil")
 	}
 }
 
