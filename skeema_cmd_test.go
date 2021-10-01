@@ -800,6 +800,11 @@ func (s SkeemaIntegrationSuite) TestUnsupportedAlter(t *testing.T) {
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
 	s.assertTableMissing(t, "product", "subscriptions", "")
+
+	// coverage for non-InnoDB extra warning text -- just ensuring no panic and
+	// no unsafe-for-diff problem
+	s.sourceSQL(t, "unsupported2.sql")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
 }
 
 func (s SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {

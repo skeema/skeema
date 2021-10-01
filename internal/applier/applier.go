@@ -115,6 +115,9 @@ func applyTarget(t *Target, printer *Printer) (Result, error) {
 		} else if unsupportedErr, ok := err.(*tengo.UnsupportedDiffError); ok {
 			result.UnsupportedCount++
 			log.Warnf("Skipping %s: Skeema does not support generating a diff of this table. Use --debug to see which properties of this table are not supported.", unsupportedErr.ObjectKey)
+			if td, ok := objDiff.(*tengo.TableDiff); ok && td.From != nil && td.From.Engine != "InnoDB" {
+				log.Warnf("This table's storage engine is %s. Skeema is primarily designed to operate on InnoDB tables. Diff support for other engines is less complete.", td.From.Engine)
+			}
 			DebugLogUnsupportedDiff(unsupportedErr)
 		} else {
 			result.SkipCount += len(objDiffs)
