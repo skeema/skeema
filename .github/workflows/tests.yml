@@ -33,7 +33,6 @@ jobs:
         env:
           COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: go install github.com/mattn/goveralls && goveralls -v -coverprofile=coverage.out -service=github
-        continue-on-error: true
 
   release:
     name: Build and deploy new release
