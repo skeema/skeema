@@ -35,8 +35,10 @@ func init() {
 
 	cmd := mybase.NewCommand("lint", summary, desc, LintHandler)
 	linter.AddCommandOptions(cmd)
-	cmd.AddOption(mybase.BoolOption("format", 0, true, "Reformat SQL statements to match canonical SHOW CREATE"))
-	cmd.AddOption(mybase.BoolOption("strip-partitioning", 0, false, "Remove PARTITION BY clauses from *.sql files").Hidden())
+	cmd.AddOptions("Format",
+		mybase.BoolOption("format", 0, true, "Reformat SQL statements to match canonical SHOW CREATE"),
+		mybase.BoolOption("strip-partitioning", 0, false, "Remove PARTITION BY clauses from *.sql files"),
+	)
 	workspace.AddCommandOptions(cmd)
 	cmd.AddArg("environment", "production", false)
 	CommandSuite.AddSubCommand(cmd)
