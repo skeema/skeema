@@ -39,6 +39,7 @@ nfpms:
     formats:
     - deb
     - rpm
+    - apk
 brews:
   -
     name: skeema
