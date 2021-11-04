@@ -11,7 +11,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/fs"
-	"github.com/skeema/tengo"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 // DumpSchema updates the *.sql files in dir to match the creation statements

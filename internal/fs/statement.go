@@ -13,7 +13,7 @@ import (
 
 	"github.com/alecthomas/participle"
 	"github.com/alecthomas/participle/lexer"
-	"github.com/skeema/tengo"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 // StatementType indicates the type of a SQL statement found in a SQLFile.

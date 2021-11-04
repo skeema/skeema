@@ -1,12 +1,12 @@
 # github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1
 github.com/Azure/go-ansiterm
 github.com/Azure/go-ansiterm/winterm
-# github.com/Microsoft/go-winio v0.5.0
+# github.com/Microsoft/go-winio v0.5.1
 github.com/Microsoft/go-winio
 github.com/Microsoft/go-winio/pkg/guid
 github.com/Microsoft/go-winio/pkg/security
 github.com/Microsoft/go-winio/vhd
-# github.com/Microsoft/hcsshim v0.8.18
+# github.com/Microsoft/hcsshim v0.8.21
 github.com/Microsoft/hcsshim
 github.com/Microsoft/hcsshim/computestorage
 github.com/Microsoft/hcsshim/internal/cow
@@ -36,11 +36,11 @@ github.com/alecthomas/participle
 github.com/alecthomas/participle/lexer
 # github.com/containerd/cgroups v1.0.1
 github.com/containerd/cgroups/stats/v1
-# github.com/containerd/containerd v1.5.5
+# github.com/containerd/containerd v1.5.7
 github.com/containerd/containerd/log
 github.com/containerd/containerd/pkg/userns
 github.com/containerd/containerd/sys
-# github.com/docker/docker v20.10.8+incompatible
+# github.com/docker/docker v20.10.10+incompatible
 github.com/docker/docker/api/types/blkiodev
 github.com/docker/docker/api/types/container
 github.com/docker/docker/api/types/filters
@@ -65,9 +65,11 @@ github.com/docker/docker/pkg/system
 github.com/docker/go-connections/nat
 # github.com/docker/go-units v0.4.0
 github.com/docker/go-units
-# github.com/fsouza/go-dockerclient v1.7.4
+# github.com/fsouza/go-dockerclient v1.7.5-0.20211103034944-aceb44c00b20
+## explicit
 github.com/fsouza/go-dockerclient
 # github.com/go-sql-driver/mysql v1.6.0
+## explicit
 github.com/go-sql-driver/mysql
 # github.com/gogo/protobuf v1.3.2
 github.com/gogo/protobuf/gogoproto
@@ -102,11 +104,12 @@ github.com/opencontainers/go-digest
 # github.com/opencontainers/image-spec v1.0.1
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
-# github.com/opencontainers/runc v1.0.1
+# github.com/opencontainers/runc v1.0.2
 github.com/opencontainers/runc/libcontainer/user
 # github.com/pkg/errors v0.9.1
 github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
+## explicit
 github.com/pmezard/go-difflib/difflib
 # github.com/sirupsen/logrus v1.8.1
 ## explicit
@@ -114,9 +117,6 @@ github.com/sirupsen/logrus
 # github.com/skeema/mybase v1.0.13
 ## explicit
 github.com/skeema/mybase
-# github.com/skeema/tengo v0.10.4-0.20210910193113-d16462327208
-## explicit
-github.com/skeema/tengo
 # go.opencensus.io v0.22.3
 go.opencensus.io
 go.opencensus.io/internal

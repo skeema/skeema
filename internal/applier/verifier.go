@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/skeema/skeema/internal/fs"
+	"github.com/skeema/skeema/internal/tengo"
 	"github.com/skeema/skeema/internal/workspace"
-	"github.com/skeema/tengo"
 )
 
 // VerifyDiff verifies the result of all AlterTable values found in

@@ -9,7 +9,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
-	"github.com/skeema/tengo"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 // LocalDocker is a Workspace created inside of a Docker container on localhost.

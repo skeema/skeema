@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/skeema/tengo"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 func (s WorkspaceIntegrationSuite) TestLocalDockerErrors(t *testing.T) {

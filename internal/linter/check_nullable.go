@@ -3,7 +3,7 @@ package linter
 import (
 	"fmt"
 
-	"github.com/skeema/tengo"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 // This linter rule is intentionally undocumented. It flags all columns lacking

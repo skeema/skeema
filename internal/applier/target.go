@@ -6,8 +6,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/fs"
+	"github.com/skeema/skeema/internal/tengo"
 	"github.com/skeema/skeema/internal/workspace"
-	"github.com/skeema/tengo"
 )
 
 // Target represents a unit of operation. For each dir that defines at least

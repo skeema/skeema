@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/skeema/tengo"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 func init() {

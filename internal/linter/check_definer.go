@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/skeema/mybase"
-	"github.com/skeema/tengo"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 func init() {

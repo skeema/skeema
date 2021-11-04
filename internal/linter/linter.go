@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/internal/tengo"
 	"github.com/skeema/skeema/internal/workspace"
-	"github.com/skeema/tengo"
 )
 
 // CheckSchema runs all registered lint rules on objects in a workspace.Schema.

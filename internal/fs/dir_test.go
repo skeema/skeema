@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/internal/tengo"
 	"github.com/skeema/skeema/internal/util"
-	"github.com/skeema/tengo"
 )
 
 func TestParseDir(t *testing.T) {

@@ -3,7 +3,7 @@ package fs
 import (
 	"testing"
 
-	"github.com/skeema/tengo"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 func TestStatementLocation(t *testing.T) {

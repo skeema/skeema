@@ -14,8 +14,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/internal/tengo"
 	"github.com/skeema/skeema/internal/util"
-	"github.com/skeema/tengo"
 )
 
 // Dir is a parsed representation of a directory that may have contained

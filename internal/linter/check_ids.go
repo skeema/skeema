@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/skeema/tengo"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 // This linter rule is intentionally undocumented. It flags columns whose names

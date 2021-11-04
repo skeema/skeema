@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/skeema/skeema/internal/tengo"
 	"github.com/skeema/skeema/internal/util"
-	"github.com/skeema/tengo"
 	"golang.org/x/sync/errgroup"
 )
 

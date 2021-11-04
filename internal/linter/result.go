@@ -10,8 +10,8 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/skeema/skeema/internal/fs"
+	"github.com/skeema/skeema/internal/tengo"
 	"github.com/skeema/skeema/internal/workspace"
-	"github.com/skeema/tengo"
 )
 
 // Note represents an individual problematic line of a statement, found by a

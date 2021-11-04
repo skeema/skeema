@@ -9,7 +9,7 @@ import (
 
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/fs"
-	"github.com/skeema/tengo"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {

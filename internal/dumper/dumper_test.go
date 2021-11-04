@@ -12,9 +12,9 @@ import (
 
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/fs"
+	"github.com/skeema/skeema/internal/tengo"
 	"github.com/skeema/skeema/internal/util"
 	"github.com/skeema/skeema/internal/workspace"
-	"github.com/skeema/tengo"
 )
 
 func TestMain(m *testing.M) {

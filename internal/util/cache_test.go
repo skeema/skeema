@@ -3,7 +3,7 @@ package util
 import (
 	"testing"
 
-	"github.com/skeema/tengo"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 func TestNewInstance(t *testing.T) {

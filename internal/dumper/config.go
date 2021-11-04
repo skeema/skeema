@@ -3,7 +3,7 @@ package dumper
 import (
 	"regexp"
 
-	"github.com/skeema/tengo"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 // Options controls dumper behavior.

@@ -10,7 +10,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/linter"
-	"github.com/skeema/tengo"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 // Result stores the overall result of all operations the worker has completed.

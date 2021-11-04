@@ -10,7 +10,7 @@ import (
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/dumper"
 	"github.com/skeema/skeema/internal/fs"
-	"github.com/skeema/tengo"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 func init() {

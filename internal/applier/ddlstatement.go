@@ -10,8 +10,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/fs"
+	"github.com/skeema/skeema/internal/tengo"
 	"github.com/skeema/skeema/internal/util"
-	"github.com/skeema/tengo"
 )
 
 // DDLStatement represents a DDL SQL statement (CREATE TABLE, ALTER TABLE, etc).

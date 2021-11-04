@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/skeema/tengo"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 // SQLFile represents a file containing zero or more SQL statements.

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/skeema/tengo"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 // Printer is capable of sending output to STDOUT in a readable manner despite

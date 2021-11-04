@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/skeema/tengo"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 func TestSQLFileExists(t *testing.T) {

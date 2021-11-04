@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/skeema/skeema/internal/fs"
+	"github.com/skeema/skeema/internal/tengo"
 	"github.com/skeema/skeema/internal/workspace"
-	"github.com/skeema/tengo"
 )
 
 func TestFindFirstLineOffset(t *testing.T) {
