@@ -34,7 +34,7 @@ type TengoIntegrationSuite struct {
 
 func (s *TengoIntegrationSuite) Setup(backend string) (err error) {
 	opts := DockerizedInstanceOptions{
-		Name:              fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1)),
+		Name:              fmt.Sprintf("skeema-test-%s", ContainerNameForImage(backend)),
 		Image:             backend,
 		RootPassword:      "fakepw",
 		DefaultConnParams: "sql_log_bin=0",

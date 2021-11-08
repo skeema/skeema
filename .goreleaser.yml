@@ -1,20 +1,17 @@
 builds:
-- binary: skeema
-  env:
-  - CGO_ENABLED=0
-  - GO111MODULE=on
-  - GOFLAGS=-mod=vendor
-  goos:
-    - linux
-    - darwin
-  goarch:
-    - amd64
+  - 
+    binary: skeema
+    env:
+      - CGO_ENABLED=0
+    targets:
+      - linux_amd64
+      - darwin_amd64
+      - darwin_arm64
 archives:
   -
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
     replacements:
       darwin: mac
-      linux: linux
 checksum:
   name_template: '{{ .ProjectName }}_checksums_{{ .Version }}.txt'
 snapshot:
@@ -31,15 +28,15 @@ changelog:
 nfpms:
   -
     file_name_template: '{{ .ProjectName }}_{{ .Arch }}'
-    homepage:  https://skeema.io
+    homepage:  https://www.skeema.io
     description: Schema management CLI for MySQL
     maintainer: Evan Elias <evan@skeema.net>
     license: Apache 2.0
     vendor: Skeema LLC
     formats:
-    - deb
-    - rpm
-    - apk
+      - deb
+      - rpm
+      - apk
 brews:
   -
     name: skeema

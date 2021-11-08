@@ -162,7 +162,7 @@ func (s IntegrationSuite) TestDumperNamedSchemas(t *testing.T) {
 
 func (s *IntegrationSuite) Setup(backend string) (err error) {
 	opts := tengo.DockerizedInstanceOptions{
-		Name:         fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1)),
+		Name:         fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),
 		Image:        backend,
 		RootPassword: "fakepw",
 	}

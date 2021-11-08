@@ -53,8 +53,20 @@ func NewLocalDocker(opts Options) (ld *LocalDocker, err error) {
 		defaultConnParams: opts.DefaultConnParams,
 	}
 	image := opts.Flavor.String()
+	if arch, _ := cstore.dockerClient.ServerArchitecture(); arch == "arm64" && opts.Flavor.MySQLishMinVersion(5, 5) {
+		// MySQL 8 images are available for arm64 on DockerHub, but via
+		// mysql/mysql-server rather than _/mysql. Pre-8 MySQL, or any version
+		// of Percona Server, are not available.
+		if opts.Flavor.VendorMinVersion(tengo.VendorMySQL, 8) {
+			image = strings.Replace(image, "mysql:", "mysql/mysql-server:", 1)
+		} else {
+			log.Warnf("Official arm64 Docker images for %s are not available. Substituting mysql/mysql-server:8.0 instead for workspace purposes, which may cause behavior differences.", image)
+			opts.ContainerName = strings.Replace(opts.ContainerName, tengo.ContainerNameForImage(image), "mysql-8.0", 1)
+			image = "mysql/mysql-server:8.0"
+		}
+	}
 	if opts.ContainerName == "" {
-		opts.ContainerName = fmt.Sprintf("skeema-%s", strings.Replace(image, ":", "-", -1))
+		opts.ContainerName = "skeema-" + tengo.ContainerNameForImage(image)
 	}
 	if cstore.containers[opts.ContainerName] != nil {
 		ld.d = cstore.containers[opts.ContainerName]

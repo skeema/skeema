@@ -281,7 +281,7 @@ func (s IntegrationSuite) TestCheckSchemaUTF8MB3(t *testing.T) {
 
 func (s *IntegrationSuite) Setup(backend string) (err error) {
 	s.d, err = s.manager.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
-		Name:              fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1)),
+		Name:              fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),
 		Image:             backend,
 		RootPassword:      "fakepw",
 		DefaultConnParams: "foreign_key_checks=0&sql_mode=%27NO_ENGINE_SUBSTITUTION%27", // disabling strict mode to allow zero dates in testdata

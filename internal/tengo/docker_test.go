@@ -2,6 +2,7 @@ package tengo
 
 import (
 	"os"
+	"runtime"
 	"testing"
 
 	docker "github.com/fsouza/go-dockerclient"
@@ -18,6 +19,16 @@ func TestDocker(t *testing.T) {
 	dc, err := NewDockerClient(DockerClientOptions{})
 	if err != nil {
 		t.Errorf("Unable to create sandbox manager: %s", err)
+	}
+
+	// CI test-cases do not involve Rosetta 2 style emulation, so expect
+	// ServerArchitecture to always match runtime.GOARCH. (If a more thorough test
+	// is ever needed, syscall.Sysctl("sysctl.proc_translated") could be used to
+	// tell the difference between Intel and Apple Silicon CPUs in theory...)
+	if arch, err := dc.ServerArchitecture(); err != nil {
+		t.Errorf("Unexpected error from ServerArchitecture: %v", err)
+	} else if arch != runtime.GOARCH {
+		t.Errorf("ServerArchitecture %q unexpectedly different than GOARCH %q", arch, runtime.GOARCH)
 	}
 
 	opts := DockerizedInstanceOptions{

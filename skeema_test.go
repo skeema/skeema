@@ -59,7 +59,7 @@ func (s *SkeemaIntegrationSuite) Setup(backend string) (err error) {
 
 	// Spin up a Dockerized database server
 	s.d, err = s.manager.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
-		Name:         fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1)),
+		Name:         fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),
 		Image:        backend,
 		RootPassword: "fakepw",
 	})

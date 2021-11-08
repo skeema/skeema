@@ -3,7 +3,6 @@ package applier
 import (
 	"fmt"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/skeema/skeema/internal/tengo"
@@ -69,7 +68,7 @@ func (s *ApplierIntegrationSuite) Setup(backend string) error {
 		n := n
 		g.Go(func() error {
 			var err error
-			containerName := fmt.Sprintf("skeema-test-%s", strings.Replace(backend, ":", "-", -1))
+			containerName := fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend))
 			if n > 0 {
 				containerName = fmt.Sprintf("%s-%d", containerName, n+1)
 			}

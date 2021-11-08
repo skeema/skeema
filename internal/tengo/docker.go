@@ -42,6 +42,25 @@ func NewDockerClient(opts DockerClientOptions) (*DockerClient, error) {
 	return dc, err
 }
 
+// ServerArchitecture returns the architecture of the Docker engine's server,
+// with values like those of runtime.GOARCH. The result is typically the same
+// as runtime.GOARCH in most situations, but may differ if e.g. the binary was
+// compiled as amd64 but is running on an m1 Mac via Rosetta 2.
+func (dc *DockerClient) ServerArchitecture() (string, error) {
+	info, err := dc.client.Info()
+	if err != nil {
+		return "", err
+	}
+	conversions := map[string]string{
+		"x86_64":  "amd64",
+		"aarch64": "arm64",
+	}
+	if converted, ok := conversions[info.Architecture]; ok {
+		return converted, nil
+	}
+	return info.Architecture, nil
+}
+
 // DockerizedInstanceOptions specifies options for creating or finding a
 // sandboxed database instance inside a Docker container.
 type DockerizedInstanceOptions struct {
@@ -78,8 +97,11 @@ func (dc *DockerClient) CreateInstance(opts DockerizedInstanceOptions) (*Dockeri
 		}
 	}
 
-	// Create and start container
-	var env []string
+	// Create and start container.
+	// Use MYSQL_ROOT_HOST=% to ensure user root@% is created; Dockerhub "official"
+	// images do this by default, but mysql/mysql-server does not. Regardless of
+	// this, the HostConfig restricts connections to the host machine anyway.
+	env := []string{"MYSQL_ROOT_HOST=%"}
 	if opts.RootPassword == "" {
 		env = append(env, "MYSQL_ALLOW_EMPTY_PASSWORD=1")
 	} else {
@@ -360,6 +382,16 @@ func (di *DockerizedInstance) Source(reader io.Reader) (string, error) {
 		return stdoutStr, errors.New(stderrStr)
 	}
 	return stdoutStr, nil
+}
+
+// ContainerNameForImage returns a usable container name (or portion of a name)
+// based on the supplied image name.
+func ContainerNameForImage(image string) string {
+	if strings.Contains(image, "/") {
+		image = strings.Replace(image, "/mysql-server", "", 1)
+		image = strings.ReplaceAll(image, "/", "-")
+	}
+	return strings.ReplaceAll(image, ":", "-")
 }
 
 type filteredLogger struct {
