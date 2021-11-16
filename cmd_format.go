@@ -93,16 +93,18 @@ func formatDir(dir *fs.Dir) error {
 		return NewExitValue(CodeBadConfig, err.Error())
 	}
 
-	// Get workspace options for dir. This involves connecting to the first
-	// defined instance, unless configured to use local Docker.
+	// Get workspace options for dir. This involves connecting to the first defined
+	// instance, so that any auto-detect-related settings work properly. However,
+	// with workspace=docker we can ignore connection errors; we'll get reasonable
+	// defaults from workspace.OptionsForDir if inst is nil as long as flavor is set.
 	var wsOpts workspace.Options
 	if len(dir.LogicalSchemas) > 0 {
-		var inst *tengo.Instance
+		inst, err := dir.FirstInstance()
 		if wsType, _ := dir.Config.GetEnum("workspace", "temp-schema", "docker"); wsType != "docker" || !dir.Config.Changed("flavor") {
-			if inst, err = dir.FirstInstance(); err != nil {
+			if err != nil {
 				return NewExitValue(CodeBadConfig, err.Error())
 			} else if inst == nil {
-				return NewExitValue(CodeBadConfig, "No host defined for environment %q", dir.Config.Get("environment"))
+				return NewExitValue(CodeBadConfig, "With workspace=temp-schema, this command needs a host to operate on, but no host is defined for environment %q", dir.Config.Get("environment"))
 			}
 		}
 		if wsOpts, err = workspace.OptionsForDir(dir, inst); err != nil {

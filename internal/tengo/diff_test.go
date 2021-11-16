@@ -586,8 +586,8 @@ func TestSchemaDiffRoutines(t *testing.T) {
 
 	// Confirm that procs and funcs with same name are handled properly
 	s1r2 = aProc("latin1_swedish_ci", "")
-	s1.Routines = []*Routine{&s1r2}
-	s2r1.Name = s2r2.Name
+	s1.Routines = []*Routine{&s1r2} // s1 has one proc named "proc1" and no funcs
+	s2r1.Name = s2r2.Name           // s2 has one proc named "proc1" and one func also named "proc1"
 	sd = NewSchemaDiff(&s1, &s2)
 	if len(sd.RoutineDiffs) != 1 {
 		t.Fatalf("Incorrect number of routine diffs: expected 1, found %d", len(sd.RoutineDiffs))
@@ -905,7 +905,7 @@ func TestIgnoreTableMod(t *testing.T) {
 
 func TestNilObjectDiff(t *testing.T) {
 	var td *TableDiff
-	expectKey := ObjectKey{Type: ObjectTypeTable}
+	expectKey := ObjectKey{}
 	if td.ObjectKey() != expectKey {
 		t.Errorf("Unexpected object key: %s", td.ObjectKey())
 	}

@@ -100,8 +100,9 @@ func (opts *Options) Equals(other *Options) bool {
 }
 
 // shouldIgnore returns true if the option configuration indicates the supplied
-// tengo.ObjectKey should be ignored.
-func (opts *Options) shouldIgnore(key tengo.ObjectKey) bool {
+// object should be ignored.
+func (opts *Options) shouldIgnore(keyer tengo.ObjectKeyer) bool {
+	key := keyer.ObjectKey()
 	if key.Type == tengo.ObjectTypeTable && opts.IgnoreTable != nil && opts.IgnoreTable.MatchString(key.Name) {
 		return true
 	}

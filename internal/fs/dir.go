@@ -543,6 +543,7 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 		"loc":               true,
 		"multistatements":   true,
 		"parsetime":         true,
+		"serverpubkey":      true,
 
 		// mysql session options that should not be overridden
 		"autocommit":             true, // always enabled by default in MySQL

@@ -414,7 +414,7 @@ func (s *SkeemaIntegrationSuite) objectExists(schemaName string, objectType teng
 		return false, phrase, fmt.Errorf("Unable to obtain %s: %s", phrase, err)
 	}
 	if columnName == "" {
-		dict := schema.ObjectDefinitions()
+		dict := schema.Objects()
 		key := tengo.ObjectKey{Type: objectType, Name: objectName}
 		_, ok := dict[key]
 		return ok, phrase, nil

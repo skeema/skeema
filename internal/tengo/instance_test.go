@@ -114,10 +114,10 @@ func TestInstanceBuildParamString(t *testing.T) {
 
 func TestInstanceIntrospectionParams(t *testing.T) {
 	instance, err := NewInstance("mysql", "username:password@tcp(1.2.3.4:3306)/")
-	instance.valid = true // prevent calls like Flavor() from actually attempting a conn
 	if err != nil {
 		t.Fatalf("NewInstance returned unexpected error: %v", err)
 	}
+	instance.valid = true // prevent calls like Flavor() from actually attempting a conn
 	assertParams := func(flavor Flavor, sqlMode, expectOptions string) {
 		t.Helper()
 		instance.flavor = flavor
@@ -334,7 +334,9 @@ func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
 	s.d.ForceFlavor(actualFlavor)
 }
 
-func (s TengoIntegrationSuite) TestInstanceCanSkipBinlog(t *testing.T) {
+// TestInstanceGrantChecks covers CanSkipBinlog on an actual
+// Instance.
+func (s TengoIntegrationSuite) TestInstanceGrantChecks(t *testing.T) {
 	// The dockerized instance in the test should always use root creds
 	if !s.d.CanSkipBinlog() {
 		t.Fatal("Expected all Dockerized instances to be able to skip binlogs, but CanSkipBinlogs returned false")
@@ -342,19 +344,24 @@ func (s TengoIntegrationSuite) TestInstanceCanSkipBinlog(t *testing.T) {
 	if _, err := s.d.Connect("", "sql_log_bin=0"); err != nil {
 		t.Errorf("Error connecting with sql_log_bin=0: %v", err)
 	}
+}
 
-	// Next, we'll manipulate the value of the hydrated grants. But first defer
-	// a func to nuke the cached grants, to ensure any future tests will re-hydrate
-	// the true value properly.
-	defer func() { s.d.grants = nil }()
+// TestInstanceGrantChecksRegexes provides unit testing coverage of the regexes
+// used by CanSkipBinlog.
+func TestInstanceGrantChecksRegexes(t *testing.T) {
+	inst, err := NewInstance("mysql", "username:password@tcp(1.2.3.4:3306)/")
+	if err != nil {
+		t.Fatalf("NewInstance returned unexpected error: %v", err)
+	}
+	inst.valid = true // prevent calls like Flavor() from actually attempting a conn
 
-	// Empty grants should cause the method to return false
-	s.d.grants = []string{}
-	if s.d.CanSkipBinlog() {
-		t.Error("Expected empty grants to cause CanSkipBinlogs to return false, but it did not")
+	// Empty grants should cause methods to return false
+	inst.grants = []string{}
+	if inst.CanSkipBinlog() {
+		t.Error("Expected empty grants to cause Can methods to return false, but it did not")
 	}
 
-	// This set of grants should not contain anything causing the method to return true
+	// This set of grants should not contain anything causing CanSkipBinlog to return true
 	noBinlogSkipGrants := []string{
 		"GRANT USAGE ON *.* TO `foo`@`%`",
 		"GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, RELOAD, SHUTDOWN, PROCESS, FILE, REFERENCES, INDEX, ALTER, SHOW DATABASES, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, REPLICATION SLAVE, REPLICATION CLIENT, CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, CREATE USER, EVENT, TRIGGER, CREATE TABLESPACE, CREATE ROLE, DROP ROLE ON *.* TO `foo`@`%`",
@@ -362,13 +369,12 @@ func (s TengoIntegrationSuite) TestInstanceCanSkipBinlog(t *testing.T) {
 		"GRANT ALL PRIVILEGES ON `blarg`.* TO `foo`@`%`",
 		"GRANT PROXY ON ''@'' TO 'foo'@'%' WITH GRANT OPTION",
 	}
-
-	s.d.grants = noBinlogSkipGrants
-	if s.d.CanSkipBinlog() {
-		t.Fatal("Expected CanSkipBinlogs to return false with only noBinlogSkipGrants, but it did not")
+	inst.grants = noBinlogSkipGrants
+	if inst.CanSkipBinlog() {
+		t.Fatal("Expected CanSkipBinlog to return false, but it returned true")
 	}
 
-	// Any of these grants should be sufficient for the method to return true
+	// Any of these grants should be sufficient for CanSkipBinlog to return true
 	binlogSkipGrants := []string{
 		"GRANT ALL PRIVILEGES ON *.* TO `foo`@`%`",
 		"GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, RELOAD, SHUTDOWN, PROCESS, FILE, REFERENCES, INDEX, ALTER, SHOW DATABASES, SUPER, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, REPLICATION SLAVE, REPLICATION CLIENT, CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, CREATE USER, EVENT, TRIGGER, CREATE TABLESPACE, CREATE ROLE, DROP ROLE ON *.* TO `foo`@`%`",
@@ -377,10 +383,10 @@ func (s TengoIntegrationSuite) TestInstanceCanSkipBinlog(t *testing.T) {
 		"GRANT SUPER ON *.* TO 'foo'@'%'",
 	}
 	for n, grant := range binlogSkipGrants {
-		s.d.grants = []string{}
-		s.d.grants = append(s.d.grants, noBinlogSkipGrants...)
-		s.d.grants = append(s.d.grants, grant)
-		if !s.d.CanSkipBinlog() {
+		inst.grants = []string{}
+		inst.grants = append(inst.grants, noBinlogSkipGrants...)
+		inst.grants = append(inst.grants, grant)
+		if !inst.CanSkipBinlog() {
 			t.Errorf("Expected binlogSkipGrants[%d] to cause CanSkipBinlogs to return true, but it did not", n)
 		}
 	}

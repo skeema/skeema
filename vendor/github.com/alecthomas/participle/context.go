@@ -15,22 +15,31 @@ type contextFieldSet struct {
 
 // Context for a single parse.
 type parseContext struct {
-	*rewinder
-	lookahead       int
-	caseInsensitive map[rune]bool
-	apply           []*contextFieldSet
+	*lexer.PeekingLexer
+	deepestError      error
+	deepestErrorDepth int
+	lookahead         int
+	caseInsensitive   map[rune]bool
+	apply             []*contextFieldSet
+	allowTrailing     bool
 }
 
-func newParseContext(lex lexer.Lexer, lookahead int, caseInsensitive map[rune]bool) (*parseContext, error) {
-	rew, err := newRewinder(lex)
-	if err != nil {
-		return nil, err
-	}
+func newParseContext(lex *lexer.PeekingLexer, lookahead int, caseInsensitive map[rune]bool) *parseContext {
 	return &parseContext{
-		rewinder:        rew,
+		PeekingLexer:    lex,
 		caseInsensitive: caseInsensitive,
 		lookahead:       lookahead,
-	}, nil
+	}
+}
+
+func (p *parseContext) DeepestError(err error) error {
+	if p.PeekingLexer.Cursor() >= p.deepestErrorDepth {
+		return err
+	}
+	if p.deepestError != nil {
+		return p.deepestError
+	}
+	return err
 }
 
 // Defer adds a function to be applied once a branch has been picked.
@@ -52,7 +61,11 @@ func (p *parseContext) Apply() error {
 // Branch accepts the branch as the correct branch.
 func (p *parseContext) Accept(branch *parseContext) {
 	p.apply = append(p.apply, branch.apply...)
-	p.rewinder = branch.rewinder
+	p.PeekingLexer = branch.PeekingLexer
+	if branch.deepestErrorDepth >= p.deepestErrorDepth {
+		p.deepestErrorDepth = branch.deepestErrorDepth
+		p.deepestError = branch.deepestError
+	}
 }
 
 // Branch starts a new lookahead branch.
@@ -60,71 +73,37 @@ func (p *parseContext) Branch() *parseContext {
 	branch := &parseContext{}
 	*branch = *p
 	branch.apply = nil
-	branch.rewinder = p.rewinder.Lookahead()
+	branch.PeekingLexer = p.PeekingLexer.Clone()
 	return branch
 }
 
+func (p *parseContext) MaybeUpdateError(err error) {
+	if p.PeekingLexer.Cursor() >= p.deepestErrorDepth {
+		p.deepestError = err
+		p.deepestErrorDepth = p.PeekingLexer.Cursor()
+	}
+}
+
 // Stop returns true if parsing should terminate after the given "branch" failed to match.
-func (p *parseContext) Stop(branch *parseContext) bool {
-	if branch.cursor > p.cursor+p.lookahead {
+//
+// Additionally, "err" should be the branch error, if any. This will be tracked to
+// aid in error reporting under the assumption that the deepest occurring error is more
+// useful than errors further up.
+func (p *parseContext) Stop(err error, branch *parseContext) bool {
+	if branch.PeekingLexer.Cursor() >= p.deepestErrorDepth {
+		p.deepestError = err
+		p.deepestErrorDepth = maxInt(branch.PeekingLexer.Cursor(), branch.deepestErrorDepth)
+	}
+	if branch.PeekingLexer.Cursor() > p.PeekingLexer.Cursor()+p.lookahead {
 		p.Accept(branch)
 		return true
 	}
 	return false
 }
 
-type rewinder struct {
-	cursor, limit int
-	tokens        []lexer.Token
-}
-
-func newRewinder(lex lexer.Lexer) (*rewinder, error) {
-	r := &rewinder{}
-	for {
-		t, err := lex.Next()
-		if err != nil {
-			return nil, err
-		}
-		if t.EOF() {
-			break
-		}
-		r.tokens = append(r.tokens, t)
+func maxInt(a, b int) int {
+	if a > b {
+		return a
 	}
-	return r, nil
-}
-
-func (r *rewinder) Next() (lexer.Token, error) {
-	if r.cursor >= len(r.tokens) {
-		return r.eofToken(), nil
-	}
-	r.cursor++
-	return r.tokens[r.cursor-1], nil
-}
-
-func (r *rewinder) Peek(n int) (lexer.Token, error) {
-	i := r.cursor + n
-	if i >= len(r.tokens) {
-		return r.eofToken(), nil
-	}
-	return r.tokens[i], nil
-}
-
-func (r *rewinder) eofToken() lexer.Token {
-	if len(r.tokens) > 0 {
-		return lexer.EOFToken(r.tokens[len(r.tokens)-1].Pos)
-	}
-	return lexer.EOFToken(lexer.Position{})
-}
-
-// Lookahead returns a new rewinder usable for lookahead.
-func (r *rewinder) Lookahead() *rewinder {
-	clone := &rewinder{}
-	*clone = *r
-	clone.limit = clone.cursor
-	return clone
-}
-
-// Keep this lookahead rewinder.
-func (r *rewinder) Keep() {
-	r.limit = 0
+	return b
 }

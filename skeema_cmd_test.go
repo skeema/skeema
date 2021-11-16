@@ -1213,7 +1213,7 @@ func (s SkeemaIntegrationSuite) TestFlavorConfig(t *testing.T) {
 }
 
 func (s SkeemaIntegrationSuite) TestRoutines(t *testing.T) {
-	origCreate := `CREATE definer=root@localhost FUNCTION routine1(a int,
+	origCreate := `CREATE definer=root@'%' FUNCTION routine1(a int,
   b int)
 RETURNS int
 DETERMINISTIC

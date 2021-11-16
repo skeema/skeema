@@ -1,24 +1,32 @@
 # A dead simple parser package for Go
 
 [![Godoc](https://godoc.org/github.com/alecthomas/participle?status.svg)](http://godoc.org/github.com/alecthomas/participle) [![CircleCI](https://img.shields.io/circleci/project/github/alecthomas/participle.svg)](https://circleci.com/gh/alecthomas/participle)
- [![Go Report Card](https://goreportcard.com/badge/github.com/alecthomas/participle)](https://goreportcard.com/report/github.com/alecthomas/participle) [![Gitter chat](https://badges.gitter.im/alecthomas.png)](https://gitter.im/alecthomas/Lobby)
+ [![Go Report Card](https://goreportcard.com/badge/github.com/alecthomas/participle)](https://goreportcard.com/report/github.com/alecthomas/participle) [![Slack chat](https://img.shields.io/static/v1?logo=slack&style=flat&label=slack&color=green&message=gophers)](https://gophers.slack.com/messages/CN9DS8YF3)
 
-<!-- TOC -->
+<!-- TOC depthFrom:2 insertAnchor:true updateOnSave:true -->
 
-1. [Introduction](#introduction)
-2. [Limitations](#limitations)
-3. [Tutorial](#tutorial)
-4. [Overview](#overview)
-5. [Annotation syntax](#annotation-syntax)
-6. [Capturing](#capturing)
-7. [Streaming](#streaming)
-8. [Lexing](#lexing)
-9. [Options](#options)
-10. [Examples](#examples)
-11. [Performance](#performance)
-12. [Concurrency](#concurrency)
+- [Old version](#old-version)
+- [Introduction](#introduction)
+- [Limitations](#limitations)
+- [Tutorial](#tutorial)
+- [Overview](#overview)
+- [Annotation syntax](#annotation-syntax)
+- [Capturing](#capturing)
+- [Streaming](#streaming)
+- [Lexing](#lexing)
+- [Options](#options)
+- [Examples](#examples)
+- [Performance](#performance)
+- [Concurrency](#concurrency)
+- [Error reporting](#error-reporting)
+- [EBNF](#ebnf)
 
 <!-- /TOC -->
+
+<a id="markdown-old-version" name="old-version"></a>
+## Old version
+
+This is an outdated version of Participle. See [here](https://pkg.go.dev/github.com/alecthomas/participle/?tab=versions) for a full list of available versions.
 
 <a id="markdown-introduction" name="introduction"></a>
 ## Introduction
@@ -34,7 +42,7 @@ encoders, but is unusual for a parser.
 <a id="markdown-limitations" name="limitations"></a>
 ## Limitations
 
-Participle parsers are LL(k). Among other things, this means that they do not support left recursion.
+Participle grammars are LL(k). Among other things, this means that they do not support left recursion.
 
 The default value of K is 1 but this can be controlled with `participle.UseLookahead(k)`.
 
@@ -105,6 +113,7 @@ err := parser.ParseString("size = 10", ast)
 - `"...":<identifier>` Match the literal, specifying the exact lexer token type to match.
 - `<expr> <expr> ...` Match expressions.
 - `<expr> | <expr>` Match one of the alternatives.
+- `!<expr>` Match any token that is not the start of the expression (eg: `@!";"` matches anything but the `;` character into the field).
 
 The following modifiers can be used after any expression:
 
@@ -161,6 +170,10 @@ Custom control of how values are captured into fields can be achieved by a
 field type implementing the `Capture` interface (`Capture(values []string)
 error`).
 
+Additionally, any field implementing the `encoding.TextUnmarshaler` interface
+will be capturable too. One caveat is that `UnmarshalText()` will be called once
+for each captured token, so eg. `@(Ident Ident Ident)` will be called three times.
+
 <a id="markdown-streaming" name="streaming"></a>
 ## Streaming
 
@@ -190,10 +203,20 @@ for token := range tokens {
 Participle operates on tokens and thus relies on a lexer to convert character
 streams to tokens.
 
-Three lexers are provided, varying in speed and flexibility. The fastest lexer
-is based on the [text/scanner](https://golang.org/pkg/text/scanner/) package
-but only allows tokens provided by that package. Next fastest is the regexp
-lexer (`lexer.Regexp()`). The slowest is currently the EBNF based lexer, but it has a large potential for optimisation through code generation.
+Four lexers are provided, varying in speed and flexibility. Configure your parser with a lexer
+via `participle.Lexer()`.
+
+The best combination of speed, flexibility and usability is `lexer/regex.New()`.
+
+Ordered by speed they are:
+
+1. `lexer.DefaultDefinition` is based on the
+   [text/scanner](https://golang.org/pkg/text/scanner/) package and only allows
+   tokens provided by that package. This is the default lexer.
+2. `lexer.Regexp()` (legacy) maps regular expression named subgroups to lexer symbols.
+3. `lexer/regex.New()` is a more readable regex lexer, with each rule in the form `<name> = <regex>`.
+4. `lexer/ebnf.New()` is a lexer based on the Go EBNF package. It has a large potential for optimisation
+   through code generation, but that is not implemented yet.
 
 To use your own Lexer you will need to implement two interfaces:
 [Definition](https://godoc.org/github.com/alecthomas/participle/lexer#Definition)
@@ -347,3 +370,38 @@ thrift takes 630ms, which aligns quite closely with the benchmarks.
 ## Concurrency
 
 A compiled `Parser` instance can be used concurrently. A `LexerDefinition` can be used concurrently. A `Lexer` instance cannot be used concurrently.
+
+<a id="markdown-error-reporting" name="error-reporting"></a>
+## Error reporting
+
+There are a few areas where Participle can provide useful feedback to users of your parser.
+
+1. Errors returned by [Parser.Parse()](https://godoc.org/github.com/alecthomas/participle#Parser.Parse) will be of type [Error](https://godoc.org/github.com/alecthomas/participle#Error). This will contain positional information where available. If the source `io.Reader` includes a `Name() string` method (as `os.File` does), the filename will be included.
+2. Participle will make a best effort to return as much of the AST up to the error location as possible.
+3. Any node in the AST containing a field `Pos lexer.Position` or `Tok lexer.Token` will be automatically
+   populated from the nearest matching token.
+4. Any node in the AST containing a field `EndPos lexer.Position` or `EndTok lexer.Token` will be
+   automatically populated with the token at the end of the node.
+
+These related pieces of information can be combined to provide fairly comprehensive error reporting.
+
+<a id="markdown-ebnf" name="ebnf"></a>
+## EBNF
+
+Participle supports outputting an EBNF grammar from a Participle parser. Once
+the parser is constructed simply call `String()`.
+
+eg. The [GraphQL example](https://github.com/alecthomas/participle/blob/cbe0cc62a3ad95955311002abd642f11543cb8ed/_examples/graphql/main.go#L14-L61)
+gives in the following EBNF:
+
+```ebnf
+File = Entry* .
+Entry = Type | Schema | Enum | "scalar" ident .
+Type = "type" ident ("implements" ident)? "{" Field* "}" .
+Field = ident ("(" (Argument ("," Argument)*)? ")")? ":" TypeRef ("@" ident)? .
+Argument = ident ":" TypeRef ("=" Value)? .
+TypeRef = "[" TypeRef "]" | ident "!"? .
+Value = ident .
+Schema = "schema" "{" Field* "}" .
+Enum = "enum" ident "{" ident* "}" .
+```

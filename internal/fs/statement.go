@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -46,6 +45,7 @@ type Statement struct {
 	ObjectQualifier string
 	FromFile        *TokenizedSQLFile
 	delimiter       string
+	nameClause      string // raw version, potentially with schema name qualifier and/or surrounding backticks; also any trailing whitespace/comments
 }
 
 // Location returns the file, line number, and character number where the
@@ -81,17 +81,20 @@ func (stmt *Statement) Schema() string {
 // whitespace, or qualified schema name.
 func (stmt *Statement) Body() string {
 	body, _ := stmt.SplitTextBody()
-	if stmt.ObjectQualifier != "" {
-		pattern := fmt.Sprintf("(?is)^(.*?create.+?%s.*?)(`%s`|%s)([\\s\\p{Zs}]*\\.[\\s\\p{Zs}]*)", string(stmt.ObjectType), stmt.ObjectQualifier, stmt.ObjectQualifier)
-		re := regexp.MustCompile(pattern)
-		body = re.ReplaceAllString(body, "$1")
+	if stmt.ObjectQualifier == "" || stmt.nameClause == "" {
+		return body
 	}
-	return body
+	// stmt.nameClause includes trailing whitespace, but we want to leave that intact
+	replaceClause := strings.TrimRight(stmt.nameClause, "\n\r\t ")
+	return strings.Replace(body, replaceClause, tengo.EscapeIdentifier(stmt.ObjectName), 1)
 }
 
 // SplitTextBody returns Text with its trailing delimiter and whitespace (if
 // any) separated out into a separate string.
 func (stmt *Statement) SplitTextBody() (body string, suffix string) {
+	if stmt == nil {
+		return "", ""
+	}
 	body = strings.TrimRight(stmt.Text, "\n\r\t ")
 	body = strings.TrimSuffix(body, stmt.delimiter)
 	body = strings.TrimRight(body, "\n\r\t ")
@@ -370,6 +373,7 @@ func (ls *lineState) parseStatement() {
 		ls.stmt.Type = StatementTypeNoop
 	} else {
 		sqlStmt := &sqlStatement{}
+		var name *objectName
 		if err := nameParser.ParseString(txt, sqlStmt); err != nil || sqlStmt.forbidden() {
 			return
 		} else if sqlStmt.UseCommand != nil {
@@ -381,15 +385,19 @@ func (ls *lineState) parseStatement() {
 		} else if sqlStmt.CreateTable != nil {
 			ls.stmt.Type = StatementTypeCreate
 			ls.stmt.ObjectType = tengo.ObjectTypeTable
-			ls.stmt.ObjectQualifier, ls.stmt.ObjectName = sqlStmt.CreateTable.Name.schemaAndTable()
+			name = &sqlStmt.CreateTable.Name
 		} else if sqlStmt.CreateProc != nil {
 			ls.stmt.Type = StatementTypeCreate
 			ls.stmt.ObjectType = tengo.ObjectTypeProc
-			ls.stmt.ObjectQualifier, ls.stmt.ObjectName = sqlStmt.CreateProc.Name.schemaAndTable()
+			name = &sqlStmt.CreateProc.Name
 		} else if sqlStmt.CreateFunc != nil {
 			ls.stmt.Type = StatementTypeCreate
 			ls.stmt.ObjectType = tengo.ObjectTypeFunc
-			ls.stmt.ObjectQualifier, ls.stmt.ObjectName = sqlStmt.CreateFunc.Name.schemaAndTable()
+			name = &sqlStmt.CreateFunc.Name
+		}
+		if name != nil {
+			ls.stmt.ObjectQualifier, ls.stmt.ObjectName = name.schemaAndTable()
+			ls.stmt.nameClause = txt[name.Pos.Offset:name.EndPos.Offset]
 		}
 	}
 }
@@ -472,6 +480,8 @@ func (sqlStmt *sqlStatement) forbidden() bool {
 type objectName struct {
 	Qualifiers []string `parser:"(@Word '.')*"`
 	Name       string   `parser:"@Word"`
+	Pos        lexer.Position
+	EndPos     lexer.Position
 }
 
 // schemaAndTable interprets the ObjectName as a table name which may optionally

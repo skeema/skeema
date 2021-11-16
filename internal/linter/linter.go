@@ -15,25 +15,13 @@ import (
 // corresponding to SQL statements / files / line numbers.)
 func CheckSchema(wsSchema *workspace.Schema, opts Options) *Result {
 	result := &Result{}
-	tables := wsSchema.TablesByName()
-	procs := wsSchema.ProceduresByName()
-	funcs := wsSchema.FunctionsByName()
+	objects := wsSchema.Objects()
 
 	for key, stmt := range wsSchema.LogicalSchema.Creates {
-		if opts.shouldIgnore(key) {
-			continue
-		}
-		var object interface{}
-		var ok bool
-		switch key.Type {
-		case tengo.ObjectTypeTable:
-			object, ok = tables[key.Name]
-		case tengo.ObjectTypeProc:
-			object, ok = procs[key.Name]
-		case tengo.ObjectTypeFunc:
-			object, ok = funcs[key.Name]
-		}
-		if !ok { // happens normally if the create SQL errored
+		// Attempt to look up the corresponding object. Might not be found if there
+		// was a syntax error in its creation SQL though.
+		object, ok := objects[key]
+		if !ok || opts.shouldIgnore(object) {
 			continue
 		}
 		for ruleName, severity := range opts.RuleSeverity {

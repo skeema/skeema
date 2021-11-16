@@ -27,6 +27,23 @@ type Table struct {
 	CreateStatement    string             `json:"showCreateTable"`              // complete SHOW CREATE TABLE obtained from an instance
 }
 
+// ObjectKey returns a value useful for uniquely refering to a Table within a
+// single Schema, for example as a map key.
+func (t *Table) ObjectKey() ObjectKey {
+	if t == nil {
+		return ObjectKey{}
+	}
+	return ObjectKey{
+		Type: ObjectTypeTable,
+		Name: t.Name,
+	}
+}
+
+// Def returns the table's CREATE statement as a string.
+func (t *Table) Def() string {
+	return t.CreateStatement
+}
+
 // AlterStatement returns the prefix to a SQL "ALTER TABLE" statement.
 func (t *Table) AlterStatement() string {
 	return fmt.Sprintf("ALTER TABLE %s", EscapeIdentifier(t.Name))

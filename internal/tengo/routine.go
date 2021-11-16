@@ -22,19 +22,44 @@ type Routine struct {
 	CreateStatement   string     `json:"showCreate"` // complete SHOW CREATE obtained from an instance
 }
 
+// ObjectKey returns a value useful for uniquely refering to a Routine within a
+// single Schema, for example as a map key.
+func (r *Routine) ObjectKey() ObjectKey {
+	if r == nil {
+		return ObjectKey{}
+	}
+	return ObjectKey{
+		Type: r.Type,
+		Name: r.Name,
+	}
+}
+
+// Def returns the routine's CREATE statement as a string.
+func (r *Routine) Def() string {
+	return r.CreateStatement
+}
+
 // Definition generates and returns a canonical CREATE PROCEDURE or CREATE
 // FUNCTION statement based on the Routine's Go field values.
 func (r *Routine) Definition(flavor Flavor) string {
 	return fmt.Sprintf("%s%s", r.head(flavor), r.Body)
 }
 
+// DefinerClause returns the routine's DEFINER, quoted/escaped in a way
+// consistent with SHOW CREATE.
+func (r *Routine) DefinerClause() string {
+	if atPos := strings.LastIndex(r.Definer, "@"); atPos >= 0 {
+		return fmt.Sprintf("DEFINER=%s@%s", EscapeIdentifier(r.Definer[0:atPos]), EscapeIdentifier(r.Definer[atPos+1:]))
+	}
+	return fmt.Sprintf("DEFINER=%s", r.Definer)
+}
+
 // head returns the portion of a CREATE statement prior to the body.
 func (r *Routine) head(_ Flavor) string {
 	var definer, returnClause, characteristics string
 
-	atPos := strings.LastIndex(r.Definer, "@")
-	if atPos >= 0 {
-		definer = fmt.Sprintf("%s@%s", EscapeIdentifier(r.Definer[0:atPos]), EscapeIdentifier(r.Definer[atPos+1:]))
+	if r.Definer != "" {
+		definer = r.DefinerClause() + " "
 	}
 	if r.Type == ObjectTypeFunc {
 		returnClause = fmt.Sprintf(" RETURNS %s", r.ReturnDataType)
@@ -55,7 +80,7 @@ func (r *Routine) head(_ Flavor) string {
 	}
 	characteristics = strings.Join(clauses, "")
 
-	return fmt.Sprintf("CREATE DEFINER=%s %s %s(%s)%s\n%s",
+	return fmt.Sprintf("CREATE %s%s %s(%s)%s\n%s",
 		definer,
 		r.Type.Caps(),
 		EscapeIdentifier(r.Name),

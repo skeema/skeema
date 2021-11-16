@@ -38,23 +38,23 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		}
 	}
 
-	// Test ObjectDefinitions map, which should contain objects of multiple types
-	dict := schema.ObjectDefinitions()
-	for key, create := range dict {
+	// Test Objects() map, which should contain objects of multiple types
+	dict := schema.Objects()
+	for key, obj := range dict {
 		var ok bool
 		switch key.Type {
 		case ObjectTypeTable:
-			ok = strings.HasPrefix(create, "CREATE TABLE")
+			ok = strings.HasPrefix(obj.Def(), "CREATE TABLE")
 		case ObjectTypeProc, ObjectTypeFunc:
-			ok = strings.HasPrefix(create, "CREATE DEFINER")
+			ok = strings.HasPrefix(obj.Def(), "CREATE DEFINER")
 		}
 		if !ok {
-			t.Errorf("Unexpected or incorrect key %s found in schema object definitions --> %s", key, create)
+			t.Errorf("Unexpected or incorrect key %s found in schema object definitions --> %s", key, obj.Def())
 		}
 	}
 
-	if dict[ObjectKey{Type: ObjectTypeFunc, Name: "func1"}] == "" || dict[ObjectKey{Type: ObjectTypeProc, Name: "func1"}] != "" {
-		t.Error("ObjectDefinitions map not populated as expected")
+	if dict[ObjectKey{Type: ObjectTypeFunc, Name: "func1"}] == nil || dict[ObjectKey{Type: ObjectTypeProc, Name: "func1"}] != nil {
+		t.Error("Objects map not populated as expected")
 	}
 
 	// ensure character set handling works properly regardless of whether this

@@ -316,11 +316,15 @@ var reSkipBinlog = regexp.MustCompile(`(?:ALL PRIVILEGES ON \*\.\*|SUPER|SESSION
 // set sql_log_bin=0. If an error occurs in checking grants, this method returns
 // false as a safe fallback.
 func (instance *Instance) CanSkipBinlog() bool {
+	return instance.checkGrantsRegexp(reSkipBinlog)
+}
+
+func (instance *Instance) checkGrantsRegexp(re *regexp.Regexp) bool {
 	if instance.grants == nil {
 		instance.hydrateGrants()
 	}
 	for _, grant := range instance.grants {
-		if reSkipBinlog.MatchString(grant) {
+		if re.MatchString(grant) {
 			return true
 		}
 	}

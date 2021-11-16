@@ -102,13 +102,6 @@ func TestDocker(t *testing.T) {
 		t.Error("Expected error attempting to SourceSQL non-SQL file, instead got nil")
 	}
 
-	if _, err := di.SourceString("CREATE DATABASE testing2"); err != nil {
-		t.Errorf("Unexpected error SourceString: %s", err)
-	}
-	if _, err := di.SourceString("BAD SQL stmt"); err == nil {
-		t.Error("Expected error attempting to SourceString invalid string, instead got nil")
-	}
-
 	if err := di.Destroy(); err != nil {
 		t.Fatalf("Unexpected error from Destroy: %s", err)
 	}

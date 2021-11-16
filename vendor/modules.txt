@@ -30,7 +30,7 @@ github.com/Microsoft/hcsshim/osversion
 # github.com/VividCortex/mysqlerr v1.0.0
 ## explicit
 github.com/VividCortex/mysqlerr
-# github.com/alecthomas/participle v0.3.0
+# github.com/alecthomas/participle v0.7.1
 ## explicit
 github.com/alecthomas/participle
 github.com/alecthomas/participle/lexer

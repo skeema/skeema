@@ -519,28 +519,31 @@ func TestAncestorPaths(t *testing.T) {
 	}
 }
 
-func getValidConfig(t *testing.T) *mybase.Config {
+func getValidConfigWithCLI(t *testing.T, cliOptions string) *mybase.Config {
+	t.Helper()
 	cmd := mybase.NewCommand("fstest", "", "", nil)
-	cmd.AddOption(mybase.StringOption("user", 'u', "root", "Username to connect to database host"))
-	cmd.AddOption(mybase.StringOption("password", 'p', "", "Password for database user; omit value to prompt from TTY (default no password)").ValueOptional())
-	cmd.AddOption(mybase.StringOption("schema", 0, "", "Database schema name").Hidden())
-	cmd.AddOption(mybase.StringOption("default-character-set", 0, "", "Schema-level default character set").Hidden())
-	cmd.AddOption(mybase.StringOption("default-collation", 0, "", "Schema-level default collation").Hidden())
-	cmd.AddOption(mybase.StringOption("host", 0, "", "Database hostname or IP address").Hidden())
-	cmd.AddOption(mybase.StringOption("port", 0, "3306", "Port to use for database host").Hidden())
-	cmd.AddOption(mybase.StringOption("flavor", 0, "", "Database server expressed in format vendor:major.minor, for use in vendor/version specific syntax").Hidden())
-	cmd.AddOption(mybase.StringOption("generator", 0, "", "Version of Skeema used for `skeema init` or most recent `skeema pull`").Hidden())
+	util.AddGlobalOptions(cmd)
 	cmd.AddArg("environment", "production", false)
-	return mybase.ParseFakeCLI(t, cmd, "fstest")
+	return mybase.ParseFakeCLI(t, cmd, "fstest "+cliOptions)
 }
 
-func getDir(t *testing.T, dirPath string) *Dir {
+func getDirWithCLI(t *testing.T, dirPath, cliOptions string) *Dir {
 	t.Helper()
-	dir, err := ParseDir(dirPath, getValidConfig(t))
+	dir, err := ParseDir(dirPath, getValidConfigWithCLI(t, cliOptions))
 	if err != nil {
 		t.Fatalf("Unexpected error parsing dir %s: %s", dirPath, err)
 	}
 	return dir
+}
+
+func getValidConfig(t *testing.T) *mybase.Config {
+	t.Helper()
+	return getValidConfigWithCLI(t, "")
+}
+
+func getDir(t *testing.T, dirPath string) *Dir {
+	t.Helper()
+	return getDirWithCLI(t, dirPath, "")
 }
 
 func countParseErrors(subs []*Dir) (count int) {

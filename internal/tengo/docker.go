@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"strconv"
@@ -310,8 +309,9 @@ func (di *DockerizedInstance) NukeData() error {
 	if err != nil {
 		return err
 	}
+	canSkipBinlog := di.Instance.CanSkipBinlog()
 	for _, schema := range schemas {
-		if err := di.Instance.DropSchema(schema, BulkDropOptions{SkipBinlog: true}); err != nil {
+		if err := di.Instance.DropSchema(schema, BulkDropOptions{SkipBinlog: canSkipBinlog}); err != nil {
 			return err
 		}
 	}
@@ -328,31 +328,7 @@ func (di *DockerizedInstance) SourceSQL(filePath string) (string, error) {
 		return "", fmt.Errorf("SourceSQL %s: Unable to open setup file %s: %s", di, filePath, err)
 	}
 	defer f.Close()
-	stdoutStr, err := di.Source(f)
-	if err != nil {
-		return stdoutStr, fmt.Errorf("SourceSQL %s: Error sourcing file %s: %v", di, filePath, err)
-	}
-	return stdoutStr, nil
-}
-
-// SourceString reads the specified string and executes it against the containerized
-// mysql-server. The string should contain one or more valid SQL instructions,
-// typically a mix of DML and/or DDL statements. It is useful as a per-test
-// setup method in implementations of IntegrationTestSuite.BeforeTest.
-func (di *DockerizedInstance) SourceString(str string) (string, error) {
-	stdoutStr, err := di.Source(strings.NewReader(str))
-	if err != nil {
-		return stdoutStr, fmt.Errorf("SourceString %s: Error sourcing string %s: %v", di, str, err)
-	}
-	return stdoutStr, nil
-}
-
-// Source reads from the io.Reader and executes it against the containerized
-// mysql-server. The io.Reader should contain one or more valid SQL instructions,
-// typically a mix of DML and/or DDL statements. It is useful as a per-test
-// setup method in implementations of IntegrationTestSuite.BeforeTest.
-func (di *DockerizedInstance) Source(reader io.Reader) (string, error) {
-	cmd := []string{"mysql", "-tvvv", "-u", "root"}
+	cmd := []string{"mysql", "-tvvv", "-u", "root", "-h", "127.0.0.1"}
 	if di.RootPassword != "" {
 		cmd = append(cmd, fmt.Sprintf("-p%s", di.RootPassword))
 	}
@@ -371,7 +347,7 @@ func (di *DockerizedInstance) Source(reader io.Reader) (string, error) {
 	seopts := docker.StartExecOptions{
 		OutputStream: &stdout,
 		ErrorStream:  &stderr,
-		InputStream:  reader,
+		InputStream:  f,
 	}
 	if err = di.Manager.client.StartExec(exec.ID, seopts); err != nil {
 		return "", err
@@ -379,7 +355,7 @@ func (di *DockerizedInstance) Source(reader io.Reader) (string, error) {
 	stdoutStr := stdout.String()
 	stderrStr := strings.Replace(stderr.String(), "Warning: Using a password on the command line interface can be insecure.\n", "", 1)
 	if strings.Contains(stderrStr, "ERROR") {
-		return stdoutStr, errors.New(stderrStr)
+		return stdoutStr, fmt.Errorf("SourceSQL %s: Error sourcing file %s: %s", di, filePath, stderrStr)
 	}
 	return stdoutStr, nil
 }

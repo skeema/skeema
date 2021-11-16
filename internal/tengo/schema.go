@@ -14,6 +14,23 @@ type Schema struct {
 	Routines  []*Routine `json:"routines,omitempty"`
 }
 
+// ObjectKey returns a value useful for uniquely refering to a Schema, for
+// example as a map key.
+func (s *Schema) ObjectKey() ObjectKey {
+	if s == nil {
+		return ObjectKey{}
+	}
+	return ObjectKey{
+		Type: ObjectTypeDatabase,
+		Name: s.Name,
+	}
+}
+
+// Def returns the schema's CREATE statement as a string.
+func (s *Schema) Def() string {
+	return s.CreateStatement()
+}
+
 // TablesByName returns a mapping of table names to Table struct pointers, for
 // all tables in the schema.
 func (s *Schema) TablesByName() map[string]*Table {
@@ -69,23 +86,18 @@ func (s *Schema) routinesByNameAndType(ot ObjectType) map[string]*Routine {
 	return result
 }
 
-// ObjectDefinitions returns a mapping of ObjectKey (type+name) to an SQL string
-// containing the corresponding CREATE statement, for all supported object types
-// in the schema.
-// Note that the returned map does NOT include an entry for the schema itself.
-func (s *Schema) ObjectDefinitions() map[ObjectKey]string {
-	dict := make(map[ObjectKey]string)
-	for name, table := range s.TablesByName() {
-		key := ObjectKey{Type: ObjectTypeTable, Name: name}
-		dict[key] = table.CreateStatement
+// Objects returns DefKeyers for all objects in the schema, excluding the schema
+// itself. The result is a map, keyed by ObjectKey (type+name).
+func (s *Schema) Objects() map[ObjectKey]DefKeyer {
+	if s == nil {
+		return nil
 	}
-	for name, procedure := range s.ProceduresByName() {
-		key := ObjectKey{Type: ObjectTypeProc, Name: name}
-		dict[key] = procedure.CreateStatement
+	dict := make(map[ObjectKey]DefKeyer, len(s.Tables)+len(s.Routines))
+	for _, table := range s.Tables {
+		dict[table.ObjectKey()] = table
 	}
-	for name, function := range s.FunctionsByName() {
-		key := ObjectKey{Type: ObjectTypeFunc, Name: name}
-		dict[key] = function.CreateStatement
+	for _, routine := range s.Routines {
+		dict[routine.ObjectKey()] = routine
 	}
 	return dict
 }

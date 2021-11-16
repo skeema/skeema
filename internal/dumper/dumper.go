@@ -83,15 +83,16 @@ func modifiedFiles(schema *tengo.Schema, dir *fs.Dir, opts Options) []*fs.Tokeni
 		}
 	}
 
-	for key, canonicalCreate := range schema.ObjectDefinitions() {
-		if opts.shouldIgnore(key) {
+	for key, object := range schema.Objects() {
+		delete(keySeen, key) // filter keySeen to just be things that *aren't* in the DB
+		if opts.shouldIgnore(object) {
 			continue
 		}
+		canonicalCreate := object.Def()
 		var fsCreate, fsDelimiter string
 		stmt := logicalSchema.Creates[key]
 		if stmt != nil {
 			fsCreate, fsDelimiter = stmt.SplitTextBody()
-			delete(keySeen, key)
 		}
 
 		// Include or strip auto_increment clause. (Note that if fs representation

@@ -1,6 +1,7 @@
 package participle
 
 import (
+	"encoding"
 	"errors"
 	"fmt"
 	"reflect"
@@ -14,9 +15,11 @@ var (
 	// MaxIterations limits the number of elements capturable by {}.
 	MaxIterations = 1000000
 
-	positionType  = reflect.TypeOf(lexer.Position{})
-	captureType   = reflect.TypeOf((*Capture)(nil)).Elem()
-	parseableType = reflect.TypeOf((*Parseable)(nil)).Elem()
+	positionType        = reflect.TypeOf(lexer.Position{})
+	tokenType           = reflect.TypeOf(lexer.Token{})
+	captureType         = reflect.TypeOf((*Capture)(nil)).Elem()
+	textUnmarshalerType = reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
+	parseableType       = reflect.TypeOf((*Parseable)(nil)).Elem()
 
 	// NextMatch should be returned by Parseable.Parse() method implementations to indicate
 	// that the node did not match and that other matches should be attempted, if appropriate.
@@ -40,9 +43,11 @@ func decorate(err *error, name func() string) {
 	}
 	switch realError := (*err).(type) {
 	case *lexer.Error:
-		*err = &lexer.Error{Message: name() + ": " + realError.Message, Pos: realError.Pos}
+		*err = &parseError{Msg: name() + ": " + realError.Msg, Tok: realError.Token()}
+	case *parseError:
+		*err = &parseError{Msg: name() + ": " + realError.Msg, Tok: realError.Token()}
 	default:
-		*err = fmt.Errorf("%s: %s", name(), realError)
+		*err = &parseError{Msg: fmt.Sprintf("%s: %s", name(), realError)}
 	}
 }
 
@@ -56,7 +61,7 @@ func (p *parseable) String() string { return stringer(p) }
 func (p *parseable) Parse(ctx *parseContext, parent reflect.Value) (out []reflect.Value, err error) {
 	rv := reflect.New(p.t)
 	v := rv.Interface().(Parseable)
-	err = v.Parse(ctx)
+	err = v.Parse(ctx.PeekingLexer)
 	if err != nil {
 		if err == NextMatch {
 			return nil, nil
@@ -66,6 +71,7 @@ func (p *parseable) Parse(ctx *parseContext, parent reflect.Value) (out []reflec
 	return []reflect.Value{rv.Elem()}, nil
 }
 
+// @@
 type strct struct {
 	typ  reflect.Type
 	expr node
@@ -73,9 +79,19 @@ type strct struct {
 
 func (s *strct) String() string { return stringer(s) }
 
-func (s *strct) maybeInjectPos(pos lexer.Position, v reflect.Value) {
+func (s *strct) maybeInjectStartToken(token lexer.Token, v reflect.Value) {
 	if f := v.FieldByName("Pos"); f.IsValid() && f.Type() == positionType {
-		f.Set(reflect.ValueOf(pos))
+		f.Set(reflect.ValueOf(token.Pos))
+	} else if f := v.FieldByName("Tok"); f.IsValid() && f.Type() == tokenType {
+		f.Set(reflect.ValueOf(token))
+	}
+}
+
+func (s *strct) maybeInjectEndToken(token lexer.Token, v reflect.Value) {
+	if f := v.FieldByName("EndPos"); f.IsValid() && f.Type() == positionType {
+		f.Set(reflect.ValueOf(token.Pos))
+	} else if f := v.FieldByName("EndTok"); f.IsValid() && f.Type() == tokenType {
+		f.Set(reflect.ValueOf(token))
 	}
 }
 
@@ -85,13 +101,16 @@ func (s *strct) Parse(ctx *parseContext, parent reflect.Value) (out []reflect.Va
 	if err != nil {
 		return nil, err
 	}
-	s.maybeInjectPos(t.Pos, sv)
+	s.maybeInjectStartToken(t, sv)
 	if out, err = s.expr.Parse(ctx, sv); err != nil {
-		_ = ctx.Apply()
+		_ = ctx.Apply() // Best effort to give partial AST.
+		ctx.MaybeUpdateError(err)
 		return []reflect.Value{sv}, err
 	} else if out == nil {
 		return nil, nil
 	}
+	t, _ = ctx.Peek(0)
+	s.maybeInjectEndToken(t, sv)
 	return []reflect.Value{sv}, ctx.Apply()
 }
 
@@ -130,7 +149,7 @@ func (g *group) Parse(ctx *parseContext, parent reflect.Value) (out []reflect.Va
 		}
 		if len(out) == 0 {
 			t, _ := ctx.Peek(0)
-			return out, lexer.Errorf(t.Pos, "sub-expression %s cannot be empty", g)
+			return out, lexer.ErrorWithTokenf(t, "sub-expression %s cannot be empty", g)
 		}
 		return out, nil
 	case groupMatchOnce:
@@ -150,8 +169,9 @@ func (g *group) Parse(ctx *parseContext, parent reflect.Value) (out []reflect.Va
 		v, err := g.expr.Parse(branch, parent)
 		out = append(out, v...)
 		if err != nil {
+			ctx.MaybeUpdateError(err)
 			// Optional part failed to match.
-			if ctx.Stop(branch) {
+			if ctx.Stop(err, branch) {
 				return out, err
 			}
 			break
@@ -165,10 +185,10 @@ func (g *group) Parse(ctx *parseContext, parent reflect.Value) (out []reflect.Va
 	// fmt.Printf("%d < %d < %d: out == nil? %v\n", min, matches, max, out == nil)
 	t, _ := ctx.Peek(0)
 	if matches >= MaxIterations {
-		panic(lexer.Errorf(t.Pos, "too many iterations of %s (> %d)", g, MaxIterations))
+		panic(lexer.ErrorWithTokenf(t, "too many iterations of %s (> %d)", g, MaxIterations))
 	}
 	if matches < min {
-		return out, lexer.Errorf(t.Pos, "sub-expression %s must match at least once", g)
+		return out, lexer.ErrorWithTokenf(t, "sub-expression %s must match at least once", g)
 	}
 	// The idea here is that something like "a"? is a successful match and that parsing should proceed.
 	if min == 0 && out == nil {
@@ -194,22 +214,28 @@ func (d *disjunction) Parse(ctx *parseContext, parent reflect.Value) (out []refl
 		branch := ctx.Branch()
 		if value, err := a.Parse(branch, parent); err != nil {
 			// If this branch progressed too far and still didn't match, error out.
-			if ctx.Stop(branch) {
+			if ctx.Stop(err, branch) {
 				return value, err
 			}
 			// Show the closest error returned. The idea here is that the further the parser progresses
 			// without error, the more difficult it is to trace the error back to its root.
-			if err != nil && branch.cursor >= deepestError {
+			if branch.Cursor() >= deepestError {
 				firstError = err
 				firstValues = value
-				deepestError = branch.cursor
+				deepestError = branch.Cursor()
 			}
 		} else if value != nil {
+			bt, _ := branch.Peek(0)
+			ct, _ := ctx.Peek(0)
+			if bt == ct {
+				panic(Errorf(bt.Pos, "branch %s was accepted but did not progress the lexer at %s (%q)", a, bt.Pos, bt.Value))
+			}
 			ctx.Accept(branch)
 			return value, nil
 		}
 	}
 	if firstError != nil {
+		ctx.MaybeUpdateError(firstError)
 		return firstValues, firstError
 	}
 	return nil, nil
@@ -240,7 +266,7 @@ func (s *sequence) Parse(ctx *parseContext, parent reflect.Value) (out []reflect
 			if err != nil {
 				return nil, err
 			}
-			return out, lexer.Errorf(token.Pos, "unexpected %q (expected %s)", token, n)
+			return out, UnexpectedTokenError{Unexpected: token, Expected: n.String()}
 		}
 	}
 	return out, nil
@@ -306,7 +332,7 @@ func (o *optional) Parse(ctx *parseContext, parent reflect.Value) (out []reflect
 	out, err = o.node.Parse(branch, parent)
 	if err != nil {
 		// Optional part failed to match.
-		if ctx.Stop(branch) {
+		if ctx.Stop(err, branch) {
 			return out, err
 		}
 	} else {
@@ -335,7 +361,7 @@ func (r *repetition) Parse(ctx *parseContext, parent reflect.Value) (out []refle
 		out = append(out, v...)
 		if err != nil {
 			// Optional part failed to match.
-			if ctx.Stop(branch) {
+			if ctx.Stop(err, branch) {
 				return out, err
 			}
 			break
@@ -348,7 +374,7 @@ func (r *repetition) Parse(ctx *parseContext, parent reflect.Value) (out []refle
 	}
 	if i >= MaxIterations {
 		t, _ := ctx.Peek(0)
-		panic(lexer.Errorf(t.Pos, "too many iterations of %s (> %d)", r, MaxIterations))
+		panic(lexer.ErrorWithTokenf(t, "too many iterations of %s (> %d)", r, MaxIterations))
 	}
 	if out == nil {
 		out = []reflect.Value{}
@@ -384,6 +410,40 @@ func (l *literal) Parse(ctx *parseContext, parent reflect.Value) (out []reflect.
 		return []reflect.Value{reflect.ValueOf(next.Value)}, nil
 	}
 	return nil, nil
+}
+
+type negation struct {
+	node node
+}
+
+func (n *negation) String() string { return "!" + stringer(n.node) }
+
+func (n *negation) Parse(ctx *parseContext, parent reflect.Value) (out []reflect.Value, err error) {
+	// Create a branch to avoid advancing the parser, but call neither Stop nor Accept on it
+	// since we will discard a match.
+	branch := ctx.Branch()
+	notEOF, err := ctx.Peek(0)
+	if err != nil {
+		return nil, err
+	}
+	if notEOF.EOF() {
+		// EOF cannot match a negation, which expects something
+		return nil, nil
+	}
+
+	out, err = n.node.Parse(branch, parent)
+
+	if out != nil && err == nil {
+		// out being non-nil means that what we don't want is actually here, so we report nomatch
+		return nil, lexer.ErrorWithTokenf(notEOF, "unexpected '%s'", notEOF.Value)
+	}
+
+	// Just give the next token
+	next, err := ctx.Next()
+	if err != nil {
+		return nil, err
+	}
+	return []reflect.Value{reflect.ValueOf(next.Value)}, nil
 }
 
 // Attempt to transform values to given type.
@@ -466,20 +526,13 @@ func sizeOfKind(kind reflect.Kind) int {
 //
 // For all other types, an attempt will be made to convert the string to the corresponding
 // type (int, float32, etc.).
-func setField(pos lexer.Position, strct reflect.Value, field structLexerField, fieldValue []reflect.Value) (err error) { // nolint: gocyclo
-	defer decorate(&err, func() string { return pos.String() + ": " + strct.Type().String() + "." + field.Name })
+func setField(pos lexer.Position, strct reflect.Value, field structLexerField, fieldValue []reflect.Value) (err error) { // nolint: gocognit
+	defer decorate(&err, func() string { return strct.Type().Name() + "." + field.Name })
 
 	f := strct.FieldByIndex(field.Index)
-	switch f.Kind() {
-	case reflect.Slice:
-		fieldValue, err = conform(f.Type().Elem(), fieldValue)
-		if err != nil {
-			return err
-		}
-		f.Set(reflect.Append(f, fieldValue...))
-		return nil
 
-	case reflect.Ptr:
+	// Any kind of pointer, hydrate it first.
+	if f.Kind() == reflect.Ptr {
 		if f.IsNil() {
 			fv := reflect.New(f.Type().Elem()).Elem()
 			f.Set(fv.Addr())
@@ -487,6 +540,15 @@ func setField(pos lexer.Position, strct reflect.Value, field structLexerField, f
 		} else {
 			f = f.Elem()
 		}
+	}
+
+	if f.Kind() == reflect.Slice {
+		fieldValue, err = conform(f.Type().Elem(), fieldValue)
+		if err != nil {
+			return err
+		}
+		f.Set(reflect.Append(f, fieldValue...))
+		return nil
 	}
 
 	if f.Kind() == reflect.Struct {
@@ -501,9 +563,12 @@ func setField(pos lexer.Position, strct reflect.Value, field structLexerField, f
 			for _, v := range fieldValue {
 				ifv = append(ifv, v.Interface().(string))
 			}
-			err := d.Capture(ifv)
-			if err != nil {
-				return err
+			return d.Capture(ifv)
+		} else if d, ok := f.Addr().Interface().(encoding.TextUnmarshaler); ok {
+			for _, v := range fieldValue {
+				if err := d.UnmarshalText([]byte(v.Interface().(string))); err != nil {
+					return err
+				}
 			}
 			return nil
 		}
@@ -561,6 +626,10 @@ func setField(pos lexer.Position, strct reflect.Value, field structLexerField, f
 		}
 
 	case reflect.Bool, reflect.Struct:
+		if f.Kind() == reflect.Bool && fv.Kind() == reflect.Bool {
+			f.SetBool(fv.Bool())
+			break
+		}
 		if fv.Type() != f.Type() {
 			return fmt.Errorf("value %q is not correct type %s", fv, f.Type())
 		}
@@ -571,8 +640,3 @@ func setField(pos lexer.Position, strct reflect.Value, field structLexerField, f
 	}
 	return nil
 }
-
-// Error is an error returned by the parser internally to differentiate from non-Participle errors.
-type Error string
-
-func (e Error) Error() string { return string(e) }

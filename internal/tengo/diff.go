@@ -38,8 +38,8 @@ func (dt DiffType) String() string {
 // ObjectDiff is an interface allowing generic handling of differences between
 // two objects.
 type ObjectDiff interface {
+	ObjectKeyer
 	DiffType() DiffType
-	ObjectKey() ObjectKey
 	Statement(StatementModifiers) (string, error)
 }
 
@@ -253,20 +253,16 @@ type DatabaseDiff struct {
 }
 
 // ObjectKey returns a value representing the type and name of the schema being
-// diff'ed. The type is always ObjectTypeDatabase. The name will be the From
-// side schema, unless it is nil (CREATE DATABASE), in which case the To side
-// schema name is returned.
+// diff'ed. The name will be the From side schema, unless it is nil (CREATE
+// DATABASE), in which case the To side schema name is returned.
 func (dd *DatabaseDiff) ObjectKey() ObjectKey {
-	key := ObjectKey{Type: ObjectTypeDatabase}
 	if dd == nil || (dd.From == nil && dd.To == nil) {
-		return key
+		return ObjectKey{}
 	}
 	if dd.From == nil {
-		key.Name = dd.To.Name
-	} else {
-		key.Name = dd.From.Name
+		return dd.To.ObjectKey()
 	}
-	return key
+	return dd.From.ObjectKey()
 }
 
 // DiffType returns the type of diff operation.
@@ -319,20 +315,16 @@ type TableDiff struct {
 }
 
 // ObjectKey returns a value representing the type and name of the table being
-// diff'ed. The type is always ObjectTypeTable. The name will be the From side
-// table, unless the diffType is DiffTypeCreate, in which case the To side
-// table name is used.
+// diff'ed. The name will be the From side table, unless the diffType is
+// DiffTypeCreate, in which case the To side table name is used.
 func (td *TableDiff) ObjectKey() ObjectKey {
-	key := ObjectKey{Type: ObjectTypeTable}
 	if td == nil {
-		return key
+		return ObjectKey{}
 	}
 	if td.Type == DiffTypeCreate {
-		key.Name = td.To.Name
-	} else {
-		key.Name = td.From.Name
+		return td.To.ObjectKey()
 	}
-	return key
+	return td.From.ObjectKey()
 }
 
 // DiffType returns the type of diff operation.
@@ -689,9 +681,9 @@ type RoutineDiff struct {
 // side routine name is used.
 func (rd *RoutineDiff) ObjectKey() ObjectKey {
 	if rd != nil && rd.From != nil {
-		return ObjectKey{Type: rd.From.Type, Name: rd.From.Name}
+		return rd.From.ObjectKey()
 	} else if rd != nil && rd.To != nil {
-		return ObjectKey{Type: rd.To.Type, Name: rd.To.Name}
+		return rd.To.ObjectKey()
 	}
 	return ObjectKey{}
 }

@@ -42,8 +42,9 @@ func (opts *Options) IgnoreKeys(keys []tengo.ObjectKey) {
 }
 
 // shouldIgnore returns true if the option configuration indicates the supplied
-// tengo.ObjectKey should be ignored.
-func (opts *Options) shouldIgnore(key tengo.ObjectKey) bool {
+// object should be ignored.
+func (opts *Options) shouldIgnore(keyer tengo.ObjectKeyer) bool {
+	key := keyer.ObjectKey()
 	if opts.skipKeys[key] {
 		return true
 	}

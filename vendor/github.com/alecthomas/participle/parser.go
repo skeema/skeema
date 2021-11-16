@@ -97,18 +97,26 @@ func Build(grammar interface{}, options ...Option) (parser *Parser, err error) {
 	return p, nil
 }
 
+// Lexer returns the parser's builtin lexer.
+func (p *Parser) Lexer() lexer.Definition {
+	return p.lex
+}
+
 // Lex uses the parser's lexer to tokenise input.
 func (p *Parser) Lex(r io.Reader) ([]lexer.Token, error) {
 	lex, err := p.lex.Lex(r)
 	if err != nil {
 		return nil, err
 	}
-	return lexer.ConsumeAll(lex)
+	tokens, err := lexer.ConsumeAll(lex)
+	return tokens, err
 }
 
-// Parse from r into grammar v which must be of the same type as the grammar passed to
+// ParseFromLexer into grammar v which must be of the same type as the grammar passed to
 // participle.Build().
-func (p *Parser) Parse(r io.Reader, v interface{}) (err error) {
+//
+// This may return a participle.Error.
+func (p *Parser) ParseFromLexer(lex *lexer.PeekingLexer, v interface{}, options ...ParseOption) error {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() == reflect.Interface {
 		rv = rv.Elem()
@@ -123,32 +131,44 @@ func (p *Parser) Parse(r io.Reader, v interface{}) (err error) {
 	if rt != p.typ {
 		return fmt.Errorf("must parse into value of type %s not %T", p.typ, v)
 	}
-	baseLexer, err := p.lex.Lex(r)
-	if err != nil {
-		return err
+	if rt.Kind() != reflect.Ptr || rt.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("target must be a pointer to a struct, not %s", rt)
 	}
-	lex := lexer.Upgrade(baseLexer)
 	caseInsensitive := map[rune]bool{}
 	for sym, rn := range p.lex.Symbols() {
 		if p.caseInsensitive[sym] {
 			caseInsensitive[rn] = true
 		}
 	}
-	ctx, err := newParseContext(lex, p.useLookahead, caseInsensitive)
-	if err != nil {
-		return err
+	ctx := newParseContext(lex, p.useLookahead, caseInsensitive)
+	defer func() { *lex = *ctx.PeekingLexer }()
+	for _, option := range options {
+		option(ctx)
 	}
 	// If the grammar implements Parseable, use it.
 	if parseable, ok := v.(Parseable); ok {
 		return p.rootParseable(ctx, parseable)
 	}
-	if rt.Kind() != reflect.Ptr || rt.Elem().Kind() != reflect.Struct {
-		return fmt.Errorf("target must be a pointer to a struct, not %s", rt)
-	}
 	if stream.IsValid() {
 		return p.parseStreaming(ctx, stream)
 	}
 	return p.parseOne(ctx, rv)
+}
+
+// Parse from r into grammar v which must be of the same type as the grammar passed to
+// participle.Build().
+//
+// This may return a participle.Error.
+func (p *Parser) Parse(r io.Reader, v interface{}, options ...ParseOption) (err error) {
+	lex, err := p.lex.Lex(r)
+	if err != nil {
+		return err
+	}
+	peeker, err := lexer.Upgrade(lex)
+	if err != nil {
+		return err
+	}
+	return p.ParseFromLexer(peeker, v, options...)
 }
 
 func (p *Parser) parseStreaming(ctx *parseContext, rv reflect.Value) error {
@@ -174,8 +194,8 @@ func (p *Parser) parseOne(ctx *parseContext, rv reflect.Value) error {
 	token, err := ctx.Peek(0)
 	if err != nil {
 		return err
-	} else if !token.EOF() {
-		return lexer.Errorf(token.Pos, "unexpected token %q", token)
+	} else if !token.EOF() && !ctx.allowTrailing {
+		return ctx.DeepestError(UnexpectedTokenError{Unexpected: token})
 	}
 	return nil
 }
@@ -193,37 +213,41 @@ func (p *Parser) parseInto(ctx *parseContext, rv reflect.Value) error {
 	}
 	if pv == nil {
 		token, _ := ctx.Peek(0)
-		return lexer.Errorf(token.Pos, "invalid syntax")
+		return ctx.DeepestError(UnexpectedTokenError{Unexpected: token})
 	}
 	return nil
 }
 
-func (p *Parser) rootParseable(lex lexer.PeekingLexer, parseable Parseable) error {
-	peek, err := lex.Peek(0)
+func (p *Parser) rootParseable(ctx *parseContext, parseable Parseable) error {
+	peek, err := ctx.Peek(0)
 	if err != nil {
 		return err
 	}
-	err = parseable.Parse(lex)
+	err = parseable.Parse(ctx.PeekingLexer)
 	if err == NextMatch {
-		return lexer.Errorf(peek.Pos, "invalid syntax")
+		token, _ := ctx.Peek(0)
+		return ctx.DeepestError(UnexpectedTokenError{Unexpected: token})
 	}
-	if err == nil && !peek.EOF() {
-		return lexer.Errorf(peek.Pos, "unexpected token %q", peek)
+	peek, err = ctx.Peek(0)
+	if err != nil {
+		return err
 	}
-	return err
+	if !peek.EOF() && !ctx.allowTrailing {
+		return ctx.DeepestError(UnexpectedTokenError{Unexpected: peek})
+	}
+	return nil
 }
 
 // ParseString is a convenience around Parse().
-func (p *Parser) ParseString(s string, v interface{}) error {
-	return p.Parse(strings.NewReader(s), v)
+//
+// This may return a participle.Error.
+func (p *Parser) ParseString(s string, v interface{}, options ...ParseOption) error {
+	return p.Parse(strings.NewReader(s), v, options...)
 }
 
 // ParseBytes is a convenience around Parse().
-func (p *Parser) ParseBytes(b []byte, v interface{}) error {
-	return p.Parse(bytes.NewReader(b), v)
-}
-
-// String representation of the grammar.
-func (p *Parser) String() string {
-	return stringern(p.root, 128)
+//
+// This may return a participle.Error.
+func (p *Parser) ParseBytes(b []byte, v interface{}, options ...ParseOption) error {
+	return p.Parse(bytes.NewReader(b), v, options...)
 }

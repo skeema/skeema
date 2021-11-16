@@ -40,7 +40,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 	}
 	if schema, err := ts.inst.Schema(opts.SchemaName); err != nil {
 		t.Fatalf("Unexpectedly unable to obtain schema: %v", err)
-	} else if objCount := len(schema.ObjectDefinitions()); objCount > 0 {
+	} else if objCount := len(schema.Objects()); objCount > 0 {
 		t.Errorf("Expected temp schema to have 0 objects after cleanup, instead found %d", objCount)
 	}
 
