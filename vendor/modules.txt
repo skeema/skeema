@@ -6,7 +6,7 @@ github.com/Microsoft/go-winio
 github.com/Microsoft/go-winio/pkg/guid
 github.com/Microsoft/go-winio/pkg/security
 github.com/Microsoft/go-winio/vhd
-# github.com/Microsoft/hcsshim v0.8.21
+# github.com/Microsoft/hcsshim v0.8.23
 github.com/Microsoft/hcsshim
 github.com/Microsoft/hcsshim/computestorage
 github.com/Microsoft/hcsshim/internal/cow
@@ -36,11 +36,11 @@ github.com/alecthomas/participle
 github.com/alecthomas/participle/lexer
 # github.com/containerd/cgroups v1.0.1
 github.com/containerd/cgroups/stats/v1
-# github.com/containerd/containerd v1.5.7
+# github.com/containerd/containerd v1.5.8
 github.com/containerd/containerd/log
 github.com/containerd/containerd/pkg/userns
 github.com/containerd/containerd/sys
-# github.com/docker/docker v20.10.10+incompatible
+# github.com/docker/docker v20.10.11+incompatible
 github.com/docker/docker/api/types/blkiodev
 github.com/docker/docker/api/types/container
 github.com/docker/docker/api/types/filters
@@ -65,7 +65,7 @@ github.com/docker/docker/pkg/system
 github.com/docker/go-connections/nat
 # github.com/docker/go-units v0.4.0
 github.com/docker/go-units
-# github.com/fsouza/go-dockerclient v1.7.5-0.20211103034944-aceb44c00b20
+# github.com/fsouza/go-dockerclient v1.7.5-0.20211201042754-ed8086f2b5b2
 ## explicit
 github.com/fsouza/go-dockerclient
 # github.com/go-sql-driver/mysql v1.6.0
@@ -101,7 +101,7 @@ github.com/morikuni/aec
 github.com/nozzle/throttler
 # github.com/opencontainers/go-digest v1.0.0
 github.com/opencontainers/go-digest
-# github.com/opencontainers/image-spec v1.0.1
+# github.com/opencontainers/image-spec v1.0.2
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
 # github.com/opencontainers/runc v1.0.2
@@ -123,7 +123,7 @@ go.opencensus.io/internal
 go.opencensus.io/trace
 go.opencensus.io/trace/internal
 go.opencensus.io/trace/tracestate
-# golang.org/x/lint v0.0.0-20201208152925-83fdc39ff7b5
+# golang.org/x/lint v0.0.0-20210508222113-6edffad5e616
 ## explicit
 golang.org/x/lint
 golang.org/x/lint/golint
@@ -136,7 +136,7 @@ golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b
+# golang.org/x/term v0.0.0-20210927222741-03fcf44c2211
 ## explicit
 golang.org/x/term
 # golang.org/x/tools v0.0.0-20210106214847-113979e3529a
