@@ -205,6 +205,12 @@ func (st *statementTokenizer) statements() ([]*Statement, error) {
 
 func (st *statementTokenizer) processLine(line string, eof bool) {
 	st.lineNo++
+
+	// Trim UTF8 BOM prefix if present at beginning of file
+	if st.lineNo == 1 {
+		line = strings.TrimPrefix(line, "\uFEFF")
+	}
+
 	ls := &lineState{
 		statementTokenizer: st,
 		line:               line,

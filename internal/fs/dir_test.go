@@ -326,6 +326,23 @@ func TestParseDirCreateSelect(t *testing.T) {
 	}
 }
 
+func TestParseDirBOM(t *testing.T) {
+	// The .skeema file and tables.sql file in this dir both have a UTF8 byte-order
+	// marker prefix char, which should not interfere with the ability to parse the
+	// dir or its contents
+	if dir, err := ParseDir("testdata/utf8bom", getValidConfig(t)); err != nil {
+		t.Fatalf("In dir testdata/utf8bom, unexpected error from ParseDir(): %v", err)
+	} else if len(dir.LogicalSchemas) != 1 {
+		t.Fatalf("In dir testdata/utf8bom, expected 1 logical schema, instead found %d", len(dir.LogicalSchemas))
+	} else if len(dir.LogicalSchemas[0].Creates) != 2 {
+		t.Fatalf("In dir testdata/utf8bom, expected 2 CREATEs, instead found %d", len(dir.LogicalSchemas[0].Creates))
+	} else if dir.ParseError != nil {
+		t.Fatalf("In dir testdata/utf8bom, expected nil ParseError, instead found %v", dir.ParseError)
+	} else if len(dir.IgnoredStatements) != 0 {
+		t.Errorf("In dir testdata/utf8bom, expected 0 IgnoredStatements, instead found %d", len(dir.IgnoredStatements))
+	}
+}
+
 func TestDirBaseName(t *testing.T) {
 	dir := getDir(t, "../../testdata/golden/init/mydb/product")
 	if bn := dir.BaseName(); bn != "product" {
