@@ -175,7 +175,8 @@ func (f *File) Parse(cfg *Config) error {
 	section := f.sectionIndex[""]
 
 	var lineNumber int
-	scanner := bufio.NewScanner(strings.NewReader(f.contents))
+	contents := strings.TrimPrefix(f.contents, "\uFEFF") // strip utf8 BOM if present
+	scanner := bufio.NewScanner(strings.NewReader(contents))
 	for scanner.Scan() {
 		line := scanner.Text()
 		lineNumber++

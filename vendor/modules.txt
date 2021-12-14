@@ -114,7 +114,7 @@ github.com/pmezard/go-difflib/difflib
 # github.com/sirupsen/logrus v1.8.1
 ## explicit
 github.com/sirupsen/logrus
-# github.com/skeema/mybase v1.0.13
+# github.com/skeema/mybase v1.0.14
 ## explicit
 github.com/skeema/mybase
 # go.opencensus.io v0.22.3
@@ -130,7 +130,7 @@ golang.org/x/lint/golint
 # golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 ## explicit
 golang.org/x/sync/errgroup
-# golang.org/x/sys v0.0.0-20210616094352-59db8d763f22
+# golang.org/x/sys v0.0.0-20211214170744-3b038e5940ed
 golang.org/x/sys/execabs
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/plan9
