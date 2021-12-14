@@ -641,9 +641,14 @@ func (dir *Dir) parseContents() {
 	for _, sf := range dir.SQLFiles {
 		tokenizedFile, err := sf.Tokenize()
 		if err != nil {
-			log.Warnf(err.Error())
-			dir.IgnoredStatements = append(dir.IgnoredStatements, tokenizedFile.Statements...)
-			continue
+			// Treat errors from Tokenize as fatal. This includes: i/o error opening or
+			// reading the .sql file; file had unterminated quote or backtick or comment.
+			// These are all problematic, since if the caller otherwise just skipped the
+			// statements in the file, it could result in the caller emitting DROP
+			// statements incorrectly -- not good if the root cause is just an unclosed
+			// quote for example.
+			dir.ParseError = err
+			return
 		}
 		for _, stmt := range tokenizedFile.Statements {
 			if _, ok := logicalSchemasByName[stmt.Schema()]; !ok {
@@ -656,7 +661,20 @@ func (dir *Dir) parseContents() {
 				return
 			}
 			if stmt.Type == StatementTypeUnknown {
+				// Statements which could not be parsed, meaning of an unsupported statement
+				// type (e.g. INSERTs), are simply ignored. This is not fatal, since it is
+				// quite rare for a typo to trigger this -- only happens when misspelling
+				// CREATE or the object type for example.
 				dir.IgnoredStatements = append(dir.IgnoredStatements, stmt)
+			} else if stmt.Type == StatementTypeLexError || stmt.Type == StatementTypeForbidden {
+				// Statements with lexer errors, meaning invalid characters, are treated as
+				// fatal. This can be indicative of a bug in the grammar, or of a normally-
+				// valid statement which has an illegal typo such as an invalid character
+				// mid-statement.
+				// Statements of explicitly-unsupported form (CREATE TABLE ... LIKE or
+				// CREATE TABLE ... SELECT) are also treated as fatal.
+				dir.ParseError = stmt.Error
+				return
 			}
 		}
 	}

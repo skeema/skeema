@@ -3,6 +3,7 @@ package fs
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -26,7 +27,9 @@ const (
 	StatementTypeNoop                  // entirely whitespace and/or comments
 	StatementTypeCommand               // currently just USE or DELIMITER
 	StatementTypeCreate
-	StatementTypeAlter // not actually ever parsed yet
+	StatementTypeAlter     // not actually ever parsed yet
+	StatementTypeLexError  // something went horribly wrong, caller should treat as fatal
+	StatementTypeForbidden // disallowed statement such as CREATE TABLE ... SELECT
 	// Other types will be added once they are supported by the package
 )
 
@@ -44,6 +47,7 @@ type Statement struct {
 	ObjectName      string
 	ObjectQualifier string
 	FromFile        *TokenizedSQLFile
+	Error           error // any problem lexing or parsing this statement, populated when Type is StatementTypeUnknown, StatementTypeLexError, or StatementTypeForbidden
 	delimiter       string
 	nameClause      string // raw version, potentially with schema name qualifier and/or surrounding backticks; also any trailing whitespace/comments
 }
@@ -368,13 +372,31 @@ func (ls *lineState) doneStatement(omitEndBytes int) {
 }
 
 func (ls *lineState) parseStatement() {
-	txt, _ := ls.stmt.SplitTextBody()
+	txt, remaining := ls.stmt.SplitTextBody()
 	if !ls.inRelevant || txt == "" {
 		ls.stmt.Type = StatementTypeNoop
 	} else {
 		sqlStmt := &sqlStatement{}
 		var name *objectName
 		if err := nameParser.ParseString(txt, sqlStmt); err != nil || sqlStmt.forbidden() {
+			if err == nil { // forbidden statement
+				ls.stmt.Type = StatementTypeForbidden
+				ls.stmt.Error = errors.New("Statements such as CREATE TABLE...LIKE and CREATE TABLE...SELECT are not supported")
+			} else if strings.ToLower(strings.TrimSpace(txt)) == "delimiter" && strings.Contains(remaining, ls.delimiter) {
+				// Special-case: DELIMITER command that sets the same delimiter that is
+				// already in effect. This unnecessarily generates a lexer error since the
+				// delimiter doesn't properly get interpretted as an arg to the command.
+				ls.stmt.Type = StatementTypeCommand
+			} else if lexErr, ok := err.(*lexer.Error); ok { // lexer error, potentially bad
+				ls.stmt.Type = StatementTypeLexError
+				fileLine, fileCol := ls.stmt.LineNo+lexErr.Tok.Pos.Line-1, lexErr.Tok.Pos.Column
+				if lexErr.Tok.Pos.Line == 1 && ls.stmt.CharNo > 1 { // error is on first line of statement, and statement started mid-line
+					fileCol += ls.stmt.CharNo - 1
+				}
+				ls.stmt.Error = fmt.Errorf("%s:%d:%d: %s", ls.stmt.File, fileLine, fileCol, lexErr.Msg)
+			} else { // unsupported statement, often benign
+				ls.stmt.Error = err // pass through the error as-is (often a participle.UnexpectedTokenError which isn't particularly useful)
+			}
 			return
 		} else if sqlStmt.UseCommand != nil {
 			ls.stmt.Type = StatementTypeCommand

@@ -266,6 +266,66 @@ func TestParseDirNoSchemas(t *testing.T) {
 	}
 }
 
+func TestParseDirUnterminated(t *testing.T) {
+	// These 3 dirs have unterminated quotes, identifiers (backticks), and multi-
+	// line comments, respectively. Each should surface as dir.ParseError.
+	for _, subdir := range []string{"unterminatedcomment", "unterminatedident", "unterminatedquote"} {
+		if _, err := ParseDir("testdata/"+subdir, getValidConfig(t)); err == nil {
+			t.Errorf("In dir testdata/%s, expected error from ParseDir(), but instead err is nil", subdir)
+		}
+	}
+}
+
+func TestParseDirInvalidChar(t *testing.T) {
+	// This dir has an invalid operator ("?") which causes the lexer to fail.
+	// It should be handled as a fatal error and the position of the error
+	// should be correct.
+	_, err := ParseDir("testdata/invalidchar", getValidConfig(t))
+	if err == nil {
+		t.Fatal("In dir testdata/invalidchar, expected error from ParseDir(), but instead err is nil")
+	}
+	if msg := err.Error(); !strings.Contains(msg, "testdata/invalidchar/tables.sql:5:15: invalid token '?'") {
+		t.Errorf("Error message did not match expectation; result was %q", msg)
+	}
+}
+
+func TestParseDirUnknownIgnored(t *testing.T) {
+	// This dir contains an INSERT statement among the valid CREATEs. This should
+	// be tracked in dir.IgnoredStatements but isn't a fatal error.
+	if dir, err := ParseDir("testdata/unknownstatement", getValidConfig(t)); err != nil {
+		t.Fatalf("In dir testdata/unknownstatement, unexpected error from ParseDir(): %v", err)
+	} else if len(dir.LogicalSchemas) != 1 {
+		t.Fatalf("In dir testdata/unknownstatement, expected 1 logical schema, instead found %d", len(dir.LogicalSchemas))
+	} else if dir.ParseError != nil {
+		t.Fatalf("In dir testdata/unknownstatement, expected nil ParseError, instead found %v", dir.ParseError)
+	} else if len(dir.IgnoredStatements) != 1 {
+		t.Errorf("In dir testdata/unknownstatement, expected 1 IgnoredStatements, instead found %d", len(dir.IgnoredStatements))
+	}
+}
+
+func TestParseDirRedundantDelimiter(t *testing.T) {
+	// This dir contains redundant DELIMITER commands, which are special-cased in
+	// the statement tokenizer and should not cause errors or IgnoredStatements.
+	if dir, err := ParseDir("testdata/redundantdelimiter", getValidConfig(t)); err != nil {
+		t.Fatalf("In dir testdata/redundantdelimiter, unexpected error from ParseDir(): %v", err)
+	} else if len(dir.LogicalSchemas) != 1 {
+		t.Fatalf("In dir testdata/redundantdelimiter, expected 1 logical schema, instead found %d", len(dir.LogicalSchemas))
+	} else if dir.ParseError != nil {
+		t.Fatalf("In dir testdata/redundantdelimiter, expected nil ParseError, instead found %v", dir.ParseError)
+	} else if len(dir.IgnoredStatements) != 0 {
+		t.Errorf("In dir testdata/redundantdelimiter, expected 0 IgnoredStatements, instead found %d", len(dir.IgnoredStatements))
+	}
+}
+
+func TestParseDirCreateSelect(t *testing.T) {
+	// This dir contains a CREATE ... SELECT statement, which is explicitly not
+	// supported at this time.
+	_, err := ParseDir("testdata/createselect", getValidConfig(t))
+	if err == nil {
+		t.Fatal("In dir testdata/createselect, expected error from ParseDir(), but instead err is nil")
+	}
+}
+
 func TestDirBaseName(t *testing.T) {
 	dir := getDir(t, "../../testdata/golden/init/mydb/product")
 	if bn := dir.BaseName(); bn != "product" {
