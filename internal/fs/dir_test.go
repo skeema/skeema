@@ -60,7 +60,7 @@ func TestParseDir(t *testing.T) {
 func TestParseDirErrors(t *testing.T) {
 	// Confirm error cases: nonexistent dir; non-dir file; dir with *.sql files
 	// creating same table multiple times
-	for _, dirPath := range []string{"../bestdata", "../testdata/setup.sql", "../testdata"} {
+	for _, dirPath := range []string{"../../bestdata", "../../testdata/setup.sql", "../../testdata"} {
 		dir, err := ParseDir(dirPath, getValidConfig(t))
 		if err == nil || (dir != nil && dir.ParseError == nil) {
 			t.Errorf("Expected ParseDir to return nil dir and non-nil error, but dir=%v err=%v", dir, err)
@@ -71,10 +71,10 @@ func TestParseDirErrors(t *testing.T) {
 	cmd := mybase.NewCommand("fstest", "", "", nil)
 	cmd.AddArg("environment", "production", false)
 	cfg := mybase.ParseFakeCLI(t, cmd, "fstest")
-	if _, err := ParseDir("../testdata/golden/init/mydb", cfg); err == nil {
+	if _, err := ParseDir("../../testdata/golden/init/mydb", cfg); err == nil {
 		t.Error("Expected error from ParseDir(), but instead err is nil")
 	}
-	if _, err := ParseDir("../testdata/golden/init/mydb/product", cfg); err == nil {
+	if _, err := ParseDir("../../testdata/golden/init/mydb/product", cfg); err == nil {
 		t.Error("Expected error from ParseDir(), but instead err is nil")
 	}
 }
