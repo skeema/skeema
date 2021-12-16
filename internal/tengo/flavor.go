@@ -100,6 +100,7 @@ var (
 	FlavorMariaDB104 = Flavor{VendorMariaDB, 10, 4, 0}
 	FlavorMariaDB105 = Flavor{VendorMariaDB, 10, 5, 0}
 	FlavorMariaDB106 = Flavor{VendorMariaDB, 10, 6, 0}
+	FlavorMariaDB107 = Flavor{VendorMariaDB, 10, 7, 0}
 )
 
 // NewFlavor returns a Flavor value based on its inputs, which should be
@@ -212,7 +213,7 @@ func (fl Flavor) Supported() bool {
 		return fl.MySQLishMinVersion(5, 5) && !fl.MySQLishMinVersion(8, 1)
 	case VendorMariaDB:
 		// Currently support 10.1.0 through 10.6.x
-		return fl.Major == 10 && fl.Minor >= 1 && fl.Minor <= 6
+		return fl.Major == 10 && fl.Minor >= 1 && fl.Minor <= 7
 	}
 	return false
 }

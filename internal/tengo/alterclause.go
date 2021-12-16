@@ -487,6 +487,9 @@ func (mc ModifyColumn) Unsafe() bool {
 	if isConversionBetween("inet6", "binary(16)", "char(39)", "varchar(39)") { // MariaDB 10.5+ inet6 type
 		return false
 	}
+	if isConversionBetween("uuid", "binary(16)", "char(32)", "varchar(32)", "char(36)", "varchar(36)") { // MariaDB 10.7+ uuid type
+		return false
+	}
 
 	// Conversions between variable-length binary types (varbinary, *blob):
 	// unsafe if new size < old size
