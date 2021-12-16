@@ -81,65 +81,26 @@ type Flavor struct {
 // value for Flavor.
 var FlavorUnknown = Flavor{VendorUnknown, 0, 0, 0}
 
-// FlavorMySQL55 represents MySQL 5.5.x. This constant omits a patch number;
-// avoid direct equality comparisons and ideally only use this in tests.
-var FlavorMySQL55 = Flavor{VendorMySQL, 5, 5, 0}
-
-// FlavorMySQL56 represents MySQL 5.6.x. This constant omits a patch number;
-// avoid direct equality comparisons and ideally only use this in tests.
-var FlavorMySQL56 = Flavor{VendorMySQL, 5, 6, 0}
-
-// FlavorMySQL57 represents MySQL 5.7.x. This constant omits a patch number;
-// avoid direct equality comparisons and ideally only use this in tests.
-var FlavorMySQL57 = Flavor{VendorMySQL, 5, 7, 0}
-
-// FlavorMySQL80 represents MySQL 8.0.x. This constant omits a patch number;
-// avoid direct equality comparisons and ideally only use this in tests.
-// Patch number is especially relevant in MySQL 8.0.x as functionality now
-// changes in patch releases.
-var FlavorMySQL80 = Flavor{VendorMySQL, 8, 0, 0}
-
-// FlavorPercona55 represents Percona Server 5.5.x. This constant omits a patch
-// number; avoid direct equality comparisons and ideally only use this in tests.
-var FlavorPercona55 = Flavor{VendorPercona, 5, 5, 0}
-
-// FlavorPercona56 represents Percona Server 5.6.x. This constant omits a patch
-// number; avoid direct equality comparisons and ideally only use this in tests.
-var FlavorPercona56 = Flavor{VendorPercona, 5, 6, 0}
-
-// FlavorPercona57 represents Percona Server 5.7.x. This constant omits a patch
-// number; avoid direct equality comparisons and ideally only use this in tests.
-var FlavorPercona57 = Flavor{VendorPercona, 5, 7, 0}
-
-// FlavorPercona80 represents Percona Server 8.0.x. This constant omits a patch
-// number; avoid direct equality comparisons and ideally only use this in tests.
-// Patch number is especially relevant in Percona Server 8.0.x as functionality
-// now changes in patch releases.
-var FlavorPercona80 = Flavor{VendorPercona, 8, 0, 0}
-
-// FlavorMariaDB101 represents MariaDB 10.1.x. This constant omits a patch
-// number; avoid direct equality comparisons and ideally only use this in tests.
-var FlavorMariaDB101 = Flavor{VendorMariaDB, 10, 1, 0}
-
-// FlavorMariaDB102 represents MariaDB 10.2.x. This constant omits a patch
-// number; avoid direct equality comparisons and ideally only use this in tests.
-var FlavorMariaDB102 = Flavor{VendorMariaDB, 10, 2, 0}
-
-// FlavorMariaDB103 represents MariaDB 10.3.x. This constant omits a patch
-// number; avoid direct equality comparisons and ideally only use this in tests.
-var FlavorMariaDB103 = Flavor{VendorMariaDB, 10, 3, 0}
-
-// FlavorMariaDB104 represents MariaDB 10.4.x. This constant omits a patch
-// number; avoid direct equality comparisons and ideally only use this in tests.
-var FlavorMariaDB104 = Flavor{VendorMariaDB, 10, 4, 0}
-
-// FlavorMariaDB105 represents MariaDB 10.5.x. This constant omits a patch
-// number; avoid direct equality comparisons and ideally only use this in tests.
-var FlavorMariaDB105 = Flavor{VendorMariaDB, 10, 5, 0}
-
-// FlavorMariaDB106 represents MariaDB 10.6.x. This constant omits a patch
-// number; avoid direct equality comparisons and ideally only use this in tests.
-var FlavorMariaDB106 = Flavor{VendorMariaDB, 10, 6, 0}
+// Flavor values representing important vendor and major/minor version
+// combinations. These all omit patch numbers! Outside of tests, avoid
+// direct equality comparison, and instead only compare these to the return
+// value of Flavor.Family().
+var (
+	FlavorMySQL55    = Flavor{VendorMySQL, 5, 5, 0}
+	FlavorMySQL56    = Flavor{VendorMySQL, 5, 6, 0}
+	FlavorMySQL57    = Flavor{VendorMySQL, 5, 7, 0}
+	FlavorMySQL80    = Flavor{VendorMySQL, 8, 0, 0}
+	FlavorPercona55  = Flavor{VendorPercona, 5, 5, 0}
+	FlavorPercona56  = Flavor{VendorPercona, 5, 6, 0}
+	FlavorPercona57  = Flavor{VendorPercona, 5, 7, 0}
+	FlavorPercona80  = Flavor{VendorPercona, 8, 0, 0}
+	FlavorMariaDB101 = Flavor{VendorMariaDB, 10, 1, 0}
+	FlavorMariaDB102 = Flavor{VendorMariaDB, 10, 2, 0}
+	FlavorMariaDB103 = Flavor{VendorMariaDB, 10, 3, 0}
+	FlavorMariaDB104 = Flavor{VendorMariaDB, 10, 4, 0}
+	FlavorMariaDB105 = Flavor{VendorMariaDB, 10, 5, 0}
+	FlavorMariaDB106 = Flavor{VendorMariaDB, 10, 6, 0}
+)
 
 // NewFlavor returns a Flavor value based on its inputs, which should be
 // supplied in one of these forms:
