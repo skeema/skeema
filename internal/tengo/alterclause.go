@@ -316,8 +316,8 @@ func (mc ModifyColumn) Clause(mods StatementModifiers) string {
 
 // Unsafe returns true if this clause is potentially destructive of data.
 // ModifyColumn's safety depends on the nature of the column change; for example,
-// increasing the size of a varchar is safe, but changing decreasing the size or
-// changing the column type entirely is considered unsafe.
+// increasing the size of a varchar is safe, but decreasing the size or (in most
+// cases) changing the column type entirely is considered unsafe.
 func (mc ModifyColumn) Unsafe() bool {
 	if mc.OldColumn.Virtual {
 		return false
@@ -470,10 +470,21 @@ func (mc ModifyColumn) Unsafe() bool {
 		return newStringSize < oldStringSize
 	}
 
-	// MariaDB 10.5+ conversions between the new inet6 type and binary(16) are
-	// always safe, as per manual description in
-	// https://mariadb.com/kb/en/inet6/#migration-between-binary16-and-inet6
-	if (oldType == "binary(16)" && newType == "inet6") || (oldType == "inet6" && newType == "binary(16)") {
+	// MariaDB introduces some new convenience types, which have safe conversions
+	// between specific binary and textual types. This func returns true if one
+	// side of the conversion has coltype typ and the other side has one of the
+	// coltypes listed in other.
+	isConversionBetween := func(typ string, others ...string) bool {
+		if oldType == typ || newType == typ {
+			for _, other := range others {
+				if oldType == other || newType == other {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if isConversionBetween("inet6", "binary(16)", "char(39)", "varchar(39)") { // MariaDB 10.5+ inet6 type
 		return false
 	}
 
