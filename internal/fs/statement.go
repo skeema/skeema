@@ -270,16 +270,28 @@ func (st *statementTokenizer) processLine(line string, eof bool) {
 			ls.inRelevant = true
 		}
 
+		// Commands are special-cases in terms of delimiter vs newline handling: USE
+		// command has optional delimiter, and DELIMITER command has no delimiter
+		// (and requires special care to handle transititions like e.g. going from
+		// a single semicolon delimiter to double-semicolon delimiter!)
+		if bufLen := ls.buf.Len(); (bufLen == 4 || bufLen == 10) && unicode.IsSpace(c) { // potentially USE or DELIMITER followed by whitespace
+			var slurpLineAsCommand bool
+			if lowerBufStr := strings.ToLower(ls.buf.String()); strings.HasPrefix(lowerBufStr, "use") && !strings.Contains(ls.line[ls.pos:], st.delimiter) {
+				slurpLineAsCommand = true
+			} else if strings.HasPrefix(lowerBufStr, "delimiter") {
+				slurpLineAsCommand = true
+			}
+			if slurpLineAsCommand {
+				ls.buf.WriteString(ls.line[ls.pos:])
+				ls.stmt.delimiter = "\000" // prevent SplitTextBody from stripping previous delimiter from command arg
+				ls.doneStatement(0)
+				return
+			}
+		}
+
 		delimFirstRune, delimFirstRuneLen := utf8.DecodeRuneInString(st.delimiter)
 		delimRuneCount := utf8.RuneCountInString(st.delimiter)
 		switch c {
-		case '\n':
-			// Commands do not require semicolons; newline alone can be delimiter.
-			// Only supported commands so far are USE and DELIMITER.
-			lowerBufStr := strings.ToLower(ls.buf.String())
-			if strings.HasPrefix(lowerBufStr, "use ") || strings.HasPrefix(lowerBufStr, "delimiter ") {
-				ls.doneStatement(0)
-			}
 		case '"', '`', '\'':
 			ls.inQuote = c
 		case delimFirstRune:
@@ -378,7 +390,7 @@ func (ls *lineState) doneStatement(omitEndBytes int) {
 }
 
 func (ls *lineState) parseStatement() {
-	txt, remaining := ls.stmt.SplitTextBody()
+	txt, _ := ls.stmt.SplitTextBody()
 	if !ls.inRelevant || txt == "" {
 		ls.stmt.Type = StatementTypeNoop
 	} else {
@@ -388,11 +400,6 @@ func (ls *lineState) parseStatement() {
 			if err == nil { // forbidden statement
 				ls.stmt.Type = StatementTypeForbidden
 				ls.stmt.Error = errors.New("Statements such as CREATE TABLE...LIKE and CREATE TABLE...SELECT are not supported")
-			} else if strings.ToLower(strings.TrimSpace(txt)) == "delimiter" && strings.Contains(remaining, ls.delimiter) {
-				// Special-case: DELIMITER command that sets the same delimiter that is
-				// already in effect. This unnecessarily generates a lexer error since the
-				// delimiter doesn't properly get interpretted as an arg to the command.
-				ls.stmt.Type = StatementTypeCommand
 			} else if lexErr, ok := err.(*lexer.Error); ok { // lexer error, potentially bad
 				ls.stmt.Type = StatementTypeLexError
 				fileLine, fileCol := ls.stmt.LineNo+lexErr.Tok.Pos.Line-1, lexErr.Tok.Pos.Column

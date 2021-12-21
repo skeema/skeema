@@ -304,16 +304,20 @@ func TestParseDirUnknownIgnored(t *testing.T) {
 }
 
 func TestParseDirRedundantDelimiter(t *testing.T) {
-	// This dir contains redundant DELIMITER commands, which are special-cased in
-	// the statement tokenizer and should not cause errors or IgnoredStatements.
+	// This dir contains two special cases of DELIMITER commands:
+	// * Setting a delimiter that is already the current delimiter, e.g. from ; to ;
+	// * Setting a delimiter that is double the previous delimiter, e.g. from ; to ;;
+	// These cases should not cause errors or IgnoredStatements.
 	if dir, err := ParseDir("testdata/redundantdelimiter", getValidConfig(t)); err != nil {
 		t.Fatalf("In dir testdata/redundantdelimiter, unexpected error from ParseDir(): %v", err)
 	} else if len(dir.LogicalSchemas) != 1 {
 		t.Fatalf("In dir testdata/redundantdelimiter, expected 1 logical schema, instead found %d", len(dir.LogicalSchemas))
+	} else if len(dir.LogicalSchemas[0].Creates) != 3 {
+		t.Fatalf("In dir testdata/redundantdelimiter, expected 3 CREATEs, instead found %d", len(dir.LogicalSchemas[0].Creates))
 	} else if dir.ParseError != nil {
 		t.Fatalf("In dir testdata/redundantdelimiter, expected nil ParseError, instead found %v", dir.ParseError)
-	} else if len(dir.IgnoredStatements) != 0 {
-		t.Errorf("In dir testdata/redundantdelimiter, expected 0 IgnoredStatements, instead found %d", len(dir.IgnoredStatements))
+	} else if len(dir.IgnoredStatements) > 0 {
+		t.Errorf("In dir testdata/redundantdelimiter, expected 0 IgnoredStatements, instead found %d, first is %+v", len(dir.IgnoredStatements), *dir.IgnoredStatements[0])
 	}
 }
 
