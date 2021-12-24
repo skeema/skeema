@@ -98,7 +98,7 @@ func TestDocker(t *testing.T) {
 	if _, err := di.SourceSQL("testdata/does-not-exist.sql"); err == nil {
 		t.Error("Expected error attempting to SourceSQL nonexistent file, instead got nil")
 	}
-	if _, err := di.SourceSQL("NOTICE"); err == nil {
+	if _, err := di.SourceSQL("docker.go"); err == nil {
 		t.Error("Expected error attempting to SourceSQL non-SQL file, instead got nil")
 	}
 

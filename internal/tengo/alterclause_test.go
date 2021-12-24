@@ -198,13 +198,11 @@ func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
 		t.Skipf("InnoDB page compression not supported in flavor %s", flavor)
 	}
 
-	sqlPath := "testdata/pagecompression.sql"
+	sqlPath := "pagecompression.sql"
 	if flavor.Vendor == VendorMariaDB {
-		sqlPath = "testdata/pagecompression-maria.sql"
+		sqlPath = "pagecompression-maria.sql"
 	}
-	if _, err := s.d.SourceSQL(sqlPath); err != nil {
-		t.Fatalf("Unexpected error sourcing %s: %v", sqlPath, err)
-	}
+	s.SourceTestSQL(t, sqlPath)
 	uncompTable := s.GetTable(t, "testing", "actor_in_film")
 	if uncompTable.CreateOptions != "" {
 		t.Fatal("Fixture table has changed without test logic being updated")

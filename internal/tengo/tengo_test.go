@@ -3,6 +3,7 @@ package tengo
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -53,6 +54,17 @@ func (s *TengoIntegrationSuite) BeforeTest(backend string) error {
 	}
 	_, err := s.d.SourceSQL("testdata/integration.sql")
 	return err
+}
+
+// SourceTestSQL executes the supplied sql file(s), which should be supplied
+// relative to the testdata subdir. If any errors occur, the test fails.
+func (s *TengoIntegrationSuite) SourceTestSQL(t *testing.T, files ...string) {
+	for _, f := range files {
+		fPath := filepath.Join("testdata", f)
+		if _, err := s.d.SourceSQL(fPath); err != nil {
+			t.Fatal(err.Error())
+		}
+	}
 }
 
 func (s *TengoIntegrationSuite) GetSchema(t *testing.T, schemaName string) *Schema {

@@ -9,6 +9,7 @@ import (
 // HasTable(), and Table(). It does not explicitly validate the introspection
 // logic though; that's handled in TestInstanceSchemaIntrospection.
 func (s TengoIntegrationSuite) TestSchemaTables(t *testing.T) {
+	s.SourceTestSQL(t, "integration-ext.sql")
 	schema := s.GetSchema(t, "testing")
 
 	// Currently at least 7 tables in testing schema in testdata/integration.sql
@@ -50,40 +51,31 @@ func (s TengoIntegrationSuite) TestSchemaTables(t *testing.T) {
 // TestSchemaJSON confirms that a schema can be JSON encoded and decoded to
 // yield the exact same schema.
 func (s TengoIntegrationSuite) TestSchemaJSON(t *testing.T) {
+	s.SourceTestSQL(t, "integration-ext.sql")
 	flavor := s.d.Flavor()
 
 	// Include coverage for partitioned tables
-	if _, err := s.d.SourceSQL("testdata/partition.sql"); err != nil {
-		t.Fatalf("Unexpected error sourcing testdata/partition.sql: %v", err)
-	}
+	s.SourceTestSQL(t, "partition.sql")
 
 	// Include coverage for generated columns, if flavor supports them
 	if flavor.GeneratedColumns() {
-		sqlfile := "testdata/generatedcols.sql"
+		sqlfile := "generatedcols.sql"
 		if flavor.Vendor == VendorMariaDB { // no support for NOT NULL generated cols
-			sqlfile = "testdata/generatedcols-maria.sql"
+			sqlfile = "generatedcols-maria.sql"
 		}
-		if _, err := s.d.SourceSQL(sqlfile); err != nil {
-			t.Fatalf("Unexpected error sourcing testdata/generatedcols.sql: %v", err)
-		}
+		s.SourceTestSQL(t, sqlfile)
 	}
 
 	// Include coverage for fulltext parsers if MySQL 5.7+
 	if flavor.MySQLishMinVersion(5, 7) {
-		if _, err := s.d.SourceSQL("testdata/ft-parser.sql"); err != nil {
-			t.Fatalf("Unexpected error sourcing testdata/ft-parser.sql: %v", err)
-		}
+		s.SourceTestSQL(t, "ft-parser.sql")
 	}
 
 	// Include coverage for advanced index functionality if flavor has it
 	if flavor.MySQLishMinVersion(8, 0) {
-		if _, err := s.d.SourceSQL("testdata/index-mysql8.sql"); err != nil {
-			t.Fatalf("Unexpected error sourcing testdata/index-mysql8.sql: %v", err)
-		}
+		s.SourceTestSQL(t, "index-mysql8.sql")
 	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 6) {
-		if _, err := s.d.SourceSQL("testdata/index-maria106.sql"); err != nil {
-			t.Fatalf("Unexpected error sourcing testdata/index-maria106.sql: %v", err)
-		}
+		s.SourceTestSQL(t, "index-maria106.sql")
 	}
 
 	for _, schemaName := range []string{"testing", "testcharcoll", "partitionparty"} {

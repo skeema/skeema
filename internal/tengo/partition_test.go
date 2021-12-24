@@ -247,9 +247,7 @@ func TestPartitioningDataDirectory(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestPartitionedIntrospection(t *testing.T) {
-	if _, err := s.d.SourceSQL("testdata/partition.sql"); err != nil {
-		t.Fatalf("Unexpected error sourcing testdata/partition.sql: %v", err)
-	}
+	s.SourceTestSQL(t, "partition.sql")
 	schema := s.GetSchema(t, "partitionparty")
 	flavor := s.d.Flavor()
 
@@ -296,9 +294,7 @@ func (s TengoIntegrationSuite) TestPartitionedIntrospection(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestDropPartitionedTable(t *testing.T) {
-	if _, err := s.d.SourceSQL("testdata/partition.sql"); err != nil {
-		t.Fatalf("Unexpected error sourcing testdata/partition.sql: %v", err)
-	}
+	s.SourceTestSQL(t, "partition.sql")
 
 	// Setup: build a "to" schema which removes 2 tables in the "from" schema:
 	// one partitioned using RANGE COLUMNS and one partitioned using LINEAR KEY
@@ -353,9 +349,7 @@ func (s TengoIntegrationSuite) TestDropPartitionedTable(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestBulkDropPartitioned(t *testing.T) {
-	if _, err := s.d.SourceSQL("testdata/partition.sql"); err != nil {
-		t.Fatalf("Unexpected error sourcing testdata/partition.sql: %v", err)
-	}
+	s.SourceTestSQL(t, "partition.sql")
 	opts := BulkDropOptions{
 		MaxConcurrency:  15,
 		PartitionsFirst: true,
@@ -367,10 +361,7 @@ func (s TengoIntegrationSuite) TestBulkDropPartitioned(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
-	if _, err := s.d.SourceSQL("testdata/partition.sql"); err != nil {
-		t.Fatalf("Unexpected error sourcing testdata/partition.sql: %v", err)
-	}
-
+	s.SourceTestSQL(t, "partition.sql")
 	flavor := s.d.Flavor()
 	mods := StatementModifiers{AllowUnsafe: true, Flavor: flavor}
 	tableFromDB := s.GetTable(t, "partitionparty", "prange")

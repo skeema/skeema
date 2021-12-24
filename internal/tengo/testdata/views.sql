@@ -13,5 +13,3 @@ FROM   actor
 WHERE  alive = 1
 WITH CHECK OPTION;
 
-# allow test on DropTablesInSchema to use BulkDropOptions.OnlyIfEmpty
-DELETE FROM has_rows;

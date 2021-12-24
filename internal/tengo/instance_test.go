@@ -394,6 +394,8 @@ func TestInstanceGrantChecksRegexes(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestInstanceSchemas(t *testing.T) {
+	s.SourceTestSQL(t, "integration-ext.sql")
+
 	assertSame := func(s1, s2 *Schema) {
 		t.Helper()
 		if s1.Name != s2.Name {
@@ -489,6 +491,7 @@ func (s TengoIntegrationSuite) TestInstanceShowCreateTable(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestInstanceTableSize(t *testing.T) {
+	s.SourceTestSQL(t, "rows.sql")
 	size, err := s.d.TableSize("testing", "has_rows")
 	if err != nil {
 		t.Errorf("Error from TableSize: %s", err)
@@ -504,6 +507,7 @@ func (s TengoIntegrationSuite) TestInstanceTableSize(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestInstanceTableHasRows(t *testing.T) {
+	s.SourceTestSQL(t, "rows.sql")
 	if hasRows, err := s.d.TableHasRows("testing", "has_rows"); err != nil {
 		t.Errorf("Error from TableHasRows: %s", err)
 	} else if !hasRows {
@@ -557,6 +561,8 @@ func (s TengoIntegrationSuite) TestInstanceCreateSchema(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestInstanceDropSchema(t *testing.T) {
+	s.SourceTestSQL(t, "integration-ext.sql", "rows.sql")
+
 	opts := BulkDropOptions{
 		MaxConcurrency:  10,
 		OnlyIfEmpty:     true,
@@ -621,6 +627,8 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesDeadlock(t *testing.T) {
 		t.Skip("Test only relevant for flavors that have the new data dictionary")
 	}
 
+	s.SourceTestSQL(t, "integration-ext.sql", "rows.sql")
+
 	db, err := s.d.Connect("", "foreign_key_checks=0")
 	if err != nil {
 		t.Fatalf("Unable to connect to DockerizedInstance: %s", err)
@@ -652,9 +660,7 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesDeadlock(t *testing.T) {
 func (s TengoIntegrationSuite) TestInstanceDropTablesSkipsViews(t *testing.T) {
 	// Create two views, including one with an invalid DEFINER, which intentionally
 	// prevents queries on the view from working.
-	if _, err := s.d.SourceSQL("testdata/views.sql"); err != nil {
-		t.Fatalf("Unexpected error sourcing testdata/views.sql: %v", err)
-	}
+	s.SourceTestSQL(t, "views.sql")
 
 	// Confirm I_S assumptions present in logic similar to tablesToPartitions:
 	// no views there except in MySQL 8 / PS 8; if views are there, they have
@@ -759,6 +765,8 @@ func (s TengoIntegrationSuite) TestInstanceDropRoutinesInSchemaByRef(t *testing.
 }
 
 func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
+	s.SourceTestSQL(t, "integration-ext.sql")
+
 	assertNoError := func(schemaName, newCharSet, newCollation, expectCharSet, expectCollation string) {
 		t.Helper()
 		opts := SchemaCreationOptions{

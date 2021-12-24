@@ -8,6 +8,8 @@ import (
 )
 
 func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
+	s.SourceTestSQL(t, "integration-ext.sql", "rows.sql")
+
 	// Ensure our unit test fixtures and integration test fixtures match
 	flavor := s.d.Flavor()
 	schema, aTableFromDB := s.GetSchemaAndTable(t, "testing", "actor")
@@ -95,9 +97,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Test introspection of default expressions, if flavor supports them
 	if flavor.VendorMinVersion(VendorMariaDB, 10, 2) || flavor.MySQLishMinVersion(8, 0, 13) {
-		if _, err := s.d.SourceSQL("testdata/default-expr.sql"); err != nil {
-			t.Fatalf("Unexpected error sourcing testdata/default-expr.sql: %v", err)
-		}
+		s.SourceTestSQL(t, "default-expr.sql")
 		table := s.GetTable(t, "testing", "testdefaults")
 		if table.UnsupportedDDL {
 			t.Errorf("Use of default expression unexpectedly triggers UnsupportedDDL.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", table.GeneratedCreateStatement(flavor), table.CreateStatement)
@@ -106,13 +106,11 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Test introspection of generated columns, if flavor supports them
 	if flavor.GeneratedColumns() {
-		sqlfile := "testdata/generatedcols.sql"
+		sqlfile := "generatedcols.sql"
 		if flavor.Vendor == VendorMariaDB { // no support for NOT NULL generated cols
-			sqlfile = "testdata/generatedcols-maria.sql"
+			sqlfile = "generatedcols-maria.sql"
 		}
-		if _, err := s.d.SourceSQL(sqlfile); err != nil {
-			t.Fatalf("Unexpected error sourcing testdata/generatedcols.sql: %v", err)
-		}
+		s.SourceTestSQL(t, sqlfile)
 		table := s.GetTable(t, "testing", "staff")
 		if table.UnsupportedDDL {
 			t.Errorf("Expected table using generated columns to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
@@ -131,9 +129,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Test advanced index functionality in MySQL 8+
 	if flavor.MySQLishMinVersion(8, 0) {
-		if _, err := s.d.SourceSQL("testdata/index-mysql8.sql"); err != nil {
-			t.Fatalf("Unexpected error sourcing testdata/index-mysql8.sql: %v", err)
-		}
+		s.SourceTestSQL(t, "index-mysql8.sql")
 		table := s.GetTable(t, "testing", "my8idx")
 		if table.UnsupportedDDL {
 			t.Errorf("Expected table using advanced index functionality to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
@@ -149,9 +145,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 			t.Errorf("Unexpected index part expressions found: [0].Expression=%q, [1].Expression=%q", idx.Parts[0].Expression, idx.Parts[1].Expression)
 		}
 	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 6) {
-		if _, err := s.d.SourceSQL("testdata/index-maria106.sql"); err != nil {
-			t.Fatalf("Unexpected error sourcing testdata/index-maria106.sql: %v", err)
-		}
+		s.SourceTestSQL(t, "index-maria106.sql")
 		table := s.GetTable(t, "testing", "maria106idx")
 		if table.UnsupportedDDL {
 			t.Errorf("Expected table using ignored index to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
@@ -164,9 +158,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Test invisible column support in flavors supporting it
 	if flavor.VendorMinVersion(VendorMariaDB, 10, 3) || flavor.MySQLishMinVersion(8, 0, 23) {
-		if _, err := s.d.SourceSQL("testdata/inviscols.sql"); err != nil {
-			t.Fatalf("Unexpected error sourcing testdata/inviscols.sql: %v", err)
-		}
+		s.SourceTestSQL(t, "inviscols.sql")
 		table := s.GetTable(t, "testing", "invistest")
 		if table.UnsupportedDDL {
 			t.Errorf("Expected table using invisible columns to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
@@ -182,9 +174,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	// Include coverage for fulltext parsers if MySQL 5.7+. (Although these are
 	// supported in other flavors too, no alternative parsers ship with them.)
 	if flavor.MySQLishMinVersion(5, 7) {
-		if _, err := s.d.SourceSQL("testdata/ft-parser.sql"); err != nil {
-			t.Fatalf("Unexpected error sourcing testdata/ft-parser.sql: %v", err)
-		}
+		s.SourceTestSQL(t, "ft-parser.sql")
 		table := s.GetTable(t, "testing", "ftparser")
 		if table.UnsupportedDDL {
 			t.Errorf("Expected table using ngram fulltext parser to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
@@ -203,9 +193,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Coverage for column compression
 	if flavor.VendorMinVersion(VendorPercona, 5, 6, 33) {
-		if _, err := s.d.SourceSQL("testdata/colcompression-percona.sql"); err != nil {
-			t.Fatalf("Unexpected error sourcing testdata/colcompression-percona.sql: %v", err)
-		}
+		s.SourceTestSQL(t, "colcompression-percona.sql")
 		table := s.GetTable(t, "testing", "colcompr")
 		if table.UnsupportedDDL {
 			t.Errorf("Expected table using column compression to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
@@ -214,9 +202,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 			t.Errorf("Unexpected value for compression column attribute: found %q", table.Columns[1].Compression)
 		}
 	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 3) {
-		if _, err := s.d.SourceSQL("testdata/colcompression-maria.sql"); err != nil {
-			t.Fatalf("Unexpected error sourcing testdata/colcompression-maria.sql: %v", err)
-		}
+		s.SourceTestSQL(t, "colcompression-maria.sql")
 		table := s.GetTable(t, "testing", "colcompr")
 		if table.UnsupportedDDL {
 			t.Errorf("Expected table using column compression to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
@@ -228,13 +214,11 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Include tables with check constraints if supported by flavor
 	if flavor.HasCheckConstraints() {
-		filename := "testdata/check.sql"
+		filename := "check.sql"
 		if flavor.Vendor == VendorMariaDB {
-			filename = "testdata/check-maria.sql"
+			filename = "check-maria.sql"
 		}
-		if _, err := s.d.SourceSQL(filename); err != nil {
-			t.Fatalf("Unexpected error sourcing %s: %v", filename, err)
-		}
+		s.SourceTestSQL(t, filename)
 		tablesWithChecks := []*Table{s.GetTable(t, "testing", "has_checks1"), s.GetTable(t, "testing", "has_checks2")}
 		for _, table := range tablesWithChecks {
 			if len(table.Checks) == 0 {
