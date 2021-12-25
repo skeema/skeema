@@ -10,6 +10,9 @@ CREATE TABLE my8idx (
 	b int,
 	c int,
 	d int,
+	name varchar(50),
 	PRIMARY KEY (a),
-	INDEX idx (d, (b * c) DESC) INVISIBLE
+	INDEX idx (d, (b * c) DESC) INVISIBLE,
+	INDEX test3b ((concat('$',name)), (concat('€', name))),
+	INDEX test4b ((b * c), d, (concat('💩', name)))
 );

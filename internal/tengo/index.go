@@ -148,6 +148,17 @@ func (idx *Index) RedundantTo(other *Index) bool {
 	return true
 }
 
+// Functional returns true if at least one IndexPart in idx is an expression
+// rather than a column.
+func (idx *Index) Functional() bool {
+	for _, part := range idx.Parts {
+		if part.Expression != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // Definition returns this index part's definition clause.
 func (part *IndexPart) Definition(_ Flavor) string {
 	var base, prefix, collation string

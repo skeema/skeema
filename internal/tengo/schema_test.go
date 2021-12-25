@@ -51,32 +51,9 @@ func (s TengoIntegrationSuite) TestSchemaTables(t *testing.T) {
 // TestSchemaJSON confirms that a schema can be JSON encoded and decoded to
 // yield the exact same schema.
 func (s TengoIntegrationSuite) TestSchemaJSON(t *testing.T) {
-	s.SourceTestSQL(t, "integration-ext.sql")
+	// include broad coverage for many flavor-specific features
 	flavor := s.d.Flavor()
-
-	// Include coverage for partitioned tables
-	s.SourceTestSQL(t, "partition.sql")
-
-	// Include coverage for generated columns, if flavor supports them
-	if flavor.GeneratedColumns() {
-		sqlfile := "generatedcols.sql"
-		if flavor.Vendor == VendorMariaDB { // no support for NOT NULL generated cols
-			sqlfile = "generatedcols-maria.sql"
-		}
-		s.SourceTestSQL(t, sqlfile)
-	}
-
-	// Include coverage for fulltext parsers if MySQL 5.7+
-	if flavor.MySQLishMinVersion(5, 7) {
-		s.SourceTestSQL(t, "ft-parser.sql")
-	}
-
-	// Include coverage for advanced index functionality if flavor has it
-	if flavor.MySQLishMinVersion(8, 0) {
-		s.SourceTestSQL(t, "index-mysql8.sql")
-	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 6) {
-		s.SourceTestSQL(t, "index-maria106.sql")
-	}
+	s.SourceTestSQL(t, flavorTestFiles(flavor)...)
 
 	for _, schemaName := range []string{"testing", "testcharcoll", "partitionparty"} {
 		schema := s.GetSchema(t, schemaName)

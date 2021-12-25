@@ -1,6 +1,6 @@
-# Test edge cases of column defaults and default expressions in MySQL 8.0.13+.
-# (Similar table for MariaDB is split into a separate file due to lack of 4-byte
-# char support there.)
+# Test edge cases of column default expressions in MariaDB 10.2+. Same as the
+# MySQL file except no 4-byte chars used in expressions.
+
 
 SET foreign_key_checks=0;
 SET sql_log_bin=0;
@@ -13,7 +13,7 @@ CREATE TABLE testdefaults (
 	b int default (a*a),
 	c int default (abs(a)),
 	d varchar(100) default 'hello',
-	e varchar(200) default (concat(d, ' world 💩')),
+	e varchar(200) default (concat(d, ' world')),
 	f varchar(30) NOT NULL default '',
 	g float default (rand()),
 	h float default (rand() * rand()),

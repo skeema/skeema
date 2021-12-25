@@ -173,8 +173,9 @@ func (t *Table) HasAutoIncrement() bool {
 
 // ClusteredIndexKey returns which index is used for an InnoDB table's clustered
 // index. This will be the primary key if one exists; otherwise, it will be the
-// first unique key with non-nullable columns. If there is no such key, or if
-// the table's engine isn't InnoDB, this method returns nil.
+// first unique key made of only non-nullable, non-expression columns. If there
+// is no such key, or if the table's engine isn't InnoDB, this method returns
+// nil.
 func (t *Table) ClusteredIndexKey() *Index {
 	if t.Engine != "InnoDB" {
 		return nil
@@ -185,7 +186,7 @@ func (t *Table) ClusteredIndexKey() *Index {
 	cols := t.ColumnsByName()
 Outer:
 	for _, index := range t.SecondaryIndexes {
-		if index.Unique {
+		if index.Unique && !index.Functional() {
 			for _, part := range index.Parts {
 				if col := cols[part.ColumnName]; col == nil || col.Nullable {
 					continue Outer

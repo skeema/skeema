@@ -61,6 +61,12 @@ func TestTableClusteredIndexKey(t *testing.T) {
 	if table.ClusteredIndexKey() != table.SecondaryIndexes[0] {
 		t.Errorf("Expected ClusteredIndexKey() to return %+v, instead found %+v", table.SecondaryIndexes[0], table.ClusteredIndexKey())
 	}
+
+	// Functional indexes cannot be clustered index key
+	table.SecondaryIndexes[0].Parts[1] = IndexPart{Expression: "LENGTH(`first_name`)"}
+	if table.ClusteredIndexKey() != table.SecondaryIndexes[1] {
+		t.Errorf("Expected ClusteredIndexKey() to return %+v, instead found %+v", table.SecondaryIndexes[1], table.ClusteredIndexKey())
+	}
 }
 
 func TestTableRowFormatClause(t *testing.T) {

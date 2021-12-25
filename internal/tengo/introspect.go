@@ -116,12 +116,17 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 			fixForeignKeyOrder(t)
 		}
 		// Create options order is unpredictable with the new MySQL 8 data dictionary
-		// Also need to fix generated column expression string literals
 		// Also need to fix superfluous column charsets and utf8mb3->utf8 change
 		if flavor.HasDataDictionary() {
 			fixCreateOptionsOrder(t, flavor)
-			fixGenerationExpr(t, flavor)
 			fixShowCreateCharSets(t, flavor)
+		}
+		// MySQL 5.7+ generated column expressions must be reparased from SHOW CREATE
+		// TABLE to properly obtain any 4-byte chars. Additionally in 8.0 the I_S
+		// representation has incorrect escaping and potentially different charset
+		// in string literal introducers.
+		if flavor.MySQLishMinVersion(5, 7) {
+			fixGenerationExpr(t, flavor)
 		}
 		// Percona Server column compression can only be parsed from SHOW CREATE
 		// TABLE. (Although it also has new I_S tables, their name differs pre-8.0
@@ -134,9 +139,11 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 		if strings.Contains(t.CreateStatement, "WITH PARSER") {
 			fixFulltextIndexParsers(t, flavor)
 		}
-		// Fix blob/text default expressions in MySQL 8.0.13-8.0.22, missing from I_S
-		if flavor.MySQLishMinVersion(8, 0, 13) && !flavor.MySQLishMinVersion(8, 0, 23) {
-			fixBlobDefaultExpression(t, flavor)
+		// Fix problems with I_S data for default expressions as well as functional
+		// indexes in MySQL 8
+		if flavor.MySQLishMinVersion(8, 0) {
+			fixDefaultExpression(t, flavor)
+			fixIndexExpression(t, flavor)
 		}
 		// Fix shortcoming in I_S data for check constraints
 		if len(t.Checks) > 0 {
@@ -277,7 +284,7 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 				// information_schema due to a bug, so in this case flag the column to
 				// have its default parsed out from SHOW CREATE TABLE later
 				if strings.Contains(rawColumn.Extra, "DEFAULT_GENERATED") {
-					col.Default = "!!!BLOBDEFAULT!!!"
+					col.Default = "(!!!BLOBDEFAULT!!!)"
 				}
 			}
 			if allowNullDefault {
@@ -293,10 +300,10 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 		} else if strings.HasPrefix(rawColumn.Type, "bit") && strings.HasPrefix(rawColumn.Default.String, "b'") {
 			col.Default = rawColumn.Default.String
 		} else if strings.Contains(rawColumn.Extra, "DEFAULT_GENERATED") {
-			// MySQL/Percona 8.0.13+ added default expressions, which are paren-wrapped
-			// in SHOW CREATE TABLE, possibly in addition to any paren-wrapping which
-			// is already in information_schema. However, quotes get oddly mangled in
-			// information_schema's representation.
+			// MySQL 8.0.13+ supports default expressions, which are paren-wrapped in
+			// SHOW CREATE TABLE in MySQL. However MySQL I_S data has some issues for
+			// default expressions. The most common one is fixed here, and if additional
+			// mismatches remain, they get corrected by fixDefaultExpression later on.
 			col.Default = fmt.Sprintf("(%s)", strings.ReplaceAll(rawColumn.Default.String, "\\'", "'"))
 		} else {
 			col.Default = fmt.Sprintf("'%s'", EscapeValueForCreateTable(rawColumn.Default.String))
@@ -695,27 +702,29 @@ func fixShowCreateCharSets(t *Table, flavor Flavor) {
 	}
 }
 
-// MySQL 8 has nonsensical behavior regarding string literals in generated col
-// expressions: the literals are expressed using a different charset in SHOW
-// CREATE TABLE vs information_schema.columns.generation_expression. This method
-// modifies each generated Column.GenerationExpr to match SHOW CREATE's version.
+// MySQL 5.7+ supports generated columns, but mangles them in I_S in various
+// ways:
+// * 4-byte characters are not returned properly in I_S since it uses utf8mb3
+// * MySQL 8 incorrectly mangles escaping of single quotes in the I_S value
+// * MySQL 8 potentially uses different charsets introducers for string literals
+//   in I_S vs SHOW CREATE
+// This method modifies each generated Column.GenerationExpr to match SHOW
+// CREATE's version.
 func fixGenerationExpr(t *Table, flavor Flavor) {
 	for _, col := range t.Columns {
-		if col.GenerationExpr != "" {
-			// Approach: dynamically build a regexp that captures the generation expr
-			// from the correct line of the full SHOW CREATE TABLE output
-			origExpr := col.GenerationExpr
-			col.GenerationExpr = "!!!GENEXPR!!!"
-			reTemplate := regexp.QuoteMeta(col.Definition(flavor, t))
-			reTemplate = strings.Replace(reTemplate, col.GenerationExpr, "(.*)", -1)
-			re := regexp.MustCompile(reTemplate)
-			matches := re.FindStringSubmatch(t.CreateStatement)
-			if matches == nil {
-				// If we somehow failed to match correctly, fall back to using the
-				// uncorrected value from information_schema; unsupported diff is
-				// preferable to a nil pointer panic
-				col.GenerationExpr = origExpr
+		if col.GenerationExpr == "" {
+			continue
+		}
+		if colDefinition := col.Definition(flavor, t); !strings.Contains(t.CreateStatement, colDefinition) {
+			var genKind string
+			if col.Virtual {
+				genKind = "VIRTUAL"
 			} else {
+				genKind = "STORED"
+			}
+			reTemplate := `(?m)^\s*` + regexp.QuoteMeta(EscapeIdentifier(col.Name)) + `.+GENERATED ALWAYS AS \((.+)\) ` + genKind
+			re := regexp.MustCompile(reTemplate)
+			if matches := re.FindStringSubmatch(t.CreateStatement); matches != nil {
 				col.GenerationExpr = matches[1]
 			}
 		}
@@ -802,20 +811,56 @@ func fixFulltextIndexParsers(t *Table, flavor Flavor) {
 	}
 }
 
-// fixBlobDefaultExpression parses the table's CREATE string in order to
-// populate Column.Default for blob/text columns using a default expression
-// in MySQLish 8.0.13-8.0.22, which omits this from information_schema due
-// to a bug fixed in MySQL 8.0.23.
-func fixBlobDefaultExpression(t *Table, flavor Flavor) {
+// fixDefaultExpression parses the table's CREATE string in order to correct
+// problems in Column.Default for columns using a default expression in MySQL 8:
+// * In MySQL 8.0.13-8.0.22, blob/text cols may have default expressions but
+//   these are omitted from I_S due to a bug fixed in MySQL 8.0.23.
+// * 4-byte characters are not returned properly in I_S since it uses utf8mb3
+// * MySQL 8 incorrectly mangles escaping of single quotes in the I_S value
+// * MySQL 8 potentially uses different charsets introducers for string literals
+//   in I_S vs SHOW CREATE
+func fixDefaultExpression(t *Table, flavor Flavor) {
 	for _, col := range t.Columns {
-		if col.Default == "!!!BLOBDEFAULT!!!" {
-			template := col.Definition(flavor, t)
-			template = regexp.QuoteMeta(template)
-			template = fmt.Sprintf("%s,?\n", strings.Replace(template, col.Default, "(.+?)", 1))
-			re := regexp.MustCompile(template)
-			matches := re.FindStringSubmatch(t.CreateStatement)
-			if matches != nil {
+		if col.Default == "" || col.Default[0] != '(' {
+			continue
+		}
+		if colDefinition := col.Definition(flavor, t); !strings.Contains(t.CreateStatement, colDefinition) {
+			defaultClause := " DEFAULT " + col.Default
+			after := colDefinition[strings.Index(colDefinition, defaultClause)+len(defaultClause):]
+			reTemplate := `(?m)^\s*` + regexp.QuoteMeta(EscapeIdentifier(col.Name)) + `.+DEFAULT (\(.+\))` + after
+			re := regexp.MustCompile(reTemplate)
+			if matches := re.FindStringSubmatch(t.CreateStatement); matches != nil {
 				col.Default = matches[1]
+			}
+		}
+	}
+}
+
+// fixIndexExpression parses the table's CREATE string in order to correct
+// problems in index expressions (functional indexes) in MySQL 8:
+// * 4-byte characters are not returned properly in I_S since it uses utf8mb3
+// * MySQL 8 incorrectly mangles escaping of single quotes in the I_S value
+func fixIndexExpression(t *Table, flavor Flavor) {
+	// Only need to check secondary indexes, since PK can't contain expressions
+	for _, idx := range t.SecondaryIndexes {
+		if !idx.Functional() {
+			continue
+		}
+		if idxDefinition := idx.Definition(flavor); !strings.Contains(t.CreateStatement, idxDefinition) {
+			exprParts := make([]*IndexPart, 0, len(idx.Parts))
+			for n := range idx.Parts {
+				if idx.Parts[n].Expression != "" {
+					idxDefinition = strings.Replace(idxDefinition, idx.Parts[n].Expression, "!!!EXPR!!!", 1)
+					exprParts = append(exprParts, &idx.Parts[n])
+				}
+			}
+			// Build a regex which captures just the index expression(s) for this index
+			reTemplate := regexp.QuoteMeta(idxDefinition)
+			reTemplate = `(?m)^\s*` + strings.ReplaceAll(reTemplate, "!!!EXPR!!!", "(.*)") + `,?$`
+			re := regexp.MustCompile(reTemplate)
+			matches := re.FindStringSubmatch(t.CreateStatement)
+			for n := 1; n < len(matches); n++ {
+				exprParts[n-1].Expression = matches[n]
 			}
 		}
 	}

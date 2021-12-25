@@ -509,10 +509,26 @@ func (instance *Instance) introspectionParams() string {
 	v := url.Values{}
 	v.Set("sql_quote_show_create", "1")
 
+	flavor := instance.Flavor()
+
 	// In MySQL 8, ensure we get up-to-date values for table sizes as well as next
 	// auto_increment value
-	if instance.Flavor().HasDataDictionary() {
+	if flavor.HasDataDictionary() {
 		v.Set("information_schema_stats_expiry", "0")
+	}
+
+	// In MySQL, we need a binary collation in order for SHOW CREATE TABLE to
+	// correctly return 4-byte chars in generated column expressions (5.7+), column
+	// default expressions (8.0+), check constraint clauses (8.0+), and
+	// functional index expressions (8.0+). Note that this isn't a silver bullet:
+	// * Non-expression default value literals still don't show 4-byte chars
+	//   correctly, regardless of collation, in any flavor
+	// * information_schema does not return 4-byte chars properly, regardless of
+	//   collation; we must reparse from SHOW CREATE TABLE
+	// * In MariaDB, SHOW CREATE TABLE does not return 4-byte chars correctly
+	//   regardless of collation
+	if flavor.MySQLishMinVersion(5, 7) {
+		v.Set("collation", "binary")
 	}
 
 	keepMode := make([]string, 0, len(instance.sqlMode))

@@ -94,8 +94,8 @@ CREATE FUNCTION func1(mult float(10,2))
 returns float deterministic NO SQL COMMENT 'hello world' return mult * 2.0;
 
 CREATE FUNCTION func2(  num    int, 
-    name   varchar(30) 
+    name   varchar(30) character set utf8mb4
 )
-returns varchar(30) deterministic
-return REPEAT(CONCAT('it''s ', name, '! '), num);
+returns varchar(30) character set utf8mb4 deterministic
+return REPEAT(CONCAT('it''s 💩', name, '! '), num);
 

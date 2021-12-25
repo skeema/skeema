@@ -100,7 +100,9 @@ func (dc *DockerClient) CreateInstance(opts DockerizedInstanceOptions) (*Dockeri
 	// Use MYSQL_ROOT_HOST=% to ensure user root@% is created; Dockerhub "official"
 	// images do this by default, but mysql/mysql-server does not. Regardless of
 	// this, the HostConfig restricts connections to the host machine anyway.
-	env := []string{"MYSQL_ROOT_HOST=%"}
+	// Use LANG=C.UTF-8 to ensure client programs can pass multi-byte chars
+	// correctly, since DockerizedInstance.SourceSQL shells out to the client.
+	env := []string{"MYSQL_ROOT_HOST=%", "LANG=C.UTF-8"}
 	if opts.RootPassword == "" {
 		env = append(env, "MYSQL_ALLOW_EMPTY_PASSWORD=1")
 	} else {
@@ -328,7 +330,7 @@ func (di *DockerizedInstance) SourceSQL(filePath string) (string, error) {
 		return "", fmt.Errorf("SourceSQL %s: Unable to open setup file %s: %s", di, filePath, err)
 	}
 	defer f.Close()
-	cmd := []string{"mysql", "-tvvv", "-u", "root", "-h", "127.0.0.1"}
+	cmd := []string{"mysql", "-tvvv", "-u", "root", "-h", "127.0.0.1", "--default-character-set", "utf8mb4"}
 	if di.RootPassword != "" {
 		cmd = append(cmd, fmt.Sprintf("-p%s", di.RootPassword))
 	}

@@ -59,6 +59,7 @@ func (s *TengoIntegrationSuite) BeforeTest(backend string) error {
 // SourceTestSQL executes the supplied sql file(s), which should be supplied
 // relative to the testdata subdir. If any errors occur, the test fails.
 func (s *TengoIntegrationSuite) SourceTestSQL(t *testing.T, files ...string) {
+	t.Helper()
 	for _, f := range files {
 		fPath := filepath.Join("testdata", f)
 		if _, err := s.d.SourceSQL(fPath); err != nil {
@@ -148,6 +149,66 @@ func TestUnitTableFlavors(t *testing.T) {
 	if !strings.Contains(colClause, "DEFAULT NULL") {
 		t.Errorf("MariaDB 10.2: Expected text column to now emit a default value, but it did not")
 	}
+}
+
+// flavorTestFiles returns a slice of .sql filenames that could run for the
+// supplied flavor. The supplied flavor should have a *non-zero* Patch field,
+// as this is especially relevant for MySQL 8.
+// The result omits integration.sql, since that is always run prior to each
+// subtest.
+func flavorTestFiles(flavor Flavor) []string {
+	// Non-flavor-specific
+	result := []string{"integration-ext.sql", "partition.sql", "rows.sql", "views.sql"}
+
+	if flavor.MySQLishMinVersion(8, 0, 13) {
+		result = append(result, "default-expr.sql")
+	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
+		result = append(result, "default-expr-maria.sql") // No support for 4-byte chars in the expressions
+	}
+
+	if flavor.GeneratedColumns() {
+		if flavor.Vendor == VendorMariaDB {
+			result = append(result, "generatedcols-maria.sql") // no support for NOT NULL generated cols or 4-byte chars in generation expressions
+		} else {
+			result = append(result, "generatedcols.sql")
+		}
+	}
+
+	if flavor.MySQLishMinVersion(8, 0) {
+		result = append(result, "index-mysql8.sql") // functional indexes, descending indexes, invisible indexes
+	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 6) {
+		result = append(result, "index-maria106.sql") // ignored indexes
+	}
+
+	if flavor.VendorMinVersion(VendorMariaDB, 10, 3) || flavor.MySQLishMinVersion(8, 0, 23) {
+		result = append(result, "inviscols.sql")
+	}
+
+	if flavor.MySQLishMinVersion(5, 7) {
+		result = append(result, "ft-parser.sql") // other flavors may support FT parsers but don't ship with any alternatives
+	}
+
+	if flavor.VendorMinVersion(VendorPercona, 5, 6, 33) {
+		result = append(result, "colcompression-percona.sql")
+	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 3) {
+		result = append(result, "colcompression-maria.sql")
+	}
+
+	if flavor.MySQLishMinVersion(5, 7) {
+		result = append(result, "pagecompression.sql")
+	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
+		result = append(result, "pagecompression-maria.sql")
+	}
+
+	if flavor.HasCheckConstraints() {
+		if flavor.Vendor == VendorMariaDB {
+			result = append(result, "check-maria.sql")
+		} else {
+			result = append(result, "check.sql")
+		}
+	}
+
+	return result
 }
 
 func primaryKey(cols ...*Column) *Index {

@@ -137,13 +137,13 @@ func TestInstanceIntrospectionParams(t *testing.T) {
 			t.Errorf("Expected param map %v, instead found %v", parsedExpected, parsedResult)
 		}
 	}
-	assertParams(FlavorMySQL57, "", "sql_quote_show_create=1")
-	assertParams(FlavorMySQL80, "", "sql_quote_show_create=1&information_schema_stats_expiry=0")
-	assertParams(FlavorMySQL57, "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1")
-	assertParams(FlavorPercona80, "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1&information_schema_stats_expiry=0")
+	assertParams(FlavorMySQL57, "", "sql_quote_show_create=1&collation=binary")
+	assertParams(FlavorMySQL80, "", "sql_quote_show_create=1&information_schema_stats_expiry=0&collation=binary")
+	assertParams(FlavorMySQL57, "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1&collation=binary")
+	assertParams(FlavorPercona80, "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1&information_schema_stats_expiry=0&collation=binary")
 	assertParams(FlavorMariaDB105, "ANSI_QUOTES", "sql_quote_show_create=1&sql_mode=%27%27")
-	assertParams(FlavorMySQL57, "REAL_AS_FLOAT,PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE,ONLY_FULL_GROUP_BY,ANSI", "sql_quote_show_create=1&sql_mode=%27REAL_AS_FLOAT%2CPIPES_AS_CONCAT%2CIGNORE_SPACE%2CONLY_FULL_GROUP_BY%27")
-	assertParams(FlavorMySQL80, "NO_FIELD_OPTIONS,NO_BACKSLASH_ESCAPES,NO_KEY_OPTIONS,NO_TABLE_OPTIONS", "sql_quote_show_create=1&information_schema_stats_expiry=0&sql_mode=%27NO_BACKSLASH_ESCAPES%27")
+	assertParams(FlavorMySQL57, "REAL_AS_FLOAT,PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE,ONLY_FULL_GROUP_BY,ANSI", "sql_quote_show_create=1&collation=binary&sql_mode=%27REAL_AS_FLOAT%2CPIPES_AS_CONCAT%2CIGNORE_SPACE%2CONLY_FULL_GROUP_BY%27")
+	assertParams(FlavorMySQL80, "NO_FIELD_OPTIONS,NO_BACKSLASH_ESCAPES,NO_KEY_OPTIONS,NO_TABLE_OPTIONS", "sql_quote_show_create=1&collation=binary&information_schema_stats_expiry=0&sql_mode=%27NO_BACKSLASH_ESCAPES%27")
 }
 
 func (s TengoIntegrationSuite) TestInstanceConnect(t *testing.T) {

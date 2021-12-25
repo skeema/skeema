@@ -18,8 +18,8 @@ CREATE TABLE `has_checks1` (
 	PRIMARY KEY (id),
 	CONSTRAINT mult_cols CHECK (num1 < num2) ENFORCED,
 	CHECK (num3 >= num1) NOT ENFORCED,
-	CONSTRAINT name_not_inline CHECK (name != 'bob\'s name' AND length(name) > 3)
-);
+	CONSTRAINT name_not_inline CHECK (name != 'bob\'s name' AND name != '💩💩💩💩💩' AND length(name) > 3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE has_checks2 (
 	foo1 varchar(30) NOT NULL,

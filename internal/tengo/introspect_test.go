@@ -8,10 +8,11 @@ import (
 )
 
 func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
-	s.SourceTestSQL(t, "integration-ext.sql", "rows.sql")
+	// include broad coverage for many flavor-specific features
+	flavor := s.d.Flavor()
+	s.SourceTestSQL(t, flavorTestFiles(flavor)...)
 
 	// Ensure our unit test fixtures and integration test fixtures match
-	flavor := s.d.Flavor()
 	schema, aTableFromDB := s.GetSchemaAndTable(t, "testing", "actor")
 	aTableFromUnit := aTableForFlavor(flavor, 1)
 	aTableFromUnit.CreateStatement = "" // Prevent diff from short-circuiting on equivalent CREATEs
@@ -97,25 +98,37 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Test introspection of default expressions, if flavor supports them
 	if flavor.VendorMinVersion(VendorMariaDB, 10, 2) || flavor.MySQLishMinVersion(8, 0, 13) {
-		s.SourceTestSQL(t, "default-expr.sql")
 		table := s.GetTable(t, "testing", "testdefaults")
-		if table.UnsupportedDDL {
-			t.Errorf("Use of default expression unexpectedly triggers UnsupportedDDL.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", table.GeneratedCreateStatement(flavor), table.CreateStatement)
+		// Ensure 3-byte chars in default expression are introspected properly
+		if !strings.Contains(table.CreateStatement, "\u20AC") {
+			t.Errorf("Expected default expression to contain 3-byte char \u20AC, but it did not. CREATE statement:\n%s", table.CreateStatement)
+		}
+
+		// In MySQL, ensure 4-byte chars in default expressions are introspected
+		// properly. (MariaDB supports them, but does not appear to provide any way
+		// to properly introspect them; they're mangled in both I_S and SHOW CREATE!)
+		if flavor.Vendor != VendorMariaDB && !strings.Contains(table.CreateStatement, "\U0001F4A9") {
+			t.Errorf("Expected default expression to contain 4-byte char \U0001F4A9, but it did not. CREATE statement:\n%s", table.CreateStatement)
 		}
 	}
 
 	// Test introspection of generated columns, if flavor supports them
 	if flavor.GeneratedColumns() {
-		sqlfile := "generatedcols.sql"
-		if flavor.Vendor == VendorMariaDB { // no support for NOT NULL generated cols
-			sqlfile = "generatedcols-maria.sql"
-		}
-		s.SourceTestSQL(t, sqlfile)
 		table := s.GetTable(t, "testing", "staff")
-		if table.UnsupportedDDL {
-			t.Errorf("Expected table using generated columns to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
+		// Ensure 3-byte chars in generation expression are introspected properly
+		if !strings.Contains(table.CreateStatement, "\u20AC") {
+			t.Errorf("Expected generation expression to contain 3-byte char \u20AC, but it did not. CREATE statement:\n%s", table.CreateStatement)
 		}
-		// Test generation expression fix, even if test image isn't MySQL 8
+
+		// In MySQL, ensure 4-byte chars in default expressions are introspected
+		// properly. (MariaDB does not appear to handle them properly in generated
+		// column expressions at all, it's corrupted at creation time and on a
+		// functional level, not just introspection.)
+		if flavor.Vendor != VendorMariaDB && !strings.Contains(table.CreateStatement, "\U0001F4A9") {
+			t.Errorf("Expected generation expression to contain 4-byte char \U0001F4A9, but it did not. CREATE statement:\n%s", table.CreateStatement)
+		}
+
+		// Test generation expression fix, even if test image isn't MySQL 5.7+
 		for _, col := range table.Columns {
 			if col.GenerationExpr != "" {
 				col.GenerationExpr = "length(_latin1\\'fixme\\')"
@@ -129,10 +142,12 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Test advanced index functionality in MySQL 8+
 	if flavor.MySQLishMinVersion(8, 0) {
-		s.SourceTestSQL(t, "index-mysql8.sql")
 		table := s.GetTable(t, "testing", "my8idx")
-		if table.UnsupportedDDL {
-			t.Errorf("Expected table using advanced index functionality to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
+		if !strings.Contains(table.CreateStatement, "\u20AC") {
+			t.Errorf("Expected functional index expression to contain 3-byte char \u20AC, but it did not. CREATE statement:\n%s", table.CreateStatement)
+		}
+		if !strings.Contains(table.CreateStatement, "\U0001F4A9") {
+			t.Errorf("Expected functional index expression to contain 4-byte char \U0001F4A9, but it did not. CREATE statement:\n%s", table.CreateStatement)
 		}
 		idx := table.SecondaryIndexes[0]
 		if !idx.Invisible {
@@ -145,11 +160,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 			t.Errorf("Unexpected index part expressions found: [0].Expression=%q, [1].Expression=%q", idx.Parts[0].Expression, idx.Parts[1].Expression)
 		}
 	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 6) {
-		s.SourceTestSQL(t, "index-maria106.sql")
 		table := s.GetTable(t, "testing", "maria106idx")
-		if table.UnsupportedDDL {
-			t.Errorf("Expected table using ignored index to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
-		}
 		idx := table.SecondaryIndexes[0]
 		if !idx.Invisible {
 			t.Errorf("Expected index %s to be ignored, but it was not", idx.Name)
@@ -158,11 +169,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Test invisible column support in flavors supporting it
 	if flavor.VendorMinVersion(VendorMariaDB, 10, 3) || flavor.MySQLishMinVersion(8, 0, 23) {
-		s.SourceTestSQL(t, "inviscols.sql")
 		table := s.GetTable(t, "testing", "invistest")
-		if table.UnsupportedDDL {
-			t.Errorf("Expected table using invisible columns to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
-		}
 		for n, col := range table.Columns {
 			expectInvis := (n == 0 || n == 4 || n == 5)
 			if col.Invisible != expectInvis {
@@ -174,11 +181,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	// Include coverage for fulltext parsers if MySQL 5.7+. (Although these are
 	// supported in other flavors too, no alternative parsers ship with them.)
 	if flavor.MySQLishMinVersion(5, 7) {
-		s.SourceTestSQL(t, "ft-parser.sql")
 		table := s.GetTable(t, "testing", "ftparser")
-		if table.UnsupportedDDL {
-			t.Errorf("Expected table using ngram fulltext parser to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
-		}
 		indexes := table.SecondaryIndexesByName()
 		if idx := indexes["ftdesc"]; idx.FullTextParser != "ngram" || idx.Type != "FULLTEXT" {
 			t.Errorf("Expected index %s to be FULLTEXT with ngram parser, instead found type=%s / parser=%s", idx.Name, idx.Type, idx.FullTextParser)
@@ -193,20 +196,12 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Coverage for column compression
 	if flavor.VendorMinVersion(VendorPercona, 5, 6, 33) {
-		s.SourceTestSQL(t, "colcompression-percona.sql")
 		table := s.GetTable(t, "testing", "colcompr")
-		if table.UnsupportedDDL {
-			t.Errorf("Expected table using column compression to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
-		}
 		if table.Columns[1].Compression != "COMPRESSED" {
 			t.Errorf("Unexpected value for compression column attribute: found %q", table.Columns[1].Compression)
 		}
 	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 3) {
-		s.SourceTestSQL(t, "colcompression-maria.sql")
 		table := s.GetTable(t, "testing", "colcompr")
-		if table.UnsupportedDDL {
-			t.Errorf("Expected table using column compression to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
-		}
 		if table.Columns[1].Compression != "COMPRESSED" {
 			t.Errorf("Unexpected value for compression column attribute: found %q", table.Columns[1].Compression)
 		}
@@ -214,18 +209,19 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Include tables with check constraints if supported by flavor
 	if flavor.HasCheckConstraints() {
-		filename := "check.sql"
-		if flavor.Vendor == VendorMariaDB {
-			filename = "check-maria.sql"
-		}
-		s.SourceTestSQL(t, filename)
 		tablesWithChecks := []*Table{s.GetTable(t, "testing", "has_checks1"), s.GetTable(t, "testing", "has_checks2")}
 		for _, table := range tablesWithChecks {
 			if len(table.Checks) == 0 {
 				t.Errorf("Expected table %s to have at least one CHECK constraint, but it did not", table.Name)
 			}
-			if table.UnsupportedDDL {
-				t.Errorf("Expected table %s to be supported for diff in flavor %s, but it was not.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", table.Name, flavor, table.GeneratedCreateStatement(flavor), table.CreateStatement)
+			if table.Name == "has_checks1" {
+				if flavor.Vendor == VendorMariaDB {
+					if !strings.Contains(table.CreateStatement, "\u20AC") {
+						t.Errorf("Expected check constraint clause to contain 3-byte char \u20AC, but it did not. CREATE statement:\n%s", table.CreateStatement)
+					}
+				} else if !strings.Contains(table.CreateStatement, "\U0001F4A9") {
+					t.Errorf("Expected check constraint clause to contain 4-byte char \U0001F4A9, but it did not. CREATE statement:\n%s", table.CreateStatement)
+				}
 			}
 		}
 	}
@@ -263,6 +259,11 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 	}
 	if actualFunc1.Equals(actualProc1) {
 		t.Error("Equals not behaving as expected, proc1 and func1 should not be equal")
+	}
+
+	// confirm 4-byte characters in the body come through properly
+	if func2 := funcsByName["func2"]; !strings.Contains(func2.Body, "\U0001F4A9") {
+		t.Errorf("Expected to find 4-byte char \U0001F4A9 in func2.Body, but did not. Body contents:\n%s", func2.Body)
 	}
 
 	// If this flavor supports using mysql.proc to bulk-fetch routines, confirm
@@ -380,19 +381,19 @@ func TestFixBlobDefaultExpression(t *testing.T) {
 	defExpr := "(CONCAT('hello ', 'world'))"
 	table.Columns[1].Default = defExpr
 	table.CreateStatement = table.GeneratedCreateStatement(FlavorMySQL80)
-	table.Columns[1].Default = "!!!BLOBDEFAULT!!!"
-	fixBlobDefaultExpression(&table, FlavorMySQL80)
+	table.Columns[1].Default = "(!!!BLOBDEFAULT!!!)"
+	fixDefaultExpression(&table, FlavorMySQL80)
 	if table.Columns[1].Default != defExpr {
-		t.Errorf("fixBlobDefaultExpression did not work or set default to unexpected value %q", table.Columns[1].Default)
+		t.Errorf("fixDefaultExpression did not work or set default to unexpected value %q", table.Columns[1].Default)
 	}
 
 	// Confirm regex still correct with stuff after the default
 	table.Columns[1].Comment = "hi i am a comment"
 	table.CreateStatement = table.GeneratedCreateStatement(FlavorMySQL80)
-	table.Columns[1].Default = "!!!BLOBDEFAULT!!!"
-	fixBlobDefaultExpression(&table, FlavorMySQL80)
+	table.Columns[1].Default = "(!!!BLOBDEFAULT!!!)"
+	fixDefaultExpression(&table, FlavorMySQL80)
 	if table.Columns[1].Default != defExpr {
-		t.Errorf("fixBlobDefaultExpression did not work after adding comment, default is unexpected value %q", table.Columns[1].Default)
+		t.Errorf("fixDefaultExpression did not work after adding comment, default is unexpected value %q", table.Columns[1].Default)
 	}
 }
 
