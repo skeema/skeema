@@ -203,7 +203,7 @@ func StatementModifiersForDir(dir *fs.Dir) (mods tengo.StatementModifiers, err e
 		mods.StrictCheckOrder = true // only affects MariaDB
 		mods.StrictForeignKeyNaming = true
 	}
-	if mods.AlgorithmClause, err = dir.Config.GetEnum("alter-algorithm", "inplace", "copy", "instant", "default"); err != nil {
+	if mods.AlgorithmClause, err = dir.Config.GetEnum("alter-algorithm", "inplace", "copy", "instant", "nocopy", "default"); err != nil {
 		return
 	}
 	if mods.LockClause, err = dir.Config.GetEnum("alter-lock", "none", "shared", "exclusive", "default"); err != nil {
