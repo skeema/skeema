@@ -827,7 +827,7 @@ func fixDefaultExpression(t *Table, flavor Flavor) {
 		if colDefinition := col.Definition(flavor, t); !strings.Contains(t.CreateStatement, colDefinition) {
 			defaultClause := " DEFAULT " + col.Default
 			after := colDefinition[strings.Index(colDefinition, defaultClause)+len(defaultClause):]
-			reTemplate := `(?m)^\s*` + regexp.QuoteMeta(EscapeIdentifier(col.Name)) + `.+DEFAULT (\(.+\))` + after
+			reTemplate := `(?m)^\s*` + regexp.QuoteMeta(EscapeIdentifier(col.Name)) + `.+DEFAULT (\(.+\))` + regexp.QuoteMeta(after)
 			re := regexp.MustCompile(reTemplate)
 			if matches := re.FindStringSubmatch(t.CreateStatement); matches != nil {
 				col.Default = matches[1]

@@ -13,7 +13,7 @@ CREATE TABLE testdefaults (
 	b int default (a*a),
 	c int default (abs(a)),
 	d varchar(100) default 'hello',
-	e varchar(200) default (concat(d, ' world 💩')),
+	e varchar(200) default (concat(d, ' world 💩')) COMMENT '(stuff after default',
 	f varchar(30) NOT NULL default '',
 	g float default (rand()),
 	h float default (rand() * rand()),
