@@ -40,7 +40,7 @@ github.com/containerd/cgroups/stats/v1
 github.com/containerd/containerd/log
 github.com/containerd/containerd/pkg/userns
 github.com/containerd/containerd/sys
-# github.com/docker/docker v20.10.11+incompatible
+# github.com/docker/docker v20.10.12+incompatible
 github.com/docker/docker/api/types/blkiodev
 github.com/docker/docker/api/types/container
 github.com/docker/docker/api/types/filters
@@ -65,7 +65,7 @@ github.com/docker/docker/pkg/system
 github.com/docker/go-connections/nat
 # github.com/docker/go-units v0.4.0
 github.com/docker/go-units
-# github.com/fsouza/go-dockerclient v1.7.5-0.20211201042754-ed8086f2b5b2
+# github.com/fsouza/go-dockerclient v1.7.6
 ## explicit
 github.com/fsouza/go-dockerclient
 # github.com/go-sql-driver/mysql v1.6.0
@@ -104,7 +104,7 @@ github.com/opencontainers/go-digest
 # github.com/opencontainers/image-spec v1.0.2
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
-# github.com/opencontainers/runc v1.0.2
+# github.com/opencontainers/runc v1.0.3
 github.com/opencontainers/runc/libcontainer/user
 # github.com/pkg/errors v0.9.1
 github.com/pkg/errors

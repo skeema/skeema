@@ -57,7 +57,7 @@ Support for partitioned tables generously sponsored by [Etsy](https://www.etsy.c
 
 ## License
 
-**Copyright 2021 Skeema LLC**
+**Copyright 2022 Skeema LLC**
 
 ```text
 Licensed under the Apache License, Version 2.0 (the "License");
