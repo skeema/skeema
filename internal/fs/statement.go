@@ -275,13 +275,13 @@ func (st *statementTokenizer) processLine(line string, eof bool) {
 		// (and requires special care to handle transititions like e.g. going from
 		// a single semicolon delimiter to double-semicolon delimiter!)
 		if bufLen := ls.buf.Len(); (bufLen == 4 || bufLen == 10) && unicode.IsSpace(c) { // potentially USE or DELIMITER followed by whitespace
-			var slurpLineAsCommand bool
-			if lowerBufStr := strings.ToLower(ls.buf.String()); strings.HasPrefix(lowerBufStr, "use") && !strings.Contains(ls.line[ls.pos:], st.delimiter) {
-				slurpLineAsCommand = true
-			} else if strings.HasPrefix(lowerBufStr, "delimiter") {
-				slurpLineAsCommand = true
-			}
-			if slurpLineAsCommand {
+			// Treat this line as a command if the current char is a space and the
+			// preceeding line content is "use" or "delimiter", case-insensitive. For
+			// "use", we only do this if there's no delimiter later on the line though,
+			// since it can optionally be present (potentially followed by other
+			// separate statements, which we should not slurp up!)
+			bufStr := strings.ToLower(ls.buf.String()[0 : bufLen-1])
+			if bufStr == "delimiter" || (bufStr == "use" && !ls.containsDelimiter()) {
 				ls.buf.WriteString(ls.line[ls.pos:])
 				ls.stmt.delimiter = "\000" // prevent SplitTextBody from stripping previous delimiter from command arg
 				ls.doneStatement(0)
@@ -354,6 +354,12 @@ func (ls *lineState) peekRunes(n int) string {
 		n--
 	}
 	return ls.line[ls.pos:pos]
+}
+
+// containsDelimiter returns true if the line contains the current delimiter
+// string beyond the current position.
+func (ls *lineState) containsDelimiter() bool {
+	return strings.Contains(ls.line[ls.pos:], ls.delimiter)
 }
 
 // beginStatement records the starting position of the next (not yet fully
