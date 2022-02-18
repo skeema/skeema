@@ -30,7 +30,7 @@ type Column struct {
 // (mirroring the specific display logic used by SHOW CREATE TABLE)
 func (c *Column) Definition(flavor Flavor, table *Table) string {
 	var compression, charSet, collation, generated, nullability, visibility, autoIncrement, defaultValue, onUpdate, colFormat, comment, check string
-	if c.Compression != "" && flavor.Vendor == VendorMariaDB {
+	if c.Compression != "" && flavor.IsMariaDB() {
 		// MariaDB puts compression modifiers in a different place than Percona Server
 		compression = fmt.Sprintf(" /*!100301 %s*/", c.Compression)
 	}
@@ -41,7 +41,7 @@ func (c *Column) Definition(flavor Flavor, table *Table) string {
 	// 8.0 only: Collations are also displayed any time a charset is displayed
 	// (except if the table was upgraded from pre-8.0, in which case it may not be;
 	// this can only be fixed up hackily post-introspection though)
-	if c.Collation != "" && (!c.CollationIsDefault || (charSet != "" && flavor.HasDataDictionary())) {
+	if c.Collation != "" && (!c.CollationIsDefault || (charSet != "" && flavor.Min(FlavorMySQL80))) {
 		collation = fmt.Sprintf(" COLLATE %s", c.Collation)
 	}
 	if c.GenerationExpr != "" {
@@ -58,7 +58,7 @@ func (c *Column) Definition(flavor Flavor, table *Table) string {
 		nullability = " NULL"
 	}
 	if c.Invisible {
-		if flavor.Vendor == VendorMariaDB {
+		if flavor.IsMariaDB() {
 			visibility = " INVISIBLE"
 		} else {
 			visibility = " /*!80023 INVISIBLE */"
@@ -73,7 +73,7 @@ func (c *Column) Definition(flavor Flavor, table *Table) string {
 	if c.OnUpdate != "" {
 		onUpdate = fmt.Sprintf(" ON UPDATE %s", c.OnUpdate)
 	}
-	if c.Compression != "" && flavor.Vendor == VendorPercona {
+	if c.Compression != "" && flavor.HasVariant(VariantPercona) {
 		colFormat = fmt.Sprintf(" /*!50633 COLUMN_FORMAT %s */", c.Compression)
 	}
 	if c.Comment != "" {
@@ -85,7 +85,7 @@ func (c *Column) Definition(flavor Flavor, table *Table) string {
 	clauses := []string{
 		EscapeIdentifier(c.Name), " ", c.TypeInDB, compression, charSet, collation, generated, nullability,
 	}
-	if flavor.Vendor == VendorMariaDB {
+	if flavor.IsMariaDB() {
 		clauses = append(clauses, visibility, autoIncrement, defaultValue, onUpdate, colFormat, comment, check)
 	} else {
 		clauses = append(clauses, autoIncrement, defaultValue, onUpdate, visibility, colFormat, comment)

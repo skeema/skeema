@@ -50,6 +50,7 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 	instSchema := getSchema("analytics")
 
 	// Hackily set up test args manually
+	flavor := s.d[0].Flavor()
 	configMap := map[string]string{
 		"user":                   "root",
 		"password":               s.d[0].Instance.Password,
@@ -64,9 +65,7 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 		"connect-options":        "",
 		"environment":            "production",
 	}
-	major, minor, _ := s.d[0].Version()
-	is55 := major == 5 && minor == 5
-	if is55 {
+	if flavor.Matches(tengo.FlavorMySQL55) {
 		delete(configMap, "alter-algorithm")
 		delete(configMap, "alter-lock")
 	}
@@ -98,7 +97,7 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 	}
 
 	mods := tengo.StatementModifiers{AllowUnsafe: true}
-	if !is55 {
+	if !flavor.Matches(tengo.FlavorMySQL55) {
 		mods.LockClause, mods.AlgorithmClause = "none", "inplace"
 	}
 	for _, diff := range objDiffs {

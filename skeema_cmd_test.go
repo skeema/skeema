@@ -495,7 +495,7 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 		t.Fatalf("Unexpected error obtaining schema: %s", err)
 	} else {
 		expectCharSet, expectCollation := "utf8", "utf8_swedish_ci"
-		if s.d.Flavor().VendorMinVersion(tengo.VendorMariaDB, 10, 6) {
+		if s.d.Flavor().Min(tengo.FlavorMariaDB106) {
 			expectCharSet, expectCollation = "utf8mb3", "utf8mb3_swedish_ci"
 		}
 		if product.CharSet != expectCharSet || product.Collation != expectCollation {
@@ -620,7 +620,7 @@ func (s SkeemaIntegrationSuite) TestIndexOrdering(t *testing.T) {
 	// Edit posts.sql to put the new indexes first again, and ensure
 	// push --exact-match actually reorders them.
 	fs.WriteTestFile(t, "mydb/product/posts.sql", contentsIndexesFirst)
-	if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
+	if s.d.Flavor().Matches(tengo.FlavorMySQL55) {
 		s.handleCommand(t, CodeSuccess, "", "skeema push --exact-match")
 	} else {
 		s.handleCommand(t, CodeSuccess, "", "skeema push --exact-match --alter-algorithm=copy")
@@ -936,9 +936,9 @@ func (s SkeemaIntegrationSuite) TestDirEdgeCases(t *testing.T) {
 func (s SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 	// MariaDB does not consider STORAGE or COLUMN_FORMAT clauses as valid SQL.
 	// Ditto for MySQL 5.5.
-	if s.d.Flavor().Vendor == tengo.VendorMariaDB {
+	if s.d.Flavor().IsMariaDB() {
 		t.Skip("Test not relevant for MariaDB-based image", s.d.Image)
-	} else if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
+	} else if s.d.Flavor().Matches(tengo.FlavorMySQL55) {
 		t.Skip("Test not relevant for 5.5-based image", s.d.Image)
 	}
 
@@ -1162,13 +1162,8 @@ func (s SkeemaIntegrationSuite) TestFlavorConfig(t *testing.T) {
 	}
 
 	realFlavor := inst.Flavor()
-	badFlavor := tengo.Flavor{Vendor: tengo.VendorUnknown, Major: realFlavor.Major, Minor: realFlavor.Minor}
-	if realFlavor.Vendor == tengo.VendorMariaDB {
-		// Hack to avoid Unknown:10.1 or higher being interpretted as having support
-		// for things in MySQL 5.7+ that aren't in MariaDB, since VendorUnknown is
-		// treated as MySQLish
-		badFlavor.Major, badFlavor.Minor = 5, 6
-	}
+	badFlavor := realFlavor
+	badFlavor.Vendor = tengo.VendorUnknown
 	defer inst.ForceFlavor(realFlavor) // clean up in case test aborts
 
 	// diff should return no differences
@@ -1196,7 +1191,7 @@ func (s SkeemaIntegrationSuite) TestFlavorConfig(t *testing.T) {
 	// takes precedence over the dir one if both are known.
 	inst.ForceFlavor(realFlavor)
 	newFlavor := tengo.FlavorMariaDB103
-	if realFlavor.Vendor == tengo.VendorMariaDB {
+	if realFlavor.IsMariaDB() {
 		newFlavor = tengo.FlavorMySQL57
 	}
 	contents = fs.ReadTestFile(t, "mydb/.skeema")
@@ -1353,7 +1348,7 @@ END`
 }
 
 func (s SkeemaIntegrationSuite) TestTempSchemaBinlog(t *testing.T) {
-	if !s.d.Flavor().MySQLishMinVersion(8, 0) {
+	if !s.d.Flavor().Min(tengo.FlavorMySQL80) {
 		t.Skip("Test only relevant for flavors that default to having binlog enabled")
 	}
 

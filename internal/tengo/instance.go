@@ -30,7 +30,6 @@ type Instance struct {
 	connectionPool map[string]*sqlx.DB // key is in format "schema?params"
 	m              *sync.Mutex         // protects unexported fields for concurrent operations
 	flavor         Flavor
-	version        [3]int
 	grants         []string
 	waitTimeout    int
 	maxUserConns   int
@@ -248,15 +247,6 @@ func (instance *Instance) SetFlavor(flavor Flavor) error {
 // check the error return value.
 func (instance *Instance) ForceFlavor(flavor Flavor) {
 	instance.flavor = flavor
-	instance.version = [3]int{flavor.Major, flavor.Minor, flavor.Patch}
-}
-
-// Version returns three ints representing the database's major, minor, and
-// patch version, respectively. If this is unable to be determined, all 0's
-// will be returned.
-func (instance *Instance) Version() (int, int, int) {
-	instance.Valid() // force an attempt to hydrate version, if not done already
-	return instance.version[0], instance.version[1], instance.version[2]
 }
 
 // hydrateVars populates several non-exported Instance fields by querying
@@ -292,8 +282,7 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 		return
 	}
 	instance.valid = true
-	instance.version = ParseVersion(result.Version)
-	instance.flavor = ParseFlavor(result.Version, result.VersionComment)
+	instance.flavor = IdentifyFlavor(result.Version, result.VersionComment)
 	instance.sqlMode = strings.Split(result.SQLMode, ",")
 	instance.waitTimeout = result.WaitTimeout
 	instance.bufferPoolSize = result.BufferPoolSize
@@ -513,7 +502,7 @@ func (instance *Instance) introspectionParams() string {
 
 	// In MySQL 8, ensure we get up-to-date values for table sizes as well as next
 	// auto_increment value
-	if flavor.HasDataDictionary() {
+	if flavor.Min(FlavorMySQL80) {
 		v.Set("information_schema_stats_expiry", "0")
 	}
 
@@ -527,7 +516,7 @@ func (instance *Instance) introspectionParams() string {
 	//   collation; we must reparse from SHOW CREATE TABLE
 	// * In MariaDB, SHOW CREATE TABLE does not return 4-byte chars correctly
 	//   regardless of collation
-	if flavor.MySQLishMinVersion(5, 7) {
+	if flavor.Min(FlavorMySQL57) {
 		v.Set("collation", "binary")
 	}
 
@@ -785,7 +774,7 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 	// If buffer pool is over 32GB and flavor doesn't have optimized DROP TABLE,
 	// reduce drop concurrency to 1 to reduce risk of stalls
 	concurrency := opts.Concurrency()
-	if instance.bufferPoolSize >= (32*1024*1024*1024) && !instance.flavor.MySQLishMinVersion(8, 0, 23) {
+	if instance.bufferPoolSize >= (32*1024*1024*1024) && !instance.flavor.Min(FlavorMySQL80.Dot(23)) {
 		concurrency = 1
 	}
 	th := throttler.New(concurrency, len(tableMap))
@@ -923,7 +912,7 @@ func tablesToPartitions(db *sqlx.DB, schema string, flavor Flavor) (map[string][
 
 	// MySQL 8's new data dictionary actually includes views in
 	// information_schema.partitions, so remove them explicitly.
-	if checkViews && flavor.HasDataDictionary() {
+	if checkViews && flavor.Min(FlavorMySQL80) {
 		var viewNames []string
 		query := `
 				SELECT table_name

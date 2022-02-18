@@ -358,7 +358,7 @@ func (dir *Dir) ValidateInstance(instance *tengo.Instance) error {
 	}
 
 	instFlavor := instance.Flavor()
-	confFlavor := tengo.NewFlavor(dir.Config.Get("flavor"))
+	confFlavor := tengo.ParseFlavor(dir.Config.Get("flavor"))
 	if instFlavor.Known() {
 		if confFlavor != tengo.FlavorUnknown && instFlavor.Family() != confFlavor.Family() {
 			log.Warnf("Instance %s actual flavor %s differs from dir %s configured flavor %s", instance, instFlavor, dir, confFlavor)
@@ -598,24 +598,13 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 // most recently pull this dir's contents. If this cannot be determined, all
 // results will be zero values.
 func (dir *Dir) Generator() (major, minor, patch int, edition string) {
-	generator := dir.Config.Get("generator")
-	if !strings.HasPrefix(generator, "skeema:") {
+	base, version, label := tengo.SplitVersionedIdentifier(dir.Config.Get("generator"))
+	if base != "skeema" {
 		return 0, 0, 0, ""
 	}
-	generator = generator[7:]
-	parts := strings.Split(generator, "-")
-	if len(parts) > 1 {
-		edition = parts[1]
-	}
-	tokens := strings.Split(parts[0], ".")
-	major, _ = strconv.Atoi(tokens[0]) // no need to check error, 0 value is fine
-	if len(tokens) > 1 {
-		minor, _ = strconv.Atoi(tokens[1])
-	}
-	if len(tokens) > 2 {
-		patch, _ = strconv.Atoi(tokens[2])
-	}
-	return
+	labelParts := strings.SplitN(label, "-", 2)
+	edition = labelParts[0]
+	return int(version.Major()), int(version.Minor()), int(version.Patch()), edition
 }
 
 // parseContents reads the .skeema and *.sql files in the dir, populating

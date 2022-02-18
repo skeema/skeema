@@ -476,9 +476,9 @@ func TestTableAlterAddIndexOrder(t *testing.T) {
 	} else if ta.Index.Name != to.SecondaryIndexes[0].Name || !ta.NewInvisible {
 		t.Errorf("Unexpected values in AlterIndex: %+v", ta)
 	} else if clauseWithoutFlavor := ta.Clause(StatementModifiers{}); clauseWithoutFlavor != "" {
-		t.Errorf("Unexpected result for AlterIndex.Clause() without a MySQLish 8.0+ flavor: %q", clauseWithoutFlavor)
-	} else if clauseWithFlavor := ta.Clause(StatementModifiers{Flavor: FlavorPercona80}); clauseWithFlavor != expectClause {
-		t.Errorf("Unexpected result for AlterIndex.Clause() with a MySQLish 8.0+ flavor: %q", clauseWithFlavor)
+		t.Errorf("Unexpected result for AlterIndex.Clause() without a MySQL 8.0+ flavor: %q", clauseWithoutFlavor)
+	} else if clauseWithFlavor := ta.Clause(StatementModifiers{Flavor: FlavorMySQL80}); clauseWithFlavor != expectClause {
+		t.Errorf("Unexpected result for AlterIndex.Clause() with a MySQL 8.0+ flavor: %q", clauseWithFlavor)
 	} else if clauseWithFlavor := ta.Clause(StatementModifiers{Flavor: FlavorMariaDB106}); clauseWithFlavor != strings.ReplaceAll(expectClause, "INVISIBLE", "IGNORED") {
 		t.Errorf("Unexpected result for AlterIndex.Clause() with a MariaDB 10.6 flavor: %q", clauseWithFlavor)
 	}

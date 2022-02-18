@@ -233,7 +233,7 @@ func statementModifiersForPull(config *mybase.Config, instance *tengo.Instance, 
 		mods.NextAutoInc = tengo.NextAutoIncIfAlready
 	}
 	mods.IgnoreTable = ignoreTable
-	instFlavor, confFlavor := instance.Flavor(), tengo.NewFlavor(config.Get("flavor"))
+	instFlavor, confFlavor := instance.Flavor(), tengo.ParseFlavor(config.Get("flavor"))
 	if !instFlavor.Known() && confFlavor.Known() {
 		mods.Flavor = confFlavor
 	} else {

@@ -1,9 +1,9 @@
 # Tables using generated columns -- split into a separate file due to only
 # being tested/supported in recent versions.
 
-# This file is only used in MySQL/Percona 5.7+; MariaDB testing is a separate
-# file due to lack of NOT NULL support in generated cols, and lack of 4-byte
-# character support in generation expressions.
+# This file is only used in MySQL 5.7+; MariaDB testing is a separate file due
+# to lack of NOT NULL support in generated cols, and lack of 4-byte character
+# support in generation expressions.
 
 SET foreign_key_checks=0;
 SET sql_log_bin=0;

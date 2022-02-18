@@ -52,7 +52,7 @@ func (idx *Index) Definition(flavor Flavor) string {
 		comment = fmt.Sprintf(" COMMENT '%s'", EscapeValueForCreateTable(idx.Comment))
 	}
 	if idx.Invisible {
-		if flavor.Vendor == VendorMariaDB {
+		if flavor.IsMariaDB() {
 			invis = " IGNORED"
 		} else {
 			invis = " /*!80000 INVISIBLE */"

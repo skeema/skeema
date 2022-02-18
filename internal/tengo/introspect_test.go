@@ -97,7 +97,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Test introspection of default expressions, if flavor supports them
-	if flavor.VendorMinVersion(VendorMariaDB, 10, 2) || flavor.MySQLishMinVersion(8, 0, 13) {
+	if flavor.Min(FlavorMariaDB102) || flavor.Min(FlavorMySQL80.Dot(13)) {
 		table := s.GetTable(t, "testing", "testdefaults")
 		// Ensure 3-byte chars in default expression are introspected properly
 		if !strings.Contains(table.CreateStatement, "\u20AC") {
@@ -141,7 +141,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Test advanced index functionality in MySQL 8+
-	if flavor.MySQLishMinVersion(8, 0) {
+	if flavor.Min(FlavorMySQL80) {
 		table := s.GetTable(t, "testing", "my8idx")
 		if !strings.Contains(table.CreateStatement, "\u20AC") {
 			t.Errorf("Expected functional index expression to contain 3-byte char \u20AC, but it did not. CREATE statement:\n%s", table.CreateStatement)
@@ -159,7 +159,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		if idx.Parts[0].Expression != "" || idx.Parts[1].Expression == "" {
 			t.Errorf("Unexpected index part expressions found: [0].Expression=%q, [1].Expression=%q", idx.Parts[0].Expression, idx.Parts[1].Expression)
 		}
-	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 6) {
+	} else if flavor.Min(FlavorMariaDB106) {
 		table := s.GetTable(t, "testing", "maria106idx")
 		idx := table.SecondaryIndexes[0]
 		if !idx.Invisible {
@@ -168,7 +168,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Test invisible column support in flavors supporting it
-	if flavor.VendorMinVersion(VendorMariaDB, 10, 3) || flavor.MySQLishMinVersion(8, 0, 23) {
+	if flavor.Min(FlavorMariaDB103) || flavor.Min(FlavorMySQL80.Dot(23)) {
 		table := s.GetTable(t, "testing", "invistest")
 		for n, col := range table.Columns {
 			expectInvis := (n == 0 || n == 4 || n == 5)
@@ -180,7 +180,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Include coverage for fulltext parsers if MySQL 5.7+. (Although these are
 	// supported in other flavors too, no alternative parsers ship with them.)
-	if flavor.MySQLishMinVersion(5, 7) {
+	if flavor.Min(FlavorMySQL57) {
 		table := s.GetTable(t, "testing", "ftparser")
 		indexes := table.SecondaryIndexesByName()
 		if idx := indexes["ftdesc"]; idx.FullTextParser != "ngram" || idx.Type != "FULLTEXT" {
@@ -195,12 +195,12 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Coverage for column compression
-	if flavor.VendorMinVersion(VendorPercona, 5, 6, 33) {
+	if flavor.Min(FlavorPercona56.Dot(33)) {
 		table := s.GetTable(t, "testing", "colcompr")
 		if table.Columns[1].Compression != "COMPRESSED" {
 			t.Errorf("Unexpected value for compression column attribute: found %q", table.Columns[1].Compression)
 		}
-	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 3) {
+	} else if flavor.Min(FlavorMariaDB103) {
 		table := s.GetTable(t, "testing", "colcompr")
 		if table.Columns[1].Compression != "COMPRESSED" {
 			t.Errorf("Unexpected value for compression column attribute: found %q", table.Columns[1].Compression)
@@ -215,7 +215,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 				t.Errorf("Expected table %s to have at least one CHECK constraint, but it did not", table.Name)
 			}
 			if table.Name == "has_checks1" {
-				if flavor.Vendor == VendorMariaDB {
+				if flavor.IsMariaDB() {
 					if !strings.Contains(table.CreateStatement, "\u20AC") {
 						t.Errorf("Expected check constraint clause to contain 3-byte char \u20AC, but it did not. CREATE statement:\n%s", table.CreateStatement)
 					}
@@ -268,7 +268,7 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 
 	// If this flavor supports using mysql.proc to bulk-fetch routines, confirm
 	// the result is identical to using the individual SHOW CREATE queries
-	if !s.d.Flavor().HasDataDictionary() {
+	if !s.d.Flavor().Min(FlavorMySQL80) {
 		db, err := s.d.ConnectionPool("testing", "")
 		if err != nil {
 			t.Fatalf("Unexpected error from ConnectionPool: %v", err)
@@ -425,7 +425,7 @@ func TestFixShowCreateCharSets(t *testing.T) {
 		CreateStatement: stmt,
 	}
 
-	fixShowCreateCharSets(table, NewFlavor("mysql:8.0.24"))
+	fixShowCreateCharSets(table, FlavorMySQL80.Dot(24))
 	expectCreate := strings.ReplaceAll(`CREATE TABLE ~many_permutations~ (
   ~a~ char(10) COLLATE utf8_unicode_ci DEFAULT NULL,
   ~b~ char(10) CHARACTER SET latin1 COLLATE latin1_swedish_ci DEFAULT NULL,
@@ -461,7 +461,7 @@ func TestFixShowCreateCharSets(t *testing.T) {
 		{Name: "g", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_unicode_ci", CollationIsDefault: false},
 	}
 
-	fixShowCreateCharSets(table, NewFlavor("mysql:8.0.24"))
+	fixShowCreateCharSets(table, FlavorMySQL80.Dot(24))
 	expectCreate = strings.ReplaceAll(`CREATE TABLE ~many_permutations~ (
   ~a~ char(10) CHARACTER SET latin1 COLLATE latin1_bin DEFAULT NULL,
   ~b~ char(10) DEFAULT NULL,

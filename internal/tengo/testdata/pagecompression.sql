@@ -1,4 +1,4 @@
-# Table using InnoDB transparent page compression (MySQLish 5.7+)
+# Table using InnoDB transparent page compression (MySQL 5.7+)
 # Keep in sync with integration.sql's actor_in_film
 use testing
 CREATE TABLE actor_in_film_comp (

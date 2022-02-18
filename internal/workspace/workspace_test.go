@@ -146,7 +146,7 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaErrors(t *testing.T) {
 // situation, if not specially handled, is known to cause random deadlock
 // errors with MySQL 8.0's new data dictionary.
 func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaFK(t *testing.T) {
-	if !s.d.Flavor().HasDataDictionary() {
+	if !s.d.Flavor().Min(tengo.FlavorMySQL80) {
 		t.Skip("Test only relevant for flavors that have the new data dictionary")
 	}
 

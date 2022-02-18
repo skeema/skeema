@@ -118,7 +118,7 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 	opts := Options{
 		RuleSeverity: make(map[string]Severity),
 		RuleConfig:   make(map[string]interface{}),
-		Flavor:       tengo.NewFlavor(dir.Config.Get("flavor")),
+		Flavor:       tengo.ParseFlavor(dir.Config.Get("flavor")),
 	}
 
 	var err error

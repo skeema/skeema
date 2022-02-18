@@ -34,7 +34,7 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 		SkipPreDropAlters:      true, // needed to ignore DROP PARTITION generated just to speed up DROP TABLE
 		Flavor:                 t.Instance.Flavor(),
 	}
-	if major, minor, _ := t.Instance.Version(); major > 5 || minor > 5 {
+	if !mods.Flavor.Matches(tengo.FlavorMySQL55) {
 		// avoid having MySQL ignore index changes that are simply reordered, but only
 		// legal syntax in 5.6+
 		mods.AlgorithmClause = "copy"

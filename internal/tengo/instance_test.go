@@ -140,7 +140,7 @@ func TestInstanceIntrospectionParams(t *testing.T) {
 	assertParams(FlavorMySQL57, "", "sql_quote_show_create=1&collation=binary")
 	assertParams(FlavorMySQL80, "", "sql_quote_show_create=1&information_schema_stats_expiry=0&collation=binary")
 	assertParams(FlavorMySQL57, "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1&collation=binary")
-	assertParams(FlavorPercona80, "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1&information_schema_stats_expiry=0&collation=binary")
+	assertParams(FlavorMySQL80, "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1&information_schema_stats_expiry=0&collation=binary")
 	assertParams(FlavorMariaDB105, "ANSI_QUOTES", "sql_quote_show_create=1&sql_mode=%27%27")
 	assertParams(FlavorMySQL57, "REAL_AS_FLOAT,PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE,ONLY_FULL_GROUP_BY,ANSI", "sql_quote_show_create=1&collation=binary&sql_mode=%27REAL_AS_FLOAT%2CPIPES_AS_CONCAT%2CIGNORE_SPACE%2CONLY_FULL_GROUP_BY%27")
 	assertParams(FlavorMySQL80, "NO_FIELD_OPTIONS,NO_BACKSLASH_ESCAPES,NO_KEY_OPTIONS,NO_TABLE_OPTIONS", "sql_quote_show_create=1&collation=binary&information_schema_stats_expiry=0&sql_mode=%27NO_BACKSLASH_ESCAPES%27")
@@ -315,11 +315,8 @@ func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
 		t.Skip("SKIPPING TEST - no image map defined for", s.d.Image)
 	}
 	actualFlavor := s.d.Flavor()
-	if actualFlavor.Family() != expected {
+	if !actualFlavor.Matches(expected) {
 		t.Errorf("Expected image=%s to yield flavor=%s, instead found %s", s.d.Image, expected, actualFlavor.Family())
-	}
-	if actualMajor, actualMinor, _ := s.d.Version(); actualMajor != expected.Major || actualMinor != expected.Minor {
-		t.Errorf("Expected image=%s to yield major=%d minor=%d, instead found major=%d minor=%d", s.d.Image, expected.Major, expected.Minor, actualMajor, actualMinor)
 	}
 
 	// Confirm that SetFlavor does not work once flavor hydrated
@@ -469,7 +466,7 @@ func (s TengoIntegrationSuite) TestInstanceShowCreateTable(t *testing.T) {
 	}
 
 	// 8.0.24+ hacky handling for utf8mb3 conversion at table level
-	if s.d.Flavor().MySQLishMinVersion(8, 0, 24) {
+	if s.d.Flavor().Min(FlavorMySQL80.Dot(24)) {
 		t1create = strings.Replace(t1create, "ENGINE=InnoDB DEFAULT CHARSET=utf8mb3", "ENGINE=InnoDB DEFAULT CHARSET=utf8", 1)
 	}
 
@@ -623,7 +620,7 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesDeadlock(t *testing.T) {
 	// With the new data dictionary, attempting to drop 2 tables concurrently can
 	// deadlock if the tables have a foreign key constraint between them. This
 	// deadlock did not occur in prior releases.
-	if !s.d.Flavor().HasDataDictionary() {
+	if !s.d.Flavor().Min(FlavorMySQL80) {
 		t.Skip("Test only relevant for flavors that have the new data dictionary")
 	}
 
@@ -684,7 +681,7 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesSkipsViews(t *testing.T) {
 	if err := db.Select(&partitions, query); err != nil {
 		t.Fatalf("Unexpected error querying information_schema.partitions: %v", err)
 	}
-	if flavor := s.d.Flavor(); flavor.HasDataDictionary() {
+	if flavor := s.d.Flavor(); flavor.Min(FlavorMySQL80) {
 		if len(partitions) != 2 {
 			t.Fatalf("Expected flavor %s to have 2 views present in information_schema.partitions; instead found %d", flavor, len(partitions))
 		}
@@ -804,13 +801,21 @@ func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
 		t.Fatalf("Unable to fetch instance default charset and collation: %s", err)
 	}
 
+	// Default collation for utf8mb4 depends on the flavor
+	var defaultCollationMB4 string
+	if s.d.Flavor().Min(FlavorMySQL80) {
+		defaultCollationMB4 = "utf8mb4_0900_ai_ci"
+	} else {
+		defaultCollationMB4 = "utf8mb4_general_ci"
+	}
+
 	// `testing` has instance-default charset and collation
 	// `testcharset` has utf8mb4 charset with its default collation (utf8mb4_general_ci)
 	// `testcharcoll` has utf8mb4 with utf8mb4_unicode_ci
 
 	// Test no-op conditions
 	assertNoError("testing", "", "", instCharSet, instCollation)
-	assertNoError("testcharset", "utf8mb4", "", "utf8mb4", s.d.Flavor().DefaultUtf8mb4Collation())
+	assertNoError("testcharset", "utf8mb4", "", "utf8mb4", defaultCollationMB4)
 	assertNoError("testcharset", "", "utf8mb4_general_ci", "utf8mb4", "utf8mb4_general_ci")
 	assertNoError("testcharcoll", "utf8mb4", "utf8mb4_unicode_ci", "utf8mb4", "utf8mb4_unicode_ci")
 

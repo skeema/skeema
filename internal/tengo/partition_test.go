@@ -145,7 +145,7 @@ func TestTableAlterPartitioningOther(t *testing.T) {
 }
 
 func TestTableUnpartitionedCreateStatement(t *testing.T) {
-	flavors := []Flavor{FlavorMySQL55, FlavorPercona56, FlavorMySQL80, FlavorMariaDB102}
+	flavors := []Flavor{FlavorMySQL55, FlavorMySQL56, FlavorMySQL80, FlavorMariaDB102}
 	for _, flavor := range flavors {
 		unpartitioned := unpartitionedTable(flavor)
 		partitioned := partitionedTable(flavor)
@@ -431,7 +431,7 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 func partitionedTable(flavor Flavor) Table {
 	t := unpartitionedTable(flavor)
 	expression := "customer_id"
-	if flavor.HasDataDictionary() || flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
+	if flavor.Min(FlavorMySQL80) || flavor.Min(FlavorMariaDB102) {
 		expression = EscapeIdentifier(expression)
 	}
 	t.Partitioning = &TablePartitioning{
@@ -467,7 +467,7 @@ func unpartitionedTable(flavor Flavor) Table {
 			CollationIsDefault: true,
 		},
 	}
-	if flavor.AllowBlobDefaults() {
+	if flavor.Min(FlavorMariaDB102) { // only Maria 10.2+ allows blob default literals
 		columns[2].Default = "NULL"
 	}
 	t := Table{

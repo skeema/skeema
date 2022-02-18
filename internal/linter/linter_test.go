@@ -64,7 +64,7 @@ func (s IntegrationSuite) TestCheckSchema(t *testing.T) {
 	opts.Flavor = s.d.Flavor()
 
 	expectFailures := 3
-	if opts.Flavor.VendorMinVersion(tengo.VendorMariaDB, 10, 6) {
+	if opts.Flavor.Min(tengo.FlavorMariaDB106) {
 		expectFailures += 2 // traditional InnoDB compression will fail due to global default of innodb_read_only_compressed=ON
 	}
 
@@ -168,7 +168,7 @@ func (s IntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 	// defaulting to half the page size.
 	// This logic is skipped in MariaDB 10.6+ due to InnoDB compression being
 	// deprecated in that version.
-	if !s.d.Flavor().VendorMinVersion(tengo.VendorMariaDB, 10, 6) {
+	if !s.d.Flavor().Min(tengo.FlavorMariaDB106) {
 		cases := []struct {
 			allowList            []string
 			flavor               tengo.Flavor
@@ -197,14 +197,14 @@ func (s IntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 	// that the regexp used by tableCompressionMode() works properly.
 	// Store a mapping of table name -> expected 2nd return value of tableCompressionMode().
 	var tableExpectedClause map[string]string
-	if s.d.Flavor().MySQLishMinVersion(5, 7) {
+	if s.d.Flavor().Min(tengo.FlavorMySQL57) {
 		dir = getDir(t, "testdata/pagecomprmysql")
 		tableExpectedClause = map[string]string{
 			"page_comp_zlib": "COMPRESSION='zlib'",
 			"page_comp_lz4":  "COMPRESSION='lz4'",
 			"page_comp_none": "",
 		}
-	} else if s.d.Flavor().VendorMinVersion(tengo.VendorMariaDB, 10, 2) {
+	} else if s.d.Flavor().Min(tengo.FlavorMariaDB102) {
 		dir = getDir(t, "testdata/pagecomprmaria")
 		tableExpectedClause = map[string]string{
 			"page_comp_1":   "`PAGE_COMPRESSED`=1",
@@ -342,7 +342,7 @@ func expectedAnnotations(logicalSchema *fs.LogicalSchema, flavor tengo.Flavor) (
 					// MySQL 8.0.19+, which omits them entirely in most cases
 					continue
 				}
-				if ruleName == "compression" && flavor.VendorMinVersion(tengo.VendorMariaDB, 10, 6) && strings.Contains(stmt.File, "compressed.sql") {
+				if ruleName == "compression" && flavor.Min(tengo.FlavorMariaDB106) && strings.Contains(stmt.File, "compressed.sql") {
 					// Special case: in MariaDB 10.6, traditional InnoDB compression cannot
 					// be used by default
 					continue

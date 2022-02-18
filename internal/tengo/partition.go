@@ -59,7 +59,7 @@ func (tp *TablePartitioning) Definition(flavor Flavor) string {
 	}
 
 	opener, closer := "/*!50100", " */"
-	if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
+	if flavor.Min(FlavorMariaDB102) {
 		// MariaDB stopped wrapping partitioning clauses in version-gated comments
 		// in 10.2.
 		opener, closer = "", ""
@@ -82,7 +82,7 @@ func (tp *TablePartitioning) partitionBy(flavor Flavor) string {
 		method = "LIST  COLUMNS"
 	}
 
-	if (tp.Method == "RANGE COLUMNS" || strings.HasSuffix(tp.Method, "KEY")) && !flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
+	if (tp.Method == "RANGE COLUMNS" || strings.HasSuffix(tp.Method, "KEY")) && !flavor.Min(FlavorMariaDB102) {
 		expr = strings.Replace(expr, "`", "", -1)
 	}
 
@@ -152,7 +152,7 @@ type Partition struct {
 // DDL statement.
 func (p *Partition) Definition(flavor Flavor, method string) string {
 	name := p.Name
-	if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
+	if flavor.Min(FlavorMariaDB102) {
 		name = EscapeIdentifier(name)
 	}
 

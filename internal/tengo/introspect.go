@@ -107,7 +107,7 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 		}
 		// Index order is unpredictable with new MySQL 8 data dictionary, so reorder
 		// indexes based on parsing SHOW CREATE TABLE if needed
-		if flavor.HasDataDictionary() && len(t.SecondaryIndexes) > 1 {
+		if flavor.Min(FlavorMySQL80) && len(t.SecondaryIndexes) > 1 {
 			fixIndexOrder(t)
 		}
 		// Foreign keys order is unpredictable in MySQL before 5.6, so reorder
@@ -117,7 +117,7 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 		}
 		// Create options order is unpredictable with the new MySQL 8 data dictionary
 		// Also need to fix superfluous column charsets and utf8mb3->utf8 change
-		if flavor.HasDataDictionary() {
+		if flavor.Min(FlavorMySQL80) {
 			fixCreateOptionsOrder(t, flavor)
 			fixShowCreateCharSets(t, flavor)
 		}
@@ -125,14 +125,14 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 		// TABLE to properly obtain any 4-byte chars. Additionally in 8.0 the I_S
 		// representation has incorrect escaping and potentially different charset
 		// in string literal introducers.
-		if flavor.MySQLishMinVersion(5, 7) {
+		if flavor.Min(FlavorMySQL57) {
 			fixGenerationExpr(t, flavor)
 		}
 		// Percona Server column compression can only be parsed from SHOW CREATE
 		// TABLE. (Although it also has new I_S tables, their name differs pre-8.0
 		// vs post-8.0, and cols that aren't using a COMPRESSION_DICTIONARY are not
 		// even present there.)
-		if flavor.VendorMinVersion(VendorPercona, 5, 6, 33) && strings.Contains(t.CreateStatement, "COLUMN_FORMAT COMPRESSED") {
+		if flavor.Min(FlavorPercona56.Dot(33)) && strings.Contains(t.CreateStatement, "COLUMN_FORMAT COMPRESSED") {
 			fixPerconaColCompression(t)
 		}
 		// FULLTEXT indexes may have a PARSER clause, which isn't exposed in I_S
@@ -141,7 +141,7 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 		}
 		// Fix problems with I_S data for default expressions as well as functional
 		// indexes in MySQL 8
-		if flavor.MySQLishMinVersion(8, 0) {
+		if flavor.Min(FlavorMySQL80) {
 			fixDefaultExpression(t, flavor)
 			fixIndexExpression(t, flavor)
 		}
@@ -278,11 +278,13 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 		}
 		if !rawColumn.Default.Valid {
 			allowNullDefault := col.Nullable && !col.AutoIncrement && col.GenerationExpr == ""
-			if !flavor.AllowBlobDefaults() && (strings.HasSuffix(col.TypeInDB, "blob") || strings.HasSuffix(col.TypeInDB, "text")) {
+			// Only MariaDB 10.2+ allows blob/text default literals, including explicit
+			// DEFAULT NULL clause.
+			// Recent versions of MySQL do allow default *expressions* for these col
+			// types, but 8.0.13-8.0.22 erroneously omit them from I_S, so we need to
+			// catch this situation and parse from SHOW CREATE later.
+			if !flavor.Min(FlavorMariaDB102) && (strings.HasSuffix(col.TypeInDB, "blob") || strings.HasSuffix(col.TypeInDB, "text")) {
 				allowNullDefault = false
-				// MySQL 8.0.13-8.0.22 omits blob/text default expressions from
-				// information_schema due to a bug, so in this case flag the column to
-				// have its default parsed out from SHOW CREATE TABLE later
 				if strings.Contains(rawColumn.Extra, "DEFAULT_GENERATED") {
 					col.Default = "(!!!BLOBDEFAULT!!!)"
 				}
@@ -290,7 +292,7 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 			if allowNullDefault {
 				col.Default = "NULL"
 			}
-		} else if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
+		} else if flavor.Min(FlavorMariaDB102) {
 			if !col.AutoIncrement && col.GenerationExpr == "" {
 				// MariaDB 10.2+ exposes defaults as expressions / quote-wrapped strings
 				col.Default = rawColumn.Default.String
@@ -353,13 +355,13 @@ func queryIndexesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 		FROM     information_schema.statistics
 		WHERE    table_schema = ?`
 	exprSelect, visSelect := "NULL", "'YES'"
-	if flavor.MySQLishMinVersion(8, 0) {
+	if flavor.Min(FlavorMySQL80) {
 		// Index expressions added in 8.0.13
-		if flavor.MySQLishMinVersion(8, 0, 13) {
+		if flavor.Min(FlavorMySQL80.Dot(13)) {
 			exprSelect = "expression"
 		}
 		visSelect = "is_visible" // available in all 8.0
-	} else if flavor.VendorMinVersion(VendorMariaDB, 10, 6) {
+	} else if flavor.Min(FlavorMariaDB106) {
 		// MariaDB I_S uses the inverse: YES for ignored (invisible), NO for visible
 		visSelect = "IF(ignored = 'YES', 'NO', 'YES')"
 	}
@@ -491,7 +493,7 @@ func queryChecksInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor
 	// broken double-escaping logic. Instead we parse bodies from SHOW CREATE
 	// TABLE separately in a fixup function.
 	var query string
-	if flavor.Vendor == VendorMariaDB {
+	if flavor.IsMariaDB() {
 		query = `
 			SELECT   SQL_BUFFER_RESULT
 			         constraint_name AS constraint_name, check_clause AS check_clause,
@@ -697,7 +699,7 @@ func fixShowCreateCharSets(t *Table, flavor Flavor) {
 
 	// If table-level default is utf8 according to I_S, fix the SHOW CREATE in
 	// 8.0.24+ to match
-	if t.CharSet == "utf8" && flavor.MySQLishMinVersion(8, 0, 24) {
+	if t.CharSet == "utf8" && flavor.Min(FlavorMySQL80.Dot(24)) {
 		t.CreateStatement = strings.Replace(t.CreateStatement, "DEFAULT CHARSET=utf8mb3", "DEFAULT CHARSET=utf8", 1)
 	}
 }
@@ -764,7 +766,7 @@ func fixPartitioningEdgeCases(t *Table, flavor Flavor) {
 		strings.Contains(t.CreateStatement, " DATA DIRECTORY = ") {
 		for _, p := range t.Partitioning.Partitions {
 			name := p.Name
-			if flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
+			if flavor.Min(FlavorMariaDB102) {
 				name = EscapeIdentifier(name)
 			}
 			name = regexp.QuoteMeta(name)
@@ -875,7 +877,7 @@ func fixChecks(t *Table, flavor Flavor) {
 	// prevent explicitly-named checks from also having that same name.
 	// MariaDB also truncates the check clause at 64 bytes in I_S, so we must
 	// parse longer checks from SHOW CREATE TABLE.
-	if flavor.Vendor == VendorMariaDB {
+	if flavor.IsMariaDB() {
 		colsByName := t.ColumnsByName()
 		var keep []*Check
 		for _, cc := range t.Checks {
@@ -980,7 +982,7 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 	// If mysql.proc doesn't exist or that query fails, we then run a SHOW CREATE
 	// per routine, using multiple goroutines for performance reasons.
 	var alreadyObtained int
-	if !flavor.HasDataDictionary() {
+	if !flavor.Min(FlavorMySQL80) {
 		var rawRoutineMeta []struct {
 			Name      string `db:"name"`
 			Type      string `db:"type"`

@@ -128,12 +128,12 @@ func (ai AlterIndex) Clause(mods StatementModifiers) string {
 		return ""
 	}
 	clause := fmt.Sprintf("ALTER INDEX %s ", EscapeIdentifier(ai.Index.Name))
-	if mods.Flavor.MySQLishMinVersion(8, 0) {
+	if mods.Flavor.Min(FlavorMySQL80) {
 		if ai.NewInvisible {
 			return clause + "INVISIBLE"
 		}
 		return clause + "VISIBLE"
-	} else if mods.Flavor.VendorMinVersion(VendorMariaDB, 10, 6) {
+	} else if mods.Flavor.Min(FlavorMariaDB106) {
 		if ai.NewInvisible {
 			return clause + "IGNORED"
 		}
@@ -192,7 +192,7 @@ type AddCheck struct {
 // Clause returns an ADD CONSTRAINT ... CHECK clause of an ALTER TABLE
 // statement.
 func (acc AddCheck) Clause(mods StatementModifiers) string {
-	if acc.reorderOnly && !(mods.StrictCheckOrder && mods.Flavor.Vendor == VendorMariaDB) {
+	if acc.reorderOnly && !(mods.StrictCheckOrder && mods.Flavor.IsMariaDB()) {
 		return ""
 	}
 	return fmt.Sprintf("ADD %s", acc.Check.Definition(mods.Flavor))
@@ -211,11 +211,11 @@ type DropCheck struct {
 // Clause returns a DROP CHECK or DROP CONSTRAINT clause of an ALTER TABLE
 // statement, depending on the flavor.
 func (dcc DropCheck) Clause(mods StatementModifiers) string {
-	if dcc.reorderOnly && !(mods.StrictCheckOrder && mods.Flavor.Vendor == VendorMariaDB) {
+	if dcc.reorderOnly && !(mods.StrictCheckOrder && mods.Flavor.IsMariaDB()) {
 		return ""
 	}
 	noun := "CHECK"
-	if mods.Flavor.Vendor == VendorMariaDB {
+	if mods.Flavor.IsMariaDB() {
 		noun = "CONSTRAINT"
 	}
 	return fmt.Sprintf("DROP %s %s", noun, EscapeIdentifier(dcc.Check.Name))

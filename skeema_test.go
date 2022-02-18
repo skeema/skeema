@@ -201,13 +201,13 @@ func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, d
 	// CURRENT_TIMESTAMP does not take an arg for specifying sub-second precision
 	// In MySQL 8.0+, partitions are formatted differently; the default character
 	// set is now utf8mb4; the default collation for utf8mb4 has also changed.
-	if s.d.Flavor().VendorMinVersion(tengo.VendorMariaDB, 10, 6) {
+	if s.d.Flavor().Min(tengo.FlavorMariaDB106) {
 		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mariadb106", 1)
-	} else if s.d.Flavor().VendorMinVersion(tengo.VendorMariaDB, 10, 2) {
+	} else if s.d.Flavor().Min(tengo.FlavorMariaDB102) {
 		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mariadb102", 1)
-	} else if major, minor, _ := s.d.Version(); major == 5 && minor == 5 {
+	} else if s.d.Flavor().Matches(tengo.FlavorMySQL55) {
 		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mysql55", 1)
-	} else if s.d.Flavor().HasDataDictionary() {
+	} else if s.d.Flavor().Min(tengo.FlavorMySQL80) {
 		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mysql80", 1)
 	}
 

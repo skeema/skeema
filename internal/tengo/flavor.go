@@ -2,19 +2,20 @@ package tengo
 
 import (
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
-// Vendor distinguishes between different database distributions/forks
+///// Vendor ///////////////////////////////////////////////////////////////////
+
+// Vendor represents an upstream DBMS software.
 type Vendor int
 
 // Constants representing different supported vendors
 const (
 	VendorUnknown Vendor = iota
 	VendorMySQL
-	VendorPercona
 	VendorMariaDB
 )
 
@@ -22,8 +23,6 @@ func (v Vendor) String() string {
 	switch v {
 	case VendorMySQL:
 		return "mysql"
-	case VendorPercona:
-		return "percona"
 	case VendorMariaDB:
 		return "mariadb"
 	default:
@@ -31,114 +30,203 @@ func (v Vendor) String() string {
 	}
 }
 
-// ParseVendor takes a version comment string (e.g. @@version_comment MySQL
-// variable) and returns the corresponding Vendor constant, defaulting to
-// VendorUnknown if the string is not recognized.
-func ParseVendor(versionComment string) Vendor {
-	versionComment = strings.ToLower(versionComment)
+// ParseVendor converts a string to a Vendor value.
+func ParseVendor(s string) Vendor {
 	// The following loop assumes VendorUnknown==0 (and skips it by starting at 1),
 	// but otherwise makes no assumptions about the number of vendors; it loops
 	// until it hits a positive number that also yields "unknown" by virtue of
 	// the default clause in Vendor.String()'s switch statement.
 	for n := 1; Vendor(n).String() != VendorUnknown.String(); n++ {
-		if strings.Contains(versionComment, Vendor(n).String()) {
+		if Vendor(n).String() == s {
 			return Vendor(n)
 		}
 	}
 	return VendorUnknown
 }
 
-var reVersion = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)`)
+///// Version //////////////////////////////////////////////////////////////////
 
-// ParseVersion takes a version string (e.g. @@version variable from MySQL)
-// and returns a 3-element array of major, minor, and patch numbers. If parsing
-// failed, the returned value will be {0, 0, 0}.
-func ParseVersion(version string) (result [3]int) {
-	matches := reVersion.FindStringSubmatch(version)
-	if matches != nil {
-		var err error
-		for n := range result {
-			result[n], err = strconv.Atoi(matches[n+1])
-			if err != nil {
-				return [3]int{0, 0, 0}
+// Version represents a (Major, Minor, Patch) version number tuple.
+type Version [3]uint16
+
+// Major returns the major component of the version number.
+func (ver Version) Major() uint16 { return ver[0] }
+
+// Minor returns the minor component of the version number.
+func (ver Version) Minor() uint16 { return ver[1] }
+
+// Patch returns the patch component of the version number, also known as the
+// point release number.
+func (ver Version) Patch() uint16 { return ver[2] }
+
+func (ver Version) String() string {
+	return fmt.Sprintf("%d.%d.%d", ver[0], ver[1], ver[2])
+}
+
+func (ver Version) pack() uint64 {
+	return (uint64(ver[0]) << 32) + (uint64(ver[1]) << 16) + uint64(ver[2])
+}
+
+// AtLeast returns true if this version is greater than or equal to the supplied
+// arg.
+func (ver Version) AtLeast(other Version) bool {
+	return ver.pack() >= other.pack()
+}
+
+// Below returns true if this version is strictly less than the supplied arg.
+func (ver Version) Below(other Version) bool {
+	return ver.pack() < other.pack()
+}
+
+// ParseVersion converts the supplied string in dot-separated format into a
+// Version, or returns an error if parsing fails. Any non-digit prefix or suffix
+// is ignored.
+func ParseVersion(s string) (ver Version, err error) {
+	for n, spart := range strings.SplitN(s, ".", 3) {
+		if n == 0 { // strip leading non-digits before major version
+			if firstDigitPos := strings.IndexFunc(spart, unicode.IsDigit); firstDigitPos > -1 {
+				spart = spart[firstDigitPos:]
+			}
+		} else if n == 2 { // strip anything after first non-digit
+			isNonDigit := func(r rune) bool { return !unicode.IsDigit(r) }
+			if firstNonDigitPos := strings.IndexFunc(spart, isNonDigit); firstNonDigitPos > -1 {
+				spart = spart[0:firstNonDigitPos]
+			}
+		}
+		part, thisErr := strconv.ParseUint(spart, 10, 16)
+		if thisErr != nil {
+			err = thisErr
+		}
+		ver[n] = uint16(part)
+	}
+	return
+}
+
+///// Variant //////////////////////////////////////////////////////////////////
+
+// Variant represents a patch-set/branch that tracks a Vendor, rather than being
+// a hard fork. Variants are used as bit flags, so in theory a Flavor may consist
+// of multiple variants, although currently none do.
+type Variant uint32
+
+// Constants representing variants. Not all entries here are necessarily
+// supported by this package.
+const (
+	VariantPercona Variant = 1 << iota
+	VariantAurora
+)
+
+// Variant zero value constants can either express no variant or unknown variants.
+const (
+	VariantNone    Variant = 0
+	VariantUnknown Variant = 0
+)
+
+// String returns a stringified representation of one or more variant flags.
+func (variant Variant) String() string {
+	var ss []string
+	if variant&VariantPercona != 0 {
+		ss = append(ss, "percona")
+	}
+	if variant&VariantAurora != 0 {
+		ss = append(ss, "aurora")
+	}
+	return strings.Join(ss, "-")
+}
+
+// ParseVariant converts a string to a Variant value, or VariantUnknown if the
+// string does not match a known variant.
+func ParseVariant(s string) (variant Variant) {
+	parts := strings.Split(s, "-")
+
+	// The following loop makes no assumptions about the number of variants; it
+	// loops until it hits one that yields an empty string, by virtue of the
+	// logic in Variant.String().
+	for n := 0; n < 32; n++ {
+		v := Variant(1 << n)
+		vstr := v.String()
+		if vstr == "" { // no more variants defined
+			break
+		}
+		for _, part := range parts {
+			if part == vstr {
+				variant |= v
 			}
 		}
 	}
 	return
 }
 
-// Flavor represents a database server release, including vendor along with
-// major and minor version number, and optionally the patch number (or 0 if
-// unknown or irrelevant).
+///// Flavor ///////////////////////////////////////////////////////////////////
+
+// Flavor represents a database server release, consisting of a vendor, a
+// version, and optionally some variant flags.
 type Flavor struct {
-	Vendor Vendor
-	Major  int
-	Minor  int
-	Patch  int
+	Vendor   Vendor
+	Version  Version
+	Variants Variant // bit set of |'ed together Variant flags
 }
 
 // FlavorUnknown represents a flavor that cannot be parsed. This is the zero
 // value for Flavor.
-var FlavorUnknown = Flavor{VendorUnknown, 0, 0, 0}
+var FlavorUnknown = Flavor{}
 
 // Flavor values representing important vendor and major/minor version
-// combinations. These all omit patch numbers! Outside of tests, avoid
-// direct equality comparison, and instead only compare these to the return
-// value of Flavor.Family().
+// combinations. These all omit patch numbers! Avoid direct equality
+// comparison with these, although they're useful as args to Flavor.Matches()
+// and Flavor.Min().
 var (
-	FlavorMySQL55    = Flavor{VendorMySQL, 5, 5, 0}
-	FlavorMySQL56    = Flavor{VendorMySQL, 5, 6, 0}
-	FlavorMySQL57    = Flavor{VendorMySQL, 5, 7, 0}
-	FlavorMySQL80    = Flavor{VendorMySQL, 8, 0, 0}
-	FlavorPercona55  = Flavor{VendorPercona, 5, 5, 0}
-	FlavorPercona56  = Flavor{VendorPercona, 5, 6, 0}
-	FlavorPercona57  = Flavor{VendorPercona, 5, 7, 0}
-	FlavorPercona80  = Flavor{VendorPercona, 8, 0, 0}
-	FlavorMariaDB101 = Flavor{VendorMariaDB, 10, 1, 0}
-	FlavorMariaDB102 = Flavor{VendorMariaDB, 10, 2, 0}
-	FlavorMariaDB103 = Flavor{VendorMariaDB, 10, 3, 0}
-	FlavorMariaDB104 = Flavor{VendorMariaDB, 10, 4, 0}
-	FlavorMariaDB105 = Flavor{VendorMariaDB, 10, 5, 0}
-	FlavorMariaDB106 = Flavor{VendorMariaDB, 10, 6, 0}
-	FlavorMariaDB107 = Flavor{VendorMariaDB, 10, 7, 0}
+	FlavorMySQL55    = Flavor{Vendor: VendorMySQL, Version: Version{5, 5, 0}}
+	FlavorMySQL56    = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}}
+	FlavorMySQL57    = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}}
+	FlavorMySQL80    = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}}
+	FlavorPercona55  = Flavor{Vendor: VendorMySQL, Version: Version{5, 5, 0}, Variants: VariantPercona}
+	FlavorPercona56  = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}, Variants: VariantPercona}
+	FlavorPercona57  = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}, Variants: VariantPercona}
+	FlavorPercona80  = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}, Variants: VariantPercona}
+	FlavorMariaDB101 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1, 0}}
+	FlavorMariaDB102 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2, 0}}
+	FlavorMariaDB103 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3, 0}}
+	FlavorMariaDB104 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 4, 0}}
+	FlavorMariaDB105 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 5, 0}}
+	FlavorMariaDB106 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 6, 0}}
+	FlavorMariaDB107 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7, 0}}
 )
 
-// NewFlavor returns a Flavor value based on its inputs, which should be
-// supplied in one of these forms:
-// NewFlavor("vendor", major, minor)
-// NewFlavor("vendor", major, minor, patch)
-// NewFlavor("vendor:major.minor")
-// NewFlavor("vendor:major.minor.patch")
-func NewFlavor(base string, versionParts ...int) Flavor {
-	if len(versionParts) == 0 {
-		versionParts = []int{0, 0, 0}
-		tokens := strings.Split(base, ":")
-		base = tokens[0]
-		if len(tokens) > 1 {
-			tokens = strings.Split(tokens[1], ".")
-			for n := 0; n < 3 && n < len(tokens); n++ {
-				versionParts[n], _ = strconv.Atoi(tokens[n]) // no need to check error, 0 value is fine
-			}
-		}
-	} else if len(versionParts) < 3 {
-		// Append enough zeroes for length to be 3
-		versionParts = append(versionParts, make([]int, 3-len(versionParts))...)
+// ParseFlavor returns a Flavor value based on the supplied string in format
+// "base:major.minor" or "base:major.minor.patch". The base should correspond
+// to either a stringified Vendor constant or to a stringified Variant constant.
+func ParseFlavor(s string) Flavor {
+	base, version, _ := SplitVersionedIdentifier(s)
+	flavor := Flavor{
+		Vendor:  ParseVendor(base),
+		Version: version,
 	}
-	return Flavor{ParseVendor(base), versionParts[0], versionParts[1], versionParts[2]}
+	if flavor.Vendor == VendorUnknown {
+		if variant := ParseVariant(base); variant != VariantUnknown {
+			flavor.Vendor = VendorMySQL // so far, all supported variants are based on MySQL
+			flavor.Variants = variant
+		}
+	}
+	return flavor
 }
 
-// ParseFlavor returns a Flavor value based on inputs obtained from server vars
-// @@global.version and @@global.version_comment. It accounts for how some
+// IdentifyFlavor returns a Flavor value based on inputs obtained from server
+// vars @@global.version and @@global.version_comment. It accounts for how some
 // distributions and/or cloud platforms manipulate those values.
-func ParseFlavor(versionString, versionComment string) Flavor {
-	version := ParseVersion(versionString)
-	vendor := VendorUnknown
+func IdentifyFlavor(versionString, versionComment string) (flavor Flavor) {
+	flavor.Version, _ = ParseVersion(versionString)
 	versionString = strings.ToLower(versionString)
 	versionComment = strings.ToLower(versionComment)
-	for _, attempt := range []Vendor{VendorMariaDB, VendorPercona, VendorMySQL} {
-		if strings.Contains(versionComment, attempt.String()) || strings.Contains(versionString, attempt.String()) {
-			vendor = attempt
-			break
+	if strings.Contains(versionComment, "percona") || strings.Contains(versionString, "percona") {
+		flavor.Vendor = VendorMySQL
+		flavor.Variants = VariantPercona
+	} else {
+		for _, attempt := range []Vendor{VendorMariaDB, VendorMySQL} {
+			if vs := attempt.String(); strings.Contains(versionComment, vs) || strings.Contains(versionString, vs) {
+				flavor.Vendor = attempt
+				break
+			}
 		}
 	}
 
@@ -146,157 +234,169 @@ func ParseFlavor(versionString, versionComment string) Flavor {
 	// various distribution methods adjust one or both of those strings. Fall
 	// back to sane defaults for known major versions.
 	// This logic will need to change whenever MySQL 9+ or MariaDB 11+ exists.
-	if vendor == VendorUnknown {
-		if version[0] == 10 {
-			vendor = VendorMariaDB
-		} else if version[0] == 5 || version[0] == 8 {
-			vendor = VendorMySQL
+	if flavor.Vendor == VendorUnknown {
+		if flavor.Version[0] == 10 {
+			flavor.Vendor = VendorMariaDB
+		} else if flavor.Version[0] == 5 || flavor.Version[0] == 8 {
+			flavor.Vendor = VendorMySQL
 		}
 	}
 
-	return Flavor{
-		Vendor: vendor,
-		Major:  version[0],
-		Minor:  version[1],
-		Patch:  version[2],
+	return flavor
+}
+
+// SplitVersionedIdentifier takes a string of form "name:major.minor.patch-label"
+// into separate name, version, and label components. The supplied string may
+// omit the label and/or some version components if desired; zero values will be
+// returned for any missing or erroneous component.
+func SplitVersionedIdentifier(s string) (name string, version Version, label string) {
+	tokens := strings.SplitN(s, ":", 2)
+	name = tokens[0]
+	if len(tokens) > 1 {
+		vtokens := strings.SplitN(tokens[1], "-", 2)
+		if len(vtokens) > 1 {
+			label = vtokens[1]
+		}
+		version, _ = ParseVersion(vtokens[0])
 	}
+	return
 }
 
 func (fl Flavor) String() string {
-	if fl.Patch > 0 {
-		return fmt.Sprintf("%s:%d.%d.%d", fl.Vendor, fl.Major, fl.Minor, fl.Patch)
+	var base string
+	if fl.Variants != VariantNone {
+		base = fl.Variants.String()
+	} else {
+		base = fl.Vendor.String()
 	}
-	return fmt.Sprintf("%s:%d.%d", fl.Vendor, fl.Major, fl.Minor)
+	if fl.Version.Patch() > 0 {
+		return fmt.Sprintf("%s:%d.%d.%d", base, fl.Version[0], fl.Version[1], fl.Version[2])
+	}
+	return fmt.Sprintf("%s:%d.%d", base, fl.Version[0], fl.Version[1])
+}
+
+// Dot returns a value equal to the receiver but with the patch version set
+// to the supplied arg value. This is a convenience method, most useful as a
+// chained arg in comparisons, for example:
+//    if myFlavor.Min(FlavorMySQL80.Dot(19)) { ... }
+func (fl Flavor) Dot(patch int) Flavor {
+	// note: receiver was passed by value, this does not modify receiver in-place
+	fl.Version[2] = uint16(patch)
+	return fl
 }
 
 // Family returns a copy of the receiver with a zeroed-out patch version.
 func (fl Flavor) Family() Flavor {
-	fl.Patch = 0 // receiver is passed by value, so mutation is fine here
-	return fl
+	return fl.Dot(0)
 }
 
-// VendorMinVersion returns true if this flavor matches the supplied vendor,
-// and has a version equal to or newer than the specified version.
-func (fl Flavor) VendorMinVersion(vendor Vendor, versionParts ...int) bool {
-	if fl.Vendor != vendor {
+// HasVariant returns true if the supplied Variant flag(s) (a single Variant
+// or multiple Variants bitwise-OR'ed together) are all present in the Flavor.
+func (fl Flavor) HasVariant(variant Variant) bool {
+	return fl.Variants&variant == variant
+}
+
+// Matches compares equality of the vendor, version, and variants of the
+// receiver to the supplied arg. If the arg's patch version number is 0, it is
+// ignored in the comparison. Any extraneous variants on the receiver's side
+// are ignored as well. For example, if the receiver is Percona Server 5.7.30,
+// then Matches(FlavorMySQL57) returns true. However, if the receiver is
+// MySQL 5.7.30, Matches(FlavorPercona57) == false since the receiver's variants
+// are not a superset of the arg's.
+func (fl Flavor) Matches(other Flavor) bool {
+	// Always compare vendor, major version, minor version exactly
+	if fl.Vendor != other.Vendor || fl.Version[0] != other.Version[0] || fl.Version[1] != other.Version[1] {
 		return false
 	}
-	if len(versionParts) < 3 {
-		// Append enough zeroes for length to be 3
-		versionParts = append(versionParts, make([]int, 3-len(versionParts))...)
-	}
-	other := Flavor{vendor, versionParts[0], versionParts[1], versionParts[2]}
-	if fl.Major != other.Major {
-		return fl.Major > other.Major
-	}
-	if fl.Minor != other.Minor {
-		return fl.Minor > other.Minor
-	}
-	return fl.Patch >= other.Patch
-}
-
-// MySQLishMinVersion returns true if the vendor isn't VendorMariaDB, and this
-// flavor has a version equal to or newer than the specified version. Note that
-// this intentionally DOES consider VendorUnknown to be MySQLish.
-func (fl Flavor) MySQLishMinVersion(versionParts ...int) bool {
-	if fl.Vendor == VendorMariaDB {
+	// Compare patch only if the arg has a nonzero value
+	if other.Version[2] > 0 && fl.Version[2] != other.Version[2] {
 		return false
 	}
-	return fl.VendorMinVersion(fl.Vendor, versionParts...)
+	// Ensure receiver has all of the arg's variants
+	return fl.Variants&other.Variants == other.Variants
 }
 
-// Supported returns true if package tengo officially supports this flavor
-func (fl Flavor) Supported() bool {
-	switch fl.Vendor {
-	case VendorMySQL, VendorPercona:
-		// Currently support 5.5.0 through 8.0.x
-		return fl.MySQLishMinVersion(5, 5) && !fl.MySQLishMinVersion(8, 1)
-	case VendorMariaDB:
-		// Currently support 10.1.0 through 10.6.x
-		return fl.Major == 10 && fl.Minor >= 1 && fl.Minor <= 7
+// MatchesAny returns true if the receiver Matches at least one of the supplied
+// arg flavors.
+func (fl Flavor) MatchesAny(others ...Flavor) bool {
+	for _, other := range others {
+		if fl.Matches(other) {
+			return true
+		}
 	}
 	return false
+}
+
+// Min compares the vendor, version, and variants of the receiver to the
+// supplied arg, returning true if all of these properties are true:
+// * receiver's Vendor is equal to arg's Vendor
+// * receiver's Version is equal to or greater than arg's Version
+// * receiver's Variants are a superset of arg's Variants
+func (fl Flavor) Min(other Flavor) bool {
+	return fl.Vendor == other.Vendor && fl.Version.AtLeast(other.Version) && (fl.Variants&other.Variants == other.Variants)
+}
+
+// IsMySQL returns true if the receiver's Vendor is VendorMySQL.
+func (fl Flavor) IsMySQL() bool {
+	return fl.Vendor == VendorMySQL
+}
+
+// IsMariaDB returns true if the receiver's Vendor is VendorMariaDB.
+func (fl Flavor) IsMariaDB() bool {
+	return fl.Vendor == VendorMariaDB
+}
+
+// Supported returns true if package tengo officially supports this flavor.
+func (fl Flavor) Supported() bool {
+	switch fl.Vendor {
+	case VendorMySQL:
+		return fl.Version.AtLeast(Version{5, 5}) && fl.Version.Below(Version{8, 1}) // MySQL 5.5.0-8.0.x is supported
+	case VendorMariaDB:
+		return fl.Version.AtLeast(Version{10, 1}) && fl.Version.Below(Version{10, 8}) // MariaDB 10.1-10.7 is supported
+	default:
+		return false
+	}
 }
 
 // Known returns true if both the vendor and major version of this flavor were
 // parsed properly
 func (fl Flavor) Known() bool {
-	return fl.Vendor != VendorUnknown && fl.Major > 0
+	return fl.Vendor != VendorUnknown && fl.Version.Major() > 0
 }
 
-// AllowBlobDefaults returns true if the flavor permits blob and text types
-// to have literal default values. (Note that MySQL may permit these types to
-// have default *expressions* anyway.)
-func (fl Flavor) AllowBlobDefaults() bool {
-	return fl.VendorMinVersion(VendorMariaDB, 10, 2)
-}
-
-// FractionalTimestamps returns true if the flavor supports fractional
-// seconds in timestamp and datetime values. Note that this returns true for
-// FlavorUnknown as a special-case, since all recent flavors do support this.
-func (fl Flavor) FractionalTimestamps() bool {
-	if fl == FlavorUnknown {
-		return true
-	}
-	return fl.Major > 5 || (fl.Major == 5 && fl.Minor > 5)
-}
-
-// HasDataDictionary returns true if the flavor has a global transactional
-// data dictionary instead of using traditional frm files.
-func (fl Flavor) HasDataDictionary() bool {
-	return fl.MySQLishMinVersion(8, 0)
-}
-
-// DefaultUtf8mb4Collation returns the name of the default collation of the
-// utf8mb4 character set in this flavor.
-func (fl Flavor) DefaultUtf8mb4Collation() string {
-	if fl.MySQLishMinVersion(8, 0) {
-		return "utf8mb4_0900_ai_ci"
-	}
-	return "utf8mb4_general_ci"
-}
-
-// AlwaysShowTableCollation returns true if this flavor always emits a collation
-// clause for the supplied character set, even if the collation is the default
-// for the character set
-func (fl Flavor) AlwaysShowTableCollation(charSet string) bool {
-	if charSet == "utf8mb4" {
-		return fl.DefaultUtf8mb4Collation() != "utf8mb4_general_ci"
-	}
-	return false
-}
+///// Flavor capability methods ////////////////////////////////////////////////
+//
+//    These are only introduced in situations where a single method call (i.e.
+//    Min) does not suffice, OR the capability involves a specific point release
+//    and the logic needs to be repeated in multiple places. In all other
+//    situations, generally avoid introducing new capability methods!
 
 // GeneratedColumns returns true if the flavor supports generated columns
 // using MySQL's native syntax. (Although MariaDB 10.1 has support for generated
 // columns, its syntax is borrowed from other DBMS, so false is returned.)
 func (fl Flavor) GeneratedColumns() bool {
-	return fl.MySQLishMinVersion(5, 7) || fl.VendorMinVersion(VendorMariaDB, 10, 2)
+	return fl.Min(FlavorMySQL57) || fl.Min(FlavorMariaDB102)
 }
 
 // SortedForeignKeys returns true if the flavor sorts foreign keys
 // lexicographically in SHOW CREATE TABLE.
 func (fl Flavor) SortedForeignKeys() bool {
-	// MySQL/Percona 8.0.19+ no longer sort lexicographically
-	if fl.MySQLishMinVersion(8, 0, 19) {
-		return false
-	}
-
-	// 5.5 did not sort lexicographically; other versions do
-	return fl.Major > 5 || (fl.Major == 5 && fl.Minor > 5)
+	// MySQL sorts lexicographically in 5.6 through 8.0.18; MariaDB always does
+	return !fl.Matches(FlavorMySQL55) && !fl.Min(FlavorMySQL80.Dot(19))
 }
 
 // OmitIntDisplayWidth returns true if the flavor omits inclusion of display
 // widths from column types in the int family, aside from special cases like
 // tinyint(1).
 func (fl Flavor) OmitIntDisplayWidth() bool {
-	return fl.MySQLishMinVersion(8, 0, 19)
+	return fl.Min(FlavorMySQL80.Dot(19))
 }
 
 // HasCheckConstraints returns true if the flavor supports check constraints
 // and exposes them in information_schema.
 func (fl Flavor) HasCheckConstraints() bool {
-	if fl.MySQLishMinVersion(8, 0, 16) || fl.VendorMinVersion(VendorMariaDB, 10, 3, 10) {
+	if fl.Min(FlavorMySQL80.Dot(16)) || fl.Min(FlavorMariaDB103.Dot(10)) {
 		return true
 	}
-	return fl.Family() == FlavorMariaDB102 && fl.VendorMinVersion(VendorMariaDB, 10, 2, 22)
+	return fl.Matches(FlavorMariaDB102) && fl.Version.Patch() >= 22
 }

@@ -111,7 +111,7 @@ func (s IntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
 	forceRulesWarning(opts) // regardless of config, set everything to warning
 
 	expectFailures := 3
-	if s.d.Flavor().VendorMinVersion(tengo.VendorMariaDB, 10, 6) {
+	if s.d.Flavor().Min(tengo.FlavorMariaDB106) {
 		expectFailures += 2 // traditional InnoDB compression will fail due to global default of innodb_read_only_compressed=ON
 	}
 
@@ -144,12 +144,12 @@ func (s IntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
 		"2:sql-syntax": true,
 		"0:sql-1072":   true,
 	}
-	if s.d.Flavor().VendorMinVersion(tengo.VendorMariaDB, 10, 5) {
+	if s.d.Flavor().Min(tengo.FlavorMariaDB105) {
 		// MariaDB 10.5+ parser changes result in different error code here
 		expectedOffsetsAndRules["0:sql-4161"] = true
 		expectedOffsetsAndRules["2:sql-syntax"] = false
 	}
-	if s.d.Flavor().VendorMinVersion(tengo.VendorMariaDB, 10, 6) {
+	if s.d.Flavor().Min(tengo.FlavorMariaDB106) {
 		// MariaDB 10.6+ error code for blocking InnoDB compression
 		expectedOffsetsAndRules["0:sql-4047"] = true
 	}

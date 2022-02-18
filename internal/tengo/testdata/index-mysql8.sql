@@ -1,4 +1,4 @@
-# Advanced index features present in MySQL/Percona 8+
+# Advanced index features present in MySQL 8+
 
 SET foreign_key_checks=0;
 SET sql_log_bin=0;

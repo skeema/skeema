@@ -1,8 +1,8 @@
 # Tables using check constraints -- split into a separate file due to only
 # being tested/supported in recent versions.
 
-# This file is only used in MySQL/Percona 8+; MariaDB testing is a separate
-# file due to some syntactical differences.
+# This file is only used in MySQL 8+; MariaDB testing is a separate file due to
+# some syntactical differences.
 
 SET foreign_key_checks=0;
 SET sql_log_bin=0;

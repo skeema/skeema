@@ -81,7 +81,7 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 		autoIncClause = fmt.Sprintf(" AUTO_INCREMENT=%d", t.NextAutoIncrement)
 	}
 	var collate string
-	if t.Collation != "" && (!t.CollationIsDefault || flavor.AlwaysShowTableCollation(t.CharSet)) {
+	if !t.CollationIsDefault || (t.CharSet == "utf8mb4" && flavor.Min(FlavorMySQL80)) {
 		collate = fmt.Sprintf(" COLLATE=%s", t.Collation)
 	}
 	var createOptions string

@@ -124,7 +124,7 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 	}
 	if requestedType == "docker" {
 		opts.Type = TypeLocalDocker
-		opts.Flavor = tengo.NewFlavor(dir.Config.Get("flavor"))
+		opts.Flavor = tengo.ParseFlavor(dir.Config.Get("flavor"))
 		opts.SkipBinlog = true
 		if !opts.Flavor.Known() && instance != nil {
 			opts.Flavor = instance.Flavor().Family()

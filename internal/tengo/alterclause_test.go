@@ -194,12 +194,12 @@ func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
 	// Skip test if flavor doesn't support page compression
 	// Note that although MariaDB 10.1 supports this feature, we exclude it here
 	// since it does not seem to work out-of-the-box in Docker images
-	if !flavor.MySQLishMinVersion(5, 7) && !flavor.VendorMinVersion(VendorMariaDB, 10, 2) {
+	if !flavor.Min(FlavorMySQL57) && !flavor.Min(FlavorMariaDB102) {
 		t.Skipf("InnoDB page compression not supported in flavor %s", flavor)
 	}
 
 	sqlPath := "pagecompression.sql"
-	if flavor.Vendor == VendorMariaDB {
+	if flavor.IsMariaDB() {
 		sqlPath = "pagecompression-maria.sql"
 	}
 	s.SourceTestSQL(t, sqlPath)
@@ -255,8 +255,7 @@ func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
 // TestAlterCheckConstraints provides unit test coverage relating to diffs of
 // check constraints.
 func TestAlterCheckConstraints(t *testing.T) {
-	flavor := FlavorMySQL80
-	flavor.Patch = 23
+	flavor := FlavorMySQL80.Dot(23)
 	mods := StatementModifiers{Flavor: flavor}
 
 	// Test addition of checks
