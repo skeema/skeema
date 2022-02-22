@@ -1050,7 +1050,7 @@ func TestTableAlterChangeCharSet(t *testing.T) {
 	assertChangeCharSet := func(a, b *Table, expected string) {
 		t.Helper()
 		tableAlters, supported := a.Diff(b)
-		if expected == "" {
+		if expected == "" && a.Collation == b.Collation && a.CharSet == b.CharSet {
 			if len(tableAlters) != 0 || !supported {
 				t.Fatalf("Incorrect result from Table.Diff(): expected len=0, true; found len=%d, %t", len(tableAlters), supported)
 			}
@@ -1083,6 +1083,13 @@ func TestTableAlterChangeCharSet(t *testing.T) {
 	to = getTableWithCharSet("latin1", "latin1_general_ci", false)
 	assertChangeCharSet(&from, &to, "DEFAULT CHARACTER SET = latin1 COLLATE = latin1_general_ci")
 	assertChangeCharSet(&to, &from, "DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci")
+
+	// Confirm "utf8" and "utf8mb3" are treated as identical, but generate a blank
+	// TableAlterClause since the SHOW CREATEs may legitimately differ if comparing
+	// tables introspected from different flavors/versions
+	from = getTableWithCharSet("utf8", "utf8_general_ci", true)
+	to = getTableWithCharSet("utf8mb3", "utf8_general_ci", true)
+	assertChangeCharSet(&from, &to, "")
 }
 
 func TestTableAlterChangeCreateOptions(t *testing.T) {

@@ -282,25 +282,6 @@ var reDisplayWidth = regexp.MustCompile(`(tinyint|smallint|mediumint|int|bigint)
 
 // Clause returns a MODIFY COLUMN clause of an ALTER TABLE statement.
 func (mc ModifyColumn) Clause(mods StatementModifiers) string {
-	// Emit a no-op if the *only* difference is presence of int display width. This
-	// can come up if comparing a pre-8.0.19 version of a table to a post-8.0.19
-	// version.
-	oldHasWidth := strings.Contains(mc.OldColumn.TypeInDB, "int(") || mc.OldColumn.TypeInDB == "year(4)"
-	newHasWidth := strings.Contains(mc.NewColumn.TypeInDB, "int(") || mc.NewColumn.TypeInDB == "year(4)"
-	if oldHasWidth && !newHasWidth {
-		oldColCopy := *mc.OldColumn
-		oldColCopy.TypeInDB = StripDisplayWidth(oldColCopy.TypeInDB)
-		if oldColCopy.Equals(mc.NewColumn) {
-			return ""
-		}
-	} else if newHasWidth && !oldHasWidth {
-		newColCopy := *mc.NewColumn
-		newColCopy.TypeInDB = StripDisplayWidth(newColCopy.TypeInDB)
-		if newColCopy.Equals(mc.OldColumn) {
-			return ""
-		}
-	}
-
 	var positionClause string
 	if mc.PositionFirst {
 		// Positioning variables are mutually exclusive
@@ -311,6 +292,15 @@ func (mc ModifyColumn) Clause(mods StatementModifiers) string {
 	} else if mc.PositionAfter != nil {
 		positionClause = fmt.Sprintf(" AFTER %s", EscapeIdentifier(mc.PositionAfter.Name))
 	}
+
+	// Emit a no-op if we're not re-ordering the column and it only has cosmetic
+	// differences, such as presence/lack of int display width, or presence/lack
+	// of charset/collation clauses that are equal to the table's defaults anyway.
+	// (These situations only come up in MySQL 8, under various edge cases.)
+	if !mods.StrictColumnDefinition && positionClause == "" && mc.OldColumn.Equivalent(mc.NewColumn) {
+		return ""
+	}
+
 	return fmt.Sprintf("MODIFY COLUMN %s%s", mc.NewColumn.Definition(mods.Flavor, mc.Table), positionClause)
 }
 
@@ -552,17 +542,23 @@ func (cai ChangeAutoIncrement) Clause(mods StatementModifiers) string {
 // collation between two versions of a table. It satisfies the TableAlterClause
 // interface.
 type ChangeCharSet struct {
-	CharSet   string
-	Collation string // blank string means "default collation for CharSet"
+	FromCharSet   string
+	FromCollation string
+	ToCharSet     string
+	ToCollation   string
 }
 
 // Clause returns a DEFAULT CHARACTER SET clause of an ALTER TABLE statement.
 func (ccs ChangeCharSet) Clause(_ StatementModifiers) string {
-	var collationClause string
-	if ccs.Collation != "" {
-		collationClause = fmt.Sprintf(" COLLATE = %s", ccs.Collation)
+	// Each collation belongs to exactly one character set. However, the canonical
+	// name of a character set can change across flavors/versions (currently just
+	// in terms of "utf8" becoming "utf8mb3"). To permit comparing tables
+	// introspected from different flavors/versions, emit a blank (no-op) clause
+	// in this situation.
+	if ccs.FromCollation == ccs.ToCollation {
+		return ""
 	}
-	return fmt.Sprintf("DEFAULT CHARACTER SET = %s%s", ccs.CharSet, collationClause)
+	return fmt.Sprintf("DEFAULT CHARACTER SET = %s COLLATE = %s", ccs.ToCharSet, ccs.ToCollation)
 }
 
 ///// ChangeCreateOptions //////////////////////////////////////////////////////

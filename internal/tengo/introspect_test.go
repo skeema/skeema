@@ -397,7 +397,9 @@ func TestFixBlobDefaultExpression(t *testing.T) {
 	}
 }
 
-func TestFixShowCreateCharSets(t *testing.T) {
+// TestFixShowCharSets provides unit test coverage for fixShowCharSets
+func TestFixShowCharSets(t *testing.T) {
+	flavor := FlavorMySQL80.Dot(24)
 	stmt := strings.ReplaceAll(`CREATE TABLE ~many_permutations~ (
   ~a~ char(10) COLLATE utf8_unicode_ci DEFAULT NULL,
   ~b~ char(10) CHARACTER SET latin1 DEFAULT NULL,
@@ -425,18 +427,13 @@ func TestFixShowCreateCharSets(t *testing.T) {
 		CreateStatement: stmt,
 	}
 
-	fixShowCreateCharSets(table, FlavorMySQL80.Dot(24))
-	expectCreate := strings.ReplaceAll(`CREATE TABLE ~many_permutations~ (
-  ~a~ char(10) COLLATE utf8_unicode_ci DEFAULT NULL,
-  ~b~ char(10) CHARACTER SET latin1 COLLATE latin1_swedish_ci DEFAULT NULL,
-  ~c~ char(10) CHARACTER SET latin1 COLLATE latin1_swedish_ci DEFAULT NULL,
-  ~d~ char(10) CHARACTER SET latin1 COLLATE latin1_bin DEFAULT NULL,
-  ~e~ char(10) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL,
-  ~f~ char(10) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL,
-  ~g~ char(10) COLLATE utf8_unicode_ci DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci`, "~", "`")
-	if table.CreateStatement != expectCreate {
-		t.Errorf("Incorrect result from fixShowCreateCharSets. Expected:\n%s\nActual:\n%s", expectCreate, table.CreateStatement)
+	// Verify initial setup: generated create should differ from CreateStatement
+	if gen := table.GeneratedCreateStatement(flavor); gen == table.CreateStatement {
+		t.Fatalf("Test setup assertion failed. CREATE statement already matches SHOW:\n%s", gen)
+	}
+	fixShowCharSets(table)
+	if gen := table.GeneratedCreateStatement(flavor); gen != table.CreateStatement {
+		t.Errorf("Mismatch between generated CREATE statement and SHOW.\nGenerated:\n%s\n\nSHOW:\n%s\n", gen, table.CreateStatement)
 	}
 
 	table.CreateStatement = strings.ReplaceAll(`CREATE TABLE ~many_permutations~ (
@@ -461,17 +458,12 @@ func TestFixShowCreateCharSets(t *testing.T) {
 		{Name: "g", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_unicode_ci", CollationIsDefault: false},
 	}
 
-	fixShowCreateCharSets(table, FlavorMySQL80.Dot(24))
-	expectCreate = strings.ReplaceAll(`CREATE TABLE ~many_permutations~ (
-  ~a~ char(10) CHARACTER SET latin1 COLLATE latin1_bin DEFAULT NULL,
-  ~b~ char(10) DEFAULT NULL,
-  ~c~ char(10) DEFAULT NULL,
-  ~d~ char(10) CHARACTER SET latin1 COLLATE latin1_bin DEFAULT NULL,
-  ~e~ char(10) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL,
-  ~f~ char(10) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL,
-  ~g~ char(10) CHARACTER SET utf8 COLLATE utf8_unicode_ci DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1`, "~", "`")
-	if table.CreateStatement != expectCreate {
-		t.Errorf("Incorrect result from fixShowCreateCharSets. Expected:\n%s\nActual:\n%s", expectCreate, table.CreateStatement)
+	// Verify initial setup: generated create should differ from CreateStatement
+	if gen := table.GeneratedCreateStatement(flavor); gen == table.CreateStatement {
+		t.Fatalf("Test setup assertion failed. CREATE statement already matches SHOW:\n%s", gen)
+	}
+	fixShowCharSets(table)
+	if gen := table.GeneratedCreateStatement(flavor); gen != table.CreateStatement {
+		t.Errorf("Mismatch between generated CREATE statement and SHOW.\nGenerated:\n%s\n\nSHOW:\n%s\n", gen, table.CreateStatement)
 	}
 }

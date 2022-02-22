@@ -18,6 +18,8 @@ type Column struct {
 	CharSet            string `json:"charSet,omitempty"`            // Only populated if textual type
 	Collation          string `json:"collation,omitempty"`          // Only populated if textual type
 	CollationIsDefault bool   `json:"collationIsDefault,omitempty"` // Only populated if textual type; indicates default for CharSet
+	ForceShowCharSet   bool   `json:"forceShowCharSet,omitempty"`   // Always include CharSet in SHOW CREATE; only true in MySQL 8 edge cases
+	ForceShowCollation bool   `json:"forceShowCollation,omitempty"` // Always include Collation in SHOW CREATE; only true in MySQL 8 edge cases
 	Compression        string `json:"compression,omitempty"`        // Only non-empty if using column compression in Percona Server or MariaDB
 	Comment            string `json:"comment,omitempty"`
 	Invisible          bool   `json:"invisible,omitempty"` // True if an invisible column (MariaDB 10.3+, MySQL 8.0.23+)
@@ -34,14 +36,14 @@ func (c *Column) Definition(flavor Flavor, table *Table) string {
 		// MariaDB puts compression modifiers in a different place than Percona Server
 		compression = fmt.Sprintf(" /*!100301 %s*/", c.Compression)
 	}
-	if c.CharSet != "" && (table == nil || c.Collation != table.Collation || c.CharSet != table.CharSet) {
+	if c.CharSet != "" && (table == nil || c.Collation != table.Collation || c.ForceShowCharSet) {
 		charSet = fmt.Sprintf(" CHARACTER SET %s", c.CharSet)
 	}
 	// Any flavor: Collations are displayed if not the default for the charset
-	// 8.0 only: Collations are also displayed any time a charset is displayed
-	// (except if the table was upgraded from pre-8.0, in which case it may not be;
-	// this can only be fixed up hackily post-introspection though)
-	if c.Collation != "" && (!c.CollationIsDefault || (charSet != "" && flavor.Min(FlavorMySQL80))) {
+	// 8.0 only: Collations are also displayed in other cases which must be parsed
+	// from SHOW CREATE (surfaced as ForceShowCollation). Typically this is any
+	// time a charset is displayed, but not if the table was upgraded from pre-8.0.
+	if c.Collation != "" && (!c.CollationIsDefault || c.ForceShowCollation) {
 		collation = fmt.Sprintf(" COLLATE %s", c.Collation)
 	}
 	if c.GenerationExpr != "" {
@@ -103,5 +105,45 @@ func (c *Column) Equals(other *Column) bool {
 	if c == nil || other == nil {
 		return false
 	}
+	// Just compare the fields, they're all simple non-pointer scalars. This does
+	// intentionally treat two columns as different if they only differ in
+	// cosmetic / non-functional ways; see Column.Equivalent() below for a looser
+	// comparison.
 	return *c == *other
+}
+
+// Equivalent returns true if two columns are equal, or only differ in cosmetic/
+// non-functional ways. Cosmetic differences can come about in MySQL 8 when a
+// column was created with CHARACTER SET or COLLATION clauses that are
+// unnecessary (equal to table's default); or when comparing a table across
+// different versions of MySQL 8 (one which supports int display widths, and
+// one that removes them).
+func (c *Column) Equivalent(other *Column) bool {
+	// If they're equal, they're also equivalent
+	if c.Equals(other) {
+		return true
+	}
+	// if one is nil, but we already know the two aren't equal, then we know the other is non-nil
+	if c == nil || other == nil {
+		return false
+	}
+
+	// Examine column types with and without integer display widths. If they
+	// differ only in *presence/lack* of int display width, this is cosmetic; any
+	// other difference (including *changing* an int display width) is functional.
+	selfStrippedType, selfHadDisplayWidth := StripDisplayWidth(c.TypeInDB)
+	otherStrippedType, otherHadDisplayWidth := StripDisplayWidth(other.TypeInDB)
+	if selfStrippedType != otherStrippedType || (c.TypeInDB != other.TypeInDB && selfHadDisplayWidth && otherHadDisplayWidth) {
+		return false
+	}
+	// If we didn't return early, we know either TypeInDB didn't change at all, or
+	// it only differs in a cosmetic manner (presence/lack of display width).
+
+	// Make a copy of c, and make all cosmetic-related fields equal to other's, and
+	// then check equality again to determine equivalence.
+	selfCopy := *c
+	selfCopy.TypeInDB = other.TypeInDB
+	selfCopy.ForceShowCharSet = other.ForceShowCharSet
+	selfCopy.ForceShowCollation = other.ForceShowCollation
+	return selfCopy == *other
 }

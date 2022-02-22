@@ -202,6 +202,7 @@ func StatementModifiersForDir(dir *fs.Dir) (mods tengo.StatementModifiers, err e
 		mods.StrictIndexOrder = true
 		mods.StrictCheckOrder = true // only affects MariaDB
 		mods.StrictForeignKeyNaming = true
+		mods.StrictColumnDefinition = true // only affects MySQL 8
 	}
 	if mods.AlgorithmClause, err = dir.Config.GetEnum("alter-algorithm", "inplace", "copy", "instant", "nocopy", "default"); err != nil {
 		return

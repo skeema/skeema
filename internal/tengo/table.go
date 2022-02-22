@@ -80,6 +80,12 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 	if t.NextAutoIncrement > 1 {
 		autoIncClause = fmt.Sprintf(" AUTO_INCREMENT=%d", t.NextAutoIncrement)
 	}
+	charSet := t.CharSet
+	// MySQL 8.0.24+ uses "utf8mb3" for table default charset in SHOW CREATE TABLE,
+	// but still "utf8" for cols there, and "utf8" everywhere in I_S
+	if charSet == "utf8" && flavor.Min(FlavorMySQL80.Dot(24)) {
+		charSet = "utf8mb3"
+	}
 	var collate string
 	if !t.CollationIsDefault || (t.CharSet == "utf8mb4" && flavor.Min(FlavorMySQL80)) {
 		collate = fmt.Sprintf(" COLLATE=%s", t.Collation)
@@ -97,7 +103,7 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 		strings.Join(defs, ",\n  "),
 		t.Engine,
 		autoIncClause,
-		t.CharSet,
+		charSet,
 		collate,
 		createOptions,
 		comment,
@@ -239,12 +245,14 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	clauses = make([]TableAlterClause, 0)
 
 	// Check for default charset or collation changes first, prior to looking at
-	// column adds, to ensure the change affects any new columns that don't
-	// explicitly state to use a different charset/collation
+	// column adds, to ensure the default change affects any new columns that don't
+	// explicitly override the table default
 	if from.CharSet != to.CharSet || from.Collation != to.Collation {
 		clauses = append(clauses, ChangeCharSet{
-			CharSet:   to.CharSet,
-			Collation: to.Collation,
+			FromCharSet:   from.CharSet,
+			FromCollation: from.Collation,
+			ToCharSet:     to.CharSet,
+			ToCollation:   to.Collation,
 		})
 	}
 

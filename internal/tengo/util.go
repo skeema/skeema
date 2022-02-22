@@ -158,23 +158,24 @@ func NormalizeCreateOptions(createStmt string) string {
 	return createStmt
 }
 
-// StripDisplayWidth removes integer display width from the supplied column
-// type string, in a way that matches MySQL 8.0.19+'s behavior. The input should
-// only be either an integer type or year(4) type; this function does NOT
-// confirm this.
-// No change is made to tinyint(1) types, nor types with a zerofill modifier, as
-// per handling in MySQL 8.0.19.
-func StripDisplayWidth(colType string) string {
+// StripDisplayWidth examines the supplied column type, and removes its integer
+// display width if it is either an int family type, or a YEAR(4) type. No
+// change is made if the column type isn't one that has a notion of integer
+// display width. Additionally, no change is made to tinyint(1) types, nor
+// types with a zerofill modifier, as per handling in MySQL 8.0.19.
+func StripDisplayWidth(colType string) (strippedType string, didStrip bool) {
 	input := strings.ToLower(colType)
-	openParen := strings.IndexRune(input, '(')
-	if openParen < 0 || input == "tinyint(1)" || strings.HasSuffix(input, "zerofill") {
-		return colType
+	if !strings.Contains(input, "int(") && input != "year(4)" {
+		return colType, false
+	} else if input == "tinyint(1)" || strings.HasSuffix(input, "zerofill") {
+		return colType, false
 	}
+	openParen := strings.IndexRune(colType, '(')
 	var modifier string
 	if strings.HasSuffix(input, " unsigned") {
 		modifier = " unsigned"
 	}
-	return fmt.Sprintf("%s%s", input[0:openParen], modifier)
+	return colType[0:openParen] + modifier, true
 }
 
 // baseDSN returns a DSN with the database (schema) name and params stripped.

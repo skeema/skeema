@@ -116,10 +116,11 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 			fixForeignKeyOrder(t)
 		}
 		// Create options order is unpredictable with the new MySQL 8 data dictionary
-		// Also need to fix superfluous column charsets and utf8mb3->utf8 change
+		// Also need to fix some charset/collation edge cases in SHOW CREATE TABLE
+		// behavior in MySQL 8
 		if flavor.Min(FlavorMySQL80) {
 			fixCreateOptionsOrder(t, flavor)
-			fixShowCreateCharSets(t, flavor)
+			fixShowCharSets(t)
 		}
 		// MySQL 5.7+ generated column expressions must be reparased from SHOW CREATE
 		// TABLE to properly obtain any 4-byte chars. Additionally in 8.0 the I_S
@@ -264,8 +265,8 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 		// I_S may still contain int display widths even though SHOW CREATE TABLE
 		// omits them. Strip to avoid incorrectly flagging the table as unsupported
 		// for diffs.
-		if stripDisplayWidth && (strings.Contains(col.TypeInDB, "int(") || col.TypeInDB == "year(4)") {
-			col.TypeInDB = StripDisplayWidth(col.TypeInDB)
+		if stripDisplayWidth {
+			col.TypeInDB, _ = StripDisplayWidth(col.TypeInDB) // safe/no-op if already no int display width
 		}
 		if pos := strings.Index(col.TypeInDB, " /*!100301 COMPRESSED"); pos > -1 {
 			// MariaDB includes compression attribute in column type; remove it
@@ -651,56 +652,34 @@ func fixCreateOptionsOrder(t *Table, flavor Flavor) {
 	}
 }
 
-var reColumnNameFromLine = regexp.MustCompile("^\\s*`((?:[^`]|``)+)`")
-
-// This function manipulates the SHOW CREATE text to normalize some weirdness
-// from MySQL 8.0:
+// fixShowCharSets parses SHOW CREATE TABLE to set ForceShowCharSet and
+// ForceShowCollation for columns when needed in MySQL 8:
+//
+// Prior to MySQL 8, the logic behind inclusion of column-level CHARACTER SET
+// and COLLATE clauses in SHOW CREATE TABLE was weird but straightforward:
+// CHARACTER SET was included whenever the col's *collation* differed from the
+// table's default; COLLATION was included whenever the col's collation differed
+// from the default collation *of the col's charset*.
+//
+// MySQL 8 includes these clauses unnecessarily in additional situations:
 // * 8.0 includes column-level character sets and collations whenever specified
 //   explicitly in the original CREATE, even when equal to the table's defaults
 // * Tables upgraded from pre-8.0 may omit COLLATE if it's the default for the
-//   charset, while tables created in 8.0 will include it
-// * 8.0.24+ uses "utf8mb3" for table-level default in place of "utf8", but
-//   doesn't do this for columns
-func fixShowCreateCharSets(t *Table, flavor Flavor) {
-	// Find columns with unnecessary charset+collation clause, and replace with
-	// either blank string (if collation is default for the charset) or just the
-	// collation; this matches SHOW CREATE behavior for columns that didn't have
-	// the superfluous clauses
-	find := fmt.Sprintf(" CHARACTER SET %s COLLATE %s", t.CharSet, t.Collation)
-	var replace string
-	if !t.CollationIsDefault {
-		replace = fmt.Sprintf(" COLLATE %s", t.Collation)
-	}
-	t.CreateStatement = strings.ReplaceAll(t.CreateStatement, find, replace)
-
-	// Fix columns created pre-8.0-upgrade which have CHARACTER SET but no COLLATE
-	// clause: if collation matches table default, remove CHARACTER SET entirely,
-	// otherwise add the missing COLLATE
-	var colsByName map[string]*Column // populated lazily only if needed
-	for _, line := range strings.Split(t.CreateStatement, "\n") {
-		if !strings.Contains(line, "CHARACTER SET") || strings.Contains(line, "COLLATE") {
-			continue
+//   charset, while tables created in 8.0 will generally include it whenever a
+//   CHARACTER SET is shown in a column definition
+func fixShowCharSets(t *Table) {
+	lines := strings.Split(t.CreateStatement, "\n")
+	for n, col := range t.Columns {
+		if col.CharSet == "" || col.Collation == "" {
+			continue // non-character-based column type, nothing to do
 		}
-		if colsByName == nil {
-			colsByName = t.ColumnsByName()
+		line := lines[n+1] // columns start on second line of CREATE TABLE
+		if col.Collation == t.Collation && strings.Contains(line, "CHARACTER SET "+col.CharSet) {
+			col.ForceShowCharSet = true
 		}
-		// Intentionally no nil guards here -- regex should always match and col should always be found -- if not, panic is appropriate!
-		matches := reColumnNameFromLine.FindStringSubmatch(line)
-		col := colsByName[matches[1]]
-		charSetClause, collateClause := " CHARACTER SET "+col.CharSet, " COLLATE "+col.Collation
-		var fixedLine string
-		if col.Collation == t.Collation {
-			fixedLine = strings.Replace(line, charSetClause, "", 1)
-		} else {
-			fixedLine = strings.Replace(line, charSetClause, charSetClause+collateClause, 1)
+		if col.CollationIsDefault && strings.Contains(line, "COLLATE "+col.Collation) {
+			col.ForceShowCollation = true
 		}
-		t.CreateStatement = strings.Replace(t.CreateStatement, line, fixedLine, 1)
-	}
-
-	// If table-level default is utf8 according to I_S, fix the SHOW CREATE in
-	// 8.0.24+ to match
-	if t.CharSet == "utf8" && flavor.Min(FlavorMySQL80.Dot(24)) {
-		t.CreateStatement = strings.Replace(t.CreateStatement, "DEFAULT CHARSET=utf8mb3", "DEFAULT CHARSET=utf8", 1)
 	}
 }
 

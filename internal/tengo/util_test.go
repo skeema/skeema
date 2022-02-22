@@ -109,16 +109,20 @@ func TestStripDisplayWidth(t *testing.T) {
 		"tinyint(1)":          "tinyint(1)",
 		"tinyint(2)":          "tinyint",
 		"tinyint(1) unsigned": "tinyint unsigned",
-		"YEAR(4)":             "year",
+		"YEAR(4)":             "YEAR",
 		"YEAR":                "YEAR",
 		"int(11)":             "int",
 		"int(11) zerofill":    "int(11) zerofill",
 		"int(10) unsigned":    "int unsigned",
 		"bigint(20)":          "bigint",
+		"varchar(30)":         "varchar(30)",
+		"CHAR(99)":            "CHAR(99)",
+		"mediumtext":          "mediumtext",
 	}
 	for input, expected := range cases {
-		if actual := StripDisplayWidth(input); actual != expected {
-			t.Errorf("Expected StripDisplayWidth(%q) to return %q, instead found %q", input, expected, actual)
+		expectStripped := (input != expected)
+		if actual, actualStripped := StripDisplayWidth(input); actual != expected || actualStripped != expectStripped {
+			t.Errorf("Expected StripDisplayWidth(%q) to return %q,%t; instead found %q,%t", input, expected, expectStripped, actual, actualStripped)
 		}
 	}
 }

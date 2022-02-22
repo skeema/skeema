@@ -28,8 +28,9 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 	mods := tengo.StatementModifiers{
 		NextAutoInc:            tengo.NextAutoIncIgnore,
 		StrictIndexOrder:       true, // needed since we must get the SHOW CREATE TABLEs to match
-		StrictCheckOrder:       true, // ditto
+		StrictCheckOrder:       true, // ditto (only affects MariaDB)
 		StrictForeignKeyNaming: true, // ditto
+		StrictColumnDefinition: true, // ditto (only affects MySQL 8 edge cases)
 		AllowUnsafe:            true, // needed since we're just running against the temp schema
 		SkipPreDropAlters:      true, // needed to ignore DROP PARTITION generated just to speed up DROP TABLE
 		Flavor:                 t.Instance.Flavor(),

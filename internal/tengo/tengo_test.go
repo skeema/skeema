@@ -328,6 +328,14 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 	if nextAutoInc > 1 {
 		autoIncClause = fmt.Sprintf(" AUTO_INCREMENT=%d", nextAutoInc)
 	}
+
+	utf8mb3Table := utf8mb3
+	if flavor.Min(FlavorMySQL80.Dot(24)) {
+		// 8.0.24+ changes how utf8mb3 is expressed for table-level default in
+		// SHOW CREATE, but not anywhere else
+		utf8mb3Table = "utf8mb3"
+	}
+
 	stmt := fmt.Sprintf(`CREATE TABLE `+"`"+`actor`+"`"+` (
   `+"`"+`actor_id`+"`"+` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
   `+"`"+`first_name`+"`"+` varchar(45) NOT NULL,
@@ -339,7 +347,7 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
   PRIMARY KEY (`+"`"+`actor_id`+"`"+`),
   UNIQUE KEY `+"`"+`idx_ssn`+"`"+` (`+"`"+`ssn`+"`"+`),
   KEY `+"`"+`idx_actor_name`+"`"+` (`+"`"+`last_name`+"`"+`(10),`+"`"+`first_name`+"`"+`(1))
-) ENGINE=InnoDB%s DEFAULT CHARSET=%s`, autoIncClause, utf8mb3)
+) ENGINE=InnoDB%s DEFAULT CHARSET=%s`, autoIncClause, utf8mb3Table)
 	table := Table{
 		Name:               "actor",
 		Engine:             "InnoDB",
@@ -594,10 +602,9 @@ func foreignKeyTable() Table {
 
 func stripIntDisplayWidths(table *Table) {
 	for _, col := range table.Columns {
-		if strings.Contains(col.TypeInDB, "int(") || col.TypeInDB == "year(4)" {
-			stripped := StripDisplayWidth(col.TypeInDB)
-			table.CreateStatement = strings.Replace(table.CreateStatement, col.TypeInDB, stripped, 1)
-			col.TypeInDB = stripped
+		if strippedType, didStrip := StripDisplayWidth(col.TypeInDB); didStrip {
+			table.CreateStatement = strings.Replace(table.CreateStatement, col.TypeInDB, strippedType, 1)
+			col.TypeInDB = strippedType
 		}
 	}
 }

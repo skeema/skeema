@@ -465,11 +465,6 @@ func (s TengoIntegrationSuite) TestInstanceShowCreateTable(t *testing.T) {
 		t.Fatalf("Unable to obtain SHOW CREATE TABLE output: err1=%s, err2=%s", err1, err2)
 	}
 
-	// 8.0.24+ hacky handling for utf8mb3 conversion at table level
-	if s.d.Flavor().Min(FlavorMySQL80.Dot(24)) {
-		t1create = strings.Replace(t1create, "ENGINE=InnoDB DEFAULT CHARSET=utf8mb3", "ENGINE=InnoDB DEFAULT CHARSET=utf8", 1)
-	}
-
 	t1expected := aTableForFlavor(s.d.Flavor(), 1)
 	if t1create != t1expected.CreateStatement {
 		t.Errorf("Mismatch for SHOW CREATE TABLE\nActual return from %s:\n%s\n----------\nExpected output: %s", s.d.Image, t1create, t1expected.CreateStatement)
