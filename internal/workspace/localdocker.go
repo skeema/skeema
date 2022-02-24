@@ -213,10 +213,14 @@ func (ld *LocalDocker) shutdown(args ...interface{}) bool {
 
 	if ld.cleanupAction == CleanupActionStop {
 		log.Infof("Stopping container %s", ld.d.Name)
-		ld.d.Stop()
+		if err := ld.d.Stop(); err != nil {
+			log.Warnf("Failed to stop container %s: %v", ld.d.Name, err)
+		}
 	} else if ld.cleanupAction == CleanupActionDestroy {
 		log.Infof("Destroying container %s", ld.d.Name)
-		ld.d.Destroy()
+		if err := ld.d.Destroy(); err != nil {
+			log.Warnf("Failed to destroy container %s: %v", ld.d.Name, err)
+		}
 	}
 	delete(cstore.containers, ld.d.Name)
 	return true
