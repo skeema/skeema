@@ -5,7 +5,8 @@ go 1.16
 require (
 	github.com/VividCortex/mysqlerr v1.0.0
 	github.com/alecthomas/participle v0.7.1
-	github.com/fsouza/go-dockerclient v1.7.6
+	github.com/docker/docker v20.10.12+incompatible // indirect
+	github.com/fsouza/go-dockerclient v1.7.10
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/jmoiron/sqlx v1.3.4
 	github.com/mattn/goveralls v0.0.8
