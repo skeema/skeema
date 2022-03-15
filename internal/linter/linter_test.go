@@ -63,11 +63,6 @@ func (s IntegrationSuite) TestCheckSchema(t *testing.T) {
 	// test db here
 	opts.Flavor = s.d.Flavor()
 
-	expectFailures := 3
-	if opts.Flavor.Min(tengo.FlavorMariaDB106) {
-		expectFailures += 2 // traditional InnoDB compression will fail due to global default of innodb_read_only_compressed=ON
-	}
-
 	logicalSchema := dir.LogicalSchemas[0]
 	wsOpts, err := workspace.OptionsForDir(dir, s.d.Instance)
 	if err != nil {
@@ -76,7 +71,7 @@ func (s IntegrationSuite) TestCheckSchema(t *testing.T) {
 	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
 	if err != nil {
 		t.Fatalf("Unexpected error from workspace.ExecLogicalSchema: %v", err)
-	} else if len(wsSchema.Failures) != expectFailures {
+	} else if len(wsSchema.Failures) != 3 {
 		// Here we just verify that no statements are unexpectedly failing, besides
 		// the 3 in validcfg/borked.sql. We don't otherwise annotate failures here;
 		// testing of that logic is handled in TestResultAnnotateStatementErrors()
@@ -84,7 +79,7 @@ func (s IntegrationSuite) TestCheckSchema(t *testing.T) {
 		for _, err := range wsSchema.Failures {
 			t.Errorf(err.Error())
 		}
-		t.Fatalf("Expected %d creation failures from %s/*.sql, instead found %d", expectFailures, dir, len(wsSchema.Failures))
+		t.Fatalf("Expected 3 creation failures from %s/*.sql, instead found %d", dir, len(wsSchema.Failures))
 	}
 
 	result := CheckSchema(wsSchema, opts)
@@ -166,30 +161,26 @@ func (s IntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 	// compressed tables in the dir are the two in testdata/validcfg/compression.sql;
 	// one uses KEY_BLOCK_SIZE=2, and the other effectively uses 8 by way of
 	// defaulting to half the page size.
-	// This logic is skipped in MariaDB 10.6+ due to InnoDB compression being
-	// deprecated in that version.
-	if !s.d.Flavor().Min(tengo.FlavorMariaDB106) {
-		cases := []struct {
-			allowList            []string
-			flavor               tengo.Flavor
-			expectedWarningCount int
-		}{
-			{[]string{"8kb"}, s.d.Flavor(), innoTableCount - 1},
-			{[]string{"page", "8kb"}, tengo.FlavorMySQL57, innoTableCount - 1},
-			{[]string{"page"}, tengo.FlavorMariaDB103, innoTableCount},
-			{[]string{"none"}, s.d.Flavor(), 2},
-			{[]string{"none", "4kb"}, s.d.Flavor(), 2},
-			{[]string{"none", "4kb", "page"}, s.d.Flavor(), 2},
-			{[]string{"none", "invalid-value"}, s.d.Flavor(), 2},
-			{[]string{"invalid-value"}, s.d.Flavor(), innoTableCount},
-		}
-		for n, c := range cases {
-			opts.RuleConfig["compression"] = c.allowList
-			opts.Flavor = c.flavor
-			result := CheckSchema(wsSchema, opts)
-			if result.WarningCount != c.expectedWarningCount {
-				t.Errorf("cases[%d] expected warning count %d, instead found %d", n, c.expectedWarningCount, result.WarningCount)
-			}
+	cases := []struct {
+		allowList            []string
+		flavor               tengo.Flavor
+		expectedWarningCount int
+	}{
+		{[]string{"8kb"}, s.d.Flavor(), innoTableCount - 1},
+		{[]string{"page", "8kb"}, tengo.FlavorMySQL57, innoTableCount - 1},
+		{[]string{"page"}, tengo.FlavorMariaDB103, innoTableCount},
+		{[]string{"none"}, s.d.Flavor(), 2},
+		{[]string{"none", "4kb"}, s.d.Flavor(), 2},
+		{[]string{"none", "4kb", "page"}, s.d.Flavor(), 2},
+		{[]string{"none", "invalid-value"}, s.d.Flavor(), 2},
+		{[]string{"invalid-value"}, s.d.Flavor(), innoTableCount},
+	}
+	for n, c := range cases {
+		opts.RuleConfig["compression"] = c.allowList
+		opts.Flavor = c.flavor
+		result := CheckSchema(wsSchema, opts)
+		if result.WarningCount != c.expectedWarningCount {
+			t.Errorf("cases[%d] expected warning count %d, instead found %d", n, c.expectedWarningCount, result.WarningCount)
 		}
 	}
 
@@ -286,7 +277,24 @@ func (s *IntegrationSuite) Setup(backend string) (err error) {
 		RootPassword:      "fakepw",
 		DefaultConnParams: "foreign_key_checks=0&sql_mode=%27NO_ENGINE_SUBSTITUTION%27", // disabling strict mode to allow zero dates in testdata
 	})
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Since some linter tests involve compressed tables, in MariaDB 10.6+ we must
+	// ensure innodb_read_only_compressed=OFF. It defaults to ON in 10.6.0-10.6.5,
+	// 10.7.0-10.7.1, and 10.8.0; the default changed to OFF in subsequent
+	// releases without much notice. For sake of robustness in case the default
+	// changes again or the variable is removed entirely, we try setting it to OFF
+	// in all 10.6+ but intentionally ignore errors in this exec call.
+	if s.d.Flavor().Min(tengo.FlavorMariaDB106) {
+		db, err := s.d.ConnectionPool("", "")
+		if err == nil {
+			_, _ = db.Exec("SET GLOBAL innodb_read_only_compressed = OFF")
+		}
+	}
+
+	return nil
 }
 
 func (s *IntegrationSuite) Teardown(backend string) error {
@@ -340,11 +348,6 @@ func expectedAnnotations(logicalSchema *fs.LogicalSchema, flavor tengo.Flavor) (
 				if ruleName == "display-width" && flavor.OmitIntDisplayWidth() {
 					// Special case: don't expect any display-width annotations in
 					// MySQL 8.0.19+, which omits them entirely in most cases
-					continue
-				}
-				if ruleName == "compression" && flavor.Min(tengo.FlavorMariaDB106) && strings.Contains(stmt.File, "compressed.sql") {
-					// Special case: in MariaDB 10.6, traditional InnoDB compression cannot
-					// be used by default
 					continue
 				}
 				annotations = append(annotations, &Annotation{

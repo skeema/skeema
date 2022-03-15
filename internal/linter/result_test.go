@@ -110,11 +110,6 @@ func (s IntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
 	}
 	forceRulesWarning(opts) // regardless of config, set everything to warning
 
-	expectFailures := 3
-	if s.d.Flavor().Min(tengo.FlavorMariaDB106) {
-		expectFailures += 2 // traditional InnoDB compression will fail due to global default of innodb_read_only_compressed=ON
-	}
-
 	logicalSchema := dir.LogicalSchemas[0]
 	wsOpts, err := workspace.OptionsForDir(dir, s.d.Instance)
 	if err != nil {
@@ -123,8 +118,8 @@ func (s IntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
 	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
 	if err != nil {
 		t.Fatalf("Unexpected error from workspace.ExecLogicalSchema: %v", err)
-	} else if len(wsSchema.Failures) != expectFailures {
-		t.Fatalf("Expected %d StatementErrors from %s/*.sql, instead found %d", expectFailures, dir, len(wsSchema.Failures))
+	} else if len(wsSchema.Failures) != 3 {
+		t.Fatalf("Expected 3 StatementErrors from %s/*.sql, instead found %d", dir, len(wsSchema.Failures))
 	}
 
 	result := CheckSchema(wsSchema, opts)
@@ -133,12 +128,12 @@ func (s IntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
 	}
 
 	// Annotate the statement errors, and confirm the error count is now correct.
-	// Of the N statement errors, one was for an ignored table, so only N-1 are
+	// Of the 3 statement errors, one was for an ignored table, so only 2 are
 	// annotated.
 	// Then find the specific annotation and confirm the line offsets are correct.
 	result.AnnotateStatementErrors(wsSchema.Failures, opts)
-	if result.ErrorCount != expectFailures-1 {
-		t.Fatalf("Expected %d errors after AnnotateStatementErrors(), instead found %d", expectFailures-1, result.ErrorCount)
+	if result.ErrorCount != 2 {
+		t.Fatalf("Expected 2 errors after AnnotateStatementErrors(), instead found %d", result.ErrorCount)
 	}
 	expectedOffsetsAndRules := map[string]bool{
 		"2:sql-syntax": true,
@@ -148,10 +143,6 @@ func (s IntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
 		// MariaDB 10.5+ parser changes result in different error code here
 		expectedOffsetsAndRules["0:sql-4161"] = true
 		expectedOffsetsAndRules["2:sql-syntax"] = false
-	}
-	if s.d.Flavor().Min(tengo.FlavorMariaDB106) {
-		// MariaDB 10.6+ error code for blocking InnoDB compression
-		expectedOffsetsAndRules["0:sql-4047"] = true
 	}
 	for _, a := range result.Annotations {
 		if a.Severity == SeverityError {
