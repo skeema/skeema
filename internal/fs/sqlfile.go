@@ -233,3 +233,13 @@ func AddDelimiter(stmt string) string {
 	}
 	return fmt.Sprintf("%s;\n", stmt)
 }
+
+// SQLContentsError represents a fatal problem parsing a .sql file: the file
+// contains an unterminated quote, unterminated multi-line comment, forbidden
+// statement, or a special character outside of a string/identifier/comment.
+type SQLContentsError string
+
+// Error satisfies the builtin error interface.
+func (sce SQLContentsError) Error() string {
+	return string(sce)
+}

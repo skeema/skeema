@@ -662,7 +662,7 @@ func (dir *Dir) parseContents() {
 				// mid-statement.
 				// Statements of explicitly-unsupported form (CREATE TABLE ... LIKE or
 				// CREATE TABLE ... SELECT) are also treated as fatal.
-				dir.ParseError = stmt.Error
+				dir.ParseError = SQLContentsError(stmt.Error.Error())
 				return
 			}
 		}

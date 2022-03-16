@@ -194,9 +194,9 @@ func (st *statementTokenizer) statements() ([]*Statement, error) {
 		st.processLine(line, err == io.EOF)
 	}
 	if st.inQuote != 0 {
-		err = fmt.Errorf("File %s has unterminated quote %c", st.filePath, st.inQuote)
+		err = SQLContentsError(fmt.Sprintf("File %s has unterminated quote %c", st.filePath, st.inQuote))
 	} else if st.inCComment {
-		err = fmt.Errorf("File %s has unterminated C-style comment", st.filePath)
+		err = SQLContentsError(fmt.Sprintf("File %s has unterminated C-style comment", st.filePath))
 	} else {
 		err = nil
 	}
@@ -477,7 +477,7 @@ var (
 		`|(--([\s\p{Zs}][^\n]*)??(?:\n|$))` +
 		`|(/\*(.|\n)*?\*/)` +
 		`|([\s\p{Zs}]+)` +
-		"|(?P<Word>[0-9a-zA-Z$_]+|`(?:[^`]|``)+`)" +
+		"|(?P<Word>[0-9a-zA-Z\u0080-\uFFFF$_]+|`(?:[^`]|``)+`)" +
 		`|(?P<String>('(\\\\|\\'|''|[^'])*')|("(\\\\|\\"|""|[^"])*"))` +
 		`|(?P<Number>[-+]?\d*\.?\d+([eE][-+]?\d+)?)` +
 		`|(?P<Operator><>|!=|<=|>=|:=|[-+*/%,.()=<>@;~!^&:|])`,
