@@ -127,8 +127,8 @@ func TestCanParse(t *testing.T) {
 		"bork bork bork":               false,
 		"# hello":                      false,
 		"CREATE TEMPORARY TABLE foo (\n\tid int\n) ;\n":   false,
-		"CREATE TABLE foo LIKE bar":                       false,
-		"CREATE TABLE foo (like bar)":                     false,
+		"CREATE TABLE foo LIKE bar":                       true,
+		"CREATE TABLE foo (like bar)":                     true,
 		"CREATE TABLE foo2 select * from foo":             false,
 		"CREATE TABLE foo2 (id int) AS select * from foo": false,
 	}

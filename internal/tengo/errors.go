@@ -1,6 +1,8 @@
 package tengo
 
 import (
+	"errors"
+
 	"github.com/VividCortex/mysqlerr"
 	"github.com/go-sql-driver/mysql"
 )
@@ -10,13 +12,15 @@ import (
 // If one or more specificErrors are supplied, IsDatabaseError only returns true
 // if the database error code matched one of those numbers.
 func IsDatabaseError(err error, specificErrors ...uint16) bool {
-	merr, ok := err.(*mysql.MySQLError)
-	if !ok || len(specificErrors) == 0 {
-		return ok
-	}
-	for _, num := range specificErrors {
-		if merr.Number == num {
+	var merr *mysql.MySQLError
+	if errors.As(err, &merr) {
+		if len(specificErrors) == 0 { // caller is just checking if err is ANY db error
 			return true
+		}
+		for _, num := range specificErrors {
+			if merr.Number == num {
+				return true
+			}
 		}
 	}
 	return false

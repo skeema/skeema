@@ -306,11 +306,13 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 
 	// Examine statement errors. If any deadlocks occurred, retry them
 	// sequentially, since some deadlocks are expected from concurrent CREATEs in
-	// MySQL 8+ if FKs are present.
+	// MySQL 8+ if FKs are present. Also retry errors from CREATE TABLE...LIKE
+	// being run out-of-order (only once though; nested chains of CREATE TABLE...
+	// LIKE are unsupported)
 	sequentialStatements := []*fs.Statement{}
 	for _, err := range th.Errs() {
 		stmterr := err.(*StatementError)
-		if tengo.IsDatabaseError(stmterr.Err, mysqlerr.ER_LOCK_DEADLOCK) {
+		if tengo.IsDatabaseError(stmterr.Err, mysqlerr.ER_LOCK_DEADLOCK, mysqlerr.ER_NO_SUCH_TABLE) {
 			sequentialStatements = append(sequentialStatements, stmterr.Statement)
 		} else {
 			wsSchema.Failures = append(wsSchema.Failures, stmterr)
@@ -361,11 +363,9 @@ func wrapFailure(statement *fs.Statement, err error) *StatementError {
 		Statement: statement,
 	}
 	if tengo.IsSyntaxError(err) {
-		stmtErr.Err = fmt.Errorf("SQL syntax error: %s", err)
-	} else if tengo.IsDatabaseError(err, mysqlerr.ER_LOCK_DEADLOCK) {
-		stmtErr.Err = err // Need to maintain original type
+		stmtErr.Err = fmt.Errorf("SQL syntax error: %w", err)
 	} else {
-		stmtErr.Err = fmt.Errorf("Error executing DDL in workspace: %s", err)
+		stmtErr.Err = fmt.Errorf("Error executing DDL in workspace: %w", err)
 	}
 	return stmtErr
 }

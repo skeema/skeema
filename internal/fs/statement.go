@@ -3,7 +3,6 @@ package fs
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -405,7 +404,7 @@ func (ls *lineState) parseStatement() {
 		if err := nameParser.ParseString(txt, sqlStmt); err != nil || sqlStmt.forbidden() {
 			if err == nil { // forbidden statement
 				ls.stmt.Type = StatementTypeForbidden
-				ls.stmt.Error = errors.New("Statements such as CREATE TABLE...LIKE and CREATE TABLE...SELECT are not supported")
+				ls.stmt.Error = fmt.Errorf("%s: Statements of the form CREATE TABLE...SELECT are not supported", ls.stmt.File)
 			} else if lexErr, ok := err.(*lexer.Error); ok { // lexer error, potentially bad
 				ls.stmt.Type = StatementTypeLexError
 				fileLine, fileCol := ls.stmt.LineNo+lexErr.Tok.Pos.Line-1, lexErr.Tok.Pos.Column
@@ -501,13 +500,11 @@ type sqlStatement struct {
 // forbidden returns true if the statement can be parsed, but is of a disallowed
 // form by this package.
 func (sqlStmt *sqlStatement) forbidden() bool {
-	// Forbid CREATE TABLE...LIKE and CREATE TABLE...SELECT. Both are potentially
-	// ordering-dependent; and the latter mixes DML, which violates "workspace
-	// tables should be empty" validations.
+	// Forbid CREATE TABLE...SELECT since it also mixes DML, violating the
+	// "workspace tables must be empty" validation upon workspace cleanup
 	if sqlStmt.CreateTable != nil {
 		for _, token := range sqlStmt.CreateTable.Body.Contents {
-			token = strings.ToUpper(token)
-			if token == "LIKE" || token == "SELECT" {
+			if len(token) == 6 && strings.ToUpper(token) == "SELECT" {
 				return true
 			}
 		}

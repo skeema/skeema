@@ -660,8 +660,8 @@ func (dir *Dir) parseContents() {
 				// fatal. This can be indicative of a bug in the grammar, or of a normally-
 				// valid statement which has an illegal typo such as an invalid character
 				// mid-statement.
-				// Statements of explicitly-unsupported form (CREATE TABLE ... LIKE or
-				// CREATE TABLE ... SELECT) are also treated as fatal.
+				// Statements of unsupported form CREATE TABLE ... SELECT are also treated
+				// as fatal.
 				dir.ParseError = SQLContentsError(stmt.Error.Error())
 				return
 			}
