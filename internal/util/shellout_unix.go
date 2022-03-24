@@ -1,6 +1,7 @@
 // This file contains shellout functionality that is specific to UNIX-like
 // operating systems.
 
+//go:build !windows
 // +build !windows
 
 package util

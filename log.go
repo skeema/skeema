@@ -1,5 +1,6 @@
 // This file uses ANSI color codes, which do not work on Windows.
 
+//go:build !windows
 // +build !windows
 
 package main
