@@ -141,9 +141,9 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance) (schemaNames []string,
 		schemaNames, err = pullLogicalSchema(dir, instance, logicalSchema)
 	}
 	if err != nil {
-		log.Warnf("Skipping %s: %s\n", dir, err)
+		log.Errorf("Skipping %s: %s\n", dir, err)
 		if _, ok := err.(*ExitValue); !ok {
-			err = NewExitValue(CodePartialError, "")
+			err = NewExitValue(CodeFatalError, "")
 		}
 	}
 	return

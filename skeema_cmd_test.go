@@ -860,7 +860,7 @@ func (s SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
 	s.handleCommand(t, CodeBadConfig, ".", "skeema lint --ignore-table='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema format --ignore-table='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema pull --ignore-table='+'")
-	s.handleCommand(t, CodePartialError, ".", "skeema pull --ignore-schema='+'")
+	s.handleCommand(t, CodeFatalError, ".", "skeema pull --ignore-schema='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema push --ignore-table='+'")
 	s.handleCommand(t, CodeFatalError, ".", "skeema push --ignore-schema='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir badre1 -h %s -P %d --ignore-schema='+'", s.d.Instance.Host, s.d.Instance.Port)
