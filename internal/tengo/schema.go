@@ -45,11 +45,15 @@ func (s *Schema) TablesByName() map[string]*Table {
 }
 
 // HasTable returns true if a table with the given name exists in the schema.
+// Callers should be careful to supply a name that takes into account the
+// server's lower_case_table_names setting.
 func (s *Schema) HasTable(name string) bool {
 	return s != nil && s.Table(name) != nil
 }
 
 // Table returns a table by name.
+// Callers should be careful to supply a name that takes into account the
+// server's lower_case_table_names setting.
 func (s *Schema) Table(name string) *Table {
 	if s != nil {
 		for _, t := range s.Tables {

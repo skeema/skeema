@@ -67,6 +67,8 @@ type DockerizedInstanceOptions struct {
 	Image             string
 	RootPassword      string
 	DefaultConnParams string
+	DataBindMount     string // Host path to bind-mount as /var/lib/mysql in container
+	CommandArgs       []string
 }
 
 // CreateInstance attempts to create a Docker container with the supplied name
@@ -113,6 +115,7 @@ func (dc *DockerClient) CreateInstance(opts DockerizedInstanceOptions) (*Dockeri
 		Config: &docker.Config{
 			Image: opts.Image,
 			Env:   env,
+			Cmd:   opts.CommandArgs,
 		},
 		HostConfig: &docker.HostConfig{
 			PortBindings: map[docker.Port][]docker.PortBinding{
@@ -121,6 +124,9 @@ func (dc *DockerClient) CreateInstance(opts DockerizedInstanceOptions) (*Dockeri
 				},
 			},
 		},
+	}
+	if opts.DataBindMount != "" {
+		ccopts.HostConfig.Binds = []string{opts.DataBindMount + ":/var/lib/mysql"}
 	}
 	di := &DockerizedInstance{
 		DockerizedInstanceOptions: opts,
@@ -268,7 +274,11 @@ func (di *DockerizedInstance) TryConnect() (err error) {
 	if err != nil {
 		return err
 	}
-	for attempts := 0; attempts < 120; attempts++ {
+	maxAttempts := 120
+	if di.DataBindMount != "" { // bind mounted dir causes slower startup
+		maxAttempts *= 2
+	}
+	for attempts := 0; attempts < maxAttempts; attempts++ {
 		if ok, err = di.Instance.CanConnect(); ok {
 			return err
 		}

@@ -84,8 +84,9 @@ type Options struct {
 	SchemaName          string
 	DefaultCharacterSet string
 	DefaultCollation    string
-	DefaultConnParams   string    // only TypeLocalDocker
-	RootPassword        string    // only TypeLocalDocker
+	DefaultConnParams   string // only TypeLocalDocker
+	RootPassword        string // only TypeLocalDocker
+	NameCaseMode        tengo.NameCaseMode
 	PrefabWorkspace     Workspace // only TypePrefab
 	LockWaitTimeout     time.Duration
 	Concurrency         int
@@ -126,8 +127,11 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 		opts.Type = TypeLocalDocker
 		opts.Flavor = tengo.ParseFlavor(dir.Config.Get("flavor"))
 		opts.SkipBinlog = true
-		if !opts.Flavor.Known() && instance != nil {
-			opts.Flavor = instance.Flavor().Family()
+		if instance != nil {
+			opts.NameCaseMode = instance.NameCaseMode()
+			if !opts.Flavor.Known() {
+				opts.Flavor = instance.Flavor().Family()
+			}
 		}
 		opts.ContainerName = "skeema-" + tengo.ContainerNameForImage(opts.Flavor.String())
 		if cleanup, err := dir.Config.GetEnum("docker-cleanup", "none", "stop", "destroy"); err != nil {
@@ -143,6 +147,7 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 	} else {
 		opts.Type = TypeTempSchema
 		opts.Instance = instance
+		opts.NameCaseMode = instance.NameCaseMode()
 		if !dir.Config.GetBool("reuse-temp-schema") {
 			opts.CleanupAction = CleanupActionDrop
 		}
@@ -263,6 +268,8 @@ func (wsSchema *Schema) FailedKeys() (result []tengo.ObjectKey) {
 // tables that could not be created). Such individual statement errors are not
 // fatal and are not included in the error return value. The error return value
 // only represents fatal errors that prevented the entire process.
+// Note that if opts.NameCaseMode > tengo.NameCaseAsIs, logicalSchema may be
+// modified in-place to force some identifiers to lowercase.
 func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema *Schema, fatalErr error) {
 	if logicalSchema.CharSet != "" {
 		opts.DefaultCharacterSet = logicalSchema.CharSet
@@ -270,6 +277,12 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 	if logicalSchema.Collation != "" {
 		opts.DefaultCollation = logicalSchema.Collation
 	}
+	if opts.NameCaseMode > tengo.NameCaseAsIs {
+		if err := logicalSchema.LowerCaseNames(opts.NameCaseMode); err != nil {
+			return nil, err
+		}
+	}
+
 	var ws Workspace
 	ws, fatalErr = New(opts)
 	if fatalErr != nil {

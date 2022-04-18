@@ -7,6 +7,7 @@ package dumper
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -65,9 +66,6 @@ func rewriteSQLFile(file *fs.TokenizedSQLFile) error {
 // a result of the dump operation. The directory's parsed values are modified
 // in-place by this function, but nothing is written to the filesystem yet.
 func modifiedFiles(schema *tengo.Schema, dir *fs.Dir, opts Options) []*fs.TokenizedSQLFile {
-	fileMap := make(map[string]*fs.TokenizedSQLFile) // filePath string -> tokenized file
-	fileDirty := make(map[string]bool)               // filePath string -> bool
-
 	// TODO: handle dirs that contain multiple logical schemas by name
 	var logicalSchema *fs.LogicalSchema
 	if len(dir.LogicalSchemas) > 0 {
@@ -75,16 +73,10 @@ func modifiedFiles(schema *tengo.Schema, dir *fs.Dir, opts Options) []*fs.Tokeni
 	} else {
 		logicalSchema = &fs.LogicalSchema{}
 	}
-	keySeen := make(map[tengo.ObjectKey]bool, len(logicalSchema.Creates))
-	for key, stmt := range logicalSchema.Creates {
-		keySeen[key] = true
-		if filePath := stmt.FromFile.String(); fileMap[filePath] == nil {
-			fileMap[filePath] = stmt.FromFile
-		}
-	}
+	fm := newFileMap(logicalSchema)
 
-	for key, object := range schema.Objects() {
-		delete(keySeen, key) // filter keySeen to just be things that *aren't* in the DB
+	dbObjects := schema.Objects()
+	for key, object := range dbObjects {
 		if opts.shouldIgnore(object) {
 			continue
 		}
@@ -126,59 +118,42 @@ func modifiedFiles(schema *tengo.Schema, dir *fs.Dir, opts Options) []*fs.Tokeni
 			continue
 		}
 
-		var filePath string
-		if stmt == nil {
-			filePath = fs.PathForObject(dir.Path, key.Name)
-		} else {
-			filePath = stmt.FromFile.Path()
-		}
-		fileDirty[filePath] = true
-		if fileMap[filePath] == nil {
-			fileMap[filePath] = &fs.TokenizedSQLFile{
-				SQLFile: fs.SQLFile{
-					Dir:      dir.Path,
-					FileName: fs.FileNameForObject(key.Name),
-				},
-			}
-		}
-
-		if opts.CountOnly {
-			continue // Don't mutate stmt if CountOnly
-		}
-
-		// Append the statement if it doesn't exist in fs yet; otherwise update it.
+		// If we reach this point, we need to mark the statement's file as dirty, and
+		// update/append its in-memory representation unless CountOnly was requested.
 		// We "cheat" by potentially omitting some fs fields and potentially including
 		// DELIMITER wrappers in a single Statement.Text, but this still works fine
 		// for rewriting the file later.
-		if stmt == nil {
-			f := fileMap[filePath]
-			stmt = &fs.Statement{
-				Type:       fs.StatementTypeCreate,
-				ObjectType: key.Type,
-				ObjectName: key.Name,
-				FromFile:   f,
+		if stmt != nil { // statement already in fs
+			fm.markDirty(stmt.FromFile)
+			if !opts.CountOnly {
+				stmt.Text = canonicalCreate
 			}
-			f.Statements = append(f.Statements, stmt)
+		} else { // statement not in fs, needs to be appended to file
+			f := fm.file(dir, object)
+			fm.markDirty(f)
+			if !opts.CountOnly {
+				f.Statements = append(f.Statements, &fs.Statement{
+					Type:       fs.StatementTypeCreate,
+					ObjectType: key.Type,
+					ObjectName: key.Name,
+					FromFile:   f,
+					Text:       canonicalCreate,
+				})
+			}
 		}
-		stmt.Text = canonicalCreate
 	}
 
-	// Remaining keys in keySeen do not exist in db, so remove them
-	for key := range keySeen {
-		if !opts.shouldIgnore(key) {
-			stmt := logicalSchema.Creates[key]
+	// Handle create statements that are in FS but do not exist in DB
+	for key, stmt := range logicalSchema.Creates {
+		if _, inDB := dbObjects[key]; !inDB && !opts.shouldIgnore(key) {
+			fm.markDirty(stmt.FromFile)
 			if !opts.CountOnly {
 				stmt.Remove()
 			}
-			fileDirty[stmt.FromFile.String()] = true
 		}
 	}
 
-	var result []*fs.TokenizedSQLFile
-	for filePath := range fileDirty {
-		result = append(result, fileMap[filePath])
-	}
-	return result
+	return fm.dirtyFiles()
 }
 
 // AddDelimiter takes the supplied string and appends a delimiter to the end.
@@ -204,4 +179,65 @@ func verifyCanParse(key tengo.ObjectKey, statementBody string) bool {
 		log.Error("Unfortunately this error is fatal and prevents Skeema from being usable in your environment until this is resolved.")
 	}
 	return ok
+}
+
+// uniquePath converts its arg to lower-case on MacOS or Windows, or returns it
+// unchanged on any other OS. This is useful for normalizing map keys to ensure
+// correct dumper behavior on systems that typically have case-insensitive
+// filesystems.
+func uniquePath(p string) string {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+		return strings.ToLower(p)
+	}
+	return p
+}
+
+type fileMap struct {
+	all   map[string]*fs.TokenizedSQLFile // all files, normalized filePath string -> tokenized sql file
+	dirty map[string]bool                 // dirty files, normalized filePath string -> bool
+}
+
+func newFileMap(logicalSchema *fs.LogicalSchema) *fileMap {
+	fm := &fileMap{
+		all:   make(map[string]*fs.TokenizedSQLFile, len(logicalSchema.Creates)),
+		dirty: make(map[string]bool),
+	}
+	// track all unique files in the logical schema's CREATE statements
+	for _, stmt := range logicalSchema.Creates {
+		fm.all[uniquePath(stmt.FromFile.Path())] = stmt.FromFile
+	}
+	return fm
+}
+
+func (fm *fileMap) file(dir *fs.Dir, keyer tengo.ObjectKeyer) *fs.TokenizedSQLFile {
+	objName := keyer.ObjectKey().Name
+	filePath := fs.PathForObject(dir.Path, objName)
+
+	// If the file at this path is already tracked, return it
+	if f := fm.all[uniquePath(filePath)]; f != nil {
+		return f
+	}
+
+	// Otherwise, instantiate a new file, track it, and return it
+	f := &fs.TokenizedSQLFile{
+		SQLFile: fs.SQLFile{
+			Dir:      dir.Path,
+			FileName: fs.FileNameForObject(objName),
+		},
+	}
+	fm.all[uniquePath(filePath)] = f
+	return f
+}
+
+func (fm *fileMap) markDirty(f *fs.TokenizedSQLFile) {
+	fm.dirty[uniquePath(f.Path())] = true
+}
+
+func (fm *fileMap) dirtyFiles() (result []*fs.TokenizedSQLFile) {
+	// contents of fm.dirty have already been run through uniquePath(); ditto for
+	// keys of fm.all; so no need to re-run uniquePath() here
+	for filePath := range fm.dirty {
+		result = append(result, fm.all[filePath])
+	}
+	return result
 }

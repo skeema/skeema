@@ -203,6 +203,19 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 		return nil, len(instances)
 	}
 
+	// Confirm all instances have the same lower_case_table_names; mixing isn't
+	// supported within a single operation
+	if len(instances) > 1 && instances[0].NameCaseMode() != tengo.NameCaseUnknown {
+		lctn := instances[0].NameCaseMode()
+		for _, other := range instances[1:] {
+			if compare := other.NameCaseMode(); compare != tengo.NameCaseUnknown && compare != lctn {
+				log.Errorf("Skipping %s: all database servers mapped by the same subdirectory and environment must have the same value for lower_case_table_names.", dir)
+				log.Errorf("Instance %s has lower_case_table_names=%d, but instance %s has lower_case_table_names=%d.", instances[0], lctn, other, compare)
+				return nil, len(instances)
+			}
+		}
+	}
+
 	// Obtain a *tengo.Schema representation of the dir's *.sql files from a
 	// workspace
 	opts, err := workspace.OptionsForDir(dir, instances[0])

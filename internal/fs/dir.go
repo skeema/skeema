@@ -70,6 +70,60 @@ func (logicalSchema *LogicalSchema) AddStatement(stmt *Statement) error {
 	}
 }
 
+// LowerCaseNames adjusts logicalSchema in-place such that its object names are
+// forced to lower-case as appropriate for the supplied NameCaseMode.
+// An error will be returned if case-insensitivity would result in duplicate
+// objects with the same name and type.
+func (logicalSchema *LogicalSchema) LowerCaseNames(mode tengo.NameCaseMode) error {
+	switch mode {
+	case tengo.NameCaseLower: // lower_case_table_names=1
+		// Schema names and table names are forced lowercase in this mode
+		logicalSchema.Name = strings.ToLower(logicalSchema.Name)
+		newCreates := make(map[tengo.ObjectKey]*Statement, len(logicalSchema.Creates))
+		for k, stmt := range logicalSchema.Creates {
+			if k.Type == tengo.ObjectTypeTable {
+				k.Name = strings.ToLower(k.Name)
+				stmt.ObjectName = strings.ToLower(stmt.ObjectName)
+				if origStmt, already := newCreates[k]; already {
+					return DuplicateDefinitionError{
+						ObjectKey: stmt.ObjectKey(),
+						FirstFile: origStmt.File,
+						FirstLine: origStmt.LineNo,
+						DupeFile:  stmt.File,
+						DupeLine:  stmt.LineNo,
+					}
+				}
+			}
+			newCreates[k] = stmt
+		}
+		logicalSchema.Creates = newCreates
+
+	case tengo.NameCaseInsensitive: // lower_case_table_names=2
+		// Only view names are forced to lowercase in this mode, but Community Edition
+		// codebase does not support views, so nothing to lowercase here.
+		// However, with this mode we still need to ensure there aren't any duplicate
+		// table names in CREATEs after accounting for case-insensitive table naming.
+		lowerTables := make(map[string]*Statement)
+
+		for k, stmt := range logicalSchema.Creates {
+			if k.Type == tengo.ObjectTypeTable {
+				lowerName := strings.ToLower(k.Name)
+				if origStmt, already := lowerTables[lowerName]; already {
+					return DuplicateDefinitionError{
+						ObjectKey: stmt.ObjectKey(),
+						FirstFile: origStmt.File,
+						FirstLine: origStmt.LineNo,
+						DupeFile:  stmt.File,
+						DupeLine:  stmt.LineNo,
+					}
+				}
+				lowerTables[lowerName] = stmt
+			}
+		}
+	}
+	return nil
+}
+
 // ParseDir parses the specified directory, including all *.sql files in it,
 // its .skeema config file, and all .skeema config files of its parent
 // directory hierarchy. Evaluation of parent dirs stops once we hit either a
@@ -440,7 +494,17 @@ func (dir *Dir) SchemaNames(instance *tengo.Instance) (names []string, err error
 	if err != nil {
 		return nil, err
 	}
-	return filterSchemaNames(names, ignoreSchema), nil
+	names = filterSchemaNames(names, ignoreSchema)
+
+	// If the instance has lower_case_table_names=1, force result to lowercase,
+	// to handle cases where a user has manually configured a mixed-case name
+	if instance.NameCaseMode() == tengo.NameCaseLower {
+		for n, name := range names {
+			names[n] = strings.ToLower(name)
+		}
+	}
+
+	return names, nil
 }
 
 func looksLikeRegex(input string) bool {

@@ -34,6 +34,7 @@ type Instance struct {
 	waitTimeout    int
 	maxUserConns   int
 	bufferPoolSize int64
+	lowerCaseNames int
 	sqlMode        []string
 	valid          bool // true if any conn has ever successfully been made yet
 }
@@ -202,7 +203,9 @@ func (instance *Instance) CanConnect() (bool, error) {
 // only returns false if no previous successful connection was ever made, and a
 // new attempt to establish one fails.
 func (instance *Instance) Valid() (bool, error) {
-	if instance.valid {
+	if instance == nil {
+		return false, nil
+	} else if instance.valid {
 		return true, nil
 	}
 	// CachedConnectionPool establishes one conn in the pool; if
@@ -249,6 +252,27 @@ func (instance *Instance) ForceFlavor(flavor Flavor) {
 	instance.flavor = flavor
 }
 
+// NameCaseMode represents different values of the lower_case_table_names
+// read-only global server variable.
+type NameCaseMode int
+
+// Constants representing valid NameCaseMode values
+const (
+	NameCaseUnknown     NameCaseMode = -1
+	NameCaseAsIs        NameCaseMode = 0
+	NameCaseLower       NameCaseMode = 1
+	NameCaseInsensitive NameCaseMode = 2
+)
+
+// NameCaseMode returns a value reflecting this instance's lower_case_table_names,
+// normally a value between 0 and 2 if successfully queryable.
+func (instance *Instance) NameCaseMode() NameCaseMode {
+	if ok, _ := instance.Valid(); !ok {
+		return NameCaseUnknown
+	}
+	return NameCaseMode(instance.lowerCaseNames)
+}
+
 // hydrateVars populates several non-exported Instance fields by querying
 // various global and session variables. Failures are ignored; these variables
 // are designed to help inform behavior but are not strictly mandatory.
@@ -262,13 +286,14 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 		}
 	}
 	var result struct {
-		VersionComment string
-		Version        string
-		SQLMode        string
-		WaitTimeout    int
-		MaxUserConns   int
-		MaxConns       int
-		BufferPoolSize int64
+		VersionComment      string
+		Version             string
+		SQLMode             string
+		WaitTimeout         int
+		MaxUserConns        int
+		MaxConns            int
+		BufferPoolSize      int64
+		LowerCaseTableNames int
 	}
 	query := `
 		SELECT @@global.version_comment AS versioncomment,
@@ -276,6 +301,7 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 		       @@session.sql_mode AS sqlmode,
 		       @@session.wait_timeout AS waittimeout,
 		       @@global.innodb_buffer_pool_size AS bufferpoolsize,
+		       @@global.lower_case_table_names as lowercasetablenames,
 		       @@session.max_user_connections AS maxuserconns,
 		       @@global.max_connections AS maxconns`
 	if err = db.Get(&result, query); err != nil {
@@ -286,6 +312,7 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 	instance.sqlMode = strings.Split(result.SQLMode, ",")
 	instance.waitTimeout = result.WaitTimeout
 	instance.bufferPoolSize = result.BufferPoolSize
+	instance.lowerCaseNames = result.LowerCaseTableNames
 	if result.MaxUserConns > 0 {
 		instance.maxUserConns = result.MaxUserConns
 	} else {
@@ -376,11 +403,18 @@ func (instance *Instance) Schemas(onlyNames ...string) ([]*Schema, error) {
 			FROM   information_schema.schemata
 			WHERE  schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'test', 'sys')`
 	} else {
-		query = `
+		// If instance is using lower_case_table_names=2, apply an explicit collation
+		// to ensure the schema name comes back with its original lettercasing. See
+		// https://dev.mysql.com/doc/refman/8.0/en/charset-collation-information-schema.html
+		var lctn2Collation string
+		if instance.NameCaseMode() == NameCaseInsensitive {
+			lctn2Collation = " COLLATE utf8_general_ci"
+		}
+		query = fmt.Sprintf(`
 			SELECT schema_name AS schema_name, default_character_set_name AS default_character_set_name,
 			       default_collation_name AS default_collation_name
 			FROM   information_schema.schemata
-			WHERE  schema_name IN (?)`
+			WHERE  schema_name%s IN (?)`, lctn2Collation)
 		query, args, err = sqlx.In(query, onlyNames)
 	}
 	if err := db.Select(&rawSchemas, query, args...); err != nil {
@@ -399,11 +433,11 @@ func (instance *Instance) Schemas(onlyNames ...string) ([]*Schema, error) {
 		// connections, so we will explicitly close the pool afterwards, to avoid
 		// keeping a very large number of conns open. (Although idle conns eventually
 		// get closed automatically, this may take too long.)
+		flavor := instance.Flavor()
 		schemaDB, err := instance.ConnectionPool(rawSchema.Name, instance.introspectionParams())
 		if err != nil {
 			return nil, err
 		}
-		flavor := instance.Flavor()
 		if instance.maxUserConns >= 30 {
 			// Limit concurrency to 20, unless limit is already lower than this due to
 			// having a low maxUserConns (see logic in Instance.rawConnectionPool)

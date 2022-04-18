@@ -153,6 +153,14 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance) (schemaNames []string,
 // more schemas. A slice of handled schema names is returned, along with any
 // error encountered.
 func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.LogicalSchema) (schemaNames []string, err error) {
+	// With non-zero lower_case_table_names, force names to lowercase as needed in
+	// logicalSchema, so that statements can be correctly linked to objects
+	if lctn := instance.NameCaseMode(); lctn > tengo.NameCaseAsIs {
+		if err := logicalSchema.LowerCaseNames(lctn); err != nil {
+			return nil, err
+		}
+	}
+
 	if logicalSchema.Name != "" {
 		schemaNames = []string{logicalSchema.Name}
 	} else if schemaNames, err = dir.SchemaNames(instance); err != nil {

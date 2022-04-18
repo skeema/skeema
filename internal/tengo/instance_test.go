@@ -247,6 +247,27 @@ func (s TengoIntegrationSuite) TestInstanceValid(t *testing.T) {
 	}
 }
 
+func (s TengoIntegrationSuite) TestInstanceNameCaseMode(t *testing.T) {
+	// The instance in TengoIntegrationSuite is started without any extra command-
+	// line args, so we know it will have lower_case_table_names=0 as this is the
+	// default for Linux
+	if lctn := s.d.NameCaseMode(); lctn != NameCaseAsIs {
+		t.Errorf("Expected lower_case_table_names=0 for a valid Linux containerized DB; instead found %d", lctn)
+	}
+
+	// An invalid Instance should return a special value since it cannot be
+	// introspected
+	dsn := s.d.DSN()
+	dsn = strings.Replace(dsn, s.d.Password, "wrongpass", 1)
+	inst, err := NewInstance("mysql", dsn)
+	if err != nil {
+		t.Fatalf("Unexpected error from NewInstance: %s", err)
+	}
+	if lctn := inst.NameCaseMode(); lctn != NameCaseUnknown {
+		t.Errorf("Expected NameCaseUnknown for a valid Linux containerized DB; instead found %d", lctn)
+	}
+}
+
 func (s TengoIntegrationSuite) TestInstanceCloseAll(t *testing.T) {
 	makePool := func(defaultSchema, params string) {
 		t.Helper()
