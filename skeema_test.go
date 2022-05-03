@@ -194,16 +194,12 @@ func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, d
 	// blob and text types now permit default values; partitions are formatted
 	// differently; default values and on-update rules for CURRENT_TIMESTAMP always
 	// include parens and lowercase the function name.
-	// In MariaDB 10.6+, three-byte utf8 charsets and collations are now called
-	// utf8mb3 as their canonical name.
 	// In MySQL 5.5, DATETIME columns cannot have default or on-update of
 	// CURRENT_TIMESTAMP; only one TIMESTAMP column can have on-update;
 	// CURRENT_TIMESTAMP does not take an arg for specifying sub-second precision
 	// In MySQL 8.0+, partitions are formatted differently; the default character
 	// set is now utf8mb4; the default collation for utf8mb4 has also changed.
-	if s.d.Flavor().Min(tengo.FlavorMariaDB106) {
-		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mariadb106", 1)
-	} else if s.d.Flavor().Min(tengo.FlavorMariaDB102) {
+	if s.d.Flavor().Min(tengo.FlavorMariaDB102) {
 		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mariadb102", 1)
 	} else if s.d.Flavor().Matches(tengo.FlavorMySQL55) {
 		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mysql55", 1)
@@ -301,6 +297,16 @@ func (s *SkeemaIntegrationSuite) compareDirOptionFiles(t *testing.T, a, b *fs.Di
 				if fileCharSet, ok := a.OptionFile.OptionValue("default-character-set"); ok && fileCharSet[0] == '{' {
 					a.OptionFile.SetOptionValue(section, "default-character-set", instDefCharSet)
 					a.OptionFile.SetOptionValue(section, "default-collation", instDefCollation)
+				} else if fileCharSet == "utf8" {
+					// MySQL 8.0.29 uses "utf8mb3" but keeps collations as-is; MariaDB 10.6
+					// uses "utf8mb3" and also changes collation names to match
+					if flavor := s.d.Flavor(); flavor.Min(tengo.FlavorMySQL80.Dot(29)) || flavor.Min(tengo.FlavorMariaDB106) {
+						a.OptionFile.SetOptionValue(section, "default-character-set", "utf8mb3")
+						if flavor.IsMariaDB() {
+							collation, _ := a.OptionFile.OptionValue("default-collation")
+							a.OptionFile.SetOptionValue(section, "default-collation", strings.Replace(collation, "utf8_", "utf8mb3_", 1))
+						}
+					}
 				}
 			}
 		}

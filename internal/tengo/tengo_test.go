@@ -234,7 +234,9 @@ func aTable(nextAutoInc uint64) Table {
 func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 	utf8mb3 := "utf8"
 	utf8mb3DefaultCollation := "utf8_general_ci"
-	if flavor.Min(FlavorMariaDB106) {
+	if flavor.Min(FlavorMySQL80.Dot(29)) {
+		utf8mb3 = "utf8mb3"
+	} else if flavor.Min(FlavorMariaDB106) {
 		utf8mb3 = "utf8mb3"
 		utf8mb3DefaultCollation = "utf8mb3_general_ci"
 	}

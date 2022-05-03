@@ -495,7 +495,9 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 		t.Fatalf("Unexpected error obtaining schema: %s", err)
 	} else {
 		expectCharSet, expectCollation := "utf8", "utf8_swedish_ci"
-		if s.d.Flavor().Min(tengo.FlavorMariaDB106) {
+		if flavor := s.d.Flavor(); flavor.Min(tengo.FlavorMySQL80.Dot(29)) {
+			expectCharSet = "utf8mb3"
+		} else if flavor.Min(tengo.FlavorMariaDB106) {
 			expectCharSet, expectCollation = "utf8mb3", "utf8mb3_swedish_ci"
 		}
 		if product.CharSet != expectCharSet || product.Collation != expectCollation {
