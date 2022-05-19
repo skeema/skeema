@@ -1619,3 +1619,48 @@ func (s SkeemaIntegrationSuite) TestStripPartitioning(t *testing.T) {
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --strip-partitioning")
 	assertUnpartitioned(cfg)
 }
+
+// TestCharsetCollate confirms that no diff verification failures occur with
+// various permutations of charset and collation on columns. This is a common
+// bug/regression source, particularly with MySQL 8 which has different SHOW
+// CREATE TABLE logic than prior versions of MySQL. Similar test logic in
+// internal/tengo covers introspection accuracy of these situations, but not
+// the full end-to-end logic used in internal/applier's diff verification.
+func (s SkeemaIntegrationSuite) TestCharsetCollate(t *testing.T) {
+	s.sourceSQL(t, "charset-collate.sql")
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir product -h %s -P %d --schema product ", s.d.Instance.Host, s.d.Instance.Port)
+
+	// Slightly adjust the four many_permutations tables in the sql file
+	for i := 1; i <= 4; i++ {
+		filename := fmt.Sprintf("product/many_permutations%d.sql", i)
+		origContents := fs.ReadTestFile(t, filename)
+		lines := strings.Split(origContents, "\n")
+		var updates int
+		for j, line := range lines {
+			// In charset-collate.sql, first col of each table is defined without any
+			// explicit charset or collation, using table-level defaults. init uses
+			// SHOW CREATE TABLE which will potentially add charset/collate back, but
+			// we want to re-strip them to test handling of this situation, especially
+			// in MySQL 8 which handles it oddly.
+			if strings.HasPrefix(strings.TrimSpace(line), "`a`") {
+				lines[j] = "  `a` char(10),"
+				updates++
+			} else if strings.HasPrefix(line, ") ") {
+				lines[j-1] += ","
+				lines[j] = "  `x` int"
+				lines[j+1] = line
+				lines = append(lines, "")
+				updates++
+				break
+			}
+		}
+		newContents := strings.Join(lines, "\n")
+		if origContents == newContents || updates != 2 {
+			t.Fatalf("Failed to adjust test file contents as expected: update count %d, new contents:\n%s", updates, newContents)
+		}
+		fs.WriteTestFile(t, filename, newContents)
+	}
+
+	// Diff should report differences found but not fatal error
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --skip-lint")
+}

@@ -23,22 +23,28 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 		return nil
 	}
 
-	// Build a set of statement modifiers that will yield matching CREATE TABLE
-	// statements in all edge cases.
+	// The goal of VerifyDiff is to confirm that the diff contains the correct and
+	// complete set of differences between all modified tables. We use a strict set
+	// of statement modifiers that will transform the initial state into an exact
+	// match of the desired state. This is all run in a workspace, so we can be
+	// more aggressive about which statement modifiers are used in generating the
+	// ALTER here. When the diff is actually used against the real live table
+	// later, a different looser set of modifiers is used which filters out some
+	// of the undesired cosmetic clauses by default.
 	mods := tengo.StatementModifiers{
-		NextAutoInc:            tengo.NextAutoIncIgnore,
-		StrictIndexOrder:       true, // needed since we must get the SHOW CREATE TABLEs to match
-		StrictCheckOrder:       true, // ditto (only affects MariaDB)
-		StrictForeignKeyNaming: true, // ditto
-		StrictColumnDefinition: true, // ditto (only affects MySQL 8 edge cases)
-		AllowUnsafe:            true, // needed since we're just running against the temp schema
-		SkipPreDropAlters:      true, // needed to ignore DROP PARTITION generated just to speed up DROP TABLE
+		NextAutoInc:            tengo.NextAutoIncAlways,      // use whichever auto_increment is in the fs
+		Partitioning:           tengo.PartitioningPermissive, // ditto with partitioning status
+		AllowUnsafe:            true,                         // needed since we're just running against the temp schema
+		AlgorithmClause:        "copy",                       // needed so the DB doesn't ignore attempts to re-order indexes
+		StrictIndexOrder:       true,                         // needed since we want the SHOW CREATE TABLEs to match
+		StrictCheckOrder:       true,                         // ditto (only affects MariaDB)
+		StrictForeignKeyNaming: true,                         // ditto
+		StrictColumnDefinition: true,                         // ditto (only affects MySQL 8 edge cases)
+		SkipPreDropAlters:      true,                         // ignore DROP PARTITIONs that were only generated to speed up a DROP TABLE
 		Flavor:                 t.Instance.Flavor(),
 	}
-	if !mods.Flavor.Matches(tengo.FlavorMySQL55) {
-		// avoid having MySQL ignore index changes that are simply reordered, but only
-		// legal syntax in 5.6+
-		mods.AlgorithmClause = "copy"
+	if mods.Flavor.Matches(tengo.FlavorMySQL55) {
+		mods.AlgorithmClause = "" // MySQL 5.5 doesn't support ALGORITHM clause
 	}
 
 	// Gather CREATE and ALTER for modified tables, and put into a LogicalSchema,
@@ -81,12 +87,20 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 		return fmt.Errorf("Diff verification failure: %s", err.Error())
 	}
 
-	// Compare the "expected" version of tables ("to" side of diff from the
-	// filesystem) with the "actual" version (from the workspace after the
-	// generated ALTERs were run there)
+	// Compare the "expected" version of each table ("to" side of original diff,
+	// from the filesystem) with the "actual" version (from the workspace after the
+	// generated ALTERs were run there) by running a second diff. Verification
+	// is successful if this second diff has no clauses (tables completely and
+	// exactly match) or only a blank statement (suppressed by StatementModifiers).
+	// We use very strict StatementModifiers here, except StrictColumnDefinition
+	// must be omitted because MySQL 8 behaves inconsistently with respect to
+	// superfluous column-level charset/collation clauses in some specific edge-
+	// cases. (These MySQL 8 discrepancies are purely cosmetic, safe to ignore.)
+	mods.StrictColumnDefinition = false
+	mods.AlgorithmClause = ""
 	actualTables := wsSchema.TablesByName()
 	for name, toTable := range expected {
-		if err := verifyTable(toTable, actualTables[name], mods.Flavor); err != nil {
+		if err := verifyTable(toTable, actualTables[name], mods); err != nil {
 			return err
 		}
 	}
@@ -97,28 +111,30 @@ func wantVerify(diff *tengo.SchemaDiff, t *Target) bool {
 	return t.Dir.Config.GetBool("verify") && len(diff.TableDiffs) > 0 && !t.briefOutput()
 }
 
-// verifyTable confirms that a table has the expected CREATE TABLE statement
-// and expected partitioning status. In comparing the CREATE TABLE statement, we
-// must ignore differences in next-auto-inc value (which intentionally is often
-// not updated in the filesystem) as well as the entirety of the partitioning
-// clause (ditto).
-func verifyTable(expected, actual *tengo.Table, flavor tengo.Flavor) error {
-	// Simply compare partitioning *status*
-	expectPartitioned := (expected.Partitioning != nil)
-	actualPartitioned := (actual.Partitioning != nil)
-	if expectPartitioned != actualPartitioned {
-		return fmt.Errorf("Diff verification failure on table %s\nEXPECTED PARTITIONING STATUS POST-ALTER: %t\nACTUAL PARTITIONING STATUS POST-ALTER: %t\nRun command again with --skip-verify if this discrepancy is safe to ignore", expected.Name, expectPartitioned, actualPartitioned)
+// verifyTable confirms that a table has the expected structure by doing an
+// additional diff. Typically this diff will return quickly based on SHOW CREATE
+// TABLE matching, but if they don't match (as happens with some MySQL 8 edge-
+// cases) it will do a full structural comparison of the tables' fields.
+func verifyTable(expected, actual *tengo.Table, mods tengo.StatementModifiers) error {
+	makeVerifyError := func() error {
+		return fmt.Errorf("Diff verification failure on table %s\n\nEXPECTED POST-ALTER:\n%s\n\nACTUAL POST-ALTER:\n%s\n\nRun command again with --skip-verify if this discrepancy is safe to ignore", expected.Name, expected.CreateStatement, actual.CreateStatement)
 	}
-	expectCreate := expected.CreateStatement
-	actualCreate := actual.CreateStatement
-	if expectPartitioned {
-		expectCreate = expected.UnpartitionedCreateStatement(flavor)
-		actualCreate = actual.UnpartitionedCreateStatement(flavor)
+	alterClauses, supported := expected.Diff(actual)
+
+	// supported will be false if either table cannot be introspected properly, or
+	// if the SHOW CREATE TABLEs don't match but the diff logic can't figure out
+	// how/why. These situations would indicate bugs, so verification fails.
+	if !supported {
+		return makeVerifyError()
 	}
-	expectCreate, _ = tengo.ParseCreateAutoInc(expectCreate)
-	actualCreate, _ = tengo.ParseCreateAutoInc(actualCreate)
-	if expectCreate != actualCreate {
-		return fmt.Errorf("Diff verification failure on table %s\n\nEXPECTED POST-ALTER:\n%s\n\nACTUAL POST-ALTER:\n%s\n\nRun command again with --skip-verify if this discrepancy is safe to ignore", expected.Name, expectCreate, actualCreate)
+
+	// If any clauses were emitted, fail verification if any are non-blank. Blank
+	// clauses are fine tho, as they are expected in a few cases, such as partition
+	// list differences or MySQL 8 superfluous charset/collate clause differences.
+	for _, clause := range alterClauses {
+		if clause.Clause(mods) != "" {
+			return makeVerifyError()
+		}
 	}
 	return nil
 }
