@@ -94,14 +94,6 @@ func (instance *Instance) String() string {
 	}
 }
 
-// HostAndOptionalPort is like String(), but omits the port if default
-func (instance *Instance) HostAndOptionalPort() string {
-	if instance.Port == 3306 || instance.SocketPath != "" {
-		return instance.Host
-	}
-	return instance.String()
-}
-
 func (instance *Instance) buildParamString(params string) string {
 	v := url.Values{}
 	for defName, defValue := range instance.defaultParams {
@@ -167,12 +159,10 @@ func (instance *Instance) rawConnectionPool(defaultSchema, fullParams string, al
 	// the database side either globally or for this user. This does not completely
 	// eliminate max-conn problems, because each Instance can have many separate
 	// connection pools, but it may help.
-	if instance.maxUserConns > 0 {
-		if instance.maxUserConns < 12 {
-			db.SetMaxOpenConns(2)
-		} else {
-			db.SetMaxOpenConns(instance.maxUserConns - 10)
-		}
+	if instance.maxUserConns < 12 {
+		db.SetMaxOpenConns(2)
+	} else {
+		db.SetMaxOpenConns(instance.maxUserConns - 10)
 	}
 
 	// Set max conn reuse lifetime to 1 minute, and set max idle time based on

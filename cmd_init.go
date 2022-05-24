@@ -139,10 +139,11 @@ func createHostDir(cfg *mybase.Config) (*fs.Dir, error) {
 func createHostOptionFile(cfg *mybase.Config, hostDir *fs.Dir, inst *tengo.Instance, schemas []*tengo.Schema) error {
 	environment := cfg.Get("environment")
 	hostOptionFile := mybase.NewFile(hostDir.Path, ".skeema")
-	hostOptionFile.SetOptionValue(environment, "host", inst.Host)
-	if inst.Host == "localhost" && inst.SocketPath != "" {
+	if inst.SocketPath != "" {
+		hostOptionFile.SetOptionValue(environment, "host", "localhost")
 		hostOptionFile.SetOptionValue(environment, "socket", inst.SocketPath)
 	} else {
+		hostOptionFile.SetOptionValue(environment, "host", inst.Host)
 		hostOptionFile.SetOptionValue(environment, "port", strconv.Itoa(inst.Port))
 	}
 	if !cfg.Changed("generator") {

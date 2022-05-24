@@ -345,10 +345,10 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 	// For each hostname, construct a DSN and use it to create an Instance
 	var instances []*tengo.Instance
 	for _, host := range hosts {
-		var dsn string
+		var net, addr string
 		thisPortValue := portValue
 		if host == "localhost" && (socketWasSupplied || !portWasSupplied) {
-			dsn = fmt.Sprintf("%s@unix(%s)/?%s", userAndPass, socketValue, params)
+			net, addr = "unix", socketValue
 		} else {
 			splitHost, splitPort, err := tengo.SplitHostOptionalPort(host)
 			if err != nil {
@@ -361,8 +361,9 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 				host = splitHost
 				thisPortValue = splitPort
 			}
-			dsn = fmt.Sprintf("%s@tcp(%s:%d)/?%s", userAndPass, host, thisPortValue, params)
+			net, addr = "tcp", fmt.Sprintf("%s:%d", host, thisPortValue)
 		}
+		dsn := fmt.Sprintf("%s@%s(%s)/?%s", userAndPass, net, addr, params)
 		instance, err := util.NewInstance("mysql", dsn)
 		if err != nil {
 			if dir.Config.Changed("password") {
@@ -628,17 +629,20 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	v.Set("writeTimeout", "5s")
 
 	// Prefer TLS, but not during integration testing
-	sslMode, err := dir.Config.GetEnum("ssl-mode", "disabled", "preferred", "required")
-	if err != nil {
-		return "", err
+	sslMode := "preferred"
+	if dir.Config.Supplied("ssl-mode") {
+		sslMode, err = dir.Config.GetEnum("ssl-mode", "disabled", "preferred", "required")
+		if err != nil {
+			return "", err
+		} else if sslMode == "disabled" {
+			sslMode = "false" // driver uses "false" to mean mysql ssl-mode=disabled
+		} else if sslMode == "required" {
+			sslMode = "skip-verify" // driver uses "skip-verify" to mean mysql ssl-mode=required
+		}
+	} else if dir.Config.IsTest {
+		sslMode = "false"
 	}
-	if sslMode == "disabled" || (dir.Config.IsTest && !dir.Config.Supplied("ssl-mode")) {
-		v.Set("tls", "false")
-	} else if sslMode == "required" {
-		v.Set("tls", "skip-verify")
-	} else {
-		v.Set("tls", sslMode)
-	}
+	v.Set("tls", sslMode)
 
 	// Set values from connect-options
 	for name, value := range options {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strconv"
@@ -290,7 +291,13 @@ func (di *DockerizedInstance) TryConnect() (err error) {
 // Port returns the actual port number on localhost that maps to the container's
 // internal port 3306.
 func (di *DockerizedInstance) Port() int {
-	portAndProto := docker.Port("3306/tcp")
+	return di.PortMap(3306)
+}
+
+// PortMap returns the port number on localhost that maps to the container's
+// specified internal tcp port.
+func (di *DockerizedInstance) PortMap(containerPort int) int {
+	portAndProto := docker.Port(fmt.Sprintf("%d/tcp", containerPort))
 	portBindings, ok := di.container.NetworkSettings.Ports[portAndProto]
 	if !ok || len(portBindings) == 0 {
 		return 0
@@ -344,6 +351,18 @@ func (di *DockerizedInstance) SourceSQL(filePath string) (string, error) {
 	if di.RootPassword != "" {
 		cmd = append(cmd, fmt.Sprintf("-p%s", di.RootPassword))
 	}
+	stdoutStr, stderrStr, err := di.Exec(cmd, f)
+	stderrStr = strings.Replace(stderrStr, "Warning: Using a password on the command line interface can be insecure.\n", "", 1)
+	if err != nil || strings.Contains(stderrStr, "ERROR") {
+		err = fmt.Errorf("SourceSQL %s: Error sourcing file %s: %s", di, filePath, stderrStr)
+	}
+	return stdoutStr, err
+}
+
+// Exec executes the supplied command/args in the container, blocks until
+// completion, and returns STDOUT and STDERR. An input stream may optionally
+// be supplied for the exec's STDIN.
+func (di *DockerizedInstance) Exec(cmd []string, stdin io.Reader) (string, string, error) {
 	ceopts := docker.CreateExecOptions{
 		AttachStdout: true,
 		AttachStderr: true,
@@ -353,23 +372,22 @@ func (di *DockerizedInstance) SourceSQL(filePath string) (string, error) {
 	}
 	exec, err := di.Manager.client.CreateExec(ceopts)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	var stdout, stderr bytes.Buffer
 	seopts := docker.StartExecOptions{
 		OutputStream: &stdout,
 		ErrorStream:  &stderr,
-		InputStream:  f,
+		InputStream:  stdin,
 	}
 	if err = di.Manager.client.StartExec(exec.ID, seopts); err != nil {
-		return "", err
+		return "", "", err
 	}
-	stdoutStr := stdout.String()
-	stderrStr := strings.Replace(stderr.String(), "Warning: Using a password on the command line interface can be insecure.\n", "", 1)
-	if strings.Contains(stderrStr, "ERROR") {
-		return stdoutStr, fmt.Errorf("SourceSQL %s: Error sourcing file %s: %s", di, filePath, stderrStr)
+	execInfo, err := di.Manager.client.InspectExec(exec.ID)
+	if err == nil && execInfo.ExitCode > 0 {
+		err = fmt.Errorf("Process returned exit code %d", execInfo.ExitCode)
 	}
-	return stdoutStr, nil
+	return stdout.String(), stderr.String(), err
 }
 
 // ContainerNameForImage returns a usable container name (or portion of a name)

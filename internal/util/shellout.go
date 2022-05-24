@@ -21,10 +21,13 @@ type ShellOut struct {
 }
 
 func (s *ShellOut) String() string {
+	var str string
 	if s.PrintableCommand != "" {
-		return s.PrintableCommand
+		str = s.PrintableCommand
+	} else {
+		str = s.Command
 	}
-	return s.Command
+	return str
 }
 
 // Run shells out to the external command and blocks until it completes. It

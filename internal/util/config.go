@@ -35,7 +35,7 @@ func AddGlobalOptions(cmd *mybase.Command) {
 		mybase.StringOption("connect-options", 'o', "", "Comma-separated session options to set upon connecting to each database instance"),
 		mybase.StringOption("ignore-schema", 0, "", "Ignore schemas that match regex"),
 		mybase.StringOption("ignore-table", 0, "", "Ignore tables that match regex"),
-		mybase.StringOption("ssl-mode", 0, "preferred", `Specify desired connection security SSL/TLS usage (valid values: "disabled", "preferred", "required")`),
+		mybase.StringOption("ssl-mode", 0, "", `Specify desired connection security SSL/TLS usage (valid values: "disabled", "preferred", "required")`),
 		mybase.BoolOption("debug", 0, false, "Enable debug logging"),
 		mybase.BoolOption("my-cnf", 0, true, "Parse ~/.my.cnf for configuration"),
 	)
@@ -120,7 +120,6 @@ func ProcessSpecialGlobalOptions(cfg *mybase.Config) error {
 		var err error
 		cfg.CLI.OptionValues["password"], err = PromptPassword()
 		cfg.MarkDirty()
-		fmt.Println()
 		if err != nil {
 			return err
 		}
@@ -134,17 +133,23 @@ func ProcessSpecialGlobalOptions(cfg *mybase.Config) error {
 }
 
 // PromptPassword reads a password from STDIN without echoing the typed
-// characters. Requires that STDIN is a TTY.
-func PromptPassword() (string, error) {
+// characters. Requires that STDIN is a TTY. Optionally supply args to build
+// a custom prompt string; first arg must be a string if so, with args behaving
+// like those to fmt.Printf().
+func PromptPassword(promptArgs ...interface{}) (string, error) {
+	if len(promptArgs) == 0 {
+		promptArgs = append(promptArgs, "Enter password: ")
+	}
 	stdin := int(os.Stdin.Fd())
 	if !terminal.IsTerminal(stdin) {
 		return "", errors.New("STDIN must be a TTY to read password")
 	}
-	fmt.Printf("Enter password: ")
+	fmt.Printf(promptArgs[0].(string), promptArgs[1:]...)
 	bytePassword, err := terminal.ReadPassword(stdin)
 	if err != nil {
 		return "", err
 	}
+	fmt.Println() // since ReadPassword also won't echo the ENTER key as a newline!
 	return string(bytePassword), nil
 }
 

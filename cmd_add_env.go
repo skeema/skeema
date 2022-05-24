@@ -65,12 +65,14 @@ func AddEnvHandler(cfg *mybase.Config) error {
 		inst = instances[0]
 	}
 
-	dir.OptionFile.SetOptionValue(environment, "host", inst.Host)
-	if inst.Host == "localhost" && inst.SocketPath != "" {
+	if inst.SocketPath != "" {
+		dir.OptionFile.SetOptionValue(environment, "host", "localhost")
 		dir.OptionFile.SetOptionValue(environment, "socket", inst.SocketPath)
 	} else {
+		dir.OptionFile.SetOptionValue(environment, "host", inst.Host)
 		dir.OptionFile.SetOptionValue(environment, "port", strconv.Itoa(inst.Port))
 	}
+
 	if flavor := inst.Flavor(); !flavor.Known() {
 		log.Warnf("Unable to automatically determine database vendor or version. To set manually, use the \"flavor\" option in %s", dir.OptionFile)
 	} else {
