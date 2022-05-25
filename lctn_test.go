@@ -51,11 +51,18 @@ func (s SkeemaIntegrationSuite) TestLowerCaseTableNames1(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb --schema NameCase -h %s -P %d lctn0", s.d.Instance.Host, s.d.Instance.Port)
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff lctn0")
 
-	// Add an environment for the lctn=2 instance, and then push to it. Afterwards,
+	// Add an environment for the lctn=1 instance, and then push to it. Afterwards,
 	// diff should show no differences.
 	s.handleCommand(t, CodeSuccess, ".", "skeema add-environment --dir mydb -h %s -P %d lctn1", dinst.Instance.Host, dinst.Instance.Port)
 	s.handleCommand(t, CodeSuccess, ".", "skeema push lctn1")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff lctn1")
+
+	// lint should show no problems on either environment by default, unless
+	// lint-name-case is enabled
+	s.handleCommand(t, CodeSuccess, ".", "skeema lint lctn0 --skip-format")
+	s.handleCommand(t, CodeSuccess, ".", "skeema lint lctn1 --skip-format")
+	s.handleCommand(t, CodeFatalError, ".", "skeema lint lctn0 --skip-format --lint-name-case=error")
+	s.handleCommand(t, CodeFatalError, ".", "skeema lint lctn1 --skip-format --lint-name-case=error")
 
 	// Confirm all tables on the LCTN=1 db are supported for diff operations
 	schema, err := dinst.Schema("NameCase")
@@ -181,6 +188,13 @@ func (s SkeemaIntegrationSuite) TestLowerCaseTableNames2(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema add-environment --dir mydb -h %s -P %d lctn2", dinst.Instance.Host, dinst.Instance.Port)
 	s.handleCommand(t, CodeSuccess, ".", "skeema push lctn2")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff lctn2")
+
+	// lint should show no problems on either environment by default, unless
+	// lint-name-case is enabled
+	s.handleCommand(t, CodeSuccess, ".", "skeema lint lctn0 --skip-format")
+	s.handleCommand(t, CodeSuccess, ".", "skeema lint lctn2 --skip-format")
+	s.handleCommand(t, CodeFatalError, ".", "skeema lint lctn0 --skip-format --lint-name-case=error")
+	s.handleCommand(t, CodeFatalError, ".", "skeema lint lctn2 --skip-format --lint-name-case=error")
 
 	// Confirm all tables on the LCTN=2 db are supported for diff operations, and
 	// confirm the schema name comes back with original casing
