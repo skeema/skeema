@@ -208,6 +208,10 @@ func flavorTestFiles(flavor Flavor) []string {
 		}
 	}
 
+	if flavor.Min(FlavorMariaDB108) { // descending indexes, IN/OUT/INOUT func params
+		result = append(result, "maria108.sql")
+	}
+
 	return result
 }
 

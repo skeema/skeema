@@ -291,6 +291,19 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 		}
 	}
 
+	// Coverage for MariaDB 10.8 IN/OUT/INOUT params in funcs
+	if fl := s.d.Flavor(); fl.Min(FlavorMariaDB108) {
+		s.SourceTestSQL(t, "maria108.sql")
+		schema := s.GetSchema(t, "testing")
+		funcsByName := schema.FunctionsByName()
+		f := funcsByName["maria108func"]
+		if defn := f.Definition(fl); defn != f.CreateStatement {
+			t.Errorf("Generated function definition does not match SHOW CREATE FUNCTION. Generated definition:\n%s\nSHOW CREATE FUNCTION:\n%s", defn, f.CreateStatement)
+		} else if !strings.Contains(defn, "INOUT") {
+			t.Errorf("Functions with IN/OUT/INOUT params not introspected properly. Generated definition:\n%s", defn)
+		}
+	}
+
 	// Coverage for various nil cases and error conditions
 	schema = nil
 	if procCount := len(schema.ProceduresByName()); procCount != 0 {
