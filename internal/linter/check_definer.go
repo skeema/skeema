@@ -35,6 +35,8 @@ type definerConfig struct {
 	allowedDefinersMatch  []*regexp.Regexp
 }
 
+var reDefinerCheckerOffset = regexp.MustCompile("(?i)definer")
+
 func definerChecker(routine *tengo.Routine, createStatement string, _ *tengo.Schema, opts Options) *Note {
 	dc := opts.RuleConfig["definer"].(definerConfig)
 	for _, re := range dc.allowedDefinersMatch {
@@ -42,13 +44,12 @@ func definerChecker(routine *tengo.Routine, createStatement string, _ *tengo.Sch
 			return nil
 		}
 	}
-	reOffset := regexp.MustCompile("(?i)definer")
 	message := fmt.Sprintf(
 		"%s %s is using definer %s, which is not configured to be permitted. The following definers are listed in option allow-definer: %s.",
 		routine.Type, routine.Name, routine.Definer, dc.allowedDefinersString,
 	)
 	return &Note{
-		LineOffset: FindFirstLineOffset(reOffset, createStatement),
+		LineOffset: FindFirstLineOffset(reDefinerCheckerOffset, createStatement),
 		Summary:    "Definer not permitted",
 		Message:    message,
 	}

@@ -190,19 +190,23 @@ func (t *Table) ClusteredIndexKey() *Index {
 		return t.PrimaryKey
 	}
 	cols := t.ColumnsByName()
-Outer:
-	for _, index := range t.SecondaryIndexes {
-		if index.Unique && !index.Functional() {
-			for _, part := range index.Parts {
-				if col := cols[part.ColumnName]; col == nil || col.Nullable {
-					continue Outer
-				}
+	nullable := func(index *Index) bool {
+		for _, part := range index.Parts {
+			if col := cols[part.ColumnName]; col == nil || col.Nullable {
+				return true
 			}
+		}
+		return false
+	}
+	for _, index := range t.SecondaryIndexes {
+		if index.Unique && !index.Functional() && !nullable(index) {
 			return index
 		}
 	}
 	return nil
 }
+
+var reTableRowFormatClause = regexp.MustCompile(`ROW_FORMAT=(\w+)`)
 
 // RowFormatClause returns the table's ROW_FORMAT clause, if one was explicitly
 // specified in the table's creation options. If no ROW_FORMAT clause was
@@ -213,8 +217,7 @@ Outer:
 // ROW_FORMAT differs from what was requested in creation options; nor does it
 // query the default row format if none was specified.
 func (t *Table) RowFormatClause() string {
-	re := regexp.MustCompile(`ROW_FORMAT=(\w+)`)
-	matches := re.FindStringSubmatch(t.CreateOptions)
+	matches := reTableRowFormatClause.FindStringSubmatch(t.CreateOptions)
 	if matches != nil {
 		return matches[1]
 	}
