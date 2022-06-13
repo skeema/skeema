@@ -101,14 +101,17 @@ func (f *File) Write(overwrite bool) error {
 		}
 		sort.Strings(ks)
 		for _, k := range ks {
-			opt := section.opts[k]
+			// Note: section.opts[k] will be nil if the option value came from
+			// File.SetOptionValue() and was not previously set! In this case we always
+			// treat the opt as stringy, to avoid converting some-int=0 to skip-some-int
+			optionIsBoolean := (section.opts[k] != nil && section.opts[k].Type == OptionTypeBool)
 			val := section.Values[k]
-			if opt == nil || opt.Type != OptionTypeBool {
-				lines = append(lines, fmt.Sprintf("%s=%s", k, val))
-			} else if !BoolValue(val) {
+			if (optionIsBoolean && !BoolValue(val)) || val == "''" { // false-valued boolean, or explicitly-empty-string non-boolean
 				lines = append(lines, fmt.Sprintf("skip-%s", k))
-			} else {
+			} else if optionIsBoolean || val == "" { // true-valued boolean, or valueless (implying value-optional) non-boolean
 				lines = append(lines, k)
+			} else { // non-boolean with a value
+				lines = append(lines, fmt.Sprintf("%s=%s", k, val))
 			}
 		}
 

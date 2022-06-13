@@ -13,7 +13,7 @@ require (
 	github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/sirupsen/logrus v1.8.1
-	github.com/skeema/mybase v1.0.14
+	github.com/skeema/mybase v1.0.15-0.20220613225259-d789b5b00cb8
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211

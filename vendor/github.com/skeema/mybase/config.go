@@ -203,6 +203,10 @@ func (cfg *Config) SuppliedWithValue(name string) bool {
 	if !cfg.Supplied(name) {
 		return false
 	}
+	// Hacky: this relies on logic in both CommandLine.parseLongArg() and
+	// File.Parse(), which store empty strings as "''" (vs bareword valueless
+	// options as ""). This makes it possible to differentiate between the two
+	// using Config.GetRaw(), since it does not strip quotes like Config.Get().
 	return cfg.GetRaw(name) != ""
 }
 
