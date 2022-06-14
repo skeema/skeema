@@ -1,9 +1,8 @@
-// Package applier handles execution of generating diffs between schemas, and
-// appropriate application of the generated DDL.
+// Package applier obtains diffs between the fs and db versions of a schema,
+// and can handle execution of the generated DDL.
 package applier
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -13,11 +12,19 @@ import (
 	"github.com/skeema/skeema/internal/tengo"
 )
 
-// Result stores the overall result of all operations the worker has completed.
+// Result stores the result of applying an individual target, or a combined
+// summary of multiple targets.
 type Result struct {
 	Differences      bool
 	SkipCount        int
 	UnsupportedCount int
+}
+
+// Merge modifies the receiver to include the sub-totals from the supplied arg.
+func (r *Result) Merge(other Result) {
+	r.Differences = r.Differences || other.Differences
+	r.SkipCount += other.SkipCount
+	r.UnsupportedCount += other.UnsupportedCount
 }
 
 // Summary returns a string reflecting the contents of the result.
@@ -39,32 +46,9 @@ func (r Result) Summary() string {
 	return fmt.Sprintf("Skipped %d operation%s due to %s%s", r.SkipCount+r.UnsupportedCount, plural, reason, plural)
 }
 
-// Worker reads TargetGroups from the input channel and performs the appropriate
-// diff/push operation on each target per TargetGroup. When there are no more
-// TargetGroups to read, it writes its aggregate Result to the output channel.
-// If a fatal error occurs, it will be returned immediately; Worker is meant to
-// be called via an errgroup (see golang.org/x/sync/errgroup).
-func Worker(ctx context.Context, targetGroups <-chan TargetGroup, results chan<- Result, printer *Printer) error {
-	for tg := range targetGroups {
-		for _, t := range tg {
-			result, err := applyTarget(t, printer)
-			if err != nil {
-				return err
-			}
-			results <- result
-
-			// Exit early if context cancelled
-			select {
-			case <-ctx.Done():
-				return nil
-			default:
-			}
-		}
-	}
-	return nil
-}
-
-func applyTarget(t *Target, printer *Printer) (Result, error) {
+// ApplyTarget generates the diff for the supplied target, prints the resulting
+// DDL, and executes the DDL if this isn't a dry-run.
+func ApplyTarget(t *Target, printer *Printer) (Result, error) {
 	var result Result
 
 	schemaFromInstance, err := t.SchemaFromInstance()
@@ -177,17 +161,6 @@ func countAndNoun(n int, nouns ...string) string {
 		plural = nouns[1]
 	}
 	return fmt.Sprintf("%d %s", n, plural)
-}
-
-// SumResults adds up the supplied results to return a single combined result.
-func SumResults(results []Result) Result {
-	var total Result
-	for _, r := range results {
-		total.Differences = total.Differences || r.Differences
-		total.SkipCount += r.SkipCount
-		total.UnsupportedCount += r.UnsupportedCount
-	}
-	return total
 }
 
 // StatementModifiersForDir returns a set of DDL modifiers, based on the

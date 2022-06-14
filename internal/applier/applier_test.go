@@ -18,26 +18,25 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestSumResults(t *testing.T) {
-	input := []Result{
-		{
-			Differences:      false,
-			SkipCount:        1,
-			UnsupportedCount: 0,
-		},
-		{
-			Differences:      true,
-			SkipCount:        3,
-			UnsupportedCount: 5,
-		},
+func TestResultMerge(t *testing.T) {
+	r := Result{
+		Differences:      false,
+		SkipCount:        1,
+		UnsupportedCount: 0,
+	}
+	other := Result{
+		Differences:      true,
+		SkipCount:        3,
+		UnsupportedCount: 5,
 	}
 	expectSum := Result{
 		Differences:      true,
 		SkipCount:        4,
 		UnsupportedCount: 5,
 	}
-	if actualSum := SumResults(input); actualSum != expectSum {
-		t.Errorf("Unexpected result from SumResults: %+v", actualSum)
+	r.Merge(other)
+	if r != expectSum {
+		t.Errorf("Unexpected result from SumResults: %+v", r)
 	}
 }
 

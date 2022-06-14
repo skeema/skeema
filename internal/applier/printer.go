@@ -8,7 +8,7 @@ import (
 )
 
 // Printer is capable of sending output to STDOUT in a readable manner despite
-// being called from multiple pushworker goroutines.
+// being called from multiple goroutines.
 type Printer struct {
 	briefOutput        bool
 	lastStdoutInstance string
@@ -30,7 +30,7 @@ func NewPrinter(briefMode bool) *Printer {
 }
 
 // printDDL outputs DDLStatement values to STDOUT in a way that prevents
-// interleaving of output from multiple workers.
+// interleaving of output from multiple goroutines.
 // TODO: buffer output from external commands and also prevent interleaving there
 func (p *Printer) printDDL(ddl *DDLStatement) {
 	p.Lock()

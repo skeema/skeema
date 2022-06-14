@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"sync"
 
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/applier"
@@ -77,51 +77,58 @@ func PushHandler(cfg *mybase.Config) error {
 		return err
 	}
 
-	briefMode := dir.Config.GetBool("dry-run") && dir.Config.GetBool("brief")
-	printer := applier.NewPrinter(briefMode)
-	g, ctx := errgroup.WithContext(context.Background())
-	tgchan, skipCount := applier.TargetGroupChanForDir(dir)
-	results := make(chan applier.Result)
-
-	workerCount, err := dir.Config.GetInt("concurrent-instances")
-	if err == nil && workerCount < 1 {
-		err = fmt.Errorf("concurrent-instances cannot be less than 1")
-	}
+	concurrency, err := dir.Config.GetInt("concurrent-instances")
 	if err != nil {
 		return NewExitValue(CodeBadConfig, err.Error())
+	} else if concurrency < 1 {
+		return NewExitValue(CodeBadConfig, "concurrent-instances cannot be less than 1")
 	}
-	for n := 0; n < workerCount; n++ {
+	briefMode := dir.Config.GetBool("dry-run") && dir.Config.GetBool("brief")
+	printer := applier.NewPrinter(briefMode)
+
+	g, ctx := errgroup.WithContext(context.Background())
+	g.SetLimit(concurrency)
+	groups, skipCount := applier.TargetGroupsForDir(dir)
+	sum := applier.Result{SkipCount: skipCount}
+	var sumLock sync.Mutex
+
+	for n := range groups {
+		tg := groups[n] // avoid loop iteration variable in closure below
 		g.Go(func() error {
-			return applier.Worker(ctx, tgchan, results, printer)
+			for _, t := range tg {
+				select {
+				case <-ctx.Done():
+					return nil // Exit early if context cancelled
+				default:
+					result, err := applier.ApplyTarget(t, printer)
+					if err != nil {
+						return err
+					}
+					sumLock.Lock()
+					sum.Merge(result)
+					sumLock.Unlock()
+				}
+			}
+			return nil
 		})
 	}
-	go func() {
-		g.Wait()
-		close(results)
-	}()
 
-	allResults := make([]applier.Result, 0, workerCount)
-	for r := range results {
-		allResults = append(allResults, r)
-	}
 	if err := g.Wait(); err != nil {
 		if _, ok := err.(applier.ConfigError); ok {
 			return NewExitValue(CodeBadConfig, err.Error())
 		}
 		return err
 	}
-	sum := applier.SumResults(allResults)
-	sum.SkipCount += skipCount
+	return pushExitValue(sum, dir.Config.GetBool("dry-run"))
+}
 
-	if sum.SkipCount+sum.UnsupportedCount == 0 {
-		if dir.Config.GetBool("dry-run") && sum.Differences {
-			return NewExitValue(CodeDifferencesFound, "")
-		}
-		return nil
+func pushExitValue(r applier.Result, dryRun bool) error {
+	if r.SkipCount > 0 {
+		return NewExitValue(CodeFatalError, r.Summary())
+	} else if r.UnsupportedCount > 0 {
+		return NewExitValue(CodePartialError, r.Summary())
+	} else if dryRun && r.Differences {
+		return NewExitValue(CodeDifferencesFound, "")
 	}
-	code := CodeFatalError
-	if sum.SkipCount == 0 {
-		code = CodePartialError
-	}
-	return NewExitValue(code, sum.Summary())
+	return nil
 }

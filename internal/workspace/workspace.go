@@ -9,13 +9,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/VividCortex/mysqlerr"
 	"github.com/jmoiron/sqlx"
-	"github.com/nozzle/throttler"
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/fs"
@@ -292,29 +290,40 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 		LogicalSchema: logicalSchema,
 		Failures:      []*StatementError{},
 	}
-
 	defer func() {
 		if cleanupErr := ws.Cleanup(wsSchema.Schema); fatalErr == nil {
 			fatalErr = cleanupErr
 		}
 	}()
 
-	// Run CREATEs in parallel
-	th := throttler.New(opts.Concurrency, len(logicalSchema.Creates))
-	for _, stmt := range logicalSchema.Creates {
-		db, err := ws.ConnectionPool(paramsForStatement(stmt, opts))
-		if err != nil {
-			fatalErr = fmt.Errorf("Cannot connect to workspace: %s", err)
-			return
+	params := "foreign_key_checks=0"
+	if opts.SkipBinlog {
+		params += "&sql_log_bin=0"
+	}
+	db, err := ws.ConnectionPool(params)
+	if err != nil {
+		return nil, fmt.Errorf("Cannot connect to workspace: %w", err)
+	}
+
+	// Run CREATEs in parallel, bounded by opts.Concurrency
+	creates := make(chan *fs.Statement, opts.Concurrency)
+	errs := make(chan error, opts.Concurrency)
+	go func() {
+		for _, stmt := range logicalSchema.Creates {
+			creates <- stmt
 		}
-		go func(db *sqlx.DB, statement *fs.Statement) {
-			_, err := db.Exec(statement.Body())
-			if err != nil {
-				err = wrapFailure(statement, err)
+		close(creates)
+	}()
+	for n := 0; n < len(logicalSchema.Creates) && n < opts.Concurrency; n++ {
+		go func() {
+			for stmt := range creates {
+				_, err := db.Exec(stmt.Body())
+				if err != nil {
+					err = wrapFailure(stmt, err)
+				}
+				errs <- err
 			}
-			th.Done(err)
-		}(db, stmt)
-		th.Throttle()
+		}()
 	}
 
 	// Examine statement errors. If any deadlocks occurred, retry them
@@ -323,25 +332,23 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 	// being run out-of-order (only once though; nested chains of CREATE TABLE...
 	// LIKE are unsupported)
 	sequentialStatements := []*fs.Statement{}
-	for _, err := range th.Errs() {
-		stmterr := err.(*StatementError)
-		if tengo.IsDatabaseError(stmterr.Err, mysqlerr.ER_LOCK_DEADLOCK, mysqlerr.ER_NO_SUCH_TABLE) {
-			sequentialStatements = append(sequentialStatements, stmterr.Statement)
-		} else {
-			wsSchema.Failures = append(wsSchema.Failures, stmterr)
+	for n := 0; n < len(logicalSchema.Creates); n++ {
+		if err := <-errs; err != nil {
+			stmterr := err.(*StatementError)
+			if tengo.IsDatabaseError(stmterr.Err, mysqlerr.ER_LOCK_DEADLOCK, mysqlerr.ER_NO_SUCH_TABLE) {
+				sequentialStatements = append(sequentialStatements, stmterr.Statement)
+			} else {
+				wsSchema.Failures = append(wsSchema.Failures, stmterr)
+			}
 		}
 	}
+	close(errs)
 
 	// Run ALTERs sequentially, since foreign key manipulations don't play
 	// nice with concurrency.
 	sequentialStatements = append(sequentialStatements, logicalSchema.Alters...)
 
 	for _, statement := range sequentialStatements {
-		db, connErr := ws.ConnectionPool(paramsForStatement(statement, opts))
-		if connErr != nil {
-			fatalErr = fmt.Errorf("Cannot connect to workspace: %s", connErr)
-			return
-		}
 		if _, err := db.Exec(statement.Body()); err != nil {
 			wsSchema.Failures = append(wsSchema.Failures, wrapFailure(statement, err))
 		}
@@ -349,26 +356,6 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 
 	wsSchema.Schema, fatalErr = ws.IntrospectSchema()
 	return
-}
-
-// paramsForStatement returns the session settings for executing the supplied
-// statement in a workspace.
-func paramsForStatement(statement *fs.Statement, opts Options) string {
-	var params []string
-
-	// Disable binlogging if requested
-	if opts.SkipBinlog {
-		params = append(params, "sql_log_bin=0")
-	}
-
-	// Disable FK checks when operating on tables, since otherwise DDL would
-	// need to be ordered to resolve dependencies, and circular references would
-	// be highly problematic
-	if statement.ObjectType == tengo.ObjectTypeTable {
-		params = append(params, "foreign_key_checks=0")
-	}
-
-	return strings.Join(params, "&")
 }
 
 func wrapFailure(statement *fs.Statement, err error) *StatementError {

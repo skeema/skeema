@@ -279,23 +279,20 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 	return
 }
 
-// TargetGroupChanForDir returns a channel for obtaining TargetGroups for this
-// dir and its subdirs, and count of directories that were skipped due to non-
-// fatal errors.
-func TargetGroupChanForDir(dir *fs.Dir) (<-chan TargetGroup, int) {
+// TargetGroupsForDir returns a slice of TargetGroups (Target values grouped by
+// Instance) for this dir and its subdirs, and count of directories that were
+// skipped due to non-fatal errors.
+func TargetGroupsForDir(dir *fs.Dir) ([]TargetGroup, int) {
 	targets, skipCount := TargetsForDir(dir, 5)
-	groups := make(chan TargetGroup)
-	go func() {
-		byInst := make(map[string]TargetGroup)
-		for _, t := range targets {
-			key := t.Instance.String()
-			byInst[key] = append(byInst[key], t)
-		}
-		for _, tg := range byInst {
-			groups <- tg
-		}
-		close(groups)
-	}()
+	byInst := make(map[string]TargetGroup)
+	for _, t := range targets {
+		key := t.Instance.String()
+		byInst[key] = append(byInst[key], t)
+	}
+	groups := []TargetGroup{}
+	for _, tg := range byInst {
+		groups = append(groups, tg)
+	}
 	return groups, skipCount
 }
 

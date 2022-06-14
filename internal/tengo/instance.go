@@ -13,7 +13,6 @@ import (
 	"github.com/VividCortex/mysqlerr"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
-	"github.com/nozzle/throttler"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -594,37 +593,36 @@ func (instance *Instance) TableSize(schema, table string) (int64, error) {
 // occurs in querying, also returns true (along with the error) since a false
 // positive is generally less dangerous in this case than a false negative.
 func (instance *Instance) TableHasRows(schema, table string) (bool, error) {
-	db, err := instance.CachedConnectionPool(schema, "")
+	db, err := instance.CachedConnectionPool("", "")
 	if err != nil {
 		return true, err
 	}
-	return tableHasRows(db, table)
+	return tableHasRows(db, schema, table)
 }
 
-func tableHasRows(db *sqlx.DB, table string) (bool, error) {
+func tableHasRows(db *sqlx.DB, schema, table string) (bool, error) {
 	var result []int
-	query := fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", EscapeIdentifier(table))
+	query := fmt.Sprintf("SELECT 1 FROM %s.%s LIMIT 1", EscapeIdentifier(schema), EscapeIdentifier(table))
 	if err := db.Select(&result, query); err != nil {
 		return true, err
 	}
 	return len(result) != 0, nil
 }
 
-func confirmTablesEmpty(db *sqlx.DB, tables []string) error {
-	th := throttler.New(15, len(tables))
-	for _, name := range tables {
-		go func(name string) {
-			hasRows, err := tableHasRows(db, name)
+func confirmTablesEmpty(db *sqlx.DB, schema string, tables []string) error {
+	g := new(errgroup.Group)
+	g.SetLimit(15)
+	for n := range tables {
+		name := tables[n] // avoid closure with loop iteration var
+		g.Go(func() error {
+			hasRows, err := tableHasRows(db, schema, name)
 			if err == nil && hasRows {
 				err = fmt.Errorf("table %s has at least one row", EscapeIdentifier(name))
 			}
-			th.Done(err)
-		}(name)
-		if th.Throttle() > 0 {
-			return th.Errs()[0]
-		}
+			return err
+		})
 	}
-	return nil
+	return g.Wait()
 }
 
 // SchemaCreationOptions specifies schema-level metadata when creating or
@@ -790,7 +788,7 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 		for tableName := range tableMap {
 			names = append(names, tableName)
 		}
-		if err := confirmTablesEmpty(db, names); err != nil {
+		if err := confirmTablesEmpty(db, schema, names); err != nil {
 			return err
 		}
 	}
@@ -801,38 +799,36 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 	if instance.bufferPoolSize >= (32*1024*1024*1024) && !instance.flavor.Min(FlavorMySQL80.Dot(23)) {
 		concurrency = 1
 	}
-	th := throttler.New(concurrency, len(tableMap))
+	g, ctx := errgroup.WithContext(context.Background())
+	g.SetLimit(concurrency)
 	retries := make(chan string, len(tableMap))
 	for name, partitions := range tableMap {
-		go func(name string, partitions []string) {
-			var err error
+		name, partitions := name, partitions // avoid closure with loop iteration variables
+		g.Go(func() (err error) {
 			if len(partitions) > 1 && opts.PartitionsFirst {
 				err = dropPartitions(db, name, partitions[0:len(partitions)-1])
 			}
 			if err == nil {
-				_, err = db.Exec(fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(name)))
+				_, err = db.ExecContext(ctx, "DROP TABLE "+EscapeIdentifier(name))
 				// With the new data dictionary added in MySQL 8.0, attempting to
 				// concurrently drop two tables that have a foreign key constraint between
-				// them can deadlock.
+				// them can deadlock
 				if IsDatabaseError(err, mysqlerr.ER_LOCK_DEADLOCK) {
 					retries <- name
 					err = nil
 				}
 			}
-			th.Done(err)
-		}(name, partitions)
-		th.Throttle()
+			return err
+		})
 	}
+	fatalErr := g.Wait()
 	close(retries)
 	for name := range retries {
-		if _, err := db.Exec(fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(name))); err != nil {
+		if _, err := db.Exec("DROP TABLE " + EscapeIdentifier(name)); err != nil {
 			return err
 		}
 	}
-	if errs := th.Errs(); len(errs) > 0 {
-		return errs[0]
-	}
-	return nil
+	return fatalErr
 }
 
 // DropRoutinesInSchema drops all stored procedures and functions in a schema.
@@ -868,18 +864,16 @@ func (instance *Instance) DropRoutinesInSchema(schema string, opts BulkDropOptio
 		return nil
 	}
 
-	th := throttler.New(opts.Concurrency(), len(routineInfo))
+	g := new(errgroup.Group)
+	g.SetLimit(opts.Concurrency())
 	for _, ri := range routineInfo {
-		go func(name, typ string) {
+		name, typ := ri.Name, ri.Type
+		g.Go(func() error {
 			_, err := db.Exec(fmt.Sprintf("DROP %s %s", typ, EscapeIdentifier(name)))
-			th.Done(err)
-		}(ri.Name, ri.Type)
-		th.Throttle()
+			return err
+		})
 	}
-	if errs := th.Errs(); len(errs) > 0 {
-		return errs[0]
-	}
-	return nil
+	return g.Wait()
 }
 
 // tablesToPartitions returns a map whose keys are all tables in the schema

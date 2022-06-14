@@ -213,18 +213,18 @@ func (s ApplierIntegrationSuite) TestTargetsForDirError(t *testing.T) {
 	}
 }
 
-func (s ApplierIntegrationSuite) TestTargetGroupChanForDir(t *testing.T) {
+func (s ApplierIntegrationSuite) TestTargetGroupsForDir(t *testing.T) {
 	setupHostList(t, s.d[0].Instance, s.d[1].Instance)
 
 	// Parent dir maps to 2 instances, and schema dir maps to 2 schemas, so expect
 	// 4 targets split into 2 groups (by instance)
 	dir := getDir(t, "testdata/multi", "")
-	tgchan, skipCount := TargetGroupChanForDir(dir)
+	groups, skipCount := TargetGroupsForDir(dir)
 	if skipCount != 0 {
 		t.Errorf("Expected skip count of 0, instead found %d", skipCount)
 	}
 	seen := make(map[string]bool, 2)
-	for tg := range tgchan {
+	for _, tg := range groups {
 		if len(tg) != 2 || tg[0].Instance != tg[1].Instance {
 			t.Errorf("Unexpected contents in targetgroup: %+v", tg)
 			continue
@@ -244,12 +244,12 @@ func (s ApplierIntegrationSuite) TestTargetGroupChanForDir(t *testing.T) {
 	// dir two/ has no errors and should successfully yield 2 targets (1 per host,
 	// and put into different targetgroups)
 	dir = getDir(t, "testdata/sqlerror", "")
-	tgchan, skipCount = TargetGroupChanForDir(dir)
+	groups, skipCount = TargetGroupsForDir(dir)
 	if skipCount != 2 {
 		t.Errorf("Expected skip count of 2, instead found %d", skipCount)
 	}
 	seen = make(map[string]bool, 2)
-	for tg := range tgchan {
+	for _, tg := range groups {
 		if len(tg) != 1 {
 			t.Errorf("Unexpected contents in targetgroup: %+v", tg)
 			continue
