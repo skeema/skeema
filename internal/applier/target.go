@@ -197,9 +197,8 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 	// mixing configuration styles. Either all CREATEs should be in a single
 	// unnamed logical schema (with schema name controlled via .skeema file), OR
 	// all CREATEs should have prior USE commands or db name prefixes.
-	if logicalSchema.Name == "" && len(dir.LogicalSchemas) > 1 {
-		namedSchemaStmts := dir.NamedSchemaStatements()
-		log.Errorf("Skipping %s: some statements reference specific schema names, for example %s line %d.", dir, namedSchemaStmts[0].File, namedSchemaStmts[0].LineNo)
+	if logicalSchema.Name == "" && len(dir.LogicalSchemas) > 1 && len(dir.NamedSchemaStatements) > 0 {
+		log.Errorf("Skipping %s: some statements reference specific schema names, for example %s line %d.", dir, dir.NamedSchemaStatements[0].File, dir.NamedSchemaStatements[0].LineNo)
 		log.Error("When configuring a schema name in .skeema, please omit schema names entirely from *.sql files.\n")
 		return nil, len(instances)
 	}

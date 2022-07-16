@@ -10,81 +10,166 @@ import (
 )
 
 func TestSQLFileExists(t *testing.T) {
-	sf := SQLFile{
-		Dir:      "testdata",
-		FileName: "statements.sql",
-	}
+	sf := SQLFile{FilePath: "testdata/statements.sql"}
 	ok, err := sf.Exists()
 	if err != nil {
 		t.Errorf("Unexpected error from Exists(): %s", err)
 	}
 	if !ok {
-		t.Errorf("Expected Exists() to return true for %s, but it returned false", sf)
+		t.Errorf("Expected Exists() to return true for %s, but it returned false", sf.FilePath)
 	}
-	sf.FileName = "statements2.sql"
+	sf.FilePath = "testdata/statements2.sql"
 	ok, err = sf.Exists()
 	if err != nil {
 		t.Errorf("Unexpected error from Exists(): %s", err)
 	}
 	if ok {
-		t.Errorf("Expected Exists() to return false for %s, but it returned true", sf)
+		t.Errorf("Expected Exists() to return false for %s, but it returned true", sf.FilePath)
 	}
 }
 
-func TestSQLFileCreate(t *testing.T) {
-	sf := SQLFile{
-		Dir:      "testdata",
-		FileName: "statements.sql",
+func TestSQLFileAddCreateStatement(t *testing.T) {
+	sf := &SQLFile{}
+
+	// Add a simple CREATE TABLE
+	key := tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: "subscriptions"}
+	create := "CREATE TABLE subscriptions (id int unsigned not null primary key)"
+	sf.AddCreateStatement(key, create)
+	if len(sf.Statements) != 1 || !sf.Dirty || sf.Statements[0].Text != create+";\n" {
+		t.Fatalf("Unexpected values in SQLFile: dirty=%t, len(statements)=%d", sf.Dirty, len(sf.Statements))
 	}
-	if err := sf.Create("# hello world"); err == nil {
-		t.Error("Expected error from Create() on preexisting file, but err is nil")
+
+	// Add a proc that requires special delimiter
+	key = tengo.ObjectKey{Type: tengo.ObjectTypeProc, Name: "whatever"}
+	create = `CREATE PROCEDURE whatever(name varchar(10))
+	BEGIN
+		DECLARE v1 INT;
+		SET v1=loops;
+		WHILE v1 > 0 DO
+			INSERT INTO users (name) values ('\xF0\x9D\x8C\x86');
+			SET v1 = v1 - (2 / 2); /* testing // testing */
+		END WHILE;
+	END;`
+	sf.AddCreateStatement(key, create)
+	if len(sf.Statements) != 4 || !sf.Dirty || sf.Statements[2].Text != create+"//\n" {
+		t.Fatalf("Unexpected values in SQLFile: dirty=%t, len(statements)=%d", sf.Dirty, len(sf.Statements))
 	}
-	sf.FileName = "statements2.sql"
-	if err := sf.Create("# hello world"); err != nil {
-		t.Errorf("Unexpected error from Create() on new file: %s", err)
-	} else if err := sf.Delete(); err != nil {
-		t.Errorf("Unexpected error from Delete(): %s", err)
+
+	// Add another proc that requires a special delimiter. This should effectively
+	// move the previous trailing "DELIMITER ;" back to the end of the file.
+	key.Name = "whatever2"
+	create = strings.Replace(create, "whatever", "Whatever2", 1)
+	sf.AddCreateStatement(key, create)
+	if len(sf.Statements) != 5 || !sf.Dirty || sf.Statements[3].Text != create+"//\n" {
+		t.Fatalf("Unexpected values in SQLFile: dirty=%t, len(statements)=%d", sf.Dirty, len(sf.Statements))
+	}
+
+	// Add a func that does not require a special delimiter. This should just add
+	// the statement at the end of the file, leaving the previously-trailing
+	// "DELIMITER ;" where it was
+	key = tengo.ObjectKey{Type: tengo.ObjectTypeFunc, Name: "foo"}
+	create = `CREATE FUNCTION foo() RETURNS varchar(30) RETURN "hello"`
+	sf.AddCreateStatement(key, create)
+	if len(sf.Statements) != 6 || !sf.Dirty || sf.Statements[5].Text != create+";\n" {
+		t.Fatalf("Unexpected values in SQLFile: dirty=%t, len(statements)=%d", sf.Dirty, len(sf.Statements))
 	}
 }
 
-func TestSQLFileTokenizeSuccess(t *testing.T) {
-	sf := SQLFile{
-		Dir:      "testdata",
-		FileName: "statements.sql",
+func TestSQLFileEditStatementText(t *testing.T) {
+	// Initial setup: two statements in one file, both with standard semicolon
+	// delimiter
+	create1 := `CREATE FUNCTION whatever() RETURNS varchar(30) RETURN "hello"`
+	stmt1 := &Statement{
+		File:       "whatever.sql",
+		Text:       create1 + ";\n",
+		Type:       StatementTypeCreate,
+		ObjectType: tengo.ObjectTypeFunc,
+		ObjectName: "whatever",
+		Delimiter:  ";",
 	}
-	tokenizedFile, err := sf.Tokenize()
+	create2 := "CREATE TABLE subscriptions (id int unsigned not null primary key)"
+	stmt2 := &Statement{File: "subscriptions.sql",
+		Text:       create2 + ";\n",
+		Type:       StatementTypeCreate,
+		ObjectType: tengo.ObjectTypeTable,
+		ObjectName: "subscriptions",
+		Delimiter:  ";",
+	}
+	sf := &SQLFile{
+		Statements: []*Statement{stmt1, stmt2},
+	}
+
+	// Adjust the second statement. This should not involve DELIMITER commands
+	// in any way.
+	sf.EditStatementText(stmt2, "CREATE TABLE subscriptions (subID int unsigned not null primary key)")
+	if !sf.Dirty {
+		t.Error("Expected file to be marked as dirty, but it was not")
+	}
+	if len(sf.Statements) != 2 {
+		t.Fatalf("Wrong statement count in file: expected 2, found %d", len(sf.Statements))
+	} else if sf.Statements[0] != stmt1 || sf.Statements[1] != stmt2 {
+		t.Fatal("Unexpected CREATE statement positions in file")
+	}
+
+	// Adjust the first statement to require a special delimiter. File should
+	// now have 4 statements incl the delimiter wrappers around the first
+	// statement.
+	sf.EditStatementText(stmt1, `CREATE FUNCTION whatever() RETURNS varchar(30)
+	BEGIN
+		RETURN "hello";
+	END;`)
+	if len(sf.Statements) != 4 {
+		t.Fatalf("Wrong statement count in file: expected 4, found %d", len(sf.Statements))
+	} else if sf.Statements[1] != stmt1 || sf.Statements[3] != stmt2 {
+		t.Fatal("Unexpected CREATE statement positions in file")
+	} else if sf.Statements[0].Type != StatementTypeCommand || sf.Statements[2].Type != StatementTypeCommand {
+		t.Fatal("Unexpected DELIMITER statement positions in file")
+	}
+
+	// Adjust the second statement back to its original text. DELIMITERs should
+	// remain in place since we do not currently clean them up!
+	sf.EditStatementText(stmt1, create1)
+	if len(sf.Statements) != 4 {
+		t.Fatalf("Wrong statement count in file: expected 4, found %d", len(sf.Statements))
+	} else if sf.Statements[1] != stmt1 || sf.Statements[3] != stmt2 {
+		t.Fatal("Unexpected CREATE statement positions in file")
+	} else if sf.Statements[0].Type != StatementTypeCommand || sf.Statements[2].Type != StatementTypeCommand {
+		t.Fatal("Unexpected DELIMITER statement positions in file")
+	}
+}
+
+func TestParseStatementsInFileSuccess(t *testing.T) {
+	filePath := "testdata/statements.sql"
+	statements, err := ParseStatementsInFile(filePath, ";")
 	if err != nil {
-		t.Fatalf("Unexpected error from Tokenize(): %v", err)
+		t.Fatalf("Unexpected error from ParseStatementsInFile(): %v", err)
 	}
-	expected := expectedStatements(sf.String())
-	if len(tokenizedFile.Statements) != len(expected) {
-		t.Errorf("Expected %d statements, instead found %d", len(expected), len(tokenizedFile.Statements))
+	expected := expectedStatements(filePath)
+	if len(statements) != len(expected) {
+		t.Errorf("Expected %d statements, instead found %d", len(expected), len(statements))
 	} else {
-		for n := range tokenizedFile.Statements {
-			actual, expect := tokenizedFile.Statements[n], expected[n]
+		for n := range statements {
+			actual, expect := statements[n], expected[n]
 			compareStatements(t, n, actual, expect)
-			if actual.FromFile != tokenizedFile {
-				t.Errorf("statement[%d]: Expected FromFile %p, instead found %p", n, tokenizedFile, actual.FromFile)
-			}
 		}
 	}
 
 	// Test again, this time with CRLF line-ends in the .sql file
-	contents := ReadTestFile(t, sf.Path())
+	contents := ReadTestFile(t, filePath)
 	contents = strings.ReplaceAll(contents, "\n", "\r\n")
-	sf.FileName = "statements_crlf.sql"
-	WriteTestFile(t, sf.Path(), contents)
-	defer RemoveTestFile(t, sf.Path())
-	tokenizedFile, err = sf.Tokenize()
+	filePath = "testdata/statements_crlf.sql"
+	WriteTestFile(t, filePath, contents)
+	defer RemoveTestFile(t, filePath)
+	statements, err = ParseStatementsInFile(filePath, ";")
 	if err != nil {
-		t.Fatalf("Unexpected error from Tokenize(): %v", err)
+		t.Fatalf("Unexpected error from ParseStatementsInFile(): %v", err)
 	}
-	if len(tokenizedFile.Statements) != len(expected) {
-		t.Errorf("Expected %d statements, instead found %d", len(expected), len(tokenizedFile.Statements))
+	if len(statements) != len(expected) {
+		t.Errorf("Expected %d statements, instead found %d", len(expected), len(statements))
 	} else {
-		for n := range tokenizedFile.Statements {
-			actual, expect := tokenizedFile.Statements[n], expected[n]
-			expect.File = sf.Path()
+		for n := range statements {
+			actual, expect := statements[n], expected[n]
+			expect.File = filePath
 			expect.Text = strings.ReplaceAll(expect.Text, "\n", "\r\n")
 			expect.nameClause = strings.ReplaceAll(expect.nameClause, "\n", "\r\n")
 			compareStatements(t, n, actual, expect)
@@ -126,69 +211,53 @@ func compareStatements(t *testing.T, n int, actual, expect *Statement) {
 	}
 }
 
-func TestSQLFileTokenizeFail(t *testing.T) {
-	sf := SQLFile{
-		Dir:      "testdata",
-		FileName: "statements.sql",
-	}
-	origContents := ReadTestFile(t, sf.Path())
+func TestParseStatementsInFileFail(t *testing.T) {
+	filePath := "testdata/statements.sql"
+	origContents := ReadTestFile(t, filePath)
 
 	// Test error returns for unterminated quote or unterminated C-style comment
 	contents := strings.Replace(origContents, "use /*wtf*/`analytics`", "use /*wtf*/`analytics", 1)
-	sf2 := SQLFile{
-		Dir:      "testdata",
-		FileName: "statements2.sql",
-	}
-	WriteTestFile(t, sf2.Path(), contents)
-	if _, err := sf2.Tokenize(); err == nil {
+	filePath = "testdata/statements2.sql"
+	WriteTestFile(t, filePath, contents)
+	if _, err := ParseStatementsInFile(filePath, ";"); err == nil {
 		t.Error("Expected to get an error about unterminated quote, but err was nil")
 	}
 
 	contents = strings.Replace(origContents, "use /*wtf*/`analytics`", "use /*wtf`analytics", 1)
-	WriteTestFile(t, sf2.Path(), contents)
-	if _, err := sf2.Tokenize(); err == nil {
+	WriteTestFile(t, filePath, contents)
+	if _, err := ParseStatementsInFile(filePath, ";"); err == nil {
 		t.Error("Expected to get an error about unterminated comment, but err was nil")
 	}
 
 	// Test error return for nonexistent file
-	sf2.Delete()
-	if _, err := sf2.Tokenize(); err == nil {
+	RemoveTestFile(t, filePath)
+	if _, err := ParseStatementsInFile(filePath, ";"); err == nil {
 		t.Error("Expected to get an error about nonexistent file, but err was nil")
 	}
 
 	// Test handling of files that just contain a single routine definition, but
 	// without using the DELIMITER command
-	nd1 := SQLFile{
-		Dir:      "testdata",
-		FileName: "nodelimiter1.sql",
-	}
-	if tokenizedFile, err := nd1.Tokenize(); err != nil {
+	filePath = "testdata/nodelimiter1.sql"
+	if statements, err := ParseStatementsInFile(filePath, ";"); err != nil {
 		t.Errorf("Unexpected error parsing nodelimiter1.sql: %s", err)
-	} else {
-		if len(tokenizedFile.Statements) == 2 {
-			if tokenizedFile.Statements[0].Type != StatementTypeNoop || tokenizedFile.Statements[1].Type != StatementTypeCreate {
-				t.Error("Correct count of statements found, but incorrect types parsed")
-			}
-		} else {
-			t.Errorf("Expected file to contain 2 statements, instead found %d", len(tokenizedFile.Statements))
-		}
+	} else if len(statements) != 2 {
+		t.Errorf("Expected file to contain 2 statements, instead found %d", len(statements))
+	} else if statements[0].Type != StatementTypeNoop || statements[1].Type != StatementTypeCreate {
+		t.Error("Correct count of statements found, but incorrect types parsed")
 	}
 
 	// Now try parsing a file that contains a multi-line routine (but no DELIMITER
 	// command) followed by another CREATE, and confirm the parsing is "incorrect"
 	// in the expected way
-	nd2 := SQLFile{
-		Dir:      "testdata",
-		FileName: "nodelimiter2.sql",
-	}
-	if tokenizedFile, err := nd2.Tokenize(); err != nil {
-		t.Errorf("Unexpected error parsing nodelimiter1.sql: %s", err)
+	filePath = "testdata/nodelimiter2.sql"
+	if statements, err := ParseStatementsInFile(filePath, ";"); err != nil {
+		t.Errorf("Unexpected error parsing nodelimiter2.sql: %s", err)
 	} else {
-		if len(tokenizedFile.Statements) != 8 {
-			t.Errorf("Expected file to contain 8 statements, instead found %d", len(tokenizedFile.Statements))
+		if len(statements) != 8 {
+			t.Errorf("Expected file to contain 8 statements, instead found %d", len(statements))
 		}
 		var seenUnknown bool
-		for _, stmt := range tokenizedFile.Statements {
+		for _, stmt := range statements {
 			if stmt.Type == StatementTypeUnknown {
 				seenUnknown = true
 			}
@@ -199,47 +268,44 @@ func TestSQLFileTokenizeFail(t *testing.T) {
 	}
 }
 
-func TestTokenizedSQLFileRewrite(t *testing.T) {
-	// Use Rewrite() to write file statements2.sql with same contents as statements.sql
+func TestSQLFileWrite(t *testing.T) {
+	// Use Write() to write file statements2.sql with same contents as statements.sql
 	contents := ReadTestFile(t, "testdata/statements.sql")
-	sf2 := SQLFile{
-		Dir:      "testdata",
-		FileName: "statements2.sql",
-	}
-	tokenizedFile := &TokenizedSQLFile{
-		SQLFile:    sf2,
-		Statements: expectedStatements(sf2.Path()),
-	}
-	bytesWritten, err := tokenizedFile.Rewrite()
+	statements, err := ParseStatementsInFile("testdata/statements.sql", ";")
 	if err != nil {
-		t.Fatalf("Unexpected error from Rewrite: %s", err)
+		t.Fatalf("Unexpected error from ParseStatementsInFile: %v", err)
 	}
-	contents2 := ReadTestFile(t, sf2.Path())
+	sqlFile := &SQLFile{
+		FilePath:   "testdata/statements2.sql",
+		Statements: statements,
+	}
+	bytesWritten, err := sqlFile.Write()
+	if err != nil {
+		t.Fatalf("Unexpected error from Write: %s", err)
+	}
+	contents2 := ReadTestFile(t, "testdata/statements2.sql")
 	if len(contents2) != bytesWritten {
 		t.Errorf("Expected bytes written to be %d, instead found %d", len(contents2), bytesWritten)
 	}
 	if contents2 != contents {
 		t.Error("File contents differ from expectation")
 	}
-	if tokenizedFile, err = sf2.Tokenize(); err != nil {
-		t.Fatalf("Unexpected error from Tokenize(): %s", err)
-	}
 
-	// Remove everything except commands and whitespace/comments. Rewrite should
+	// Remove everything except commands and whitespace/comments. Write should
 	// now delete the file.
-	for n := len(tokenizedFile.Statements) - 1; n >= 0; n-- {
-		stmt := tokenizedFile.Statements[n]
+	for n := len(sqlFile.Statements) - 1; n >= 0; n-- {
+		stmt := sqlFile.Statements[n]
 		if stmt.Type != StatementTypeNoop && stmt.Type != StatementTypeCommand {
-			stmt.Remove()
+			sqlFile.RemoveStatement(stmt)
 		}
 	}
-	bytesWritten, err = tokenizedFile.Rewrite()
+	bytesWritten, err = sqlFile.Write()
 	if bytesWritten != 0 || err != nil {
-		t.Errorf("Unexpected return values from Rewrite: %d / %v", bytesWritten, err)
+		t.Errorf("Unexpected return values from Write: %d / %v", bytesWritten, err)
 	}
-	if exists, err := sf2.Exists(); exists || err != nil {
+	if exists, err := sqlFile.Exists(); exists || err != nil {
 		t.Errorf("Unexpected return values from Exists: %t / %v", exists, err)
-		sf2.Delete()
+		sqlFile.Delete()
 	}
 }
 
@@ -304,33 +370,6 @@ func TestPathForObject(t *testing.T) {
 			t.Errorf("Expected PathForObject(%q, %q) to return %q, instead found %q", c.DirPath, c.ObjectName, c.Expected, actual)
 		}
 	}
-}
-
-func TestAppendToFile(t *testing.T) {
-	assertAppend := func(filePath, contents string, expectBytes int, expectCreated bool) {
-		t.Helper()
-		bytesWritten, created, err := AppendToFile(filePath, contents)
-		if err != nil {
-			t.Errorf("Unexpected error from AppendToFile on %s: %s", filePath, err)
-		}
-		if bytesWritten != expectBytes {
-			t.Errorf("Incorrect bytes-written from AppendToFile: expected %d, found %d", expectBytes, bytesWritten)
-		}
-		if created != expectCreated {
-			t.Error("created did not match expectation")
-		}
-	}
-
-	WriteTestFile(t, "testdata/.scratch/append-test1", "")
-	assertAppend("testdata/.scratch/append-test1", "hello world", 11, false)
-	assertAppend("testdata/.scratch/append-test2", "hello world", 11, true)
-	assertAppend("testdata/.scratch/append-test2", "hello world", 23, false)
-	if contents := ReadTestFile(t, "testdata/.scratch/append-test2"); contents != "hello world\nhello world" {
-		t.Errorf("Unexpected contents: %s", contents)
-	}
-	RemoveTestFile(t, "testdata/.scratch/append-test1")
-	RemoveTestFile(t, "testdata/.scratch/append-test2")
-	RemoveTestFile(t, "testdata/.scratch")
 }
 
 func TestAddDelimiter(t *testing.T) {

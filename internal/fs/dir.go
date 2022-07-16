@@ -21,108 +21,16 @@ import (
 // Dir is a parsed representation of a directory that may have contained
 // a .skeema config file and/or *.sql files.
 type Dir struct {
-	Path               string
-	Config             *mybase.Config
-	OptionFile         *mybase.File
-	SQLFiles           []SQLFile
-	LogicalSchemas     []*LogicalSchema      // for now, always 0 or 1 elements; 2+ in same dir to be supported in future
-	ParseError         error                 // any fatal error found parsing dir's config or contents
-	UnparsedStatements []*Statement          // statements with unknown type / not supported by this package
-	IgnorePatterns     []tengo.ObjectPattern // regexes for matching objects that should be ignored
-	repoBase           string                // absolute path of containing repo, or topmost-found .skeema file
-}
-
-// LogicalSchema represents a set of statements from *.sql files in a directory
-// that all operated on the same schema. Note that Name is often blank, which
-// means "all SQL statements in this dir that don't have an explicit USE
-// statement before them". This "nameless" LogicalSchema is mapped to schema
-// names based on the "schema" option in the dir's OptionFile.
-type LogicalSchema struct {
-	Name      string
-	CharSet   string
-	Collation string
-	Creates   map[tengo.ObjectKey]*Statement
-	Alters    []*Statement // Alterations that are run after the Creates
-}
-
-// AddStatement adds the supplied statement into the appropriate data structure
-// within the receiver. This is useful when assembling a new logical schema.
-// An error will be returned if a duplicate CREATE object name/type pair is
-// added.
-func (logicalSchema *LogicalSchema) AddStatement(stmt *Statement) error {
-	switch stmt.Type {
-	case StatementTypeCreate:
-		if origStmt, already := logicalSchema.Creates[stmt.ObjectKey()]; already {
-			return DuplicateDefinitionError{
-				ObjectKey: stmt.ObjectKey(),
-				FirstFile: origStmt.File,
-				FirstLine: origStmt.LineNo,
-				DupeFile:  stmt.File,
-				DupeLine:  stmt.LineNo,
-			}
-		}
-		logicalSchema.Creates[stmt.ObjectKey()] = stmt
-		return nil
-	case StatementTypeAlter:
-		logicalSchema.Alters = append(logicalSchema.Alters, stmt)
-		return nil
-	default:
-		return nil
-	}
-}
-
-// LowerCaseNames adjusts logicalSchema in-place such that its object names are
-// forced to lower-case as appropriate for the supplied NameCaseMode.
-// An error will be returned if case-insensitivity would result in duplicate
-// objects with the same name and type.
-func (logicalSchema *LogicalSchema) LowerCaseNames(mode tengo.NameCaseMode) error {
-	switch mode {
-	case tengo.NameCaseLower: // lower_case_table_names=1
-		// Schema names and table names are forced lowercase in this mode
-		logicalSchema.Name = strings.ToLower(logicalSchema.Name)
-		newCreates := make(map[tengo.ObjectKey]*Statement, len(logicalSchema.Creates))
-		for k, stmt := range logicalSchema.Creates {
-			if k.Type == tengo.ObjectTypeTable {
-				k.Name = strings.ToLower(k.Name)
-				stmt.ObjectName = strings.ToLower(stmt.ObjectName)
-				if origStmt, already := newCreates[k]; already {
-					return DuplicateDefinitionError{
-						ObjectKey: stmt.ObjectKey(),
-						FirstFile: origStmt.File,
-						FirstLine: origStmt.LineNo,
-						DupeFile:  stmt.File,
-						DupeLine:  stmt.LineNo,
-					}
-				}
-			}
-			newCreates[k] = stmt
-		}
-		logicalSchema.Creates = newCreates
-
-	case tengo.NameCaseInsensitive: // lower_case_table_names=2
-		// Only view names are forced to lowercase in this mode, but Community Edition
-		// codebase does not support views, so nothing to lowercase here.
-		// However, with this mode we still need to ensure there aren't any duplicate
-		// table names in CREATEs after accounting for case-insensitive table naming.
-		lowerTables := make(map[string]*Statement)
-
-		for k, stmt := range logicalSchema.Creates {
-			if k.Type == tengo.ObjectTypeTable {
-				lowerName := strings.ToLower(k.Name)
-				if origStmt, already := lowerTables[lowerName]; already {
-					return DuplicateDefinitionError{
-						ObjectKey: stmt.ObjectKey(),
-						FirstFile: origStmt.File,
-						FirstLine: origStmt.LineNo,
-						DupeFile:  stmt.File,
-						DupeLine:  stmt.LineNo,
-					}
-				}
-				lowerTables[lowerName] = stmt
-			}
-		}
-	}
-	return nil
+	Path                  string
+	Config                *mybase.Config
+	OptionFile            *mybase.File
+	SQLFiles              map[string]*SQLFile   // .sql files, keyed by normalized absolute file path
+	UnparsedStatements    []*Statement          // statements with unknown type / not supported by this package
+	NamedSchemaStatements []*Statement          // statements with explicit schema names: USE command or CREATEs with schema name qualifier
+	LogicalSchemas        []*LogicalSchema      // for now, always 0 or 1 elements; 2+ in same dir to be supported in future
+	IgnorePatterns        []tengo.ObjectPattern // regexes for matching objects that should be ignored
+	ParseError            error                 // any fatal error found parsing dir's config or contents
+	repoBase              string                // absolute path of containing repo, or topmost-found .skeema file
 }
 
 // ParseDir parses the specified directory, including all *.sql files in it,
@@ -318,6 +226,41 @@ func (dir *Dir) Port() (int, bool) {
 		intValue = 3306
 	}
 	return intValue, dir.Config.Supplied("port")
+}
+
+// FileFor returns a SQLFile associated with the supplied keyer. If keyer is a
+// *Statement with non-empty File field, that path will be used as-is.
+// Otherwise, FileFor returns the default location for the supplied keyer based
+// on its type and name. In either case, if no known SQLFile exists at that
+// location yet, FileFor will instantiate a new SQLFile value for it.
+func (dir *Dir) FileFor(keyer tengo.ObjectKeyer) *SQLFile {
+	var filePath string
+	if stmt, ok := keyer.(*Statement); ok && stmt.File != "" {
+		filePath = stmt.File
+	} else {
+		objName := keyer.ObjectKey().Name
+		filePath = PathForObject(dir.Path, NormalizeFileName(objName))
+	}
+
+	// No file yet at that path: return a new SQLFile, but no need to mark it
+	// dirty yet -- that will happen anyway once a statement is added to the file
+	if dir.SQLFiles[filePath] == nil {
+		dir.SQLFiles[filePath] = &SQLFile{
+			FilePath:   filePath,
+			Statements: []*Statement{},
+		}
+	}
+	return dir.SQLFiles[filePath]
+}
+
+// DirtyFiles returns a slice of SQLFiles that have been marked as dirty.
+func (dir *Dir) DirtyFiles() (result []*SQLFile) {
+	for _, sf := range dir.SQLFiles {
+		if sf.Dirty {
+			result = append(result, sf)
+		}
+	}
+	return
 }
 
 // Instances returns 0 or more tengo.Instance pointers, based on the
@@ -567,42 +510,6 @@ func (dir *Dir) HasSchema() bool {
 	return false
 }
 
-var reUseStatement = regexp.MustCompile(`(?i)\bUSE\b`)
-
-// NamedSchemaStatements returns a slice of Statements in the dir that are
-// a USE command, or are a CREATE that specify a schema name. Such statements
-// are not yet fully supported by most Skeema packages.
-func (dir *Dir) NamedSchemaStatements() []*Statement {
-	result := make([]*Statement, 0)
-	checkFiles := make(map[*TokenizedSQLFile]bool, 0)
-	for _, ls := range dir.LogicalSchemas {
-		if ls.Name != "" {
-			for _, stmt := range ls.Creates {
-				if stmt.ObjectQualifier != "" {
-					result = append(result, stmt)
-				} else {
-					checkFiles[stmt.FromFile] = true
-				}
-			}
-			for _, stmt := range ls.Alters {
-				if stmt.ObjectQualifier != "" {
-					result = append(result, stmt)
-				} else {
-					checkFiles[stmt.FromFile] = true
-				}
-			}
-		}
-	}
-	for tokenizedFile := range checkFiles {
-		for _, stmt := range tokenizedFile.Statements {
-			if stmt.Type == StatementTypeCommand && reUseStatement.MatchString(stmt.Text) {
-				result = append(result, stmt)
-			}
-		}
-	}
-	return result
-}
-
 // InstanceDefaultParams returns a param string for use in constructing a
 // DSN. Any overrides specified in the config for this dir will be taken into
 // account. The returned string will already be in the correct format (HTTP
@@ -793,23 +700,27 @@ func (dir *Dir) parseContents() {
 	}
 
 	// Tokenize and parse any *.sql files
-	if dir.SQLFiles, dir.ParseError = sqlFiles(dir.Path, dir.repoBase); dir.ParseError != nil {
+	var sqlFilePaths []string
+	if sqlFilePaths, dir.ParseError = sqlFiles(dir.Path, dir.repoBase); dir.ParseError != nil {
 		return
 	}
+	dir.SQLFiles = make(map[string]*SQLFile, len(sqlFilePaths))
 	logicalSchemasByName := make(map[string]*LogicalSchema)
-	for _, sf := range dir.SQLFiles {
-		tokenizedFile, err := sf.Tokenize()
-		if err != nil {
-			// Treat errors from Tokenize as fatal. This includes: i/o error opening or
-			// reading the .sql file; file had unterminated quote or backtick or comment.
+	for _, filePath := range sqlFilePaths {
+		sf := &SQLFile{
+			FilePath: filePath,
+		}
+		sf.Statements, dir.ParseError = ParseStatementsInFile(filePath, ";")
+		if dir.ParseError != nil {
+			// Treat errors here as fatal. This includes: i/o error opening or reading
+			// the .sql file; file had unterminated quote or backtick or comment.
 			// These are all problematic, since if the caller otherwise just skipped the
 			// statements in the file, it could result in the caller emitting DROP
 			// statements incorrectly -- not good if the root cause is just an unclosed
 			// quote for example.
-			dir.ParseError = err
 			return
 		}
-		for _, stmt := range tokenizedFile.Statements {
+		for _, stmt := range sf.Statements {
 			// Statements that are ignored due to ignore-table, ignore-proc, etc are
 			// simply not placed into a LogicalSchema, so that all other logic won't
 			// interact with them
@@ -841,8 +752,14 @@ func (dir *Dir) parseContents() {
 				// as fatal.
 				dir.ParseError = SQLContentsError(stmt.Error.Error())
 				return
+			} else if stmt.ObjectQualifier != "" || (stmt.Type == StatementTypeCommand && len(stmt.Text) > 4 && strings.ToLower(stmt.Text[0:3]) == "use") {
+				// Statements which refer to specific schema names can be problematic, since
+				// this conflicts with the ability to specify the schema name dynamically
+				// in the .skeema config file.
+				dir.NamedSchemaStatements = append(dir.NamedSchemaStatements, stmt)
 			}
 		}
+		dir.SQLFiles[filePath] = sf
 	}
 
 	// If there are no *.sql files, but .skeema defines a schema name, create an
@@ -1032,18 +949,19 @@ func parseOptionFile(dirPath, repoBase string, baseConfig *mybase.Config) (*myba
 	return f, nil
 }
 
-// sqlFiles returns a slice of SQLFile for all *.sql files found in the supplied
-// path. This function does not recursively search subdirs, and does not parse
-// or validate the SQLFile contents in any way. An error will only be returned
-// if the directory cannot be read.
-// The repoBase affects evaluation of symlinks; any link destinations outside
-// of the repoBase are ignored.
-func sqlFiles(dirPath, repoBase string) ([]SQLFile, error) {
+// sqlFiles returns a slice of absolute file paths for all *.sql files found in
+// the supplied directory path. This function does not recursively search
+// subdirs, and does not parse or validate the file contents in any way. An
+// error will only be returned if the directory cannot be read. The file names
+// (but not directory path) are forced to lowercase on operating systems that
+// use case-insensitive filesystems by default.
+// The repoBase affects evaluation of symlinks: any link destinations outside
+// of the repoBase are ignored and excluded from the result.
+func sqlFiles(dirPath, repoBase string) (result []string, err error) {
 	fileInfos, err := ioutil.ReadDir(dirPath)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]SQLFile, 0, len(fileInfos))
 	for _, fi := range fileInfos {
 		name := fi.Name()
 		// symlinks: verify it points to an existing file within repoBase. If it
@@ -1066,13 +984,11 @@ func sqlFiles(dirPath, repoBase string) ([]SQLFile, error) {
 				continue
 			}
 		}
-		destName := fi.Name()
-		if strings.HasSuffix(destName, ".sql") && fi.Mode().IsRegular() {
-			sf := SQLFile{
-				Dir:      dirPath,
-				FileName: name, // name relative to dirPath, NOT symlink destination!
-			}
-			result = append(result, sf)
+		if destName := fi.Name(); strings.HasSuffix(destName, ".sql") && fi.Mode().IsRegular() {
+			// Note we intentionally use name, not destName, here. For symlinks we want
+			// to return the symlink, not the destination, since the destination could
+			// be in a different directory.
+			result = append(result, filepath.Join(dirPath, NormalizeFileName(name)))
 		}
 	}
 	return result, nil
@@ -1103,23 +1019,4 @@ func (ce ConfigError) ExitCode() int {
 // ConfigErrorf formats and returns a new ConfigError value.
 func ConfigErrorf(format string, a ...any) ConfigError {
 	return ConfigError{err: fmt.Errorf(format, a...)}
-}
-
-// DuplicateDefinitionError is an error returned when Dir.parseContents()
-// encounters multiple CREATE statements for the same exact object.
-type DuplicateDefinitionError struct {
-	ObjectKey tengo.ObjectKey
-	FirstFile string
-	FirstLine int
-	DupeFile  string
-	DupeLine  int
-}
-
-// Error satisfies the builtin error interface.
-func (dde DuplicateDefinitionError) Error() string {
-	return fmt.Sprintf("%s defined multiple times in same directory: %s line %d and %s line %d",
-		dde.ObjectKey,
-		dde.FirstFile, dde.FirstLine,
-		dde.DupeFile, dde.DupeLine,
-	)
 }

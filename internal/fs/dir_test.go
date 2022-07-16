@@ -212,40 +212,40 @@ func TestDirGenerator(t *testing.T) {
 func TestDirNamedSchemaStatements(t *testing.T) {
 	// Test against a dir that has no named-schema statements
 	dir := getDir(t, "../../testdata/golden/init/mydb/product")
-	if stmts := dir.NamedSchemaStatements(); len(stmts) > 0 {
-		t.Errorf("Expected dir %s to have no named schema statements; instead found %d", dir, len(stmts))
+	if len(dir.NamedSchemaStatements) > 0 {
+		t.Errorf("Expected dir %s to have no named schema statements; instead found %d", dir, len(dir.NamedSchemaStatements))
 	}
 
 	// named1 has 2 USE statements, and no schema-qualified CREATEs
 	dir = getDir(t, "testdata/named1")
-	if stmts := dir.NamedSchemaStatements(); len(stmts) != 2 {
-		t.Errorf("Expected dir %s to have 2 named schema statements; instead found %d", dir, len(stmts))
-	} else if stmts[0].Type != StatementTypeCommand || stmts[1].Type != StatementTypeCommand {
-		t.Errorf("Unexpected statements found in result of NamedSchemaStatements: [0]=%+v, [1]=%+v", *stmts[0], *stmts[1])
+	if len(dir.NamedSchemaStatements) != 2 {
+		t.Errorf("Expected dir %s to have 2 named schema statements; instead found %d", dir, len(dir.NamedSchemaStatements))
+	} else if dir.NamedSchemaStatements[0].Type != StatementTypeCommand || dir.NamedSchemaStatements[1].Type != StatementTypeCommand {
+		t.Errorf("Unexpected statements found in result of NamedSchemaStatements: [0]=%+v, [1]=%+v", *dir.NamedSchemaStatements[0], *dir.NamedSchemaStatements[1])
 	}
 
 	// named2 has 1 schema-qualified CREATE, and 1 USE statement
 	dir = getDir(t, "testdata/named2")
-	if stmts := dir.NamedSchemaStatements(); len(stmts) != 2 {
-		t.Errorf("Expected dir %s to have 2 named schema statements; instead found %d", dir, len(stmts))
-	} else if stmts[0].Type != StatementTypeCreate || stmts[1].Type != StatementTypeCommand {
-		t.Errorf("Unexpected statements found in result of NamedSchemaStatements: [0]=%+v, [1]=%+v", *stmts[0], *stmts[1])
+	if len(dir.NamedSchemaStatements) != 2 {
+		t.Errorf("Expected dir %s to have 2 named schema statements; instead found %d", dir, len(dir.NamedSchemaStatements))
+	} else if dir.NamedSchemaStatements[0].Type != StatementTypeCreate || dir.NamedSchemaStatements[1].Type != StatementTypeCommand {
+		t.Errorf("Unexpected statements found in result of NamedSchemaStatements: [0]=%+v, [1]=%+v", *dir.NamedSchemaStatements[0], *dir.NamedSchemaStatements[1])
 	}
 
 	// named3 has 2 schema-qualified CREATEs
 	dir = getDir(t, "testdata/named3")
-	if stmts := dir.NamedSchemaStatements(); len(stmts) != 2 {
-		t.Errorf("Expected dir %s to have 2 named schema statements; instead found %d", dir, len(stmts))
-	} else if stmts[0].Type != StatementTypeCreate || stmts[1].Type != StatementTypeCreate {
-		t.Errorf("Unexpected statements found in result of NamedSchemaStatements: [0]=%+v, [1]=%+v", *stmts[0], *stmts[1])
+	if len(dir.NamedSchemaStatements) != 2 {
+		t.Errorf("Expected dir %s to have 2 named schema statements; instead found %d", dir, len(dir.NamedSchemaStatements))
+	} else if dir.NamedSchemaStatements[0].Type != StatementTypeCreate || dir.NamedSchemaStatements[1].Type != StatementTypeCreate {
+		t.Errorf("Unexpected statements found in result of NamedSchemaStatements: [0]=%+v, [1]=%+v", *dir.NamedSchemaStatements[0], *dir.NamedSchemaStatements[1])
 	}
 
 	// named4 has 2 USE statements, and no schema-qualified CREATEs
 	dir = getDir(t, "testdata/named4")
-	if stmts := dir.NamedSchemaStatements(); len(stmts) != 2 {
-		t.Errorf("Expected dir %s to have 2 named schema statements; instead found %d", dir, len(stmts))
-	} else if stmts[0].Type != StatementTypeCommand || stmts[1].Type != StatementTypeCommand {
-		t.Errorf("Unexpected statements found in result of NamedSchemaStatements: [0]=%+v, [1]=%+v", *stmts[0], *stmts[1])
+	if len(dir.NamedSchemaStatements) != 2 {
+		t.Errorf("Expected dir %s to have 2 named schema statements; instead found %d", dir, len(dir.NamedSchemaStatements))
+	} else if dir.NamedSchemaStatements[0].Type != StatementTypeCommand || dir.NamedSchemaStatements[1].Type != StatementTypeCommand {
+		t.Errorf("Unexpected statements found in result of NamedSchemaStatements: [0]=%+v, [1]=%+v", *dir.NamedSchemaStatements[0], *dir.NamedSchemaStatements[1])
 	}
 }
 
@@ -419,6 +419,75 @@ func TestDirSubdirs(t *testing.T) {
 	if len(subs) != 1 || err != nil || countParseErrors(subs) != 1 {
 		// parse error is from redundant definition of same table between nodelimiter1.sql and nodelimiter2.sql
 		t.Errorf("Unexpected return from Subdirs(): %d subs, %d parse errors, err=%v", len(subs), countParseErrors(subs), err)
+	}
+}
+
+func TestDirFileFor(t *testing.T) {
+	dir := getDir(t, "testdata/host/db")
+
+	// test FileFor with an object that does not yet exist: it should still return
+	// an SQLFile based on the object's default location, but with zero statements
+	key := tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: "doesnt_exist"}
+	sf := dir.FileFor(key)
+	if sf == nil {
+		t.Error("Dir.FileFor unexpectedly returned nil SQLFile")
+	} else if len(sf.Statements) > 0 {
+		t.Errorf("Expected new SQLFile to have 0 statements, but instead found %d", len(sf.Statements))
+	}
+
+	// test FileFor with an object that already exists: it should return an SQLFile
+	// with one statement
+	key.Name = "comments"
+	sf = dir.FileFor(key)
+	if sf == nil {
+		t.Fatal("Dir.FileFor unexpectedly returned nil SQLFile")
+	} else if len(sf.Statements) != 1 {
+		t.Fatalf("Expected SQLFile to have 1 statement, but instead found %d", len(sf.Statements))
+	}
+
+	// test FileFor with a statement: its return should be based on the File field
+	// of the statement, returning back a pointer to the exact same SQLFile
+	stmt := sf.Statements[0]
+	if sf2 := dir.FileFor(stmt); sf2 != sf {
+		t.Errorf("Unexpected return from FileFor on a statement: expected %+v, found %+v", sf, sf2)
+	}
+
+	// Artificially manipulate the statement: change its name and empty its file
+	// field. FileFor should fall back to the object's default location.
+	origName := stmt.ObjectName
+	stmt.ObjectName += "2"
+	stmt.Text = strings.Replace(stmt.Text, origName, stmt.ObjectName, 1)
+	stmt.File = ""
+	sf3 := dir.FileFor(stmt)
+	if expectedPath := strings.Replace(sf.FilePath, origName, stmt.ObjectName, 1); expectedPath != sf3.FilePath {
+		t.Errorf("Expected return from FileFor to have path %s, instead found %s", expectedPath, sf3.FilePath)
+	}
+}
+
+func TestDirDirtyFiles(t *testing.T) {
+	dir := getDir(t, "testdata/host/db")
+
+	// Expect no dirty file initially
+	if dirties := dir.DirtyFiles(); len(dirties) > 0 {
+		t.Errorf("Expected no dirty files initially, instead found %d", len(dirties))
+	}
+
+	// Artificially mark two files as dirty and confirm they are returned now
+	for filePath, sf := range dir.SQLFiles {
+		if strings.HasSuffix(filePath, "comments.sql") || strings.HasSuffix(filePath, "posts.sql") {
+			sf.Dirty = true
+		}
+	}
+	if dirties := dir.DirtyFiles(); len(dirties) != 2 {
+		t.Errorf("Expected 2 dirty files, instead found %d", len(dirties))
+	} else if dirties[0].FilePath == dirties[1].FilePath {
+		t.Error("Same file returned twice by dir.DirtyFiles()")
+	} else {
+		for _, sf := range dirties {
+			if !strings.HasSuffix(sf.FilePath, "comments.sql") && !strings.HasSuffix(sf.FilePath, "posts.sql") {
+				t.Errorf("Unexpected file returned from dir.DirtyFiles(): %s", sf.FilePath)
+			}
+		}
 	}
 }
 

@@ -1,42 +1,33 @@
 package fs
 
 import (
+	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"unicode"
 
 	"github.com/skeema/skeema/internal/tengo"
 )
 
-// SQLFile represents a file containing zero or more SQL statements.
+// SQLFile represents a file containing SQL statements.
 type SQLFile struct {
-	Dir      string
-	FileName string
-}
-
-// TokenizedSQLFile represents a SQLFile that has been tokenized into
-// statements successfully.
-type TokenizedSQLFile struct {
-	SQLFile
+	FilePath   string
 	Statements []*Statement
+	Dirty      bool
 }
 
-// Path returns the full absolute path to a SQLFile.
-func (sf SQLFile) Path() string {
-	return filepath.Join(sf.Dir, sf.FileName)
+// FileName returns the file name of sqlFile without its directory path.
+func (sqlFile *SQLFile) FileName() string {
+	return filepath.Base(sqlFile.FilePath)
 }
 
-func (sf SQLFile) String() string {
-	return sf.Path()
-}
-
-// Exists returns true if sf already exists in the filesystem, false if not.
-func (sf SQLFile) Exists() (bool, error) {
-	_, err := os.Stat(sf.Path())
+// Exists returns true if sqlFile already exists in the filesystem, false if not.
+func (sqlFile *SQLFile) Exists() (bool, error) {
+	_, err := os.Stat(sqlFile.FilePath)
 	if err == nil {
 		return true, nil
 	} else if os.IsNotExist(err) {
@@ -45,112 +36,168 @@ func (sf SQLFile) Exists() (bool, error) {
 	return false, err
 }
 
-// Create writes a new file, erroring if it already exists.
-func (sf SQLFile) Create(contents string) error {
-	if exists, err := sf.Exists(); err != nil {
-		return err
-	} else if exists {
-		return fmt.Errorf("Cannot create %s: already exists", sf)
-	}
-	return ioutil.WriteFile(sf.Path(), []byte(contents), 0666)
-}
-
 // Delete unlinks the file.
-func (sf SQLFile) Delete() error {
-	return os.Remove(sf.Path())
+func (sqlFile *SQLFile) Delete() error {
+	return os.Remove(sqlFile.FilePath)
 }
 
-// Tokenize reads the file and splits it into statements, returning a
-// TokenizedSQLFile that wraps sf with the statements added. Statements preserve
-// their whitespace and semicolons; the return value exactly represents the
-// entire file. Some of the returned "statements" may just be comments and/or
-// whitespace, since any comments and/or whitespace between SQL statements gets
-// split into separate Statement values.
-func (sf SQLFile) Tokenize() (*TokenizedSQLFile, error) {
-	tokenizer := newStatementTokenizer(sf.Path(), ";")
-	statements, err := tokenizer.statements()
-
-	// As a special case, if a file contains a single routine but no DELIMITER
-	// command, re-parse it as a single statement. This avoids user error from
-	// lack of DELIMITER usage in a multi-statement routine.
-	tryReparse := true
-	var seenRoutine, unknownAfterRoutine bool
-	for _, stmt := range statements {
-		switch stmt.Type {
-		case StatementTypeNoop:
-			// nothing to do for StatementTypeNoop, just excluding it from the default case
-		case StatementTypeCreate:
-			if !seenRoutine && stmt.isCreateWithBegin() {
-				seenRoutine = true
-			} else {
-				tryReparse = false
-			}
-		case StatementTypeUnknown:
-			if seenRoutine {
-				unknownAfterRoutine = true
-			}
-		default:
-			tryReparse = false
-		}
-		if !tryReparse {
-			break
-		}
-	}
-	if seenRoutine && unknownAfterRoutine && tryReparse {
-		tokenizer := newStatementTokenizer(sf.Path(), "\000")
-		if statements2, err2 := tokenizer.statements(); err2 == nil {
-			statements = statements2
-			err = nil
-		}
-	}
-	return NewTokenizedSQLFile(sf, statements), err
-}
-
-// WriteStatements writes (or re-writes) the file using the contents of the
-// supplied statements. The number of bytes written is returned.
-func (sf SQLFile) WriteStatements(statements []*Statement) (int, error) {
-	lines := make([]string, len(statements))
-	for n := range statements {
-		lines[n] = string(statements[n].Text)
-	}
-	value := strings.Join(lines, "")
-	err := ioutil.WriteFile(sf.Path(), []byte(value), 0666)
-	if err != nil {
-		return 0, err
-	}
-	return len(value), nil
-}
-
-// NewTokenizedSQLFile creates a TokenizedSQLFile whose statements have a
-// FromFile pointer linking back to the TokenizedSQLFile. This permits easy
-// mutation of the statements and rewriting of the file.
-func NewTokenizedSQLFile(sf SQLFile, statements []*Statement) *TokenizedSQLFile {
-	result := &TokenizedSQLFile{
-		SQLFile:    sf,
-		Statements: statements,
-	}
-	for _, stmt := range statements {
-		stmt.FromFile = result
-	}
-	return result
-}
-
-// Rewrite rewrites the SQLFile with the current statements, returning the
-// number of bytes written. If the file's statements now only consist of
+// Write creates or replaces the SQLFile with the current statements, returning
+// the number of bytes written. If the file's statements now only consist of
 // comments, whitespace, and commands (e.g. USE, DELIMITER) then the file will
-// be deleted instead, and a length of 0 will be returned.
-func (tsf *TokenizedSQLFile) Rewrite() (int, error) {
+// be deleted instead, and a length of 0 will be returned. The file will be
+// unmarked as dirty if the operation was successful.
+func (sqlFile *SQLFile) Write() (n int, err error) {
+	var b bytes.Buffer
 	var keepFile bool
-	for _, stmt := range tsf.Statements {
+	for _, stmt := range sqlFile.Statements {
+		b.WriteString(stmt.Text)
 		if stmt.Type != StatementTypeNoop && stmt.Type != StatementTypeCommand {
 			keepFile = true
-			break
 		}
 	}
 	if keepFile {
-		return tsf.WriteStatements(tsf.Statements)
+		n, err = b.Len(), os.WriteFile(sqlFile.FilePath, b.Bytes(), 0666)
+	} else {
+		err = sqlFile.Delete()
 	}
-	return 0, tsf.Delete()
+	if err == nil {
+		sqlFile.Dirty = false
+	}
+	return n, err
+}
+
+// AddCreateStatement appends a CREATE statement to the file's list of
+// statements, using the supplied create statement string. create should not
+// include a delimiter or trailing newline.
+// This method marks the file as dirty, but does not rewrite the file.
+func (sqlFile *SQLFile) AddCreateStatement(key tengo.ObjectKey, create string) {
+	// Prune any trailing DELIMITER or USE commands from the file, as these have
+	// no effect anyway.
+	for len(sqlFile.Statements) > 0 && sqlFile.Statements[len(sqlFile.Statements)-1].Type == StatementTypeCommand {
+		sqlFile.Statements = sqlFile.Statements[:len(sqlFile.Statements)-1]
+	}
+
+	// If there are any statements left, examine the last statement to see what
+	// the delimiter and default database are at the end of the file.
+	currentDelimiter := ";"
+	var defaultDatabase string
+	if len(sqlFile.Statements) > 0 {
+		currentDelimiter = sqlFile.Statements[len(sqlFile.Statements)-1].Delimiter
+		defaultDatabase = sqlFile.Statements[len(sqlFile.Statements)-1].DefaultDatabase
+	}
+
+	makeDelimiterCommand := func(newDelim string) *Statement {
+		stmt := &Statement{
+			File:            sqlFile.FilePath,
+			Text:            "DELIMITER " + newDelim + "\n",
+			DefaultDatabase: defaultDatabase,
+			Type:            StatementTypeCommand,
+			Delimiter:       "\000",
+		}
+		currentDelimiter = newDelim
+		return stmt
+	}
+
+	if NeedSpecialDelimiter(key, create) {
+		if currentDelimiter == ";" {
+			sqlFile.Statements = append(sqlFile.Statements, makeDelimiterCommand("//"))
+		}
+		create += "//\n"
+	} else {
+		if currentDelimiter != ";" {
+			sqlFile.Statements = append(sqlFile.Statements, makeDelimiterCommand(";"))
+		}
+		create += ";\n"
+	}
+	sqlFile.Statements = append(sqlFile.Statements, &Statement{
+		File:            sqlFile.FilePath,
+		Text:            create,
+		DefaultDatabase: defaultDatabase,
+		Type:            StatementTypeCreate,
+		ObjectType:      key.Type,
+		ObjectName:      key.Name,
+		Delimiter:       currentDelimiter,
+	})
+	if currentDelimiter != ";" {
+		sqlFile.Statements = append(sqlFile.Statements, makeDelimiterCommand(";"))
+	}
+
+	sqlFile.Dirty = true
+}
+
+// EditStatementText sets stmt.Text to a new value consisting of newText plus
+// an appropriate delimiter and newline. It marks the file as dirty, and (if
+// needed) adds DELIMITER commands around stmt in the file's list of statements.
+// The supplied newText should NOT have a delimiter or trailing newline. This
+// method panics if stmt's address is not actually found among the file's
+// statement pointers slice.
+func (sqlFile *SQLFile) EditStatementText(stmt *Statement, newText string) {
+	prevSpecialDelim := (stmt.Delimiter != ";")
+	newSpecialDelim := NeedSpecialDelimiter(stmt.ObjectKey(), newText)
+	sqlFile.Dirty = true
+	i := sqlFile.statementIndex(stmt)
+
+	// TODO: remove extraneous DELIMITER commands if they are unnecessary.
+	// currently we only add them if needed, but never remove them, nor avoid
+	// introducing duplicate ones in a multi-statement file.
+	if prevSpecialDelim || !newSpecialDelim {
+		_, oldFooter := stmt.SplitTextBody()
+		stmt.Text = newText + oldFooter
+		return
+	}
+
+	newStatements := make([]*Statement, len(sqlFile.Statements)+2)
+	copy(newStatements, sqlFile.Statements[0:i])
+	newStatements[i] = &Statement{
+		File:            sqlFile.FilePath,
+		Text:            "DELIMITER //\n",
+		DefaultDatabase: stmt.DefaultDatabase,
+		Type:            StatementTypeCommand,
+		Delimiter:       "\000",
+	}
+	stmt.Delimiter = "//"
+	stmt.Text = newText + "//\n"
+	newStatements[i+1] = stmt
+	newStatements[i+2] = &Statement{
+		File:            sqlFile.FilePath,
+		Text:            "DELIMITER ;\n",
+		DefaultDatabase: stmt.DefaultDatabase,
+		Type:            StatementTypeCommand,
+		Delimiter:       "\000",
+	}
+	copy(newStatements[i+3:], sqlFile.Statements[i+1:])
+	sqlFile.Statements = newStatements
+}
+
+// RemoveStatement removes stmt from the file's in-memory list of statements,
+// and marks the file as dirty. Panics if the address of stmt is not actually
+// found in its expected file's in-memory representation.
+func (sqlFile *SQLFile) RemoveStatement(stmt *Statement) {
+	i := sqlFile.statementIndex(stmt)
+	sqlFile.Dirty = true
+	copy(sqlFile.Statements[i:], sqlFile.Statements[i+1:])
+	sqlFile.Statements[len(sqlFile.Statements)-1] = nil
+	sqlFile.Statements = sqlFile.Statements[:len(sqlFile.Statements)-1]
+}
+
+func (sqlFile *SQLFile) statementIndex(stmt *Statement) int {
+	for n := range sqlFile.Statements {
+		if sqlFile.Statements[n] == stmt {
+			return n
+		}
+	}
+	panic(fmt.Errorf("Statement previously at %s not actually found in file", stmt.Location()))
+}
+
+// NormalizeFileName forces name to lowercase on operating systems that
+// traditionally have case-insensitive operating systems. This is intended for
+// use in string-keyed maps, to avoid the possibility of having multiple
+// distinct map keys which actually refer to the same file.
+func NormalizeFileName(name string) string {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+		return strings.ToLower(name)
+	}
+	return name
 }
 
 // FileNameForObject returns a string containing the filename to use for the
@@ -162,7 +209,7 @@ func FileNameForObject(objectName string) string {
 	if objectName == "" {
 		objectName = "symbols"
 	}
-	return fmt.Sprintf("%s.sql", objectName)
+	return NormalizeFileName(objectName) + ".sql"
 }
 
 // PathForObject returns a string containing a path to use for the SQLFile
@@ -190,29 +237,6 @@ func removeSpecialChars(r rune) rune {
 		}
 	}
 	return r
-}
-
-// AppendToFile appends the supplied string to the file at the given path. If the
-// file already exists and is not newline-terminated, a newline will be added
-// before contents are appended. If the file does not exist, it will be created.
-func AppendToFile(filePath, contents string) (bytesWritten int, created bool, err error) {
-	_, err = os.Stat(filePath)
-	if os.IsNotExist(err) {
-		return len(contents), true, ioutil.WriteFile(filePath, []byte(contents), 0666)
-	} else if err != nil {
-		return
-	}
-
-	byteContents, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return 0, false, fmt.Errorf("%s: Cannot append: %s", filePath, err)
-	}
-	var whitespace string
-	if len(byteContents) > 0 && byteContents[len(byteContents)-1] != '\n' {
-		whitespace = "\n"
-	}
-	newContents := fmt.Sprintf("%s%s%s", string(byteContents), whitespace, contents)
-	return len(newContents), false, ioutil.WriteFile(filePath, []byte(newContents), 0666)
 }
 
 var reIsMultiStatement = regexp.MustCompile(`(?is)begin.*;.*end`)

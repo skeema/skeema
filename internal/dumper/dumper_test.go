@@ -2,7 +2,6 @@ package dumper
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -256,7 +255,7 @@ func (s *IntegrationSuite) reparseScratchDir(t *testing.T) {
 	}
 	if s.d.Flavor().OmitIntDisplayWidth() || s.d.Flavor().AlwaysShowCollate() {
 		for _, sqlFile := range dir.SQLFiles {
-			contents, err := ioutil.ReadFile(sqlFile.Path())
+			contents, err := os.ReadFile(sqlFile.FilePath)
 			if err != nil {
 				t.Fatalf("Unexpected error from ReadFile: %v", err)
 			}
@@ -269,7 +268,7 @@ func (s *IntegrationSuite) reparseScratchDir(t *testing.T) {
 				newContents = strings.ReplaceAll(newContents, "DEFAULT CHARSET=latin1\n", "DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci\n")
 			}
 			if newContents != string(contents) {
-				err := ioutil.WriteFile(sqlFile.Path(), []byte(newContents), 0777)
+				err := os.WriteFile(sqlFile.FilePath, []byte(newContents), 0777)
 				if err != nil {
 					t.Fatalf("Unexpected error from WriteFile: %v", err)
 				}
@@ -297,13 +296,14 @@ func (s *IntegrationSuite) verifyDumperResult(t *testing.T, subdir string) {
 	if len(s.scratchDir.SQLFiles) != len(goldenDir.SQLFiles) {
 		t.Errorf("Differing count of *.sql files between %s and %s", s.scratchDir, goldenDir)
 	} else {
-		for n := range s.scratchDir.SQLFiles {
-			if s.scratchDir.SQLFiles[n].FileName != goldenDir.SQLFiles[n].FileName {
-				t.Errorf("Differing file name at position[%d]: %s vs %s", n, s.scratchDir.SQLFiles[n].FileName, goldenDir.SQLFiles[n].FileName)
+		for filePath := range s.scratchDir.SQLFiles {
+			goldenPath := filepath.Join(goldenDir.Path, filepath.Base(filePath))
+			if goldenDir.SQLFiles[goldenPath] == nil {
+				t.Errorf("Unexpected file at path %s", filePath)
 				break
 			}
-			actualContents := fs.ReadTestFile(t, s.scratchDir.SQLFiles[n].Path())
-			expectContents := fs.ReadTestFile(t, goldenDir.SQLFiles[n].Path())
+			actualContents := fs.ReadTestFile(t, filePath)
+			expectContents := fs.ReadTestFile(t, goldenPath)
 			if s.d.Flavor().OmitIntDisplayWidth() {
 				expectContents = stripDisplayWidth(expectContents)
 			}
@@ -312,7 +312,7 @@ func (s *IntegrationSuite) verifyDumperResult(t *testing.T, subdir string) {
 				expectContents = strings.ReplaceAll(expectContents, "DEFAULT CHARSET=latin1\n", "DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci\n")
 			}
 			if actualContents != expectContents {
-				t.Errorf("Mismatch for contents of %s:\n%s:\n%s\n\n%s:\n%s\n", s.scratchDir.SQLFiles[n].FileName, s.scratchDir, actualContents, goldenDir, expectContents)
+				t.Errorf("Mismatch for contents of %s:\n%s:\n%s\n\n%s:\n%s\n", filePath, s.scratchDir, actualContents, goldenDir, expectContents)
 			}
 		}
 	}

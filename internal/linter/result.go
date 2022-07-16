@@ -187,7 +187,7 @@ func (r *Result) AnnotateMixedSchemaNames(dir *fs.Dir, opts Options) {
 		return
 	}
 
-	for _, stmt := range dir.NamedSchemaStatements() {
+	for _, stmt := range dir.NamedSchemaStatements {
 		if opts.shouldIgnore(stmt.ObjectKey()) {
 			continue
 		}

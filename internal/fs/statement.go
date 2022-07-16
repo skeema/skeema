@@ -45,9 +45,8 @@ type Statement struct {
 	ObjectType      tengo.ObjectType
 	ObjectName      string
 	ObjectQualifier string
-	FromFile        *TokenizedSQLFile
 	Error           error // any problem lexing or parsing this statement, populated when Type is StatementTypeUnknown, StatementTypeLexError, or StatementTypeForbidden
-	delimiter       string
+	Delimiter       string
 	nameClause      string // raw version, potentially with schema name qualifier and/or surrounding backticks; also any trailing whitespace/comments
 }
 
@@ -99,24 +98,9 @@ func (stmt *Statement) SplitTextBody() (body string, suffix string) {
 		return "", ""
 	}
 	body = strings.TrimRight(stmt.Text, "\n\r\t ")
-	body = strings.TrimSuffix(body, stmt.delimiter)
+	body = strings.TrimSuffix(body, stmt.Delimiter)
 	body = strings.TrimRight(body, "\n\r\t ")
 	return body, stmt.Text[len(body):]
-}
-
-// Remove removes the statement from the list of statements in stmt.FromFile.
-// It does not rewrite the file though.
-func (stmt *Statement) Remove() {
-	for i, comp := range stmt.FromFile.Statements {
-		if stmt == comp {
-			// from go wiki slicetricks -- delete slice element without leaking memory
-			copy(stmt.FromFile.Statements[i:], stmt.FromFile.Statements[i+1:])
-			stmt.FromFile.Statements[len(stmt.FromFile.Statements)-1] = nil
-			stmt.FromFile.Statements = stmt.FromFile.Statements[:len(stmt.FromFile.Statements)-1]
-			return
-		}
-	}
-	panic(fmt.Errorf("Statement previously at %s not actually found in file", stmt.Location()))
 }
 
 // isCreateWithBegin is useful for identifying multi-line statements that may
@@ -135,6 +119,53 @@ func CanParse(input string) (bool, error) {
 	sqlStmt := &sqlStatement{}
 	err := nameParser.ParseString(input, sqlStmt)
 	return err == nil && !sqlStmt.forbidden(), err
+}
+
+// ParseStatementsInFile splits the contents of the supplied file path into
+// distinct SQL statements. Statements preserve their whitespace and semicolons;
+// the return value exactly represents the entire file. Some of the returned
+// "statements" may just be comments and/or whitespace, since any comments and/
+// or whitespace between SQL statements gets split into separate Statement
+// values. The starting statement delimiter is supplied, but may be changed as
+// DELIMITER commands are encountered in the input.
+func ParseStatementsInFile(filePath, delimiter string) (result []*Statement, err error) {
+	tokenizer := newStatementTokenizer(filePath, delimiter)
+	result, err = tokenizer.statements()
+
+	// As a special case, if a file contains a single routine but no DELIMITER
+	// command, re-parse it as a single statement. This avoids user error from
+	// lack of DELIMITER usage in a multi-statement routine.
+	tryReparse := true
+	var seenRoutine, unknownAfterRoutine bool
+	for _, stmt := range result {
+		switch stmt.Type {
+		case StatementTypeNoop:
+			// nothing to do for StatementTypeNoop, just excluding it from the default case
+		case StatementTypeCreate:
+			if !seenRoutine && stmt.isCreateWithBegin() {
+				seenRoutine = true
+			} else {
+				tryReparse = false
+			}
+		case StatementTypeUnknown:
+			if seenRoutine {
+				unknownAfterRoutine = true
+			}
+		default:
+			tryReparse = false
+		}
+		if !tryReparse {
+			break
+		}
+	}
+	if seenRoutine && unknownAfterRoutine && tryReparse {
+		tokenizer := newStatementTokenizer(filePath, "\000")
+		if result2, err2 := tokenizer.statements(); err2 == nil {
+			result = result2
+			err = nil
+		}
+	}
+	return
 }
 
 //////////// lexing/parsing internals from here to end of this file ////////////
@@ -279,7 +310,7 @@ func (st *statementTokenizer) processLine(line string, eof bool) {
 			bufStr := strings.ToLower(ls.buf.String()[0 : bufLen-1])
 			if bufStr == "delimiter" || (bufStr == "use" && !ls.containsDelimiter()) {
 				ls.buf.WriteString(ls.line[ls.pos:])
-				ls.stmt.delimiter = "\000" // prevent SplitTextBody from stripping previous delimiter from command arg
+				ls.stmt.Delimiter = "\000" // prevent SplitTextBody from stripping previous delimiter from command arg
 				ls.doneStatement(0)
 				return
 			}
@@ -366,7 +397,7 @@ func (ls *lineState) beginStatement() {
 		LineNo:          ls.lineNo,
 		CharNo:          ls.charNo,
 		DefaultDatabase: ls.defaultDatabase,
-		delimiter:       ls.delimiter,
+		Delimiter:       ls.delimiter,
 	}
 }
 

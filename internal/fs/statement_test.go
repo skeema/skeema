@@ -60,7 +60,7 @@ func TestStatementSplitTextBody(t *testing.T) {
 		"USE some_db\n\n":                     {"USE some_db", "\n\n"},
 	}
 	for input, expected := range cases {
-		stmt := &Statement{Text: input, delimiter: ";"}
+		stmt := &Statement{Text: input, Delimiter: ";"}
 		actualBody, actualSuffix := stmt.SplitTextBody()
 		if actualBody != expected[0] || actualSuffix != expected[1] {
 			t.Errorf("SplitTextBody on %s: Expected %#v,%#v; found %#v,%#v", input, expected[0], expected[1], actualBody, actualSuffix)
@@ -90,7 +90,7 @@ func TestStatementBody(t *testing.T) {
 		"create definer=foo@'localhost' /*lol*/ FUNCTION `funcdefquote3`() RETURNS int RETURN 42": true,
 	}
 	for n, stmt := range statements {
-		stmt.delimiter = ";"
+		stmt.Delimiter = ";"
 		body := stmt.Body()
 		if !allowedBodies[body] {
 			t.Errorf("Unexpected Body() result for statement[%d]: %q", n, body)

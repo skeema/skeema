@@ -301,22 +301,24 @@ func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
 	if len(productDir.SQLFiles) < 4 {
 		t.Fatalf("Unable to obtain *.sql files from %s", productDir)
 	}
+	var commentsFilePath string
 	rewriteFiles := func(includeSyntaxError bool) {
-		for n, sf := range productDir.SQLFiles {
-			contents := fs.ReadTestFile(t, sf.Path())
-			switch n {
-			case 0:
+		for _, sf := range productDir.SQLFiles {
+			contents := fs.ReadTestFile(t, sf.FilePath)
+			switch sf.FileName() {
+			case "comments.sql":
+				commentsFilePath = sf.FilePath
 				if includeSyntaxError {
 					contents = strings.Replace(contents, "DEFAULT", "DEFALUT", 1)
 				}
-			case 1:
+			case "posts.sql":
 				contents = strings.ToLower(contents)
-			case 2:
+			case "subscriptions.sql":
 				contents = strings.Replace(contents, "`", "", -1)
-			case 3:
+			case "users.sql":
 				contents = strings.Replace(contents, " ", "  ", -1)
 			}
-			fs.WriteTestFile(t, sf.Path(), contents)
+			fs.WriteTestFile(t, sf.FilePath, contents)
 		}
 	}
 	rewriteFiles(false)
@@ -333,14 +335,14 @@ func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
 	// Manually restore the file with invalid SQL; the files should now verify,
 	// confirming that the fatal error did not prevent the other files from being
 	// reformatted; re-linting should yield no changes.
-	contents := fs.ReadTestFile(t, productDir.SQLFiles[0].Path())
-	fs.WriteTestFile(t, productDir.SQLFiles[0].Path(), strings.Replace(contents, "DEFALUT", "DEFAULT", 1))
+	contents := fs.ReadTestFile(t, commentsFilePath)
+	fs.WriteTestFile(t, commentsFilePath, strings.Replace(contents, "DEFALUT", "DEFAULT", 1))
 	s.verifyFiles(t, cfg, "../golden/init")
 	s.handleCommand(t, CodeSuccess, ".", "skeema lint")
 
 	// Files with SQL statements unsupported by this package should yield a
 	// warning, resulting in CodeDifferencesFound
-	fs.WriteTestFile(t, productDir.SQLFiles[0].Path(), "INSERT INTO foo (col1, col2) VALUES (123, 456)")
+	fs.WriteTestFile(t, commentsFilePath, "INSERT INTO foo (col1, col2) VALUES (123, 456)")
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint")
 
 	// Directories that have invalid options should yield CodeBadConfig
@@ -370,22 +372,24 @@ func (s SkeemaIntegrationSuite) TestFormatHandler(t *testing.T) {
 	if len(productDir.SQLFiles) < 4 {
 		t.Fatalf("Unable to obtain *.sql files from %s", productDir)
 	}
+	var commentsFilePath string
 	rewriteFiles := func(includeSyntaxError bool) {
-		for n, sf := range productDir.SQLFiles {
-			contents := fs.ReadTestFile(t, sf.Path())
-			switch n {
-			case 0:
+		for _, sf := range productDir.SQLFiles {
+			contents := fs.ReadTestFile(t, sf.FilePath)
+			switch sf.FileName() {
+			case "comments.sql":
+				commentsFilePath = sf.FilePath
 				if includeSyntaxError {
 					contents = strings.Replace(contents, "DEFAULT", "DEFALUT", 1)
 				}
-			case 1:
+			case "posts.sql":
 				contents = strings.ToLower(contents)
-			case 2:
+			case "subscriptions.sql":
 				contents = strings.Replace(contents, "`", "", -1)
-			case 3:
+			case "users.sql":
 				contents = strings.Replace(contents, " ", "  ", -1)
 			}
-			fs.WriteTestFile(t, sf.Path(), contents)
+			fs.WriteTestFile(t, sf.FilePath, contents)
 		}
 	}
 	rewriteFiles(false)
@@ -404,14 +408,14 @@ func (s SkeemaIntegrationSuite) TestFormatHandler(t *testing.T) {
 	// Manually restore the file with invalid SQL; the files should now verify,
 	// confirming that the fatal error did not prevent the other files from being
 	// reformatted; re-formatting again should yield no changes.
-	contents := fs.ReadTestFile(t, productDir.SQLFiles[0].Path())
-	fs.WriteTestFile(t, productDir.SQLFiles[0].Path(), strings.Replace(contents, "DEFALUT", "DEFAULT", 1))
+	contents := fs.ReadTestFile(t, commentsFilePath)
+	fs.WriteTestFile(t, commentsFilePath, strings.Replace(contents, "DEFALUT", "DEFAULT", 1))
 	s.verifyFiles(t, cfg, "../golden/init")
 	s.handleCommand(t, CodeSuccess, ".", "skeema format")
 
 	// Files with SQL statements unsupported by this package should not affect
 	// exit code
-	fs.WriteTestFile(t, productDir.SQLFiles[0].Path(), "INSERT INTO foo (col1, col2) VALUES (123, 456)")
+	fs.WriteTestFile(t, commentsFilePath, "INSERT INTO foo (col1, col2) VALUES (123, 456)")
 	s.handleCommand(t, CodeSuccess, ".", "skeema format --debug")
 
 	// Directories that have invalid options should yield CodeBadConfig

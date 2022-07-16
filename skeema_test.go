@@ -330,9 +330,11 @@ func (s *SkeemaIntegrationSuite) compareDirSQLFiles(t *testing.T, a, b *fs.Dir) 
 	if len(a.SQLFiles) != len(b.SQLFiles) {
 		t.Errorf("Differing count of *.sql files between %s and %s", a, b)
 	} else {
-		for n := range a.SQLFiles {
-			if a.SQLFiles[n].FileName != b.SQLFiles[n].FileName {
-				t.Errorf("Differing file name at position[%d]: %s vs %s", n, a.SQLFiles[n].FileName, b.SQLFiles[n].FileName)
+		for _, sqlFile := range a.SQLFiles {
+			base := sqlFile.FileName()
+			bFilePath := filepath.Join(b.Path, base)
+			if _, ok := b.SQLFiles[bFilePath]; !ok {
+				t.Errorf("File %s was found in %s, but not in %s", base, a, b)
 			}
 		}
 	}
