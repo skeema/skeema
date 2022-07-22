@@ -577,20 +577,29 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 		if td.To.UnsupportedDDL {
 			return "", &UnsupportedDiffError{
 				ObjectKey:      td.ObjectKey(),
+				Reason:         "The desired state (\"to\" side of diff) contains unexpected or unsupported clauses in SHOW CREATE TABLE.",
 				ExpectedCreate: td.To.GeneratedCreateStatement(mods.Flavor),
+				ExpectedDesc:   "desired state expected CREATE",
 				ActualCreate:   td.To.CreateStatement,
+				ActualDesc:     "desired state actual SHOW CREATE",
 			}
 		} else if td.From.UnsupportedDDL {
 			return "", &UnsupportedDiffError{
 				ObjectKey:      td.ObjectKey(),
+				Reason:         "The original state (\"from\" side of diff) contains unexpected or unsupported clauses in SHOW CREATE TABLE.",
 				ExpectedCreate: td.From.GeneratedCreateStatement(mods.Flavor),
+				ExpectedDesc:   "original state expected CREATE",
 				ActualCreate:   td.From.CreateStatement,
+				ActualDesc:     "original state actual SHOW CREATE",
 			}
 		} else {
 			return "", &UnsupportedDiffError{
 				ObjectKey:      td.ObjectKey(),
+				Reason:         "The two sides of the diff vary in SHOW CREATE TABLE in unexpected ways, perhaps due to a bug in Skeema.",
 				ExpectedCreate: td.From.CreateStatement,
+				ExpectedDesc:   "original state actual SHOW CREATE",
 				ActualCreate:   td.To.CreateStatement,
+				ActualDesc:     "desired state actual SHOW CREATE",
 			}
 		}
 	}
@@ -764,8 +773,11 @@ func IsForbiddenDiff(err error) bool {
 // unable to transform the object due to use of unsupported features.
 type UnsupportedDiffError struct {
 	ObjectKey      ObjectKey
+	Reason         string
 	ExpectedCreate string
+	ExpectedDesc   string
 	ActualCreate   string
+	ActualDesc     string
 }
 
 // Error satisfies the builtin error interface.
@@ -779,13 +791,16 @@ func (e *UnsupportedDiffError) ExtendedError() string {
 	diff := difflib.UnifiedDiff{
 		A:        difflib.SplitLines(e.ExpectedCreate),
 		B:        difflib.SplitLines(e.ActualCreate),
-		FromFile: "Expected CREATE",
-		ToFile:   "MySQL-actual SHOW CREATE",
+		FromFile: e.ExpectedDesc,
+		ToFile:   e.ActualDesc,
 		Context:  0,
 	}
 	diffText, err := difflib.GetUnifiedDiffString(diff)
 	if err != nil {
 		return err.Error()
+	}
+	if e.Reason != "" {
+		diffText = e.Reason + "\n" + diffText
 	}
 	return diffText
 }

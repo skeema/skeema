@@ -650,8 +650,17 @@ func TestTableDiffUnsupportedAlter(t *testing.T) {
 	t1 := supportedTable()
 	t2 := unsupportedTable()
 
-	assertUnsupported := func(td *TableDiff) {
+	assertUnsupported := func(reverse bool) {
 		t.Helper()
+		var td *TableDiff
+		var subject, side string
+		if reverse { // unsupported table is on "from" side
+			td = NewAlterTable(&t2, &t1)
+			subject, side = "original state", "from"
+		} else { // unsupported table is on "to" side
+			td = NewAlterTable(&t1, &t2)
+			subject, side = "desired state", "to"
+		}
 		if td.supported {
 			t.Fatal("Expected diff to be unsupported, but it isn't")
 		}
@@ -663,23 +672,23 @@ func TestTableDiffUnsupportedAlter(t *testing.T) {
 			t.Fatalf("Expected unsupported diff error, instead err=%v", err)
 		}
 
-		// Confirm extended error message. Regardless of whether the unsupported
-		// table was on the "to" or "from" side, the message should show what part
-		// of the unsupported table triggered the issue.
+		// Confirm extended error message, which should show what part of the
+		// unsupported diff triggered the issue.
 		extended := err.(*UnsupportedDiffError).ExtendedError()
-		expected := `--- Expected CREATE
-+++ MySQL-actual SHOW CREATE
+		expected := fmt.Sprintf(`The %s (%q side of diff) contains unexpected or unsupported clauses in SHOW CREATE TABLE.
+--- %s expected CREATE
++++ %s actual SHOW CREATE
 @@ -8,0 +9,2 @@
 +SUBPARTITION BY HASH (post_id)
 +SUBPARTITIONS 2
-`
+`, subject, side, subject, subject)
 		if expected != extended {
 			t.Errorf("Output of ExtendedError() did not match expectation. Returned value:\n%s", extended)
 		}
 	}
 
-	assertUnsupported(NewAlterTable(&t1, &t2))
-	assertUnsupported(NewAlterTable(&t2, &t1))
+	assertUnsupported(false)
+	assertUnsupported(true)
 }
 
 func TestTableDiffClauses(t *testing.T) {

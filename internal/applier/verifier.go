@@ -1,7 +1,9 @@
 package applier
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
@@ -13,7 +15,7 @@ import (
 // bring a table from the version currently in the instance to the version
 // specified in the filesystem.
 func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
-	if !wantVerify(diff, t) {
+	if !t.Dir.Config.GetBool("verify") || len(diff.TableDiffs) == 0 || t.briefOutput() {
 		return nil
 	}
 
@@ -55,11 +57,14 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 		Creates:   make(map[tengo.ObjectKey]*fs.Statement),
 		Alters:    make([]*fs.Statement, 0),
 	}
-	expected := make(map[string]*tengo.Table)
+	desiredTables := make(map[string]*tengo.Table)
 	for _, td := range altersInDiff {
 		stmt, err := td.Statement(mods)
 		if stmt != "" && err == nil {
-			expected[td.From.Name] = td.To
+			// Note: sometimes a table's diff gets split into multiple ALTERs, but this
+			// logic can ignore that fact. If there are redundant AddStatement calls for
+			// one CREATE, the first AddStatement for that CREATE succeeds and the
+			// subsequent duplicate CREATEs error, but that is harmless in this code path!
 			logicalSchema.AddStatement(&fs.Statement{
 				Type:       fs.StatementTypeCreate,
 				Text:       td.From.CreateStatement,
@@ -72,6 +77,7 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 				ObjectType: tengo.ObjectTypeTable,
 				ObjectName: td.From.Name,
 			})
+			desiredTables[td.From.Name] = td.To
 		}
 	}
 
@@ -99,42 +105,33 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 	mods.StrictColumnDefinition = false
 	mods.AlgorithmClause = ""
 	actualTables := wsSchema.TablesByName()
-	for name, toTable := range expected {
-		if err := verifyTable(toTable, actualTables[name], mods); err != nil {
+	for name, desiredTable := range desiredTables {
+		if err := verifyTable(actualTables[name], desiredTable, mods); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func wantVerify(diff *tengo.SchemaDiff, t *Target) bool {
-	return t.Dir.Config.GetBool("verify") && len(diff.TableDiffs) > 0 && !t.briefOutput()
-}
-
 // verifyTable confirms that a table has the expected structure by doing an
 // additional diff. Typically this diff will return quickly based on SHOW CREATE
 // TABLE matching, but if they don't match (as happens with some MySQL 8 edge-
-// cases) it will do a full structural comparison of the tables' fields.
-func verifyTable(expected, actual *tengo.Table, mods tengo.StatementModifiers) error {
-	makeVerifyError := func() error {
-		return fmt.Errorf("Diff verification failure on table %s\n\nEXPECTED POST-ALTER:\n%s\n\nACTUAL POST-ALTER:\n%s\n\nRun command again with --skip-verify if this discrepancy is safe to ignore", expected.Name, expected.CreateStatement, actual.CreateStatement)
-	}
-	alterClauses, supported := expected.Diff(actual)
-
-	// supported will be false if either table cannot be introspected properly, or
-	// if the SHOW CREATE TABLEs don't match but the diff logic can't figure out
-	// how/why. These situations would indicate bugs, so verification fails.
-	if !supported {
-		return makeVerifyError()
-	}
-
-	// If any clauses were emitted, fail verification if any are non-blank. Blank
-	// clauses are fine tho, as they are expected in a few cases, such as partition
-	// list differences or MySQL 8 superfluous charset/collate clause differences.
-	for _, clause := range alterClauses {
-		if clause.Clause(mods) != "" {
-			return makeVerifyError()
-		}
+// cases) it will do a full structural comparison of the tables' fields. If this
+// second diff returns a non-empty ALTER, an error, or an unsupported diff, it
+// means the first diff did not properly do its job, so verification fails.
+func verifyTable(actual, desired *tengo.Table, mods tengo.StatementModifiers) error {
+	var unsupportedErr *tengo.UnsupportedDiffError
+	td := tengo.NewAlterTable(actual, desired)
+	stmt, err := td.Statement(mods)
+	if errors.As(err, &unsupportedErr) {
+		unsupportedErr.Reason = strings.Replace(unsupportedErr.Reason, "original state", "post-verification state", 1)
+		unsupportedErr.ExpectedDesc = strings.Replace(unsupportedErr.ExpectedDesc, "original state", "post-verification state", 1)
+		unsupportedErr.ActualDesc = strings.Replace(unsupportedErr.ActualDesc, "original state", "post-verification state", 1)
+		return fmt.Errorf("Diff verification failure on table %s. This may indicate a Skeema bug.\nRun command again with --skip-verify if this discrepancy is safe to ignore.\nDebug details: %s", desired.Name, unsupportedErr.ExtendedError())
+	} else if err != nil {
+		return fmt.Errorf("Diff verification failure on table %s due to unexpected error: %w.\nRun command again with --skip-verify if this is safe to ignore.", desired.Name, err)
+	} else if stmt != "" {
+		return fmt.Errorf("Diff verification failure on table %s: the generated ALTER TABLE does not fully bring the table to the desired state.\nRun command again with --skip-verify if this discrepancy is safe to ignore.\nDebug details: secondary verification diff is non-empty, yielding this DDL: %s", desired.Name, stmt)
 	}
 	return nil
 }

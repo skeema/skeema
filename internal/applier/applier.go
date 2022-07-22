@@ -4,7 +4,6 @@ package applier
 
 import (
 	"fmt"
-	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/fs"
@@ -102,7 +101,7 @@ func ApplyTarget(t *Target, printer *Printer) (Result, error) {
 			if td, ok := objDiff.(*tengo.TableDiff); ok && td.From != nil && td.From.Engine != "InnoDB" {
 				log.Warnf("This table's storage engine is %s. Skeema is primarily designed to operate on InnoDB tables. Diff support for other engines is less complete.", td.From.Engine)
 			}
-			DebugLogUnsupportedDiff(unsupportedErr)
+			log.Debug(unsupportedErr.ExtendedError())
 		} else {
 			result.SkipCount += len(objDiffs)
 			log.Errorf(err.Error())
@@ -197,16 +196,6 @@ func StatementModifiersForDir(dir *fs.Dir) (mods tengo.StatementModifiers, err e
 	}
 	mods.Partitioning = partMap[partitioning]
 	return
-}
-
-// DebugLogUnsupportedDiff logs (at Debug level) the reason why an object is
-// unsupported for diff/alter operations.
-func DebugLogUnsupportedDiff(err *tengo.UnsupportedDiffError) {
-	for _, line := range strings.Split(err.ExtendedError(), "\n") {
-		if len(line) > 0 {
-			log.Debug(line)
-		}
-	}
 }
 
 // ConfigError represents a configuration problem encountered at runtime.

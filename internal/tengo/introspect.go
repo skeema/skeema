@@ -97,7 +97,9 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 			fixPartitioningEdgeCases(t, flavor)
 		}
 
-		// Avoid issues from data dictionary weirdly caching a NULL next auto-inc
+		// Obtain next AUTO_INCREMENT value from SHOW CREATE TABLE, which avoids
+		// potential problems with information_schema discrepancies
+		_, t.NextAutoIncrement = ParseCreateAutoInc(t.CreateStatement)
 		if t.NextAutoIncrement == 0 && t.HasAutoIncrement() {
 			t.NextAutoIncrement = 1
 		}
@@ -150,13 +152,11 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 		if len(t.Checks) > 0 {
 			fixChecks(t, flavor)
 		}
+
 		// Compare what we expect the create DDL to be, to determine if we support
-		// diffing for the table. Ignore next-auto-increment differences in this
-		// comparison, since the value may have changed between our previous
-		// information_schema introspection and our current SHOW CREATE TABLE call!
-		actual, _ := ParseCreateAutoInc(t.CreateStatement)
-		expected, _ := ParseCreateAutoInc(t.GeneratedCreateStatement(flavor))
-		if actual != expected {
+		// diffing for the table. (No need to remove next AUTO_INCREMENT from this
+		// comparison since the value was parsed from t.CreateStatement earlier.)
+		if t.CreateStatement != t.GeneratedCreateStatement(flavor) {
 			t.UnsupportedDDL = true
 		}
 	}
@@ -168,7 +168,6 @@ func queryTablesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor
 		Name               string         `db:"table_name"`
 		Type               string         `db:"table_type"`
 		Engine             sql.NullString `db:"engine"`
-		AutoIncrement      sql.NullInt64  `db:"auto_increment"`
 		TableCollation     sql.NullString `db:"table_collation"`
 		CreateOptions      sql.NullString `db:"create_options"`
 		Comment            string         `db:"table_comment"`
@@ -177,8 +176,8 @@ func queryTablesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor
 	}
 	query := `
 		SELECT SQL_BUFFER_RESULT
-		       t.table_name AS table_name, t.table_type AS table_type, t.engine AS engine,
-		       t.auto_increment AS auto_increment, t.table_collation AS table_collation,
+		       t.table_name AS table_name, t.table_type AS table_type,
+		       t.engine AS engine, t.table_collation AS table_collation,
 		       t.create_options AS create_options, t.table_comment AS table_comment,
 		       c.character_set_name AS character_set_name, c.is_default AS is_default
 		FROM   information_schema.tables t
@@ -194,6 +193,10 @@ func queryTablesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor
 	tables := make([]*Table, len(rawTables))
 	var havePartitions bool
 	for n, rawTable := range rawTables {
+		// Note that we no longer set Table.NextAutoIncrement here. information_schema
+		// potentially has bad data, e.g. a table without an auto-inc col can still
+		// have a non-NULL tables.auto_increment if the original CREATE specified one.
+		// Instead the value is parsed from SHOW CREATE TABLE in querySchemaTables().
 		tables[n] = &Table{
 			Name:               rawTable.Name,
 			Engine:             rawTable.Engine.String,
@@ -201,9 +204,6 @@ func queryTablesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor
 			Collation:          rawTable.TableCollation.String,
 			CollationIsDefault: rawTable.CollationIsDefault != "",
 			Comment:            rawTable.Comment,
-		}
-		if rawTable.AutoIncrement.Valid {
-			tables[n].NextAutoIncrement = uint64(rawTable.AutoIncrement.Int64)
 		}
 		if rawTable.CreateOptions.Valid && rawTable.CreateOptions.String != "" {
 			if strings.Contains(strings.ToUpper(rawTable.CreateOptions.String), "PARTITIONED") {
