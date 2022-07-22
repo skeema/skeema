@@ -123,15 +123,16 @@ func verifyTable(actual, desired *tengo.Table, mods tengo.StatementModifiers) er
 	var unsupportedErr *tengo.UnsupportedDiffError
 	td := tengo.NewAlterTable(actual, desired)
 	stmt, err := td.Statement(mods)
+	header := "Diff verification failure on table " + desired.Name
 	if errors.As(err, &unsupportedErr) {
 		unsupportedErr.Reason = strings.Replace(unsupportedErr.Reason, "original state", "post-verification state", 1)
 		unsupportedErr.ExpectedDesc = strings.Replace(unsupportedErr.ExpectedDesc, "original state", "post-verification state", 1)
 		unsupportedErr.ActualDesc = strings.Replace(unsupportedErr.ActualDesc, "original state", "post-verification state", 1)
-		return fmt.Errorf("Diff verification failure on table %s. This may indicate a Skeema bug.\nRun command again with --skip-verify if this discrepancy is safe to ignore.\nDebug details: %s", desired.Name, unsupportedErr.ExtendedError())
+		return fmt.Errorf(header+". This may indicate a Skeema bug.\nRun command again with --skip-verify if this discrepancy is safe to ignore.\nDebug details: %s", unsupportedErr.ExtendedError())
 	} else if err != nil {
-		return fmt.Errorf("Diff verification failure on table %s due to unexpected error: %w.\nRun command again with --skip-verify if this is safe to ignore.", desired.Name, err)
+		return fmt.Errorf(header+" due to unexpected error: %w.\nRun command again with --skip-verify if this is safe to ignore.", err)
 	} else if stmt != "" {
-		return fmt.Errorf("Diff verification failure on table %s: the generated ALTER TABLE does not fully bring the table to the desired state.\nRun command again with --skip-verify if this discrepancy is safe to ignore.\nDebug details: secondary verification diff is non-empty, yielding this DDL: %s", desired.Name, stmt)
+		return fmt.Errorf(header+": the generated ALTER TABLE does not fully bring the table to the desired state.\nRun command again with --skip-verify if this discrepancy is safe to ignore.\nDebug details: secondary verification diff is non-empty, yielding this DDL: %s", stmt)
 	}
 	return nil
 }
