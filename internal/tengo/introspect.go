@@ -97,6 +97,9 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 			fixPartitioningEdgeCases(t, flavor)
 		}
 
+		// Obtain TABLESPACE clause from SHOW CREATE TABLE, if present
+		t.Tablespace = ParseCreateTablespace(t.CreateStatement)
+
 		// Obtain next AUTO_INCREMENT value from SHOW CREATE TABLE, which avoids
 		// potential problems with information_schema discrepancies
 		_, t.NextAutoIncrement = ParseCreateAutoInc(t.CreateStatement)

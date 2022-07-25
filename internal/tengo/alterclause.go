@@ -643,6 +643,27 @@ func (cc ChangeComment) Clause(_ StatementModifiers) string {
 	return fmt.Sprintf("COMMENT '%s'", EscapeValueForCreateTable(cc.NewComment))
 }
 
+///// ChangeTablespace /////////////////////////////////////////////////////////
+
+// ChangeTablespace represents a difference in the table's TABLESPACE clause
+// between two versions of a table. It satisfies the TableAlterClause interface.
+type ChangeTablespace struct {
+	NewTablespace string
+}
+
+// Clause returns a clause of an ALTER TABLE statement that changes a table's
+// tablespace.
+func (ct ChangeTablespace) Clause(_ StatementModifiers) string {
+	// Once an explicit tablespace name has been specified, there's no way to
+	// hide it again. Table.Diff will still generate a ChangeTablespace value,
+	// which avoids the "unsupported diff due to no clauses generated" check,
+	// but there's nothing to actually run.
+	if ct.NewTablespace == "" {
+		return ""
+	}
+	return "TABLESPACE " + EscapeIdentifier(ct.NewTablespace)
+}
+
 ///// ChangeStorageEngine //////////////////////////////////////////////////////
 
 // ChangeStorageEngine represents a difference in the table's storage engine.

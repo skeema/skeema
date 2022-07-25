@@ -185,7 +185,9 @@ func flavorTestFiles(flavor Flavor) []string {
 	}
 
 	if flavor.Min(FlavorMySQL57) {
-		result = append(result, "ft-parser.sql") // other flavors may support FT parsers but don't ship with any alternatives
+		// other flavors may support FT parsers but don't ship with any alternatives;
+		// other flavors do not support TABLESPACE clauses in InnoDB tables
+		result = append(result, "ft-parser.sql", "inno-tablespace.sql")
 	}
 
 	if flavor.Min(FlavorPercona56.Dot(33)) {

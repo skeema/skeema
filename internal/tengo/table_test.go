@@ -1190,6 +1190,40 @@ func TestTableAlterChangeComment(t *testing.T) {
 	assertChangeComment(&to, &from, "COMMENT ''")
 }
 
+func TestTableAlterTablespace(t *testing.T) {
+	getTableWithTablespace := func(tablespace string) *Table {
+		t := aTable(123)
+		t.Tablespace = tablespace
+		t.CreateStatement = t.GeneratedCreateStatement(FlavorUnknown)
+		return &t
+	}
+	assertChangeTablespace := func(a, b *Table, expectDiff bool, expectClause string) {
+		t.Helper()
+		tableAlters, supported := a.Diff(b)
+		var expectedCount int
+		if expectDiff {
+			expectedCount++
+		}
+		if len(tableAlters) != expectedCount || !supported {
+			t.Errorf("Incorrect result from Table.Diff(): %d alter clauses, supported=%t", len(tableAlters), supported)
+		} else if expectDiff {
+			if ta, ok := tableAlters[0].(ChangeTablespace); !ok {
+				t.Errorf("Incorrect type of alter returned: expected %T, found %T", ta, tableAlters[0])
+			} else if actual := ta.Clause(StatementModifiers{}); actual != expectClause {
+				t.Errorf("Incorrect ALTER TABLE clause returned: expected %q, found %q", expectClause, actual)
+			}
+		}
+	}
+
+	noTablespace := getTableWithTablespace("")
+	explicitFPT := getTableWithTablespace("innodb_file_per_table")
+	explicitSys := getTableWithTablespace("innodb_system")
+	assertChangeTablespace(noTablespace, explicitFPT, true, "TABLESPACE `innodb_file_per_table`")
+	assertChangeTablespace(explicitFPT, noTablespace, true, "") // no way to remove an explicit tablespace clause, but diff still supported
+	assertChangeTablespace(explicitFPT, explicitFPT, false, "")
+	assertChangeTablespace(explicitFPT, explicitSys, true, "TABLESPACE `innodb_system`")
+}
+
 func TestTableAlterUnsupportedTable(t *testing.T) {
 	from, to := unsupportedTable(), unsupportedTable()
 	newCol := &Column{

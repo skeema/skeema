@@ -21,6 +21,7 @@ type Table struct {
 	ForeignKeys        []*ForeignKey      `json:"foreignKeys,omitempty"`
 	Checks             []*Check           `json:"checks,omitempty"`
 	Comment            string             `json:"comment,omitempty"`
+	Tablespace         string             `json:"tablespace,omitempty"`
 	NextAutoIncrement  uint64             `json:"nextAutoIncrement,omitempty"`
 	Partitioning       *TablePartitioning `json:"partitioning,omitempty"`       // nil if table isn't partitioned
 	UnsupportedDDL     bool               `json:"unsupportedForDiff,omitempty"` // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
@@ -76,6 +77,10 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 	for _, cc := range t.Checks {
 		defs = append(defs, cc.Definition(flavor))
 	}
+	var tablespaceClause string
+	if t.Tablespace != "" {
+		tablespaceClause = fmt.Sprintf(" /*!50100 TABLESPACE %s */", EscapeIdentifier(t.Tablespace))
+	}
 	var autoIncClause string
 	if t.NextAutoIncrement > 1 {
 		autoIncClause = fmt.Sprintf(" AUTO_INCREMENT=%d", t.NextAutoIncrement)
@@ -98,9 +103,10 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 	if t.Comment != "" {
 		comment = fmt.Sprintf(" COMMENT='%s'", EscapeValueForCreateTable(t.Comment))
 	}
-	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n) ENGINE=%s%s DEFAULT CHARSET=%s%s%s%s%s",
+	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n)%s ENGINE=%s%s DEFAULT CHARSET=%s%s%s%s%s",
 		EscapeIdentifier(t.Name),
 		strings.Join(defs, ",\n  "),
+		tablespaceClause,
 		t.Engine,
 		autoIncClause,
 		charSet,
@@ -426,6 +432,11 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// Compare comment
 	if from.Comment != to.Comment {
 		clauses = append(clauses, ChangeComment{NewComment: to.Comment})
+	}
+
+	// Compare tablespace
+	if from.Tablespace != to.Tablespace {
+		clauses = append(clauses, ChangeTablespace{NewTablespace: to.Tablespace})
 	}
 
 	// Compare partitioning. This must be performed last due to a MySQL requirement
