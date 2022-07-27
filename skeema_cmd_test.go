@@ -495,10 +495,12 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 		t.Fatalf("Unexpected error obtaining schema: %s", err)
 	} else {
 		expectCharSet, expectCollation := "utf8", "utf8_swedish_ci"
-		if flavor := s.d.Flavor(); flavor.Min(tengo.FlavorMySQL80.Dot(29)) {
+		mysql8029 := tengo.FlavorMySQL80.Dot(29)
+		if flavor := s.d.Flavor(); flavor.Min(mysql8029) || flavor.Min(tengo.FlavorMariaDB106) {
 			expectCharSet = "utf8mb3"
-		} else if flavor.Min(tengo.FlavorMariaDB106) {
-			expectCharSet, expectCollation = "utf8mb3", "utf8mb3_swedish_ci"
+			if !flavor.Matches(mysql8029) { // MySQL (or variants) of *exactly* 8.0.29 does not update collation names (but 8.0.30+ does)
+				expectCollation = "utf8mb3_swedish_ci"
+			}
 		}
 		if product.CharSet != expectCharSet || product.Collation != expectCollation {
 			t.Errorf("Expected schema should have charset/collation=%s/%s from push1.sql, instead found %s/%s", expectCharSet, expectCollation, product.CharSet, product.Collation)

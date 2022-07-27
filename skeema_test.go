@@ -298,11 +298,12 @@ func (s *SkeemaIntegrationSuite) compareDirOptionFiles(t *testing.T, a, b *fs.Di
 					a.OptionFile.SetOptionValue(section, "default-character-set", instDefCharSet)
 					a.OptionFile.SetOptionValue(section, "default-collation", instDefCollation)
 				} else if fileCharSet == "utf8" {
-					// MySQL 8.0.29 uses "utf8mb3" but keeps collations as-is; MariaDB 10.6
-					// uses "utf8mb3" and also changes collation names to match
-					if flavor := s.d.Flavor(); flavor.Min(tengo.FlavorMySQL80.Dot(29)) || flavor.Min(tengo.FlavorMariaDB106) {
+					// MySQL 8.0.29 uses "utf8mb3" but keeps collations as-is; MySQL 8.0.30+
+					// and MariaDB 10.6+ use "utf8mb3" and also changes collation names to match
+					mysql8029 := tengo.FlavorMySQL80.Dot(29)
+					if flavor := s.d.Flavor(); flavor.Min(mysql8029) || flavor.Min(tengo.FlavorMariaDB106) {
 						a.OptionFile.SetOptionValue(section, "default-character-set", "utf8mb3")
-						if flavor.IsMariaDB() {
+						if !flavor.Matches(mysql8029) {
 							collation, _ := a.OptionFile.OptionValue("default-collation")
 							a.OptionFile.SetOptionValue(section, "default-collation", strings.Replace(collation, "utf8_", "utf8mb3_", 1))
 						}
