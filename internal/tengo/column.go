@@ -137,7 +137,7 @@ func (c *Column) Equivalent(other *Column) bool {
 		return false
 	}
 	// If we didn't return early, we know either TypeInDB didn't change at all, or
-	// it only differs in a cosmetic manner (presence/lack of display width).
+	// it only differs in a cosmetic manner.
 
 	// Make a copy of c, and make all cosmetic-related fields equal to other's, and
 	// then check equality again to determine equivalence.
@@ -145,5 +145,13 @@ func (c *Column) Equivalent(other *Column) bool {
 	selfCopy.TypeInDB = other.TypeInDB
 	selfCopy.ForceShowCharSet = other.ForceShowCharSet
 	selfCopy.ForceShowCollation = other.ForceShowCollation
+	if (other.CharSet == "utf8mb3" && c.CharSet == "utf8") || (other.CharSet == "utf8" && c.CharSet == "utf8mb3") {
+		selfCopy.CharSet = other.CharSet
+	}
+	if strings.HasPrefix(other.Collation, "utf8mb3_") {
+		selfCopy.Collation = strings.Replace(selfCopy.Collation, "utf8_", "utf8mb3_", 1)
+	} else if strings.HasPrefix(other.Collation, "utf8_") {
+		selfCopy.Collation = strings.Replace(selfCopy.Collation, "utf8mb3_", "utf8_", 1)
+	}
 	return selfCopy == *other
 }

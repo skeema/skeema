@@ -1090,6 +1090,12 @@ func TestTableAlterChangeCharSet(t *testing.T) {
 	from = getTableWithCharSet("utf8", "utf8_general_ci", true)
 	to = getTableWithCharSet("utf8mb3", "utf8_general_ci", true)
 	assertChangeCharSet(&from, &to, "")
+	to = getTableWithCharSet("utf8mb3", "utf8mb3_general_ci", true)
+	assertChangeCharSet(&from, &to, "")
+
+	// Confirm "utf8" and "utf8mb4" are not treated as identical
+	to = getTableWithCharSet("utf8mb4", "utf8mb4_general_ci", true)
+	assertChangeCharSet(&from, &to, "DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci")
 }
 
 func TestTableAlterChangeCreateOptions(t *testing.T) {

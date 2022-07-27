@@ -92,4 +92,13 @@ func TestColumnEquivalent(t *testing.T) {
 	b.Nullable = false
 	b.Default = ""
 	assertEquivalent(false)
+
+	// Test situations involving utf8 vs utf8mb3
+	*b = *a
+	b.CharSet, b.Collation = "utf8", "utf8_general_ci"
+	assertEquivalent(false)
+	a.CharSet, a.Collation = "utf8mb3", "utf8_general_ci"
+	assertEquivalent(true)
+	a.Collation = "utf8mb3_general_ci"
+	assertEquivalent(true)
 }

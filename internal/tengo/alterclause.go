@@ -558,6 +558,13 @@ func (ccs ChangeCharSet) Clause(_ StatementModifiers) string {
 	if ccs.FromCollation == ccs.ToCollation {
 		return ""
 	}
+	if strings.HasPrefix(ccs.FromCollation, "utf8mb3_") || strings.HasPrefix(ccs.ToCollation, "utf8mb3_") {
+		fromNormalized := strings.Replace(ccs.FromCollation, "utf8_", "utf8mb3_", 1)
+		toNormalized := strings.Replace(ccs.ToCollation, "utf8_", "utf8mb3_", 1)
+		if fromNormalized == toNormalized {
+			return ""
+		}
+	}
 	return fmt.Sprintf("DEFAULT CHARACTER SET = %s COLLATE = %s", ccs.ToCharSet, ccs.ToCollation)
 }
 
