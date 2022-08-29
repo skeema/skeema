@@ -665,11 +665,11 @@ func fixCreateOptionsOrder(t *Table, flavor Flavor) {
 // from the default collation *of the col's charset*.
 //
 // MySQL 8 includes these clauses unnecessarily in additional situations:
-// * 8.0 includes column-level character sets and collations whenever specified
-//   explicitly in the original CREATE, even when equal to the table's defaults
-// * Tables upgraded from pre-8.0 may omit COLLATE if it's the default for the
-//   charset, while tables created in 8.0 will generally include it whenever a
-//   CHARACTER SET is shown in a column definition
+//   - 8.0 includes column-level character sets and collations whenever specified
+//     explicitly in the original CREATE, even when equal to the table's defaults
+//   - Tables upgraded from pre-8.0 may omit COLLATE if it's the default for the
+//     charset, while tables created in 8.0 will generally include it whenever a
+//     CHARACTER SET is shown in a column definition
 func fixShowCharSets(t *Table) {
 	lines := strings.Split(t.CreateStatement, "\n")
 	for n, col := range t.Columns {
@@ -688,10 +688,11 @@ func fixShowCharSets(t *Table) {
 
 // MySQL 5.7+ supports generated columns, but mangles them in I_S in various
 // ways:
-// * 4-byte characters are not returned properly in I_S since it uses utf8mb3
-// * MySQL 8 incorrectly mangles escaping of single quotes in the I_S value
-// * MySQL 8 potentially uses different charsets introducers for string literals
-//   in I_S vs SHOW CREATE
+//   - 4-byte characters are not returned properly in I_S since it uses utf8mb3
+//   - MySQL 8 incorrectly mangles escaping of single quotes in the I_S value
+//   - MySQL 8 potentially uses different charsets introducers for string literals
+//     in I_S vs SHOW CREATE
+//
 // This method modifies each generated Column.GenerationExpr to match SHOW
 // CREATE's version.
 func fixGenerationExpr(t *Table, flavor Flavor) {
@@ -797,12 +798,12 @@ func fixFulltextIndexParsers(t *Table, flavor Flavor) {
 
 // fixDefaultExpression parses the table's CREATE string in order to correct
 // problems in Column.Default for columns using a default expression in MySQL 8:
-// * In MySQL 8.0.13-8.0.22, blob/text cols may have default expressions but
-//   these are omitted from I_S due to a bug fixed in MySQL 8.0.23.
-// * 4-byte characters are not returned properly in I_S since it uses utf8mb3
-// * MySQL 8 incorrectly mangles escaping of single quotes in the I_S value
-// * MySQL 8 potentially uses different charsets introducers for string literals
-//   in I_S vs SHOW CREATE
+//   - In MySQL 8.0.13-8.0.22, blob/text cols may have default expressions but
+//     these are omitted from I_S due to a bug fixed in MySQL 8.0.23.
+//   - 4-byte characters are not returned properly in I_S since it uses utf8mb3
+//   - MySQL 8 incorrectly mangles escaping of single quotes in the I_S value
+//   - MySQL 8 potentially uses different charsets introducers for string literals
+//     in I_S vs SHOW CREATE
 func fixDefaultExpression(t *Table, flavor Flavor) {
 	for _, col := range t.Columns {
 		if col.Default == "" || col.Default[0] != '(' {

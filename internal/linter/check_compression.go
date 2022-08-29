@@ -69,14 +69,14 @@ func compressionChecker(table *tengo.Table, createStatement string, _ *tengo.Sch
 // table.CreateOptions, which is typically correct in the vast majority of
 // cases, but does not handle a few rare edge cases involving MySQL global
 // variables:
-// * Users who override innodb_page_size and also omit key_block_size in
-//   compressed table definitions. In this case this method will return "8kb"
-//   instead of the correct value of innodb_page_size/2.
-// * Users with innodb_file_per_table=OFF and/or innodb_file_format=Antelope
-//   but still have compression settings applied in table definitions. In this
-//   case this method will return a value based on the table definition, even
-//   instead of the correct value of "none" (since these settings prevent
-//   compression options from having any effect).
+//   - Users who override innodb_page_size and also omit key_block_size in
+//     compressed table definitions. In this case this method will return "8kb"
+//     instead of the correct value of innodb_page_size/2.
+//   - Users with innodb_file_per_table=OFF and/or innodb_file_format=Antelope
+//     but still have compression settings applied in table definitions. In this
+//     case this method will return a value based on the table definition, even
+//     instead of the correct value of "none" (since these settings prevent
+//     compression options from having any effect).
 func tableCompressionMode(table *tengo.Table) (mode string, clause string) {
 	if table.RowFormatClause() == "COMPRESSED" {
 		matches := reKeyBlockSize.FindStringSubmatch(table.CreateOptions)

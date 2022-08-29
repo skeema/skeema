@@ -279,7 +279,8 @@ func (fl Flavor) String() string {
 // Dot returns a value equal to the receiver but with the patch version set
 // to the supplied arg value. This is a convenience method, most useful as a
 // chained arg in comparisons, for example:
-//    if myFlavor.Min(FlavorMySQL80.Dot(19)) { ... }
+//
+//	if myFlavor.Min(FlavorMySQL80.Dot(19)) { ... }
 func (fl Flavor) Dot(patch int) Flavor {
 	// note: receiver was passed by value, this does not modify receiver in-place
 	fl.Version[2] = uint16(patch)
