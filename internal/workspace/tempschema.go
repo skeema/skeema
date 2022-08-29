@@ -22,11 +22,18 @@ type TempSchema struct {
 
 // NewTempSchema creates a temporary schema on the supplied instance and returns
 // it.
-func NewTempSchema(opts Options) (ts *TempSchema, err error) {
+func NewTempSchema(opts Options) (_ *TempSchema, retErr error) {
 	if opts.Instance == nil {
 		return nil, errors.New("No instance defined in options")
 	}
-	ts = &TempSchema{
+
+	// NewTempSchema names its error return so that a deferred func can check if
+	// an error occurred, but otherwise intentionally does not use named return
+	// variables, and instead declares new local vars for all other usage. This is
+	// to avoid mistakes with variable shadowing, nil pointer panics, etc which are
+	// common when dealing with named returns and deferred anonymous functions.
+	var err error
+	ts := &TempSchema{
 		schemaName:  opts.SchemaName,
 		keepSchema:  opts.CleanupAction == CleanupActionNone,
 		inst:        opts.Instance,
@@ -41,9 +48,8 @@ func NewTempSchema(opts Options) (ts *TempSchema, err error) {
 
 	// If NewTempSchema errors, don't continue to hold the lock
 	defer func() {
-		if err != nil {
+		if retErr != nil {
 			ts.releaseLock()
-			ts = nil
 		}
 	}()
 
@@ -53,7 +59,7 @@ func NewTempSchema(opts Options) (ts *TempSchema, err error) {
 		SkipBinlog:       opts.SkipBinlog,
 	}
 	if has, err := ts.inst.HasSchema(ts.schemaName); err != nil {
-		return ts, fmt.Errorf("Unable to check for existence of temp schema on %s: %s", ts.inst, err)
+		return nil, fmt.Errorf("Unable to check for existence of temp schema on %s: %s", ts.inst, err)
 	} else if has {
 		// Attempt to drop any tables already present in tempSchema, but fail if
 		// any of them actually have 1 or more rows
@@ -64,19 +70,16 @@ func NewTempSchema(opts Options) (ts *TempSchema, err error) {
 			PartitionsFirst: true,
 		}
 		if err := ts.inst.DropTablesInSchema(ts.schemaName, dropOpts); err != nil {
-			return ts, fmt.Errorf("Cannot drop existing temp schema tables on %s: %s", ts.inst, err)
+			return nil, fmt.Errorf("Cannot drop existing temp schema tables on %s: %s", ts.inst, err)
 		}
 		if err := ts.inst.DropRoutinesInSchema(ts.schemaName, dropOpts); err != nil {
-			return ts, fmt.Errorf("Cannot drop existing temp schema routines on %s: %s", ts.inst, err)
+			return nil, fmt.Errorf("Cannot drop existing temp schema routines on %s: %s", ts.inst, err)
 		}
 		if err := ts.inst.AlterSchema(ts.schemaName, createOpts); err != nil {
-			return ts, fmt.Errorf("Cannot alter existing temp schema charset and collation on %s: %s", ts.inst, err)
+			return nil, fmt.Errorf("Cannot alter existing temp schema charset and collation on %s: %s", ts.inst, err)
 		}
-	} else {
-		_, err = ts.inst.CreateSchema(ts.schemaName, createOpts)
-		if err != nil {
-			return ts, fmt.Errorf("Cannot create temporary schema on %s: %s", ts.inst, err)
-		}
+	} else if _, err := ts.inst.CreateSchema(ts.schemaName, createOpts); err != nil {
+		return nil, fmt.Errorf("Cannot create temporary schema on %s: %s", ts.inst, err)
 	}
 	return ts, nil
 }

@@ -32,26 +32,34 @@ var cstore struct {
 
 // NewLocalDocker finds or creates a containerized MySQL instance, creates a
 // temporary schema on it, and returns it.
-func NewLocalDocker(opts Options) (ld *LocalDocker, err error) {
+func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	if !opts.Flavor.Supported() {
 		return nil, fmt.Errorf("NewLocalDocker: unsupported flavor %s", opts.Flavor)
 	}
+
+	// NewLocalDocker names its error return so that a deferred func can check if
+	// an error occurred, but otherwise intentionally does not use named return
+	// variables, and instead declares new local vars for all other usage. This is
+	// to avoid mistakes with variable shadowing, nil pointer panics, etc which are
+	// common when dealing with named returns and deferred anonymous functions.
+	var err error
 
 	cstore.Lock()
 	defer cstore.Unlock()
 	if cstore.dockerClient == nil {
 		if cstore.dockerClient, err = tengo.NewDockerClient(tengo.DockerClientOptions{}); err != nil {
-			return
+			return nil, err
 		}
 		cstore.containers = make(map[string]*tengo.DockerizedInstance)
 		tengo.UseFilteredDriverLogger()
 	}
 
-	ld = &LocalDocker{
+	ld := &LocalDocker{
 		schemaName:        opts.SchemaName,
 		cleanupAction:     opts.CleanupAction,
 		defaultConnParams: opts.DefaultConnParams,
 	}
+
 	image := opts.Flavor.String()
 	if arch, _ := cstore.dockerClient.ServerArchitecture(); arch == "arm64" && opts.Flavor.IsMySQL() {
 		// MySQL 8 images are available for arm64 on DockerHub, but via
@@ -100,16 +108,15 @@ func NewLocalDocker(opts Options) (ld *LocalDocker, err error) {
 	if ld.releaseLock, err = getLock(ld.d.Instance, lockName, opts.LockWaitTimeout); err != nil {
 		return nil, fmt.Errorf("Unable to obtain lock on %s: %s", ld.d.Instance, err)
 	}
-	// If this function errors, don't continue to hold the lock
+	// If this function returns an error, don't continue to hold the lock
 	defer func() {
-		if err != nil {
+		if retErr != nil {
 			ld.releaseLock()
-			ld = nil
 		}
 	}()
 
 	if has, err := ld.d.HasSchema(ld.schemaName); err != nil {
-		return ld, fmt.Errorf("Unable to check for existence of temp schema on %s: %s", ld.d.Instance, err)
+		return nil, fmt.Errorf("Unable to check for existence of temp schema on %s: %s", ld.d.Instance, err)
 	} else if has {
 		// Attempt to drop the schema, so we can recreate it below. (This is safer
 		// than attempting to re-use the schema.) Fail if any tables actually have
@@ -120,7 +127,7 @@ func NewLocalDocker(opts Options) (ld *LocalDocker, err error) {
 			SkipBinlog:     true,
 		}
 		if err := ld.d.DropSchema(ld.schemaName, dropOpts); err != nil {
-			return ld, fmt.Errorf("Cannot drop existing temporary schema on %s: %s", ld.d.Instance, err)
+			return nil, fmt.Errorf("Cannot drop existing temporary schema on %s: %s", ld.d.Instance, err)
 		}
 	}
 
@@ -129,9 +136,8 @@ func NewLocalDocker(opts Options) (ld *LocalDocker, err error) {
 		DefaultCollation: opts.DefaultCollation,
 		SkipBinlog:       true,
 	}
-	_, err = ld.d.CreateSchema(ld.schemaName, createOpts)
-	if err != nil {
-		return ld, fmt.Errorf("Cannot create temporary schema on %s: %s", ld.d.Instance, err)
+	if _, err := ld.d.CreateSchema(ld.schemaName, createOpts); err != nil {
+		return nil, fmt.Errorf("Cannot create temporary schema on %s: %s", ld.d.Instance, err)
 	}
 	return ld, nil
 }

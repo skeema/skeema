@@ -268,7 +268,7 @@ func (wsSchema *Schema) FailedKeys() (result []tengo.ObjectKey) {
 // only represents fatal errors that prevented the entire process.
 // Note that if opts.NameCaseMode > tengo.NameCaseAsIs, logicalSchema may be
 // modified in-place to force some identifiers to lowercase.
-func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema *Schema, fatalErr error) {
+func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema, retErr error) {
 	if logicalSchema.CharSet != "" {
 		opts.DefaultCharacterSet = logicalSchema.CharSet
 	}
@@ -281,18 +281,25 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 		}
 	}
 
-	var ws Workspace
-	ws, fatalErr = New(opts)
-	if fatalErr != nil {
-		return
+	ws, err := New(opts)
+	if err != nil {
+		return nil, err
 	}
-	wsSchema = &Schema{
+
+	// ExecLogicalSchema names its error return so that a deferred func can check
+	// if an error occurred, but otherwise intentionally does not use named return
+	// variables, and instead declares new local vars for all other usage. This is
+	// to avoid mistakes with variable shadowing, nil pointer panics, etc which are
+	// common when dealing with named returns and deferred anonymous functions.
+	wsSchema := &Schema{
 		LogicalSchema: logicalSchema,
 		Failures:      []*StatementError{},
 	}
 	defer func() {
-		if cleanupErr := ws.Cleanup(wsSchema.Schema); fatalErr == nil {
-			fatalErr = cleanupErr
+		cleanupErr := ws.Cleanup(wsSchema.Schema)
+		// We only care about a cleanup error if the original returned error was nil
+		if retErr == nil && cleanupErr != nil {
+			retErr = cleanupErr
 		}
 	}()
 
@@ -354,8 +361,8 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (wsSchema 
 		}
 	}
 
-	wsSchema.Schema, fatalErr = ws.IntrospectSchema()
-	return
+	wsSchema.Schema, err = ws.IntrospectSchema()
+	return wsSchema, err
 }
 
 func wrapFailure(statement *fs.Statement, err error) *StatementError {
