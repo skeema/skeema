@@ -135,7 +135,9 @@ func ProcessSpecialGlobalOptions(cfg *mybase.Config) error {
 // PromptPassword reads a password from STDIN without echoing the typed
 // characters. Requires that STDIN is a TTY. Optionally supply args to build
 // a custom prompt string; first arg must be a string if so, with args behaving
-// like those to fmt.Printf().
+// like those to fmt.Printf(). The prompt will be written to STDERR, unless
+// STDERR is a non-terminal and STDOUT is a terminal, in which case STDOUT is
+// used.
 func PromptPassword(promptArgs ...interface{}) (string, error) {
 	if len(promptArgs) == 0 {
 		promptArgs = append(promptArgs, "Enter password: ")
@@ -144,12 +146,19 @@ func PromptPassword(promptArgs ...interface{}) (string, error) {
 	if !terminal.IsTerminal(stdin) {
 		return "", errors.New("STDIN must be a TTY to read password")
 	}
-	fmt.Printf(promptArgs[0].(string), promptArgs[1:]...)
+
+	w := os.Stderr
+	if !terminal.IsTerminal(int(w.Fd())) && terminal.IsTerminal(int(os.Stdout.Fd())) {
+		w = os.Stdout
+	}
+	fmt.Fprintf(w, promptArgs[0].(string), promptArgs[1:]...)
+
 	bytePassword, err := terminal.ReadPassword(stdin)
 	if err != nil {
 		return "", err
 	}
-	fmt.Println() // since ReadPassword also won't echo the ENTER key as a newline!
+
+	fmt.Fprintln(w) // since ReadPassword also won't echo the ENTER key as a newline!
 	return string(bytePassword), nil
 }
 
