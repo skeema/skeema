@@ -49,7 +49,7 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
 	}
-	opts.LockWaitTimeout = 100 * time.Millisecond
+	opts.LockTimeout = 100 * time.Millisecond
 	wsSchema, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 	if err != nil {
 		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
@@ -87,7 +87,7 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
 	}
-	opts.LockWaitTimeout = 100 * time.Millisecond
+	opts.LockTimeout = 100 * time.Millisecond
 
 	// Test with invalid ALTER (valid syntax but nonexistent table)
 	dir.LogicalSchemas[0].AddStatement(&fs.Statement{
@@ -155,7 +155,7 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaFK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
 	}
-	opts.LockWaitTimeout = 100 * time.Millisecond
+	opts.LockTimeout = 100 * time.Millisecond
 
 	// Test multiple times, since the problem isn't deterministic
 	for n := 0; n < 3; n++ {
@@ -239,7 +239,7 @@ func (s WorkspaceIntegrationSuite) TestPrefab(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
 	}
-	opts.LockWaitTimeout = 100 * time.Millisecond
+	opts.LockTimeout = 100 * time.Millisecond
 
 	ws, err := New(opts)
 	if err != nil {

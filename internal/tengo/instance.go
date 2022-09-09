@@ -18,24 +18,25 @@ import (
 
 // Instance represents a single database server running on a specific host or address.
 type Instance struct {
-	BaseDSN        string // DSN ending in trailing slash; i.e. no schema name or params
-	Driver         string
-	User           string
-	Password       string
-	Host           string
-	Port           int
-	SocketPath     string
-	defaultParams  map[string]string
-	connectionPool map[string]*sqlx.DB // key is in format "schema?params"
-	m              *sync.Mutex         // protects unexported fields for concurrent operations
-	flavor         Flavor
-	grants         []string
-	waitTimeout    int
-	maxUserConns   int
-	bufferPoolSize int64
-	lowerCaseNames int
-	sqlMode        []string
-	valid          bool // true if any conn has ever successfully been made yet
+	BaseDSN         string // DSN ending in trailing slash; i.e. no schema name or params
+	Driver          string
+	User            string
+	Password        string
+	Host            string
+	Port            int
+	SocketPath      string
+	defaultParams   map[string]string
+	connectionPool  map[string]*sqlx.DB // key is in format "schema?params"
+	m               *sync.Mutex         // protects unexported fields for concurrent operations
+	flavor          Flavor
+	grants          []string
+	waitTimeout     int
+	lockWaitTimeout int
+	maxUserConns    int
+	bufferPoolSize  int64
+	lowerCaseNames  int
+	sqlMode         []string
+	valid           bool // true if any conn has ever successfully been made yet
 }
 
 // NewInstance returns a pointer to a new Instance corresponding to the
@@ -262,6 +263,15 @@ func (instance *Instance) NameCaseMode() NameCaseMode {
 	return NameCaseMode(instance.lowerCaseNames)
 }
 
+// LockWaitTimeout returns the default session lock_wait_timeout for connections
+// to this instance, or 0 if it could not be queried.
+func (instance *Instance) LockWaitTimeout() int {
+	if ok, _ := instance.Valid(); !ok {
+		return 0
+	}
+	return instance.lockWaitTimeout
+}
+
 // hydrateVars populates several non-exported Instance fields by querying
 // various global and session variables. Failures are ignored; these variables
 // are designed to help inform behavior but are not strictly mandatory.
@@ -279,6 +289,7 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 		Version             string
 		SQLMode             string
 		WaitTimeout         int
+		LockWaitTimeout     int
 		MaxUserConns        int
 		MaxConns            int
 		BufferPoolSize      int64
@@ -289,6 +300,7 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 		       @@global.version AS version,
 		       @@session.sql_mode AS sqlmode,
 		       @@session.wait_timeout AS waittimeout,
+		       @@session.lock_wait_timeout AS lockwaittimeout,
 		       @@global.innodb_buffer_pool_size AS bufferpoolsize,
 		       @@global.lower_case_table_names as lowercasetablenames,
 		       @@session.max_user_connections AS maxuserconns,
@@ -300,6 +312,7 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 	instance.flavor = IdentifyFlavor(result.Version, result.VersionComment)
 	instance.sqlMode = strings.Split(result.SQLMode, ",")
 	instance.waitTimeout = result.WaitTimeout
+	instance.lockWaitTimeout = result.LockWaitTimeout
 	instance.bufferPoolSize = result.BufferPoolSize
 	instance.lowerCaseNames = result.LowerCaseTableNames
 	if result.MaxUserConns > 0 {
@@ -742,14 +755,19 @@ type BulkDropOptions struct {
 	MaxConcurrency  int     // Max objects to drop at once
 	SkipBinlog      bool    // If true, use session sql_log_bin=0 (requires superuser)
 	PartitionsFirst bool    // If true, drop RANGE/LIST partitioned tables one partition at a time
+	LockWaitTimeout int     // If greater than 0, limit how long to wait for metadata locks (in seconds)
 	Schema          *Schema // If non-nil, obtain object lists from Schema instead of running I_S queries
 }
 
 func (opts BulkDropOptions) params() string {
+	values := []string{"foreign_key_checks=0"}
 	if opts.SkipBinlog {
-		return "foreign_key_checks=0&sql_log_bin=0"
+		values = append(values, "sql_log_bin=0")
 	}
-	return "foreign_key_checks=0"
+	if opts.LockWaitTimeout > 0 {
+		values = append(values, fmt.Sprintf("lock_wait_timeout=%d", opts.LockWaitTimeout))
+	}
+	return strings.Join(values, "&")
 }
 
 // Concurrency returns the concurrency, with a minimum value of 1.
@@ -812,8 +830,9 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 				_, err = db.ExecContext(ctx, "DROP TABLE "+EscapeIdentifier(name))
 				// With the new data dictionary added in MySQL 8.0, attempting to
 				// concurrently drop two tables that have a foreign key constraint between
-				// them can deadlock
-				if IsDatabaseError(err, mysqlerr.ER_LOCK_DEADLOCK) {
+				// them can deadlock, so we try them serially later. Metadata lock timeouts
+				// are also more common with FKs in MySQL 8.0, so we retry those as well.
+				if IsDatabaseError(err, mysqlerr.ER_LOCK_DEADLOCK, mysqlerr.ER_LOCK_WAIT_TIMEOUT) {
 					retries <- name
 					err = nil
 				}

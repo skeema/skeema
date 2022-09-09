@@ -212,12 +212,12 @@ func (s *IntegrationSuite) setupDirAndDB(t *testing.T, subdir string) {
 	s.setupScratchDir(t, subdir)
 
 	wsOpts := workspace.Options{
-		Type:            workspace.TypeTempSchema,
-		Instance:        s.d.Instance,
-		CleanupAction:   workspace.CleanupActionDrop,
-		SchemaName:      "dumper_test",
-		LockWaitTimeout: 30 * time.Second,
-		Concurrency:     5,
+		Type:          workspace.TypeTempSchema,
+		Instance:      s.d.Instance,
+		CleanupAction: workspace.CleanupActionDrop,
+		SchemaName:    "dumper_test",
+		LockTimeout:   30 * time.Second,
+		Concurrency:   5,
 	}
 	wsSchema, err := workspace.ExecLogicalSchema(s.scratchDir.LogicalSchemas[0], wsOpts)
 	if err != nil {

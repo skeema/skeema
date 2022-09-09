@@ -16,7 +16,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerErrors(t *testing.T) {
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
 		RootPassword:        "",
-		LockWaitTimeout:     100 * time.Millisecond,
+		LockTimeout:         100 * time.Millisecond,
 		Concurrency:         10,
 	}
 
@@ -43,7 +43,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDocker(t *testing.T) {
 		DefaultCollation:    "latin1_swedish_ci",
 		DefaultConnParams:   "wait_timeout=123",
 		RootPassword:        "",
-		LockWaitTimeout:     100 * time.Millisecond,
+		LockTimeout:         100 * time.Millisecond,
 		Concurrency:         10,
 	}
 
@@ -77,7 +77,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerShutdown(t *testing.T) {
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
 		RootPassword:        "",
-		LockWaitTimeout:     100 * time.Millisecond,
+		LockTimeout:         100 * time.Millisecond,
 		Concurrency:         10,
 	}
 
@@ -156,7 +156,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerConnParams(t *testing.T) {
 		DefaultCollation:    "latin1_swedish_ci",
 		DefaultConnParams:   "wait_timeout=123",
 		RootPassword:        "",
-		LockWaitTimeout:     100 * time.Millisecond,
+		LockTimeout:         100 * time.Millisecond,
 		Concurrency:         10,
 	}
 

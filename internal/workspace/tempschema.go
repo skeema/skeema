@@ -3,6 +3,8 @@ package workspace
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/skeema/skeema/internal/tengo"
@@ -18,6 +20,7 @@ type TempSchema struct {
 	skipBinlog  bool
 	inst        *tengo.Instance
 	releaseLock releaseFunc
+	mdlTimeout  int // metadata lock wait timeout, in seconds; 0 for session default
 }
 
 // NewTempSchema creates a temporary schema on the supplied instance and returns
@@ -42,7 +45,7 @@ func NewTempSchema(opts Options) (_ *TempSchema, retErr error) {
 	}
 
 	lockName := fmt.Sprintf("skeema.%s", ts.schemaName)
-	if ts.releaseLock, err = getLock(ts.inst, lockName, opts.LockWaitTimeout); err != nil {
+	if ts.releaseLock, err = getLock(ts.inst, lockName, opts.LockTimeout); err != nil {
 		return nil, fmt.Errorf("Unable to lock temporary schema on %s: %s", ts.inst, err)
 	}
 
@@ -52,6 +55,20 @@ func NewTempSchema(opts Options) (_ *TempSchema, retErr error) {
 			ts.releaseLock()
 		}
 	}()
+
+	// MySQL 8 extends foreign key metadata locks to the "parent" side of the FK,
+	// which means the TempSchema may not be fully isolated from non-workspace
+	// workloads and their own usage of metadata locks. As a result, we must force
+	// a low lock_wait_timeout on any TempSchema DDL in MySQL 8.
+	if ts.inst.Flavor().Min(tengo.FlavorMySQL80) {
+		wantLockWait := 5
+		if strings.HasSuffix(os.Args[0], ".test") || strings.HasSuffix(os.Args[0], ".test.exe") {
+			wantLockWait = 2 // use lower value in test suites so MDL-related tests aren't super slow
+		}
+		if ts.inst.LockWaitTimeout() > wantLockWait {
+			ts.mdlTimeout = wantLockWait
+		}
+	}
 
 	createOpts := tengo.SchemaCreationOptions{
 		DefaultCharSet:   opts.DefaultCharacterSet,
@@ -63,12 +80,7 @@ func NewTempSchema(opts Options) (_ *TempSchema, retErr error) {
 	} else if has {
 		// Attempt to drop any tables already present in tempSchema, but fail if
 		// any of them actually have 1 or more rows
-		dropOpts := tengo.BulkDropOptions{
-			MaxConcurrency:  ts.concurrency,
-			OnlyIfEmpty:     true,
-			SkipBinlog:      opts.SkipBinlog,
-			PartitionsFirst: true,
-		}
+		dropOpts := ts.bulkDropOptions()
 		if err := ts.inst.DropTablesInSchema(ts.schemaName, dropOpts); err != nil {
 			return nil, fmt.Errorf("Cannot drop existing temp schema tables on %s: %s", ts.inst, err)
 		}
@@ -84,9 +96,22 @@ func NewTempSchema(opts Options) (_ *TempSchema, retErr error) {
 	return ts, nil
 }
 
+func (ts *TempSchema) bulkDropOptions() tengo.BulkDropOptions {
+	return tengo.BulkDropOptions{
+		MaxConcurrency:  ts.concurrency,
+		OnlyIfEmpty:     true,
+		SkipBinlog:      ts.skipBinlog,
+		PartitionsFirst: true,
+		LockWaitTimeout: ts.mdlTimeout,
+	}
+}
+
 // ConnectionPool returns a connection pool (*sqlx.DB) to the temporary
 // workspace schema, using the supplied connection params (which may be blank).
 func (ts *TempSchema) ConnectionPool(params string) (*sqlx.DB, error) {
+	if ts.mdlTimeout > 0 && !strings.Contains(params, "lock_wait_timeout") {
+		params = strings.TrimLeft(fmt.Sprintf("%s&lock_wait_timeout=%d", params, ts.mdlTimeout), "&")
+	}
 	return ts.inst.CachedConnectionPool(ts.schemaName, params)
 }
 
@@ -108,13 +133,9 @@ func (ts *TempSchema) Cleanup(schema *tengo.Schema) error {
 		ts.releaseLock = nil
 	}()
 
-	dropOpts := tengo.BulkDropOptions{
-		MaxConcurrency:  ts.concurrency,
-		OnlyIfEmpty:     true,
-		SkipBinlog:      ts.skipBinlog,
-		PartitionsFirst: true,
-		Schema:          schema, // may be nil, not a problem
-	}
+	dropOpts := ts.bulkDropOptions()
+	dropOpts.Schema = schema // may be nil, not a problem
+
 	if ts.keepSchema {
 		if err := ts.inst.DropTablesInSchema(ts.schemaName, dropOpts); err != nil {
 			return fmt.Errorf("Cannot drop tables in temporary schema on %s: %s", ts.inst, err)

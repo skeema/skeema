@@ -268,6 +268,20 @@ func (s TengoIntegrationSuite) TestInstanceNameCaseMode(t *testing.T) {
 	}
 }
 
+func (s TengoIntegrationSuite) TestInstanceLockWaitTimeout(t *testing.T) {
+	var expected int
+	// lock_wait_timeout defaults to a ridiculous 1 year in MySQL. MariaDB lowered
+	// it to a slightly-less-ridiculous 1 day in MariaDB 10.2.
+	if s.d.Flavor().Min(FlavorMariaDB102) {
+		expected = 86400
+	} else {
+		expected = 86400 * 365
+	}
+	if actual := s.d.LockWaitTimeout(); actual != expected {
+		t.Errorf("Expected LockWaitTimeout to return %d, instead found %d", expected, actual)
+	}
+}
+
 func (s TengoIntegrationSuite) TestInstanceCloseAll(t *testing.T) {
 	makePool := func(defaultSchema, params string) {
 		t.Helper()

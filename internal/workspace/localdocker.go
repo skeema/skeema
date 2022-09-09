@@ -105,7 +105,7 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	}
 
 	lockName := fmt.Sprintf("skeema.%s", ld.schemaName)
-	if ld.releaseLock, err = getLock(ld.d.Instance, lockName, opts.LockWaitTimeout); err != nil {
+	if ld.releaseLock, err = getLock(ld.d.Instance, lockName, opts.LockTimeout); err != nil {
 		return nil, fmt.Errorf("Unable to obtain lock on %s: %s", ld.d.Instance, err)
 	}
 	// If this function returns an error, don't continue to hold the lock

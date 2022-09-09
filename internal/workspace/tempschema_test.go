@@ -1,8 +1,11 @@
 package workspace
 
 import (
+	"fmt"
 	"testing"
 	"time"
+
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
@@ -13,7 +16,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 		SchemaName:          "_skeema_tmp",
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
-		LockWaitTimeout:     100 * time.Millisecond,
+		LockTimeout:         100 * time.Millisecond,
 		Concurrency:         5,
 	}
 	ts, err := NewTempSchema(opts)
@@ -73,7 +76,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCleanupDrop(t *testing.T) {
 		SchemaName:          "_skeema_tmp",
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
-		LockWaitTimeout:     100 * time.Millisecond,
+		LockTimeout:         100 * time.Millisecond,
 		Concurrency:         5,
 	}
 	ts, err := NewTempSchema(opts)
@@ -102,6 +105,108 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCleanupDrop(t *testing.T) {
 	}
 }
 
+// TestTempSchemaCrossDBFK confirms that TempSchema workspaces properly use
+// lock_wait_timeout in MySQL 8.0 to reduce problems with cross-schema foreign
+// keys and metadata locking. This is necessary because MySQL 8.0 extends
+// metadata locks across both sides of an FK, which can be problematic with DDL.
+func (s WorkspaceIntegrationSuite) TestTempSchemaCrossDBFK(t *testing.T) {
+	if !s.d.Flavor().Min(tengo.FlavorMySQL80) {
+		t.Skip("Test only relevant for flavors that extend metadata locks across FK relations")
+	}
+
+	s.sourceSQL(t, "crossdbfk-setup1.sql")
+
+	dir := s.getParsedDir(t, "testdata/crossdbfk", "")
+	opts, err := OptionsForDir(dir, s.d.Instance)
+	if err != nil {
+		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
+	}
+
+	// If nothing holding locks on parent side, workspace should be fine
+	wsSchema, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts)
+	if err != nil {
+		t.Errorf("Unexpected error from ExecLogicalSchema with nothing holding MDL: %v", err)
+	} else if len(wsSchema.Failures) > 0 {
+		t.Errorf("Unexpected %d failures from ExecLogicalSchema with nothing holding MDL; first err %v from %s", len(wsSchema.Failures), wsSchema.Failures[0].Err, wsSchema.Failures[0].Statement.Location())
+	}
+
+	// This function obtains SHARED_READ MDL for the specified duration. Since
+	// DDL requires EXCLUSIVE MDL, DDL will be blocked until this query completes.
+	holdMDL := func(tableName string, seconds int) {
+		db, err := s.d.ConnectionPool("parent_side", "")
+		if err != nil {
+			panic(fmt.Errorf("Unexpected error from ConnectionPool: %v", err))
+		}
+		var x struct{}
+		query := fmt.Sprintf("SELECT %s.*, SLEEP(?) FROM %s LIMIT 1", tengo.EscapeIdentifier(tableName), tengo.EscapeIdentifier(tableName))
+		db.Select(&x, query, seconds)
+	}
+
+	// Note: ordinarily, TempSchema uses a 5-second lock_wait_timeout, with one
+	// retry for each DDL. However, in test suites, it automatically uses a 2-
+	// second lock_wait_timeout instead, to prevent these tests from being slow.
+
+	// Holding the lock for under 4 seconds shouldn't result in workspace failures.
+	// The first test here should succeed quickly; the second one slightly more
+	// slowly since it will do a retry.
+	go holdMDL("p1", 1)
+	wsSchema, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
+	if err != nil {
+		t.Errorf("Unexpected error from ExecLogicalSchema with 1-sec MDL: %v", err)
+	} else if len(wsSchema.Failures) > 0 {
+		t.Errorf("Unexpected %d failures from ExecLogicalSchema with 1-sec MDL; first err %v from %s", len(wsSchema.Failures), wsSchema.Failures[0].Err, wsSchema.Failures[0].Statement.Location())
+	}
+	go holdMDL("p2", 3)
+	wsSchema, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
+	if err != nil {
+		t.Errorf("Unexpected error from ExecLogicalSchema with 3-sec MDL: %v", err)
+	} else if len(wsSchema.Failures) > 0 {
+		t.Errorf("Unexpected %d failures from ExecLogicalSchema with 3-sec MDL; first err %v from %s", len(wsSchema.Failures), wsSchema.Failures[0].Err, wsSchema.Failures[0].Statement.Location())
+	}
+
+	// Holding the lock for over 4 seconds should result in workspace failures
+	// (2-second lock_wait_timeout in tests, x 2 attempts)
+	go holdMDL("p1", 5)
+	wsSchema, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
+	if err != nil {
+		t.Errorf("Unexpected error from ExecLogicalSchema with 5-sec MDL (which should have resulted in statement failures but not overall error): %v", err)
+	} else if len(wsSchema.Failures) == 0 {
+		t.Error("Expected at least one statement failure from ExecLogicalSchema with 5-sec MDL; instead found 0")
+	}
+
+	// Now test cleanup logic vs MDL. This involves hackily setting up a temp
+	// schema. Here we'll use a 1-second lock_wait_timeout.
+	getTempSchema := func() *TempSchema {
+		// This file re-populates _skeema_tmp as if a workspace was set up but not
+		// cleaned up yet.
+		s.sourceSQL(t, "crossdbfk-setup2.sql")
+		tempSchema := &TempSchema{
+			schemaName:  "_skeema_tmp",
+			concurrency: 5,
+			inst:        s.d.Instance,
+			mdlTimeout:  1,
+		}
+		if tempSchema.releaseLock, err = getLock(tempSchema.inst, "skeema._skeema_tmp", opts.LockTimeout); err != nil {
+			t.Fatalf("Unable to lock temporary schema on Dockerized instance: %v", err)
+		}
+		return tempSchema
+	}
+
+	// 1-second mdl conflict should still allow cleanup to succeed
+	ts := getTempSchema()
+	go holdMDL("p2", 1)
+	if err := ts.Cleanup(nil); err != nil {
+		t.Fatalf("Expected cleanup to succeed with 1-sec MDL; instead found error %v", err)
+	}
+
+	// 3-second mdl conflict should cause cleanup to fail
+	ts = getTempSchema()
+	go holdMDL("p1", 3)
+	if err := ts.Cleanup(nil); err == nil {
+		t.Fatal("Expected cleanup to fail with 3-sec MDL; instead error is nil")
+	}
+}
+
 func TestTempSchemaNilInstance(t *testing.T) {
 	opts := Options{
 		Type:                TypeTempSchema,
@@ -110,7 +215,7 @@ func TestTempSchemaNilInstance(t *testing.T) {
 		SchemaName:          "_skeema_tmp",
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
-		LockWaitTimeout:     100 * time.Millisecond,
+		LockTimeout:         100 * time.Millisecond,
 		Concurrency:         5,
 	}
 	if _, err := NewTempSchema(opts); err == nil {

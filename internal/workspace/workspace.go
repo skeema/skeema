@@ -85,8 +85,8 @@ type Options struct {
 	DefaultConnParams   string // only TypeLocalDocker
 	RootPassword        string // only TypeLocalDocker
 	NameCaseMode        tengo.NameCaseMode
-	PrefabWorkspace     Workspace // only TypePrefab
-	LockWaitTimeout     time.Duration
+	PrefabWorkspace     Workspace     // only TypePrefab
+	LockTimeout         time.Duration // max wait for workspace user-level locking, via GET_LOCK()
 	Concurrency         int
 	SkipBinlog          bool
 }
@@ -116,10 +116,10 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 		return Options{}, err
 	}
 	opts := Options{
-		CleanupAction:   CleanupActionNone,
-		SchemaName:      dir.Config.Get("temp-schema"),
-		LockWaitTimeout: 30 * time.Second,
-		Concurrency:     10,
+		CleanupAction: CleanupActionNone,
+		SchemaName:    dir.Config.Get("temp-schema"),
+		LockTimeout:   30 * time.Second,
+		Concurrency:   10,
 	}
 	if requestedType == "docker" {
 		opts.Type = TypeLocalDocker
@@ -335,14 +335,14 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 
 	// Examine statement errors. If any deadlocks occurred, retry them
 	// sequentially, since some deadlocks are expected from concurrent CREATEs in
-	// MySQL 8+ if FKs are present. Also retry errors from CREATE TABLE...LIKE
-	// being run out-of-order (only once though; nested chains of CREATE TABLE...
-	// LIKE are unsupported)
+	// MySQL 8+ if FKs are present. Ditto with metadata lock wait timeouts.
+	// Also retry errors from CREATE TABLE...LIKE being run out-of-order (only once
+	// though; nested chains of CREATE TABLE...LIKE are unsupported)
 	sequentialStatements := []*fs.Statement{}
 	for n := 0; n < len(logicalSchema.Creates); n++ {
 		if err := <-errs; err != nil {
 			stmterr := err.(*StatementError)
-			if tengo.IsDatabaseError(stmterr.Err, mysqlerr.ER_LOCK_DEADLOCK, mysqlerr.ER_NO_SUCH_TABLE) {
+			if tengo.IsDatabaseError(stmterr.Err, mysqlerr.ER_LOCK_DEADLOCK, mysqlerr.ER_LOCK_WAIT_TIMEOUT, mysqlerr.ER_NO_SUCH_TABLE) {
 				sequentialStatements = append(sequentialStatements, stmterr.Statement)
 			} else {
 				wsSchema.Failures = append(wsSchema.Failures, stmterr)
