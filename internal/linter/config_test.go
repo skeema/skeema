@@ -41,15 +41,15 @@ func TestOptionsForDir(t *testing.T) {
 			}
 		}
 
-		expectedDefinerConfig := definerConfig{
+		expectedDefinerConfig := &definerConfig{
 			allowedDefinersString: "'root'@'%', procbot@127.0.0.1",
 			allowedDefinersMatch: []*regexp.Regexp{
 				regexp.MustCompile(`^root@.*$`),
 				regexp.MustCompile(`^procbot@127\.0\.0\.1$`),
 			},
 		}
-		actualDefinerConfig := opts.RuleConfig["definer"].(definerConfig)
-		if !reflect.DeepEqual(expectedDefinerConfig, actualDefinerConfig) {
+		actualDefinerConfig := opts.RuleConfig["definer"].(*definerConfig)
+		if !reflect.DeepEqual(*expectedDefinerConfig, *actualDefinerConfig) {
 			t.Errorf("definerConfig did not match expectation")
 		}
 

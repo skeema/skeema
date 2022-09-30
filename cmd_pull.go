@@ -274,6 +274,7 @@ func objectsInDiff(logicalSchema *fs.LogicalSchema, instSchema *tengo.Schema, op
 	inDiff := make([]tengo.ObjectKey, 0)
 	for _, od := range diff.ObjectDiffs() {
 		odStatement, odStatementErr := od.Statement(mods)
+		key := od.ObjectKey()
 		// Errors are fatal, except for UnsupportedDiffError which we can safely
 		// ignore (since pull doesn't actually run ALTERs; it just needs to know
 		// what was altered)
@@ -283,7 +284,7 @@ func objectsInDiff(logicalSchema *fs.LogicalSchema, instSchema *tengo.Schema, op
 		// mods may cause the diff to be a no-op; only include it in result if this
 		// isn't the case
 		if odStatement != "" {
-			inDiff = append(inDiff, od.ObjectKey())
+			inDiff = append(inDiff, key)
 		}
 	}
 

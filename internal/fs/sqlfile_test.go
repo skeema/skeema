@@ -86,6 +86,7 @@ func TestSQLFileTokenizeSuccess(t *testing.T) {
 			actual, expect := tokenizedFile.Statements[n], expected[n]
 			expect.File = sf.Path()
 			expect.Text = strings.ReplaceAll(expect.Text, "\n", "\r\n")
+			expect.nameClause = strings.ReplaceAll(expect.nameClause, "\n", "\r\n")
 			compareStatements(t, n, actual, expect)
 		}
 	}

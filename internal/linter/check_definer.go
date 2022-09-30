@@ -16,7 +16,7 @@ func init() {
 	// handle LIKE-style % and _ wildcards (just like MySQL/MariaDB user
 	// definitions)
 	RegisterRule(Rule{
-		CheckerFunc:     RoutineChecker(definerChecker),
+		CheckerFunc:     GenericChecker(definerChecker),
 		Name:            "definer",
 		Description:     "Only allow routine definers listed in --allow-definer",
 		DefaultSeverity: SeverityError,
@@ -33,37 +33,59 @@ func init() {
 type definerConfig struct {
 	allowedDefinersString string
 	allowedDefinersMatch  []*regexp.Regexp
+	fastAllowAll          bool
 }
 
 var reDefinerCheckerOffset = regexp.MustCompile("(?i)definer")
 
-func definerChecker(routine *tengo.Routine, createStatement string, _ *tengo.Schema, opts Options) *Note {
-	dc := opts.RuleConfig["definer"].(definerConfig)
+func definerChecker(object tengo.DefKeyer, createStatement string, schema *tengo.Schema, opts Options) []Note {
+	dc := opts.RuleConfig["definer"].(*definerConfig)
+
+	// Performance hack for default settings case
+	if dc.fastAllowAll {
+		return nil
+	}
+
+	var typ, name, definer string
+	if object, ok := object.(*tengo.Routine); ok {
+		typ, name, definer = strings.Title(string(object.Type)), object.Name, object.Definer
+	} else {
+		return nil
+	}
+
 	for _, re := range dc.allowedDefinersMatch {
-		if re.MatchString(routine.Definer) {
+		if re.MatchString(definer) {
 			return nil
 		}
 	}
 	message := fmt.Sprintf(
 		"%s %s is using definer %s, which is not configured to be permitted. The following definers are listed in option allow-definer: %s.",
-		routine.Type, routine.Name, routine.Definer, dc.allowedDefinersString,
+		typ, name, definer, dc.allowedDefinersString,
 	)
-	return &Note{
+	note := Note{
 		LineOffset: FindFirstLineOffset(reDefinerCheckerOffset, createStatement),
 		Summary:    "Definer not permitted",
 		Message:    message,
 	}
+	return []Note{note}
 }
 
 // definerConfiger establishes the configuration of valid definers, in
 // both string and regexp-slice form. The former is for display purposes,
-// while the latter is used for efficient comparison against routines.
+// while the latter is used for efficient comparison.
 func definerConfiger(config *mybase.Config) interface{} {
+	// By default, lint-definer=error but allow-definer="%@%", which means we'd
+	// needlessly scan each object against a permissive regex. Instead, short-
+	// circuit the logic entirely in this situation for perf reasons.
+	if !config.Changed("allow-definer") {
+		return &definerConfig{fastAllowAll: true}
+	}
+
 	values := config.GetSlice("allow-definer", ',', true)
 	if len(values) == 0 {
 		return errors.New("Option allow-definer must be non-empty")
 	}
-	dc := definerConfig{
+	dc := &definerConfig{
 		allowedDefinersString: strings.Join(values, ", "),
 		allowedDefinersMatch:  make([]*regexp.Regexp, len(values)),
 	}

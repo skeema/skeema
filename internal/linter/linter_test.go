@@ -270,6 +270,38 @@ func (s IntegrationSuite) TestCheckSchemaUTF8MB3(t *testing.T) {
 	compareAnnotations(t, expected, result)
 }
 
+// TestCheckSchemaAllowAllDefiner provides additional coverage for the default
+// allow-definer / lint-definer logic's perf shortcut.
+func (s IntegrationSuite) TestCheckSchemaAllowAllDefiner(t *testing.T) {
+	dir := getDir(t, "testdata/routines")
+	opts, err := OptionsForDir(dir)
+	if err != nil {
+		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
+	}
+
+	logicalSchema := dir.LogicalSchemas[0]
+	wsOpts, err := workspace.OptionsForDir(dir, s.d.Instance)
+	if err != nil {
+		t.Fatalf("Unexpected error from workspace.OptionsForDir: %v", err)
+	}
+	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
+	if err != nil {
+		t.Fatalf("Unexpected error from workspace.ExecLogicalSchema: %v", err)
+	} else if len(wsSchema.Failures) != 0 {
+		t.Fatalf("Unexpectedly found %d workspace failures", len(wsSchema.Failures))
+	}
+
+	// There's intentionally no .skeema file here; force the flavor value
+	// corresponding to the current Dockerized test db here
+	opts.Flavor = s.d.Flavor()
+
+	// Should have no annotations at all!
+	result := CheckSchema(wsSchema, opts)
+	if len(result.Annotations) > 0 {
+		t.Errorf("Expected 0 annotations, instead found %d", len(result.Annotations))
+	}
+}
+
 func (s *IntegrationSuite) Setup(backend string) (err error) {
 	s.d, err = s.manager.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
 		Name:              fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),

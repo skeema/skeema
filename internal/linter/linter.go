@@ -40,7 +40,17 @@ func CheckSchema(wsSchema *workspace.Schema, opts Options) *Result {
 
 // ObjectChecker values may be used to check for problems in database objects.
 type ObjectChecker interface {
-	CheckObject(object interface{}, createStatement string, schema *tengo.Schema, opts Options) []Note
+	CheckObject(object tengo.DefKeyer, createStatement string, schema *tengo.Schema, opts Options) []Note
+}
+
+// GenericChecker is a function that looks for problems in multiple types of
+// database objects. It can return any number of notes per object.
+type GenericChecker func(object tengo.DefKeyer, createStatement string, schema *tengo.Schema, opts Options) []Note
+
+// CheckObject allows GenericChecker functions to satisfy the ObjectChecker
+// interface.
+func (c GenericChecker) CheckObject(object tengo.DefKeyer, createStatement string, schema *tengo.Schema, opts Options) []Note {
+	return c(object, createStatement, schema, opts)
 }
 
 // TableChecker is a function that looks for problems in a table. It can return
@@ -49,7 +59,7 @@ type TableChecker func(table *tengo.Table, createStatement string, schema *tengo
 
 // CheckObject provides arg conversion in order for TableChecker functions to
 // satisfy the ObjectChecker interface.
-func (tc TableChecker) CheckObject(object interface{}, createStatement string, schema *tengo.Schema, opts Options) []Note {
+func (tc TableChecker) CheckObject(object tengo.DefKeyer, createStatement string, schema *tengo.Schema, opts Options) []Note {
 	if table, ok := object.(*tengo.Table); ok {
 		return tc(table, createStatement, schema, opts)
 	}
@@ -62,7 +72,7 @@ type TableBinaryChecker func(table *tengo.Table, createStatement string, schema 
 
 // CheckObject provides arg and return conversion in order for
 // TableBinaryChecker functions to satisfy the ObjectChecker interface.
-func (tbc TableBinaryChecker) CheckObject(object interface{}, createStatement string, schema *tengo.Schema, opts Options) []Note {
+func (tbc TableBinaryChecker) CheckObject(object tengo.DefKeyer, createStatement string, schema *tengo.Schema, opts Options) []Note {
 	if table, ok := object.(*tengo.Table); ok {
 		if note := tbc(table, createStatement, schema, opts); note != nil {
 			return []Note{*note}
@@ -79,7 +89,7 @@ type RoutineChecker func(routine *tengo.Routine, createStatement string, schema 
 
 // CheckObject provides arg conversion in order for RoutineChecker functions to
 // satisfy the ObjectChecker interface.
-func (rc RoutineChecker) CheckObject(object interface{}, createStatement string, schema *tengo.Schema, opts Options) []Note {
+func (rc RoutineChecker) CheckObject(object tengo.DefKeyer, createStatement string, schema *tengo.Schema, opts Options) []Note {
 	if routine, ok := object.(*tengo.Routine); ok {
 		if note := rc(routine, createStatement, schema, opts); note != nil {
 			return []Note{*note}
