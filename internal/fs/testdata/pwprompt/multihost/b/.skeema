@@ -1,0 +1,3 @@
+host-wrapper=/usr/local/bin/mywrapper.sh
+host=foo
+password

@@ -130,6 +130,13 @@ func lintDir(dir *fs.Dir) *linter.Result {
 		return linter.BadConfigResult(dir, err)
 	}
 
+	wsType, _ := dir.Config.GetEnum("workspace", "temp-schema", "docker")
+	if wsType != "docker" {
+		if err := dir.PromptPasswordIfRequested(); err != nil {
+			log.Warn(err)
+		}
+	}
+
 	// Get workspace options for dir. This involves connecting to the first defined
 	// instance, so that any auto-detect-related settings work properly. However,
 	// with workspace=docker we can ignore connection errors; we'll get reasonable
@@ -137,11 +144,11 @@ func lintDir(dir *fs.Dir) *linter.Result {
 	var wsOpts workspace.Options
 	if len(dir.LogicalSchemas) > 0 {
 		inst, err := dir.FirstInstance()
-		if wsType, _ := dir.Config.GetEnum("workspace", "temp-schema", "docker"); wsType != "docker" || !dir.Config.Changed("flavor") {
+		if wsType != "docker" || !dir.Config.Changed("flavor") {
 			if err != nil {
 				return linter.BadConfigResult(dir, err)
 			} else if inst == nil {
-				return linter.BadConfigResult(dir, fmt.Errorf("With workspace=temp-schema, this command needs a host to operate on, but no host is defined for environment %q", dir.Config.Get("environment")))
+				return linter.BadConfigResult(dir, fmt.Errorf("This command needs either a host (with workspace=temp-schema) or flavor (with workspace=docker), but one is not configured for environment %q", dir.Config.Get("environment")))
 			}
 		}
 		if wsOpts, err = workspace.OptionsForDir(dir, inst); err != nil {

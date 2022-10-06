@@ -35,14 +35,7 @@ func AssertFileMissingOptions(t *testing.T, file *File, options ...string) {
 
 // SimpleSource is the most trivial possible implementation of the OptionValuer
 // interface: it just maps option name strings to option value strings.
-type SimpleSource map[string]string
-
-// OptionValue satisfies the OptionValuer interface, allowing SimpleSource to
-// be an option source for Config methods.
-func (source SimpleSource) OptionValue(optionName string) (string, bool) {
-	val, ok := source[optionName]
-	return val, ok
-}
+type SimpleSource = StringMapValues
 
 // SimpleConfig returns a stub config based on a single map of key->value string
 // pairs. All keys in the map will automatically be considered valid options.

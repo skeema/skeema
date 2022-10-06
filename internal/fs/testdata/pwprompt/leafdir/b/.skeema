@@ -1,0 +1,5 @@
+# should prompt for password in this dir
+schema=b
+user=b
+port=3307
+password

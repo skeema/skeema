@@ -1,6 +1,7 @@
 package fs
 
 import (
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -597,6 +598,99 @@ func TestAncestorPaths(t *testing.T) {
 		if actual := ancestorPaths(c.input); !reflect.DeepEqual(actual, c.expected) {
 			t.Errorf("Expected ancestorPaths(%q) to return %q, instead found %q", c.input, c.expected, actual)
 		}
+	}
+}
+
+func TestPromptPasswordIfRequested(t *testing.T) {
+	defer func() {
+		util.PasswordPromptInput = util.PasswordInputSource(util.NoInteractiveInput)
+	}()
+
+	// If a parent dir .skeema file has a bare "password" line, pw should be
+	// prompted there but not redundantly for its subdirs
+	dir := getDir(t, "testdata/pwprompt/basedir")
+	util.PasswordPromptInput = util.NewMockPasswordInput("basedir")
+	if err := dir.PromptPasswordIfRequested(); err != nil {
+		t.Fatalf("Unexpected error from mock password input: %v", err)
+	} else if actual := dir.Config.Get("password"); actual != "basedir" {
+		t.Errorf("Unexpected configuration for password: %q (expected %q)", actual, "basedir")
+	}
+	util.PasswordPromptInput = util.NewMockPasswordInput("different value to ensure not re-prompted")
+	subdirs, err := dir.Subdirs()
+	if err != nil {
+		t.Fatalf("Unexpected error from Subdirs: %v", err)
+	}
+	for _, subdir := range subdirs {
+		if err := subdir.PromptPasswordIfRequested(); err != nil {
+			t.Fatalf("Unexpected error from mock password input: %v", err)
+		} else if actual := subdir.Config.Get("password"); actual != "basedir" {
+			t.Errorf("Unexpected configuration for password: %q (expected %q)", actual, "basedir")
+		}
+	}
+
+	// If parent dir doesn't have bare "password" but both subdirs do, they should
+	// each prompt password separately
+	dir = getDir(t, "testdata/pwprompt/leafdir")
+	util.PasswordPromptInput = util.NewMockPasswordInput("basedir")
+	if err := dir.PromptPasswordIfRequested(); err != nil {
+		t.Fatalf("Unexpected error from mock password input: %v", err)
+	} else if dir.Config.Changed("password") {
+		t.Errorf("password value unexpectedly changed for base dir %s", dir)
+	}
+	subdirs, err = dir.Subdirs()
+	if err != nil {
+		t.Fatalf("Unexpected error from Subdirs: %v", err)
+	}
+	for n, subdir := range subdirs {
+		leafPassword := fmt.Sprintf("leaf-%d", n)
+		util.PasswordPromptInput = util.NewMockPasswordInput(leafPassword)
+		if err := subdir.PromptPasswordIfRequested(); err != nil {
+			t.Fatalf("Unexpected error from mock password input: %v", err)
+		} else if actual := subdir.Config.Get("password"); actual != leafPassword {
+			t.Errorf("Unexpected configuration for password: %q (expected %q)", actual, leafPassword)
+		}
+	}
+
+	// If an equals sign is present, but no value or an empty string, this means
+	// empty password (not prompt) for compat with MySQL client behavior
+	util.PasswordPromptInput = util.NewMockPasswordInput("this should not show up")
+	dir = getDir(t, "testdata/pwprompt/noprompt/a")
+	if err := dir.PromptPasswordIfRequested(); err != nil {
+		t.Fatalf("Unexpected error from mock password input: %v", err)
+	} else if dir.Config.Changed("password") {
+		t.Errorf("password value unexpectedly changed for dir %s", dir)
+	}
+	dir = getDir(t, "testdata/pwprompt/noprompt/b")
+	if err := dir.PromptPasswordIfRequested(); err != nil {
+		t.Fatalf("Unexpected error from mock password input: %v", err)
+	} else if dir.Config.Changed("password") {
+		t.Errorf("password value unexpectedly changed for dir %s", dir)
+	}
+
+	// The prompt string and error strings should normally contain the host, or
+	// host:port if port is nonstandard, or directory name if no host or multiple
+	// hosts. We cannot directly test the prompt string, but we can confirm it via
+	// error strings.
+	util.PasswordPromptInput = util.PasswordInputSource(util.NoInteractiveInput)
+	dir = getDir(t, "testdata/pwprompt/basedir") // no host
+	if err := dir.PromptPasswordIfRequested(); err == nil || !strings.Contains(err.Error(), "testdata/pwprompt/basedir") {
+		t.Errorf("Error value did not contain expected string: %v", err)
+	}
+	dir = getDir(t, "testdata/pwprompt/leafdir/a") // host, and port, but port is set to 3306 which shouldn't display
+	if err := dir.PromptPasswordIfRequested(); err == nil || !strings.Contains(err.Error(), "1.2.3.4") || strings.Contains(err.Error(), ":3306") {
+		t.Errorf("Error value did not contain expected string: %v", err)
+	}
+	dir = getDir(t, "testdata/pwprompt/leafdir/b") // host, and non-3306 port
+	if err := dir.PromptPasswordIfRequested(); err == nil || !strings.Contains(err.Error(), "1.2.3.4:3307") {
+		t.Errorf("Error value did not contain expected string: %v", err)
+	}
+	dir = getDir(t, "testdata/pwprompt/multihost/a") // multiple hosts comma-separated
+	if err := dir.PromptPasswordIfRequested(); err == nil || !strings.Contains(err.Error(), "testdata/pwprompt/multihost/a") {
+		t.Errorf("Error value did not contain expected string: %v", err)
+	}
+	dir = getDir(t, "testdata/pwprompt/multihost/b") // using host-wrapper
+	if err := dir.PromptPasswordIfRequested(); err == nil || !strings.Contains(err.Error(), "testdata/pwprompt/multihost/b") {
+		t.Errorf("Error value did not contain expected string: %v", err)
 	}
 }
 

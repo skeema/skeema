@@ -127,16 +127,9 @@ func TestPasswordOption(t *testing.T) {
 	}
 	assertPassword(cfg, "howdyplanet")
 
-	// ProcessSpecialGlobalOptions should error with valueless password if STDIN
-	// isn't a TTY. Test bare "password" (no =) on both CLI and config file.
-	oldStdin := os.Stdin
-	defer func() {
-		os.Stdin = oldStdin
-	}()
-	var err error
-	if os.Stdin, err = os.Open("../../testdata/setup.sql"); err != nil {
-		t.Fatalf("Unable to open ../../testdata/setup.sql: %s", err)
-	}
+	// ProcessSpecialGlobalOptions should error with valueless password, since
+	// logic in init() forces test behavior to be same as if STDIN isn't a TTY.
+	// Test bare "password" (no =) on both CLI and config file.
 	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --password")
 	if err := ProcessSpecialGlobalOptions(cfg); err == nil {
 		t.Error("Expected ProcessSpecialGlobalOptions to return an error for non-TTY STDIN, but it did not")
@@ -152,7 +145,6 @@ func TestPasswordOption(t *testing.T) {
 	}
 
 	// Setting password to an empty string explicitly should not trigger TTY prompt
-	// (note: STDIN intentionally still points to a file here, from test above)
 	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --password=")
 	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
 		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %v", err)
@@ -162,6 +154,24 @@ func TestPasswordOption(t *testing.T) {
 	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
 		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %v", err)
 	}
+
+	// Verify password input behavior using mock input source, using both bare
+	// --password as well as bare "password" line in config file
+	defer func() {
+		PasswordPromptInput = PasswordInputSource(NoInteractiveInput)
+	}()
+	PasswordPromptInput = NewMockPasswordInput("mock-password-cli")
+	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --password")
+	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
+		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %v", err)
+	}
+	assertPassword(cfg, "mock-password-cli")
+	PasswordPromptInput = NewMockPasswordInput("mock-password-file")
+	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff", fakeFileSource)
+	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
+		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %v", err)
+	}
+	assertPassword(cfg, "mock-password-file")
 }
 
 func TestSplitConnectOptions(t *testing.T) {

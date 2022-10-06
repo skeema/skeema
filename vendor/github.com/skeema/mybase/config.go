@@ -17,6 +17,22 @@ type OptionValuer interface {
 	OptionValue(optionName string) (value string, ok bool)
 }
 
+// StringMapValues is the most trivial possible implementation of the
+// OptionValuer interface: it just maps option name strings to option value
+// strings.
+type StringMapValues map[string]string
+
+// OptionValue satisfies the OptionValuer interface, allowing StringMapValues
+// to be an option source for Config methods.
+func (source StringMapValues) OptionValue(optionName string) (string, bool) {
+	val, ok := source[optionName]
+	return val, ok
+}
+
+func (source StringMapValues) String() string {
+	return "runtime override"
+}
+
 // Config represents a list of sources for option values -- the command-line
 // plus zero or more option files, or any other source implementing the
 // OptionValuer interface.
@@ -24,7 +40,8 @@ type Config struct {
 	CLI              *CommandLine            // Parsed command-line
 	IsTest           bool                    // true if Config generated from test logic, false otherwise
 	LooseFileOptions bool                    // enable to ignore unknown options in all Files
-	sources          []OptionValuer          // Sources of option values, excluding CLI or Command; higher indexes override lower indexes
+	runtimeOverrides StringMapValues         // Highest-priority option value overrides
+	sources          []OptionValuer          // Sources of option values, excluding CLI, Command, runtimeOverrides; higher indexes override lower indexes
 	unifiedValues    map[string]string       // Precomputed cache of option name => value
 	unifiedSources   map[string]OptionValuer // Precomputed cache of option name => which source supplied it
 	dirty            bool                    // true if source list has changed, meaning next access needs to recompute caches
@@ -37,9 +54,10 @@ type Config struct {
 // other sources, and should not be supplied redundantly via sources.
 func NewConfig(cli *CommandLine, sources ...OptionValuer) *Config {
 	return &Config{
-		CLI:     cli,
-		sources: sources,
-		dirty:   true,
+		CLI:              cli,
+		runtimeOverrides: StringMapValues(make(map[string]string)),
+		sources:          sources,
+		dirty:            true,
 	}
 }
 
@@ -50,10 +68,15 @@ func NewConfig(cli *CommandLine, sources ...OptionValuer) *Config {
 func (cfg *Config) Clone() *Config {
 	sourcesCopy := make([]OptionValuer, len(cfg.sources))
 	copy(sourcesCopy, cfg.sources)
+	runtimeOverridesCopy := StringMapValues(make(map[string]string, len(cfg.runtimeOverrides)))
+	for rtoName, rtoValue := range cfg.runtimeOverrides {
+		runtimeOverridesCopy[rtoName] = rtoValue
+	}
 	return &Config{
 		CLI:              cfg.CLI,
 		IsTest:           cfg.IsTest,
 		LooseFileOptions: cfg.LooseFileOptions,
+		runtimeOverrides: runtimeOverridesCopy,
 		sources:          sourcesCopy,
 		dirty:            true,
 	}
@@ -100,8 +123,9 @@ func (cfg *Config) rebuild() {
 	// Next come cfg.sources, which are already ordered from lowest priority to highest priority
 	allSources = append(allSources, cfg.sources...)
 
-	// Finally, at highest priority is options provided on the command-line
-	allSources = append(allSources, cfg.CLI)
+	// Finally, at highest priorities are options provided on the command-line,
+	// and then runtime overrides
+	allSources = append(allSources, cfg.CLI, cfg.runtimeOverrides)
 
 	options := cfg.CLI.Command.Options()
 	cfg.unifiedValues = make(map[string]string, len(options)+len(cfg.CLI.Command.args))
@@ -153,8 +177,31 @@ func (cfg *Config) rebuildIfDirty() {
 // MarkDirty causes the config to rebuild itself on next option lookup. This
 // is only needed in situations where a source is known to have changed since
 // the previous lookup.
+//
+// Deprecated: Callers should prefer using SetRuntimeOverride, instead of
+// directly manipulating a source and then calling MarkDirty.
 func (cfg *Config) MarkDirty() {
 	cfg.dirty = true
+}
+
+// SetRuntimeOverride sets an override value for the supplied option name.
+// This value takes precedence over all sources, including option values that
+// were supplied on the CLI. The supplied name must correspond to a known option
+// in cfg, otherwise this method panics.
+func (cfg *Config) SetRuntimeOverride(name, value string) {
+	if _, ok := cfg.unifiedSources[name]; !ok {
+		panic(fmt.Errorf("Assertion failed: option %s does not exist", name))
+	}
+
+	cfg.runtimeOverrides[name] = value
+
+	// Instead of marking the config as dirty and rebuilding it lazily, we can
+	// just set the value right away, since runtime overrides are always the
+	// highest priority source.
+	if !cfg.dirty {
+		cfg.unifiedValues[name] = value
+		cfg.unifiedSources[name] = cfg.runtimeOverrides
+	}
 }
 
 // Changed returns true if the specified option name has been set, and its
@@ -190,9 +237,9 @@ func (cfg *Config) Supplied(name string) bool {
 
 // SuppliedWithValue returns true if the specified option name has been set by
 // some configuration source AND had a value specified, even if that value was
-// a blank string. For example, this returns true even for "--foo=''" or
-// "--foo=" on a command line, or "foo=''" or "foo=" in an option file. Returns
-// false for bare "--foo" on CLI or bare "foo" in an option file.
+// a blank string or empty value. For example, this returns true even for
+// --foo="" or --foo= on a command line, or foo="" or foo= in an option file.
+// Returns false for bare --foo on CLI or bare foo in an option file.
 // This method is only usable on OptionTypeString options with !RequireValue.
 // Panics if the supplied option name does not meet those requirements.
 func (cfg *Config) SuppliedWithValue(name string) bool {

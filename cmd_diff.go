@@ -29,8 +29,7 @@ func init() {
 // DiffHandler is the handler method for `skeema diff`
 func DiffHandler(cfg *mybase.Config) error {
 	// We just delegate to PushHandler, forcing dry-run to be enabled
-	cfg.CLI.OptionValues["dry-run"] = "1"
-	cfg.MarkDirty()
+	cfg.SetRuntimeOverride("dry-run", "1")
 	return PushHandler(cfg)
 }
 

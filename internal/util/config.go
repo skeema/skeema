@@ -113,16 +113,14 @@ func ProcessSpecialGlobalOptions(cfg *mybase.Config) error {
 	// STDIN like mysql client does.
 	if !cfg.Supplied("password") {
 		if val := os.Getenv("MYSQL_PWD"); val != "" {
-			cfg.CLI.OptionValues["password"] = val
-			cfg.MarkDirty()
+			cfg.SetRuntimeOverride("password", val)
 		}
 	} else if !cfg.SuppliedWithValue("password") {
-		var err error
-		cfg.CLI.OptionValues["password"], err = PromptPassword()
-		cfg.MarkDirty()
+		val, err := PromptPassword()
 		if err != nil {
 			return err
 		}
+		cfg.SetRuntimeOverride("password", val)
 	}
 
 	if cfg.GetBool("debug") {
@@ -130,6 +128,47 @@ func ProcessSpecialGlobalOptions(cfg *mybase.Config) error {
 	}
 
 	return nil
+}
+
+// PasswordInputSource is a function that can be used to obtain a password
+// interactively.
+type PasswordInputSource func() (string, error)
+
+// InteractivePasswordInput reads a password from STDIN. This only works if
+// STDIN is a terminal.
+func InteractivePasswordInput() (string, error) {
+	stdin := int(os.Stdin.Fd())
+	bytePassword, err := terminal.ReadPassword(stdin)
+	return string(bytePassword), err
+}
+
+// NoInteractiveInput always returns an error instead of attempting to read a
+// password.
+func NoInteractiveInput() (string, error) {
+	return "", errors.New("STDIN must be a TTY to read password")
+}
+
+// NewMockPasswordInput returns a PasswordInputSource function which always
+// returns the specified string.
+func NewMockPasswordInput(mockPassword string) PasswordInputSource {
+	return PasswordInputSource(func() (string, error) {
+		fmt.Fprintf(os.Stderr, strings.Repeat("*", len(mockPassword)))
+		return mockPassword, nil
+	})
+}
+
+// PasswordPromptInput is the input source used by PromptPassword to obtain a
+// password interactively, or to mock such an input for testing purposes.
+var PasswordPromptInput PasswordInputSource
+
+func init() {
+	// Don't attempt interactive password prompt if STDIN isn't a TTY, or if
+	// running a test suite
+	if !terminal.IsTerminal(int(os.Stdin.Fd())) || strings.HasSuffix(os.Args[0], ".test") || strings.HasSuffix(os.Args[0], ".test.exe") {
+		PasswordPromptInput = PasswordInputSource(NoInteractiveInput)
+	} else {
+		PasswordPromptInput = PasswordInputSource(InteractivePasswordInput)
+	}
 }
 
 // PromptPassword reads a password from STDIN without echoing the typed
@@ -142,24 +181,15 @@ func PromptPassword(promptArgs ...interface{}) (string, error) {
 	if len(promptArgs) == 0 {
 		promptArgs = append(promptArgs, "Enter password: ")
 	}
-	stdin := int(os.Stdin.Fd())
-	if !terminal.IsTerminal(stdin) {
-		return "", errors.New("STDIN must be a TTY to read password")
-	}
 
 	w := os.Stderr
 	if !terminal.IsTerminal(int(w.Fd())) && terminal.IsTerminal(int(os.Stdout.Fd())) {
 		w = os.Stdout
 	}
 	fmt.Fprintf(w, promptArgs[0].(string), promptArgs[1:]...)
-
-	bytePassword, err := terminal.ReadPassword(stdin)
-	if err != nil {
-		return "", err
-	}
-
-	fmt.Fprintln(w) // since ReadPassword also won't echo the ENTER key as a newline!
-	return string(bytePassword), nil
+	pw, err := PasswordPromptInput()
+	fmt.Fprintln(w) // since password input funcs won't echo the ENTER key as a newline
+	return pw, err
 }
 
 // SplitConnectOptions takes a string containing a comma-separated list of

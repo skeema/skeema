@@ -675,6 +675,41 @@ func (dir *Dir) Generator() (major, minor, patch int, edition string) {
 	return int(version.Major()), int(version.Minor()), int(version.Patch()), edition
 }
 
+// PromptPasswordIfRequested checks if this dir's configuration indicates a
+// password should be read from STDIN, due to a .skeema file having a bare
+// "password" line with no equals sign or value. If successful, the password
+// will be stored in the directory's configuration as a runtime override. An
+// error is returned if a password should be prompted but cannot, for example
+// due to STDIN not being a TTY.
+func (dir *Dir) PromptPasswordIfRequested() error {
+	// Don't prompt if password option not supplied at all (left at default of no
+	// password) or supplied with some value (even if that value is a blank string,
+	// which also indicates intentionally no password).
+	// TODO replace this with a more efficient check once env var support is
+	// fleshed out and the default for password option is no longer ""
+	if !dir.Config.Supplied("password") || dir.Config.SuppliedWithValue("password") {
+		return nil
+	}
+
+	// Since different dirs/hosts may have different passwords, indicate in the
+	// prompt text which one is being requested
+	var promptArg string
+	if !dir.Config.Changed("host-wrapper") && dir.Config.Changed("host") && !strings.Contains(dir.Config.Get("host"), ",") {
+		promptArg = dir.Config.Get("host")
+		if dir.Config.Changed("port") {
+			promptArg = fmt.Sprintf("%s:%d", promptArg, dir.Config.GetIntOrDefault("port"))
+		}
+	} else {
+		promptArg = "directory " + dir.RelPath()
+	}
+	val, err := util.PromptPassword("Enter password for %s: ", promptArg)
+	if err != nil {
+		return fmt.Errorf("Unable to prompt password for %s: %w", promptArg, err)
+	}
+	dir.Config.SetRuntimeOverride("password", val)
+	return nil
+}
+
 // parseContents reads the .skeema and *.sql files in the dir, populating
 // fields of dir accordingly. This method modifies dir in-place. Any fatal
 // error will populate dir.ParseError.

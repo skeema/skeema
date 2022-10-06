@@ -127,6 +127,9 @@ func ParseCLI(cmd *Command, args []string) (*Config, error) {
 	shortOptionIndex := make(map[rune]*Option, len(longOptionIndex))
 	for name, opt := range longOptionIndex {
 		if opt.Shorthand != 0 {
+			if _, already := shortOptionIndex[opt.Shorthand]; already {
+				panic(fmt.Errorf("Command %s defines multiple conflicting options with short-form -%c", cmd.Name, opt.Shorthand))
+			}
 			shortOptionIndex[opt.Shorthand] = longOptionIndex[name]
 		}
 	}
