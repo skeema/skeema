@@ -193,7 +193,7 @@ func generatorString() string {
 // correct schema name.
 func PopulateSchemaDir(s *tengo.Schema, parentDir *fs.Dir, makeSubdir bool) error {
 	// Ignore any attempt to populate a dir for the temp schema
-	if s.Name == parentDir.Config.Get("temp-schema") {
+	if s.Name == parentDir.Config.GetAllowEnvVar("temp-schema") {
 		return nil
 	}
 

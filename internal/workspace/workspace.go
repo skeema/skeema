@@ -117,7 +117,7 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 	}
 	opts := Options{
 		CleanupAction: CleanupActionNone,
-		SchemaName:    dir.Config.Get("temp-schema"),
+		SchemaName:    dir.Config.GetAllowEnvVar("temp-schema"),
 		LockTimeout:   30 * time.Second,
 		Concurrency:   10,
 	}

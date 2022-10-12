@@ -30,7 +30,7 @@ func AddGlobalOptions(cmd *mybase.Command) {
 	// Visible global options
 	cmd.AddOptions("global",
 		mybase.StringOption("user", 'u', "root", "Username to connect to database host"),
-		mybase.StringOption("password", 'p', "", "Password for database user; omit value to prompt from TTY (default no password)").ValueOptional(),
+		mybase.StringOption("password", 'p', "$MYSQL_PWD", "Password for database user; omit value to prompt from TTY").ValueOptional(),
 		mybase.StringOption("host-wrapper", 'H', "", "External bin to shell out to for host lookup; see manual for template vars"),
 		mybase.StringOption("connect-options", 'o', "", "Comma-separated session options to set upon connecting to each database instance"),
 		mybase.StringOption("ignore-schema", 0, "", "Ignore schemas that match regex"),
@@ -94,7 +94,7 @@ func AddGlobalConfigFiles(cfg *mybase.Config) {
 
 // ProcessSpecialGlobalOptions performs special handling of global options with
 // unusual semantics -- handling restricted placement of host and schema;
-// obtaining a password from MYSQL_PWD or STDIN; enable debug logging.
+// obtaining a password from STDIN if requested; enable debug logging.
 func ProcessSpecialGlobalOptions(cfg *mybase.Config) error {
 	// The host and schema options are special -- most commands only expect
 	// to find them when recursively crawling directory configs. So if these
@@ -108,18 +108,24 @@ func ProcessSpecialGlobalOptions(cfg *mybase.Config) error {
 		}
 	}
 
-	// Special handling for password option: if not supplied at all, check env
-	// var instead. Or if supplied but with no equals sign or value, prompt on
-	// STDIN like mysql client does.
-	if !cfg.Supplied("password") {
-		if val := os.Getenv("MYSQL_PWD"); val != "" {
-			cfg.SetRuntimeOverride("password", val)
-		}
-	} else if !cfg.SuppliedWithValue("password") {
+	// Special handling for password option: if supplied but with no equals sign or
+	// value, prompt on STDIN like mysql client does. (If it was supplied with an
+	// equals sign but set to a blank value, mybase will expose this as "''" from
+	// GetRaw, since GetRaw doesn't remove the quotes like Get does. This allows us
+	// to differentiate between "prompt on STDIN" and "intentionally no/blank
+	// password" situations.)
+	// Note this only handles --password on CLI and "password" lines in global
+	// option files. For per-dir .skeema file handling, use fs package's
+	// Dir.PromptPasswordIfRequested() method.
+	if cfg.GetRaw("password") == "" {
 		val, err := PromptPassword()
 		if err != nil {
 			return err
 		}
+		// We single-quote-wrap the value (escaping any internal single-quotes) to
+		// prevent a redundant pw prompt on an empty string, and also to prevent
+		// input of the form $SOME_ENV_VAR from performing env var substitution.
+		val = fmt.Sprintf("'%s'", strings.ReplaceAll(val, "'", "\\'"))
 		cfg.SetRuntimeOverride("password", val)
 	}
 

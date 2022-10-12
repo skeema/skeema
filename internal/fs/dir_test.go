@@ -433,7 +433,7 @@ func TestDirInstances(t *testing.T) {
 	assertInstances(map[string]string{"host": "some.db.host:3307"}, false, "some.db.host:3307")
 	assertInstances(map[string]string{"host": "some.db.host", "port": "3307"}, false, "some.db.host:3307")
 	assertInstances(map[string]string{"host": "some.db.host:3307", "port": "3307"}, false, "some.db.host:3307")
-	assertInstances(map[string]string{"host": "some.db.host:3307", "port": "3306"}, false, "some.db.host:3307") // port option ignored if default, even if explicitly specified
+	assertInstances(map[string]string{"host": "some.db.host:3307", "port": "3306"}, true) // mismatched port option not ignored if supplied explicitly, even if default
 	assertInstances(map[string]string{"host": "localhost"}, false, "localhost:/tmp/mysql.sock")
 	assertInstances(map[string]string{"host": "localhost", "port": "1234"}, false, "localhost:1234")
 	assertInstances(map[string]string{"host": "localhost", "socket": "/var/run/mysql.sock"}, false, "localhost:/var/run/mysql.sock")
@@ -612,7 +612,7 @@ func TestPromptPasswordIfRequested(t *testing.T) {
 	util.PasswordPromptInput = util.NewMockPasswordInput("basedir")
 	if err := dir.PromptPasswordIfRequested(); err != nil {
 		t.Fatalf("Unexpected error from mock password input: %v", err)
-	} else if actual := dir.Config.Get("password"); actual != "basedir" {
+	} else if actual := dir.Config.GetAllowEnvVar("password"); actual != "basedir" {
 		t.Errorf("Unexpected configuration for password: %q (expected %q)", actual, "basedir")
 	}
 	util.PasswordPromptInput = util.NewMockPasswordInput("different value to ensure not re-prompted")
@@ -623,8 +623,30 @@ func TestPromptPasswordIfRequested(t *testing.T) {
 	for _, subdir := range subdirs {
 		if err := subdir.PromptPasswordIfRequested(); err != nil {
 			t.Fatalf("Unexpected error from mock password input: %v", err)
-		} else if actual := subdir.Config.Get("password"); actual != "basedir" {
+		} else if actual := subdir.Config.GetAllowEnvVar("password"); actual != "basedir" {
 			t.Errorf("Unexpected configuration for password: %q (expected %q)", actual, "basedir")
+		}
+	}
+
+	// Same situation as above, but verify that a blank interactive password won't
+	// re-prompt redundantly for subdirs
+	dir = getDir(t, "testdata/pwprompt/basedir")
+	util.PasswordPromptInput = util.NewMockPasswordInput("")
+	if err := dir.PromptPasswordIfRequested(); err != nil {
+		t.Fatalf("Unexpected error from mock password input: %v", err)
+	} else if actual := dir.Config.GetAllowEnvVar("password"); actual != "" {
+		t.Errorf("Unexpected configuration for password: %q (expected %q)", actual, "")
+	}
+	util.PasswordPromptInput = util.NewMockPasswordInput("different value to ensure not re-prompted")
+	subdirs, err = dir.Subdirs()
+	if err != nil {
+		t.Fatalf("Unexpected error from Subdirs: %v", err)
+	}
+	for _, subdir := range subdirs {
+		if err := subdir.PromptPasswordIfRequested(); err != nil {
+			t.Fatalf("Unexpected error from mock password input: %v", err)
+		} else if actual := subdir.Config.GetAllowEnvVar("password"); actual != "" {
+			t.Errorf("Unexpected configuration for password: %q (expected %q)", actual, "")
 		}
 	}
 
@@ -646,7 +668,7 @@ func TestPromptPasswordIfRequested(t *testing.T) {
 		util.PasswordPromptInput = util.NewMockPasswordInput(leafPassword)
 		if err := subdir.PromptPasswordIfRequested(); err != nil {
 			t.Fatalf("Unexpected error from mock password input: %v", err)
-		} else if actual := subdir.Config.Get("password"); actual != leafPassword {
+		} else if actual := subdir.Config.GetAllowEnvVar("password"); actual != leafPassword {
 			t.Errorf("Unexpected configuration for password: %q (expected %q)", actual, leafPassword)
 		}
 	}
@@ -657,14 +679,14 @@ func TestPromptPasswordIfRequested(t *testing.T) {
 	dir = getDir(t, "testdata/pwprompt/noprompt/a")
 	if err := dir.PromptPasswordIfRequested(); err != nil {
 		t.Fatalf("Unexpected error from mock password input: %v", err)
-	} else if dir.Config.Changed("password") {
-		t.Errorf("password value unexpectedly changed for dir %s", dir)
+	} else if dir.Config.GetAllowEnvVar("password") != "" {
+		t.Errorf("password value unexpectedly non-blank for dir %s", dir)
 	}
 	dir = getDir(t, "testdata/pwprompt/noprompt/b")
 	if err := dir.PromptPasswordIfRequested(); err != nil {
 		t.Fatalf("Unexpected error from mock password input: %v", err)
-	} else if dir.Config.Changed("password") {
-		t.Errorf("password value unexpectedly changed for dir %s", dir)
+	} else if dir.Config.GetAllowEnvVar("password") != "" {
+		t.Errorf("password value unexpectedly non-blank for dir %s", dir)
 	}
 
 	// The prompt string and error strings should normally contain the host, or

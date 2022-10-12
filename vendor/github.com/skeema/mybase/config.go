@@ -2,10 +2,10 @@ package mybase
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 )
 
 // OptionValuer should be implemented by anything that can parse and return
@@ -336,6 +336,26 @@ func (cfg *Config) Get(name string) string {
 	return unquote(value)
 }
 
+// GetAllowEnvVar works like Get, but with additional support for ENV variables:
+// If the option value begins with $, it will be replaced with the value of the
+// corresponding environment variable, or an empty string if that variable is
+// not set.
+// Environment value lookups only occur if the option value came from a source
+// other than the CLI, since it is assumed that shells already handle the CLI
+// use-case appropriately. The value must also either not be quote-wrapped, or
+// be wrapped in double-quotes. (This way, literal values that just happen to
+// begin with a dollar sign may be expressed by wrapping a string in single-
+// quotes.)
+// Note that this method does NOT perform full variable interpolation: env
+// vars may not be present mid-string, nor can the form ${varname} be used.
+func (cfg *Config) GetAllowEnvVar(name string) string {
+	unquoted, quote := trimQuotes(cfg.GetRaw(name))
+	if len(unquoted) < 2 || unquoted[0] != '$' || quote == '\'' || quote == '`' || cfg.OnCLI(name) {
+		return unquoted
+	}
+	return os.Getenv(unquoted[1:])
+}
+
 // GetSlice returns an option's value as a slice of strings, splitting on
 // the provided delimiter. Delimiters contained inside quoted values have no
 // effect, nor do backslash-escaped delimiters. Quote-wrapped tokens will have
@@ -353,8 +373,34 @@ func (cfg *Config) GetSlice(name string, delimiter rune, unwrapFullValue bool) [
 	} else {
 		value = cfg.GetRaw(name)
 	}
+	return splitValueIntoSlice(value, delimiter)
+}
 
-	tokens := make([]string, 0)
+// GetSliceAllowEnvVar works like a combination of GetAllowEnvVar and GetSlice:
+// if the configured value is of form $FOO, and the $FOO environment variable
+// stores a comma-separated list of values, the list will be split using the
+// supplied delimiter.
+// Options can either be set to literal lists (as per GetSlice) or to a single
+// env variable name (as per GetAllowEnvVar), but not a combination. In other
+// words, if an option value is set to "a,$FOO,b" then this will not expand
+// $FOO.
+// unwrapFullValue only applies to values which aren't set via env vars.
+func (cfg *Config) GetSliceAllowEnvVar(name string, delimiter rune, unwrapFullValue bool) []string {
+	raw := cfg.GetRaw(name)
+	unquoted, quote := trimQuotes(raw)
+	var value string
+	if len(unquoted) >= 2 && unquoted[0] == '$' && quote != '\'' && quote != '`' && !cfg.OnCLI(name) {
+		value = os.Getenv(unquoted[1:])
+	} else if unwrapFullValue {
+		value = unquoted
+	} else {
+		value = raw
+	}
+	return splitValueIntoSlice(value, delimiter)
+}
+
+func splitValueIntoSlice(value string, delimiter rune) []string {
+	tokens := []string{}
 	var startToken int
 	var inQuote rune
 	var escapeNext bool
@@ -492,46 +538,51 @@ func (cfg *Config) GetRegexp(name string) (*regexp.Regexp, error) {
 	return re, nil
 }
 
-// Unquote takes a string, trims whitespace on both ends, and then examines
+// unquote takes a string, trims whitespace on both ends, and then examines
 // whether the entire string is wrapped in quotes. If it isn't, the string
 // is returned as-is after the whitespace is trimmed. Otherwise, the string
 // will have its wrapped quotes removed, and escaped values within the string
 // will be un-escaped.
 func unquote(input string) string {
+	unquoted, _ := trimQuotes(input)
+	return unquoted
+}
+
+// trimQuotes behaves like unquote, but also returns the quote rune that was
+// removed, or a zero-valued rune if no unquoting occurred.
+func trimQuotes(input string) (string, rune) {
 	input = strings.TrimSpace(input)
-	if utf8.RuneCountInString(input) < 2 { // too short to possibly be quoted
-		return input
+
+	// If the string isn't quote-wrapped, return as-is.
+	// Since the only supported quote characters are single-byte, no need to be
+	// cautious about multi-byte chars in these conditionals.
+	if len(input) < 2 {
+		return input, 0
 	}
-	quote, _ := utf8.DecodeRuneInString(input)
-	last, _ := utf8.DecodeLastRuneInString(input)
-	if quote != last || (quote != '`' && quote != '"' && quote != '\'') {
-		return input
+	quote := rune(input[0])
+	if (quote != '`' && quote != '"' && quote != '\'') || quote != rune(input[len(input)-1]) {
+		return input, 0
 	}
 
 	// Do a pass through the string. Store each rune in a buffer, unescaping
-	// escaped values in the process. If we hit a terminating quote midway thru
+	// escaped quotes in the process. If we hit a terminating quote midway thru
 	// the string, return the original value. (We don't unquote or unescape
 	// anything unless the *entire* value is quoted.)
 	var escapeNext bool
-	var runeTmp [utf8.UTFMax]byte
-	buf := make([]byte, 0, len(input)-2)
+	var buf strings.Builder
+	buf.Grow(len(input) - 2)
 	for _, r := range input[1 : len(input)-1] {
 		if r == quote && !escapeNext {
 			// we hit an unescaped terminating quote midway in the string, meaning the
 			// entire input is not quote-wrapped
-			return input
+			return input, 0
 		}
 		if r == '\\' && !escapeNext {
 			escapeNext = true
 			continue
 		}
 		escapeNext = false
-		if r >= utf8.RuneSelf { // multibyte character
-			byteCount := utf8.EncodeRune(runeTmp[:], r)
-			buf = append(buf, runeTmp[0:byteCount]...)
-		} else { // single-byte character
-			buf = append(buf, byte(r))
-		}
+		buf.WriteRune(r)
 	}
-	return string(buf)
+	return buf.String(), quote
 }

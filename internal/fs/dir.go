@@ -293,11 +293,11 @@ func (dir *Dir) CreateOptionFile(optionFile *mybase.File) (err error) {
 func (dir *Dir) Hostnames() ([]string, error) {
 	if dir.Config.Changed("host-wrapper") {
 		variables := map[string]string{
-			"HOST":        dir.Config.Get("host"),
+			"HOST":        dir.Config.GetAllowEnvVar("host"),
 			"ENVIRONMENT": dir.Config.Get("environment"),
 			"DIRNAME":     dir.BaseName(),
 			"DIRPATH":     dir.Path,
-			"SCHEMA":      dir.Config.Get("schema"),
+			"SCHEMA":      dir.Config.GetAllowEnvVar("schema"),
 		}
 		shellOut, err := util.NewInterpolatedShellOut(dir.Config.Get("host-wrapper"), variables)
 		if err != nil {
@@ -305,7 +305,18 @@ func (dir *Dir) Hostnames() ([]string, error) {
 		}
 		return shellOut.RunCaptureSplit()
 	}
-	return dir.Config.GetSlice("host", ',', true), nil
+	return dir.Config.GetSliceAllowEnvVar("host", ',', true), nil
+}
+
+// Port returns the port number in the directory's configuration (often the
+// default of 3306) and a boolean indicating whether the port was configured
+// explicitly using the port option.
+func (dir *Dir) Port() (int, bool) {
+	intValue, _ := strconv.Atoi(dir.Config.GetAllowEnvVar("port"))
+	if intValue == 0 {
+		intValue = 3306
+	}
+	return intValue, dir.Config.Supplied("port")
 }
 
 // Instances returns 0 or more tengo.Instance pointers, based on the
@@ -326,20 +337,20 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 
 	// Before looping over hostnames, do a single lookup of user, password,
 	// connect-options, port, socket.
+	user := dir.Config.GetAllowEnvVar("user")
+	password := dir.Config.GetAllowEnvVar("password")
 	var userAndPass string
-	if !dir.Config.Changed("password") {
-		userAndPass = dir.Config.Get("user")
+	if password == "" {
+		userAndPass = user
 	} else {
-		userAndPass = fmt.Sprintf("%s:%s", dir.Config.Get("user"), dir.Config.Get("password"))
+		userAndPass = user + ":" + password
 	}
 	params, err := dir.InstanceDefaultParams()
 	if err != nil {
 		return nil, fmt.Errorf("Invalid connection options: %s", err)
 	}
-	portValue := dir.Config.GetIntOrDefault("port")
-	portWasSupplied := dir.Config.Supplied("port")
-	portIsntDefault := dir.Config.Changed("port")
-	socketValue := dir.Config.Get("socket")
+	portValue, portWasSupplied := dir.Port()
+	socketValue := dir.Config.GetAllowEnvVar("socket")
 	socketWasSupplied := dir.Config.Supplied("socket")
 
 	// For each hostname, construct a DSN and use it to create an Instance
@@ -355,7 +366,7 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 				return nil, err
 			}
 			if splitPort > 0 {
-				if portIsntDefault && portValue != splitPort {
+				if splitPort != portValue && portWasSupplied {
 					return nil, fmt.Errorf("Port was supplied as %d inside hostname %s but as %d in option file", splitPort, host, portValue)
 				}
 				host = splitHost
@@ -366,8 +377,8 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 		dsn := fmt.Sprintf("%s@%s(%s)/?%s", userAndPass, net, addr, params)
 		instance, err := util.NewInstance("mysql", dsn)
 		if err != nil {
-			if dir.Config.Changed("password") {
-				safeUserPass := fmt.Sprintf("%s:*****", dir.Config.Get("user"))
+			if password != "" {
+				safeUserPass := user + ":*****"
 				dsn = strings.Replace(dsn, userAndPass, safeUserPass, 1)
 			}
 			return nil, fmt.Errorf("Invalid connection information for %s (DSN=%s): %s", dir, dsn, err)
@@ -437,18 +448,18 @@ func (dir *Dir) SchemaNames(instance *tengo.Instance) (names []string, err error
 	// If no schema defined in this dir (meaning this dir's .skeema, as well as
 	// parent dirs' .skeema, global option files, or command-line) for the current
 	// environment, then nothing to do
-	if !dir.Config.Changed("schema") {
+	schemaValue := dir.Config.GetAllowEnvVar("schema") // Strips quotes (including backticks) from fully quoted-wrapped values
+	if schemaValue == "" {
 		return nil, nil
 	}
 
-	schemaValue := dir.Config.Get("schema")                        // Get strips quotes (including backticks) from fully quoted-wrapped values
-	rawSchemaValue := dir.Config.GetRaw("schema")                  // GetRaw does not strip quotes
-	if rawSchemaValue != schemaValue && rawSchemaValue[0] == '`' { // no need to check len, the Changed check above already tells us schema != ""
+	rawSchemaValue := dir.Config.GetRaw("schema")                  // Does not strip quotes
+	if rawSchemaValue != schemaValue && rawSchemaValue[0] == '`' { // no need to check len: since non-raw value isn't empty, raw value can't be empty
 		variables := map[string]string{
 			"HOST":        instance.Host,
 			"PORT":        strconv.Itoa(instance.Port),
-			"USER":        dir.Config.Get("user"),
-			"PASSWORD":    dir.Config.Get("password"),
+			"USER":        dir.Config.GetAllowEnvVar("user"),
+			"PASSWORD":    dir.Config.GetAllowEnvVar("password"),
 			"ENVIRONMENT": dir.Config.Get("environment"),
 			"DIRNAME":     dir.BaseName(),
 			"DIRPATH":     dir.Path,
@@ -485,7 +496,7 @@ func (dir *Dir) SchemaNames(instance *tengo.Instance) (names []string, err error
 			names = keepNames
 		}
 	} else {
-		names = dir.Config.GetSlice("schema", ',', true)
+		names = dir.Config.GetSliceAllowEnvVar("schema", ',', true)
 	}
 
 	// Remove ignored schemas and system schemas. (tengo removes the latter from
@@ -682,22 +693,22 @@ func (dir *Dir) Generator() (major, minor, patch int, edition string) {
 // error is returned if a password should be prompted but cannot, for example
 // due to STDIN not being a TTY.
 func (dir *Dir) PromptPasswordIfRequested() error {
-	// Don't prompt if password option not supplied at all (left at default of no
-	// password) or supplied with some value (even if that value is a blank string,
-	// which also indicates intentionally no password).
-	// TODO replace this with a more efficient check once env var support is
-	// fleshed out and the default for password option is no longer ""
-	if !dir.Config.Supplied("password") || dir.Config.SuppliedWithValue("password") {
+	// Only prompt if password option was supplied with no equals sign or value.
+	// If it was supplied with an equals sign but set to a blank value, mybase
+	// will expose this as "''" from GetRaw, since GetRaw doesn't remove the quotes
+	// like other Config getters. This allows us to differentiate between "prompt
+	// on STDIN" and "intentionally no/blank password" situations.
+	if dir.Config.GetRaw("password") != "" {
 		return nil
 	}
 
 	// Since different dirs/hosts may have different passwords, indicate in the
 	// prompt text which one is being requested
 	var promptArg string
-	if !dir.Config.Changed("host-wrapper") && dir.Config.Changed("host") && !strings.Contains(dir.Config.Get("host"), ",") {
+	if !dir.Config.Changed("host-wrapper") && dir.Config.Changed("host") && !strings.ContainsAny(dir.Config.Get("host"), ",$") {
 		promptArg = dir.Config.Get("host")
-		if dir.Config.Changed("port") {
-			promptArg = fmt.Sprintf("%s:%d", promptArg, dir.Config.GetIntOrDefault("port"))
+		if port, _ := dir.Port(); port != 3306 {
+			promptArg = fmt.Sprintf("%s:%d", promptArg, port)
 		}
 	} else {
 		promptArg = "directory " + dir.RelPath()
@@ -706,6 +717,10 @@ func (dir *Dir) PromptPasswordIfRequested() error {
 	if err != nil {
 		return fmt.Errorf("Unable to prompt password for %s: %w", promptArg, err)
 	}
+	// We single-quote-wrap the value (escaping any internal single-quotes) to
+	// prevent a redundant pw prompt on an empty string, and also to prevent
+	// input of the form $SOME_ENV_VAR from performing env var substitution.
+	val = fmt.Sprintf("'%s'", strings.ReplaceAll(val, "'", "\\'"))
 	dir.Config.SetRuntimeOverride("password", val)
 	return nil
 }
