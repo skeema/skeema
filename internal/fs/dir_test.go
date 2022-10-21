@@ -601,19 +601,20 @@ func TestAncestorPaths(t *testing.T) {
 	}
 }
 
-func TestPromptPasswordIfRequested(t *testing.T) {
+func TestDirPassword(t *testing.T) {
 	defer func() {
 		util.PasswordPromptInput = util.PasswordInputSource(util.NoInteractiveInput)
+		cachedInteractivePasswords = make(map[string]string)
 	}()
 
 	// If a parent dir .skeema file has a bare "password" line, pw should be
-	// prompted there but not redundantly for its subdirs
-	dir := getDir(t, "testdata/pwprompt/basedir")
+	// prompted there, but not redundantly for its subdirs, since it gets cached
+	// in the dir's config as a runtime override, at dir parsing time (e.g. getDir)
 	util.PasswordPromptInput = util.NewMockPasswordInput("basedir")
-	if err := dir.PromptPasswordIfRequested(); err != nil {
-		t.Fatalf("Unexpected error from mock password input: %v", err)
-	} else if actual := dir.Config.GetAllowEnvVar("password"); actual != "basedir" {
-		t.Errorf("Unexpected configuration for password: %q (expected %q)", actual, "basedir")
+	dir := getDir(t, "testdata/pwprompt/basedir")
+	util.PasswordPromptInput = util.PasswordInputSource(util.NoInteractiveInput)
+	if pw, err := dir.Password(); pw != "basedir" || err != nil {
+		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
 	}
 	util.PasswordPromptInput = util.NewMockPasswordInput("different value to ensure not re-prompted")
 	subdirs, err := dir.Subdirs()
@@ -621,55 +622,49 @@ func TestPromptPasswordIfRequested(t *testing.T) {
 		t.Fatalf("Unexpected error from Subdirs: %v", err)
 	}
 	for _, subdir := range subdirs {
-		if err := subdir.PromptPasswordIfRequested(); err != nil {
-			t.Fatalf("Unexpected error from mock password input: %v", err)
-		} else if actual := subdir.Config.GetAllowEnvVar("password"); actual != "basedir" {
-			t.Errorf("Unexpected configuration for password: %q (expected %q)", actual, "basedir")
+		if pw, err := subdir.Password(); pw != "basedir" || err != nil {
+			t.Errorf("Unexpected return values from subdir.Password(): %q, %v", pw, err)
 		}
 	}
 
 	// Same situation as above, but verify that a blank interactive password won't
 	// re-prompt redundantly for subdirs
-	dir = getDir(t, "testdata/pwprompt/basedir")
 	util.PasswordPromptInput = util.NewMockPasswordInput("")
-	if err := dir.PromptPasswordIfRequested(); err != nil {
-		t.Fatalf("Unexpected error from mock password input: %v", err)
-	} else if actual := dir.Config.GetAllowEnvVar("password"); actual != "" {
-		t.Errorf("Unexpected configuration for password: %q (expected %q)", actual, "")
-	}
+	dir = getDir(t, "testdata/pwprompt/basedir")
 	util.PasswordPromptInput = util.NewMockPasswordInput("different value to ensure not re-prompted")
+	if pw, err := dir.Password(); pw != "" || err != nil {
+		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
+	}
 	subdirs, err = dir.Subdirs()
 	if err != nil {
 		t.Fatalf("Unexpected error from Subdirs: %v", err)
 	}
 	for _, subdir := range subdirs {
-		if err := subdir.PromptPasswordIfRequested(); err != nil {
-			t.Fatalf("Unexpected error from mock password input: %v", err)
-		} else if actual := subdir.Config.GetAllowEnvVar("password"); actual != "" {
-			t.Errorf("Unexpected configuration for password: %q (expected %q)", actual, "")
+		if pw, err := subdir.Password(); pw != "" || err != nil {
+			t.Errorf("Unexpected return values from subdir.Password(): %q, %v", pw, err)
 		}
 	}
 
 	// If parent dir doesn't have bare "password" but both subdirs do, they should
 	// each prompt password separately
-	dir = getDir(t, "testdata/pwprompt/leafdir")
 	util.PasswordPromptInput = util.NewMockPasswordInput("basedir")
-	if err := dir.PromptPasswordIfRequested(); err != nil {
-		t.Fatalf("Unexpected error from mock password input: %v", err)
-	} else if dir.Config.Changed("password") {
-		t.Errorf("password value unexpectedly changed for base dir %s", dir)
+	dir = getDir(t, "testdata/pwprompt/leafdir")
+	if pw, err := dir.Password(); pw != "" || err != nil {
+		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
+	}
+	var counter int
+	util.PasswordPromptInput = func() (string, error) {
+		val := fmt.Sprintf("leaf-%d", counter)
+		counter++
+		return val, nil
 	}
 	subdirs, err = dir.Subdirs()
 	if err != nil {
 		t.Fatalf("Unexpected error from Subdirs: %v", err)
 	}
 	for n, subdir := range subdirs {
-		leafPassword := fmt.Sprintf("leaf-%d", n)
-		util.PasswordPromptInput = util.NewMockPasswordInput(leafPassword)
-		if err := subdir.PromptPasswordIfRequested(); err != nil {
-			t.Fatalf("Unexpected error from mock password input: %v", err)
-		} else if actual := subdir.Config.GetAllowEnvVar("password"); actual != leafPassword {
-			t.Errorf("Unexpected configuration for password: %q (expected %q)", actual, leafPassword)
+		if pw, err := subdir.Password(); pw != fmt.Sprintf("leaf-%d", n) || err != nil {
+			t.Errorf("Unexpected return values from subdir.Password(): %q, %v", pw, err)
 		}
 	}
 
@@ -677,42 +672,47 @@ func TestPromptPasswordIfRequested(t *testing.T) {
 	// empty password (not prompt) for compat with MySQL client behavior
 	util.PasswordPromptInput = util.NewMockPasswordInput("this should not show up")
 	dir = getDir(t, "testdata/pwprompt/noprompt/a")
-	if err := dir.PromptPasswordIfRequested(); err != nil {
-		t.Fatalf("Unexpected error from mock password input: %v", err)
-	} else if dir.Config.GetAllowEnvVar("password") != "" {
-		t.Errorf("password value unexpectedly non-blank for dir %s", dir)
+	if pw, err := dir.Password(); pw != "" || err != nil {
+		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
 	}
 	dir = getDir(t, "testdata/pwprompt/noprompt/b")
-	if err := dir.PromptPasswordIfRequested(); err != nil {
-		t.Fatalf("Unexpected error from mock password input: %v", err)
-	} else if dir.Config.GetAllowEnvVar("password") != "" {
-		t.Errorf("password value unexpectedly non-blank for dir %s", dir)
+	if pw, err := dir.Password(); pw != "" || err != nil {
+		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
 	}
 
-	// The prompt string and error strings should normally contain the host, or
-	// host:port if port is nonstandard, or directory name if no host or multiple
-	// hosts. We cannot directly test the prompt string, but we can confirm it via
-	// error strings.
-	util.PasswordPromptInput = util.PasswordInputSource(util.NoInteractiveInput)
-	dir = getDir(t, "testdata/pwprompt/basedir") // no host
-	if err := dir.PromptPasswordIfRequested(); err == nil || !strings.Contains(err.Error(), "testdata/pwprompt/basedir") {
-		t.Errorf("Error value did not contain expected string: %v", err)
+	// Now test prompting with hostnames:
+	// The first dir here contains 3 hosts, but a prompt should only occur once.
+	// Set the mock input to return a value once, followed by errors on subsequent
+	// calls.
+	util.PasswordPromptInput = func() (string, error) {
+		util.PasswordPromptInput = util.NoInteractiveInput
+		return "success", nil
 	}
-	dir = getDir(t, "testdata/pwprompt/leafdir/a") // host, and port, but port is set to 3306 which shouldn't display
-	if err := dir.PromptPasswordIfRequested(); err == nil || !strings.Contains(err.Error(), "1.2.3.4") || strings.Contains(err.Error(), ":3306") {
-		t.Errorf("Error value did not contain expected string: %v", err)
+	dir = getDir(t, "testdata/pwprompt/hosts/a")
+	if pw, err := dir.Password(dir.Config.GetSlice("host", ',', true)...); pw != "success" || err != nil {
+		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
 	}
-	dir = getDir(t, "testdata/pwprompt/leafdir/b") // host, and non-3306 port
-	if err := dir.PromptPasswordIfRequested(); err == nil || !strings.Contains(err.Error(), "1.2.3.4:3307") {
-		t.Errorf("Error value did not contain expected string: %v", err)
+
+	// The second dir has only one host, but it's one that also existed in first
+	// dir, so its pw should be cached since it also has same username.
+	dir = getDir(t, "testdata/pwprompt/hosts/b")
+	if pw, err := dir.Password(dir.Config.GetSlice("host", ',', true)...); pw != "success" || err != nil {
+		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
 	}
-	dir = getDir(t, "testdata/pwprompt/multihost/a") // multiple hosts comma-separated
-	if err := dir.PromptPasswordIfRequested(); err == nil || !strings.Contains(err.Error(), "testdata/pwprompt/multihost/a") {
-		t.Errorf("Error value did not contain expected string: %v", err)
+
+	// The third dir has a single host that also appeared in first dir, but a
+	// different user name, so pw prompt should error instead of using cache!
+	dir = getDir(t, "testdata/pwprompt/hosts/c")
+	if pw, err := dir.Password(dir.Config.GetSlice("host", ',', true)...); pw != "" || err == nil {
+		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
 	}
-	dir = getDir(t, "testdata/pwprompt/multihost/b") // using host-wrapper
-	if err := dir.PromptPasswordIfRequested(); err == nil || !strings.Contains(err.Error(), "testdata/pwprompt/multihost/b") {
-		t.Errorf("Error value did not contain expected string: %v", err)
+
+	// The fourth dir has a single host that did not appear previously, altho
+	// same user name as first two dirs. PW prompt should error instead of using
+	// cache.
+	dir = getDir(t, "testdata/pwprompt/hosts/d")
+	if pw, err := dir.Password(dir.Config.GetSlice("host", ',', true)...); pw != "" || err == nil {
+		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
 	}
 }
 

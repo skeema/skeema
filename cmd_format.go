@@ -93,13 +93,6 @@ func formatDir(dir *fs.Dir) error {
 		return NewExitValue(CodeBadConfig, err.Error())
 	}
 
-	wsType, _ := dir.Config.GetEnum("workspace", "temp-schema", "docker")
-	if wsType != "docker" {
-		if err := dir.PromptPasswordIfRequested(); err != nil {
-			log.Warn(err)
-		}
-	}
-
 	// Get workspace options for dir. This involves connecting to the first defined
 	// instance, so that any auto-detect-related settings work properly. However,
 	// with workspace=docker we can ignore connection errors; we'll get reasonable
@@ -107,7 +100,7 @@ func formatDir(dir *fs.Dir) error {
 	var wsOpts workspace.Options
 	if len(dir.LogicalSchemas) > 0 {
 		inst, err := dir.FirstInstance()
-		if wsType != "docker" || !dir.Config.Changed("flavor") {
+		if wsType, _ := dir.Config.GetEnum("workspace", "temp-schema", "docker"); wsType != "docker" || !dir.Config.Changed("flavor") {
 			if err != nil {
 				return NewExitValue(CodeBadConfig, err.Error())
 			} else if inst == nil {

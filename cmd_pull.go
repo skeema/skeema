@@ -60,9 +60,6 @@ func pullWalker(dir *fs.Dir, maxDepth int) error {
 		log.Warnf("Skipping %s: %s", dir, dir.ParseError)
 		return NewExitValue(CodeBadConfig, "")
 	}
-	if err := dir.PromptPasswordIfRequested(); err != nil {
-		log.Warn(err)
-	}
 
 	var instance *tengo.Instance
 	var err error

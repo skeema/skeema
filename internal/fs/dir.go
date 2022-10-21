@@ -338,7 +338,10 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 	// Before looping over hostnames, do a single lookup of user, password,
 	// connect-options, port, socket.
 	user := dir.Config.GetAllowEnvVar("user")
-	password := dir.Config.GetAllowEnvVar("password")
+	password, err := dir.Password(hosts...)
+	if err != nil {
+		return nil, err // for example, need interactive password but STDIN isn't a TTY
+	}
 	var userAndPass string
 	if password == "" {
 		userAndPass = user
@@ -686,43 +689,74 @@ func (dir *Dir) Generator() (major, minor, patch int, edition string) {
 	return int(version.Major()), int(version.Minor()), int(version.Patch()), edition
 }
 
-// PromptPasswordIfRequested checks if this dir's configuration indicates a
-// password should be read from STDIN, due to a .skeema file having a bare
-// "password" line with no equals sign or value. If successful, the password
-// will be stored in the directory's configuration as a runtime override. An
-// error is returned if a password should be prompted but cannot, for example
+// Package-level user@host interactive password cache, used by Dir.Password()
+var cachedInteractivePasswords = make(map[string]string)
+
+// Password returns the configured password in this dir, a cached password
+// from a previous interactive password check, or an interactively-prompted
+// password from STDIN if one should be obtained based on the directory's
+// configuration. If interactive input is requested and successful, the password
+// will be returned and also cached, so that subsequent identical requests
+// return the password without prompting.
+//
+// Optionally supply one or more hostnames to affect the behavior of interactive
+// password prompts and caching: with no hosts, the prompt text will mention the
+// directory and be cached in the directory's configuration; with one or more
+// hosts, the prompt text will mention the first host and will cache values in
+// a package-level map independent of this dir.
+//
+// An error is returned if a password should be prompted but cannot, for example
 // due to STDIN not being a TTY.
-func (dir *Dir) PromptPasswordIfRequested() error {
+func (dir *Dir) Password(hosts ...string) (string, error) {
 	// Only prompt if password option was supplied with no equals sign or value.
 	// If it was supplied with an equals sign but set to a blank value, mybase
 	// will expose this as "''" from GetRaw, since GetRaw doesn't remove the quotes
 	// like other Config getters. This allows us to differentiate between "prompt
 	// on STDIN" and "intentionally no/blank password" situations.
 	if dir.Config.GetRaw("password") != "" {
-		return nil
+		return dir.Config.GetAllowEnvVar("password"), nil
 	}
 
-	// Since different dirs/hosts may have different passwords, indicate in the
-	// prompt text which one is being requested
+	cacheKeys := make([]string, len(hosts))
 	var promptArg string
-	if !dir.Config.Changed("host-wrapper") && dir.Config.Changed("host") && !strings.ContainsAny(dir.Config.Get("host"), ",$") {
-		promptArg = dir.Config.Get("host")
-		if port, _ := dir.Port(); port != 3306 {
-			promptArg = fmt.Sprintf("%s:%d", promptArg, port)
-		}
-	} else {
+	if len(hosts) == 0 {
+		// No need to check a cache for dir-level prompting, since the previous Config
+		// check will already have managed a previously-prompted password
 		promptArg = "directory " + dir.RelPath()
+	} else {
+		user := dir.Config.GetAllowEnvVar("user")
+		for n, host := range hosts {
+			cacheKeys[n] = user + "@" + host
+			if cachedPassword, ok := cachedInteractivePasswords[cacheKeys[n]]; ok {
+				return cachedPassword, nil
+			}
+		}
+		promptArg = cacheKeys[0]
+		if len(hosts) == 2 {
+			promptArg += " and " + cacheKeys[1]
+		} else if len(hosts) > 2 {
+			promptArg = fmt.Sprintf("%s and %d other servers", promptArg, len(hosts))
+		}
 	}
+
 	val, err := util.PromptPassword("Enter password for %s: ", promptArg)
 	if err != nil {
-		return fmt.Errorf("Unable to prompt password for %s: %w", promptArg, err)
+		return "", fmt.Errorf("Unable to prompt password for %s: %w", promptArg, err)
 	}
-	// We single-quote-wrap the value (escaping any internal single-quotes) to
-	// prevent a redundant pw prompt on an empty string, and also to prevent
-	// input of the form $SOME_ENV_VAR from performing env var substitution.
-	val = fmt.Sprintf("'%s'", strings.ReplaceAll(val, "'", "\\'"))
-	dir.Config.SetRuntimeOverride("password", val)
-	return nil
+
+	if len(hosts) == 0 {
+		// We single-quote-wrap the value (escaping any internal single-quotes) to
+		// prevent a redundant pw prompt on an empty string, and also to prevent
+		// input of the form $SOME_ENV_VAR from performing env var substitution.
+		cacheVal := fmt.Sprintf("'%s'", strings.ReplaceAll(val, "'", "\\'"))
+		dir.Config.SetRuntimeOverride("password", cacheVal)
+	}
+	for _, cacheKey := range cacheKeys {
+		// For caching per host, we use the value as-is since this does not go
+		// through mybase Config getters.
+		cachedInteractivePasswords[cacheKey] = val
+	}
+	return val, nil
 }
 
 // parseContents reads the .skeema and *.sql files in the dir, populating
@@ -812,6 +846,18 @@ func (dir *Dir) parseContents() {
 		if name != "" && len(ls.Creates) > 0 {
 			ls.Name = name
 			dir.LogicalSchemas = append(dir.LogicalSchemas, ls)
+		}
+	}
+
+	// If the dir's configuration includes "password" with no =value, and the dir
+	// does not configure any hosts, prompt for password now. This way, any subdirs
+	// will inherit the password without having to each prompt individually.
+	if !dir.Config.Changed("host") {
+		// This has no side-effects if the dir isn't configured to prompt for pw
+		// interactively. It will only return an error if an interactive prompt
+		// is attempted but fails due to STDIN not being a TTY.
+		if _, err := dir.Password(); err != nil {
+			log.Warn(err)
 		}
 	}
 }

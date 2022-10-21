@@ -111,9 +111,9 @@ func (cfg *Config) HandleCommand() error {
 	return cfg.CLI.Command.Handler(cfg)
 }
 
-// rebuild iterates over all sources, to construct a single cached key-value
-// lookup map. This improves performance of subsequent option value lookups.
-func (cfg *Config) rebuild() {
+// Sources returns a slice of OptionValuer values used as option sources for
+// cfg. The result is ordered from lowest-priority to highest-priority.
+func (cfg *Config) Sources() []OptionValuer {
 	allSources := make([]OptionValuer, 1, len(cfg.sources)+2)
 
 	// Lowest-priority source is the current command, which returns default values
@@ -126,7 +126,12 @@ func (cfg *Config) rebuild() {
 	// Finally, at highest priorities are options provided on the command-line,
 	// and then runtime overrides
 	allSources = append(allSources, cfg.CLI, cfg.runtimeOverrides)
+	return allSources
+}
 
+// rebuild iterates over all sources, to construct a single cached key-value
+// lookup map. This improves performance of subsequent option value lookups.
+func (cfg *Config) rebuild() {
 	options := cfg.CLI.Command.Options()
 	cfg.unifiedValues = make(map[string]string, len(options)+len(cfg.CLI.Command.args))
 	cfg.unifiedSources = make(map[string]OptionValuer, len(options)+len(cfg.CLI.Command.args))
@@ -149,6 +154,7 @@ func (cfg *Config) rebuild() {
 
 	// Iterate over all options, and set them in our maps for tracking values and sources.
 	// We go in reverse order to start at highest priority and break early when a value is found.
+	allSources := cfg.Sources()
 	for name := range options {
 		var found bool
 		for n := len(allSources) - 1; n >= 0 && !found; n-- {
@@ -189,16 +195,21 @@ func (cfg *Config) MarkDirty() {
 // were supplied on the CLI. The supplied name must correspond to a known option
 // in cfg, otherwise this method panics.
 func (cfg *Config) SetRuntimeOverride(name, value string) {
-	if _, ok := cfg.unifiedSources[name]; !ok {
+	var optionExists bool
+	if cfg.dirty {
+		optionExists = (cfg.FindOption(name) != nil)
+	} else {
+		_, optionExists = cfg.unifiedSources[name]
+	}
+	if !optionExists {
 		panic(fmt.Errorf("Assertion failed: option %s does not exist", name))
 	}
 
 	cfg.runtimeOverrides[name] = value
-
-	// Instead of marking the config as dirty and rebuilding it lazily, we can
-	// just set the value right away, since runtime overrides are always the
-	// highest priority source.
 	if !cfg.dirty {
+		// Instead of marking the config as dirty and rebuilding it lazily, we can
+		// just set the value right away, since runtime overrides are always the
+		// highest priority source.
 		cfg.unifiedValues[name] = value
 		cfg.unifiedSources[name] = cfg.runtimeOverrides
 	}

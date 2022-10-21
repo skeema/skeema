@@ -108,9 +108,6 @@ func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int)
 		log.Errorf("Skipping %s: %s\n", dir.Path, dir.ParseError)
 		return nil, 1
 	}
-	if err := dir.PromptPasswordIfRequested(); err != nil {
-		log.Warn(err)
-	}
 	if dir.Config.Changed("host") && dir.HasSchema() {
 		var instances []*tengo.Instance
 		instances, skipCount = instancesForDir(dir)

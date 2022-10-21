@@ -116,7 +116,7 @@ func ProcessSpecialGlobalOptions(cfg *mybase.Config) error {
 	// password" situations.)
 	// Note this only handles --password on CLI and "password" lines in global
 	// option files. For per-dir .skeema file handling, use fs package's
-	// Dir.PromptPasswordIfRequested() method.
+	// Dir.Password() method.
 	if cfg.GetRaw("password") == "" {
 		val, err := PromptPassword()
 		if err != nil {

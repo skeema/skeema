@@ -243,6 +243,10 @@ func (f *File) Parse(cfg *Config) error {
 func (f *File) UseSection(names ...string) error {
 	notFound := make([]string, 0)
 	already := make(map[string]bool, len(names))
+
+	// This intentionally allocates a new []string for selected. This way, even
+	// if there are other shallow copies of f, calling UseSection on one won't
+	// affect the others.
 	f.selected = make([]string, 0, len(names)+1)
 
 	for _, name := range names {
