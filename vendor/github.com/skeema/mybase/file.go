@@ -294,6 +294,21 @@ func (f *File) SomeSectionHasOption(optionName string) bool {
 	return len(f.SectionsWithOption(optionName)) > 0
 }
 
+// SectionValues returns a map of option name to raw option string values for
+// the supplied section name. The returned map is a copy; modifying it will not
+// affect the File.
+func (f *File) SectionValues(name string) map[string]string {
+	section := f.sectionIndex[name]
+	if section == nil {
+		return map[string]string{}
+	}
+	result := make(map[string]string, len(section.Values))
+	for k, v := range section.Values {
+		result[k] = v
+	}
+	return result
+}
+
 // OptionValue returns the value for the requested option from the option file.
 // Only the previously-selected section(s) of the file will be used, or the
 // default section "" if no section has been selected via UseSection.

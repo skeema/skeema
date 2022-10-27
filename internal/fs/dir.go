@@ -735,7 +735,7 @@ func (dir *Dir) Password(hosts ...string) (string, error) {
 		if len(hosts) == 2 {
 			promptArg += " and " + cacheKeys[1]
 		} else if len(hosts) > 2 {
-			promptArg = fmt.Sprintf("%s and %d other servers", promptArg, len(hosts))
+			promptArg = fmt.Sprintf("%s and %d other servers", promptArg, len(hosts)-1)
 		}
 	}
 
