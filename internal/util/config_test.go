@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/internal/tengo"
 )
 
 func TestAddGlobalConfigFiles(t *testing.T) {
@@ -274,5 +275,51 @@ func TestRealConnectOptions(t *testing.T) {
 	// Ensure errors from SplitConnectOptions are passed through
 	if _, err := RealConnectOptions("foo='ok,cool',multiStatements=true,bareword"); err == nil {
 		t.Error("Expected error from SplitConnectOptions to be passed through to RealConnectOptions, but err is nil")
+	}
+}
+
+func TestIgnorePatterns(t *testing.T) {
+	cmd := mybase.NewCommand("skeematest", "", "", nil)
+	AddGlobalOptions(cmd)
+	cfg := mybase.ParseFakeCLI(t, cmd, `skeematest --ignore-table='foo' --ignore-proc='.'`)
+	ignore, err := IgnorePatterns(cfg)
+	if err != nil {
+		t.Fatalf("Unexpected error from IgnorePatterns: %v", err)
+	}
+
+	// Confirm length of result
+	if len(ignore) != 2 {
+		t.Fatalf("Expected IgnorePatterns to return 2 patterns, instead found %d", len(ignore))
+	}
+
+	// Confirm functionality
+	shouldIgnore := func(obj tengo.ObjectKeyer) bool {
+		for _, pattern := range ignore {
+			if pattern.Match(obj) {
+				return true
+			}
+		}
+		return false
+	}
+	assertShouldIgnore := func(obj tengo.ObjectKeyer, expectIgnored bool) {
+		t.Helper()
+		ignored := shouldIgnore(obj)
+		if ignored != expectIgnored {
+			t.Errorf("Unexpected behavior from IgnorePatterns: for %s, expected ignored %t, instead found %t", obj, expectIgnored, ignored)
+		}
+	}
+	assertShouldIgnore(tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: "foobert"}, true)
+	assertShouldIgnore(tengo.ObjectKey{Type: tengo.ObjectTypeProc, Name: "WHATEVER"}, true)
+	assertShouldIgnore(tengo.ObjectKey{Type: tengo.ObjectTypeFunc, Name: "foobar"}, false)
+
+	// Confirm consistent sort order for result
+	ignore2, _ := IgnorePatterns(cfg)
+	if len(ignore) != len(ignore2) {
+		t.Fatalf("Unexpectedly different lengths in result from IgnorePatterns: %d vs %d", len(ignore), len(ignore2))
+	}
+	for n := range ignore {
+		if ignore[n].Type != ignore2[n].Type || ignore[n].Pattern.String() != ignore2[n].Pattern.String() {
+			t.Fatal("Sort order of result of IgnorePatterns is not consistent between repeated calls on same config")
+		}
 	}
 }

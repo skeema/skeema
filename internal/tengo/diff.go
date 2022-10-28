@@ -2,7 +2,6 @@ package tengo
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/pmezard/go-difflib/difflib"
@@ -76,7 +75,7 @@ type StatementModifiers struct {
 	AllowUnsafe            bool             // Whether to allow potentially-destructive DDL (drop table, drop column, modify col type, etc)
 	LockClause             string           // Include a LOCK=[value] clause in generated ALTER TABLE
 	AlgorithmClause        string           // Include an ALGORITHM=[value] clause in generated ALTER TABLE
-	IgnoreTable            *regexp.Regexp   // Generate blank DDL if table name matches this regexp
+	Ignore                 []ObjectPattern  // Generate blank DDL for objects matching any of these patterns
 	StrictIndexOrder       bool             // If true, maintain index order even in cases where there is no functional difference
 	StrictCheckOrder       bool             // If true, maintain check constraint order even though it never has a functional difference (only affects MariaDB)
 	StrictForeignKeyNaming bool             // If true, maintain foreign key definition even if differences are cosmetic (name change, RESTRICT vs NO ACTION, etc)
@@ -85,6 +84,15 @@ type StatementModifiers struct {
 	VirtualColValidation   bool             // If true, add WITH VALIDATION clause for ALTER TABLE affecting virtual columns
 	SkipPreDropAlters      bool             // If true, skip ALTERs that were only generated to make DROP TABLE faster
 	Flavor                 Flavor           // Adjust generated DDL to match vendor/version. Zero value is FlavorUnknown which makes no adjustments.
+}
+
+func (mods *StatementModifiers) shouldIgnore(obj ObjectKeyer) bool {
+	for _, pattern := range mods.Ignore {
+		if pattern.Match(obj) {
+			return true
+		}
+	}
+	return false
 }
 
 ///// SchemaDiff ///////////////////////////////////////////////////////////////
@@ -513,13 +521,8 @@ func (td *TableDiff) SplitConflicts() (result []*TableDiff) {
 // still be returned as-is, but the error will be non-nil. Be sure not to
 // ignore the error value of this method.
 func (td *TableDiff) Statement(mods StatementModifiers) (string, error) {
-	if td == nil {
+	if td == nil || mods.shouldIgnore(td) {
 		return "", nil
-	}
-	if mods.IgnoreTable != nil {
-		if (td.From != nil && mods.IgnoreTable.MatchString(td.From.Name)) || (td.To != nil && mods.IgnoreTable.MatchString(td.To.Name)) {
-			return "", nil
-		}
 	}
 
 	var err error
@@ -716,11 +719,15 @@ func (rd *RoutineDiff) DiffType() DiffType {
 // still be returned as-is, but the error will be non-nil. Be sure not to
 // ignore the error value of this method.
 func (rd *RoutineDiff) Statement(mods StatementModifiers) (string, error) {
+	if rd == nil || mods.shouldIgnore(rd) {
+		return "", nil
+	}
+
 	// If we're replacing a routine only because its creation-time sql_mode or
 	// db collation has changed, only proceed if mods indicate we should. (This
 	// type of replacement is effectively opt-in because it is counter-intuitive
 	// and obscure.)
-	if rd != nil && rd.ForMetadata && !mods.CompareMetadata {
+	if rd.ForMetadata && !mods.CompareMetadata {
 		return "", nil
 	}
 	switch rd.DiffType() {

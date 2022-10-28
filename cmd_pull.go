@@ -4,13 +4,13 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"regexp"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/dumper"
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
+	"github.com/skeema/skeema/internal/util"
 	"github.com/skeema/skeema/internal/workspace"
 )
 
@@ -189,7 +189,7 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 	dumpOpts := dumper.Options{
 		IncludeAutoInc: dir.Config.GetBool("include-auto-inc"),
 	}
-	if dumpOpts.IgnoreTable, err = dir.Config.GetRegexp("ignore-table"); err != nil {
+	if dumpOpts.Ignore, err = util.IgnorePatterns(dir.Config); err != nil {
 		return nil, NewExitValue(CodeBadConfig, err.Error())
 	}
 	if !dir.Config.GetBool("update-partitioning") {
@@ -208,7 +208,7 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 	// To make this distinction, we need to actually execute the *.sql files in a
 	// Workspace and run a diff against it.
 	if !dir.Config.GetBool("format") || !dir.Config.GetBool("normalize") {
-		mods := statementModifiersForPull(dir.Config, instance, dumpOpts.IgnoreTable)
+		mods := statementModifiersForPull(dir.Config, instance, dumpOpts.Ignore)
 		opts, err := workspace.OptionsForDir(dir, instance)
 		if err != nil {
 			return nil, NewExitValue(CodeBadConfig, err.Error())
@@ -227,11 +227,12 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 	return
 }
 
-func statementModifiersForPull(config *mybase.Config, instance *tengo.Instance, ignoreTable *regexp.Regexp) tengo.StatementModifiers {
+func statementModifiersForPull(config *mybase.Config, instance *tengo.Instance, ignore []tengo.ObjectPattern) tengo.StatementModifiers {
 	// We're permissive of unsafe operations here since we don't ever actually
 	// execute the generated statement! We just examine its type.
 	mods := tengo.StatementModifiers{
 		AllowUnsafe: true,
+		Ignore:      ignore,
 	}
 	// pull command updates next auto-increment value for existing table always
 	// if requested, or only if previously present in file otherwise
@@ -240,7 +241,6 @@ func statementModifiersForPull(config *mybase.Config, instance *tengo.Instance, 
 	} else {
 		mods.NextAutoInc = tengo.NextAutoIncIfAlready
 	}
-	mods.IgnoreTable = ignoreTable
 	instFlavor, confFlavor := instance.Flavor(), tengo.ParseFlavor(config.Get("flavor"))
 	if !instFlavor.Known() && confFlavor.Known() {
 		mods.Flavor = confFlavor

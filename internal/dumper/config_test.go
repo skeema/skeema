@@ -17,9 +17,10 @@ func TestOptionsIgnore(t *testing.T) {
 		}
 	}
 
-	// Confirm behavior of IgnoreTable
-	opts = Options{
-		IgnoreTable: regexp.MustCompile("^multi"),
+	// Confirm behavior of Ignore
+	opts = Options{}
+	opts.Ignore = []tengo.ObjectPattern{
+		{Type: tengo.ObjectTypeTable, Pattern: regexp.MustCompile(`^multi`)},
 	}
 	assertIgnore(tengo.ObjectTypeTable, "multi1", true)
 	assertIgnore(tengo.ObjectTypeTable, "ultimulti", false)
@@ -45,8 +46,9 @@ func TestOptionsIgnore(t *testing.T) {
 	assertIgnore(tengo.ObjectTypeFunc, "pounce", false)
 
 	// Confirm behavior of combination of these settings
-	opts = Options{
-		IgnoreTable: regexp.MustCompile("^multi"),
+	opts = Options{}
+	opts.Ignore = []tengo.ObjectPattern{
+		{Type: tengo.ObjectTypeTable, Pattern: regexp.MustCompile(`^multi`)},
 	}
 	opts.IgnoreKeys(keys)
 	opts.OnlyKeys([]tengo.ObjectKey{

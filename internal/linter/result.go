@@ -151,7 +151,7 @@ var (
 func (r *Result) AnnotateStatementErrors(statementErrors []*workspace.StatementError, opts Options) {
 	for _, stmtErr := range statementErrors {
 		if opts.shouldIgnore(stmtErr.ObjectKey()) {
-			r.Debug("Skipping %s because ignore-table='%s'", stmtErr.ObjectKey(), opts.IgnoreTable)
+			r.Debug("Skipping %s due to ignore options", stmtErr.ObjectKey())
 			continue
 		}
 		note := Note{

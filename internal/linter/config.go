@@ -3,12 +3,12 @@ package linter
 import (
 	"fmt"
 	"reflect"
-	"regexp"
 	"strings"
 
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
+	"github.com/skeema/skeema/internal/util"
 )
 
 // Severity represents different annotation severity levels.
@@ -42,7 +42,7 @@ func AddCommandOptions(cmd *mybase.Command) {
 type Options struct {
 	RuleSeverity map[string]Severity
 	RuleConfig   map[string]interface{}
-	IgnoreTable  *regexp.Regexp
+	Ignore       []tengo.ObjectPattern
 	Flavor       tengo.Flavor
 	onlyKeys     map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
 }
@@ -93,21 +93,28 @@ func (opts *Options) Equals(other *Options) bool {
 	if opts.Flavor != other.Flavor {
 		return false
 	}
-	if opts.IgnoreTable == nil || other.IgnoreTable == nil {
-		return opts.IgnoreTable == other.IgnoreTable
+	if len(opts.Ignore) != len(other.Ignore) {
+		return false
 	}
-	return opts.IgnoreTable.String() == other.IgnoreTable.String()
+	for n := range opts.Ignore { // ordering of slices is consistent due to use of util.IgnorePatterns
+		if opts.Ignore[n].String() != other.Ignore[n].String() {
+			return false
+		}
+	}
+	return true
 }
 
 // shouldIgnore returns true if the option configuration indicates the supplied
 // object should be ignored.
 func (opts *Options) shouldIgnore(keyer tengo.ObjectKeyer) bool {
 	key := keyer.ObjectKey()
-	if key.Type == tengo.ObjectTypeTable && opts.IgnoreTable != nil && opts.IgnoreTable.MatchString(key.Name) {
-		return true
-	}
 	if opts.onlyKeys != nil && !opts.onlyKeys[key] {
 		return true
+	}
+	for _, pattern := range opts.Ignore {
+		if pattern.Match(key) {
+			return true
+		}
 	}
 	return false
 }
@@ -122,7 +129,7 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 	}
 
 	var err error
-	opts.IgnoreTable, err = dir.Config.GetRegexp("ignore-table")
+	opts.Ignore, err = util.IgnorePatterns(dir.Config)
 	if err != nil {
 		return Options{}, ConfigError{Dir: dir, err: err}
 	}

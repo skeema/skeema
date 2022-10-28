@@ -9,6 +9,7 @@ import (
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/linter"
 	"github.com/skeema/skeema/internal/tengo"
+	"github.com/skeema/skeema/internal/util"
 )
 
 // Result stores the result of applying an individual target, or a combined
@@ -182,7 +183,7 @@ func StatementModifiersForDir(dir *fs.Dir) (mods tengo.StatementModifiers, err e
 	if mods.LockClause, err = dir.Config.GetEnum("alter-lock", "none", "shared", "exclusive", "default"); err != nil {
 		return
 	}
-	if mods.IgnoreTable, err = dir.Config.GetRegexp("ignore-table"); err != nil {
+	if mods.Ignore, err = util.IgnorePatterns(dir.Config); err != nil {
 		return
 	}
 	var partitioning string

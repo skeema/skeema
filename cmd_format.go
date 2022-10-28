@@ -8,6 +8,7 @@ import (
 	"github.com/skeema/skeema/internal/dumper"
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
+	"github.com/skeema/skeema/internal/util"
 	"github.com/skeema/skeema/internal/workspace"
 )
 
@@ -88,7 +89,7 @@ func formatWalker(dir *fs.Dir, maxDepth int) error {
 func formatDir(dir *fs.Dir) error {
 	var totalReformatCount int
 
-	ignoreTable, err := dir.Config.GetRegexp("ignore-table")
+	ignorePatterns, err := util.IgnorePatterns(dir.Config)
 	if err != nil {
 		return NewExitValue(CodeBadConfig, err.Error())
 	}
@@ -125,7 +126,7 @@ func formatDir(dir *fs.Dir) error {
 
 		dumpOpts := dumper.Options{
 			IncludeAutoInc: true,
-			IgnoreTable:    ignoreTable,
+			Ignore:         ignorePatterns,
 			CountOnly:      !dir.Config.GetBool("write"),
 		}
 		if dir.Config.GetBool("strip-partitioning") {

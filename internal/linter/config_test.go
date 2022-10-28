@@ -24,9 +24,11 @@ func TestOptionsForDir(t *testing.T) {
 			t.Errorf("RuleSeverity is %v, does not match expectation %v", opts.RuleSeverity, expectedSeverity)
 		}
 
-		expectedIgnoreTable := regexp.MustCompile(`^_`)
-		if !reflect.DeepEqual(expectedIgnoreTable, opts.IgnoreTable) {
-			t.Error("IgnoreTable did not match expectation")
+		expectedIgnore := []tengo.ObjectPattern{
+			{Type: tengo.ObjectTypeTable, Pattern: regexp.MustCompile(`^_`)},
+		}
+		if !reflect.DeepEqual(expectedIgnore, opts.Ignore) {
+			t.Error("Ignore did not match expectation")
 		}
 
 		expectedAllowList := map[string]string{
@@ -101,9 +103,10 @@ func TestOptionsIgnore(t *testing.T) {
 		}
 	}
 
-	// Confirm behavior of IgnoreTable
-	opts = Options{
-		IgnoreTable: regexp.MustCompile("^multi"),
+	// Confirm behavior of ignore-table
+	opts = Options{}
+	opts.Ignore = []tengo.ObjectPattern{
+		{Type: tengo.ObjectTypeTable, Pattern: regexp.MustCompile(`^multi`)},
 	}
 	assertIgnore(tengo.ObjectTypeTable, "multi1", true)
 	assertIgnore(tengo.ObjectTypeTable, "ultimulti", false)
@@ -122,8 +125,9 @@ func TestOptionsIgnore(t *testing.T) {
 	assertIgnore(tengo.ObjectTypeFunc, "pounce", true)
 
 	// Confirm behavior of combination of these settings
-	opts = Options{
-		IgnoreTable: regexp.MustCompile("^dog"),
+	opts = Options{}
+	opts.Ignore = []tengo.ObjectPattern{
+		{Type: tengo.ObjectTypeTable, Pattern: regexp.MustCompile(`^dog`)},
 	}
 	opts.OnlyKeys([]tengo.ObjectKey{
 		{Type: tengo.ObjectTypeTable, Name: "cats"},
@@ -145,13 +149,18 @@ func TestOptionsEquals(t *testing.T) {
 		t.Errorf("Two equivalent options structs are unexpectedly not equal: %+v vs %+v", opts, other)
 	}
 
-	if other.IgnoreTable = nil; opts.Equals(&other) {
-		t.Error("Equals unexpectedly still returning true even after setting IgnoreTable to nil")
+	if other.Ignore[0].Pattern = regexp.MustCompile("ignoreme"); opts.Equals(&other) {
+		t.Error("Equals unexpectedly still returning true even after setting Ignore to other regex")
 	}
-	if other.IgnoreTable = regexp.MustCompile("ignoreme"); opts.Equals(&other) {
-		t.Error("Equals unexpectedly still returning true even after setting IgnoreTable to other value")
+	other.Ignore[0] = tengo.ObjectPattern{Type: tengo.ObjectTypeProc, Pattern: opts.Ignore[0].Pattern}
+	if opts.Equals(&other) {
+		t.Error("Equals unexpectedly still returning true even after setting Ignore to other type")
+	}
+	if other.Ignore = nil; opts.Equals(&other) {
+		t.Error("Equals unexpectedly still returning true even after setting Ignore to nil")
 	}
 
+	opts, _ = OptionsForDir(dir)
 	other, _ = OptionsForDir(dir)
 	if other.RuleSeverity["charset"] = SeverityError; opts.Equals(&other) {
 		t.Error("Equals unexpectedly still returning true even after changing a severity value")

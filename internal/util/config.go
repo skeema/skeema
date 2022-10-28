@@ -11,6 +11,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/internal/tengo"
 	terminal "golang.org/x/term"
 )
 
@@ -35,6 +36,8 @@ func AddGlobalOptions(cmd *mybase.Command) {
 		mybase.StringOption("connect-options", 'o', "", "Comma-separated session options to set upon connecting to each database instance"),
 		mybase.StringOption("ignore-schema", 0, "", "Ignore schemas that match regex"),
 		mybase.StringOption("ignore-table", 0, "", "Ignore tables that match regex"),
+		mybase.StringOption("ignore-proc", 0, "", "Ignore stored procedures that match regex"),
+		mybase.StringOption("ignore-func", 0, "", "Ignore functions that match regex"),
 		mybase.StringOption("ssl-mode", 0, "", `Specify desired connection security SSL/TLS usage (valid values: "disabled", "preferred", "required")`),
 		mybase.BoolOption("debug", 0, false, "Enable debug logging"),
 		mybase.BoolOption("my-cnf", 0, true, "Parse ~/.my.cnf for configuration"),
@@ -322,4 +325,36 @@ func RealConnectOptions(connectOpts string) (string, error) {
 		connectOpts = connectOpts[0 : len(connectOpts)-1]
 	}
 	return connectOpts, nil
+}
+
+// This mapping of ignore-options to object types is stored in a slice (rather
+// than a map) to ensure consistent sort order of the result of IgnorePatterns.
+// ignore-schema is intentionally omitted here, as that needs special handling
+// elsewhere.
+var ignoreOptionToTypes = []struct {
+	optionName string
+	types      []tengo.ObjectType
+}{
+	{"ignore-table", []tengo.ObjectType{tengo.ObjectTypeTable}},
+	{"ignore-proc", []tengo.ObjectType{tengo.ObjectTypeProc}},
+	{"ignore-func", []tengo.ObjectType{tengo.ObjectTypeFunc}},
+}
+
+// IgnorePatterns compiles the regexes in the supplied mybase.Config's ignore-*
+// options. If all supplied regex strings were valid, a slice of
+// tengo.ObjectPattern is returned; otherwise, an error with the first invalid
+// regex is returned.
+func IgnorePatterns(cfg *mybase.Config) ([]tengo.ObjectPattern, error) {
+	var patterns []tengo.ObjectPattern
+	for _, opt := range ignoreOptionToTypes {
+		re, err := cfg.GetRegexp(opt.optionName)
+		if err != nil {
+			return nil, err
+		} else if re != nil {
+			for _, objType := range opt.types {
+				patterns = append(patterns, tengo.ObjectPattern{Type: objType, Pattern: re})
+			}
+		}
+	}
+	return patterns, nil
 }

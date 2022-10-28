@@ -11,6 +11,7 @@ import (
 	"github.com/skeema/skeema/internal/dumper"
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
+	"github.com/skeema/skeema/internal/util"
 )
 
 func init() {
@@ -152,7 +153,7 @@ func createHostOptionFile(cfg *mybase.Config, hostDir *fs.Dir, inst *tengo.Insta
 	if flavor := inst.Flavor(); flavor.Known() {
 		hostOptionFile.SetOptionValue(environment, "flavor", flavor.Family().String())
 	}
-	for _, persistOpt := range []string{"user", "ignore-schema", "ignore-table", "connect-options"} {
+	for _, persistOpt := range []string{"user", "ignore-schema", "ignore-table", "ignore-proc", "ignore-func", "connect-options"} {
 		if cfg.OnCLI(persistOpt) {
 			hostOptionFile.SetOptionValue(environment, persistOpt, cfg.Get(persistOpt))
 		}
@@ -223,8 +224,7 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *fs.Dir, makeSubdir bool) erro
 	dumpOpts := dumper.Options{
 		IncludeAutoInc: dir.Config.GetBool("include-auto-inc"),
 	}
-	dumpOpts.IgnoreTable, err = dir.Config.GetRegexp("ignore-table")
-	if err != nil {
+	if dumpOpts.Ignore, err = util.IgnorePatterns(dir.Config); err != nil {
 		return NewExitValue(CodeBadConfig, err.Error())
 	}
 	if dir.Config.GetBool("strip-partitioning") {

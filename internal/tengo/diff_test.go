@@ -584,7 +584,8 @@ func TestSchemaDiffRoutines(t *testing.T) {
 		}
 	}
 
-	// Confirm that procs and funcs with same name are handled properly
+	// Confirm that procs and funcs with same name are handled properly, including
+	// with respect to ignore patterns
 	s1r2 = aProc("latin1_swedish_ci", "")
 	s1.Routines = []*Routine{&s1r2} // s1 has one proc named "proc1" and no funcs
 	s2r1.Name = s2r2.Name           // s2 has one proc named "proc1" and one func also named "proc1"
@@ -598,6 +599,18 @@ func TestSchemaDiffRoutines(t *testing.T) {
 	}
 	if rd.To != &s2r1 || rd.ObjectKey().Type != ObjectTypeFunc {
 		t.Error("Pointer in diff does not point to expected value")
+	}
+	mods = StatementModifiers{
+		Ignore: []ObjectPattern{{Type: ObjectTypeProc, Pattern: regexp.MustCompile(s2r2.Name)}},
+	}
+	if stmt, err := rd.Statement(mods); stmt == "" || err != nil {
+		t.Error("Did not expect IgnoreProc to affect func, but it did")
+	}
+	mods = StatementModifiers{
+		Ignore: []ObjectPattern{{Type: ObjectTypeFunc, Pattern: regexp.MustCompile(s2r2.Name)}},
+	}
+	if stmt, err := rd.Statement(mods); stmt != "" || err != nil {
+		t.Error("Expected IgnoreFunc to affect func, but it did not")
 	}
 }
 
@@ -893,7 +906,7 @@ func TestIgnoreTableMod(t *testing.T) {
 			AllowUnsafe: true,
 		}
 		if re != "" {
-			mods.IgnoreTable = regexp.MustCompile(re)
+			mods.Ignore = append(mods.Ignore, ObjectPattern{Type: ObjectTypeTable, Pattern: regexp.MustCompile(re)})
 		}
 		from.Name = tableName
 		to.Name = tableName

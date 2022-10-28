@@ -166,7 +166,7 @@ func lintDir(dir *fs.Dir) *linter.Result {
 		if dir.Config.GetBool("format") && n == 0 {
 			dumpOpts := dumper.Options{
 				IncludeAutoInc: true,
-				IgnoreTable:    opts.IgnoreTable,
+				Ignore:         opts.Ignore,
 			}
 			if dir.Config.GetBool("strip-partitioning") {
 				dumpOpts.Partitioning = tengo.PartitioningRemove

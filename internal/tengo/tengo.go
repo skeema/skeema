@@ -5,6 +5,7 @@ package tengo
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -60,4 +61,28 @@ type ObjectKeyer interface {
 type DefKeyer interface {
 	ObjectKeyer
 	Def() string
+}
+
+// ObjectPattern is a regular expression matched against an object name, but
+// only for a specific object type.
+type ObjectPattern struct {
+	Type    ObjectType
+	Pattern *regexp.Regexp
+}
+
+// Match returns true if p's Type equals obj's ObjectKey.Type and p's Pattern
+// matches obj's ObjectKey.Name.
+func (p *ObjectPattern) Match(obj ObjectKeyer) bool {
+	if p == nil || p.Pattern == nil {
+		return false
+	}
+	key := obj.ObjectKey()
+	return p.Type == key.Type && key.Name != "" && p.Pattern.MatchString(key.Name)
+}
+
+func (p *ObjectPattern) String() string {
+	if p == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s %s", p.Type, p.Pattern)
 }

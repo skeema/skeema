@@ -78,7 +78,7 @@ func AddEnvHandler(cfg *mybase.Config) error {
 	} else {
 		dir.OptionFile.SetOptionValue(environment, "flavor", flavor.Family().String())
 	}
-	for _, persistOpt := range []string{"user", "ignore-schema", "ignore-table", "connect-options"} {
+	for _, persistOpt := range []string{"user", "ignore-schema", "ignore-table", "ignore-proc", "ignore-func", "connect-options"} {
 		if cfg.OnCLI(persistOpt) {
 			dir.OptionFile.SetOptionValue(environment, persistOpt, cfg.Get(persistOpt))
 		}
