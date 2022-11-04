@@ -2,6 +2,7 @@ package tengo
 
 import (
 	"encoding/json"
+	"regexp"
 	"testing"
 )
 
@@ -12,7 +13,8 @@ func (s TengoIntegrationSuite) TestSchemaTables(t *testing.T) {
 	s.SourceTestSQL(t, "integration-ext.sql")
 	schema := s.GetSchema(t, "testing")
 
-	// Currently at least 7 tables in testing schema in testdata/integration.sql
+	// Currently at least 7 tables in testing schema from testdata/integration.sql
+	// and testdata/introspection-ext.sql
 	if len(schema.Tables) < 7 {
 		t.Errorf("Expected at least 7 tables, instead found %d", len(schema.Tables))
 	}
@@ -76,4 +78,44 @@ func (s TengoIntegrationSuite) TestSchemaJSON(t *testing.T) {
 			}
 		}
 	}
+}
+
+func (s TengoIntegrationSuite) TestSchemaStripMatches(t *testing.T) {
+	s.SourceTestSQL(t, "integration-ext.sql")
+	schema := s.GetSchema(t, "testing")
+
+	origTableCount, origRoutineCount := len(schema.Tables), len(schema.Routines)
+
+	// Confirm nothing is stripped when no matching patterns are supplied
+	schema.StripMatches(nil)
+	if len(schema.Tables) != origTableCount || len(schema.Routines) != origRoutineCount {
+		t.Fatal("StripMatches with nil arg unexpectedly stripped objects from schema")
+	}
+	noMatch1 := ObjectPattern{Type: ObjectTypeTable, Pattern: regexp.MustCompile("wont_match_anything")}
+	noMatch2 := ObjectPattern{Type: ObjectTypeProc, Pattern: regexp.MustCompile("^func")}
+	schema.StripMatches([]ObjectPattern{noMatch1, noMatch2})
+	if len(schema.Tables) != origTableCount || len(schema.Routines) != origRoutineCount {
+		t.Fatal("StripMatches with non-matching patterns unexpectedly stripped objects from schema")
+	}
+
+	// Confirm behavior stripping a table
+	matchTable := ObjectPattern{Type: ObjectTypeTable, Pattern: regexp.MustCompile("^grab_bag$")}
+	schema.StripMatches([]ObjectPattern{matchTable})
+	if len(schema.Tables) != origTableCount-1 {
+		t.Errorf("StripMatches not working correctly; expected %d tables remaining, instead found %d", origTableCount-1, len(schema.Tables))
+	}
+	if len(schema.Routines) != origRoutineCount {
+		t.Errorf("StripMatches not working correctly; expected %d routines, instead found %d", origRoutineCount, len(schema.Routines))
+	}
+
+	// Confirm behavior stripping a func
+	matchFunc := ObjectPattern{Type: ObjectTypeFunc, Pattern: regexp.MustCompile("func1")}
+	schema.StripMatches([]ObjectPattern{matchFunc})
+	if len(schema.Routines) != origRoutineCount-1 {
+		t.Errorf("StripMatches not working correctly; expected %d routines remaining, instead found %d", origRoutineCount-1, len(schema.Routines))
+	}
+
+	// Confirm no panic if called on nil schema
+	schema = nil
+	schema.StripMatches([]ObjectPattern{matchFunc})
 }

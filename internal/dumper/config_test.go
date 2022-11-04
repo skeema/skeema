@@ -1,7 +1,6 @@
 package dumper
 
 import (
-	"regexp"
 	"testing"
 
 	"github.com/skeema/skeema/internal/tengo"
@@ -16,15 +15,6 @@ func TestOptionsIgnore(t *testing.T) {
 			t.Errorf("Unexpected result from shouldIgnore(%s): expected %t, found %t", key, expected, actual)
 		}
 	}
-
-	// Confirm behavior of Ignore
-	opts = Options{}
-	opts.Ignore = []tengo.ObjectPattern{
-		{Type: tengo.ObjectTypeTable, Pattern: regexp.MustCompile(`^multi`)},
-	}
-	assertIgnore(tengo.ObjectTypeTable, "multi1", true)
-	assertIgnore(tengo.ObjectTypeTable, "ultimulti", false)
-	assertIgnore(tengo.ObjectTypeFunc, "multi1", false)
 
 	// Confirm behavior of OnlyKeys
 	keys := []tengo.ObjectKey{
@@ -47,9 +37,6 @@ func TestOptionsIgnore(t *testing.T) {
 
 	// Confirm behavior of combination of these settings
 	opts = Options{}
-	opts.Ignore = []tengo.ObjectPattern{
-		{Type: tengo.ObjectTypeTable, Pattern: regexp.MustCompile(`^multi`)},
-	}
 	opts.IgnoreKeys(keys)
 	opts.OnlyKeys([]tengo.ObjectKey{
 		{Type: tengo.ObjectTypeTable, Name: "cats"},

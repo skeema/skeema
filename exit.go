@@ -1,23 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/util"
 )
-
-// ExitValue represents an exit code for an operation. It satisfies the Error
-// interface, but does not necessarily indicate a "fatal error" condition. For
-// example, diff exit code of 1 means differences were found; lint exit code of
-// 1 means at least one file was reformatted. By convention, fatal errors will
-// be indicated by a code > 1. A nil *ExitValue always represents success / exit
-// code 0.
-type ExitValue struct {
-	Code    int
-	message string
-}
 
 // Constants representing some predefined exit codes used by Skeema. A few of
 // these are loosely adapted from BSD's `man sysexits`.
@@ -33,12 +23,22 @@ const (
 	CodeBadConfig        = 78
 )
 
-// NewExitValue is a constructor for ExitValue.
-func NewExitValue(code int, format string, a ...interface{}) *ExitValue {
-	return &ExitValue{
-		Code:    code,
-		message: fmt.Sprintf(format, a...),
-	}
+// ExitCoder is an interface for error values that also expose a specific
+// process exit code.
+type ExitCoder interface {
+	error
+	ExitCode() int
+}
+
+// ExitValue represents an exit code for an operation. It satisfies the Error
+// interface, but does not necessarily indicate a "fatal error" condition. For
+// example, diff exit code of 1 means differences were found; lint exit code of
+// 1 means at least one file was reformatted. By convention, fatal errors will
+// be indicated by a code > 1. A nil *ExitValue always represents success / exit
+// code 0.
+type ExitValue struct {
+	Code    int
+	message string
 }
 
 // Error returns an error string, satisfying the Go builtin error interface.
@@ -49,14 +49,32 @@ func (ev *ExitValue) Error() string {
 	return ev.message
 }
 
+// ExitCode returns ev's Code, satisfying the ExitCoder interface.
+func (ev *ExitValue) ExitCode() int {
+	if ev == nil {
+		return CodeSuccess
+	}
+	return ev.Code
+}
+
+// NewExitValue is a constructor for ExitValue.
+func NewExitValue(code int, format string, a ...interface{}) *ExitValue {
+	return &ExitValue{
+		Code:    code,
+		message: fmt.Sprintf(format, a...),
+	}
+}
+
 // ExitCode returns an exit code corresponding to the supplied error. If err
-// is nil, code 0 (success) is returned. If err is an *ExitValue, its Code is
-// returned. Otherwise, exit 2 code (fatal error) is returned.
+// is nil, code 0 (success) is returned. If err is an ExitCoder (or wraps one),
+// its ExitCode is returned. Otherwise, exit 2 code (fatal error) is returned.
 func ExitCode(err error) int {
 	if err == nil {
 		return CodeSuccess
-	} else if ev, ok := err.(*ExitValue); ok {
-		return ev.Code
+	}
+	var ec ExitCoder
+	if errors.As(err, &ec) {
+		return ec.ExitCode()
 	}
 	return CodeFatalError
 }

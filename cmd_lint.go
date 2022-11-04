@@ -54,12 +54,7 @@ func LintHandler(cfg *mybase.Config) error {
 	result := lintWalker(dir, 5)
 	switch {
 	case len(result.Exceptions) > 0:
-		exitCode := CodeFatalError
-		for _, err := range result.Exceptions {
-			if _, ok := err.(linter.ConfigError); ok {
-				exitCode = CodeBadConfig
-			}
-		}
+		exitCode := ExitCode(HighestExitCode(result.Exceptions...))
 		return NewExitValue(exitCode, "Skipped %s due to fatal errors",
 			countAndNoun(len(result.Exceptions), "operation", "operations"),
 		)
@@ -166,7 +161,6 @@ func lintDir(dir *fs.Dir) *linter.Result {
 		if dir.Config.GetBool("format") && n == 0 {
 			dumpOpts := dumper.Options{
 				IncludeAutoInc: true,
-				Ignore:         opts.Ignore,
 			}
 			if dir.Config.GetBool("strip-partitioning") {
 				dumpOpts.Partitioning = tengo.PartitioningRemove
@@ -191,7 +185,7 @@ func lintDir(dir *fs.Dir) *linter.Result {
 	// Add warning annotations for unparseable statements (unless we hit an
 	// exception, in which case skip it to avoid extra noise!)
 	if len(result.Exceptions) == 0 {
-		for _, stmt := range dir.IgnoredStatements {
+		for _, stmt := range dir.UnparsedStatements {
 			note := linter.Note{
 				Summary: "Unable to parse statement",
 				Message: "Ignoring unsupported or unparseable SQL statement",

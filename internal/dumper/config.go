@@ -9,7 +9,6 @@ type Options struct {
 	IncludeAutoInc bool                     // if false, strip AUTO_INCREMENT clauses from CREATE TABLE
 	Partitioning   tengo.PartitioningMode   // PartitioningKeep: retain previous FS partitioning clause; PartitioningRemove: strip partitioning clause
 	CountOnly      bool                     // if true, skip writing files, just report count of rewrites
-	Ignore         []tengo.ObjectPattern    // skip objects matching these patterns
 	skipKeys       map[tengo.ObjectKey]bool // skip objects with true values
 	onlyKeys       map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
 }
@@ -48,11 +47,6 @@ func (opts *Options) shouldIgnore(keyer tengo.ObjectKeyer) bool {
 	}
 	if opts.onlyKeys != nil && !opts.onlyKeys[key] {
 		return true
-	}
-	for _, pattern := range opts.Ignore {
-		if pattern.Match(key) {
-			return true
-		}
 	}
 	return false
 }

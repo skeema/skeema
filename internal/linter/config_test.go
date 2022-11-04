@@ -24,13 +24,6 @@ func TestOptionsForDir(t *testing.T) {
 			t.Errorf("RuleSeverity is %v, does not match expectation %v", opts.RuleSeverity, expectedSeverity)
 		}
 
-		expectedIgnore := []tengo.ObjectPattern{
-			{Type: tengo.ObjectTypeTable, Pattern: regexp.MustCompile(`^_`)},
-		}
-		if !reflect.DeepEqual(expectedIgnore, opts.Ignore) {
-			t.Error("Ignore did not match expectation")
-		}
-
 		expectedAllowList := map[string]string{
 			"charset":  "utf8mb4",
 			"engine":   "innodb, myisam",
@@ -66,7 +59,6 @@ func TestOptionsForDir(t *testing.T) {
 		"--errors=made-up-problem",
 		"--warnings='bad-charset,made-up-problem,bad-engine'",
 		"--lint-engine=ignore --warnings=bad-engine",
-		"--ignore-table=+",
 		"--allow-charset=''",
 		"--allow-engine=''",
 		"--lint-engine=gentle-nudge",
@@ -103,15 +95,6 @@ func TestOptionsIgnore(t *testing.T) {
 		}
 	}
 
-	// Confirm behavior of ignore-table
-	opts = Options{}
-	opts.Ignore = []tengo.ObjectPattern{
-		{Type: tengo.ObjectTypeTable, Pattern: regexp.MustCompile(`^multi`)},
-	}
-	assertIgnore(tengo.ObjectTypeTable, "multi1", true)
-	assertIgnore(tengo.ObjectTypeTable, "ultimulti", false)
-	assertIgnore(tengo.ObjectTypeFunc, "multi1", false)
-
 	// Confirm behavior of OnlyKeys
 	keys := []tengo.ObjectKey{
 		{Type: tengo.ObjectTypeTable, Name: "cats"},
@@ -123,19 +106,6 @@ func TestOptionsIgnore(t *testing.T) {
 	assertIgnore(tengo.ObjectTypeTable, "multi1", true)
 	assertIgnore(tengo.ObjectTypeTable, "cats", false)
 	assertIgnore(tengo.ObjectTypeFunc, "pounce", true)
-
-	// Confirm behavior of combination of these settings
-	opts = Options{}
-	opts.Ignore = []tengo.ObjectPattern{
-		{Type: tengo.ObjectTypeTable, Pattern: regexp.MustCompile(`^dog`)},
-	}
-	opts.OnlyKeys([]tengo.ObjectKey{
-		{Type: tengo.ObjectTypeTable, Name: "cats"},
-		{Type: tengo.ObjectTypeTable, Name: "dogs"},
-	})
-	assertIgnore(tengo.ObjectTypeTable, "cats", false)
-	assertIgnore(tengo.ObjectTypeTable, "horses", true)
-	assertIgnore(tengo.ObjectTypeTable, "dogs", true)
 }
 
 func TestOptionsEquals(t *testing.T) {
@@ -148,20 +118,6 @@ func TestOptionsEquals(t *testing.T) {
 	if !opts.Equals(&other) {
 		t.Errorf("Two equivalent options structs are unexpectedly not equal: %+v vs %+v", opts, other)
 	}
-
-	if other.Ignore[0].Pattern = regexp.MustCompile("ignoreme"); opts.Equals(&other) {
-		t.Error("Equals unexpectedly still returning true even after setting Ignore to other regex")
-	}
-	other.Ignore[0] = tengo.ObjectPattern{Type: tengo.ObjectTypeProc, Pattern: opts.Ignore[0].Pattern}
-	if opts.Equals(&other) {
-		t.Error("Equals unexpectedly still returning true even after setting Ignore to other type")
-	}
-	if other.Ignore = nil; opts.Equals(&other) {
-		t.Error("Equals unexpectedly still returning true even after setting Ignore to nil")
-	}
-
-	opts, _ = OptionsForDir(dir)
-	other, _ = OptionsForDir(dir)
 	if other.RuleSeverity["charset"] = SeverityError; opts.Equals(&other) {
 		t.Error("Equals unexpectedly still returning true even after changing a severity value")
 	}

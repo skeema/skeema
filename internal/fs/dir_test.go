@@ -1,6 +1,7 @@
 package fs
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -23,8 +24,8 @@ func TestParseDir(t *testing.T) {
 	if dir.Config.Get("host") != "127.0.0.1" {
 		t.Errorf("dir.Config not working as expected; host is %s", dir.Config.Get("host"))
 	}
-	if len(dir.IgnoredStatements) > 0 {
-		t.Errorf("Expected 0 IgnoredStatements, instead found %d", len(dir.IgnoredStatements))
+	if len(dir.UnparsedStatements) > 0 {
+		t.Errorf("Expected 0 UnparsedStatements, instead found %d", len(dir.UnparsedStatements))
 	}
 	if len(dir.LogicalSchemas) != 1 {
 		t.Fatalf("Expected 1 LogicalSchema; instead found %d", len(dir.LogicalSchemas))
@@ -290,17 +291,17 @@ func TestParseDirInvalidChar(t *testing.T) {
 	}
 }
 
-func TestParseDirUnknownIgnored(t *testing.T) {
+func TestParseDirUnparsedStatements(t *testing.T) {
 	// This dir contains an INSERT statement among the valid CREATEs. This should
-	// be tracked in dir.IgnoredStatements but isn't a fatal error.
+	// be tracked in dir.UnparsedStatements but isn't a fatal error.
 	if dir, err := ParseDir("testdata/unknownstatement", getValidConfig(t)); err != nil {
 		t.Fatalf("In dir testdata/unknownstatement, unexpected error from ParseDir(): %v", err)
 	} else if len(dir.LogicalSchemas) != 1 {
 		t.Fatalf("In dir testdata/unknownstatement, expected 1 logical schema, instead found %d", len(dir.LogicalSchemas))
 	} else if dir.ParseError != nil {
 		t.Fatalf("In dir testdata/unknownstatement, expected nil ParseError, instead found %v", dir.ParseError)
-	} else if len(dir.IgnoredStatements) != 1 {
-		t.Errorf("In dir testdata/unknownstatement, expected 1 IgnoredStatements, instead found %d", len(dir.IgnoredStatements))
+	} else if len(dir.UnparsedStatements) != 1 {
+		t.Errorf("In dir testdata/unknownstatement, expected 1 UnparsedStatements, instead found %d", len(dir.UnparsedStatements))
 	}
 }
 
@@ -308,7 +309,7 @@ func TestParseDirRedundantDelimiter(t *testing.T) {
 	// This dir contains two special cases of DELIMITER commands:
 	// * Setting a delimiter that is already the current delimiter, e.g. from ; to ;
 	// * Setting a delimiter that is double the previous delimiter, e.g. from ; to ;;
-	// These cases should not cause errors or IgnoredStatements.
+	// These cases should not cause errors or UnparsedStatements.
 	if dir, err := ParseDir("testdata/redundantdelimiter", getValidConfig(t)); err != nil {
 		t.Fatalf("In dir testdata/redundantdelimiter, unexpected error from ParseDir(): %v", err)
 	} else if len(dir.LogicalSchemas) != 1 {
@@ -317,8 +318,8 @@ func TestParseDirRedundantDelimiter(t *testing.T) {
 		t.Fatalf("In dir testdata/redundantdelimiter, expected 3 CREATEs, instead found %d", len(dir.LogicalSchemas[0].Creates))
 	} else if dir.ParseError != nil {
 		t.Fatalf("In dir testdata/redundantdelimiter, expected nil ParseError, instead found %v", dir.ParseError)
-	} else if len(dir.IgnoredStatements) > 0 {
-		t.Errorf("In dir testdata/redundantdelimiter, expected 0 IgnoredStatements, instead found %d, first is %+v", len(dir.IgnoredStatements), *dir.IgnoredStatements[0])
+	} else if len(dir.UnparsedStatements) > 0 {
+		t.Errorf("In dir testdata/redundantdelimiter, expected 0 UnparsedStatements, instead found %d, first is %+v", len(dir.UnparsedStatements), *dir.UnparsedStatements[0])
 	}
 }
 
@@ -343,8 +344,34 @@ func TestParseDirBOM(t *testing.T) {
 		t.Fatalf("In dir testdata/utf8bom, expected 2 CREATEs, instead found %d", len(dir.LogicalSchemas[0].Creates))
 	} else if dir.ParseError != nil {
 		t.Fatalf("In dir testdata/utf8bom, expected nil ParseError, instead found %v", dir.ParseError)
-	} else if len(dir.IgnoredStatements) != 0 {
-		t.Errorf("In dir testdata/utf8bom, expected 0 IgnoredStatements, instead found %d", len(dir.IgnoredStatements))
+	} else if len(dir.UnparsedStatements) != 0 {
+		t.Errorf("In dir testdata/utf8bom, expected 0 UnparsedStatements, instead found %d", len(dir.UnparsedStatements))
+	}
+}
+
+func TestParseDirIgnorePatterns(t *testing.T) {
+	// Confirm behavior of ignore pattern blocking all procs
+	dir := getDir(t, "testdata/ignore/invalidsql")
+	if len(dir.LogicalSchemas) != 1 {
+		t.Errorf("Expected 1 logical schema, instead found %d", len(dir.LogicalSchemas))
+	}
+	if len(dir.LogicalSchemas[0].Creates) != 2 {
+		t.Errorf("Expected 2 non-ignored CREATES in logical schema, instead found %d", len(dir.LogicalSchemas[0].Creates))
+	}
+	for _, stmt := range dir.LogicalSchemas[0].Creates {
+		if stmt.ObjectKey().Type == tengo.ObjectTypeProc {
+			t.Errorf("Expected all procs to be ignored by ignore-proc=., but found proc with name %s", stmt.ObjectKey().Name)
+		}
+	}
+
+	// Confirm behavior of invalid regex for ignore pattern
+	_, err := ParseDir("testdata/ignore/invalidregex", getValidConfig(t))
+	if err == nil {
+		t.Fatal("In dir testdata/ignore/invalidregex, expected error from ParseDir(), but instead err is nil")
+	}
+	var ce ConfigError
+	if !errors.As(err, &ce) {
+		t.Errorf("Expected err to be ConfigError, instead type is %T and it does not unwrap to ConfigError", err)
 	}
 }
 

@@ -2,7 +2,6 @@ package tengo
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -600,18 +599,6 @@ func TestSchemaDiffRoutines(t *testing.T) {
 	if rd.To != &s2r1 || rd.ObjectKey().Type != ObjectTypeFunc {
 		t.Error("Pointer in diff does not point to expected value")
 	}
-	mods = StatementModifiers{
-		Ignore: []ObjectPattern{{Type: ObjectTypeProc, Pattern: regexp.MustCompile(s2r2.Name)}},
-	}
-	if stmt, err := rd.Statement(mods); stmt == "" || err != nil {
-		t.Error("Did not expect IgnoreProc to affect func, but it did")
-	}
-	mods = StatementModifiers{
-		Ignore: []ObjectPattern{{Type: ObjectTypeFunc, Pattern: regexp.MustCompile(s2r2.Name)}},
-	}
-	if stmt, err := rd.Statement(mods); stmt != "" || err != nil {
-		t.Error("Expected IgnoreFunc to affect func, but it did not")
-	}
 }
 
 func TestSchemaDiffFilteredTableDiffs(t *testing.T) {
@@ -886,43 +873,6 @@ func TestAlterTableStatementVirtualColValidation(t *testing.T) {
 	from.CreateStatement = from.GeneratedCreateStatement(FlavorUnknown)
 	to.Columns[4].TypeInDB = "varchar(20)"
 	assertWithValidation(false)
-}
-
-func TestIgnoreTableMod(t *testing.T) {
-	from := anotherTable()
-	to := anotherTable()
-	col := &Column{
-		Name:     "something",
-		TypeInDB: "smallint(5) unsigned",
-	}
-	to.Columns = append(to.Columns, col)
-	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
-	alter := NewAlterTable(&from, &to)
-	create := NewCreateTable(&from)
-	drop := NewDropTable(&from)
-	assertStatement := func(re string, tableName string, expectNonemptyStatement bool) {
-		t.Helper()
-		mods := StatementModifiers{
-			AllowUnsafe: true,
-		}
-		if re != "" {
-			mods.Ignore = append(mods.Ignore, ObjectPattern{Type: ObjectTypeTable, Pattern: regexp.MustCompile(re)})
-		}
-		from.Name = tableName
-		to.Name = tableName
-		if stmt, err := alter.Statement(mods); err != nil || (stmt == "") == expectNonemptyStatement {
-			t.Errorf("Unexpected result for alter: re=%s, table=%s, expectNonEmpty=%t, actual=%s, err=%s", re, tableName, expectNonemptyStatement, stmt, err)
-		}
-		if stmt, err := create.Statement(mods); err != nil || (stmt == "") == expectNonemptyStatement {
-			t.Errorf("Unexpected result for create: re=%s, table=%s, expectNonEmpty=%t, actual=%s, err=%s", re, tableName, expectNonemptyStatement, stmt, err)
-		}
-		if stmt, err := drop.Statement(mods); err != nil || (stmt == "") == expectNonemptyStatement {
-			t.Errorf("Unexpected result for drop: re=%s, table=%s, expectNonEmpty=%t, actual=%s, err=%s", re, tableName, expectNonemptyStatement, stmt, err)
-		}
-	}
-	assertStatement("", "testing", true)
-	assertStatement("^hello", "testing", true)
-	assertStatement("^test", "testing", false)
 }
 
 func TestNilObjectDiff(t *testing.T) {

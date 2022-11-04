@@ -28,6 +28,7 @@ func (t *Target) SchemaFromInstance() (*tengo.Schema, error) {
 	if err == sql.ErrNoRows {
 		err = nil
 	}
+	schema.StripMatches(t.Dir.IgnorePatterns)
 	return schema, err
 }
 
@@ -56,8 +57,8 @@ func (t *Target) logApplyStart() {
 	} else {
 		log.Infof("Pushing changes from %s%c*.sql to %s %s", t.Dir, os.PathSeparator, t.Instance, t.SchemaName)
 	}
-	if len(t.Dir.IgnoredStatements) > 0 {
-		log.Warnf("Ignoring %d unsupported or unparseable statements found in this directory's *.sql files; run `skeema lint` for more info", len(t.Dir.IgnoredStatements))
+	if len(t.Dir.UnparsedStatements) > 0 {
+		log.Warnf("Ignoring %d unsupported or unparseable statements found in this directory's *.sql files; run `skeema lint` for more info", len(t.Dir.UnparsedStatements))
 	}
 }
 

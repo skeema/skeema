@@ -11,7 +11,6 @@ import (
 	"github.com/skeema/skeema/internal/dumper"
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
-	"github.com/skeema/skeema/internal/util"
 )
 
 func init() {
@@ -99,6 +98,7 @@ func InitHandler(cfg *mybase.Config) error {
 
 	// Iterate over the schemas. For each one, create a dir with .skeema and *.sql files
 	for _, s := range schemas {
+		s.StripMatches(hostDir.IgnorePatterns)
 		if err := PopulateSchemaDir(s, hostDir, separateSchemaSubdir); err != nil {
 			return err
 		}
@@ -223,9 +223,6 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *fs.Dir, makeSubdir bool) erro
 
 	dumpOpts := dumper.Options{
 		IncludeAutoInc: dir.Config.GetBool("include-auto-inc"),
-	}
-	if dumpOpts.Ignore, err = util.IgnorePatterns(dir.Config); err != nil {
-		return NewExitValue(CodeBadConfig, err.Error())
 	}
 	if dir.Config.GetBool("strip-partitioning") {
 		dumpOpts.Partitioning = tengo.PartitioningRemove

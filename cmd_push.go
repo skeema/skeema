@@ -114,20 +114,12 @@ func PushHandler(cfg *mybase.Config) error {
 	}
 
 	if err := g.Wait(); err != nil {
-		if _, ok := err.(applier.ConfigError); ok {
-			return NewExitValue(CodeBadConfig, err.Error())
-		}
 		return err
-	}
-	return pushExitValue(sum, dir.Config.GetBool("dry-run"))
-}
-
-func pushExitValue(r applier.Result, dryRun bool) error {
-	if r.SkipCount > 0 {
-		return NewExitValue(CodeFatalError, r.Summary())
-	} else if r.UnsupportedCount > 0 {
-		return NewExitValue(CodePartialError, r.Summary())
-	} else if dryRun && r.Differences {
+	} else if sum.SkipCount > 0 {
+		return NewExitValue(CodeFatalError, sum.Summary())
+	} else if sum.UnsupportedCount > 0 {
+		return NewExitValue(CodePartialError, sum.Summary())
+	} else if dir.Config.GetBool("dry-run") && sum.Differences {
 		return NewExitValue(CodeDifferencesFound, "")
 	}
 	return nil

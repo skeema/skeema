@@ -1,0 +1,6 @@
+schema=product
+default-character-set=latin1
+default-collation=latin1_swedish_ci
+ignore-proc=.
+ignore-table=this_wont_match_anything
+ignore-func=neither_will_this

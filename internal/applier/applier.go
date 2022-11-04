@@ -9,7 +9,6 @@ import (
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/linter"
 	"github.com/skeema/skeema/internal/tengo"
-	"github.com/skeema/skeema/internal/util"
 )
 
 // Result stores the result of applying an individual target, or a combined
@@ -183,9 +182,6 @@ func StatementModifiersForDir(dir *fs.Dir) (mods tengo.StatementModifiers, err e
 	if mods.LockClause, err = dir.Config.GetEnum("alter-lock", "none", "shared", "exclusive", "default"); err != nil {
 		return
 	}
-	if mods.Ignore, err = util.IgnorePatterns(dir.Config); err != nil {
-		return
-	}
 	var partitioning string
 	if partitioning, err = dir.Config.GetEnum("partitioning", "keep", "remove", "modify"); err != nil {
 		return
@@ -205,4 +201,10 @@ type ConfigError string
 // Error satisfies the builtin error interface.
 func (ce ConfigError) Error() string {
 	return string(ce)
+}
+
+// ExitCode returns 78 for ConfigError, corresponding to EX_CONFIG in BSD's
+// SYSEXITS(3) manpage.
+func (ce ConfigError) ExitCode() int {
+	return 78
 }

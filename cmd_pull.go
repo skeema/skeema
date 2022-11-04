@@ -10,7 +10,6 @@ import (
 	"github.com/skeema/skeema/internal/dumper"
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
-	"github.com/skeema/skeema/internal/util"
 	"github.com/skeema/skeema/internal/workspace"
 )
 
@@ -139,11 +138,8 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance) (schemaNames []string,
 		// TODO: support multiple logical schemas per dir
 		logicalSchema := dir.LogicalSchemas[0]
 		schemaNames, err = pullLogicalSchema(dir, instance, logicalSchema)
-	}
-	if err != nil {
-		log.Errorf("Skipping %s: %s\n", dir, err)
-		if _, ok := err.(*ExitValue); !ok {
-			err = NewExitValue(CodeFatalError, "")
+		if err != nil {
+			log.Errorf("Skipping %s: %s\n", dir, err)
 		}
 	}
 	return
@@ -164,7 +160,7 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 	if logicalSchema.Name != "" {
 		schemaNames = []string{logicalSchema.Name}
 	} else if schemaNames, err = dir.SchemaNames(instance); err != nil {
-		return nil, fmt.Errorf("unable to fetch schema names mapped by this dir: %s", err)
+		return nil, fmt.Errorf("unable to fetch schema names mapped by this dir: %w", err)
 	}
 	if len(schemaNames) == 0 {
 		log.Warnf("Ignoring directory %s -- did not map to any schema names for environment %q\n", dir, dir.Config.Get("environment"))
@@ -177,6 +173,7 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 	} else if err != nil {
 		return nil, fmt.Errorf("Unable to fetch schema %s from %s: %s", schemaNames[0], instance, err)
 	}
+	instSchema.StripMatches(dir.IgnorePatterns)
 
 	log.Infof("Updating %s to reflect %s %s", dir, instance, instSchema.Name)
 
@@ -188,9 +185,6 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 
 	dumpOpts := dumper.Options{
 		IncludeAutoInc: dir.Config.GetBool("include-auto-inc"),
-	}
-	if dumpOpts.Ignore, err = util.IgnorePatterns(dir.Config); err != nil {
-		return nil, NewExitValue(CodeBadConfig, err.Error())
 	}
 	if !dir.Config.GetBool("update-partitioning") {
 		if dir.Config.GetBool("strip-partitioning") {
@@ -208,7 +202,7 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 	// To make this distinction, we need to actually execute the *.sql files in a
 	// Workspace and run a diff against it.
 	if !dir.Config.GetBool("format") || !dir.Config.GetBool("normalize") {
-		mods := statementModifiersForPull(dir.Config, instance, dumpOpts.Ignore)
+		mods := statementModifiersForPull(dir.Config, instance)
 		opts, err := workspace.OptionsForDir(dir, instance)
 		if err != nil {
 			return nil, NewExitValue(CodeBadConfig, err.Error())
@@ -227,12 +221,11 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 	return
 }
 
-func statementModifiersForPull(config *mybase.Config, instance *tengo.Instance, ignore []tengo.ObjectPattern) tengo.StatementModifiers {
+func statementModifiersForPull(config *mybase.Config, instance *tengo.Instance) tengo.StatementModifiers {
 	// We're permissive of unsafe operations here since we don't ever actually
 	// execute the generated statement! We just examine its type.
 	mods := tengo.StatementModifiers{
 		AllowUnsafe: true,
-		Ignore:      ignore,
 	}
 	// pull command updates next auto-increment value for existing table always
 	// if requested, or only if previously present in file otherwise
@@ -356,6 +349,7 @@ func findNewSchemas(dir *fs.Dir, instance *tengo.Instance, seenNames []string) e
 			if err != nil {
 				return err
 			}
+			s.StripMatches(dir.IgnorePatterns)
 			// use same logic from init command
 			if err := PopulateSchemaDir(s, dir, true); err != nil {
 				return err

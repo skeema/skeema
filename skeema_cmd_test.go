@@ -91,7 +91,7 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	// init should fail if a parent dir has an invalid .skeema file
 	fs.MakeTestDirectory(t, "hasbadoptions")
 	fs.WriteTestFile(t, "hasbadoptions/.skeema", "invalid file will not parse")
-	s.handleCommand(t, CodeFatalError, "hasbadoptions", "skeema init -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+	s.handleCommand(t, CodeBadConfig, "hasbadoptions", "skeema init -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
 
 	// init should fail if the --dir specifies an existing non-directory file; or
 	// if the --dir already contains a subdir matching a schema name; or if the
@@ -858,13 +858,14 @@ func (s SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
 		t.Error("Expected `skeema lint` to ignore mydb/analytics/_trending.sql, but it did not")
 	}
 
-	// push, pull, lint, format, init: invalid regexes should error. Error is
-	// CodeBadConfig except for cases of invalid ignore-schema being hit in
-	// fs.Dir.SchemaNames().
+	// push, pull, lint, format, init: invalid regexes should error with
+	// CodeBadConfig (except for push with invalid ignore-schema, which needs
+	// some further refactoring to handle configuration errors differently in
+	// some code paths)
 	s.handleCommand(t, CodeBadConfig, ".", "skeema lint --ignore-table='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema format --ignore-table='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema pull --ignore-table='+'")
-	s.handleCommand(t, CodeFatalError, ".", "skeema pull --ignore-schema='+'")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema pull --ignore-schema='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema push --ignore-table='+'")
 	s.handleCommand(t, CodeFatalError, ".", "skeema push --ignore-schema='+'")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir badre1 -h %s -P %d --ignore-schema='+'", s.d.Instance.Host, s.d.Instance.Port)
@@ -877,11 +878,11 @@ func (s SkeemaIntegrationSuite) TestDirEdgeCases(t *testing.T) {
 	// Invalid option file should break all commands
 	oldContents := fs.ReadTestFile(t, "mydb/.skeema")
 	fs.WriteTestFile(t, "mydb/.skeema", "invalid contents\n")
-	s.handleCommand(t, CodeFatalError, "mydb", "skeema pull")
-	s.handleCommand(t, CodeFatalError, "mydb", "skeema diff")
-	s.handleCommand(t, CodeFatalError, "mydb", "skeema lint")
-	s.handleCommand(t, CodeFatalError, "mydb", "skeema format")
-	s.handleCommand(t, CodeFatalError, ".", "skeema add-environment --host my.staging.db.com --dir mydb staging")
+	s.handleCommand(t, CodeBadConfig, "mydb", "skeema pull")
+	s.handleCommand(t, CodeBadConfig, "mydb", "skeema diff")
+	s.handleCommand(t, CodeBadConfig, "mydb", "skeema lint")
+	s.handleCommand(t, CodeBadConfig, "mydb", "skeema format")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema add-environment --host my.staging.db.com --dir mydb staging")
 	fs.WriteTestFile(t, "mydb/.skeema", oldContents)
 
 	// Hidden directories are ignored, even if they contain a .skeema file, whether

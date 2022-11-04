@@ -71,15 +71,15 @@ func (s IntegrationSuite) TestCheckSchema(t *testing.T) {
 	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
 	if err != nil {
 		t.Fatalf("Unexpected error from workspace.ExecLogicalSchema: %v", err)
-	} else if len(wsSchema.Failures) != 3 {
+	} else if len(wsSchema.Failures) != 2 {
 		// Here we just verify that no statements are unexpectedly failing, besides
-		// the 3 in validcfg/borked.sql. We don't otherwise annotate failures here;
-		// testing of that logic is handled in TestResultAnnotateStatementErrors()
-		// in result_test.go.
+		// the 3 in validcfg/borked.sql, one of which is ignored by ignore-table. We
+		// don't otherwise annotate failures here; testing of that logic is handled
+		// in TestResultAnnotateStatementErrors() in result_test.go.
 		for _, err := range wsSchema.Failures {
 			t.Errorf(err.Error())
 		}
-		t.Fatalf("Expected 3 creation failures from %s/*.sql, instead found %d", dir, len(wsSchema.Failures))
+		t.Fatalf("Expected 2 creation failures from %s/*.sql, instead found %d (see above errors)", dir, len(wsSchema.Failures))
 	}
 
 	result := CheckSchema(wsSchema, opts)

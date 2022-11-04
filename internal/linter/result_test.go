@@ -118,8 +118,8 @@ func (s IntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
 	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
 	if err != nil {
 		t.Fatalf("Unexpected error from workspace.ExecLogicalSchema: %v", err)
-	} else if len(wsSchema.Failures) != 3 {
-		t.Fatalf("Expected 3 StatementErrors from %s/*.sql, instead found %d", dir, len(wsSchema.Failures))
+	} else if len(wsSchema.Failures) != 2 {
+		t.Fatalf("Expected 2 StatementErrors from %s/*.sql, instead found %d", dir, len(wsSchema.Failures))
 	}
 
 	result := CheckSchema(wsSchema, opts)
@@ -127,9 +127,7 @@ func (s IntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
 		t.Fatalf("Expected no errors in initial result, due to forceRulesWarning(); instead found %d", result.ErrorCount)
 	}
 
-	// Annotate the statement errors, and confirm the error count is now correct.
-	// Of the 3 statement errors, one was for an ignored table, so only 2 are
-	// annotated.
+	// Annotate the statement errors, and confirm the error count is correct.
 	// Then find the specific annotation and confirm the line offsets are correct.
 	result.AnnotateStatementErrors(wsSchema.Failures, opts)
 	if result.ErrorCount != 2 {

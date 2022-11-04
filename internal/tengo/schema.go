@@ -106,6 +106,32 @@ func (s *Schema) Objects() map[ObjectKey]DefKeyer {
 	return dict
 }
 
+// StripMatches removes objects from s if they match any supplied pattern. The
+// in-memory representation of the schema is modified in-place. This does not
+// affect any actual database instances.
+func (s *Schema) StripMatches(removePatterns []ObjectPattern) {
+	if s == nil {
+		return
+	}
+	for _, pattern := range removePatterns {
+		switch pattern.Type {
+		case ObjectTypeTable:
+			s.Tables = stripMatchingObjects(s.Tables, pattern)
+		case ObjectTypeProc, ObjectTypeFunc:
+			s.Routines = stripMatchingObjects(s.Routines, pattern)
+		}
+	}
+}
+
+func stripMatchingObjects[T ObjectKeyer](s []T, pattern ObjectPattern) (result []T) {
+	for _, obj := range s {
+		if !pattern.Match(obj) {
+			result = append(result, obj)
+		}
+	}
+	return
+}
+
 // Diff returns the set of differences between this schema and another schema.
 func (s *Schema) Diff(other *Schema) *SchemaDiff {
 	return NewSchemaDiff(s, other)

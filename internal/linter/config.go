@@ -8,7 +8,6 @@ import (
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
-	"github.com/skeema/skeema/internal/util"
 )
 
 // Severity represents different annotation severity levels.
@@ -42,7 +41,6 @@ func AddCommandOptions(cmd *mybase.Command) {
 type Options struct {
 	RuleSeverity map[string]Severity
 	RuleConfig   map[string]interface{}
-	Ignore       []tengo.ObjectPattern
 	Flavor       tengo.Flavor
 	onlyKeys     map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
 }
@@ -93,30 +91,13 @@ func (opts *Options) Equals(other *Options) bool {
 	if opts.Flavor != other.Flavor {
 		return false
 	}
-	if len(opts.Ignore) != len(other.Ignore) {
-		return false
-	}
-	for n := range opts.Ignore { // ordering of slices is consistent due to use of util.IgnorePatterns
-		if opts.Ignore[n].String() != other.Ignore[n].String() {
-			return false
-		}
-	}
 	return true
 }
 
 // shouldIgnore returns true if the option configuration indicates the supplied
 // object should be ignored.
 func (opts *Options) shouldIgnore(keyer tengo.ObjectKeyer) bool {
-	key := keyer.ObjectKey()
-	if opts.onlyKeys != nil && !opts.onlyKeys[key] {
-		return true
-	}
-	for _, pattern := range opts.Ignore {
-		if pattern.Match(key) {
-			return true
-		}
-	}
-	return false
+	return opts.onlyKeys != nil && !opts.onlyKeys[keyer.ObjectKey()]
 }
 
 // OptionsForDir returns Options based on the configuration in an fs.Dir,
@@ -126,12 +107,6 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 		RuleSeverity: make(map[string]Severity),
 		RuleConfig:   make(map[string]interface{}),
 		Flavor:       tengo.ParseFlavor(dir.Config.Get("flavor")),
-	}
-
-	var err error
-	opts.Ignore, err = util.IgnorePatterns(dir.Config)
-	if err != nil {
-		return Options{}, ConfigError{Dir: dir, err: err}
 	}
 
 	// Populate opts.RuleSeverity from individual rule options
@@ -199,6 +174,17 @@ type ConfigError struct {
 // Error satisfies the builtin error interface.
 func (ce ConfigError) Error() string {
 	return ce.err.Error()
+}
+
+// Unwrap satisfies Golang errors package unwrapping behavior.
+func (ce ConfigError) Unwrap() error {
+	return ce.err
+}
+
+// ExitCode returns 78 for ConfigError, corresponding to EX_CONFIG in BSD's
+// SYSEXITS(3) manpage.
+func (ce ConfigError) ExitCode() int {
+	return 78
 }
 
 // NewConfigError creates a config error referring to the specified directory

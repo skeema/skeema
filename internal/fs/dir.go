@@ -21,14 +21,15 @@ import (
 // Dir is a parsed representation of a directory that may have contained
 // a .skeema config file and/or *.sql files.
 type Dir struct {
-	Path              string
-	Config            *mybase.Config
-	OptionFile        *mybase.File
-	SQLFiles          []SQLFile
-	LogicalSchemas    []*LogicalSchema // for now, always 0 or 1 elements; 2+ in same dir to be supported in future
-	ParseError        error            // any fatal error found parsing dir's config or contents
-	IgnoredStatements []*Statement     // statements with unknown type / not supported by this package
-	repoBase          string           // absolute path of containing repo, or topmost-found .skeema file
+	Path               string
+	Config             *mybase.Config
+	OptionFile         *mybase.File
+	SQLFiles           []SQLFile
+	LogicalSchemas     []*LogicalSchema      // for now, always 0 or 1 elements; 2+ in same dir to be supported in future
+	ParseError         error                 // any fatal error found parsing dir's config or contents
+	UnparsedStatements []*Statement          // statements with unknown type / not supported by this package
+	IgnorePatterns     []tengo.ObjectPattern // regexes for matching objects that should be ignored
+	repoBase           string                // absolute path of containing repo, or topmost-found .skeema file
 }
 
 // LogicalSchema represents a set of statements from *.sql files in a directory
@@ -224,9 +225,9 @@ func (dir *Dir) Subdirs() ([]*Dir, error) {
 func (dir *Dir) CreateSubdir(name string, optionFile *mybase.File) (*Dir, error) {
 	dirPath := filepath.Join(dir.Path, name)
 	if dir.OptionFile != nil && dir.OptionFile.SomeSectionHasOption("schema") {
-		return nil, fmt.Errorf("Cannot use dir %s: parent option file %s defines schema option", dirPath, dir.OptionFile)
+		return nil, ConfigErrorf("Cannot use dir %s: parent option file %s defines schema option", dirPath, dir.OptionFile)
 	} else if _, ok := dir.Config.Source("schema").(*mybase.File); ok {
-		return nil, fmt.Errorf("Cannot use dir %s: an ancestor option file defines schema option", dirPath)
+		return nil, ConfigErrorf("Cannot use dir %s: an ancestor option file defines schema option", dirPath)
 	}
 
 	if fi, err := os.Stat(dirPath); os.IsNotExist(err) {
@@ -350,7 +351,7 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 	}
 	params, err := dir.InstanceDefaultParams()
 	if err != nil {
-		return nil, fmt.Errorf("Invalid connection options: %s", err)
+		return nil, ConfigErrorf("Invalid connection options: %w", err)
 	}
 	portValue, portWasSupplied := dir.Port()
 	socketValue := dir.Config.GetAllowEnvVar("socket")
@@ -370,7 +371,7 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 			}
 			if splitPort > 0 {
 				if splitPort != portValue && portWasSupplied {
-					return nil, fmt.Errorf("Port was supplied as %d inside hostname %s but as %d in option file", splitPort, host, portValue)
+					return nil, ConfigErrorf("Port was supplied as %d inside hostname %s but as %d in option file", splitPort, host, portValue)
 				}
 				host = splitHost
 				thisPortValue = splitPort
@@ -384,7 +385,7 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 				safeUserPass := user + ":*****"
 				dsn = strings.Replace(dsn, userAndPass, safeUserPass, 1)
 			}
-			return nil, fmt.Errorf("Invalid connection information for %s (DSN=%s): %s", dir, dsn, err)
+			return nil, ConfigErrorf("Invalid connection information for %s (DSN=%s): %w", dir, dsn, err)
 		}
 		instances = append(instances, instance)
 	}
@@ -488,7 +489,7 @@ func (dir *Dir) SchemaNames(instance *tengo.Instance) (names []string, err error
 		if schemaValue != "*" {
 			re, err := regexp.Compile(schemaValue[1 : len(schemaValue)-1])
 			if err != nil {
-				return nil, err
+				return nil, ConfigError{err}
 			}
 			keepNames := []string{}
 			for _, name := range names {
@@ -507,7 +508,7 @@ func (dir *Dir) SchemaNames(instance *tengo.Instance) (names []string, err error
 	// can't manually configure the schema option to a system schema.)
 	ignoreSchema, err := dir.Config.GetRegexp("ignore-schema")
 	if err != nil {
-		return nil, err
+		return nil, ConfigError{err}
 	}
 	names = filterSchemaNames(names, ignoreSchema)
 
@@ -632,7 +633,7 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 
 	options, err := util.SplitConnectOptions(dir.Config.Get("connect-options"))
 	if err != nil {
-		return "", err
+		return "", ConfigError{err}
 	}
 
 	v := url.Values{}
@@ -647,7 +648,7 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	if dir.Config.Supplied("ssl-mode") {
 		sslMode, err = dir.Config.GetEnum("ssl-mode", "disabled", "preferred", "required")
 		if err != nil {
-			return "", err
+			return "", ConfigError{err}
 		} else if sslMode == "disabled" {
 			sslMode = "false" // driver uses "false" to mean mysql ssl-mode=disabled
 		} else if sslMode == "required" {
@@ -661,10 +662,10 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	// Set values from connect-options
 	for name, value := range options {
 		if banned[strings.ToLower(name)] {
-			return "", fmt.Errorf("connect-options is not allowed to contain %s", name)
+			return "", ConfigErrorf("connect-options is not allowed to contain %s", name)
 		}
 		if name == "tls" && dir.Config.Supplied("ssl-mode") {
-			return "", fmt.Errorf("connect-options is not allowed to contain %s; use only the newer ssl-mode option instead", name)
+			return "", ConfigErrorf("connect-options is not allowed to contain %s; use only the newer ssl-mode option instead", name)
 		}
 		v.Set(name, value)
 	}
@@ -759,6 +760,17 @@ func (dir *Dir) Password(hosts ...string) (string, error) {
 	return val, nil
 }
 
+// ShouldIgnore returns true if the directory's configuration states that the
+// supplied object/key/statement should be ignored.
+func (dir *Dir) ShouldIgnore(object tengo.ObjectKeyer) bool {
+	for _, pattern := range dir.IgnorePatterns {
+		if pattern.Match(object) {
+			return true
+		}
+	}
+	return false
+}
+
 // parseContents reads the .skeema and *.sql files in the dir, populating
 // fields of dir accordingly. This method modifies dir in-place. Any fatal
 // error will populate dir.ParseError.
@@ -772,6 +784,12 @@ func (dir *Dir) parseContents() {
 			return
 		}
 		dir.Config.AddSource(dir.OptionFile)
+	}
+
+	var err error
+	if dir.IgnorePatterns, err = util.IgnorePatterns(dir.Config); err != nil {
+		dir.ParseError = ConfigError{err}
+		return
 	}
 
 	// Tokenize and parse any *.sql files
@@ -792,6 +810,13 @@ func (dir *Dir) parseContents() {
 			return
 		}
 		for _, stmt := range tokenizedFile.Statements {
+			// Statements that are ignored due to ignore-table, ignore-proc, etc are
+			// simply not placed into a LogicalSchema, so that all other logic won't
+			// interact with them
+			if dir.ShouldIgnore(stmt) {
+				continue
+			}
+
 			if _, ok := logicalSchemasByName[stmt.Schema()]; !ok {
 				logicalSchemasByName[stmt.Schema()] = &LogicalSchema{
 					Creates: make(map[tengo.ObjectKey]*Statement),
@@ -806,7 +831,7 @@ func (dir *Dir) parseContents() {
 				// type (e.g. INSERTs), are simply ignored. This is not fatal, since it is
 				// quite rare for a typo to trigger this -- only happens when misspelling
 				// CREATE or the object type for example.
-				dir.IgnoredStatements = append(dir.IgnoredStatements, stmt)
+				dir.UnparsedStatements = append(dir.UnparsedStatements, stmt)
 			} else if stmt.Type == StatementTypeLexError || stmt.Type == StatementTypeForbidden {
 				// Statements with lexer errors, meaning invalid characters, are treated as
 				// fatal. This can be indicative of a bug in the grammar, or of a normally-
@@ -1001,7 +1026,7 @@ func parseOptionFile(dirPath, repoBase string, baseConfig *mybase.Config) (*myba
 		return nil, err
 	}
 	if err := f.Parse(baseConfig); err != nil {
-		return nil, err
+		return nil, ConfigError{err}
 	}
 	_ = f.UseSection(baseConfig.Get("environment")) // we don't care if the section doesn't exist
 	return f, nil
@@ -1051,6 +1076,33 @@ func sqlFiles(dirPath, repoBase string) ([]SQLFile, error) {
 		}
 	}
 	return result, nil
+}
+
+// ConfigError indicates a misconfiguration in the directory's .skeema file or
+// the command-line overrides.
+type ConfigError struct {
+	err error
+}
+
+// Error satisfies the builtin error interface.
+func (ce ConfigError) Error() string {
+	return ce.err.Error()
+}
+
+// Unwrap satisfies Golang errors package unwrapping behavior.
+func (ce ConfigError) Unwrap() error {
+	return ce.err
+}
+
+// ExitCode returns 78 for ConfigError, corresponding to EX_CONFIG in BSD's
+// SYSEXITS(3) manpage.
+func (ce ConfigError) ExitCode() int {
+	return 78
+}
+
+// ConfigErrorf formats and returns a new ConfigError value.
+func ConfigErrorf(format string, a ...any) ConfigError {
+	return ConfigError{err: fmt.Errorf(format, a...)}
 }
 
 // DuplicateDefinitionError is an error returned when Dir.parseContents()
