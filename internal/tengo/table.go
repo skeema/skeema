@@ -92,7 +92,7 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 		charSet = "utf8mb3"
 	}
 	var collate string
-	if !t.CollationIsDefault || (t.CharSet == "utf8mb4" && flavor.Min(FlavorMySQL80)) {
+	if !t.CollationIsDefault || (t.CharSet == "utf8mb4" && flavor.Min(FlavorMySQL80)) || flavor.AlwaysShowCollate() {
 		collate = fmt.Sprintf(" COLLATE=%s", t.Collation)
 	}
 	var createOptions string

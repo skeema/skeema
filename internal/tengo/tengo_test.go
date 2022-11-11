@@ -344,6 +344,8 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 		// 8.0.24+ changes how utf8mb3 is expressed for table-level default in
 		// SHOW CREATE, but not anywhere else
 		utf8mb3Table = "utf8mb3"
+	} else if flavor.AlwaysShowCollate() {
+		utf8mb3Table += " COLLATE=" + utf8mb3DefaultCollation
 	}
 
 	stmt := fmt.Sprintf(`CREATE TABLE `+"`"+`actor`+"`"+` (
@@ -421,6 +423,9 @@ func anotherTableForFlavor(flavor Flavor) Table {
 	if flavor.OmitIntDisplayWidth() {
 		stripIntDisplayWidths(&table)
 	}
+	if flavor.AlwaysShowCollate() {
+		table.CreateStatement += " COLLATE=latin1_swedish_ci"
+	}
 	return table
 }
 
@@ -495,6 +500,9 @@ func supportedTableForFlavor(flavor Flavor) Table {
 	if flavor.Min(FlavorMariaDB102) { // allow explicit DEFAULT NULL for blob/text
 		columns[3].Default = "NULL"
 		stmt = strings.Replace(stmt, " text", " text DEFAULT NULL", 1)
+	}
+	if flavor.AlwaysShowCollate() {
+		stmt += " COLLATE=latin1_swedish_ci"
 	}
 
 	table := Table{
@@ -583,7 +591,8 @@ func foreignKeyTable() Table {
 	// table yet because the need hasn't come up, but there are actual flavor-
 	// specific differences with FKs. In particular, MySQL 8+ squashes NO ACTION
 	// clauses from SHOW CREATE TABLE; 8.0.19+ strips display widths; ordering of
-	// FKs is different in 5.5 as well as 8.0.19+.
+	// FKs is different in 5.5 as well as 8.0.19+; recent MariaDB (Nov'22 onwards)
+	// will include COLLATE after any CHARSET.
 	stmt := strings.Replace(`CREATE TABLE ~warranties~ (
   ~id~ int(10) unsigned NOT NULL,
   ~customer_id~ int(10) unsigned DEFAULT NULL,

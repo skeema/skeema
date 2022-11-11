@@ -403,3 +403,30 @@ func (fl Flavor) HasCheckConstraints() bool {
 	}
 	return fl.Matches(FlavorMariaDB102) && fl.Version.Patch() >= 22
 }
+
+// Mapping for whether MariaDB returns true for AlwaysShowCollate: key is
+// flavor family, value is minimum patch version. Versions prior to 10.3 are
+// excluded, as are non-MariaDB versions, since the AlwaysShowCollate method
+// checks for these separately (and always returns false).
+var mariaPatchAlwaysCollate = map[Flavor]uint16{
+	FlavorMariaDB103: 37,
+	FlavorMariaDB104: 27,
+	FlavorMariaDB105: 18,
+	FlavorMariaDB106: 11,
+	FlavorMariaDB107: 7,
+	FlavorMariaDB108: 6,
+	FlavorMariaDB109: 4,
+}
+
+// AlwaysShowCollate returns true if the flavor always puts a COLLATE clause
+// after a CHARACTER SET clause in SHOW CREATE TABLE, for columns as well as
+// the table default. This is true in MariaDB versions released Nov 2022
+// onwards. Reference: https://jira.mariadb.org/browse/MDEV-29446
+// TODO: adjust slightly once 10.10 is GA: 10.10.2+ always returns true; ditto
+// for 10.11 onwards with any patch version.
+func (fl Flavor) AlwaysShowCollate() bool {
+	if !fl.Min(FlavorMariaDB103) {
+		return false
+	}
+	return fl.Version.Patch() >= mariaPatchAlwaysCollate[fl.Family()]
+}

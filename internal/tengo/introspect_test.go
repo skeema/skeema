@@ -60,8 +60,8 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		t.Error("Objects map not populated as expected")
 	}
 
-	// ensure character set handling works properly regardless of whether this
-	// flavor has a data dictionary, which changed many SHOW CREATE TABLE behaviors
+	// ensure character set handling works properly. Recent flavors tend to change
+	// many SHOW CREATE TABLE behaviors.
 	schema = s.GetSchema(t, "testcharcoll")
 	for _, table := range schema.Tables {
 		if table.UnsupportedDDL {

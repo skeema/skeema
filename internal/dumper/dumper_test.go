@@ -253,13 +253,21 @@ func (s *IntegrationSuite) reparseScratchDir(t *testing.T) {
 	} else if len(dir.LogicalSchemas) != 1 {
 		t.Fatalf("Unexpected logical schema count for %s: %d", dir, len(dir.LogicalSchemas))
 	}
-	if s.d.Flavor().OmitIntDisplayWidth() {
+	if s.d.Flavor().OmitIntDisplayWidth() || s.d.Flavor().AlwaysShowCollate() {
 		for _, sqlFile := range dir.SQLFiles {
 			contents, err := ioutil.ReadFile(sqlFile.Path())
 			if err != nil {
 				t.Fatalf("Unexpected error from ReadFile: %v", err)
 			}
-			if newContents := stripDisplayWidth(string(contents)); newContents != string(contents) {
+			var newContents string
+			if s.d.Flavor().OmitIntDisplayWidth() {
+				newContents = stripDisplayWidth(string(contents))
+			}
+			if s.d.Flavor().AlwaysShowCollate() {
+				newContents = strings.ReplaceAll(string(contents), "DEFAULT CHARSET=latin1;", "DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;")
+				newContents = strings.ReplaceAll(newContents, "DEFAULT CHARSET=latin1\n", "DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci\n")
+			}
+			if newContents != string(contents) {
 				err := ioutil.WriteFile(sqlFile.Path(), []byte(newContents), 0777)
 				if err != nil {
 					t.Fatalf("Unexpected error from WriteFile: %v", err)
@@ -297,6 +305,10 @@ func (s *IntegrationSuite) verifyDumperResult(t *testing.T, subdir string) {
 			expectContents := fs.ReadTestFile(t, goldenDir.SQLFiles[n].Path())
 			if s.d.Flavor().OmitIntDisplayWidth() {
 				expectContents = stripDisplayWidth(expectContents)
+			}
+			if s.d.Flavor().AlwaysShowCollate() {
+				expectContents = strings.ReplaceAll(expectContents, "DEFAULT CHARSET=latin1;", "DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;")
+				expectContents = strings.ReplaceAll(expectContents, "DEFAULT CHARSET=latin1\n", "DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci\n")
 			}
 			if actualContents != expectContents {
 				t.Errorf("Mismatch for contents of %s:\n%s:\n%s\n\n%s:\n%s\n", s.scratchDir.SQLFiles[n].FileName, s.scratchDir, actualContents, goldenDir, expectContents)

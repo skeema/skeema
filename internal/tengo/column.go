@@ -39,12 +39,25 @@ func (c *Column) Definition(flavor Flavor, table *Table) string {
 	if c.CharSet != "" && (table == nil || c.Collation != table.Collation || c.ForceShowCharSet) {
 		charSet = fmt.Sprintf(" CHARACTER SET %s", c.CharSet)
 	}
-	// Any flavor: Collations are displayed if not the default for the charset
-	// 8.0 only: Collations are also displayed in other cases which must be parsed
-	// from SHOW CREATE (surfaced as ForceShowCollation). Typically this is any
-	// time a charset is displayed, but not if the table was upgraded from pre-8.0.
-	if c.Collation != "" && (!c.CollationIsDefault || c.ForceShowCollation) {
-		collation = fmt.Sprintf(" COLLATE %s", c.Collation)
+	// MySQL pre-8.0, MariaDB pre-Nov'22: Collations are displayed if not the
+	//     default for the charset.
+	// MySQL 8.0: ditto, but also collations are displayed in other cases which
+	//     must be parsed from SHOW CREATE (surfaced as ForceShowCollation).
+	//     Typically this is any time a charset is displayed, but not if the table
+	//     was upgraded from pre-8.0.
+	// MariaDB Nov'22 onwards: Collations are displayed if (and only if) the
+	//     character set is displayed, based on charset display logic (which is
+	//     partially based on the collation anyway)
+	if c.Collation != "" {
+		var showCollate bool
+		if flavor.AlwaysShowCollate() {
+			showCollate = (charSet != "")
+		} else {
+			showCollate = !c.CollationIsDefault || c.ForceShowCollation
+		}
+		if showCollate {
+			collation = " COLLATE " + c.Collation
+		}
 	}
 	if c.GenerationExpr != "" {
 		genKind := "STORED"
