@@ -176,23 +176,24 @@ var FlavorUnknown = Flavor{}
 // comparison with these, although they're useful as args to Flavor.Matches()
 // and Flavor.Min().
 var (
-	FlavorMySQL55    = Flavor{Vendor: VendorMySQL, Version: Version{5, 5, 0}}
-	FlavorMySQL56    = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}}
-	FlavorMySQL57    = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}}
-	FlavorMySQL80    = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}}
-	FlavorPercona55  = Flavor{Vendor: VendorMySQL, Version: Version{5, 5, 0}, Variants: VariantPercona}
-	FlavorPercona56  = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}, Variants: VariantPercona}
-	FlavorPercona57  = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}, Variants: VariantPercona}
-	FlavorPercona80  = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}, Variants: VariantPercona}
-	FlavorMariaDB101 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1, 0}}
-	FlavorMariaDB102 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2, 0}}
-	FlavorMariaDB103 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3, 0}}
-	FlavorMariaDB104 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 4, 0}}
-	FlavorMariaDB105 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 5, 0}}
-	FlavorMariaDB106 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 6, 0}}
-	FlavorMariaDB107 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7, 0}}
-	FlavorMariaDB108 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 8, 0}}
-	FlavorMariaDB109 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 9, 0}}
+	FlavorMySQL55     = Flavor{Vendor: VendorMySQL, Version: Version{5, 5, 0}}
+	FlavorMySQL56     = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}}
+	FlavorMySQL57     = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}}
+	FlavorMySQL80     = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}}
+	FlavorPercona55   = Flavor{Vendor: VendorMySQL, Version: Version{5, 5, 0}, Variants: VariantPercona}
+	FlavorPercona56   = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}, Variants: VariantPercona}
+	FlavorPercona57   = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}, Variants: VariantPercona}
+	FlavorPercona80   = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}, Variants: VariantPercona}
+	FlavorMariaDB101  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1, 0}}
+	FlavorMariaDB102  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2, 0}}
+	FlavorMariaDB103  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3, 0}}
+	FlavorMariaDB104  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 4, 0}}
+	FlavorMariaDB105  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 5, 0}}
+	FlavorMariaDB106  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 6, 0}}
+	FlavorMariaDB107  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7, 0}}
+	FlavorMariaDB108  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 8, 0}}
+	FlavorMariaDB109  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 9, 0}}
+	FlavorMariaDB1010 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 10, 0}}
 )
 
 // ParseFlavor returns a Flavor value based on the supplied string in format
@@ -355,7 +356,7 @@ func (fl Flavor) Supported() bool {
 	case VendorMySQL:
 		return fl.Version.AtLeast(Version{5, 5}) && fl.Version.Below(Version{8, 1}) // MySQL 5.5.0-8.0.x is supported
 	case VendorMariaDB:
-		return fl.Version.AtLeast(Version{10, 1}) && fl.Version.Below(Version{10, 10}) // MariaDB 10.1-10.9 is supported
+		return fl.Version.AtLeast(Version{10, 1}) && fl.Version.Below(Version{10, 11}) // MariaDB 10.1-10.10 is supported
 	default:
 		return false
 	}
@@ -422,11 +423,11 @@ var mariaPatchAlwaysCollate = map[Flavor]uint16{
 // after a CHARACTER SET clause in SHOW CREATE TABLE, for columns as well as
 // the table default. This is true in MariaDB versions released Nov 2022
 // onwards. Reference: https://jira.mariadb.org/browse/MDEV-29446
-// TODO: adjust slightly once 10.10 is GA: 10.10.2+ always returns true; ditto
-// for 10.11 onwards with any patch version.
 func (fl Flavor) AlwaysShowCollate() bool {
 	if !fl.Min(FlavorMariaDB103) {
 		return false
+	} else if fl.Min(FlavorMariaDB1010.Dot(2)) {
+		return true
 	}
 	return fl.Version.Patch() >= mariaPatchAlwaysCollate[fl.Family()]
 }

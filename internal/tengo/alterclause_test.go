@@ -52,6 +52,7 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		{"binary(17)", "inet6"},
 		{"inet6", "varbinary(16)"},
 		{"inet6", "varchar(38)"},
+		{"inet4", "char(10)"},
 		{"char(31)", "uuid"},
 		{"uuid", "binary(15)"},
 	}
@@ -95,6 +96,8 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		{"binary(16)", "inet6"},
 		{"inet6", "binary(16)"},
 		{"char(39)", "inet6"},
+		{"inet4", "binary(4)"},
+		{"varchar(15)", "inet4"},
 		{"uuid", "varchar(32)"},
 		{"binary(16)", "uuid"},
 	}
