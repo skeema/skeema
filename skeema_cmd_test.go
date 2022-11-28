@@ -1245,18 +1245,30 @@ END`
 		t.Error("Expected UNIX-style line-ends to be restored after `skeema pull`, but they were not")
 	}
 
-	// Modify the db representation of the routine; diff/push should work, but only
-	// with --allow-unsafe (and not with --safe-below-size)
+	// Modify the db representation of the routine. In MySQL/Percona, diff/push
+	// should work, but only with --allow-unsafe (and not with --safe-below-size).
+	// In MariaDB, --allow-unsafe is not required due to CREATE OR REPLACE support.
 	s.dbExec(t, "product", "DROP FUNCTION routine1")
 	create = strings.Replace(create, "a * b", "b * a", 1)
 	if create == origCreate {
 		t.Fatal("Test setup incorrect")
 	}
 	s.dbExec(t, "product", create)
-	s.handleCommand(t, CodeFatalError, ".", "skeema diff")
-	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
-	s.handleCommand(t, CodeFatalError, ".", "skeema push --safe-below-size=10000")
-	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
+	if s.d.Flavor().Vendor == tengo.VendorMariaDB {
+		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
+		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --ignore-proc=routine1")
+		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --ignore-func=nomatch")
+		s.handleCommand(t, CodeSuccess, ".", "skeema diff --ignore-func=routine1")
+		cfg = s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	} else {
+		s.handleCommand(t, CodeFatalError, ".", "skeema diff")
+		s.handleCommand(t, CodeFatalError, ".", "skeema diff --ignore-proc=routine1")
+		s.handleCommand(t, CodeFatalError, ".", "skeema diff --ignore-func=nomatch")
+		s.handleCommand(t, CodeSuccess, ".", "skeema diff --ignore-func=routine1")
+		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
+		s.handleCommand(t, CodeFatalError, ".", "skeema push --safe-below-size=10000")
+		cfg = s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
+	}
 	s.verifyFiles(t, cfg, "../golden/routines")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
@@ -1271,9 +1283,14 @@ END`
 	s.dbExec(t, "", "ALTER DATABASE product DEFAULT COLLATE = latin1_general_ci")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
-	s.handleCommand(t, CodeFatalError, ".", "skeema diff --compare-metadata")
-	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --compare-metadata --allow-unsafe")
-	s.handleCommand(t, CodeSuccess, ".", "skeema push --compare-metadata --allow-unsafe")
+	if s.d.Flavor().Vendor == tengo.VendorMariaDB {
+		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --compare-metadata")
+		s.handleCommand(t, CodeSuccess, ".", "skeema push --compare-metadata")
+	} else {
+		s.handleCommand(t, CodeFatalError, ".", "skeema diff --compare-metadata")
+		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --compare-metadata --allow-unsafe")
+		s.handleCommand(t, CodeSuccess, ".", "skeema push --compare-metadata --allow-unsafe")
+	}
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff --compare-metadata")
 	s.d.CloseAll() // avoid mysql bug where ALTER DATABASE doesn't affect existing sessions
 

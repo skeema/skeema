@@ -545,7 +545,8 @@ func TestSchemaDiffRoutines(t *testing.T) {
 		t.Errorf("Modifier AllowUnsafe=true not working; error (%s) returned for %s", err, stmt)
 	}
 
-	// Test alter, which currently always is handled by a drop and re-add.
+	// Test alter, which is handled by a drop and re-add in MySQL/Percona, and
+	// OR REPLACE in MariaDB.
 	// Since this is a creation-time metadata change, also test statement modifier
 	// affecting whether or not those changes are suppressed.
 	s1r2 := aProc("utf8mb4_general_ci", "")
@@ -568,18 +569,34 @@ func TestSchemaDiffRoutines(t *testing.T) {
 	if rd.To != &s1r2 || rd.ObjectKey().Name != s1r2.Name {
 		t.Error("Pointer in diff does not point to expected value")
 	}
-	mods := StatementModifiers{AllowUnsafe: true}
+	mods := StatementModifiers{Flavor: FlavorMySQL57}
 	for _, od := range sd.ObjectDiffs() {
 		stmt, err := od.Statement(mods)
 		if stmt != "" || err != nil {
 			t.Errorf("Unexpected return from Statement: %s / %v", stmt, err)
 		}
 	}
+	mods.AllowUnsafe = true
 	mods.CompareMetadata = true
 	for n, od := range sd.ObjectDiffs() {
 		stmt, err := od.Statement(mods)
 		if stmt == "" || err != nil || (n == 0 && !strings.HasPrefix(stmt, "# ")) {
 			t.Errorf("Unexpected return from Statement: %s / %v", stmt, err)
+		}
+	}
+	mods.Flavor = FlavorMariaDB101
+	mods.AllowUnsafe = false
+	for n, od := range sd.ObjectDiffs() {
+		stmt, err := od.Statement(mods)
+		if err != nil {
+			t.Errorf("Unexpected error from Statement[%d]: %v", n, err)
+			continue
+		}
+		if n == 0 && stmt != "" {
+			t.Errorf("Expected blank statement from Statement[0], instead found %q", stmt)
+		}
+		if n == 1 && (!strings.HasPrefix(stmt, "# ") || !strings.Contains(stmt, "CREATE OR REPLACE")) {
+			t.Errorf("Unexpected statement from Statement[1]: %q", stmt)
 		}
 	}
 

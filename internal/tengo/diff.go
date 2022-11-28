@@ -166,8 +166,8 @@ func compareRoutines(from, to *Schema) (routineDiffs []*RoutineDiff) {
 				// then-ADD, but characteristic-only changes could use ALTER FUNCTION /
 				// ALTER PROCEDURE instead.
 				routineDiffs = append(routineDiffs,
-					&RoutineDiff{From: fromRoutine, ForMetadata: metadataOnly},
-					&RoutineDiff{To: toRoutine, ForMetadata: metadataOnly},
+					&RoutineDiff{From: fromRoutine, ForReplace: true, ForMetadata: metadataOnly},
+					&RoutineDiff{To: toRoutine, ForReplace: true, ForMetadata: metadataOnly},
 				)
 			}
 		}
@@ -675,6 +675,7 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 type RoutineDiff struct {
 	From        *Routine
 	To          *Routine
+	ForReplace  bool // if true, routine is being dropped/re-created to replace
 	ForMetadata bool // if true, routine is being replaced only to update creation-time metadata
 }
 
@@ -720,13 +721,25 @@ func (rd *RoutineDiff) Statement(mods StatementModifiers) (string, error) {
 	if rd.ForMetadata && !mods.CompareMetadata {
 		return "", nil
 	}
+
+	var comment string
+	mariaReplace := rd.ForReplace && mods.Flavor.IsMariaDB()
 	switch rd.DiffType() {
-	case DiffTypeNone:
-		return "", nil
 	case DiffTypeCreate:
-		return rd.To.CreateStatement, nil
+		if mariaReplace && rd.ForMetadata {
+			comment = fmt.Sprintf("# Replacing %s to update metadata\n", rd.ObjectKey())
+		}
+		stmt := rd.To.CreateStatement
+		if mariaReplace {
+			stmt = strings.Replace(stmt, "CREATE ", "CREATE OR REPLACE ", 1)
+		}
+		return comment + stmt, nil
 	case DiffTypeDrop:
-		var comment string
+		// MariaDB 10.1+ can use CREATE OR REPLACE, so omit any replacement-motivated
+		// DROP statements
+		if mariaReplace {
+			return "", nil
+		}
 		if rd.ForMetadata {
 			comment = fmt.Sprintf("# Dropping and re-creating %s to update metadata\n", rd.ObjectKey())
 		}
