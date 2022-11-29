@@ -79,7 +79,8 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	if cstore.containers[opts.ContainerName] != nil {
 		ld.d = cstore.containers[opts.ContainerName]
 	} else {
-		var commandArgs []string
+		commandArgs := []string{"--skip-log-bin"} // override MySQL 8 default of enabling binlog (never needed in workspace)
+
 		// If real inst had lower_case_table_names=1, use that in the container as
 		// well. (No need for similar logic with lower_case_table_names=2; this cannot
 		// be used on Linux, and code in ExecLogicalSchema already gets us close

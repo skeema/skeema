@@ -1,5 +1,4 @@
 SET foreign_key_checks=0;
-SET sql_log_bin=0;
 CREATE DATABASE partitionparty DEFAULT CHARSET=latin1;
 use partitionparty
 

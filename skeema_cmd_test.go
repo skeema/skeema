@@ -1369,14 +1369,37 @@ END`
 	}
 }
 
+// TestTempSchemaBinlog provides coverage for the temp-schema-binlog option.
+// Because we ordinarily create containerized test DBs with binlogging disabled
+// (even in MySQL 8 where it normally defaults to enabled), this test has to
+// create a new separate container for its logic.
+// This test is run in CI, or when SKEEMA_TEST_BINLOG env var is set to any non-
+// blank value.
 func (s SkeemaIntegrationSuite) TestTempSchemaBinlog(t *testing.T) {
-	if !s.d.Flavor().Min(tengo.FlavorMySQL80) {
-		t.Skip("Test only relevant for flavors that default to having binlog enabled")
+	if os.Getenv("SKEEMA_TEST_BINLOG") == "" && (os.Getenv("CI") == "" || os.Getenv("CI") == "0" || os.Getenv("CI") == "false") {
+		t.Skip("Skipping temp-schema-binlog testing. To run, set env var SKEEMA_TEST_BINLOG=true and/or CI=1.")
+	}
+
+	// Create an instance with log-bin enabled
+	opts := s.d.DockerizedInstanceOptions
+	opts.Name = strings.Replace(opts.Name, "skeema-test-", "skeema-test-binlog-", 1)
+	opts.CommandArgs = []string{"--log-bin", "--server-id=1"}
+	dinst, err := s.manager.GetOrCreateInstance(opts)
+	if err != nil {
+		t.Fatalf("Unable to create Dockerized instance with log-bin enabled: %v", err)
+	}
+	defer func() {
+		if err := dinst.Destroy(); err != nil {
+			t.Errorf("Unable to destroy test instance with log-bin enabled: %v", err)
+		}
+	}()
+	if _, err := dinst.SourceSQL("../setup.sql"); err != nil {
+		t.Fatalf("Unable to source setup.sql: %v", err)
 	}
 
 	getLogPos := func() string {
 		t.Helper()
-		db, err := s.d.CachedConnectionPool("", "")
+		db, err := dinst.CachedConnectionPool("", "")
 		if err != nil {
 			t.Fatalf("Unable to establish connection: %v", err)
 		}
@@ -1410,9 +1433,8 @@ func (s SkeemaIntegrationSuite) TestTempSchemaBinlog(t *testing.T) {
 	}
 
 	pos := getLogPos()
-	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", dinst.Instance.Host, dinst.Instance.Port)
 	assertNotLogged(pos)
-	s.dbExec(t, "analytics", "ALTER TABLE pageviews DROP COLUMN domain")
 	createRoutine := `CREATE definer=root@localhost FUNCTION routine1(a int,
   b int)
 RETURNS int

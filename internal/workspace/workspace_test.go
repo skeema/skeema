@@ -279,6 +279,7 @@ func (s *WorkspaceIntegrationSuite) Setup(backend string) (err error) {
 		Name:         fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),
 		Image:        backend,
 		RootPassword: "fakepw",
+		CommandArgs:  []string{"--skip-log-bin"}, // override MySQL 8 default of enabling binlog
 	})
 	return err
 }

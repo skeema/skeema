@@ -5,7 +5,6 @@
 # some syntactical differences.
 
 SET foreign_key_checks=0;
-SET sql_log_bin=0;
 
 use testing
 

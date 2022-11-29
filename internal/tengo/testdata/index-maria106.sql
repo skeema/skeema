@@ -1,7 +1,6 @@
 # Coverage for ignored (invisible) indexes in MariaDB 10.6
 
 SET foreign_key_checks=0;
-SET sql_log_bin=0;
 
 use testing
 

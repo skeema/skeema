@@ -5,7 +5,6 @@
 # due to a MariaDB bug; see MDEV-20210
 
 SET foreign_key_checks=0;
-SET sql_log_bin=0;
 
 use testing
 

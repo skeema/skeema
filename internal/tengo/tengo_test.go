@@ -35,10 +35,10 @@ type TengoIntegrationSuite struct {
 
 func (s *TengoIntegrationSuite) Setup(backend string) (err error) {
 	opts := DockerizedInstanceOptions{
-		Name:              fmt.Sprintf("skeema-test-%s", ContainerNameForImage(backend)),
-		Image:             backend,
-		RootPassword:      "fakepw",
-		DefaultConnParams: "sql_log_bin=0",
+		Name:         fmt.Sprintf("skeema-test-%s", ContainerNameForImage(backend)),
+		Image:        backend,
+		RootPassword: "fakepw",
+		CommandArgs:  []string{"--skip-log-bin"}, // override MySQL 8 default of enabling binlog
 	}
 	s.d, err = s.manager.GetOrCreateInstance(opts)
 	return err

@@ -2,7 +2,6 @@
 # a majority of tests, so they're separated out from integration.sql.
 
 SET foreign_key_checks=0;
-SET sql_log_bin=0;
 CREATE DATABASE testcollate DEFAULT COLLATE latin1_bin;
 CREATE DATABASE testcharset DEFAULT CHARACTER SET utf8mb4;
 CREATE DATABASE testcharcoll DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

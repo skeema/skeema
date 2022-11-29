@@ -1,5 +1,4 @@
 SET foreign_key_checks=0;
-SET sql_log_bin=0;
 CREATE DATABASE testing;
 
 use testing
@@ -96,6 +95,6 @@ returns float deterministic NO SQL COMMENT 'hello world' return mult * 2.0;
 CREATE FUNCTION func2(  num    int, 
     name   varchar(30) character set utf8mb4
 )
-returns varchar(30) character set utf8mb4 deterministic
+returns varchar(30) character set utf8mb4
 return REPEAT(CONCAT('it''s 💩', name, '! '), num);
 

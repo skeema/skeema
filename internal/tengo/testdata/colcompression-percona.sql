@@ -1,7 +1,6 @@
 # Table using Percona Server's column compression
 
 SET foreign_key_checks=0;
-SET sql_log_bin=0;
 
 use testing
 
