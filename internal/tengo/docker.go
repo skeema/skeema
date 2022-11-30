@@ -328,9 +328,8 @@ func (di *DockerizedInstance) NukeData() error {
 	if err != nil {
 		return err
 	}
-	canSkipBinlog := di.Instance.CanSkipBinlog()
 	for _, schema := range schemas {
-		if err := di.Instance.DropSchema(schema, BulkDropOptions{SkipBinlog: canSkipBinlog}); err != nil {
+		if err := di.Instance.DropSchema(schema, BulkDropOptions{MaxConcurrency: 10}); err != nil {
 			return err
 		}
 	}

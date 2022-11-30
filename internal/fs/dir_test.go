@@ -358,9 +358,9 @@ func TestParseDirIgnorePatterns(t *testing.T) {
 	if len(dir.LogicalSchemas[0].Creates) != 2 {
 		t.Errorf("Expected 2 non-ignored CREATES in logical schema, instead found %d", len(dir.LogicalSchemas[0].Creates))
 	}
-	for _, stmt := range dir.LogicalSchemas[0].Creates {
-		if stmt.ObjectKey().Type == tengo.ObjectTypeProc {
-			t.Errorf("Expected all procs to be ignored by ignore-proc=., but found proc with name %s", stmt.ObjectKey().Name)
+	for key := range dir.LogicalSchemas[0].Creates {
+		if key.Type == tengo.ObjectTypeProc {
+			t.Errorf("Expected all procs to be ignored by ignore-proc=., but found proc with name %s", key.Name)
 		}
 	}
 

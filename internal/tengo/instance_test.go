@@ -560,7 +560,6 @@ func (s TengoIntegrationSuite) TestInstanceCreateSchema(t *testing.T) {
 	opts := SchemaCreationOptions{
 		DefaultCharSet:   "utf8mb4",
 		DefaultCollation: "utf8mb4_unicode_ci",
-		SkipBinlog:       true,
 	}
 	_, err := s.d.CreateSchema("foobar", opts)
 	if err != nil {
@@ -632,7 +631,6 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesInSchemaByRef(t *testing.T)
 	}
 	opts := BulkDropOptions{
 		MaxConcurrency: 10,
-		SkipBinlog:     true,
 		Schema:         schema,
 	}
 	if err := s.d.DropTablesInSchema("testing", opts); err != nil {
@@ -667,7 +665,7 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesDeadlock(t *testing.T) {
 	// Add a FK relation, drop all tables in the schema, and then restore the
 	// test database to its previous state. Without the fix in DropTablesInSchema,
 	// this tends to hit a deadlock within just a few loop iterations.
-	opts := BulkDropOptions{MaxConcurrency: 10, SkipBinlog: true}
+	opts := BulkDropOptions{MaxConcurrency: 10}
 	for n := 0; n < 10; n++ {
 		_, err = db.Exec("ALTER TABLE testing.actor_in_film ADD CONSTRAINT actor FOREIGN KEY (actor_id) REFERENCES testing.actor (actor_id)")
 		if err != nil {
@@ -749,7 +747,6 @@ func (s TengoIntegrationSuite) TestInstanceDropRoutinesInSchema(t *testing.T) {
 	}
 	opts := BulkDropOptions{
 		MaxConcurrency: 10,
-		SkipBinlog:     true,
 	}
 	if err := s.d.DropRoutinesInSchema("testing", opts); err != nil {
 		t.Fatalf("Unexpected error from DropRoutinesInSchema: %v", err)
@@ -777,7 +774,6 @@ func (s TengoIntegrationSuite) TestInstanceDropRoutinesInSchemaByRef(t *testing.
 	}
 	opts := BulkDropOptions{
 		MaxConcurrency: 10,
-		SkipBinlog:     true,
 		Schema:         schema,
 	}
 	if err := s.d.DropRoutinesInSchema("testing", opts); err != nil {
