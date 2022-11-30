@@ -139,12 +139,9 @@ func CanParse(input string) (bool, error) {
 
 //////////// lexing/parsing internals from here to end of this file ////////////
 
-// TODO: The current state of lexing and parsing in this file is a mess. First
-// there's a manually-coded lexer to split files into statements, and then
-// there's a separate regexp-based lexer for splitting statements into tokens,
-// followed by a parser for identifying the statement type and any identifier
-// names. These should all be unified, which would improve performance and
-// reduce the amount of code.
+// IMPORTANT: the lexer/parser here is going to be completely replaced in 2023.
+// Implementation is nearly complete in a separate branch. Outside pull requests
+// should avoid touching this code until then.
 type statementTokenizer struct {
 	filePath  string
 	delimiter string // statement delimiter, typically ";" or sometimes "//" for routines
