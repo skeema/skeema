@@ -76,11 +76,11 @@ func TestStatementBody(t *testing.T) {
 	filePath := "testdata/statements.sql"
 	// extracted from relevant lines of sqlfile_test.go's expectedStatements()
 	statements := []*Statement{
-		{File: filePath, LineNo: 31, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeFunc, ObjectName: "funcdefquote2", ObjectQualifier: "analytics", Text: "create definer=foo@'localhost' /*lol*/ FUNCTION analytics.funcdefquote2() RETURNS int RETURN 42;\n", nameClause: "analytics.funcdefquote2"},
-		{File: filePath, LineNo: 48, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "tbl1", ObjectQualifier: "uhoh", Text: "CREATE TABLE `uhoh` . tbl1 (id int unsigned not null primary key);\n", nameClause: "`uhoh` . tbl1 "},
-		{File: filePath, LineNo: 49, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "tbl2", ObjectQualifier: "uhoh", Text: "CREATE TABLE uhoh.tbl2 (id int unsigned not null primary key);\n", nameClause: "uhoh.tbl2 "},
-		{File: filePath, LineNo: 50, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "tbl3", ObjectQualifier: "uhoh", Text: "CREATE TABLE /*lol*/ uhoh  .  `tbl3`  \n  (id int unsigned not null primary key);\n", nameClause: "uhoh  .  `tbl3`  \n  "},
-		{File: filePath, LineNo: 51, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeFunc, ObjectName: "funcdefquote3", ObjectQualifier: "foo", Text: "create definer=foo@'localhost' /*lol*/ FUNCTION foo.funcdefquote3() RETURNS int RETURN 42;\n", nameClause: "foo.funcdefquote3"},
+		{File: filePath, LineNo: 31, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeFunc, ObjectName: "funcdefquote2", ObjectQualifier: "analytics", Text: "create definer=foo@'localhost' /*lol*/ FUNCTION analytics.funcdefquote2() RETURNS int RETURN 42;\n", Delimiter: ";", nameClause: "analytics.funcdefquote2"},
+		{File: filePath, LineNo: 48, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "tbl1", ObjectQualifier: "uhoh", Text: "CREATE TABLE `uhoh` . tbl1 (id int unsigned not null primary key);\n", Delimiter: ";", nameClause: "`uhoh` . tbl1"},
+		{File: filePath, LineNo: 49, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "tbl2", ObjectQualifier: "uhoh", Text: "CREATE TABLE uhoh.tbl2 (id int unsigned not null primary key);\n", Delimiter: ";", nameClause: "uhoh.tbl2"},
+		{File: filePath, LineNo: 50, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "tbl3", ObjectQualifier: "uhoh", Text: "CREATE TABLE /*lol*/ uhoh  .  `tbl3`  \n  (id int unsigned not null primary key);\n", Delimiter: ";", nameClause: "uhoh  .  `tbl3`"},
+		{File: filePath, LineNo: 51, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeFunc, ObjectName: "funcdefquote3", ObjectQualifier: "foo", Text: "create definer=foo@'localhost' /*lol*/ FUNCTION foo.funcdefquote3() RETURNS int RETURN 42;\n", Delimiter: ";", nameClause: "foo.funcdefquote3"},
 	}
 	allowedBodies := map[string]bool{
 		"create definer=foo@'localhost' /*lol*/ FUNCTION `funcdefquote2`() RETURNS int RETURN 42": true,
@@ -90,7 +90,6 @@ func TestStatementBody(t *testing.T) {
 		"create definer=foo@'localhost' /*lol*/ FUNCTION `funcdefquote3`() RETURNS int RETURN 42": true,
 	}
 	for n, stmt := range statements {
-		stmt.Delimiter = ";"
 		body := stmt.Body()
 		if !allowedBodies[body] {
 			t.Errorf("Unexpected Body() result for statement[%d]: %q", n, body)

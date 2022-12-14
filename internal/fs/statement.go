@@ -45,9 +45,9 @@ type Statement struct {
 	ObjectType      tengo.ObjectType
 	ObjectName      string
 	ObjectQualifier string
-	Error           error // any problem lexing or parsing this statement, populated when Type is StatementTypeUnknown, StatementTypeLexError, or StatementTypeForbidden
-	Delimiter       string
-	nameClause      string // raw version, potentially with schema name qualifier and/or surrounding backticks; also any trailing whitespace/comments
+	Error           error  // any problem lexing or parsing this statement, populated when Type is StatementTypeUnknown, StatementTypeLexError, or StatementTypeForbidden
+	Delimiter       string // delimiter in use at the time of statement; not necessarily present in Text though
+	nameClause      string // raw version, potentially with schema name qualifier and/or surrounding backticks
 }
 
 // Location returns the file, line number, and character number where the
@@ -86,9 +86,7 @@ func (stmt *Statement) Body() string {
 	if stmt.ObjectQualifier == "" || stmt.nameClause == "" {
 		return body
 	}
-	// stmt.nameClause includes trailing whitespace, but we want to leave that intact
-	replaceClause := strings.TrimRight(stmt.nameClause, "\n\r\t ")
-	return strings.Replace(body, replaceClause, tengo.EscapeIdentifier(stmt.ObjectName), 1)
+	return strings.Replace(body, stmt.nameClause, tengo.EscapeIdentifier(stmt.ObjectName), 1)
 }
 
 // SplitTextBody returns Text with its trailing delimiter and whitespace (if
@@ -126,10 +124,9 @@ func CanParse(input string) (bool, error) {
 // the return value exactly represents the entire file. Some of the returned
 // "statements" may just be comments and/or whitespace, since any comments and/
 // or whitespace between SQL statements gets split into separate Statement
-// values. The starting statement delimiter is supplied, but may be changed as
-// DELIMITER commands are encountered in the input.
-func ParseStatementsInFile(filePath, delimiter string) (result []*Statement, err error) {
-	tokenizer := newStatementTokenizer(filePath, delimiter)
+// values.
+func ParseStatementsInFile(filePath string) (result []*Statement, err error) {
+	tokenizer := newStatementTokenizer(filePath, ";")
 	result, err = tokenizer.statements()
 
 	// As a special case, if a file contains a single routine but no DELIMITER
@@ -310,7 +307,10 @@ func (st *statementTokenizer) processLine(line string, eof bool) {
 			bufStr := strings.ToLower(ls.buf.String()[0 : bufLen-1])
 			if bufStr == "delimiter" || (bufStr == "use" && !ls.containsDelimiter()) {
 				ls.buf.WriteString(ls.line[ls.pos:])
-				ls.stmt.Delimiter = "\000" // prevent SplitTextBody from stripping previous delimiter from command arg
+				if bufStr == "delimiter" {
+					// prevent SplitTextBody from stripping previous delimiter from command arg
+					ls.stmt.Delimiter = "\000"
+				}
 				ls.doneStatement(0)
 				return
 			}
@@ -440,9 +440,9 @@ func (ls *lineState) parseStatement() {
 					fileCol += ls.stmt.CharNo - 1
 				}
 				ls.stmt.Error = fmt.Errorf("%s:%d:%d: %s", ls.stmt.File, fileLine, fileCol, lexErr.Msg)
-			} else { // unsupported statement, often benign
-				ls.stmt.Error = err // pass through the error as-is (often a participle.UnexpectedTokenError which isn't particularly useful)
 			}
+			// Note we no longer populate ls.stmt.Error in unsupported statement cases,
+			// as setting it to a participle.UnexpectedTokenError isn't particularly useful
 			return
 		} else if sqlStmt.UseCommand != nil {
 			ls.stmt.Type = StatementTypeCommand
@@ -465,7 +465,7 @@ func (ls *lineState) parseStatement() {
 		}
 		if name != nil {
 			ls.stmt.ObjectQualifier, ls.stmt.ObjectName = name.schemaAndTable()
-			ls.stmt.nameClause = txt[name.Pos.Offset:name.EndPos.Offset]
+			ls.stmt.nameClause = name.clause(txt)
 		}
 	}
 }
@@ -550,7 +550,7 @@ type objectName struct {
 	EndPos     lexer.Position
 }
 
-// schemaAndTable interprets the ObjectName as a table name which may optionally
+// schemaAndTable interprets the objectName as a table name which may optionally
 // have a schema name qualifier. The first return value is the schema name, or
 // empty string if none was specified; the second return value is the table name.
 func (n *objectName) schemaAndTable() (string, string) {
@@ -558,6 +558,20 @@ func (n *objectName) schemaAndTable() (string, string) {
 		return stripBackticks(n.Qualifiers[0]), stripBackticks(n.Name)
 	}
 	return "", stripBackticks(n.Name)
+}
+
+// clause returns the portion of the supplied raw SQL string that makes up the
+// object name clause, including any optional schema name qualifier and
+// backticks, but without any trailing whitespace or trailing comments. If a
+// schema name qualifier is present, whitespace and/or comments may still be
+// present in the middle of the clause though.
+func (n *objectName) clause(statementText string) string {
+	startObjectName := n.Pos.Offset
+	if len(n.Qualifiers) > 0 {
+		startObjectName += len(n.Qualifiers[0])
+	}
+	endObjectName := startObjectName + strings.Index(statementText[startObjectName:n.EndPos.Offset], n.Name) + len(n.Name)
+	return statementText[n.Pos.Offset:endObjectName]
 }
 
 // body slurps all body contents of a statement. Note that "body" and

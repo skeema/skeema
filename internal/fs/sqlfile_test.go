@@ -140,7 +140,7 @@ func TestSQLFileEditStatementText(t *testing.T) {
 
 func TestParseStatementsInFileSuccess(t *testing.T) {
 	filePath := "testdata/statements.sql"
-	statements, err := ParseStatementsInFile(filePath, ";")
+	statements, err := ParseStatementsInFile(filePath)
 	if err != nil {
 		t.Fatalf("Unexpected error from ParseStatementsInFile(): %v", err)
 	}
@@ -149,8 +149,12 @@ func TestParseStatementsInFileSuccess(t *testing.T) {
 		t.Errorf("Expected %d statements, instead found %d", len(expected), len(statements))
 	} else {
 		for n := range statements {
-			actual, expect := statements[n], expected[n]
-			compareStatements(t, n, actual, expect)
+			if expected[n].Error != nil && statements[n].Error != nil {
+				expected[n].Error = statements[n].Error // for Error, only verify nil/non-nil
+			}
+			if *statements[n] != *expected[n] {
+				t.Errorf("statement[%d] fields did not all match expected values.\nExpected:\n%+v\n\nActual:\n%+v", n, expected[n], statements[n])
+			}
 		}
 	}
 
@@ -160,7 +164,7 @@ func TestParseStatementsInFileSuccess(t *testing.T) {
 	filePath = "testdata/statements_crlf.sql"
 	WriteTestFile(t, filePath, contents)
 	defer RemoveTestFile(t, filePath)
-	statements, err = ParseStatementsInFile(filePath, ";")
+	statements, err = ParseStatementsInFile(filePath)
 	if err != nil {
 		t.Fatalf("Unexpected error from ParseStatementsInFile(): %v", err)
 	}
@@ -168,46 +172,14 @@ func TestParseStatementsInFileSuccess(t *testing.T) {
 		t.Errorf("Expected %d statements, instead found %d", len(expected), len(statements))
 	} else {
 		for n := range statements {
-			actual, expect := statements[n], expected[n]
+			expect := expected[n]
 			expect.File = filePath
 			expect.Text = strings.ReplaceAll(expect.Text, "\n", "\r\n")
 			expect.nameClause = strings.ReplaceAll(expect.nameClause, "\n", "\r\n")
-			compareStatements(t, n, actual, expect)
+			if *statements[n] != *expect {
+				t.Errorf("statement[%d] fields did not all match expected values.\nExpected:\n%+v\n\nActual:\n%+v", n, expect, statements[n])
+			}
 		}
-	}
-}
-
-func compareStatements(t *testing.T, n int, actual, expect *Statement) {
-	t.Helper()
-	if actual.File != expect.File {
-		t.Errorf("statement[%d]: Expected file %s, instead found %s", n, expect.File, actual.File)
-	}
-	if actual.LineNo != expect.LineNo {
-		t.Errorf("statement[%d]: Expected line %d, instead found %d", n, expect.LineNo, actual.LineNo)
-	}
-	if actual.CharNo != expect.CharNo {
-		t.Errorf("statement[%d]: Expected char %d, instead found %d", n, expect.CharNo, actual.CharNo)
-	}
-	if actual.Text != expect.Text {
-		t.Errorf("statement[%d]: Expected text %s, instead found %s", n, expect.Text, actual.Text)
-	}
-	if actual.DefaultDatabase != expect.DefaultDatabase {
-		t.Errorf("statement[%d]: Expected default db %s, instead found %s", n, expect.DefaultDatabase, actual.DefaultDatabase)
-	}
-	if actual.Type != expect.Type {
-		t.Errorf("statement[%d]: Expected statement type %d, instead found %d", n, expect.Type, actual.Type)
-	}
-	if actual.ObjectType != expect.ObjectType {
-		t.Errorf("statement[%d]: Expected object type %s, instead found %s", n, expect.ObjectType, actual.ObjectType)
-	}
-	if actual.ObjectQualifier != expect.ObjectQualifier {
-		t.Errorf("statement[%d]: Expected object qualifier %s, instead found %s", n, expect.ObjectQualifier, actual.ObjectQualifier)
-	}
-	if actual.ObjectName != expect.ObjectName {
-		t.Errorf("statement[%d]: Expected object name %s, instead found %s", n, expect.ObjectName, actual.ObjectName)
-	}
-	if actual.nameClause != expect.nameClause {
-		t.Errorf("statement[%d]: Expected name clause %q, instead found %q", n, expect.nameClause, actual.nameClause)
 	}
 }
 
@@ -219,26 +191,26 @@ func TestParseStatementsInFileFail(t *testing.T) {
 	contents := strings.Replace(origContents, "use /*wtf*/`analytics`", "use /*wtf*/`analytics", 1)
 	filePath = "testdata/statements2.sql"
 	WriteTestFile(t, filePath, contents)
-	if _, err := ParseStatementsInFile(filePath, ";"); err == nil {
+	if _, err := ParseStatementsInFile(filePath); err == nil {
 		t.Error("Expected to get an error about unterminated quote, but err was nil")
 	}
 
 	contents = strings.Replace(origContents, "use /*wtf*/`analytics`", "use /*wtf`analytics", 1)
 	WriteTestFile(t, filePath, contents)
-	if _, err := ParseStatementsInFile(filePath, ";"); err == nil {
+	if _, err := ParseStatementsInFile(filePath); err == nil {
 		t.Error("Expected to get an error about unterminated comment, but err was nil")
 	}
 
 	// Test error return for nonexistent file
 	RemoveTestFile(t, filePath)
-	if _, err := ParseStatementsInFile(filePath, ";"); err == nil {
+	if _, err := ParseStatementsInFile(filePath); err == nil {
 		t.Error("Expected to get an error about nonexistent file, but err was nil")
 	}
 
 	// Test handling of files that just contain a single routine definition, but
 	// without using the DELIMITER command
 	filePath = "testdata/nodelimiter1.sql"
-	if statements, err := ParseStatementsInFile(filePath, ";"); err != nil {
+	if statements, err := ParseStatementsInFile(filePath); err != nil {
 		t.Errorf("Unexpected error parsing nodelimiter1.sql: %s", err)
 	} else if len(statements) != 2 {
 		t.Errorf("Expected file to contain 2 statements, instead found %d", len(statements))
@@ -250,7 +222,7 @@ func TestParseStatementsInFileFail(t *testing.T) {
 	// command) followed by another CREATE, and confirm the parsing is "incorrect"
 	// in the expected way
 	filePath = "testdata/nodelimiter2.sql"
-	if statements, err := ParseStatementsInFile(filePath, ";"); err != nil {
+	if statements, err := ParseStatementsInFile(filePath); err != nil {
 		t.Errorf("Unexpected error parsing nodelimiter2.sql: %s", err)
 	} else {
 		if len(statements) != 8 {
@@ -271,7 +243,7 @@ func TestParseStatementsInFileFail(t *testing.T) {
 func TestSQLFileWrite(t *testing.T) {
 	// Use Write() to write file statements2.sql with same contents as statements.sql
 	contents := ReadTestFile(t, "testdata/statements.sql")
-	statements, err := ParseStatementsInFile("testdata/statements.sql", ";")
+	statements, err := ParseStatementsInFile("testdata/statements.sql")
 	if err != nil {
 		t.Fatalf("Unexpected error from ParseStatementsInFile: %v", err)
 	}
@@ -313,35 +285,35 @@ func TestSQLFileWrite(t *testing.T) {
 // in the form of a slice of statement pointers
 func expectedStatements(filePath string) []*Statement {
 	return []*Statement{
-		{File: filePath, LineNo: 1, CharNo: 1, DefaultDatabase: "", Type: StatementTypeNoop, Text: "  -- this file exists for testing statement tokenization of *.sql files\n\n"},
-		{File: filePath, LineNo: 3, CharNo: 1, DefaultDatabase: "", Type: StatementTypeUnknown, Text: "CREATE DATABASE /*!32312 IF NOT EXISTS*/ `product` /*!40100 DEFAULT CHARACTER SET latin1 */;\n"},
-		{File: filePath, LineNo: 4, CharNo: 1, DefaultDatabase: "", Type: StatementTypeNoop, Text: "/* hello */   "},
-		{File: filePath, LineNo: 4, CharNo: 15, DefaultDatabase: "", Type: StatementTypeCommand, Text: "USE product\n"},
-		{File: filePath, LineNo: 5, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n"},
-		{File: filePath, LineNo: 6, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "users", Text: "CREATE #fun interruption\nTABLE `users` (\n  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,\n  `na``me` varchar(30) NOT NULL DEFAULT 'it\\'s complicated \"escapes''',--\tend of line comment with tab\n  `credits` decimal(9,2) DEFAULT '10.00', --\u3000end of line; \" comment with ideographic space\n  `last_modified` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, # another end-of-line comment;\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `name` (`name`)\n) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n", nameClause: "`users` "},
-		{File: filePath, LineNo: 15, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "          "},
-		{File: filePath, LineNo: 15, CharNo: 11, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "posts with spaces", Text: "CREATE TABLE `posts with spaces` (\n  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,\n  `user_id` bigint(20) unsigned NOT NULL,\n  `body` varchar(50) DEFAULT '/* lol\\'',\n  `created_at` datetime /*!50601 DEFAULT CURRENT_TIMESTAMP*/,\n  `edited_at` datetime /*!50601 DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP*/,\n  PRIMARY KEY (`id`),\n  KEY `user_created` (`user_id`,`created_at`)\n) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n", nameClause: "`posts with spaces` "},
-		{File: filePath, LineNo: 24, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n\n--\n"},
-		{File: filePath, LineNo: 27, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeFunc, ObjectName: "funcnodefiner", Text: "create function funcnodefiner() RETURNS varchar(30) RETURN \"hello\";\n", nameClause: "funcnodefiner"},
-		{File: filePath, LineNo: 28, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeFunc, ObjectName: "funccuruserparens", Text: "CREATE DEFINER = CURRENT_USER() FUNCTION funccuruserparens() RETURNS int RETURN 42;\n", nameClause: "funccuruserparens"},
-		{File: filePath, LineNo: 29, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeProc, ObjectName: "proccurusernoparens", Text: "CREATE DEFINER=CURRENT_USER PROCEDURE proccurusernoparens() # this is a comment!\n\tSELECT 1;\n", nameClause: "proccurusernoparens"},
-		{File: filePath, LineNo: 31, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeFunc, ObjectName: "funcdefquote2", ObjectQualifier: "analytics", Text: "create definer=foo@'localhost' /*lol*/ FUNCTION analytics.funcdefquote2() RETURNS int RETURN 42;\n", nameClause: "analytics.funcdefquote2"},
-		{File: filePath, LineNo: 32, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeProc, ObjectName: "procdefquote1", Text: "create DEFINER = 'foo'@localhost PROCEDURE `procdefquote1`() SELECT 42;\n", nameClause: "`procdefquote1`"},
-		{File: filePath, LineNo: 33, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\t"},
-		{File: filePath, LineNo: 33, CharNo: 2, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "delimiter    \"💩💩💩\"\n"},
-		{File: filePath, LineNo: 34, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "uhoh", Text: "CREATE TABLE uhoh (ummm varchar(20) default 'ok 💩💩💩 cool')💩💩💩\n", nameClause: "uhoh "},
-		{File: filePath, LineNo: 35, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "DELIMITER //\n"},
-		{File: filePath, LineNo: 36, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeProc, ObjectName: "whatever", Text: "CREATE PROCEDURE whatever(name varchar(10))\nBEGIN\n\tDECLARE v1 INT; -- comment with \"normal space\" in front!\n\tSET v1=loops;--\u00A0comment with `nbsp' in front?!?\n\tWHILE v1 > 0 DO\n\t\tINSERT INTO users (name) values ('\\xF0\\x9D\\x8C\\x86');\n\t\tSET v1 = v1 - (2 / 2); /* testing // testing */\n\tEND WHILE;\nEND\n//\n", nameClause: "whatever"},
-		{File: filePath, LineNo: 46, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "delimiter ;\n"},
-		{File: filePath, LineNo: 47, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n"},
-		{File: filePath, LineNo: 48, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "tbl1", ObjectQualifier: "uhoh", Text: "CREATE TABLE `uhoh` . tbl1 (id int unsigned not null primary key);\n", nameClause: "`uhoh` . tbl1 "},
-		{File: filePath, LineNo: 49, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "tbl2", ObjectQualifier: "uhoh", Text: "CREATE TABLE uhoh.tbl2 (id int unsigned not null primary key);\n", nameClause: "uhoh.tbl2 "},
-		{File: filePath, LineNo: 50, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "tbl3", ObjectQualifier: "uhoh", Text: "CREATE TABLE /*lol*/ uhoh  .  `tbl3` (id int unsigned not null primary key);\n", nameClause: "uhoh  .  `tbl3` "},
-		{File: filePath, LineNo: 51, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeFunc, ObjectName: "funcdefquote3", ObjectQualifier: "foo", Text: "create definer=foo@'localhost' /*lol*/ FUNCTION foo.funcdefquote3() RETURNS int RETURN 42;\n", nameClause: "foo.funcdefquote3"},
-		{File: filePath, LineNo: 52, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n"},
-		{File: filePath, LineNo: 53, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "use /*wtf*/`analytics`;"},
-		{File: filePath, LineNo: 53, CharNo: 24, DefaultDatabase: "analytics", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "comments", Text: "CREATE TABLE  if  NOT    eXiStS     `comments` (\n  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,\n  `post_id` bigint(20) unsigned NOT NULL,\n  `user_id` bigint(20) unsigned NOT NULL,\n  `created_at` datetime DEFAULT NULL,\n  `body` text,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n", nameClause: "`comments` "},
-		{File: filePath, LineNo: 61, CharNo: 1, DefaultDatabase: "analytics", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "subscriptions", Text: "CREATE TABLE subscriptions (id int unsigned not null primary key)", nameClause: "subscriptions "},
+		{File: filePath, LineNo: 1, CharNo: 1, DefaultDatabase: "", Type: StatementTypeNoop, Text: "  -- this file exists for testing statement tokenization of *.sql files\n\n", Delimiter: ";"},
+		{File: filePath, LineNo: 3, CharNo: 1, DefaultDatabase: "", Type: StatementTypeUnknown, Text: "CREATE DATABASE /*!32312 IF NOT EXISTS*/ `product` /*!40100 DEFAULT CHARACTER SET latin1 */;\n", Delimiter: ";"},
+		{File: filePath, LineNo: 4, CharNo: 1, DefaultDatabase: "", Type: StatementTypeNoop, Text: "/* hello */   ", Delimiter: ";"},
+		{File: filePath, LineNo: 4, CharNo: 15, DefaultDatabase: "", Type: StatementTypeCommand, Text: "USE product\n", Delimiter: ";"},
+		{File: filePath, LineNo: 5, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n", Delimiter: ";"},
+		{File: filePath, LineNo: 6, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "users", Text: "CREATE #fun interruption\nTABLE `users` (\n  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,\n  `na``me` varchar(30) NOT NULL DEFAULT 'it\\'s complicated \"escapes''',--\tend of line comment with tab\n  `credits` decimal(9,2) DEFAULT '10.00', --\u3000end of line; \" comment with ideographic space\n  `last_modified` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, # another end-of-line comment;\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `name` (`name`)\n) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n", Delimiter: ";", nameClause: "`users`"},
+		{File: filePath, LineNo: 15, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "          ", Delimiter: ";"},
+		{File: filePath, LineNo: 15, CharNo: 11, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "posts with spaces", Text: "CREATE TABLE `posts with spaces` (\n  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,\n  `user_id` bigint(20) unsigned NOT NULL,\n  `body` varchar(50) DEFAULT '/* lol\\'',\n  `created_at` datetime /*!50601 DEFAULT CURRENT_TIMESTAMP*/,\n  `edited_at` datetime /*!50601 DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP*/,\n  PRIMARY KEY (`id`),\n  KEY `user_created` (`user_id`,`created_at`)\n) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n", Delimiter: ";", nameClause: "`posts with spaces`"},
+		{File: filePath, LineNo: 24, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n\n--\n", Delimiter: ";"},
+		{File: filePath, LineNo: 27, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeFunc, ObjectName: "funcnodefiner", Text: "create function funcnodefiner() RETURNS varchar(30) RETURN \"hello\";\n", Delimiter: ";", nameClause: "funcnodefiner"},
+		{File: filePath, LineNo: 28, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeFunc, ObjectName: "funccuruserparens", Text: "CREATE DEFINER = CURRENT_USER() FUNCTION funccuruserparens() RETURNS int RETURN 42;\n", Delimiter: ";", nameClause: "funccuruserparens"},
+		{File: filePath, LineNo: 29, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeProc, ObjectName: "proccurusernoparens", Text: "CREATE DEFINER=CURRENT_USER PROCEDURE proccurusernoparens() # this is a comment!\n\tSELECT 1;\n", Delimiter: ";", nameClause: "proccurusernoparens"},
+		{File: filePath, LineNo: 31, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeFunc, ObjectName: "funcdefquote2", ObjectQualifier: "analytics", Text: "create definer=foo@'localhost' /*lol*/ FUNCTION analytics.funcdefquote2() RETURNS int RETURN 42;\n", Delimiter: ";", nameClause: "analytics.funcdefquote2"},
+		{File: filePath, LineNo: 32, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeProc, ObjectName: "procdefquote1", Text: "create DEFINER = 'foo'@localhost PROCEDURE `procdefquote1`() SELECT 42;\n", Delimiter: ";", nameClause: "`procdefquote1`"},
+		{File: filePath, LineNo: 33, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\t", Delimiter: ";"},
+		{File: filePath, LineNo: 33, CharNo: 2, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "delimiter    \"💩💩💩\"\n", Delimiter: "\000"},
+		{File: filePath, LineNo: 34, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "uhoh", Text: "CREATE TABLE uhoh (ummm varchar(20) default 'ok 💩💩💩 cool')💩💩💩\n", Delimiter: "💩💩💩", nameClause: "uhoh"},
+		{File: filePath, LineNo: 35, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "DELIMITER //\n", Delimiter: "\000"},
+		{File: filePath, LineNo: 36, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeProc, ObjectName: "whatever", Text: "CREATE PROCEDURE whatever(name varchar(10))\nBEGIN\n\tDECLARE v1 INT; -- comment with \"normal space\" in front!\n\tSET v1=loops;--\u00A0comment with `nbsp' in front?!?\n\tWHILE v1 > 0 DO\n\t\tINSERT INTO users (name) values ('\\xF0\\x9D\\x8C\\x86');\n\t\tSET v1 = v1 - (2 / 2); /* testing // testing */\n\tEND WHILE;\nEND\n//\n", Delimiter: "//", nameClause: "whatever"},
+		{File: filePath, LineNo: 46, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "delimiter ;\n", Delimiter: "\000"},
+		{File: filePath, LineNo: 47, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n", Delimiter: ";"},
+		{File: filePath, LineNo: 48, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "tbl1", ObjectQualifier: "uhoh", Text: "CREATE TABLE `uhoh` . tbl1 (id int unsigned not null primary key);\n", Delimiter: ";", nameClause: "`uhoh` . tbl1"},
+		{File: filePath, LineNo: 49, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "tbl2", ObjectQualifier: "uhoh", Text: "CREATE TABLE uhoh.tbl2 (id int unsigned not null primary key);\n", Delimiter: ";", nameClause: "uhoh.tbl2"},
+		{File: filePath, LineNo: 50, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "tbl3", ObjectQualifier: "uhoh", Text: "CREATE TABLE /*lol*/ uhoh  .  `tbl3` (id int unsigned not null primary key);\n", Delimiter: ";", nameClause: "uhoh  .  `tbl3`"},
+		{File: filePath, LineNo: 51, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeFunc, ObjectName: "funcdefquote3", ObjectQualifier: "foo", Text: "create definer=foo@'localhost' /*lol*/ FUNCTION foo.funcdefquote3() RETURNS int RETURN 42;\n", Delimiter: ";", nameClause: "foo.funcdefquote3"},
+		{File: filePath, LineNo: 52, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n", Delimiter: ";"},
+		{File: filePath, LineNo: 53, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "use /*wtf*/`analytics`;", Delimiter: ";"},
+		{File: filePath, LineNo: 53, CharNo: 24, DefaultDatabase: "analytics", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "comments", Text: "CREATE TABLE  if  NOT    eXiStS     `comments` (\n  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,\n  `post_id` bigint(20) unsigned NOT NULL,\n  `user_id` bigint(20) unsigned NOT NULL,\n  `created_at` datetime DEFAULT NULL,\n  `body` text,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n", Delimiter: ";", nameClause: "`comments`"},
+		{File: filePath, LineNo: 61, CharNo: 1, DefaultDatabase: "analytics", Type: StatementTypeCreate, ObjectType: tengo.ObjectTypeTable, ObjectName: "subscriptions", Text: "CREATE TABLE subscriptions (id int unsigned not null primary key)", Delimiter: ";", nameClause: "subscriptions"},
 	}
 }
 

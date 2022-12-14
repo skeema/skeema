@@ -710,7 +710,7 @@ func (dir *Dir) parseContents() {
 		sf := &SQLFile{
 			FilePath: filePath,
 		}
-		sf.Statements, dir.ParseError = ParseStatementsInFile(filePath, ";")
+		sf.Statements, dir.ParseError = ParseStatementsInFile(filePath)
 		if dir.ParseError != nil {
 			// Treat errors here as fatal. This includes: i/o error opening or reading
 			// the .sql file; file had unterminated quote or backtick or comment.
