@@ -709,6 +709,11 @@ func (instance *Instance) DropSchema(schema string, opts BulkDropOptions) error 
 		return err
 	}
 	_, err = db.Exec(s.DropStatement())
+	if IsDatabaseError(err, mysqlerr.ER_LOCK_WAIT_TIMEOUT) {
+		// we do 1 retry upon seeing a metadata locking conflict, consistent with
+		// logic in DropTablesInSchema
+		_, err = db.Exec(s.DropStatement())
+	}
 	if err != nil {
 		return err
 	}

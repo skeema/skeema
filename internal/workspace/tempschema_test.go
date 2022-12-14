@@ -130,8 +130,9 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCrossDBFK(t *testing.T) {
 		t.Errorf("Unexpected %d failures from ExecLogicalSchema with nothing holding MDL; first err %v from %s", len(wsSchema.Failures), wsSchema.Failures[0].Err, wsSchema.Failures[0].Statement.Location())
 	}
 
-	// This function obtains SHARED_READ MDL for the specified duration. Since
-	// DDL requires EXCLUSIVE MDL, DDL will be blocked until this query completes.
+	// This function obtains SHARED_READ MDL for the specified duration, in the
+	// background. Since DDL requires EXCLUSIVE MDL, DDL will be blocked until this
+	// query completes, although this function will return immediately.
 	holdMDL := func(tableName string, seconds int) {
 		db, err := s.d.ConnectionPool("parent_side", "")
 		if err != nil {
@@ -139,7 +140,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCrossDBFK(t *testing.T) {
 		}
 		var x struct{}
 		query := fmt.Sprintf("SELECT %s.*, SLEEP(?) FROM %s LIMIT 1", tengo.EscapeIdentifier(tableName), tengo.EscapeIdentifier(tableName))
-		db.Select(&x, query, seconds)
+		go db.Select(&x, query, seconds)
 	}
 
 	// Note: ordinarily, TempSchema uses a 5-second lock_wait_timeout, with one
@@ -149,14 +150,14 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCrossDBFK(t *testing.T) {
 	// Holding the lock for under 4 seconds shouldn't result in workspace failures.
 	// The first test here should succeed quickly; the second one slightly more
 	// slowly since it will do a retry.
-	go holdMDL("p1", 1)
+	holdMDL("p1", 1)
 	wsSchema, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 	if err != nil {
 		t.Errorf("Unexpected error from ExecLogicalSchema with 1-sec MDL: %v", err)
 	} else if len(wsSchema.Failures) > 0 {
 		t.Errorf("Unexpected %d failures from ExecLogicalSchema with 1-sec MDL; first err %v from %s", len(wsSchema.Failures), wsSchema.Failures[0].Err, wsSchema.Failures[0].Statement.Location())
 	}
-	go holdMDL("p2", 3)
+	holdMDL("p2", 3)
 	wsSchema, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 	if err != nil {
 		t.Errorf("Unexpected error from ExecLogicalSchema with 3-sec MDL: %v", err)
@@ -166,7 +167,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCrossDBFK(t *testing.T) {
 
 	// Holding the lock for over 4 seconds should result in workspace failures
 	// (2-second lock_wait_timeout in tests, x 2 attempts)
-	go holdMDL("p1", 5)
+	holdMDL("p1", 5)
 	wsSchema, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 	if err != nil {
 		t.Errorf("Unexpected error from ExecLogicalSchema with 5-sec MDL (which should have resulted in statement failures but not overall error): %v", err)
@@ -194,14 +195,14 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCrossDBFK(t *testing.T) {
 
 	// 1-second mdl conflict should still allow cleanup to succeed
 	ts := getTempSchema()
-	go holdMDL("p2", 1)
+	holdMDL("p2", 1)
 	if err := ts.Cleanup(nil); err != nil {
 		t.Fatalf("Expected cleanup to succeed with 1-sec MDL; instead found error %v", err)
 	}
 
 	// 3-second mdl conflict should cause cleanup to fail
 	ts = getTempSchema()
-	go holdMDL("p1", 3)
+	holdMDL("p1", 3)
 	if err := ts.Cleanup(nil); err == nil {
 		t.Fatal("Expected cleanup to fail with 3-sec MDL; instead error is nil")
 	}
