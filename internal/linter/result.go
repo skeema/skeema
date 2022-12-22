@@ -25,7 +25,7 @@ type Note struct {
 // statement.
 type Annotation struct {
 	RuleName  string
-	Statement *fs.Statement
+	Statement *tengo.Statement
 	Severity  Severity
 	Note
 }
@@ -124,7 +124,7 @@ type Result struct {
 
 // Annotate constructs an annotation on the supplied statement, and stores it
 // in the result.
-func (r *Result) Annotate(stmt *fs.Statement, sev Severity, ruleName string, note Note) {
+func (r *Result) Annotate(stmt *tengo.Statement, sev Severity, ruleName string, note Note) {
 	switch sev {
 	case SeverityError:
 		r.ErrorCount++
@@ -192,7 +192,7 @@ func (r *Result) AnnotateMixedSchemaNames(dir *fs.Dir, opts Options) {
 			continue
 		}
 		var subject string
-		if stmt.Type == fs.StatementTypeCommand {
+		if stmt.Type == tengo.StatementTypeCommand {
 			subject = "USE statement"
 		} else {
 			subject = "CREATE with schema name qualifier"

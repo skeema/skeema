@@ -366,7 +366,7 @@ func getDir(t *testing.T, dirPath string, cliArgs ...string) *fs.Dir {
 // IMPORTANT: for comments on the last line of a statement, the comment must
 // come BEFORE the closing delimiter (e.g. closing semicolon) in order for
 // this method to see it! Otherwise, the .sql file tokenizer will consider
-// the comment to be a separate fs.Statement.
+// the comment to be a separate tengo.Statement.
 func expectedAnnotations(logicalSchema *fs.LogicalSchema, flavor tengo.Flavor) (annotations []*Annotation) {
 	re := regexp.MustCompile(`/\*[^*]*annotations:\s*([^*]+)\*/`)
 

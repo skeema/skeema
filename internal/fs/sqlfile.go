@@ -16,7 +16,7 @@ import (
 // SQLFile represents a file containing SQL statements.
 type SQLFile struct {
 	FilePath   string
-	Statements []*Statement
+	Statements []*tengo.Statement
 	Dirty      bool
 }
 
@@ -51,7 +51,7 @@ func (sqlFile *SQLFile) Write() (n int, err error) {
 	var keepFile bool
 	for _, stmt := range sqlFile.Statements {
 		b.WriteString(stmt.Text)
-		if stmt.Type != StatementTypeNoop && stmt.Type != StatementTypeCommand {
+		if stmt.Type != tengo.StatementTypeNoop && stmt.Type != tengo.StatementTypeCommand {
 			keepFile = true
 		}
 	}
@@ -73,7 +73,7 @@ func (sqlFile *SQLFile) Write() (n int, err error) {
 func (sqlFile *SQLFile) AddCreateStatement(key tengo.ObjectKey, create string) {
 	// Prune any trailing DELIMITER or USE commands from the file, as these have
 	// no effect anyway.
-	for len(sqlFile.Statements) > 0 && sqlFile.Statements[len(sqlFile.Statements)-1].Type == StatementTypeCommand {
+	for len(sqlFile.Statements) > 0 && sqlFile.Statements[len(sqlFile.Statements)-1].Type == tengo.StatementTypeCommand {
 		sqlFile.Statements = sqlFile.Statements[:len(sqlFile.Statements)-1]
 	}
 
@@ -86,12 +86,12 @@ func (sqlFile *SQLFile) AddCreateStatement(key tengo.ObjectKey, create string) {
 		defaultDatabase = sqlFile.Statements[len(sqlFile.Statements)-1].DefaultDatabase
 	}
 
-	makeDelimiterCommand := func(newDelim string) *Statement {
-		stmt := &Statement{
+	makeDelimiterCommand := func(newDelim string) *tengo.Statement {
+		stmt := &tengo.Statement{
 			File:            sqlFile.FilePath,
 			Text:            "DELIMITER " + newDelim + "\n",
 			DefaultDatabase: defaultDatabase,
-			Type:            StatementTypeCommand,
+			Type:            tengo.StatementTypeCommand,
 			Delimiter:       "\000",
 		}
 		currentDelimiter = newDelim
@@ -109,11 +109,11 @@ func (sqlFile *SQLFile) AddCreateStatement(key tengo.ObjectKey, create string) {
 		}
 		create += ";\n"
 	}
-	sqlFile.Statements = append(sqlFile.Statements, &Statement{
+	sqlFile.Statements = append(sqlFile.Statements, &tengo.Statement{
 		File:            sqlFile.FilePath,
 		Text:            create,
 		DefaultDatabase: defaultDatabase,
-		Type:            StatementTypeCreate,
+		Type:            tengo.StatementTypeCreate,
 		ObjectType:      key.Type,
 		ObjectName:      key.Name,
 		Delimiter:       currentDelimiter,
@@ -131,7 +131,7 @@ func (sqlFile *SQLFile) AddCreateStatement(key tengo.ObjectKey, create string) {
 // The supplied newText should NOT have a delimiter or trailing newline. This
 // method panics if stmt's address is not actually found among the file's
 // statement pointers slice.
-func (sqlFile *SQLFile) EditStatementText(stmt *Statement, newText string) {
+func (sqlFile *SQLFile) EditStatementText(stmt *tengo.Statement, newText string) {
 	prevSpecialDelim := (stmt.Delimiter != ";")
 	newSpecialDelim := NeedSpecialDelimiter(stmt.ObjectKey(), newText)
 	sqlFile.Dirty = true
@@ -146,23 +146,23 @@ func (sqlFile *SQLFile) EditStatementText(stmt *Statement, newText string) {
 		return
 	}
 
-	newStatements := make([]*Statement, len(sqlFile.Statements)+2)
+	newStatements := make([]*tengo.Statement, len(sqlFile.Statements)+2)
 	copy(newStatements, sqlFile.Statements[0:i])
-	newStatements[i] = &Statement{
+	newStatements[i] = &tengo.Statement{
 		File:            sqlFile.FilePath,
 		Text:            "DELIMITER //\n",
 		DefaultDatabase: stmt.DefaultDatabase,
-		Type:            StatementTypeCommand,
+		Type:            tengo.StatementTypeCommand,
 		Delimiter:       "\000",
 	}
 	stmt.Delimiter = "//"
 	stmt.Text = newText + "//\n"
 	newStatements[i+1] = stmt
-	newStatements[i+2] = &Statement{
+	newStatements[i+2] = &tengo.Statement{
 		File:            sqlFile.FilePath,
 		Text:            "DELIMITER ;\n",
 		DefaultDatabase: stmt.DefaultDatabase,
-		Type:            StatementTypeCommand,
+		Type:            tengo.StatementTypeCommand,
 		Delimiter:       "\000",
 	}
 	copy(newStatements[i+3:], sqlFile.Statements[i+1:])
@@ -172,7 +172,7 @@ func (sqlFile *SQLFile) EditStatementText(stmt *Statement, newText string) {
 // RemoveStatement removes stmt from the file's in-memory list of statements,
 // and marks the file as dirty. Panics if the address of stmt is not actually
 // found in its expected file's in-memory representation.
-func (sqlFile *SQLFile) RemoveStatement(stmt *Statement) {
+func (sqlFile *SQLFile) RemoveStatement(stmt *tengo.Statement) {
 	i := sqlFile.statementIndex(stmt)
 	sqlFile.Dirty = true
 	copy(sqlFile.Statements[i:], sqlFile.Statements[i+1:])
@@ -180,7 +180,7 @@ func (sqlFile *SQLFile) RemoveStatement(stmt *Statement) {
 	sqlFile.Statements = sqlFile.Statements[:len(sqlFile.Statements)-1]
 }
 
-func (sqlFile *SQLFile) statementIndex(stmt *Statement) int {
+func (sqlFile *SQLFile) statementIndex(stmt *tengo.Statement) int {
 	for n := range sqlFile.Statements {
 		if sqlFile.Statements[n] == stmt {
 			return n
@@ -256,14 +256,4 @@ func AddDelimiter(stmt string) string {
 		return fmt.Sprintf("DELIMITER //\n%s//\nDELIMITER ;\n", stmt)
 	}
 	return fmt.Sprintf("%s;\n", stmt)
-}
-
-// SQLContentsError represents a fatal problem parsing a .sql file: the file
-// contains an unterminated quote, unterminated multi-line comment, forbidden
-// statement, or a special character outside of a string/identifier/comment.
-type SQLContentsError string
-
-// Error satisfies the builtin error interface.
-func (sce SQLContentsError) Error() string {
-	return string(sce)
 }

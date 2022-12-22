@@ -221,9 +221,9 @@ func RegisterShutdownFunc(f ShutdownFunc) {
 }
 
 // StatementError represents a problem that occurred when executing a specific
-// fs.Statement in a Workspace.
+// tengo.Statement in a Workspace.
 type StatementError struct {
-	*fs.Statement
+	*tengo.Statement
 	Err error
 }
 
@@ -313,7 +313,7 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 	}
 
 	// Run CREATEs in parallel, bounded by opts.Concurrency
-	creates := make(chan *fs.Statement, opts.Concurrency)
+	creates := make(chan *tengo.Statement, opts.Concurrency)
 	errs := make(chan error, opts.Concurrency)
 	go func() {
 		for _, stmt := range logicalSchema.Creates {
@@ -338,7 +338,7 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 	// MySQL 8+ if FKs are present. Ditto with metadata lock wait timeouts.
 	// Also retry errors from CREATE TABLE...LIKE being run out-of-order (only once
 	// though; nested chains of CREATE TABLE...LIKE are unsupported)
-	sequentialStatements := []*fs.Statement{}
+	sequentialStatements := []*tengo.Statement{}
 	for n := 0; n < len(logicalSchema.Creates); n++ {
 		if err := <-errs; err != nil {
 			stmterr := err.(*StatementError)
@@ -365,7 +365,7 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 	return wsSchema, err
 }
 
-func wrapFailure(statement *fs.Statement, err error) *StatementError {
+func wrapFailure(statement *tengo.Statement, err error) *StatementError {
 	stmtErr := &StatementError{
 		Statement: statement,
 	}

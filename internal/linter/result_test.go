@@ -63,12 +63,12 @@ func TestResultSortByFile(t *testing.T) {
 	// Sneakily re-using Annotation.Statement.Text to store the correct expected sort order
 	r := &Result{
 		Annotations: []*Annotation{
-			{RuleName: "charset", Note: Note{LineOffset: 0}, Statement: &fs.Statement{File: "bbb.sql", LineNo: 1, Text: "3"}},
-			{RuleName: "charset", Note: Note{LineOffset: 3}, Statement: &fs.Statement{File: "aaa.sql", LineNo: 4, Text: "1"}},
-			{RuleName: "pk", Note: Note{LineOffset: 0}, Statement: &fs.Statement{File: "aaa.sql", LineNo: 1, Text: "0"}},
-			{RuleName: "engine", Note: Note{LineOffset: 0}, Statement: &fs.Statement{File: "ccc.sql", LineNo: 10, Text: "5"}},
-			{RuleName: "engine", Note: Note{LineOffset: 3}, Statement: &fs.Statement{File: "aaa.sql", LineNo: 4, Text: "2"}},
-			{RuleName: "engine", Note: Note{LineOffset: 8}, Statement: &fs.Statement{File: "ccc.sql", LineNo: 1, Text: "4"}},
+			{RuleName: "charset", Note: Note{LineOffset: 0}, Statement: &tengo.Statement{File: "bbb.sql", LineNo: 1, Text: "3"}},
+			{RuleName: "charset", Note: Note{LineOffset: 3}, Statement: &tengo.Statement{File: "aaa.sql", LineNo: 4, Text: "1"}},
+			{RuleName: "pk", Note: Note{LineOffset: 0}, Statement: &tengo.Statement{File: "aaa.sql", LineNo: 1, Text: "0"}},
+			{RuleName: "engine", Note: Note{LineOffset: 0}, Statement: &tengo.Statement{File: "ccc.sql", LineNo: 10, Text: "5"}},
+			{RuleName: "engine", Note: Note{LineOffset: 3}, Statement: &tengo.Statement{File: "aaa.sql", LineNo: 4, Text: "2"}},
+			{RuleName: "engine", Note: Note{LineOffset: 8}, Statement: &tengo.Statement{File: "ccc.sql", LineNo: 1, Text: "4"}},
 		},
 	}
 	r.SortByFile()

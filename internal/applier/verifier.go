@@ -54,8 +54,8 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 	logicalSchema := &fs.LogicalSchema{
 		CharSet:   t.Dir.Config.Get("default-character-set"),
 		Collation: t.Dir.Config.Get("default-collation"),
-		Creates:   make(map[tengo.ObjectKey]*fs.Statement),
-		Alters:    make([]*fs.Statement, 0),
+		Creates:   make(map[tengo.ObjectKey]*tengo.Statement),
+		Alters:    make([]*tengo.Statement, 0),
 	}
 	desiredTables := make(map[string]*tengo.Table)
 	for _, td := range altersInDiff {
@@ -65,14 +65,14 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 			// logic can ignore that fact. If there are redundant AddStatement calls for
 			// one CREATE, the first AddStatement for that CREATE succeeds and the
 			// subsequent duplicate CREATEs error, but that is harmless in this code path!
-			logicalSchema.AddStatement(&fs.Statement{
-				Type:       fs.StatementTypeCreate,
+			logicalSchema.AddStatement(&tengo.Statement{
+				Type:       tengo.StatementTypeCreate,
 				Text:       td.From.CreateStatement,
 				ObjectType: tengo.ObjectTypeTable,
 				ObjectName: td.From.Name,
 			})
-			logicalSchema.AddStatement(&fs.Statement{
-				Type:       fs.StatementTypeAlter,
+			logicalSchema.AddStatement(&tengo.Statement{
+				Type:       tengo.StatementTypeAlter,
 				Text:       stmt,
 				ObjectType: tengo.ObjectTypeTable,
 				ObjectName: td.From.Name,

@@ -1,7 +1,6 @@
 package util
 
 import (
-	"io/ioutil"
 	"os"
 	"reflect"
 	"strings"
@@ -27,8 +26,8 @@ func TestAddGlobalConfigFiles(t *testing.T) {
 
 	os.MkdirAll("fake-etc", 0777)
 	os.MkdirAll("fake-home", 0777)
-	ioutil.WriteFile("fake-etc/skeema", []byte("user=one\npassword=foo\n"), 0777)
-	ioutil.WriteFile("fake-home/.my.cnf", []byte("doesnt-exist\nuser=two\nhost=uhoh\n"), 0777)
+	os.WriteFile("fake-etc/skeema", []byte("user=one\npassword=foo\n"), 0777)
+	os.WriteFile("fake-home/.my.cnf", []byte("doesnt-exist\nuser=two\nhost=uhoh\n"), 0777)
 	defer func() {
 		os.RemoveAll("fake-etc")
 		os.RemoveAll("fake-home")
@@ -60,7 +59,7 @@ func TestAddGlobalConfigFiles(t *testing.T) {
 	// Introduce an invalid option into fake-etc/skeema. Expectation: the file
 	// is no longer used as a source, even for options declared above the invalid
 	// one.
-	ioutil.WriteFile("fake-etc/skeema", []byte("user=one\npassword=foo\nthis will not parse"), 0777)
+	os.WriteFile("fake-etc/skeema", []byte("user=one\npassword=foo\nthis will not parse"), 0777)
 	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff")
 	AddGlobalConfigFiles(cfg)
 	if actualUser := cfg.GetAllowEnvVar("user"); actualUser != "two" {

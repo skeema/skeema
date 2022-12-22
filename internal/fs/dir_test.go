@@ -220,7 +220,7 @@ func TestDirNamedSchemaStatements(t *testing.T) {
 	dir = getDir(t, "testdata/named1")
 	if len(dir.NamedSchemaStatements) != 2 {
 		t.Errorf("Expected dir %s to have 2 named schema statements; instead found %d", dir, len(dir.NamedSchemaStatements))
-	} else if dir.NamedSchemaStatements[0].Type != StatementTypeCommand || dir.NamedSchemaStatements[1].Type != StatementTypeCommand {
+	} else if dir.NamedSchemaStatements[0].Type != tengo.StatementTypeCommand || dir.NamedSchemaStatements[1].Type != tengo.StatementTypeCommand {
 		t.Errorf("Unexpected statements found in result of NamedSchemaStatements: [0]=%+v, [1]=%+v", *dir.NamedSchemaStatements[0], *dir.NamedSchemaStatements[1])
 	}
 
@@ -228,7 +228,7 @@ func TestDirNamedSchemaStatements(t *testing.T) {
 	dir = getDir(t, "testdata/named2")
 	if len(dir.NamedSchemaStatements) != 2 {
 		t.Errorf("Expected dir %s to have 2 named schema statements; instead found %d", dir, len(dir.NamedSchemaStatements))
-	} else if dir.NamedSchemaStatements[0].Type != StatementTypeCreate || dir.NamedSchemaStatements[1].Type != StatementTypeCommand {
+	} else if dir.NamedSchemaStatements[0].Type != tengo.StatementTypeCreate || dir.NamedSchemaStatements[1].Type != tengo.StatementTypeCommand {
 		t.Errorf("Unexpected statements found in result of NamedSchemaStatements: [0]=%+v, [1]=%+v", *dir.NamedSchemaStatements[0], *dir.NamedSchemaStatements[1])
 	}
 
@@ -236,7 +236,7 @@ func TestDirNamedSchemaStatements(t *testing.T) {
 	dir = getDir(t, "testdata/named3")
 	if len(dir.NamedSchemaStatements) != 2 {
 		t.Errorf("Expected dir %s to have 2 named schema statements; instead found %d", dir, len(dir.NamedSchemaStatements))
-	} else if dir.NamedSchemaStatements[0].Type != StatementTypeCreate || dir.NamedSchemaStatements[1].Type != StatementTypeCreate {
+	} else if dir.NamedSchemaStatements[0].Type != tengo.StatementTypeCreate || dir.NamedSchemaStatements[1].Type != tengo.StatementTypeCreate {
 		t.Errorf("Unexpected statements found in result of NamedSchemaStatements: [0]=%+v, [1]=%+v", *dir.NamedSchemaStatements[0], *dir.NamedSchemaStatements[1])
 	}
 
@@ -244,7 +244,7 @@ func TestDirNamedSchemaStatements(t *testing.T) {
 	dir = getDir(t, "testdata/named4")
 	if len(dir.NamedSchemaStatements) != 2 {
 		t.Errorf("Expected dir %s to have 2 named schema statements; instead found %d", dir, len(dir.NamedSchemaStatements))
-	} else if dir.NamedSchemaStatements[0].Type != StatementTypeCommand || dir.NamedSchemaStatements[1].Type != StatementTypeCommand {
+	} else if dir.NamedSchemaStatements[0].Type != tengo.StatementTypeCommand || dir.NamedSchemaStatements[1].Type != tengo.StatementTypeCommand {
 		t.Errorf("Unexpected statements found in result of NamedSchemaStatements: [0]=%+v, [1]=%+v", *dir.NamedSchemaStatements[0], *dir.NamedSchemaStatements[1])
 	}
 }
@@ -414,10 +414,12 @@ func TestDirSubdirs(t *testing.T) {
 		t.Errorf("Unexpectedly low subdir count returned: found %d, expected at least 2", len(subs))
 	}
 
-	dir = getDir(t, ".")
+	dir = getDir(t, "testdata")
 	subs, err = dir.Subdirs()
-	if len(subs) != 1 || err != nil || countParseErrors(subs) != 1 {
-		// parse error is from redundant definition of same table between nodelimiter1.sql and nodelimiter2.sql
+	// Expect at least 6 parse errors: 3 with unterminated quotes/comments, 1 bad
+	// symlink in cfgsymlinks2, 1 forbidden statement in createselect, 1 lexer
+	// error in invalidchar
+	if len(subs) < 20 || err != nil || countParseErrors(subs) < 6 {
 		t.Errorf("Unexpected return from Subdirs(): %d subs, %d parse errors, err=%v", len(subs), countParseErrors(subs), err)
 	}
 }

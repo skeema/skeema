@@ -2,7 +2,6 @@ package fs
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -25,8 +24,8 @@ type Dir struct {
 	Config                *mybase.Config
 	OptionFile            *mybase.File
 	SQLFiles              map[string]*SQLFile   // .sql files, keyed by normalized absolute file path
-	UnparsedStatements    []*Statement          // statements with unknown type / not supported by this package
-	NamedSchemaStatements []*Statement          // statements with explicit schema names: USE command or CREATEs with schema name qualifier
+	UnparsedStatements    []*tengo.Statement    // statements with unknown type / not supported by this package
+	NamedSchemaStatements []*tengo.Statement    // statements with explicit schema names: USE command or CREATEs with schema name qualifier
 	LogicalSchemas        []*LogicalSchema      // for now, always 0 or 1 elements; 2+ in same dir to be supported in future
 	IgnorePatterns        []tengo.ObjectPattern // regexes for matching objects that should be ignored
 	ParseError            error                 // any fatal error found parsing dir's config or contents
@@ -108,15 +107,15 @@ func (dir *Dir) HasFile(name string) (bool, error) {
 // nil, but some of the returned Dir values will have a non-nil ParseError if
 // any problems were encountered in that subdir.
 func (dir *Dir) Subdirs() ([]*Dir, error) {
-	fileInfos, err := ioutil.ReadDir(dir.Path)
+	entries, err := os.ReadDir(dir.Path)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]*Dir, 0, len(fileInfos))
-	for _, fi := range fileInfos {
-		if fi.IsDir() && fi.Name()[0] != '.' {
+	result := make([]*Dir, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() && entry.Name()[0] != '.' {
 			sub := &Dir{
-				Path:     filepath.Join(dir.Path, fi.Name()),
+				Path:     filepath.Join(dir.Path, entry.Name()),
 				Config:   dir.Config.Clone(),
 				repoBase: dir.repoBase,
 			}
@@ -149,14 +148,14 @@ func (dir *Dir) CreateSubdir(name string, optionFile *mybase.File) (*Dir, error)
 		return nil, fmt.Errorf("Path %s already exists but is not a directory", dirPath)
 	} else {
 		// Existing dir: confirm it doesn't already have .skeema or *.sql files
-		fileInfos, err := ioutil.ReadDir(dirPath)
+		entries, err := os.ReadDir(dirPath)
 		if err != nil {
 			return nil, err
 		}
-		for _, fi := range fileInfos {
-			if fi.Name() == ".skeema" {
+		for _, entry := range entries {
+			if entry.Name() == ".skeema" {
 				return nil, fmt.Errorf("Cannot use dir %s: already has .skeema file", dirPath)
-			} else if strings.HasSuffix(fi.Name(), ".sql") {
+			} else if strings.HasSuffix(entry.Name(), ".sql") {
 				return nil, fmt.Errorf("Cannot use dir %s: Already contains *.sql files", dirPath)
 			}
 		}
@@ -229,13 +228,13 @@ func (dir *Dir) Port() (int, bool) {
 }
 
 // FileFor returns a SQLFile associated with the supplied keyer. If keyer is a
-// *Statement with non-empty File field, that path will be used as-is.
+// *tengo.Statement with non-empty File field, that path will be used as-is.
 // Otherwise, FileFor returns the default location for the supplied keyer based
 // on its type and name. In either case, if no known SQLFile exists at that
 // location yet, FileFor will instantiate a new SQLFile value for it.
 func (dir *Dir) FileFor(keyer tengo.ObjectKeyer) *SQLFile {
 	var filePath string
-	if stmt, ok := keyer.(*Statement); ok && stmt.File != "" {
+	if stmt, ok := keyer.(*tengo.Statement); ok && stmt.File != "" {
 		filePath = stmt.File
 	} else {
 		objName := keyer.ObjectKey().Name
@@ -247,7 +246,7 @@ func (dir *Dir) FileFor(keyer tengo.ObjectKeyer) *SQLFile {
 	if dir.SQLFiles[filePath] == nil {
 		dir.SQLFiles[filePath] = &SQLFile{
 			FilePath:   filePath,
-			Statements: []*Statement{},
+			Statements: []*tengo.Statement{},
 		}
 	}
 	return dir.SQLFiles[filePath]
@@ -710,7 +709,7 @@ func (dir *Dir) parseContents() {
 		sf := &SQLFile{
 			FilePath: filePath,
 		}
-		sf.Statements, dir.ParseError = ParseStatementsInFile(filePath)
+		sf.Statements, dir.ParseError = tengo.ParseStatementsInFile(filePath)
 		if dir.ParseError != nil {
 			// Treat errors here as fatal. This includes: i/o error opening or reading
 			// the .sql file; file had unterminated quote or backtick or comment.
@@ -730,29 +729,29 @@ func (dir *Dir) parseContents() {
 
 			if _, ok := logicalSchemasByName[stmt.Schema()]; !ok {
 				logicalSchemasByName[stmt.Schema()] = &LogicalSchema{
-					Creates: make(map[tengo.ObjectKey]*Statement),
+					Creates: make(map[tengo.ObjectKey]*tengo.Statement),
 				}
 			}
 			dir.ParseError = logicalSchemasByName[stmt.Schema()].AddStatement(stmt)
 			if dir.ParseError != nil {
 				return
 			}
-			if stmt.Type == StatementTypeUnknown {
+			if stmt.Type == tengo.StatementTypeUnknown {
 				// Statements which could not be parsed, meaning of an unsupported statement
 				// type (e.g. INSERTs), are simply ignored. This is not fatal, since it is
 				// quite rare for a typo to trigger this -- only happens when misspelling
 				// CREATE or the object type for example.
 				dir.UnparsedStatements = append(dir.UnparsedStatements, stmt)
-			} else if stmt.Type == StatementTypeLexError || stmt.Type == StatementTypeForbidden {
+			} else if stmt.Type == tengo.StatementTypeLexError || stmt.Type == tengo.StatementTypeForbidden {
 				// Statements with lexer errors, meaning invalid characters, are treated as
 				// fatal. This can be indicative of a bug in the grammar, or of a normally-
 				// valid statement which has an illegal typo such as an invalid character
 				// mid-statement.
 				// Statements of unsupported form CREATE TABLE ... SELECT are also treated
 				// as fatal.
-				dir.ParseError = SQLContentsError(stmt.Error.Error())
+				dir.ParseError = tengo.MalformedSQLError(stmt.Error.Error())
 				return
-			} else if stmt.ObjectQualifier != "" || (stmt.Type == StatementTypeCommand && len(stmt.Text) > 4 && strings.ToLower(stmt.Text[0:3]) == "use") {
+			} else if stmt.ObjectQualifier != "" || (stmt.Type == tengo.StatementTypeCommand && len(stmt.Text) > 4 && strings.ToLower(stmt.Text[0:3]) == "use") {
 				// Statements which refer to specific schema names can be problematic, since
 				// this conflicts with the ability to specify the schema name dynamically
 				// in the .skeema config file.
@@ -768,7 +767,7 @@ func (dir *Dir) parseContents() {
 	if len(logicalSchemasByName) == 0 && dir.HasSchema() {
 		dir.LogicalSchemas = []*LogicalSchema{
 			{
-				Creates:   make(map[tengo.ObjectKey]*Statement),
+				Creates:   make(map[tengo.ObjectKey]*tengo.Statement),
 				CharSet:   dir.Config.Get("default-character-set"),
 				Collation: dir.Config.Get("default-collation"),
 			},
@@ -838,16 +837,16 @@ func ParentOptionFiles(dirPath string, baseConfig *mybase.Config) ([]*mybase.Fil
 			// home directory, so stop early if we're already there
 			break
 		}
-		fileInfos, err := ioutil.ReadDir(curPath)
+		entries, err := os.ReadDir(curPath)
 		if err != nil {
 			// If we hit a dir we cannot read, halt early but don't consider this fatal
 			break
 		}
-		for _, fi := range fileInfos {
-			if fi.Name() == ".git" {
+		for _, entry := range entries {
+			if entry.Name() == ".git" {
 				repoBase = curPath
 				atRepoBase = true
-			} else if fi.Name() == ".skeema" && n > 0 {
+			} else if entry.Name() == ".skeema" && n > 0 {
 				// The second part of the above conditional ensures we ignore dirPath's own
 				// .skeema file, since that is handled separately in Dir.parseContents() in
 				// order to store it in dir.OptionFile
@@ -958,12 +957,16 @@ func parseOptionFile(dirPath, repoBase string, baseConfig *mybase.Config) (*myba
 // The repoBase affects evaluation of symlinks: any link destinations outside
 // of the repoBase are ignored and excluded from the result.
 func sqlFiles(dirPath, repoBase string) (result []string, err error) {
-	fileInfos, err := ioutil.ReadDir(dirPath)
+	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return nil, err
 	}
-	for _, fi := range fileInfos {
-		name := fi.Name()
+	for _, entry := range entries {
+		name := entry.Name()
+		fi, err := entry.Info()
+		if err != nil {
+			continue
+		}
 		// symlinks: verify it points to an existing file within repoBase. If it
 		// does not, or if any error occurs in any step in checking, skip it.
 		if fi.Mode()&os.ModeSymlink == os.ModeSymlink {

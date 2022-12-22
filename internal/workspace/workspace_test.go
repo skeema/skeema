@@ -63,8 +63,8 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchema(t *testing.T) {
 
 	// Test with a valid ALTER involved
 	oldUserColumnCount := len(wsSchema.Table("users").Columns)
-	dir.LogicalSchemas[0].AddStatement(&fs.Statement{
-		Type:       fs.StatementTypeAlter,
+	dir.LogicalSchemas[0].AddStatement(&tengo.Statement{
+		Type:       tengo.StatementTypeAlter,
 		ObjectType: tengo.ObjectTypeTable,
 		ObjectName: "users",
 		Text:       "ALTER TABLE users ADD COLUMN foo int",
@@ -90,8 +90,8 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaErrors(t *testing.T) {
 	opts.LockTimeout = 100 * time.Millisecond
 
 	// Test with invalid ALTER (valid syntax but nonexistent table)
-	dir.LogicalSchemas[0].AddStatement(&fs.Statement{
-		Type:       fs.StatementTypeAlter,
+	dir.LogicalSchemas[0].AddStatement(&tengo.Statement{
+		Type:       tengo.StatementTypeAlter,
 		ObjectType: tengo.ObjectTypeTable,
 		ObjectName: "nopenopenope",
 		Text:       "ALTER TABLE nopenopenope ADD COLUMN foo int",
@@ -109,7 +109,7 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaErrors(t *testing.T) {
 	} else {
 		t.Errorf("Expected one StatementError, instead found %d", len(wsSchema.Failures))
 	}
-	dir.LogicalSchemas[0].Alters = []*fs.Statement{}
+	dir.LogicalSchemas[0].Alters = []*tengo.Statement{}
 
 	// Introduce an intentional syntax error
 	key := tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: "posts"}

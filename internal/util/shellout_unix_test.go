@@ -4,7 +4,6 @@
 package util
 
 import (
-	"io/ioutil"
 	"os"
 	"reflect"
 	"testing"
@@ -176,7 +175,7 @@ func TestShellOutCombineOutput(t *testing.T) {
 			t.Errorf("Unexpected error from Run(): %v", err)
 		}
 		outFile.Close()
-		if output, err := ioutil.ReadFile("test-shellout-combine.out"); err != nil {
+		if output, err := os.ReadFile("test-shellout-combine.out"); err != nil {
 			t.Fatalf("Unable to read file: %v", err)
 		} else if string(output) != "hello\nworld\n" {
 			t.Errorf("Unexpected STDOUT from Run(): %q", output)

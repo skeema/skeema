@@ -1,24 +1,23 @@
 package fs
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
-// ReadTestFile wraps ioutil.ReadFile. If an error occurs, it is fatal to the
+// ReadTestFile wraps os.ReadFile. If an error occurs, it is fatal to the
 // test.
 func ReadTestFile(t *testing.T, filename string) string {
 	t.Helper()
-	contents, err := ioutil.ReadFile(filename)
+	contents, err := os.ReadFile(filename)
 	if err != nil {
 		t.Fatalf("Unable to read %s: %s", filename, err)
 	}
 	return string(contents)
 }
 
-// WriteTestFile wraps ioutil.WriteFile. If an error occurs, it is fatal to the
+// WriteTestFile wraps os.WriteFile. If an error occurs, it is fatal to the
 // test.
 func WriteTestFile(t *testing.T, filename, contents string) {
 	t.Helper()
@@ -27,7 +26,7 @@ func WriteTestFile(t *testing.T, filename, contents string) {
 		MakeTestDirectory(t, dirPath)
 	}
 
-	err := ioutil.WriteFile(filename, []byte(contents), 0777)
+	err := os.WriteFile(filename, []byte(contents), 0777)
 	if err != nil {
 		t.Fatalf("Unable to write %s: %s", filename, err)
 	}

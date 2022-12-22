@@ -16,17 +16,17 @@ type LogicalSchema struct {
 	Name      string
 	CharSet   string
 	Collation string
-	Creates   map[tengo.ObjectKey]*Statement
-	Alters    []*Statement // Alterations that are run after the Creates
+	Creates   map[tengo.ObjectKey]*tengo.Statement
+	Alters    []*tengo.Statement // Alterations that are run after the Creates
 }
 
 // AddStatement adds the supplied statement into the appropriate data structure
 // within the receiver. This is useful when assembling a new logical schema.
 // An error will be returned if a duplicate CREATE object name/type pair is
 // added.
-func (logicalSchema *LogicalSchema) AddStatement(stmt *Statement) error {
+func (logicalSchema *LogicalSchema) AddStatement(stmt *tengo.Statement) error {
 	switch stmt.Type {
-	case StatementTypeCreate:
+	case tengo.StatementTypeCreate:
 		if origStmt, already := logicalSchema.Creates[stmt.ObjectKey()]; already {
 			return DuplicateDefinitionError{
 				ObjectKey: stmt.ObjectKey(),
@@ -38,7 +38,7 @@ func (logicalSchema *LogicalSchema) AddStatement(stmt *Statement) error {
 		}
 		logicalSchema.Creates[stmt.ObjectKey()] = stmt
 		return nil
-	case StatementTypeAlter:
+	case tengo.StatementTypeAlter:
 		logicalSchema.Alters = append(logicalSchema.Alters, stmt)
 		return nil
 	default:
@@ -55,7 +55,7 @@ func (logicalSchema *LogicalSchema) LowerCaseNames(mode tengo.NameCaseMode) erro
 	case tengo.NameCaseLower: // lower_case_table_names=1
 		// Schema names and table names are forced lowercase in this mode
 		logicalSchema.Name = strings.ToLower(logicalSchema.Name)
-		newCreates := make(map[tengo.ObjectKey]*Statement, len(logicalSchema.Creates))
+		newCreates := make(map[tengo.ObjectKey]*tengo.Statement, len(logicalSchema.Creates))
 		for k, stmt := range logicalSchema.Creates {
 			if k.Type == tengo.ObjectTypeTable {
 				k.Name = strings.ToLower(k.Name)
@@ -79,7 +79,7 @@ func (logicalSchema *LogicalSchema) LowerCaseNames(mode tengo.NameCaseMode) erro
 		// codebase does not support views, so nothing to lowercase here.
 		// However, with this mode we still need to ensure there aren't any duplicate
 		// table names in CREATEs after accounting for case-insensitive table naming.
-		lowerTables := make(map[string]*Statement)
+		lowerTables := make(map[string]*tengo.Statement)
 
 		for k, stmt := range logicalSchema.Creates {
 			if k.Type == tengo.ObjectTypeTable {

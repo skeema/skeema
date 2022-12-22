@@ -1,4 +1,4 @@
-package fs
+package tengo
 
 import (
 	"bufio"
@@ -12,160 +12,17 @@ import (
 
 	"github.com/alecthomas/participle"
 	"github.com/alecthomas/participle/lexer"
-	"github.com/skeema/skeema/internal/tengo"
 )
 
-// StatementType indicates the type of a SQL statement found in a SQLFile.
-// Parsing of types is very rudimentary, which can be advantageous for linting
-// purposes. Otherwise, SQL errors or typos would prevent type detection.
-type StatementType int
+// MalformedSQLError represents a fatal problem parsing or lexing SQL: the input
+// contains an unterminated quote, unterminated multi-line comment, forbidden
+// statement, or a special character outside of a string/identifier/comment.
+type MalformedSQLError string
 
-// Constants enumerating different types of statements
-const (
-	StatementTypeUnknown StatementType = iota
-	StatementTypeNoop                  // entirely whitespace and/or comments
-	StatementTypeCommand               // currently just USE or DELIMITER
-	StatementTypeCreate
-	StatementTypeAlter     // not actually ever parsed yet
-	StatementTypeLexError  // something went horribly wrong, caller should treat as fatal
-	StatementTypeForbidden // disallowed statement such as CREATE TABLE ... SELECT
-	// Other types will be added once they are supported by the package
-)
-
-// Statement represents a logical instruction in a file, consisting of either
-// an SQL statement, a command (e.g. "USE some_database"), or whitespace and/or
-// comments between two separate statements or commands.
-type Statement struct {
-	File            string
-	LineNo          int
-	CharNo          int
-	Text            string // includes trailing Delimiter and newline
-	DefaultDatabase string // only populated if an explicit USE command was encountered
-	Type            StatementType
-	ObjectType      tengo.ObjectType
-	ObjectName      string
-	ObjectQualifier string
-	Error           error  // any problem lexing or parsing this statement, populated when Type is StatementTypeUnknown, StatementTypeLexError, or StatementTypeForbidden
-	Delimiter       string // delimiter in use at the time of statement; not necessarily present in Text though
-	nameClause      string // raw version, potentially with schema name qualifier and/or surrounding backticks
+// Error satisfies the builtin error interface.
+func (mse MalformedSQLError) Error() string {
+	return string(mse)
 }
-
-// Location returns the file, line number, and character number where the
-// statement was obtained from
-func (stmt *Statement) Location() string {
-	if stmt.File == "" && stmt.LineNo == 0 && stmt.CharNo == 0 {
-		return ""
-	}
-	if stmt.File == "" {
-		return fmt.Sprintf("unknown:%d:%d", stmt.LineNo, stmt.CharNo)
-	}
-	return fmt.Sprintf("%s:%d:%d", stmt.File, stmt.LineNo, stmt.CharNo)
-}
-
-// ObjectKey returns a tengo.ObjectKey for the object affected by this
-// statement.
-func (stmt *Statement) ObjectKey() tengo.ObjectKey {
-	return tengo.ObjectKey{
-		Type: stmt.ObjectType,
-		Name: stmt.ObjectName,
-	}
-}
-
-// Schema returns the schema name that this statement impacts.
-func (stmt *Statement) Schema() string {
-	if stmt.ObjectQualifier != "" {
-		return stmt.ObjectQualifier
-	}
-	return stmt.DefaultDatabase
-}
-
-// Body returns the Statement's Text, without any trailing delimiter,
-// whitespace, or qualified schema name.
-func (stmt *Statement) Body() string {
-	body, _ := stmt.SplitTextBody()
-	if stmt.ObjectQualifier == "" || stmt.nameClause == "" {
-		return body
-	}
-	return strings.Replace(body, stmt.nameClause, tengo.EscapeIdentifier(stmt.ObjectName), 1)
-}
-
-// SplitTextBody returns Text with its trailing delimiter and whitespace (if
-// any) separated out into a separate string.
-func (stmt *Statement) SplitTextBody() (body string, suffix string) {
-	if stmt == nil {
-		return "", ""
-	}
-	body = strings.TrimRight(stmt.Text, "\n\r\t ")
-	body = strings.TrimSuffix(body, stmt.Delimiter)
-	body = strings.TrimRight(body, "\n\r\t ")
-	return body, stmt.Text[len(body):]
-}
-
-// isCreateWithBegin is useful for identifying multi-line statements that may
-// have been mis-parsed (for example, due to lack of DELIMITER commands)
-func (stmt *Statement) isCreateWithBegin() bool {
-	return stmt.Type == StatementTypeCreate &&
-		(stmt.ObjectType == tengo.ObjectTypeProc || stmt.ObjectType == tengo.ObjectTypeFunc) &&
-		strings.Contains(strings.ToLower(stmt.Text), "begin")
-}
-
-// CanParse returns true if the supplied string can be parsed as a type of
-// SQL statement understood by this package. The supplied string should NOT
-// have a delimiter. Note that this method returns false for strings that are
-// entirely whitespace and/or comments.
-func CanParse(input string) (bool, error) {
-	sqlStmt := &sqlStatement{}
-	err := nameParser.ParseString(input, sqlStmt)
-	return err == nil && !sqlStmt.forbidden(), err
-}
-
-// ParseStatementsInFile splits the contents of the supplied file path into
-// distinct SQL statements. Statements preserve their whitespace and semicolons;
-// the return value exactly represents the entire file. Some of the returned
-// "statements" may just be comments and/or whitespace, since any comments and/
-// or whitespace between SQL statements gets split into separate Statement
-// values.
-func ParseStatementsInFile(filePath string) (result []*Statement, err error) {
-	tokenizer := newStatementTokenizer(filePath, ";")
-	result, err = tokenizer.statements()
-
-	// As a special case, if a file contains a single routine but no DELIMITER
-	// command, re-parse it as a single statement. This avoids user error from
-	// lack of DELIMITER usage in a multi-statement routine.
-	tryReparse := true
-	var seenRoutine, unknownAfterRoutine bool
-	for _, stmt := range result {
-		switch stmt.Type {
-		case StatementTypeNoop:
-			// nothing to do for StatementTypeNoop, just excluding it from the default case
-		case StatementTypeCreate:
-			if !seenRoutine && stmt.isCreateWithBegin() {
-				seenRoutine = true
-			} else {
-				tryReparse = false
-			}
-		case StatementTypeUnknown:
-			if seenRoutine {
-				unknownAfterRoutine = true
-			}
-		default:
-			tryReparse = false
-		}
-		if !tryReparse {
-			break
-		}
-	}
-	if seenRoutine && unknownAfterRoutine && tryReparse {
-		tokenizer := newStatementTokenizer(filePath, "\000")
-		if result2, err2 := tokenizer.statements(); err2 == nil {
-			result = result2
-			err = nil
-		}
-	}
-	return
-}
-
-//////////// lexing/parsing internals from here to end of this file ////////////
 
 // IMPORTANT: the lexer/parser here is going to be completely replaced in 2023.
 // Implementation is nearly complete in a separate branch. Outside pull requests
@@ -218,9 +75,9 @@ func (st *statementTokenizer) statements() ([]*Statement, error) {
 		st.processLine(line, err == io.EOF)
 	}
 	if st.inQuote != 0 {
-		err = SQLContentsError(fmt.Sprintf("File %s has unterminated quote %c", st.filePath, st.inQuote))
+		err = MalformedSQLError(fmt.Sprintf("File %s has unterminated quote %c", st.filePath, st.inQuote))
 	} else if st.inCComment {
-		err = SQLContentsError(fmt.Sprintf("File %s has unterminated C-style comment", st.filePath))
+		err = MalformedSQLError(fmt.Sprintf("File %s has unterminated C-style comment", st.filePath))
 	} else {
 		err = nil
 	}
@@ -452,15 +309,15 @@ func (ls *lineState) parseStatement() {
 			ls.delimiter = stripAnyQuote(sqlStmt.DelimiterCommand.NewDelimiter)
 		} else if sqlStmt.CreateTable != nil {
 			ls.stmt.Type = StatementTypeCreate
-			ls.stmt.ObjectType = tengo.ObjectTypeTable
+			ls.stmt.ObjectType = ObjectTypeTable
 			name = &sqlStmt.CreateTable.Name
 		} else if sqlStmt.CreateProc != nil {
 			ls.stmt.Type = StatementTypeCreate
-			ls.stmt.ObjectType = tengo.ObjectTypeProc
+			ls.stmt.ObjectType = ObjectTypeProc
 			name = &sqlStmt.CreateProc.Name
 		} else if sqlStmt.CreateFunc != nil {
 			ls.stmt.Type = StatementTypeCreate
-			ls.stmt.ObjectType = tengo.ObjectTypeFunc
+			ls.stmt.ObjectType = ObjectTypeFunc
 			name = &sqlStmt.CreateFunc.Name
 		}
 		if name != nil {
@@ -515,105 +372,3 @@ var (
 		participle.UseLookahead(10),
 	)
 )
-
-// sqlStatement is the top-level struct for the name parser.
-type sqlStatement struct {
-	CreateTable      *createTable      `parser:"@@"`
-	CreateProc       *createProc       `parser:"| @@"`
-	CreateFunc       *createFunc       `parser:"| @@"`
-	UseCommand       *useCommand       `parser:"| @@"`
-	DelimiterCommand *delimiterCommand `parser:"| @@"`
-}
-
-// forbidden returns true if the statement can be parsed, but is of a disallowed
-// form by this package.
-func (sqlStmt *sqlStatement) forbidden() bool {
-	// Forbid CREATE TABLE...SELECT since it also mixes DML, violating the
-	// "workspace tables must be empty" validation upon workspace cleanup
-	if sqlStmt.CreateTable != nil {
-		for _, token := range sqlStmt.CreateTable.Body.Contents {
-			if len(token) == 6 && strings.ToUpper(token) == "SELECT" {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// objectName represents the name of an object, which may or may not be
-// backtick-wrapped, and may or may not have multiple qualifier parts (each
-// also potentially backtick-wrapped).
-type objectName struct {
-	Qualifiers []string `parser:"(@Word '.')*"`
-	Name       string   `parser:"@Word"`
-	Pos        lexer.Position
-	EndPos     lexer.Position
-}
-
-// schemaAndTable interprets the objectName as a table name which may optionally
-// have a schema name qualifier. The first return value is the schema name, or
-// empty string if none was specified; the second return value is the table name.
-func (n *objectName) schemaAndTable() (string, string) {
-	if len(n.Qualifiers) > 0 {
-		return stripBackticks(n.Qualifiers[0]), stripBackticks(n.Name)
-	}
-	return "", stripBackticks(n.Name)
-}
-
-// clause returns the portion of the supplied raw SQL string that makes up the
-// object name clause, including any optional schema name qualifier and
-// backticks, but without any trailing whitespace or trailing comments. If a
-// schema name qualifier is present, whitespace and/or comments may still be
-// present in the middle of the clause though.
-func (n *objectName) clause(statementText string) string {
-	startObjectName := n.Pos.Offset
-	if len(n.Qualifiers) > 0 {
-		startObjectName += len(n.Qualifiers[0])
-	}
-	endObjectName := startObjectName + strings.Index(statementText[startObjectName:n.EndPos.Offset], n.Name) + len(n.Name)
-	return statementText[n.Pos.Offset:endObjectName]
-}
-
-// body slurps all body contents of a statement. Note that "body" and
-// "statement" here are used with respect to the parser internals, and do NOT
-// refer to Statement or Statement.Body().
-type body struct {
-	Contents []string `parser:"(@Word | @String | @Number | @Operator)*"`
-}
-
-// definer represents a user who is the definer of a routine or view.
-type definer struct {
-	User string `parser:"((@String | @Word) '@'"`
-	Host string `parser:"(@String | @Word))"`
-	Func string `parser:"| ('CURRENT_USER' ('(' ')')?)"`
-}
-
-// createTable represents a CREATE TABLE statement.
-type createTable struct {
-	Name objectName `parser:"'CREATE' 'TABLE' ('IF' 'NOT' 'EXISTS')? @@"`
-	Body body       `parser:"@@"`
-}
-
-// createProc represents a CREATE PROCEDURE statement.
-type createProc struct {
-	Definer *definer   `parser:"'CREATE' ('DEFINER' '=' @@)?"`
-	Name    objectName `parser:"'PROCEDURE' @@"`
-	Body    body       `parser:"@@"`
-}
-
-// createFunc represents a CREATE FUNCTION statement.
-type createFunc struct {
-	Definer *definer   `parser:"'CREATE' ('DEFINER' '=' @@)?"`
-	Name    objectName `parser:"'FUNCTION' @@"`
-	Body    body       `parser:"@@"`
-}
-
-// useCommand represents a USE command.
-type useCommand struct {
-	DefaultDatabase string `parser:"'USE' @Word"`
-}
-
-// delimiterCommand represents a DELIMITER command.
-type delimiterCommand struct {
-	NewDelimiter string `parser:"'DELIMITER' (@Word | @String | @Operator+)"`
-}
