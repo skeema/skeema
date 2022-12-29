@@ -11,7 +11,7 @@ func TestCanParse(t *testing.T) {
 	cases := map[string]bool{
 		"CREATE TABLE foo (\n\t`id` int unsigned DEFAULT '0'\n) ;\n": true,
 		"CREATE TABLE   IF  not EXISTS  foo (\n\tid int\n) ;\n":      true,
-		"USE some_db\n\n":              true,
+		"USE some_db\n":                true,
 		"INSERT INTO foo VALUES (';')": false,
 		"bork bork bork":               false,
 		"# hello":                      false,
@@ -196,5 +196,15 @@ func expectedStatements(filePath string) []*Statement {
 		{File: filePath, LineNo: 53, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "use /*wtf*/`analytics`;", Delimiter: ";"},
 		{File: filePath, LineNo: 53, CharNo: 24, DefaultDatabase: "analytics", Type: StatementTypeCreate, ObjectType: ObjectTypeTable, ObjectName: "comments", Text: "CREATE TABLE  if  NOT    eXiStS     `comments` (\n  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,\n  `post_id` bigint(20) unsigned NOT NULL,\n  `user_id` bigint(20) unsigned NOT NULL,\n  `created_at` datetime DEFAULT NULL,\n  `body` text,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n", Delimiter: ";", nameClause: "`comments`"},
 		{File: filePath, LineNo: 61, CharNo: 1, DefaultDatabase: "analytics", Type: StatementTypeCreate, ObjectType: ObjectTypeTable, ObjectName: "subscriptions", Text: "CREATE TABLE subscriptions (id int unsigned not null primary key)", Delimiter: ";", nameClause: "subscriptions"},
+	}
+}
+
+func BenchmarkParseStatementsInFile(b *testing.B) {
+	b.ReportAllocs()
+	for n := 0; n < b.N; n++ {
+		_, err := ParseStatementsInFile("testdata/statements.sql")
+		if err != nil {
+			panic(err)
+		}
 	}
 }

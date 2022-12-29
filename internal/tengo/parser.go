@@ -1,6 +1,7 @@
 package tengo
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/alecthomas/participle/lexer"
@@ -166,4 +167,27 @@ type useCommand struct {
 // delimiterCommand represents a DELIMITER command.
 type delimiterCommand struct {
 	NewDelimiter string `parser:"'DELIMITER' (@Word | @String | @Operator+)"`
+}
+
+func stripBackticks(input string) string {
+	if len(input) < 2 || input[0] != '`' || input[len(input)-1] != '`' {
+		return input
+	}
+	input = input[1 : len(input)-1]
+	return strings.Replace(input, "``", "`", -1)
+}
+
+func stripAnyQuote(input string) string {
+	if len(input) < 2 || input[0] != input[len(input)-1] {
+		return input
+	}
+	if input[0] == '`' {
+		return stripBackticks(input)
+	} else if input[0] != '"' && input[0] != '\'' {
+		return input
+	}
+	quoteStr := input[0:1]
+	input = input[1 : len(input)-1]
+	input = strings.Replace(input, strings.Repeat(quoteStr, 2), quoteStr, -1)
+	return strings.Replace(input, fmt.Sprintf("\\%s", quoteStr), quoteStr, -1)
 }

@@ -327,29 +327,6 @@ func (ls *lineState) parseStatement() {
 	}
 }
 
-func stripBackticks(input string) string {
-	if len(input) < 2 || input[0] != '`' || input[len(input)-1] != '`' {
-		return input
-	}
-	input = input[1 : len(input)-1]
-	return strings.Replace(input, "``", "`", -1)
-}
-
-func stripAnyQuote(input string) string {
-	if len(input) < 2 || input[0] != input[len(input)-1] {
-		return input
-	}
-	if input[0] == '`' {
-		return stripBackticks(input)
-	} else if input[0] != '"' && input[0] != '\'' {
-		return input
-	}
-	quoteStr := input[0:1]
-	input = input[1 : len(input)-1]
-	input = strings.Replace(input, strings.Repeat(quoteStr, 2), quoteStr, -1)
-	return strings.Replace(input, fmt.Sprintf("\\%s", quoteStr), quoteStr, -1)
-}
-
 // Note: this lexer and parser is not intended to line up 1:1 with SQL; its
 // purpose is simply to parse *statement types* and either *object names* or
 // *simple args*. The definition of Word intentionally matches keywords,
