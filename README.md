@@ -1,6 +1,6 @@
 [![Skeema](https://www.skeema.io/img/logo.png)](https://www.skeema.io)
 
-[![build status](https://img.shields.io/github/workflow/status/skeema/skeema/Tests/main)](https://github.com/skeema/skeema/actions)
+[![build status](https://img.shields.io/github/actions/workflow/status/skeema/skeema/tests.yml?branch=main)](https://github.com/skeema/skeema/actions)
 [![code coverage](https://img.shields.io/coveralls/skeema/skeema.svg)](https://coveralls.io/r/skeema/skeema)
 [![downloads](https://img.shields.io/github/downloads/skeema/skeema/total.svg)](https://github.com/skeema/skeema/releases)
 [![latest release](https://img.shields.io/github/release/skeema/skeema.svg)](https://github.com/skeema/skeema/releases)
