@@ -19,7 +19,7 @@ Skeema supports a pull-request-based workflow for schema change submission, revi
 
 This repo is the free open source Community edition of the Skeema CLI. The Community edition supports management of **tables** and **routines** (procs/funcs). Builds are provided for Linux and MacOS.
 
-The paid [Premium edition](https://www.skeema.io/download/) of the Skeema CLI adds support for managing **views** and **triggers**, and also includes a native Windows build, among other improvements.
+The paid [Premium edition](https://www.skeema.io/download/) of the Skeema CLI adds support for managing **views** and **triggers**, and also includes a native **Windows build**, built-in **SSH tunnel** functionality, and many other improvements.
 
 A companion SaaS product, [Skeema Cloud Linter](https://www.skeema.io/docs/install/cloud/), is also available to simplify CI setup for schema repos stored on GitHub.
 
@@ -57,7 +57,7 @@ Support for partitioned tables generously sponsored by [Etsy](https://www.etsy.c
 
 ## License
 
-**Copyright 2022 Skeema LLC**
+**Copyright 2023 Skeema LLC**
 
 ```text
 Licensed under the Apache License, Version 2.0 (the "License");
