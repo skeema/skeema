@@ -1,6 +1,7 @@
 package tengo
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,14 +38,16 @@ func TestParseStatementsInFileSuccess(t *testing.T) {
 	expected := expectedStatements(filePath)
 	if len(statements) != len(expected) {
 		t.Errorf("Expected %d statements, instead found %d", len(expected), len(statements))
-	} else {
-		for n := range statements {
-			if expected[n].Error != nil && statements[n].Error != nil {
-				expected[n].Error = statements[n].Error // for Error, only verify nil/non-nil
-			}
-			if *statements[n] != *expected[n] {
-				t.Errorf("statement[%d] fields did not all match expected values.\nExpected:\n%+v\n\nActual:\n%+v", n, expected[n], statements[n])
-			}
+	}
+	for n := range statements {
+		if n >= len(expected) || n >= len(statements) {
+			break
+		}
+		if expected[n].Error != nil && statements[n].Error != nil {
+			expected[n].Error = statements[n].Error // for Error, only verify nil/non-nil
+		}
+		if *statements[n] != *expected[n] {
+			t.Errorf("statement[%d] fields did not all match expected values.\nExpected:\n%+v\n\nActual:\n%+v", n, expected[n], statements[n])
 		}
 	}
 
@@ -122,6 +125,21 @@ func TestParseStatementsInFileFail(t *testing.T) {
 		t.Error("Correct count of statements found, but incorrect types parsed")
 	}
 
+	// Repeat previous test, but this time using a reader which doesn't support
+	// seeking
+	f, err := os.Open("testdata/nodelimiter1.sql")
+	if err != nil {
+		t.Fatalf("Unexpected error from os.Open: %v", err)
+	}
+	r := bufio.NewReader(f)
+	if statements, err := ParseStatements(r, filePath); err != nil {
+		t.Errorf("Unexpected error parsing nodelimiter1.sql: %s", err)
+	} else if len(statements) != 2 {
+		t.Errorf("Expected file to contain 2 statements, instead found %d", len(statements))
+	} else if statements[0].Type != StatementTypeNoop || statements[1].Type != StatementTypeCreate {
+		t.Error("Correct count of statements found, but incorrect types parsed")
+	}
+
 	// Now try parsing a file that contains a multi-line routine (but no DELIMITER
 	// command) followed by another CREATE, and confirm the parsing is "incorrect"
 	// in the expected way
@@ -140,6 +158,47 @@ func TestParseStatementsInFileFail(t *testing.T) {
 		if !seenUnknown {
 			t.Error("Expected to find a statement that could not be parsed, but did not")
 		}
+	}
+}
+
+func TestParseStatementsInFileBadCreate(t *testing.T) {
+	statements, err := ParseStatementsInFile("testdata/statements-badcreate.sql")
+	if err != nil {
+		t.Fatalf("Unexpected error from ParseStatementsInFile(): %v", err)
+	}
+
+	// All statements should come out as StatementTypeUnknown
+	for _, stmt := range statements {
+		if stmt.Type != StatementTypeUnknown || stmt.ObjectName != "" {
+			t.Errorf("Unexpected field values in statement at %s: %+v", stmt.Location(), stmt)
+		}
+	}
+}
+
+func TestParseStatementsInFileWithBOM(t *testing.T) {
+	statements, err := ParseStatementsInFile("testdata/statements-utf8bom.sql")
+	if err != nil {
+		t.Fatalf("Unexpected error from ParseStatementsInFile(): %v", err)
+	}
+
+	// We should find 2 StatementTypeNoop (one with just the BOM, and then one with
+	// a comment), followed by 2 StatementTypeCreate for the two CREATE TABLEs.
+	// The BOM's noop statement should have a special CharNo of 0, which normally
+	// is not used; the subsequent statement should start at CharNo of 1 as usual.
+	if len(statements) != 4 {
+		t.Fatalf("Unexpected statement count in testdata/statements-utf8bom.sql: expected 4, found %d", len(statements))
+	}
+	if stmt := statements[0]; stmt.Type != StatementTypeNoop || stmt.Text != "\uFEFF" || stmt.LineNo != 1 || stmt.CharNo != 0 {
+		t.Errorf("Unexpected field values in statements[0]: %+v", stmt)
+	}
+	if stmt := statements[1]; stmt.Type != StatementTypeNoop || !strings.HasPrefix(stmt.Text, "-- ") || stmt.LineNo != 1 || stmt.CharNo != 1 {
+		t.Errorf("Unexpected field values in statements[1]: %+v", stmt)
+	}
+	if stmt := statements[2]; stmt.Type != StatementTypeCreate || stmt.ObjectType != ObjectTypeTable || stmt.ObjectName != "one" || stmt.LineNo != 2 || stmt.CharNo != 1 {
+		t.Errorf("Unexpected field values in statements[2]: %+v", stmt)
+	}
+	if stmt := statements[3]; stmt.Type != StatementTypeCreate || stmt.ObjectType != ObjectTypeTable || stmt.ObjectName != "two" || stmt.LineNo != 7 || stmt.CharNo != 1 {
+		t.Errorf("Unexpected field values in statements[3]: %+v", stmt)
 	}
 }
 
@@ -170,7 +229,7 @@ func expectedStatements(filePath string) []*Statement {
 		{File: filePath, LineNo: 1, CharNo: 1, DefaultDatabase: "", Type: StatementTypeNoop, Text: "  -- this file exists for testing statement tokenization of *.sql files\n\n", Delimiter: ";"},
 		{File: filePath, LineNo: 3, CharNo: 1, DefaultDatabase: "", Type: StatementTypeUnknown, Text: "CREATE DATABASE /*!32312 IF NOT EXISTS*/ `product` /*!40100 DEFAULT CHARACTER SET latin1 */;\n", Delimiter: ";"},
 		{File: filePath, LineNo: 4, CharNo: 1, DefaultDatabase: "", Type: StatementTypeNoop, Text: "/* hello */   ", Delimiter: ";"},
-		{File: filePath, LineNo: 4, CharNo: 15, DefaultDatabase: "", Type: StatementTypeCommand, Text: "USE product\n", Delimiter: ";"},
+		{File: filePath, LineNo: 4, CharNo: 15, DefaultDatabase: "", Type: StatementTypeCommand, Text: "USE product # this is a comment\n", Delimiter: ";"},
 		{File: filePath, LineNo: 5, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n", Delimiter: ";"},
 		{File: filePath, LineNo: 6, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: ObjectTypeTable, ObjectName: "users", Text: "CREATE #fun interruption\nTABLE `users` (\n  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,\n  `na``me` varchar(30) NOT NULL DEFAULT 'it\\'s complicated \"escapes''',--\tend of line comment with tab\n  `credits` decimal(9,2) DEFAULT '10.00', --\u3000end of line; \" comment with ideographic space\n  `last_modified` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, # another end-of-line comment;\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `name` (`name`)\n) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n", Delimiter: ";", nameClause: "`users`"},
 		{File: filePath, LineNo: 15, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "          ", Delimiter: ";"},
@@ -184,10 +243,10 @@ func expectedStatements(filePath string) []*Statement {
 		{File: filePath, LineNo: 33, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\t", Delimiter: ";"},
 		{File: filePath, LineNo: 33, CharNo: 2, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "delimiter    \"💩💩💩\"\n", Delimiter: "\000"},
 		{File: filePath, LineNo: 34, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: ObjectTypeTable, ObjectName: "uhoh", Text: "CREATE TABLE uhoh (ummm varchar(20) default 'ok 💩💩💩 cool')💩💩💩\n", Delimiter: "💩💩💩", nameClause: "uhoh"},
-		{File: filePath, LineNo: 35, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "DELIMITER //\n", Delimiter: "\000"},
-		{File: filePath, LineNo: 36, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: ObjectTypeProc, ObjectName: "whatever", Text: "CREATE PROCEDURE whatever(name varchar(10))\nBEGIN\n\tDECLARE v1 INT; -- comment with \"normal space\" in front!\n\tSET v1=loops;--\u00A0comment with `nbsp' in front?!?\n\tWHILE v1 > 0 DO\n\t\tINSERT INTO users (name) values ('\\xF0\\x9D\\x8C\\x86');\n\t\tSET v1 = v1 - (2 / 2); /* testing // testing */\n\tEND WHILE;\nEND\n//\n", Delimiter: "//", nameClause: "whatever"},
-		{File: filePath, LineNo: 46, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "delimiter ;\n", Delimiter: "\000"},
-		{File: filePath, LineNo: 47, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n", Delimiter: ";"},
+		{File: filePath, LineNo: 35, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "DELIMITER $$ -- cool\n", Delimiter: "\000"},
+		{File: filePath, LineNo: 36, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: ObjectTypeProc, ObjectName: "whatever", Text: "CREATE PROCEDURE whatever(name varchar(10))\nBEGIN\n\tDECLARE v1 INT; -- comment with \"normal space\" in front!\n\tSET v1=loops;--\u00A0comment with `nbsp' in front?!?\n\tWHILE v1 > 0 DO\n\t\tINSERT INTO users (name) values ('\\xF0\\x9D\\x8C\\x86');\n\t\tSET v1 = v1 - (2 / 2); /* testing // testing */\n\tEND WHILE;\nEND$$\n", Delimiter: "$$", nameClause: "whatever"},
+		{File: filePath, LineNo: 45, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "delimiter ;\n", Delimiter: "\000"},
+		{File: filePath, LineNo: 46, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n\n", Delimiter: ";"},
 		{File: filePath, LineNo: 48, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: ObjectTypeTable, ObjectName: "tbl1", ObjectQualifier: "uhoh", Text: "CREATE TABLE `uhoh` . tbl1 (id int unsigned not null primary key);\n", Delimiter: ";", nameClause: "`uhoh` . tbl1"},
 		{File: filePath, LineNo: 49, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: ObjectTypeTable, ObjectName: "tbl2", ObjectQualifier: "uhoh", Text: "CREATE TABLE uhoh.tbl2 (id int unsigned not null primary key);\n", Delimiter: ";", nameClause: "uhoh.tbl2"},
 		{File: filePath, LineNo: 50, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: ObjectTypeTable, ObjectName: "tbl3", ObjectQualifier: "uhoh", Text: "CREATE TABLE /*lol*/ uhoh  .  `tbl3` (id int unsigned not null primary key);\n", Delimiter: ";", nameClause: "uhoh  .  `tbl3`"},

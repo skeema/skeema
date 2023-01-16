@@ -278,19 +278,6 @@ func TestParseDirUnterminated(t *testing.T) {
 	}
 }
 
-func TestParseDirInvalidChar(t *testing.T) {
-	// This dir has an invalid operator ("?") which causes the lexer to fail.
-	// It should be handled as a fatal error and the position of the error
-	// should be correct.
-	_, err := ParseDir("testdata/invalidchar", getValidConfig(t))
-	if err == nil {
-		t.Fatal("In dir testdata/invalidchar, expected error from ParseDir(), but instead err is nil")
-	}
-	if msg := err.Error(); !strings.Contains(msg, "testdata/invalidchar/tables.sql:5:15: invalid token '?'") {
-		t.Errorf("Error message did not match expectation; result was %q", msg)
-	}
-}
-
 func TestParseDirUnparsedStatements(t *testing.T) {
 	// This dir contains an INSERT statement among the valid CREATEs. This should
 	// be tracked in dir.UnparsedStatements but isn't a fatal error.
@@ -416,10 +403,9 @@ func TestDirSubdirs(t *testing.T) {
 
 	dir = getDir(t, "testdata")
 	subs, err = dir.Subdirs()
-	// Expect at least 6 parse errors: 3 with unterminated quotes/comments, 1 bad
-	// symlink in cfgsymlinks2, 1 forbidden statement in createselect, 1 lexer
-	// error in invalidchar
-	if len(subs) < 20 || err != nil || countParseErrors(subs) < 6 {
+	// Expect at least 5 parse errors: 3 with unterminated quotes/comments, 1 bad
+	// symlink in cfgsymlinks2, 1 forbidden statement in createselect
+	if len(subs) < 19 || err != nil || countParseErrors(subs) < 5 {
 		t.Errorf("Unexpected return from Subdirs(): %d subs, %d parse errors, err=%v", len(subs), countParseErrors(subs), err)
 	}
 }

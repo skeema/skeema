@@ -1,7 +1,7 @@
   -- this file exists for testing statement tokenization of *.sql files
 
 CREATE DATABASE /*!32312 IF NOT EXISTS*/ `product` /*!40100 DEFAULT CHARACTER SET latin1 */;
-/* hello */   USE product
+/* hello */   USE product # this is a comment
 
 CREATE #fun interruption
 TABLE `users` (
@@ -32,7 +32,7 @@ create definer=foo@'localhost' /*lol*/ FUNCTION analytics.funcdefquote2() RETURN
 create DEFINER = 'foo'@localhost PROCEDURE `procdefquote1`() SELECT 42;
 	delimiter    "💩💩💩"
 CREATE TABLE uhoh (ummm varchar(20) default 'ok 💩💩💩 cool')💩💩💩
-DELIMITER //
+DELIMITER $$ -- cool
 CREATE PROCEDURE whatever(name varchar(10))
 BEGIN
 	DECLARE v1 INT; -- comment with "normal space" in front!
@@ -41,9 +41,9 @@ BEGIN
 		INSERT INTO users (name) values ('\xF0\x9D\x8C\x86');
 		SET v1 = v1 - (2 / 2); /* testing // testing */
 	END WHILE;
-END
-//
+END$$
 delimiter ;
+
 
 CREATE TABLE `uhoh` . tbl1 (id int unsigned not null primary key);
 CREATE TABLE uhoh.tbl2 (id int unsigned not null primary key);

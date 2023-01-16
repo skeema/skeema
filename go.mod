@@ -4,7 +4,6 @@ go 1.18
 
 require (
 	github.com/VividCortex/mysqlerr v1.0.0
-	github.com/alecthomas/participle v0.7.1
 	github.com/fsouza/go-dockerclient v1.7.10
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/jmoiron/sqlx v1.3.4

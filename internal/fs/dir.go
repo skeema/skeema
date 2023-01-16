@@ -742,15 +742,6 @@ func (dir *Dir) parseContents() {
 				// quite rare for a typo to trigger this -- only happens when misspelling
 				// CREATE or the object type for example.
 				dir.UnparsedStatements = append(dir.UnparsedStatements, stmt)
-			} else if stmt.Type == tengo.StatementTypeLexError || stmt.Type == tengo.StatementTypeForbidden {
-				// Statements with lexer errors, meaning invalid characters, are treated as
-				// fatal. This can be indicative of a bug in the grammar, or of a normally-
-				// valid statement which has an illegal typo such as an invalid character
-				// mid-statement.
-				// Statements of unsupported form CREATE TABLE ... SELECT are also treated
-				// as fatal.
-				dir.ParseError = tengo.MalformedSQLError(stmt.Error.Error())
-				return
 			} else if stmt.ObjectQualifier != "" || (stmt.Type == tengo.StatementTypeCommand && len(stmt.Text) > 4 && strings.ToLower(stmt.Text[0:3]) == "use") {
 				// Statements which refer to specific schema names can be problematic, since
 				// this conflicts with the ability to specify the schema name dynamically

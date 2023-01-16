@@ -17,7 +17,6 @@ const (
 	StatementTypeCommand               // currently just USE or DELIMITER
 	StatementTypeCreate
 	StatementTypeAlter     // not actually ever parsed yet
-	StatementTypeLexError  // something went horribly wrong, caller should treat as fatal
 	StatementTypeForbidden // disallowed statement such as CREATE TABLE ... SELECT
 	// Other types will be added once they are supported by the package
 )
@@ -35,7 +34,7 @@ type Statement struct {
 	ObjectType      ObjectType
 	ObjectName      string
 	ObjectQualifier string
-	Error           error  // any problem lexing or parsing this statement, populated when Type is StatementTypeUnknown, StatementTypeLexError, or StatementTypeForbidden
+	Error           error  // any problem lexing or parsing this statement, populated when Type is StatementTypeUnknown or StatementTypeForbidden
 	Delimiter       string // delimiter in use at the time of statement; not necessarily present in Text though
 	nameClause      string // raw version, potentially with schema name qualifier and/or surrounding backticks
 }

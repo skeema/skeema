@@ -3,349 +3,462 @@ package tengo
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/alecthomas/participle"
-	"github.com/alecthomas/participle/lexer"
 )
 
 // MalformedSQLError represents a fatal problem parsing or lexing SQL: the input
-// contains an unterminated quote, unterminated multi-line comment, forbidden
-// statement, or a special character outside of a string/identifier/comment.
-type MalformedSQLError string
+// contains an unterminated quote or unterminated multi-line comment.
+type MalformedSQLError struct {
+	str        string
+	filePath   string
+	lineNumber int
+	colNumber  int
+}
 
 // Error satisfies the builtin error interface.
 func (mse MalformedSQLError) Error() string {
-	return string(mse)
-}
-
-// IMPORTANT: the lexer/parser here is going to be completely replaced in 2023.
-// Implementation is nearly complete in a separate branch. Outside pull requests
-// should avoid touching this code until then.
-type statementTokenizer struct {
-	filePath  string
-	delimiter string // statement delimiter, typically ";" or sometimes "//" for routines
-
-	result []*Statement // completed statements
-	stmt   *Statement   // tracking current (not yet completely tokenized) statement
-	buf    bytes.Buffer // tracking text to eventually put into stmt
-
-	lineNo          int    // human-readable line number, starting at 1
-	inRelevant      bool   // true if current statement contains something other than just whitespace and comments
-	inCComment      bool   // true if in a C-style comment
-	inQuote         rune   // nonzero if inside of a quoted string; value indicates which quote rune
-	defaultDatabase string // tracks most recent USE command
-}
-
-type lineState struct {
-	*statementTokenizer
-	line   string // current line of text, including trailing newline
-	pos    int    // current byte offset within line
-	charNo int    // human-readable column number, starting at 1
-}
-
-// newStatementTokenizer creates a tokenizer for splitting the contents of the
-// file at the supplied path into statements.
-func newStatementTokenizer(filePath, delimiter string) *statementTokenizer {
-	return &statementTokenizer{
-		filePath:  filePath,
-		delimiter: delimiter,
+	var parts []string
+	if mse.filePath != "" {
+		parts = append(parts, "File "+mse.filePath+": ")
 	}
-}
-
-func (st *statementTokenizer) statements() ([]*Statement, error) {
-	file, err := os.Open(st.filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	reader := bufio.NewReader(file)
-
-	for err != io.EOF {
-		var line string
-		line, err = reader.ReadString('\n')
-		if err != nil && err != io.EOF {
-			return st.result, err
-		}
-		st.processLine(line, err == io.EOF)
-	}
-	if st.inQuote != 0 {
-		err = MalformedSQLError(fmt.Sprintf("File %s has unterminated quote %c", st.filePath, st.inQuote))
-	} else if st.inCComment {
-		err = MalformedSQLError(fmt.Sprintf("File %s has unterminated C-style comment", st.filePath))
+	if mse.str != "" {
+		parts = append(parts, mse.str)
 	} else {
+		parts = append(parts, "Malformed SQL")
+	}
+	if mse.lineNumber > 0 {
+		parts = append(parts, fmt.Sprintf(" at line %d", mse.lineNumber))
+		if mse.colNumber > 1 {
+			parts = append(parts, fmt.Sprintf(", column %d", mse.colNumber))
+		}
+	}
+	return strings.Join(parts, "")
+}
+
+// TokenType represents the category of a lexical token.
+type TokenType uint32
+
+// Constants enumerating TokenType values
+const (
+	TokenNone       TokenType = iota // zero value for TokenType
+	TokenWord                        // bare word, either a keyword or an unquoted identifier
+	TokenIdent                       // backtick-wrapped identifier
+	TokenString                      // string wrapped in either single quotes or double quotes
+	TokenNumeric                     // int or float (unsigned; leading - will be treated as symbol by lexer)
+	TokenSymbol                      // single operator or other symbol (always just one rune)
+	TokenExtComment                  // C-style comment with contents beginning with !, +, or M! TODO not really handled well yet
+	TokenDelimiter                   // token equal to current delimiter (whatever that happened to be)
+	TokenFiller                      // mix of whitespaces and/or comments (other than tokenExtComment)
+)
+
+// Lexer is a simple partial SQL lexical tokenizer. It intentionally does not
+// aim to be a complete solution for use in fully parsing SQL. See comment at
+// the top of parser.go for the purpose of this implementation.
+type Lexer struct {
+	reader          *bufio.Reader
+	bufferSize      int          // size of reader's buffer
+	largeData       bytes.Buffer // temporary buffer for large token values
+	err             error
+	delimiter       string
+	delimBytes      []byte
+	delimTricky     bool // true if delimBytes[0] could appear at the start of an unquoted identifier or numeric literal
+	commandMode     bool // true if \n (or \r\n) should emit TokenDelimiter instead of TokenFiller
+	prevTokenFiller bool // true if previous Scan token was filler (whitespaces/comments)
+}
+
+// NewLexer returns a lexer which reads from r. The supplied delimiter string
+// will be used initially, but may be changed by calling ChangeDelimiter.
+func NewLexer(r io.Reader, delimiter string, bufferSize int) *Lexer {
+	lex := &Lexer{
+		reader:     bufio.NewReaderSize(r, bufferSize),
+		bufferSize: bufferSize,
+	}
+	lex.ChangeDelimiter(delimiter)
+	return lex
+}
+
+// Delimiter returns the lexer's current delimiter string.
+func (lex *Lexer) Delimiter() string {
+	return lex.delimiter
+}
+
+// ChangeDelimiter changes the lexer's delimiter string for all subsequent
+// calls to Scan.
+func (lex *Lexer) ChangeDelimiter(newDelimiter string) {
+	lex.delimiter = newDelimiter
+	lex.delimBytes = []byte(newDelimiter)
+	lex.delimTricky = len(lex.delimBytes) > 0 && (lex.delimBytes[0] >= utf8.RuneSelf || isWord(lex.delimBytes[0]) || lex.delimBytes[0] == '-' || lex.delimBytes[0] == '.')
+}
+
+// Scan returns the next token data from the reader, returning the raw data and
+// token type. If an error occurs mid-scan (*after* at least one rune was
+// successfully read), it will be suppressed until the next call to Scan. In
+// other words, if the returned data is non-nil, err will always be nil; and
+// likewise if err is non-nil then data will be nil and typ will be TokenNone.
+// Data returned by Scan() is only valid until the subsequent call to Scan().
+func (lex *Lexer) Scan() (data []byte, typ TokenType, err error) {
+	// Peek ahead in the buffered reader, in a way which only performs an
+	// underlying read if the buffer is less than half full. Peek returns data
+	// directly from the bufio.Reader's underlying buffer, so this is ideal for
+	// minimizing the number of allocations and copies.
+	peekSize := lex.reader.Buffered()
+	if peekSize == 0 && lex.err != nil {
+		return nil, TokenNone, lex.err
+	} else if peekSize < (lex.bufferSize/2) && lex.err == nil {
+		peekSize = lex.bufferSize / 2 // ensure we're doing an underlying read
+	}
+	var p []byte
+	p, err = lex.reader.Peek(peekSize)
+	if len(p) == 0 {
+		if err == nil {
+			err = io.EOF
+		}
+		lex.err = err
+		return nil, TokenNone, lex.err
+	} else if err != nil {
+		lex.err = err
 		err = nil
 	}
-	return st.result, err
-}
 
-func (st *statementTokenizer) processLine(line string, eof bool) {
-	st.lineNo++
+	// Bookkeeping before examining next token
+	lex.largeData.Reset()
 
-	// Trim UTF8 BOM prefix if present at beginning of file
-	if st.lineNo == 1 {
-		line = strings.TrimPrefix(line, "\uFEFF")
+	// Client commands such as USE may optionally be terminated by only a newline
+	// instead of the usual delimiter. Meanwhile the DELIMITER command *must* be
+	// newline-terminated. Newlines will emit TokenDelimiter in these situations.
+	if lex.commandMode {
+		var newlineDelimFoundLen int
+		if p[0] == '\n' {
+			newlineDelimFoundLen = 1
+		} else if p[0] == '\r' && len(p) > 1 && p[1] == '\n' {
+			newlineDelimFoundLen = 2
+		}
+		if newlineDelimFoundLen > 0 {
+			lex.commandMode = false
+			lex.prevTokenFiller = false
+			lex.reader.Discard(newlineDelimFoundLen)
+			return p[0:newlineDelimFoundLen], TokenDelimiter, nil
+		}
 	}
 
-	ls := &lineState{
-		statementTokenizer: st,
-		line:               line,
+	if !lex.prevTokenFiller {
+		if ok, _, _ := isFiller(p); ok {
+			return lex.scanFiller(p)
+		}
+	}
+	lex.prevTokenFiller = false // scanFiller ensures there are never 2 filler tokens in a row
+
+	// Check for delimiter token. This must be done before any other non-filler
+	// comparisons, since delimiter string can consist of any arbitrary rune(s).
+	// A single trailing newline (LF or CRLF), if present, will be included in the
+	// delimiter token.
+	if bytes.HasPrefix(p, lex.delimBytes) {
+		n := len(lex.delimBytes)
+		if len(p) > n+1 && p[n] == '\r' && p[n+1] == '\n' {
+			n += 2
+		} else if len(p) > n && p[n] == '\n' {
+			n++
+		}
+		lex.commandMode = false
+		lex.reader.Discard(n)
+		return p[0:n], TokenDelimiter, nil
 	}
 
-	for ls.pos < len(ls.line) {
-		c, cLen := ls.nextRune()
-		if ls.stmt == nil {
-			ls.beginStatement()
-		}
-		if ls.inCComment {
-			if c == '*' && ls.peekRune() == '/' {
-				ls.nextRune()
-				ls.inCComment = false
+	var sawDecimalPoint, sawE bool // used in building numerics
+	var size int
+	if p[0] < utf8.RuneSelf { // single-byte rune
+		if p[0] == '\'' || p[0] == '"' || p[0] == '`' {
+			return lex.scanString(p)
+		} else if p[0] >= '0' && p[0] <= '9' {
+			typ = TokenNumeric
+		} else if p[0] == '.' { // might be a symbol or might be a float/decimal numeric below 0 without the leading 0
+			if len(p) == 1 || p[1] < '0' || p[1] > '9' {
+				typ = TokenSymbol
+			} else {
+				typ = TokenNumeric
+				sawDecimalPoint = true
 			}
-			continue
-		} else if ls.inQuote > 0 {
-			if c == '\\' {
-				ls.nextRune()
-			} else if c == ls.inQuote {
-				if ls.peekRune() == ls.inQuote {
-					ls.nextRune()
-				} else {
-					ls.inQuote = 0
-				}
-			}
-			continue
+		} else if !isWord(p[0]) {
+			// note: negative numbers are intentionally emitted as '-' symbol token
+			// followed by a separate positive numeric token. Parser can re-combine if
+			// ever needed.
+			typ = TokenSymbol
+		} else {
+			typ = TokenWord
 		}
+		size = 1
+	} else if _, size = utf8.DecodeRune(p); size > 3 {
+		typ = TokenSymbol // 4-byte rune handled as symbol, since cannot be in unquoted identifier and won't be a keyword
+	} else {
+		typ = TokenWord
+	}
 
-		// C-style comment can be multi-line
-		if c == '/' && ls.peekRune() == '*' {
-			ls.inCComment = true
-			ls.nextRune()
-			continue
-		}
+	// Symbols (operators, periods, parens, etc) are always lexed as a single rune.
+	// Parser could combine multi-rune operators if ever needed.
+	if typ == TokenSymbol {
+		lex.reader.Discard(size)
+		return p[0:size], TokenSymbol, nil
+	}
 
-		// Comment until end of line: Just put the rest of the line in the buffer
-		// and move on to next line
-		if c == '#' {
-			ls.buf.WriteString(ls.line[ls.pos:])
-			break
-		}
-		if c == '-' && ls.peekRune() == '-' {
-			ls.nextRune()
-			if unicode.IsSpace(ls.peekRune()) {
-				ls.buf.WriteString(ls.line[ls.pos:])
+	// Remaining situations are handled as TokenWord or TokenNumeric. Care must be
+	// taken to differentiate between the two, since unquoted identifiers can
+	// include digits in any position, as long as the entire identifier isn't
+	// digits.
+
+	// It's unlikely we will need more data than p in legitimate SQL cases, but
+	// handle very long tokens anyway. We'll try to read more data when we don't
+	// have enough for one rune or the delimiter string, whichever is longer.
+	minBytes := 4
+	if len(lex.delimBytes) > minBytes {
+		minBytes = len(lex.delimBytes)
+	}
+
+	var r rune
+	n := size // skip past the first rune, which we already examined
+	for n < len(p) {
+		if p[n] < utf8.RuneSelf { // single-byte rune
+			size = 1
+			if isSpace(p[n]) {
 				break
-			}
-		}
-
-		// When transitioning from whitespace and/or comments, to something that
-		// isn't whitespace or comments, split the whitespace/comments into its own
-		// statement. That way, future file manipulations that change individual
-		// statements won't remove any preceding whitespace or comments.
-		if !ls.inRelevant && !unicode.IsSpace(c) {
-			ls.doneStatement(cLen)
-			ls.inRelevant = true
-		}
-
-		// Commands are special-cases in terms of delimiter vs newline handling: USE
-		// command has optional delimiter, and DELIMITER command has no delimiter
-		// (and requires special care to handle transititions like e.g. going from
-		// a single semicolon delimiter to double-semicolon delimiter!)
-		if bufLen := ls.buf.Len(); (bufLen == 4 || bufLen == 10) && unicode.IsSpace(c) { // potentially USE or DELIMITER followed by whitespace
-			// Treat this line as a command if the current char is a space and the
-			// preceeding line content is "use" or "delimiter", case-insensitive. For
-			// "use", we only do this if there's no delimiter later on the line though,
-			// since it can optionally be present (potentially followed by other
-			// separate statements, which we should not slurp up!)
-			bufStr := strings.ToLower(ls.buf.String()[0 : bufLen-1])
-			if bufStr == "delimiter" || (bufStr == "use" && !ls.containsDelimiter()) {
-				ls.buf.WriteString(ls.line[ls.pos:])
-				if bufStr == "delimiter" {
-					// prevent SplitTextBody from stripping previous delimiter from command arg
-					ls.stmt.Delimiter = "\000"
-				}
-				ls.doneStatement(0)
-				return
-			}
-		}
-
-		delimFirstRune, delimFirstRuneLen := utf8.DecodeRuneInString(st.delimiter)
-		delimRuneCount := utf8.RuneCountInString(st.delimiter)
-		switch c {
-		case '"', '`', '\'':
-			ls.inQuote = c
-		case delimFirstRune:
-			// Multi-rune delimiter: peek ahead to see if we've matched the full
-			// delimiter. If so, slurp up the rest of the delimiter's runes.
-			if delimRuneCount > 1 {
-				if ls.peekRunes(delimRuneCount-1) != st.delimiter[delimFirstRuneLen:] {
+			} else if p[n] == '.' { // decimal point only part of the token if permitted in this position of a numeric token
+				if typ != TokenNumeric || sawDecimalPoint || sawE || len(p) == n+1 || p[n+1] < '0' || p[n+1] > '9' {
 					break
 				}
-				for n := 0; n < delimRuneCount-1; n++ {
-					ls.nextRune()
+				sawDecimalPoint = true
+			} else if !isWord(p[n]) {
+				break
+			} else if typ == TokenNumeric && (p[n] < '0' || p[n] > '9') {
+				if (p[n] == 'e' || p[n] == 'E') && !sawE && len(p) > n+1 && (p[n+1] == '-' || (p[n+1] >= '0' && p[n+1] <= '9')) {
+					sawE = true // allow a single e in a specific allowed position of numerics
+					size++      // skip past that next digit or minus sign as well; simplifies handling for numbers in form 123e-4
+				} else if sawDecimalPoint {
+					break // demical/float numeric token ends upon encountering non-digit, aside from specific 'e'/'E' cases above
+				} else {
+					typ = TokenWord // otherwise it was actually a word (unquoted identifier which happened to contain digits)
 				}
 			}
-			// Slurp up a single trailing newline (LF or CRLF) if present
-			if ls.peekRune() == '\n' {
-				ls.nextRune()
-			} else if ls.peekRunes(2) == "\r\n" {
-				ls.nextRune()
-				ls.nextRune()
+		} else if r, size = utf8.DecodeRune(p[n:]); size > 3 || unicode.IsSpace(r) {
+			break // token definitely ends at 4-byte rune or multibyte/extended space
+		} else if typ == TokenNumeric {
+			if sawDecimalPoint {
+				break // decimal/float numeric token ends upon encountering 2-3 byte rune
 			}
-			ls.doneStatement(0)
+			typ = TokenWord // otherwise consider it a word (unquoted identifier which happened to contain digits)
+		}
+		if lex.delimTricky && bytes.HasPrefix(p[n:], lex.delimBytes) {
+			break
+		}
+
+		n += size
+		if lex.err == nil && len(p)-n < minBytes {
+			p, n = lex.bufferAndPeek(p[0:n]), 0
 		}
 	}
-
-	// handle final statement before EOF, if anything left in buffer
-	if eof {
-		ls.doneStatement(0)
-	}
+	return lex.buildReturn(p[0:n], typ)
 }
 
-// nextRune returns the rune at the current position, along with its length
-// in bytes. It also advances to the next position.
-func (ls *lineState) nextRune() (rune, int) {
-	if ls.pos >= len(ls.line) {
-		return 0, 0
+// ScanBOM peeks at the next 3 bytes of the reader to see if they contain a UTF8
+// byte-order marker. This method should generally only be called on a new lexer
+// prior to any other Scan().
+func (lex *Lexer) ScanBOM() bool {
+	var r rune
+	r, _, lex.err = lex.reader.ReadRune()
+	if r == '\uFEFF' {
+		return true
 	}
-	c, cLen := utf8.DecodeRuneInString(ls.line[ls.pos:])
-	ls.buf.WriteRune(c)
-	ls.pos += cLen
-	ls.charNo++
-	return c, cLen
+	lex.reader.UnreadRune() // harmless even if lex.err is non-nil (UnreadRune will just fail)
+	return false
 }
 
-// peekRune returns the rune at the current position, without advancing.
-func (ls *lineState) peekRune() rune {
-	if ls.pos >= len(ls.line) {
-		return 0
-	}
-	c, _ := utf8.DecodeRuneInString(ls.line[ls.pos:])
-	return c
+// bufferAndPeek is a helper method which copies p into lex.largeData, advances
+// the reader to p's length, and then peeks for more data. If an error occurs,
+// it is stored into lex.err for use in a subsequent Scan. The caller should
+// always ensure lex.err is nil before calling bufferAndPeek.
+func (lex *Lexer) bufferAndPeek(p []byte) []byte {
+	lex.largeData.Write(p)
+	lex.reader.Discard(len(p))
+	p, lex.err = lex.reader.Peek(lex.bufferSize - lex.reader.Buffered())
+	return p
 }
 
-// peekRunes returns a string, made of at most n runes, from the current
-// position without advancing.
-func (ls *lineState) peekRunes(n int) string {
-	pos := ls.pos
-	for n > 0 && pos < len(ls.line) {
-		_, runeLen := utf8.DecodeRuneInString(ls.line[pos:])
-		pos += runeLen
-		n--
+// buildReturn is a helper method for returning values from Scan. It advances
+// the reader to be right after p, and returns data that properly accounts for
+// lex.largeData if non-empty.
+func (lex *Lexer) buildReturn(p []byte, typ TokenType) ([]byte, TokenType, error) {
+	lex.reader.Discard(len(p))
+	if lex.largeData.Len() > 0 { // read a large enough token to need external buffer
+		lex.largeData.Write(p)
+		return lex.largeData.Bytes(), typ, nil
 	}
-	return ls.line[ls.pos:pos]
+	return p, typ, nil
 }
 
-// containsDelimiter returns true if the line contains the current delimiter
-// string beyond the current position.
-func (ls *lineState) containsDelimiter() bool {
-	return strings.Contains(ls.line[ls.pos:], ls.delimiter)
-}
-
-// beginStatement records the starting position of the next (not yet fully
-// tokenized) statement.
-func (ls *lineState) beginStatement() {
-	ls.stmt = &Statement{
-		File:            ls.filePath,
-		LineNo:          ls.lineNo,
-		CharNo:          ls.charNo,
-		DefaultDatabase: ls.defaultDatabase,
-		Delimiter:       ls.delimiter,
-	}
-}
-
-// doneStatement finalizes the current statement by filling in its text
-// field with the buffer contents, optionally excluding the last omitEndBytes
-// bytes of the buffer. It then puts this statement onto the result slice,
-// and cleans up bookkeeping state in preparation for the next statement.
-func (ls *lineState) doneStatement(omitEndBytes int) {
-	bufLen := ls.buf.Len()
-	if ls.stmt == nil || bufLen <= omitEndBytes {
-		return
-	}
-	ls.stmt.Text = fmt.Sprintf("%s", ls.buf.Next(bufLen-omitEndBytes))
-	ls.parseStatement()
-	ls.result = append(ls.result, ls.stmt)
-	ls.stmt = nil
-	if omitEndBytes == 0 {
-		ls.buf.Reset()
-		ls.inRelevant = false
-	} else {
-		ls.beginStatement()
-	}
-}
-
-func (ls *lineState) parseStatement() {
-	txt, _ := ls.stmt.SplitTextBody()
-	if !ls.inRelevant || txt == "" {
-		ls.stmt.Type = StatementTypeNoop
-	} else {
-		sqlStmt := &sqlStatement{}
-		var name *objectName
-		if err := nameParser.ParseString(txt, sqlStmt); err != nil || sqlStmt.forbidden() {
-			if err == nil { // forbidden statement
-				ls.stmt.Type = StatementTypeForbidden
-				ls.stmt.Error = fmt.Errorf("%s: Statements of the form CREATE TABLE...SELECT are not supported", ls.stmt.File)
-			} else if lexErr, ok := err.(*lexer.Error); ok { // lexer error, potentially bad
-				ls.stmt.Type = StatementTypeLexError
-				fileLine, fileCol := ls.stmt.LineNo+lexErr.Tok.Pos.Line-1, lexErr.Tok.Pos.Column
-				if lexErr.Tok.Pos.Line == 1 && ls.stmt.CharNo > 1 { // error is on first line of statement, and statement started mid-line
-					fileCol += ls.stmt.CharNo - 1
-				}
-				ls.stmt.Error = fmt.Errorf("%s:%d:%d: %s", ls.stmt.File, fileLine, fileCol, lexErr.Msg)
-			}
-			// Note we no longer populate ls.stmt.Error in unsupported statement cases,
-			// as setting it to a participle.UnexpectedTokenError isn't particularly useful
-			return
-		} else if sqlStmt.UseCommand != nil {
-			ls.stmt.Type = StatementTypeCommand
-			ls.defaultDatabase = stripBackticks(sqlStmt.UseCommand.DefaultDatabase)
-		} else if sqlStmt.DelimiterCommand != nil {
-			ls.stmt.Type = StatementTypeCommand
-			ls.delimiter = stripAnyQuote(sqlStmt.DelimiterCommand.NewDelimiter)
-		} else if sqlStmt.CreateTable != nil {
-			ls.stmt.Type = StatementTypeCreate
-			ls.stmt.ObjectType = ObjectTypeTable
-			name = &sqlStmt.CreateTable.Name
-		} else if sqlStmt.CreateProc != nil {
-			ls.stmt.Type = StatementTypeCreate
-			ls.stmt.ObjectType = ObjectTypeProc
-			name = &sqlStmt.CreateProc.Name
-		} else if sqlStmt.CreateFunc != nil {
-			ls.stmt.Type = StatementTypeCreate
-			ls.stmt.ObjectType = ObjectTypeFunc
-			name = &sqlStmt.CreateFunc.Name
-		}
-		if name != nil {
-			ls.stmt.ObjectQualifier, ls.stmt.ObjectName = name.schemaAndTable()
-			ls.stmt.nameClause = name.clause(txt)
-		}
-	}
-}
-
-// Note: this lexer and parser is not intended to line up 1:1 with SQL; its
-// purpose is simply to parse *statement types* and either *object names* or
-// *simple args*. The definition of Word intentionally matches keywords,
-// barewords, and backtick-quoted identifiers. The definition of Operator
-// intentionally matches several non-operator symbols in case they are used
-// as delimiters (via the delimiter command).
 var (
-	sqlLexer = lexer.Must(lexer.Regexp(`(#[^\n]*(?:\n|$))` +
-		`|(--([\s\p{Zs}][^\n]*)??(?:\n|$))` +
-		`|(/\*(.|\n)*?\*/)` +
-		`|([\s\p{Zs}]+)` +
-		"|(?P<Word>[0-9a-zA-Z\u0080-\uFFFF$_]+|`(?:[^`]|``)+`)" +
-		`|(?P<String>('(\\\\|\\'|''|[^'])*')|("(\\\\|\\"|""|[^"])*"))` +
-		`|(?P<Number>[-+]?\d*\.?\d+([eE][-+]?\d+)?)` +
-		`|(?P<Operator><>|!=|<=|>=|:=|[-+*/%,.()=<>@;~!^&:|])`,
-	))
-	nameParser = participle.MustBuild(&sqlStatement{},
-		participle.Lexer(sqlLexer),
-		participle.CaseInsensitive("Word"),
-		participle.UseLookahead(10),
-	)
+	needleNewline      = []byte{'\n'}
+	needleCloseComment = []byte{'*', '/'}
 )
+
+// isFiller is a helper method for identifying the start of a span of spaces or
+// comments. The supplied p must have len(1) or more, otherwise isFiller will
+// panic. If p begins with whitespace or marks the beginning of a comment, ok
+// will be true, and prefixLen will indicate how many bytes of the start of p
+// are definitely part of the filler token. In the case of a comment,
+// closerNeedle will be the byte(s) that indicate the end of the comment.
+func isFiller(p []byte) (ok bool, prefixLen int, closerNeedle []byte) {
+	if p[0] >= utf8.RuneSelf { // multi-byte rune at the start of p, or non-utf8 e.g. extended ascii nbsp
+		if r, size := utf8.DecodeRune(p); unicode.IsSpace(r) {
+			return true, size, nil
+		}
+		return false, 0, nil
+	}
+	if isSpace(p[0]) { // efficiently check for single-byte spaces
+		return true, 1, nil
+	} else if p[0] == '#' {
+		return true, 1, needleNewline
+	} else if len(p) == 1 {
+		return false, 0, nil // already know the one byte in p isn't a space, and can't start /* or -- with one byte
+	} else if p[0] == '-' && p[1] == '-' {
+		if r, _ := utf8.DecodeRune(p[2:]); unicode.IsSpace(r) || len(p) == 2 {
+			return true, 2, needleNewline // don't include r's length in prefixLen, since r may already be the terminating newline!
+		}
+		return false, 0, nil // "--" followed by non-space: not a comment, and n marks the beginning of next token
+	} else if p[0] == '/' && p[1] == '*' {
+		return true, 2, needleCloseComment
+	}
+	return false, 0, nil
+}
+
+// scanFiller combines contiguous whitespace and/or comments into a single
+// token.
+func (lex *Lexer) scanFiller(p []byte) (data []byte, typ TokenType, err error) {
+	var n int
+	var needle []byte
+	for n < len(p) {
+		if lex.commandMode && (p[n] == '\n' || (p[n] == '\r' && len(p) > n+1 && p[n+1] == '\n')) {
+			// in command mode, we exclude the newline from the filler token, since it
+			// will become a separate TokenDelimiter. Note that we know p doesn't *begin*
+			// with a newline by virtue of Scan() handling that case before anything else.
+			break
+		}
+		if needle == nil { // not currently in a comment of any type
+			if ok, prefixLen, closerNeedle := isFiller(p[n:]); ok {
+				n += prefixLen
+				needle = closerNeedle
+			} else {
+				break // not starting a new comment, and not a space, so n is the end of the filler token
+			}
+		} else if i := bytes.Index(p[n:], needle); i >= 0 { // in a comment, and the closing needle is found in p
+			n += i
+			if !lex.commandMode || p[n] != '\n' {
+				// include the needle in the filler token, UNLESS it's a newline in command
+				// mode, in which case it gets emitted as a separate TokenDelimiter
+				n += len(needle)
+			}
+			needle = nil // go back to "not in a comment" mode
+		} else if lex.err == nil { // didn't find needle in p, but we can read and buffer more data
+			n = len(p) + 1 - len(needle) // leave some n if multi-byte needle is split between p and next chunk
+		} else {
+			n = len(p) // there's no more data, so no need to worry about a split needle
+		}
+
+		// Unless we're at EOF (or other i/o error), ensure p has at least 6 bytes,
+		// which is enough to hold "--" followed by a 4-byte rune
+		if lex.err == nil && len(p)-n < 6 {
+			p, n = lex.bufferAndPeek(p[0:n]), 0 // move data into external buffer and refill p
+		}
+	}
+	if needle != nil && bytes.Equal(needle, needleCloseComment) {
+		lex.err = &MalformedSQLError{str: "Comment starting with /* is never closed"}
+	}
+	lex.prevTokenFiller = true
+	return lex.buildReturn(p[0:n], TokenFiller)
+}
+
+// scanString scans a quote-wrapped string wrapped in single-quotes, double-
+// quotes, or backticks. The token will be considered TokenIdent in the case of
+// backticks, otherwise TokenString.
+func (lex *Lexer) scanString(p []byte) (data []byte, typ TokenType, err error) {
+	c := p[0]
+	if c == '`' {
+		typ = TokenIdent
+	} else {
+		typ = TokenString
+	}
+
+	var done, skipNext, keepLast bool
+	n := 1 // start right after the opening quote
+	for !done && n < len(p) {
+		if skipNext { // previous byte escaped this one
+			skipNext = false
+		} else if p[n] == '\\' && c != '`' { // backslash-escape only possible for c=='\'' or c=='"'
+			skipNext = true
+		} else if p[n] == c {
+			if n >= len(p)-1 { // not enough data to see if c is escaped by doubling
+				if lex.err == nil { // but there's more data to read
+					keepLast = true // so keep this last byte at the head of the next refill of p
+				} else { // if there isn't more data to read,
+					done = true // then we're done since the last byte was the closing quote symbol
+				}
+			} else if p[n+1] == c { // c is definitely escaped by doubling
+				skipNext = true
+			} else { // c is not escaped
+				done = true
+			}
+		}
+		n++
+		if n == len(p) && lex.err == nil && !done {
+			// keep current last byte of p to become start of new p, to later see if
+			// there's escape-by-doubling or not
+			if keepLast {
+				n--
+				keepLast = false
+			}
+			p, n = lex.bufferAndPeek(p[0:n]), 0
+		}
+	}
+	if !done && lex.err == io.EOF { // never found closing quote
+		var noun string
+		if c == '`' {
+			noun = "Identifier"
+		} else {
+			noun = "String"
+		}
+		lex.err = &MalformedSQLError{str: noun + " is missing closing quote"}
+	}
+	return lex.buildReturn(p[0:n], typ)
+}
+
+type asciiSet [4]uint32 // only supports single-byte runes!
+
+var wordSet = buildASCIISet("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ$_")
+var spaceSet = buildASCIISet(" \t\n\v\f\r")
+
+func buildASCIISet(chars string) (as asciiSet) {
+	for n := 0; n < len(chars); n++ {
+		c := chars[n]
+		if c >= utf8.RuneSelf {
+			panic(errors.New("fs: assertion failed: ascii set cannot contain multibyte rune"))
+		}
+		as[c/32] |= 1 << (c % 32)
+	}
+	return as
+}
+
+// Returns true if b is within range 0-9a-zA-Z$_
+func isWord(b byte) bool {
+	return b < 128 && (wordSet[b/32]&(1<<(b%32))) != 0
+}
+
+// Returns true if b is an ascii whitespace character. This does handle ascii
+// NBSP or NEL as whitespace despite them not being valid utf8.
+func isSpace(b byte) bool {
+	if b < 128 {
+		return (spaceSet[b/32] & (1 << (b % 32))) != 0
+	}
+	return b == '\x85' || b == '\xA0'
+}
