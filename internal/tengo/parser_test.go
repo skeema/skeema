@@ -8,27 +8,6 @@ import (
 	"testing"
 )
 
-func TestCanParse(t *testing.T) {
-	cases := map[string]bool{
-		"CREATE TABLE foo (\n\t`id` int unsigned DEFAULT '0'\n) ;\n": true,
-		"CREATE TABLE   IF  not EXISTS  foo (\n\tid int\n) ;\n":      true,
-		"USE some_db\n":                true,
-		"INSERT INTO foo VALUES (';')": false,
-		"bork bork bork":               false,
-		"# hello":                      false,
-		"CREATE TEMPORARY TABLE foo (\n\tid int\n) ;\n":   false,
-		"CREATE TABLE foo LIKE bar":                       true,
-		"CREATE TABLE foo (like bar)":                     true,
-		"CREATE TABLE foo2 select * from foo":             false,
-		"CREATE TABLE foo2 (id int) AS select * from foo": false,
-	}
-	for input, expected := range cases {
-		if actual, _ := CanParse(input); actual != expected {
-			t.Errorf("CanParse on %s: Expected %t, found %t", input, expected, actual)
-		}
-	}
-}
-
 func TestParseStatementsInFileSuccess(t *testing.T) {
 	filePath := "testdata/statements.sql"
 	statements, err := ParseStatementsInFile(filePath)
@@ -42,9 +21,6 @@ func TestParseStatementsInFileSuccess(t *testing.T) {
 	for n := range statements {
 		if n >= len(expected) || n >= len(statements) {
 			break
-		}
-		if expected[n].Error != nil && statements[n].Error != nil {
-			expected[n].Error = statements[n].Error // for Error, only verify nil/non-nil
 		}
 		if *statements[n] != *expected[n] {
 			t.Errorf("statement[%d] fields did not all match expected values.\nExpected:\n%+v\n\nActual:\n%+v", n, expected[n], statements[n])
@@ -98,6 +74,12 @@ func TestParseStatementsInFileFail(t *testing.T) {
 	}
 	if _, err := ParseStatementsInFile(filePath); err == nil {
 		t.Error("Expected to get an error about unterminated quote, but err was nil")
+	} else if msg := err.Error(); !strings.Contains(msg, "openbacktick.sql") {
+		t.Errorf("Expected error message to include file path, but it did not: %s", msg)
+	} else if mse, ok := err.(*MalformedSQLError); !ok {
+		t.Errorf("Expected error to be a *MalformedSQLError, instead type is %T", err)
+	} else if mse.lineNumber != 59 || mse.colNumber != 19 {
+		t.Errorf("Unexpected line/col numbers in error: expected line 59, column 19; instead found line %d, column %d", mse.lineNumber, mse.colNumber)
 	}
 
 	contents = strings.Replace(origContents, "use /*wtf*/`analytics`", "use /*wtf`analytics", 1)
@@ -199,6 +181,33 @@ func TestParseStatementsInFileWithBOM(t *testing.T) {
 	}
 	if stmt := statements[3]; stmt.Type != StatementTypeCreate || stmt.ObjectType != ObjectTypeTable || stmt.ObjectName != "two" || stmt.LineNo != 7 || stmt.CharNo != 1 {
 		t.Errorf("Unexpected field values in statements[3]: %+v", stmt)
+	}
+}
+
+func TestParseStatementsInString(t *testing.T) {
+	if stmts, err := ParseStatementsInString("/* hello */\nCREATE TABLE foo (id int);\n"); err != nil || len(stmts) != 2 {
+		t.Errorf("Unexpected return from ParseStatementsInString: %+v, %v", stmts, err)
+	}
+	if stmts, err := ParseStatementsInString("insert into foo values ('unexpected eof"); err == nil || len(stmts) != 1 || stmts[0].Type != StatementTypeUnknown {
+		t.Errorf("Unexpected return from ParseStatementsInString: %+v, %v", stmts, err)
+	}
+	if stmts, err := ParseStatementsInString(""); err != nil || len(stmts) != 0 {
+		t.Errorf("Unexpected return from ParseStatementsInString: %+v, %v", stmts, err)
+	}
+}
+
+func TestParseStatementInString(t *testing.T) {
+	cases := map[string]ObjectKey{
+		"":      {},
+		"x y z": {},
+		"/* hello */\nCREATE TABLE foo (id int);\n":                {},
+		"CREATE TABLE foo (id int);\n":                             {Type: ObjectTypeTable, Name: "foo"},
+		"CREATE TABLE foo (id int);\nCREATE TABLE bar (id int);\n": {Type: ObjectTypeTable, Name: "foo"},
+	}
+	for input, expected := range cases {
+		if actual := ParseStatementInString(input).ObjectKey(); actual != expected {
+			t.Errorf("For input %q, expected resulting statement to have ObjectKey %s, instead found %s", input, expected, actual)
+		}
 	}
 }
 

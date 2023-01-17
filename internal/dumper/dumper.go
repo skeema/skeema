@@ -100,8 +100,8 @@ func modifiedFiles(schema *tengo.Schema, dir *fs.Dir, opts Options) []*fs.SQLFil
 			}
 		}
 
-		if ok, err := tengo.CanParse(canonicalCreate); !ok {
-			log.Errorf("%s is unexpectedly not able to be parsed by Skeema\nPlease file an issue report at https://github.com/skeema/skeema/issues with this information:\nError value=%v", key, err)
+		if tengo.ParseStatementInString(canonicalCreate).ObjectKey() != key {
+			log.Errorf("%s is unexpectedly not able to be parsed by Skeema\nPlease file an issue report at https://github.com/skeema/skeema/issues with the problematic statement, redacting sensitive portions if necessary:\n%s", key, canonicalCreate)
 			log.Error("Unfortunately this error is fatal and prevents Skeema from being usable in your environment until this is resolved.")
 			return nil
 		}

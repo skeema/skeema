@@ -111,25 +111,21 @@ func ParseStatementsInString(s string) (result []*Statement, err error) {
 	return ParseStatements(r, "")
 }
 
-// CanParse returns true if the supplied string can be parsed as a type of
-// SQL statement understood by this package. The supplied string should not have
-// a delimiter, nor any leading whitespace or comments.
-func CanParse(input string) (bool, error) {
-	r := strings.NewReader(input)
-	statements, err := parseStatements(r, "", "\000")
-	if err != nil {
-		return false, err
-	} else if len(statements) != 1 {
-		return false, fmt.Errorf("found %d statements", len(statements))
+// ParseStatementInString returns the first Statement that can be found in its
+// input. If the input is an empty string, and/or if an error occurs, then a
+// zero-valued Statement will be returned, rather than a nil Statement. Note
+// that the zero value of its Type field is StatementTypeUnknown.
+// Since leading whitespace and/or comments are considered a separate
+// "statement", be aware that this will mask any subsequent "real" statements
+// later in the string.
+// For situations that require a specific error value, or the ability to detect
+// zero or 2+ statements in the input, use ParseStatementsInString instead.
+func ParseStatementInString(s string) *Statement {
+	statements, err := ParseStatementsInString(s)
+	if err == nil && len(statements) > 0 {
+		return statements[0]
 	}
-	stmt := statements[0]
-	if stmt.Type == StatementTypeUnknown || stmt.Type == StatementTypeNoop || stmt.Type == StatementTypeForbidden {
-		if stmt.Error == nil {
-			return false, fmt.Errorf("statement type %d", stmt.Type)
-		}
-		return false, stmt.Error
-	}
-	return true, nil
+	return &Statement{}
 }
 
 type parser struct {
@@ -584,14 +580,12 @@ func processCreateTable(p *parser, tokens []Token) (*Statement, error) {
 
 	matched, tokens := p.skipUntilSequence(tokens, "select")
 	if matched != nil {
-		p.stmt.Type = StatementTypeForbidden
-		p.stmt.Error = MalformedSQLError{
+		p.err = MalformedSQLError{
 			str:        "Statements of the form CREATE TABLE...SELECT are not supported",
 			filePath:   p.filePath,
 			lineNumber: p.lineNumber,
 			colNumber:  p.colNumber,
 		}
-		p.err = p.stmt.Error
 	}
 
 	return processUntilDelimiter(p, tokens)
