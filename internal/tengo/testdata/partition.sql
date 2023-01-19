@@ -37,10 +37,10 @@ PARTITION BY LIST (`id`) (
 );
 
 CREATE TABLE plistcol (
-	first int,
-	second int
+	a int,
+	b int
 )
-PARTITION BY LIST COLUMNS(`first`,second) (
+PARTITION BY LIST COLUMNS(`a`,b) (
 	PARTITION p0 VALUES IN( (0,0), (NULL,NULL) ),
 	PARTITION p1 VALUES IN( (0,1), (0,2), (0,3), (1,1), (1,2) ),
 	PARTITION p2 VALUES IN( (1,0), (2,0), (2,1), (3,0), (3,1) ),

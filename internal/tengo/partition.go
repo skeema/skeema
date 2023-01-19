@@ -82,7 +82,13 @@ func (tp *TablePartitioning) partitionBy(flavor Flavor) string {
 		method = "LIST  COLUMNS"
 	}
 
-	if (tp.Method == "RANGE COLUMNS" || strings.HasSuffix(tp.Method, "KEY")) && !flavor.Min(FlavorMariaDB102) {
+	// MySQL (any version) and MariaDB 10.1 (but not later) normally omit the
+	// backticks around column names in the partitioning expression, if the method
+	// is RANGE COLUMNS, LIST COLUMNS, KEY, or LINEAR KEY.
+	// TODO handle edge cases where the backticks are still present: column name is
+	// a keyword (even if not a *reserved* word) or contains special characters.
+	// See https://github.com/skeema/skeema/issues/199
+	if (strings.HasSuffix(tp.Method, "COLUMNS") || strings.HasSuffix(tp.Method, "KEY")) && !flavor.Min(FlavorMariaDB102) {
 		expr = strings.Replace(expr, "`", "", -1)
 	}
 
@@ -151,6 +157,10 @@ type Partition struct {
 // Definition returns this partition's definition clause, for use as part of a
 // DDL statement.
 func (p *Partition) Definition(flavor Flavor, method string) string {
+	// MariaDB 10.2+ wraps partition names in backticks.
+	// TODO MySQL (any version) and MariaDB 10.1 will also wrap a partition name in
+	// backticks if the name is a keyword (even if not a *reserved* word) or has
+	// special characters. See https://github.com/skeema/skeema/issues/175
 	name := p.Name
 	if flavor.Min(FlavorMariaDB102) {
 		name = EscapeIdentifier(name)
