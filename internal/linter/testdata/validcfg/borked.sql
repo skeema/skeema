@@ -16,5 +16,7 @@ CREATE TABLE borked3 (
 	PRIMARY KEY (doesntexist)
 );
 
-# Expect this to go in Result.Annotations as warning since it cannot be parsed
-INSERT INTO whatever (name) VALUES ("hello");
+
+# linter module does not create Annotations for unparsed statements; callers
+# handle this separately, so this won't generate an annotation
+CALL my_proc(123456);

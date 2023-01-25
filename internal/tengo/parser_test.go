@@ -188,7 +188,7 @@ func TestParseStatementsInString(t *testing.T) {
 	if stmts, err := ParseStatementsInString("/* hello */\nCREATE TABLE foo (id int);\n"); err != nil || len(stmts) != 2 {
 		t.Errorf("Unexpected return from ParseStatementsInString: %+v, %v", stmts, err)
 	}
-	if stmts, err := ParseStatementsInString("insert into foo values ('unexpected eof"); err == nil || len(stmts) != 1 || stmts[0].Type != StatementTypeUnknown {
+	if stmts, err := ParseStatementsInString("LOAD XML LOCAL INFILE 'unexpected-eof"); err == nil || len(stmts) != 1 || stmts[0].Type != StatementTypeUnknown {
 		t.Errorf("Unexpected return from ParseStatementsInString: %+v, %v", stmts, err)
 	}
 	if stmts, err := ParseStatementsInString(""); err != nil || len(stmts) != 0 {

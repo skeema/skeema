@@ -342,7 +342,7 @@ func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
 
 	// Files with SQL statements unsupported by this package should yield a
 	// warning, resulting in CodeDifferencesFound
-	fs.WriteTestFile(t, commentsFilePath, "INSERT INTO foo (col1, col2) VALUES (123, 456)")
+	fs.WriteTestFile(t, commentsFilePath, "CALL some_proc(123, 234)")
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint")
 
 	// Directories that have invalid options should yield CodeBadConfig
@@ -415,7 +415,7 @@ func (s SkeemaIntegrationSuite) TestFormatHandler(t *testing.T) {
 
 	// Files with SQL statements unsupported by this package should not affect
 	// exit code
-	fs.WriteTestFile(t, commentsFilePath, "INSERT INTO foo (col1, col2) VALUES (123, 456)")
+	fs.WriteTestFile(t, commentsFilePath, "CALL some_proc(123, 234)")
 	s.handleCommand(t, CodeSuccess, ".", "skeema format --debug")
 
 	// Directories that have invalid options should yield CodeBadConfig

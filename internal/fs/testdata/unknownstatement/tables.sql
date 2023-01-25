@@ -4,11 +4,11 @@ CREATE TABLE one (
 	PRIMARY KEY (id)
 );
 
-INSERT INTO one (id, name) VALUES
-(1, "Barclay"),
-(5, "Barry"),
-(123, "Bert"),
-(789, "Bort");
+VALUES
+ROW(1, "Barclay"),
+ROW(5, "Barry"),
+ROW(123, "Bert"),
+ROW(789, "Bort");
 
 CREATE TABLE `two` ( /* this is another table */
 	`id` int unsigned NOT NULL,
