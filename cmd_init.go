@@ -126,13 +126,20 @@ func createHostDir(cfg *mybase.Config) (*fs.Dir, error) {
 		hostDirName = fs.HostDefaultDirName(cfg.Get("host"), cfg.GetIntOrDefault("port"))
 	}
 
-	dir, err := fs.ParseDir(".", cfg)
+	// Attempt to create the dir, without erroring if it already exists. Then parse
+	// it and confirm it is sufficiently empty/usable.
+	if err := os.MkdirAll(hostDirName, 0777); err != nil {
+		return nil, NewExitValue(CodeCantCreate, "Cannot create dir %s: %v", hostDirName, err)
+	}
+	hostDir, err := fs.ParseDir(hostDirName, cfg)
 	if err != nil {
 		return nil, err
-	}
-	hostDir, err := dir.CreateSubdir(hostDirName, nil) // nil because we'll set up the option file later
-	if err != nil {
-		return nil, NewExitValue(CodeBadConfig, err.Error())
+	} else if hostDir.OptionFile != nil {
+		return nil, NewExitValue(CodeBadConfig, "Cannot use dir %s: already has .skeema file", hostDir.Path)
+	} else if len(hostDir.SQLFiles) > 0 {
+		return nil, NewExitValue(CodeBadConfig, "Cannot use dir %s: already contains *.sql files", hostDir.Path)
+	} else if _, ok := hostDir.Config.Source("schema").(*mybase.File); ok {
+		return nil, NewExitValue(CodeBadConfig, "Cannot use dir %s: an ancestor option file defines schema option", hostDir.Path)
 	}
 	return hostDir, nil
 }
@@ -208,13 +215,21 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *fs.Dir, makeSubdir bool) erro
 	var dir *fs.Dir
 	var err error
 	if makeSubdir {
-		optionFile := mybase.NewFile(filepath.Join(parentDir.Path, s.Name), ".skeema")
+		if err = os.MkdirAll(filepath.Join(parentDir.Path, s.Name), 0777); err != nil {
+			return NewExitValue(CodeCantCreate, "Unable to create subdirectory for schema %s: %v", s.Name, err)
+		}
+		dir, err = parentDir.Subdir(s.Name)
+		if err != nil {
+			return err
+		} else if len(dir.SQLFiles) > 0 {
+			return NewExitValue(CodeCantCreate, "Cannot use dir %s for schema %s: already contains *.sql files", dir.Path, s.Name)
+		}
+		optionFile := mybase.NewFile(dir.Path, ".skeema")
 		optionFile.SetOptionValue("", "schema", s.Name)
 		optionFile.SetOptionValue("", "default-character-set", s.CharSet)
 		optionFile.SetOptionValue("", "default-collation", s.Collation)
-		dir, err = parentDir.CreateSubdir(s.Name, optionFile)
-		if err != nil {
-			return NewExitValue(CodeCantCreate, "Unable to create subdirectory for schema %s: %s", s.Name, err)
+		if err = dir.CreateOptionFile(optionFile); err != nil {
+			return NewExitValue(CodeCantCreate, "Cannot use dir %s for schema %s: %v", dir.Path, s.Name, err)
 		}
 	} else {
 		dir = parentDir

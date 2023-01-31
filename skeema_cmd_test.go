@@ -88,21 +88,26 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	mybase.AssertFileSetsOptions(t, dir.OptionFile, "host", "port", "connect-options")
 	mybase.AssertFileMissingOptions(t, dir.OptionFile, "schema", "default-character-set", "default-collation")
 
-	// init should fail if a parent dir has an invalid .skeema file
+	// init should fail if a parent dir (or working directory) has an invalid .skeema file
 	fs.MakeTestDirectory(t, "hasbadoptions")
 	fs.WriteTestFile(t, "hasbadoptions/.skeema", "invalid file will not parse")
 	s.handleCommand(t, CodeBadConfig, "hasbadoptions", "skeema init -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
 
-	// init should fail if the --dir specifies an existing non-directory file; or
-	// if the --dir already contains a subdir matching a schema name; or if the
-	// --dir already contains a .sql file and --schema was used to only do 1 level
+	// init should fail in any of various permutations where a non-directory file
+	// is present where a dir needs to be created; or if an existing dir contains
+	// a .skeema file and/or one or more *.sql files
 	fs.WriteTestFile(t, "nondir", "foo bar")
-	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir nondir -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+	s.handleCommand(t, CodeCantCreate, ".", "skeema init --dir nondir -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+	fs.WriteTestFile(t, "okdir/product", "foo bar")
+	s.handleCommand(t, CodeCantCreate, ".", "skeema init --dir okdir -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
 	fs.WriteTestFile(t, "alreadyexists/product/.skeema", "schema=product\n")
 	s.handleCommand(t, CodeCantCreate, ".", "skeema init --dir alreadyexists -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
-	fs.MakeTestDirectory(t, "hassql")
+	fs.WriteTestFile(t, "alreadyexists2/product/foo.sql", "CREATE TABLE foo (id int);\n")
+	s.handleCommand(t, CodeCantCreate, ".", "skeema init --dir alreadyexists2 -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
 	fs.WriteTestFile(t, "hassql/foo.sql", "foo")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir hassql --schema product -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+	fs.WriteTestFile(t, "hasoptionfile/.skeema", "# comment")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir hasoptionfile --schema product -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
 }
 
 func (s SkeemaIntegrationSuite) TestAddEnvHandler(t *testing.T) {

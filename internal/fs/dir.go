@@ -114,66 +114,35 @@ func (dir *Dir) Subdirs() ([]*Dir, error) {
 	result := make([]*Dir, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() && entry.Name()[0] != '.' {
-			sub := &Dir{
-				Path:     filepath.Join(dir.Path, entry.Name()),
-				Config:   dir.Config.Clone(),
-				repoBase: dir.repoBase,
+			if sub, _ := dir.Subdir(entry.Name()); sub != nil {
+				result = append(result, sub)
 			}
-			sub.parseContents()
-			result = append(result, sub)
 		}
 	}
 	return result, nil
 }
 
-// CreateSubdir creates a subdirectory with the supplied name and optional
-// config file. If the directory already exists, it is an error if it already
-// contains any *.sql files or a .skeema file.
-func (dir *Dir) CreateSubdir(name string, optionFile *mybase.File) (*Dir, error) {
-	dirPath := filepath.Join(dir.Path, name)
-	if dir.OptionFile != nil && dir.OptionFile.SomeSectionHasOption("schema") {
-		return nil, ConfigErrorf("Cannot use dir %s: parent option file %s defines schema option", dirPath, dir.OptionFile)
-	} else if _, ok := dir.Config.Source("schema").(*mybase.File); ok {
-		return nil, ConfigErrorf("Cannot use dir %s: an ancestor option file defines schema option", dirPath)
-	}
-
-	if fi, err := os.Stat(dirPath); os.IsNotExist(err) {
-		err = os.MkdirAll(dirPath, 0777)
-		if err != nil {
-			return nil, fmt.Errorf("Unable to create directory %s: %s", dirPath, err)
-		}
-	} else if err != nil {
-		return nil, err
-	} else if !fi.IsDir() {
-		return nil, fmt.Errorf("Path %s already exists but is not a directory", dirPath)
-	} else {
-		// Existing dir: confirm it doesn't already have .skeema or *.sql files
-		entries, err := os.ReadDir(dirPath)
-		if err != nil {
-			return nil, err
-		}
-		for _, entry := range entries {
-			if entry.Name() == ".skeema" {
-				return nil, fmt.Errorf("Cannot use dir %s: already has .skeema file", dirPath)
-			} else if strings.HasSuffix(entry.Name(), ".sql") {
-				return nil, fmt.Errorf("Cannot use dir %s: Already contains *.sql files", dirPath)
-			}
-		}
-	}
-
-	if optionFile != nil {
-		optionFile.Dir = dirPath
-		if err := optionFile.Write(false); err != nil {
-			return nil, fmt.Errorf("Cannot use dir %s: Unable to write to %s: %s", dirPath, optionFile.Path(), err)
-		}
-	}
-
+// Subdir returns a specific subdirectory of dir by name. If the named
+// subdirectory does not exist or is a non-directory, then a nil *Dir will be
+// returned alongside an error. In some other error conditions (such as a
+// problem parsing the directory's .skeema file or *.sql files), a non-nil *Dir
+// may be returned even alongside a non-nil error.
+func (dir *Dir) Subdir(name string) (*Dir, error) {
 	sub := &Dir{
-		Path:     dirPath,
+		Path:     filepath.Join(dir.Path, name),
 		Config:   dir.Config.Clone(),
 		repoBase: dir.repoBase,
 	}
 	sub.parseContents()
+	if sub.ParseError != nil {
+		// See if the parse error was caused by a more fundamental problem with the
+		// path; in these cases don't bother returning a non-nil Dir
+		if fi, err := os.Stat(sub.Path); err != nil {
+			return nil, err
+		} else if !fi.IsDir() {
+			return nil, fmt.Errorf("Path %s is not a directory", sub.Path)
+		}
+	}
 	return sub, sub.ParseError
 }
 
@@ -181,7 +150,7 @@ func (dir *Dir) CreateSubdir(name string, optionFile *mybase.File) (*Dir, error)
 // already has an option file.
 func (dir *Dir) CreateOptionFile(optionFile *mybase.File) (err error) {
 	if dir.OptionFile != nil {
-		return fmt.Errorf("Directory %s already has an option file", dir)
+		return fmt.Errorf("directory %s already has .skeema file", dir)
 	}
 	optionFile.Dir = dir.Path
 	if err := optionFile.Write(false); err != nil {
