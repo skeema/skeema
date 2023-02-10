@@ -74,13 +74,13 @@ func (t *Target) logApplyEnd(result Result) {
 	}
 }
 
-func (t *Target) processDDL(ddls []*DDLStatement, printer *Printer) (skipCount int) {
-	for i, ddl := range ddls {
-		printer.printDDL(ddl)
+func (t *Target) processSQL(stmts []PlannedStatement, printer Printer) (skipCount int) {
+	for i, stmt := range stmts {
+		printer.Print(stmt)
 		if !t.dryRun() {
-			if err := ddl.Execute(); err != nil {
-				log.Errorf("Error running DDL on %s %s: %s", t.Instance, t.SchemaName, err)
-				skipped := len(ddls) - i
+			if err := stmt.Execute(); err != nil {
+				log.Errorf("Error running SQL statement on %s %s: %s\nFull SQL statement: %s", t.Instance, t.SchemaName, err, stmt.Statement())
+				skipped := len(stmts) - i
 				skipCount += skipped
 				if skipped > 1 {
 					log.Warnf("Skipping %d remaining operations for %s %s due to previous error", skipped-1, t.Instance, t.SchemaName)

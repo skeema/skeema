@@ -221,27 +221,10 @@ func getConnectParams(diff tengo.ObjectDiff, config *mybase.Config) string {
 	return ""
 }
 
-// IsShellOut returns true if the DDL is to be executed via shelling out to an
-// external binary, or false if the DDL represents SQL to be executed directly
-// via a standard database connection.
-func (ddl *DDLStatement) IsShellOut() bool {
-	return (ddl.shellOut != nil)
-}
-
-// String returns a string representation of ddl. If an external command is in
-// use, the returned string will be prefixed with "\!", the MySQL CLI command
-// shortcut for "system" shellout.
-func (ddl *DDLStatement) String() string {
-	if ddl.IsShellOut() {
-		return fmt.Sprintf("\\! %s\n", ddl.shellOut)
-	}
-	return fs.AddDelimiter(ddl.stmt)
-}
-
 // Execute runs the DDL statement, either by running a SQL query against a DB,
 // or shelling out to an external program, as appropriate.
 func (ddl *DDLStatement) Execute() error {
-	if ddl.IsShellOut() {
+	if ddl.shellOut != nil {
 		return ddl.shellOut.Run()
 	}
 	db, err := ddl.instance.CachedConnectionPool(ddl.schemaName, ddl.connectParams)
@@ -250,4 +233,23 @@ func (ddl *DDLStatement) Execute() error {
 	}
 	_, err = db.Exec(ddl.stmt)
 	return err
+}
+
+// Statement returns a string representation of ddl. If an external command is
+// in use, the returned string will be prefixed with "\!", the MySQL CLI command
+// shortcut for "system" shellout.
+func (ddl *DDLStatement) Statement() string {
+	if ddl.shellOut != nil {
+		return fmt.Sprintf("\\! %s\n", ddl.shellOut)
+	}
+	return fs.AddDelimiter(ddl.stmt)
+}
+
+// ClientState returns a representation of the client state which would be
+// used in execution of the statement.
+func (ddl *DDLStatement) ClientState() ClientState {
+	return ClientState{
+		InstanceName: ddl.instance.String(),
+		SchemaName:   ddl.schemaName,
+	}
 }

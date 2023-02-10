@@ -1,5 +1,5 @@
 // Package applier obtains diffs between the fs and db versions of a schema,
-// and can handle execution of the generated DDL.
+// and can handle execution of the generated SQL.
 package applier
 
 import (
@@ -10,6 +10,22 @@ import (
 	"github.com/skeema/skeema/internal/linter"
 	"github.com/skeema/skeema/internal/tengo"
 )
+
+// ClientState provides information on where and how a SQL statement would be
+// executed. It is intended for use in display purposes.
+type ClientState struct {
+	InstanceName string
+	SchemaName   string
+	// Eventually may include additional state such as session vars
+}
+
+// PlannedStatement represents a SQL statement that is targeted for a specific
+// database instance and schema name.
+type PlannedStatement interface {
+	Execute() error
+	Statement() string
+	ClientState() ClientState
+}
 
 // Result stores the result of applying an individual target, or a combined
 // summary of multiple targets.
@@ -46,8 +62,8 @@ func (r Result) Summary() string {
 }
 
 // ApplyTarget generates the diff for the supplied target, prints the resulting
-// DDL, and executes the DDL if this isn't a dry-run.
-func ApplyTarget(t *Target, printer *Printer) (Result, error) {
+// SQL, and executes the SQL if this isn't a dry-run.
+func ApplyTarget(t *Target, printer Printer) (Result, error) {
 	var result Result
 
 	schemaFromInstance, err := t.SchemaFromInstance()
@@ -80,11 +96,11 @@ func ApplyTarget(t *Target, printer *Printer) (Result, error) {
 		return result, err
 	}
 
-	// Build DDLStatements for each ObjectDiff, handling pre-execution errors
+	// Build PlannedStatement for each ObjectDiff, handling pre-execution errors
 	// accordingly. Also track ObjectKeys for modified objects, for subsequent
 	// use in linting.
 	objDiffs := diff.ObjectDiffs()
-	ddls := make([]*DDLStatement, 0, len(objDiffs))
+	stmts := make([]PlannedStatement, 0, len(objDiffs))
 	keys := make([]tengo.ObjectKey, 0, len(objDiffs))
 	for _, objDiff := range objDiffs {
 		ddl, err := NewDDLStatement(objDiff, mods, t)
@@ -93,7 +109,7 @@ func ApplyTarget(t *Target, printer *Printer) (Result, error) {
 		}
 		result.Differences = true
 		if err == nil {
-			ddls = append(ddls, ddl)
+			stmts = append(stmts, ddl)
 			keys = append(keys, objDiff.ObjectKey())
 		} else if unsupportedErr, ok := err.(*tengo.UnsupportedDiffError); ok {
 			result.UnsupportedCount++
@@ -132,8 +148,8 @@ func ApplyTarget(t *Target, printer *Printer) (Result, error) {
 		}
 	}
 
-	// Print DDL; if not dry-run, execute it; final logging; return result
-	result.SkipCount += t.processDDL(ddls, printer)
+	// Print SQL; if not dry-run, execute it; final logging; return result
+	result.SkipCount += t.processSQL(stmts, printer)
 	t.logApplyEnd(result)
 	return result, nil
 }

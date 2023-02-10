@@ -105,15 +105,15 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 		if err != nil {
 			t.Errorf("Unexpected DDLStatement error: %s", err)
 		}
-		if !ddl.IsShellOut() {
+		if ddl.shellOut == nil {
 			t.Fatalf("Expected this configuration to result in all DDLs being shellouts, but %v is not", ddl)
 		}
 		expected := objectDiffExpected(t, diff, ddl, s.d[0].Flavor())
 		if ddl.shellOut.Command != expected {
 			t.Errorf("Expected shellout:\n%s\nActual shellout:\n%s\n", expected, ddl.shellOut.Command)
 		}
-		if expectedString := fmt.Sprintf("\\! %s\n", expected); ddl.String() != expectedString {
-			t.Errorf("Expected String():\n%s\nActual String():\n%s\n", expectedString, ddl.String())
+		if expectedString := fmt.Sprintf("\\! %s\n", expected); ddl.Statement() != expectedString {
+			t.Errorf("Expected String():\n%s\nActual String():\n%s\n", expectedString, ddl.Statement())
 		}
 	}
 }

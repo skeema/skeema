@@ -20,30 +20,42 @@ type LogicalSchema struct {
 	Alters    []*tengo.Statement // Alterations that are run after the Creates
 }
 
+// NewLogicalSchema returns a pointer to an empty, nameless LogicalSchema. Any
+// map fields will be properly initialized; all other fields will be left at
+// zero values.
+func NewLogicalSchema() *LogicalSchema {
+	return &LogicalSchema{
+		Creates: make(map[tengo.ObjectKey]*tengo.Statement),
+	}
+}
+
 // AddStatement adds the supplied statement into the appropriate data structure
 // within the receiver. This is useful when assembling a new logical schema.
 // An error will be returned if a duplicate CREATE object name/type pair is
 // added.
 func (logicalSchema *LogicalSchema) AddStatement(stmt *tengo.Statement) error {
+	key := stmt.ObjectKey()
 	switch stmt.Type {
 	case tengo.StatementTypeCreate:
-		if origStmt, already := logicalSchema.Creates[stmt.ObjectKey()]; already {
+		if origStmt, already := logicalSchema.Creates[key]; already {
 			return DuplicateDefinitionError{
-				ObjectKey: stmt.ObjectKey(),
+				ObjectKey: key,
 				FirstFile: origStmt.File,
 				FirstLine: origStmt.LineNo,
 				DupeFile:  stmt.File,
 				DupeLine:  stmt.LineNo,
 			}
 		}
-		logicalSchema.Creates[stmt.ObjectKey()] = stmt
-		return nil
+		logicalSchema.Creates[key] = stmt
 	case tengo.StatementTypeAlter:
 		logicalSchema.Alters = append(logicalSchema.Alters, stmt)
-		return nil
-	default:
-		return nil
 	}
+	return nil
+}
+
+// Empty returns true if the LogicalSchema contains no statements.
+func (logicalSchema *LogicalSchema) Empty() bool {
+	return len(logicalSchema.Creates)+len(logicalSchema.Alters) == 0
 }
 
 // LowerCaseNames adjusts logicalSchema in-place such that its object names are

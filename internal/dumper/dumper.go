@@ -64,7 +64,7 @@ func modifiedFiles(schema *tengo.Schema, dir *fs.Dir, opts Options) []*fs.SQLFil
 	if len(dir.LogicalSchemas) > 0 {
 		logicalSchema = dir.LogicalSchemas[0]
 	} else {
-		logicalSchema = &fs.LogicalSchema{}
+		logicalSchema = fs.NewLogicalSchema()
 	}
 
 	dbObjects := schema.Objects()

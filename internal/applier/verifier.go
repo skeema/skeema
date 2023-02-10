@@ -51,12 +51,9 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 
 	// Gather CREATE and ALTER for modified tables, and put into a LogicalSchema,
 	// which we then materialize into a real schema using a workspace
-	logicalSchema := &fs.LogicalSchema{
-		CharSet:   t.Dir.Config.Get("default-character-set"),
-		Collation: t.Dir.Config.Get("default-collation"),
-		Creates:   make(map[tengo.ObjectKey]*tengo.Statement),
-		Alters:    make([]*tengo.Statement, 0),
-	}
+	logicalSchema := fs.NewLogicalSchema()
+	logicalSchema.CharSet = t.Dir.Config.Get("default-character-set")
+	logicalSchema.Collation = t.Dir.Config.Get("default-collation")
 	desiredTables := make(map[string]*tengo.Table)
 	for _, td := range altersInDiff {
 		stmt, err := td.Statement(mods)

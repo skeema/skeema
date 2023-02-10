@@ -697,9 +697,7 @@ func (dir *Dir) parseContents() {
 			}
 
 			if _, ok := logicalSchemasByName[stmt.Schema()]; !ok {
-				logicalSchemasByName[stmt.Schema()] = &LogicalSchema{
-					Creates: make(map[tengo.ObjectKey]*tengo.Statement),
-				}
+				logicalSchemasByName[stmt.Schema()] = NewLogicalSchema()
 			}
 			dir.ParseError = logicalSchemasByName[stmt.Schema()].AddStatement(stmt)
 			if dir.ParseError != nil {
@@ -721,33 +719,33 @@ func (dir *Dir) parseContents() {
 		dir.SQLFiles[filePath] = sf
 	}
 
-	// If there are no *.sql files, but .skeema defines a schema name, create an
-	// empty LogicalSchema. This permits `skeema pull` to work properly on a
-	// formerly-empty schema, for example.
-	if len(logicalSchemasByName) == 0 && dir.HasSchema() {
-		dir.LogicalSchemas = []*LogicalSchema{
-			{
-				Creates:   make(map[tengo.ObjectKey]*tengo.Statement),
-				CharSet:   dir.Config.Get("default-character-set"),
-				Collation: dir.Config.Get("default-collation"),
-			},
+	// Prune any logical schema which didn't have any relevant statements (e.g.
+	// only had commands like USE, or statements that Skeema cannot parse)
+	for name, ls := range logicalSchemasByName {
+		if ls.Empty() {
+			delete(logicalSchemasByName, name)
 		}
-		return
 	}
 
-	// Put any non-empty logical schemas into the dir, with the blank-named one
-	// always in the first position
+	// If there are no non-empty logical schemas in the directory, but .skeema
+	// defines a schema name, create an empty LogicalSchema. This permits
+	// `skeema pull` to work properly on a formerly-empty schema, for example.
+	if len(logicalSchemasByName) == 0 && dir.HasSchema() {
+		logicalSchemasByName[""] = NewLogicalSchema()
+	}
+
+	// Place logical schemas into the dir, with the blank-named one always in
+	// the first position if it exists
 	dir.LogicalSchemas = make([]*LogicalSchema, 0, len(logicalSchemasByName))
-	if ls, ok := logicalSchemasByName[""]; ok && len(ls.Creates) > 0 {
+	if ls, ok := logicalSchemasByName[""]; ok {
 		ls.CharSet = dir.Config.Get("default-character-set")
 		ls.Collation = dir.Config.Get("default-collation")
 		dir.LogicalSchemas = append(dir.LogicalSchemas, ls)
+		delete(logicalSchemasByName, "")
 	}
 	for name, ls := range logicalSchemasByName {
-		if name != "" && len(ls.Creates) > 0 {
-			ls.Name = name
-			dir.LogicalSchemas = append(dir.LogicalSchemas, ls)
-		}
+		ls.Name = name
+		dir.LogicalSchemas = append(dir.LogicalSchemas, ls)
 	}
 
 	// If the dir's configuration includes "password" with no =value, and the dir

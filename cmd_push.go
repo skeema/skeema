@@ -30,7 +30,7 @@ func init() {
 
 	cmd := mybase.NewCommand("push", summary, desc, PushHandler)
 
-	cmd.AddOptions("DDL generation",
+	cmd.AddOptions("SQL generation",
 		mybase.BoolOption("exact-match", 0, false, "Follow *.sql table definitions exactly, even for differences with no functional impact"),
 		mybase.BoolOption("compare-metadata", 0, false, "For stored programs, detect changes to creation-time sql_mode or DB collation"),
 		mybase.BoolOption("alter-validate-virtual", 0, false, "Apply a WITH VALIDATION clause to ALTER TABLEs affecting virtual columns"),
@@ -83,8 +83,7 @@ func PushHandler(cfg *mybase.Config) error {
 	} else if concurrency < 1 {
 		return NewExitValue(CodeBadConfig, "concurrent-instances cannot be less than 1")
 	}
-	briefMode := dir.Config.GetBool("dry-run") && dir.Config.GetBool("brief")
-	printer := applier.NewPrinter(briefMode)
+	printer := applier.NewPrinter(dir.Config)
 
 	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(concurrency)
