@@ -56,3 +56,46 @@ func TestHighestExitCode(t *testing.T) {
 		}
 	}
 }
+
+func TestExit(t *testing.T) {
+	// Defer a fix to restore the real exit handler, since it will be manipulated
+	// by the test.
+	defer func() {
+		exitFunc = realExit
+	}()
+
+	expectNextExitCode := func(expectCode int) {
+		t.Helper()
+		exitFunc = func(code int) {
+			t.Helper()
+			if code != expectCode {
+				t.Errorf("Expected exit code %d, instead found %d", expectCode, code)
+			}
+		}
+	}
+
+	expectNextExitCode(CodeSuccess)
+	Exit(nil)
+	expectNextExitCode(CodeFatalError)
+	Exit(errors.New("errors that don't implement ExitCoder are all treated as fatal error"))
+	expectNextExitCode(CodeDifferencesFound)
+	Exit(NewExitValue(CodeDifferencesFound, ""))
+	expectNextExitCode(CodeBadConfig)
+	Exit(NewExitValue(CodeBadConfig, "bad config"))
+}
+
+func TestPanicHandler(t *testing.T) {
+	// Override the exit function used by Exit() so that it doesn't actually exit
+	// the program. Defer a fix to restore the real exit handler, and then defer
+	// the panic handler *after* that, since deferred functions are executed LIFO.
+	exitFunc = func(code int) {
+		if code != CodeFatalError {
+			t.Errorf("Expected Exit(%d) to be called, instead saw Exit(%d)", CodeFatalError, code)
+		}
+	}
+	defer func() {
+		exitFunc = realExit
+	}()
+	defer panicHandler()
+	panic(errors.New("If this test passes, this was actually caught properly, don't worry about the surrounding text"))
+}

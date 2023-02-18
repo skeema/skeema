@@ -3,10 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
-	"runtime/debug"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/util"
 	"github.com/skeema/skeema/internal/workspace"
@@ -30,22 +28,14 @@ var edition = "community"
 var CommandSuite = mybase.NewCommandSuite("skeema", extendedVersionString(), rootDesc)
 
 func main() {
+	defer panicHandler() // see exit.go
+
 	CommandSuite.WebDocURL = "https://www.skeema.io/docs/commands"
 
 	// Add global options. Sub-commands may override these when needed.
 	util.AddGlobalOptions(CommandSuite)
 
 	var cfg *mybase.Config
-
-	defer func() {
-		if iface := recover(); iface != nil {
-			if cfg != nil && cfg.GetBool("debug") {
-				log.Debug(string(debug.Stack()))
-			}
-			Exit(NewExitValue(CodeFatalError, fmt.Sprint(iface)))
-		}
-	}()
-
 	cfg, err := mybase.ParseCLI(CommandSuite, os.Args)
 	if err != nil {
 		Exit(NewExitValue(CodeBadConfig, err.Error()))

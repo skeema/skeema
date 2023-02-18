@@ -94,6 +94,7 @@ func PushHandler(cfg *mybase.Config) error {
 	for n := range groups {
 		tg := groups[n] // avoid loop iteration variable in closure below
 		g.Go(func() error {
+			defer panicHandler()
 			for _, t := range tg {
 				select {
 				case <-ctx.Done():

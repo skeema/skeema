@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
+	"runtime/debug"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/util"
@@ -92,6 +95,18 @@ func HighestExitCode(errs ...error) error {
 	return highestErr
 }
 
+// realExit performs any necessary cleanup and then exits the program.
+func realExit(code int) {
+	// Gracefully close all connection pools, to avoid aborted connection counter/
+	// logging in some versions of MySQL
+	util.CloseCachedConnectionPools()
+
+	os.Exit(code)
+}
+
+// by default, we want Exit to call realExit, but tests can manipulate this.
+var exitFunc = realExit
+
 // Exit terminates the program with the appropriate exit code and log output.
 func Exit(err error) {
 	exitCode := ExitCode(err)
@@ -108,10 +123,36 @@ func Exit(err error) {
 		}
 		log.Debugf("Exit code %d", exitCode)
 	}
+	exitFunc(exitCode)
+}
 
-	// Gracefully close all connection pools, to avoid aborted connection counter/
-	// logging in some versions of MySQL
-	util.CloseCachedConnectionPools()
-
-	os.Exit(exitCode)
+// panicHandler can be called in a deferred function to recover from panics by
+// displaying a user-friendly message and then exiting with code 2 (fatal
+// error).
+func panicHandler() {
+	if iface := recover(); iface != nil {
+		location := "unknown location"
+		pc := make([]uintptr, 10)
+		if n := runtime.Callers(2, pc); n > 0 {
+			pc = pc[:n] // remove invalid pcs before calling runtime.CallersFrames
+			frames := runtime.CallersFrames(pc)
+			for {
+				frame, more := frames.Next()
+				if !strings.Contains(frame.File, "runtime/") {
+					location = fmt.Sprintf("%s at %s:%d", frame.Function, frame.File, frame.Line)
+					break
+				}
+				if !more {
+					break
+				}
+			}
+		}
+		log.Debug(string(debug.Stack()))
+		messages := []string{
+			fmt.Sprintf("Uncaught panic in %s: %v", location, iface),
+			"This situation indicates a bug in Skeema. Use --debug to view full stack trace.",
+			"Please file an issue report at https://github.com/skeema/skeema/issues with any available background information.",
+		}
+		Exit(NewExitValue(CodeFatalError, strings.Join(messages, "\n")))
+	}
 }
