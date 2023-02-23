@@ -330,6 +330,7 @@ func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
 		"mariadb:10.8":  FlavorMariaDB108,
 		"mariadb:10.9":  FlavorMariaDB109,
 		"mariadb:10.10": FlavorMariaDB1010,
+		"mariadb:10.11": FlavorMariaDB1011,
 	}
 
 	// Determine expected Flavor value of the Dockerized instance being tested
