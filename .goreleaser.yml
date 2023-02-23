@@ -10,9 +10,11 @@ builds:
       - darwin_arm64
 archives:
   -
-    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
-    replacements:
-      darwin: mac
+    name_template: >-
+      {{- .ProjectName }}_
+      {{- .Version }}_
+      {{- if eq .Os "darwin" }}mac{{ else }}{{ .Os }}{{ end }}_
+      {{- .Arch }}
 checksum:
   name_template: '{{ .ProjectName }}_checksums_{{ .Version }}.txt'
 snapshot:
