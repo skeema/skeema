@@ -1,7 +1,7 @@
 name: Tests
 on: [push, pull_request]
 env:
-  GOVERSION: "1.18"
+  GOVERSION: "1.19"
   SKEEMA_TEST_IMAGES: "mysql:5.7,mysql:8.0,mariadb:10.11"
 jobs:
   test:
@@ -10,12 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Set up Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v3
         with:
           go-version: ${{env.GOVERSION}}
 
       - name: Check out code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Run gofmt
         run: test -z "$(gofmt -s -d *.go internal/*/*.go 2>&1)"
