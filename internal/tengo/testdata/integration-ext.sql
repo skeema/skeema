@@ -31,6 +31,19 @@ CREATE TABLE ft_test (
 	/*!50601 FULLTEXT */ KEY ftbody (body)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
+# MySQL 8 handles these incorrectly in information_schema, so this tests
+# introspection from SHOW CREATE TABLE instead
+CREATE TABLE bin_defaults (
+	one binary(16) not null default 0x00,
+	two binary(16) not null default 0x0001,
+	three VARBinary(16) not null default 0x01077,
+	four binary(16) not null default 0x01 COMMENT 'hello\'s world''s',
+	five binary(16) not null default 0x77,
+	six binary(16) not null default 0x7701,
+	seven binary(16),
+	eight binary(4) not null default ''
+) ENGINE=InnoDB;
+
 use testcharcoll
 
 CREATE TABLE col_overrides_aplenty (

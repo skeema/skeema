@@ -804,15 +804,26 @@ func fixFulltextIndexParsers(t *Table, flavor Flavor) {
 //   - MySQL 8 incorrectly mangles escaping of single quotes in the I_S value
 //   - MySQL 8 potentially uses different charsets introducers for string literals
 //     in I_S vs SHOW CREATE
+//
+// It also fixes problems with BINARY / VARBINARY literal constant defaults in
+// MySQL 8, as these are also mangled by I_S if a zero byte is present.
 func fixDefaultExpression(t *Table, flavor Flavor) {
 	for _, col := range t.Columns {
-		if col.Default == "" || col.Default[0] != '(' {
+		if col.Default == "" {
+			continue
+		}
+		var matcher string
+		if col.Default[0] == '(' {
+			matcher = `.+DEFAULT (\(.+\))`
+		} else if strings.HasPrefix(col.Default, "'0x") && strings.Contains(col.TypeInDB, "binary") {
+			matcher = `.+DEFAULT ('(''|[^'])*')`
+		} else {
 			continue
 		}
 		if colDefinition := col.Definition(flavor, t); !strings.Contains(t.CreateStatement, colDefinition) {
 			defaultClause := " DEFAULT " + col.Default
 			after := colDefinition[strings.Index(colDefinition, defaultClause)+len(defaultClause):]
-			reTemplate := `(?m)^\s*` + regexp.QuoteMeta(EscapeIdentifier(col.Name)) + `.+DEFAULT (\(.+\))` + regexp.QuoteMeta(after)
+			reTemplate := `(?m)^\s*` + regexp.QuoteMeta(EscapeIdentifier(col.Name)) + matcher + regexp.QuoteMeta(after)
 			re := regexp.MustCompile(reTemplate)
 			if matches := re.FindStringSubmatch(t.CreateStatement); matches != nil {
 				col.Default = matches[1]
