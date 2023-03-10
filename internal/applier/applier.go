@@ -16,6 +16,7 @@ import (
 type ClientState struct {
 	InstanceName string
 	SchemaName   string
+	Delimiter    string
 	// Eventually may include additional state such as session vars
 }
 

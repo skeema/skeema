@@ -128,17 +128,12 @@ func TestParseStatementsInFileFail(t *testing.T) {
 	if statements, err := ParseStatementsInFile("testdata/nodelimiter2.sql"); err != nil {
 		t.Errorf("Unexpected error parsing nodelimiter2.sql: %s", err)
 	} else {
-		if len(statements) != 8 {
-			t.Errorf("Expected file to contain 8 statements, instead found %d", len(statements))
-		}
-		var seenUnknown bool
-		for _, stmt := range statements {
-			if stmt.Type == StatementTypeUnknown {
-				seenUnknown = true
-			}
-		}
-		if !seenUnknown {
-			t.Error("Expected to find a statement that could not be parsed, but did not")
+		if len(statements) != 2 {
+			t.Errorf("Expected file to contain 2 statements, instead found %d", len(statements))
+		} else if statements[0].Type != StatementTypeNoop {
+			t.Errorf("Expected first statement to be a no-op (comment), instead found type %d", statements[0].Type)
+		} else if statements[1].Type != StatementTypeCreate {
+			t.Errorf("Expected second statement to be a CREATE, instead found type %d", statements[1].Type)
 		}
 	}
 }
@@ -253,7 +248,7 @@ func expectedStatements(filePath string) []*Statement {
 		{File: filePath, LineNo: 33, CharNo: 2, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "delimiter    \"💩💩💩\"\n", Delimiter: "\000"},
 		{File: filePath, LineNo: 34, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: ObjectTypeTable, ObjectName: "uhoh", Text: "CREATE TABLE uhoh (ummm varchar(20) default 'ok 💩💩💩 cool')💩💩💩\n", Delimiter: "💩💩💩", nameClause: "uhoh"},
 		{File: filePath, LineNo: 35, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "DELIMITER $$ -- cool\n", Delimiter: "\000"},
-		{File: filePath, LineNo: 36, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: ObjectTypeProc, ObjectName: "whatever", Text: "CREATE PROCEDURE whatever(name varchar(10))\nBEGIN\n\tDECLARE v1 INT; -- comment with \"normal space\" in front!\n\tSET v1=loops;--\u00A0comment with `nbsp' in front?!?\n\tWHILE v1 > 0 DO\n\t\tINSERT INTO users (name) values ('\\xF0\\x9D\\x8C\\x86');\n\t\tSET v1 = v1 - (2 / 2); /* testing // testing */\n\tEND WHILE;\nEND$$\n", Delimiter: "$$", nameClause: "whatever"},
+		{File: filePath, LineNo: 36, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: ObjectTypeProc, ObjectName: "whatever", Text: "CREATE PROCEDURE whatever(name varchar(10))\nBEGIN\n\tDECLARE v1 INT; -- comment with \"normal space\" in front!\n\tSET v1=loops;--\u00A0comment with `nbsp' in front?!?\n\tWHILE v1 > 0 DO\n\t\tINSERT INTO users (name) values ('\\xF0\\x9D\\x8C\\x86');\n\t\tSET v1 = v1 - (2 / 2); /* testing // testing */\n\tEND WHILE;\nEND$$\n", Delimiter: "$$", Compound: true, nameClause: "whatever"},
 		{File: filePath, LineNo: 45, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "delimiter ;\n", Delimiter: "\000"},
 		{File: filePath, LineNo: 46, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n\n", Delimiter: ";"},
 		{File: filePath, LineNo: 48, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: ObjectTypeTable, ObjectName: "tbl1", ObjectQualifier: "uhoh", Text: "CREATE TABLE `uhoh` . tbl1 (id int unsigned not null primary key);\n", Delimiter: ";", nameClause: "`uhoh` . tbl1"},

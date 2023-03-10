@@ -34,6 +34,7 @@ type Statement struct {
 	ObjectName      string
 	ObjectQualifier string
 	Delimiter       string // delimiter in use at the time of statement; not necessarily present in Text though
+	Compound        bool   // if true, this is a compound statement (stored program with a BEGIN block, requiring alternative delimiter)
 	nameClause      string // raw version, potentially with schema name qualifier and/or surrounding backticks
 }
 
@@ -83,15 +84,20 @@ func (stmt *Statement) SplitTextBody() (body string, suffix string) {
 		return "", ""
 	}
 	body = strings.TrimRight(stmt.Text, "\n\r\t ")
-	body = strings.TrimSuffix(body, stmt.Delimiter)
-	body = strings.TrimRight(body, "\n\r\t ")
+	if stmt.Delimiter != "" && stmt.Delimiter != "\000" {
+		body = strings.TrimSuffix(body, stmt.Delimiter)
+		body = strings.TrimRight(body, "\n\r\t ")
+	}
 	return body, stmt.Text[len(body):]
 }
 
-// isCreateWithBegin is useful for identifying multi-line statements that may
-// have been mis-parsed (for example, due to lack of DELIMITER commands)
-func (stmt *Statement) isCreateWithBegin() bool {
-	return stmt.Type == StatementTypeCreate &&
-		(stmt.ObjectType == ObjectTypeProc || stmt.ObjectType == ObjectTypeFunc) &&
-		strings.Contains(strings.ToLower(stmt.Text), "begin")
+// Compounder is implemented by types that have the ability to represent
+// compound statements, requiring special delimiter handling.
+type Compounder interface {
+	IsCompoundStatement() bool
+}
+
+// IsCompoundStatement returns true if stmt is a compound statement.
+func (stmt *Statement) IsCompoundStatement() bool {
+	return stmt != nil && stmt.Compound
 }

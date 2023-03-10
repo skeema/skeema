@@ -1,5 +1,5 @@
-# This should NOT parse "correctly" as a single proc without using the DELIMITER
-# command, due to the table after
+# This should incorrectly parse as a single proc, due to lack of DELIMITER
+# command
 CREATE PROCEDURE whatever(name varchar(10))
 BEGIN
 DECLARE v1 INT;

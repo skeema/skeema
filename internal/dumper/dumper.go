@@ -100,7 +100,8 @@ func modifiedFiles(schema *tengo.Schema, dir *fs.Dir, opts Options) []*fs.SQLFil
 			}
 		}
 
-		if tengo.ParseStatementInString(canonicalCreate).ObjectKey() != key {
+		newStmt := tengo.ParseStatementInString(canonicalCreate)
+		if newStmt.Type != tengo.StatementTypeCreate || newStmt.ObjectKey() != key {
 			log.Errorf("%s is unexpectedly not able to be parsed by Skeema\nPlease file an issue report at https://github.com/skeema/skeema/issues with the problematic statement, redacting sensitive portions if necessary:\n%s", key, canonicalCreate)
 			log.Error("Unfortunately this error is fatal and prevents Skeema from being usable in your environment until this is resolved.")
 			return nil
@@ -113,7 +114,7 @@ func modifiedFiles(schema *tengo.Schema, dir *fs.Dir, opts Options) []*fs.SQLFil
 			if opts.CountOnly {
 				sqlFile.Dirty = true
 			} else {
-				sqlFile.AddCreateStatement(key, canonicalCreate)
+				sqlFile.AddStatement(newStmt)
 			}
 		} else if fsCreate != canonicalCreate {
 			// Statement came from the fs and we need to update it, or just mark its
@@ -122,7 +123,7 @@ func modifiedFiles(schema *tengo.Schema, dir *fs.Dir, opts Options) []*fs.SQLFil
 			if opts.CountOnly {
 				sqlFile.Dirty = true
 			} else {
-				sqlFile.EditStatementText(stmt, canonicalCreate)
+				sqlFile.EditStatementText(stmt, canonicalCreate, newStmt.Compound)
 			}
 		}
 	}
