@@ -19,7 +19,7 @@ func init() {
 		"allow-pk-type",
 		"",
 		"List of allowed data types for --lint-pk-type",
-		true, // permit empty list
+		true, // prohibit empty list
 	)
 	RegisterRule(rule)
 }
