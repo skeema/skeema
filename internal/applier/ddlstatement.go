@@ -9,7 +9,6 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
-	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
 	"github.com/skeema/skeema/internal/util"
 )
@@ -19,6 +18,7 @@ import (
 // run directly against a DB.
 type DDLStatement struct {
 	stmt     string
+	compound bool
 	shellOut *util.ShellOut
 
 	instance      *tengo.Instance
@@ -79,6 +79,13 @@ func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, targe
 	} else if ddl.stmt == "" {
 		// Noop statements (due to mods) must be skipped by caller
 		return nil, nil
+	}
+
+	// Determine if the statement is a compound statement, requiring special
+	// delimiter handling in output. Only stored program diffs (e.g. procs, funcs)
+	// implement this interface; others never generate compound statements.
+	if compounder, ok := diff.(tengo.Compounder); ok && compounder.IsCompoundStatement() {
+		ddl.compound = true
 	}
 
 	if wrapper == "" {
@@ -240,16 +247,23 @@ func (ddl *DDLStatement) Execute() error {
 // shortcut for "system" shellout.
 func (ddl *DDLStatement) Statement() string {
 	if ddl.shellOut != nil {
-		return fmt.Sprintf("\\! %s\n", ddl.shellOut)
+		return "\\! " + ddl.shellOut.String()
 	}
-	return fs.AddDelimiter(ddl.stmt)
+	return ddl.stmt
 }
 
 // ClientState returns a representation of the client state which would be
 // used in execution of the statement.
 func (ddl *DDLStatement) ClientState() ClientState {
-	return ClientState{
+	cs := ClientState{
 		InstanceName: ddl.instance.String(),
 		SchemaName:   ddl.schemaName,
+		Delimiter:    ";",
 	}
+	if ddl.shellOut != nil {
+		cs.Delimiter = ""
+	} else if ddl.compound {
+		cs.Delimiter = "//"
+	}
+	return cs
 }

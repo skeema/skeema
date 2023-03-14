@@ -516,6 +516,9 @@ func TestSchemaDiffRoutines(t *testing.T) {
 	if stmt, err := rd.Statement(StatementModifiers{}); err != nil || !strings.HasPrefix(stmt, "CREATE") {
 		t.Errorf("Unexpected return value from Statement(): %s / %s", stmt, err)
 	}
+	if !rd.IsCompoundStatement() { // s2r2 is a proc with a BEGIN block, so expect this to return true
+		t.Error("Unexpected return value from IsCompoundStatement(): found false, expected true")
+	}
 	expectKey := ObjectKey{Type: ObjectTypeProc, Name: s2r2.Name}
 	if rd.To != &s2r2 || rd.ObjectKey() != expectKey {
 		t.Error("Pointer in diff does not point to expected value")
@@ -535,6 +538,9 @@ func TestSchemaDiffRoutines(t *testing.T) {
 	}
 	if sd.String() != fmt.Sprintf("DROP PROCEDURE %s;\n", EscapeIdentifier(s2r2.Name)) {
 		t.Errorf("SchemaDiff.String returned unexpected result: %s", sd)
+	}
+	if rd.IsCompoundStatement() { // DROPs should never be compound statements
+		t.Error("Unexpected return value from IsCompoundStatement(): found true, expected false")
 	}
 
 	// Test impact of statement modifiers (allowing/forbidding drop) on previous drop
@@ -615,6 +621,9 @@ func TestSchemaDiffRoutines(t *testing.T) {
 	}
 	if rd.To != &s2r1 || rd.ObjectKey().Type != ObjectTypeFunc {
 		t.Error("Pointer in diff does not point to expected value")
+	}
+	if rd.IsCompoundStatement() { // the function body in aFunc() is just a single RETURN
+		t.Error("Unexpected return value from IsCompoundStatement(): found true, expected false")
 	}
 }
 

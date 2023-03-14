@@ -104,11 +104,11 @@ func TestBadConfigResult(t *testing.T) {
 
 func (s IntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
 	dir := getDir(t, "testdata/validcfg")
+	forceRulesWarning(dir.Config) // regardless of .skeema config, set everything to warning
 	opts, err := OptionsForDir(dir)
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
 	}
-	forceRulesWarning(opts) // regardless of config, set everything to warning
 
 	logicalSchema := dir.LogicalSchemas[0]
 	wsOpts, err := workspace.OptionsForDir(dir, s.d.Instance)

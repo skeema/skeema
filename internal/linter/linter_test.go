@@ -50,13 +50,12 @@ type IntegrationSuite struct {
 // given line. See expectedAnnotations() for more information.
 func (s IntegrationSuite) TestCheckSchema(t *testing.T) {
 	dir := getDir(t, "testdata/validcfg")
+	// Set all non-hidden rules to warning level
+	forceRulesWarning(dir.Config)
 	opts, err := OptionsForDir(dir)
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
 	}
-
-	// Set all non-hidden rules to warning level
-	forceRulesWarning(opts)
 
 	// There's intentionally no hardcoded flavor value in testdata/validcfg/.skeema
 	// so that we can force the value corresponding to the current Dockerized
@@ -96,13 +95,12 @@ func (s IntegrationSuite) TestCheckSchema(t *testing.T) {
 // by TestCheckSchema.
 func (s IntegrationSuite) TestCheckSchemaHidden(t *testing.T) {
 	dir := getDir(t, "testdata/hidden")
+	// Set specific hidden rules to warning level
+	forceOnlyRulesWarning(dir.Config, "nullable", "ids")
 	opts, err := OptionsForDir(dir)
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
 	}
-
-	// Set specific hidden rules to warning level
-	forceOnlyRulesWarning(opts, "nullable", "ids")
 
 	// There's intentionally no hardcoded flavor value in testdata/hidden/.skeema
 	// so that we can force the value corresponding to the current Dockerized
@@ -130,6 +128,9 @@ func (s IntegrationSuite) TestCheckSchemaHidden(t *testing.T) {
 // helper functions in check_compression.go.
 func (s IntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 	dir := getDir(t, "testdata/validcfg")
+
+	// Ignore all linters except for the compression one
+	forceOnlyRulesWarning(dir.Config, "compression")
 	opts, err := OptionsForDir(dir)
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
@@ -143,9 +144,6 @@ func (s IntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error from workspace.ExecLogicalSchema: %v", err)
 	}
-
-	// Ignore all linters except for the compression one
-	forceOnlyRulesWarning(opts, "compression")
 
 	// Count the InnoDB tables in the dir, for use in computing the expected
 	// warning annotation count below
@@ -240,6 +238,9 @@ func (s IntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 // allow-charset as an alias for utf8.
 func (s IntegrationSuite) TestCheckSchemaUTF8MB3(t *testing.T) {
 	dir := getDir(t, "testdata/utf8mb3")
+
+	// Ignore all linters except for lint-charset
+	forceOnlyRulesWarning(dir.Config, "charset")
 	opts, err := OptionsForDir(dir)
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
@@ -256,9 +257,6 @@ func (s IntegrationSuite) TestCheckSchemaUTF8MB3(t *testing.T) {
 	} else if len(wsSchema.Failures) != 0 {
 		t.Fatalf("Unexpectedly found %d workspace failures", len(wsSchema.Failures))
 	}
-
-	// Ignore all linters except for lint-charset
-	forceOnlyRulesWarning(opts, "charset")
 
 	// There's intentionally no hardcoded flavor value in testdata/validcfg/.skeema
 	// so that we can force the value corresponding to the current Dockerized
@@ -430,26 +428,29 @@ func compareAnnotations(t *testing.T, expected []*Annotation, actualResult *Resu
 // Hidden rules are excluded because they may be overly broad / affect too many
 // "normal" tables when enabled. Such rules must be tested separately (outside
 // of IntegrationSuite.TestCheckSchema for example).
-func forceRulesWarning(opts Options) {
-	for key := range opts.RuleSeverity {
-		if rule := rulesByName[key]; !rule.hidden() {
-			opts.RuleSeverity[key] = SeverityWarning
+// This must be called *prior* to OptionsForDir or any other logic that converts
+// a mybase.Config into a linter.Options. Otherwise, supplemental options via
+// Rule.RelatedOption may not be configured properly.
+func forceRulesWarning(cfg *mybase.Config) {
+	for _, rule := range rulesByName {
+		if !rule.hidden() {
+			cfg.SetRuntimeOverride(rule.optionName(), string(SeverityWarning))
 		}
 	}
 }
 
 // forceOnlyRulesWarning sets the specific named linter rule(s) to
 // SeverityWarning, and sets all other rules to SeverityIgnore.
-func forceOnlyRulesWarning(opts Options, names ...string) {
+func forceOnlyRulesWarning(cfg *mybase.Config, names ...string) {
 	wantNames := make(map[string]bool, len(names))
 	for _, name := range names {
 		wantNames[name] = true
 	}
-	for key := range opts.RuleSeverity {
-		if wantNames[key] {
-			opts.RuleSeverity[key] = SeverityWarning
+	for name, rule := range rulesByName {
+		if wantNames[name] {
+			cfg.SetRuntimeOverride(rule.optionName(), string(SeverityWarning))
 		} else {
-			opts.RuleSeverity[key] = SeverityIgnore
+			cfg.SetRuntimeOverride(rule.optionName(), string(SeverityIgnore))
 		}
 	}
 }

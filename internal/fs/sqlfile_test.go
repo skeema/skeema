@@ -28,19 +28,24 @@ func TestSQLFileExists(t *testing.T) {
 	}
 }
 
-func TestSQLFileAddCreateStatement(t *testing.T) {
+func TestSQLFileAddStatement(t *testing.T) {
 	sf := &SQLFile{}
 
 	// Add a simple CREATE TABLE
-	key := tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: "subscriptions"}
 	create := "CREATE TABLE subscriptions (id int unsigned not null primary key)"
-	sf.AddCreateStatement(key, create)
+	stmt := &tengo.Statement{
+		Type:       tengo.StatementTypeCreate,
+		ObjectType: tengo.ObjectTypeTable,
+		ObjectName: "subscriptions",
+		Text:       create,
+		Delimiter:  ";",
+	}
+	sf.AddStatement(stmt)
 	if len(sf.Statements) != 1 || !sf.Dirty || sf.Statements[0].Text != create+";\n" {
-		t.Fatalf("Unexpected values in SQLFile: dirty=%t, len(statements)=%d", sf.Dirty, len(sf.Statements))
+		t.Fatalf("Unexpected values in SQLFile: dirty=%t, len(statements)=%d, text[0]=%q", sf.Dirty, len(sf.Statements), sf.Statements[0].Text)
 	}
 
 	// Add a proc that requires special delimiter
-	key = tengo.ObjectKey{Type: tengo.ObjectTypeProc, Name: "whatever"}
 	create = `CREATE PROCEDURE whatever(name varchar(10))
 	BEGIN
 		DECLARE v1 INT;
@@ -50,16 +55,25 @@ func TestSQLFileAddCreateStatement(t *testing.T) {
 			SET v1 = v1 - (2 / 2); /* testing // testing */
 		END WHILE;
 	END;`
-	sf.AddCreateStatement(key, create)
-	if len(sf.Statements) != 4 || !sf.Dirty || sf.Statements[2].Text != create+"//\n" {
-		t.Fatalf("Unexpected values in SQLFile: dirty=%t, len(statements)=%d", sf.Dirty, len(sf.Statements))
+	stmt = &tengo.Statement{
+		Type:       tengo.StatementTypeCreate,
+		ObjectType: tengo.ObjectTypeProc,
+		ObjectName: "whatever",
+		Text:       create,
+		Delimiter:  ";", // this matches how ParseStatementInString will always return it
+		Compound:   true,
+	}
+	sf.AddStatement(stmt)
+	if len(sf.Statements) != 4 || !sf.Dirty || sf.Statements[2].Text != strings.TrimRight(create, ";")+"//\n" {
+		t.Fatalf("Unexpected values in SQLFile: dirty=%t, len(statements)=%d, text[2]=%q", sf.Dirty, len(sf.Statements), sf.Statements[2].Text)
 	}
 
 	// Add another proc that requires a special delimiter. This should effectively
 	// move the previous trailing "DELIMITER ;" back to the end of the file.
-	key.Name = "whatever2"
+	routine2 := *stmt
 	create = strings.Replace(create, "whatever", "Whatever2", 1)
-	sf.AddCreateStatement(key, create)
+	routine2.Text = create
+	sf.AddStatement(&routine2)
 	if len(sf.Statements) != 5 || !sf.Dirty || sf.Statements[3].Text != create+"//\n" {
 		t.Fatalf("Unexpected values in SQLFile: dirty=%t, len(statements)=%d", sf.Dirty, len(sf.Statements))
 	}
@@ -67,9 +81,15 @@ func TestSQLFileAddCreateStatement(t *testing.T) {
 	// Add a func that does not require a special delimiter. This should just add
 	// the statement at the end of the file, leaving the previously-trailing
 	// "DELIMITER ;" where it was
-	key = tengo.ObjectKey{Type: tengo.ObjectTypeFunc, Name: "foo"}
-	create = `CREATE FUNCTION foo() RETURNS varchar(30) RETURN "hello"`
-	sf.AddCreateStatement(key, create)
+	create = `CREATE FUNCTION foo() RETURNS varchar(30) RETURN "hello;world"`
+	stmt = &tengo.Statement{
+		Type:       tengo.StatementTypeCreate,
+		ObjectType: tengo.ObjectTypeFunc,
+		ObjectName: "foo",
+		Text:       create,
+		Delimiter:  ";",
+	}
+	sf.AddStatement(stmt)
 	if len(sf.Statements) != 6 || !sf.Dirty || sf.Statements[5].Text != create+";\n" {
 		t.Fatalf("Unexpected values in SQLFile: dirty=%t, len(statements)=%d", sf.Dirty, len(sf.Statements))
 	}
@@ -101,7 +121,7 @@ func TestSQLFileEditStatementText(t *testing.T) {
 
 	// Adjust the second statement. This should not involve DELIMITER commands
 	// in any way.
-	sf.EditStatementText(stmt2, "CREATE TABLE subscriptions (subID int unsigned not null primary key)")
+	sf.EditStatementText(stmt2, "CREATE TABLE subscriptions (subID int unsigned not null primary key)", false)
 	if !sf.Dirty {
 		t.Error("Expected file to be marked as dirty, but it was not")
 	}
@@ -117,24 +137,28 @@ func TestSQLFileEditStatementText(t *testing.T) {
 	sf.EditStatementText(stmt1, `CREATE FUNCTION whatever() RETURNS varchar(30)
 	BEGIN
 		RETURN "hello";
-	END;`)
+	END;`, true)
 	if len(sf.Statements) != 4 {
 		t.Fatalf("Wrong statement count in file: expected 4, found %d", len(sf.Statements))
 	} else if sf.Statements[1] != stmt1 || sf.Statements[3] != stmt2 {
 		t.Fatal("Unexpected CREATE statement positions in file")
 	} else if sf.Statements[0].Type != tengo.StatementTypeCommand || sf.Statements[2].Type != tengo.StatementTypeCommand {
 		t.Fatal("Unexpected DELIMITER statement positions in file")
+	} else if !sf.Statements[1].Compound || sf.Statements[1].Delimiter != "//" {
+		t.Fatal("Statement fields not updated as expected")
 	}
 
-	// Adjust the second statement back to its original text. DELIMITERs should
+	// Adjust the func statement back to its original text. DELIMITERs should
 	// remain in place since we do not currently clean them up!
-	sf.EditStatementText(stmt1, create1)
+	sf.EditStatementText(stmt1, create1, false)
 	if len(sf.Statements) != 4 {
 		t.Fatalf("Wrong statement count in file: expected 4, found %d", len(sf.Statements))
 	} else if sf.Statements[1] != stmt1 || sf.Statements[3] != stmt2 {
 		t.Fatal("Unexpected CREATE statement positions in file")
 	} else if sf.Statements[0].Type != tengo.StatementTypeCommand || sf.Statements[2].Type != tengo.StatementTypeCommand {
 		t.Fatal("Unexpected DELIMITER statement positions in file")
+	} else if sf.Statements[1].Compound || sf.Statements[1].Delimiter != "//" {
+		t.Fatalf("Statement fields not updated as expected: %+v", sf.Statements[1])
 	}
 }
 
@@ -203,27 +227,5 @@ func TestPathForObject(t *testing.T) {
 		if actual := PathForObject(c.DirPath, c.ObjectName); actual != c.Expected {
 			t.Errorf("Expected PathForObject(%q, %q) to return %q, instead found %q", c.DirPath, c.ObjectName, c.Expected, actual)
 		}
-	}
-}
-
-func TestAddDelimiter(t *testing.T) {
-	proc := `CREATE PROCEDURE whatever(name varchar(10))
-BEGIN
-	DECLARE v1 INT;
-	SET v1=loops;
-	WHILE v1 > 0 DO
-		INSERT INTO users (name) values ('\xF0\x9D\x8C\x86');
-		SET v1 = v1 - (2 / 2); /* testing // testing */
-	END WHILE;
-END;`
-	result := AddDelimiter(proc)
-	if result == proc || !strings.Contains(result, "DELIMITER") {
-		t.Errorf("Unexpected result from AddDelimiter: %s", result)
-	}
-
-	proc = `CREATE FUNCTION foo() RETURNS varchar(30) RETURN "hello"`
-	result = AddDelimiter(proc)
-	if result == proc || strings.Contains(result, "DELIMITER") || !strings.HasSuffix(result, ";\n") {
-		t.Errorf("Unexpected result from AddDelimiter: %s", result)
 	}
 }

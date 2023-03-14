@@ -757,6 +757,12 @@ func (rd *RoutineDiff) Statement(mods StatementModifiers) (string, error) {
 	}
 }
 
+// IsCompoundStatement returns true if the diff is a compound CREATE statement,
+// requiring special delimiter handling.
+func (rd *RoutineDiff) IsCompoundStatement() bool {
+	return rd.To != nil && ParseStatementInString(rd.To.CreateStatement).Compound
+}
+
 ///// Errors ///////////////////////////////////////////////////////////////////
 
 // ForbiddenDiffError can be returned by ObjectDiff.Statement when the supplied

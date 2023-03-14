@@ -16,9 +16,10 @@ type Printer interface {
 
 // standardPrinter displays full output for each statement.
 type standardPrinter struct {
-	lastStdoutInstance string
-	lastStdoutSchema   string
-	m                  sync.Mutex
+	lastStdoutInstance  string
+	lastStdoutSchema    string
+	lastStdoutDelimiter string
+	m                   sync.Mutex
 }
 
 // instanceDiffPrinter displays instances that have schema differences, rather
@@ -39,7 +40,7 @@ func NewPrinter(cfg *mybase.Config) Printer {
 			seenInstance: make(map[string]bool),
 		}
 	}
-	return &standardPrinter{}
+	return &standardPrinter{lastStdoutDelimiter: ";"}
 }
 
 // Print outputs stmt to STDOUT, in a way that prevents interleaving of output
@@ -50,6 +51,13 @@ func (p *standardPrinter) Print(stmt PlannedStatement) {
 	defer p.m.Unlock()
 	cs := stmt.ClientState()
 
+	// If using a nonstandard delimiter and about to switch to a new instance or
+	// schema, restore standard delimiter first to avoid USE with nonstandard delim
+	if p.lastStdoutDelimiter != ";" && (cs.InstanceName != p.lastStdoutInstance || cs.SchemaName != p.lastStdoutSchema) {
+		fmt.Print("DELIMITER ;\n")
+		p.lastStdoutDelimiter = ";"
+	}
+
 	if cs.InstanceName != p.lastStdoutInstance {
 		fmt.Printf("-- instance: %s\n", cs.InstanceName)
 		p.lastStdoutInstance = cs.InstanceName
@@ -59,7 +67,11 @@ func (p *standardPrinter) Print(stmt PlannedStatement) {
 		fmt.Printf("USE %s;\n", tengo.EscapeIdentifier(cs.SchemaName))
 		p.lastStdoutSchema = cs.SchemaName
 	}
-	fmt.Print(stmt.Statement())
+	if cs.Delimiter != p.lastStdoutDelimiter && cs.Delimiter != "" {
+		fmt.Printf("DELIMITER %s\n", cs.Delimiter)
+		p.lastStdoutDelimiter = cs.Delimiter
+	}
+	fmt.Print(stmt.Statement(), cs.Delimiter, "\n")
 }
 
 // Print outputs distinct instances that have statements.

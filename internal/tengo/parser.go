@@ -31,56 +31,8 @@ type Token struct {
 // comments and/or whitespace, since any comments and/or whitespace between SQL
 // statements gets split into separate Statement values. Other "statements" are
 // actually client commands (USE, DELIMITER).
-//
-// If the input appears to contain a single multi-statement routine but lacks a
-// proper DELIMITER command before it, this method is forgiving and will attempt
-// to re-parse the input as if a nonstandard DELIMITER was already in effect.
 func ParseStatements(r io.Reader, filePath string) (result []*Statement, err error) {
-	result, err = parseStatements(r, filePath, ";")
-	tryReparse := true
-	var seenRoutine, unknownAfterRoutine bool
-	for _, stmt := range result {
-		switch stmt.Type {
-		case StatementTypeNoop:
-			// nothing to do for StatementTypeNoop, just excluding it from the default case
-		case StatementTypeCreate:
-			if !seenRoutine && stmt.isCreateWithBegin() {
-				seenRoutine = true
-			} else {
-				tryReparse = false
-			}
-		case StatementTypeUnknown:
-			if seenRoutine {
-				unknownAfterRoutine = true
-			}
-		default:
-			tryReparse = false
-		}
-		if !tryReparse {
-			break
-		}
-	}
-	if seenRoutine && unknownAfterRoutine && tryReparse {
-		// Seek back to start of reader if possible; otherwise, build a new reader
-		if seeker, ok := r.(io.Seeker); ok {
-			seeker.Seek(0, io.SeekStart)
-		} else {
-			var b strings.Builder
-			for _, stmt := range result {
-				b.WriteString(stmt.Text)
-			}
-			r = strings.NewReader(b.String())
-		}
-		// Re-parse, this time with an impossible delimiter
-		if result2, err2 := parseStatements(r, filePath, "\000"); err2 == nil {
-			return result2, err2
-		}
-	}
-	return
-}
-
-func parseStatements(r io.Reader, filePath, delimiter string) (result []*Statement, err error) {
-	p := newParser(r, filePath, delimiter)
+	p := newParser(r, filePath, ";")
 	for {
 		stmt, err := p.nextStatement()
 		if stmt != nil {
@@ -135,10 +87,12 @@ type parser struct {
 	b    strings.Builder // buffer for building text of under-construction statement
 	err  error           // only set once an error occurs during scanning (eof, io error, etc)
 
-	defaultDatabase string
-	filePath        string
-	lineNumber      int
-	colNumber       int
+	defaultDatabase   string
+	explicitDelimiter bool // true only if a DELIMITER command has ever been encountered in this input
+
+	filePath   string
+	lineNumber int
+	colNumber  int
 }
 
 type statementProcessor func(p *parser, tokens []Token) (*Statement, error)
@@ -546,6 +500,7 @@ func processDelimiterCommand(p *parser, _ []Token) (stmt *Statement, err error) 
 	}
 	p.stmt.Type = StatementTypeCommand
 	p.lexer.ChangeDelimiter(newDelim)
+	p.explicitDelimiter = true // disable permissive parsing of compound stored program bodies in input lacking DELIMITER
 	return p.finishStatement(), err
 }
 
@@ -608,7 +563,7 @@ func processCreateRoutine(p *parser, tokens []Token) (*Statement, error) {
 		p.stmt.ObjectType = ObjectType(strings.ToLower(matched[0].val))
 	}
 
-	return processUntilDelimiter(p, tokens)
+	return processStoredProgram(p, tokens)
 }
 
 func processCreateWithDefiner(p *parser, tokens []Token) (*Statement, error) {
@@ -643,6 +598,51 @@ func processCreateWithDefiner(p *parser, tokens []Token) (*Statement, error) {
 		processor = processUntilDelimiter
 	}
 	return processor(p, tokens)
+}
+
+// processStoredProgram parses the definition of a stored program (proc/func/
+// trigger/event) after the initial part of the CREATE statement. This may
+// include args (proc/func), return value (func), and body of the statement,
+// which may or may not be a compound statement (BEGIN block). If no explicit
+// DELIMITER command has already been encountered in the input, this parsing is
+// permissive of compound statements and won't treat semicolons as delimiters,
+// meaning the entire remaining input is considered a single statement.
+func processStoredProgram(p *parser, tokens []Token) (stmt *Statement, err error) {
+	var n int
+	var t Token
+	var compound bool
+	for {
+		// If we've already obtained some tokens, use those; otherwise get another one
+		if n < len(tokens) {
+			t = tokens[n]
+			n++
+		} else {
+			t, err = p.nextToken()
+			if err != nil {
+				break
+			}
+		}
+
+		// Stop looping on the delimiter token, unless the input didn't have an
+		// explicit DELIMITER command and we've already seen a BEGIN keyword, in which
+		// case we treat the entire input as a single compound statement.
+		// Since BEGIN isn't a reserved word, it is possible this will misdetect
+		// single-statement procs/funcs that happen to have an arg called "begin", but
+		// that situation is rare and it's typically harmless to set compound=true.
+		// The only pathological case is when there's no DELIMITER command *and* a
+		// single-statement proc/func has an arg called "begin" *and* other statements
+		// follow it in the input. We don't account for that case since it means the
+		// input wasn't generated by Skeema in the first place.
+		if t.typ == TokenDelimiter && (p.explicitDelimiter || !compound) {
+			break
+		}
+		if !compound && t.typ == TokenWord && strings.ToLower(t.val) == "begin" {
+			compound = true
+		}
+	}
+	stmt = p.finishStatement()
+	stmt.Compound = compound
+	return
 }
 
 func stripBackticks(input string) string {
