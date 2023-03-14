@@ -60,12 +60,15 @@ var reservedWords = []string{
 	// For MariaDB as at March 2023
 	// https://mariadb.com/kb/en/reserved-words/
 	// Adding just the extras, not in the MySQL list.
-	"BODY", "CURRENT_ROLE", "DELETE_DOMAIN_ID", "DO_DOMAIN_IDS", "ELSIF", "GENERAL", "GOTO",
+	"CURRENT_ROLE", "DELETE_DOMAIN_ID", "DO_DOMAIN_IDS", "GENERAL",
 	"IGNORE_DOMAIN_IDS", "IGNORE_SERVER_IDS", "INTERSECTS", "MASTER_HEARTBEAT_PERIOD",
-	"MINUS", "OFFSET", "OTHERS", "OVERLAPS", "PACKAGE", "PAGE_CHECKSUM", "PARSE_VCOL_EXPR",
-	"POSITION", "RAISE", "REF_SYSTEM_ID", "RETURNING", "ROWNUM", "ROWTYPE",
-	"SLOW", "STATS_AUTO_RECALC", "STATS_PERSISTENT", "STATS_SAMPLE_PAGES", "SYSDATE",
-	"SYSTEM_USER", "WITHOUT",
+	"OFFSET", "OVERLAPS", "PAGE_CHECKSUM", "PARSE_VCOL_EXPR", "POSITION", "REF_SYSTEM_ID", "RETURNING",
+	"SLOW", "STATS_AUTO_RECALC", "STATS_PERSISTENT", "STATS_SAMPLE_PAGES", "SYSTEM_USER",
+
+	// MariaDB Oracle-SQL Mode only reserved words.
+	// Uncomment to allow, currently disabled because it breaks other tests.
+	// "BODY", "ELSIF", "GOTO", "MINUS", "OTHERS", "PACKAGE", "RAISE", "ROWNUM", "ROWTYPE",
+	// "SYSDATE", "WITHOUT",
 
 	// For testing purposes, since if we try and run against a real MySQL/MariaDB server
 	// we might get a parse error before we get to this.
