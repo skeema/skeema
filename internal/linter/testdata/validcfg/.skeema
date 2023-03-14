@@ -11,3 +11,5 @@ ignore-table=^_
 schema=whatever
 default-character-set=latin1
 default-collation=latin1_swedish_ci
+
+allow-pk-type=smallint,int,bigint,varbinary
