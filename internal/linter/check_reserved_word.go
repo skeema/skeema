@@ -9,8 +9,8 @@ import (
 
 func init() {
 	RegisterRule(Rule{
-		CheckerFunc:     TableBinaryChecker(reservedChecker),
-		Name:            "reserved",
+		CheckerFunc:     TableChecker(reservedWordChecker),
+		Name:            "reserved-word",
 		Description:     "Flag tables and columns that used reserved words",
 		DefaultSeverity: SeverityWarning,
 	})
@@ -70,29 +70,27 @@ var reservedWords = []string{
 	// "BODY", "ELSIF", "GOTO", "MINUS", "OTHERS", "PACKAGE", "RAISE", "ROWNUM", "ROWTYPE",
 	// "SYSDATE", "WITHOUT",
 
-	// For testing purposes, since if we try and run against a real MySQL/MariaDB server
-	// we might get a parse error before we get to this.
-	"SPECIAL_RESERVED_CHECKER_TEST_KEYWORD",
 }
 
-func reservedChecker(table *tengo.Table, _ string, _ *tengo.Schema, _ Options) *Note {
+func reservedWordChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ Options) []Note {
+	notes := []Note{}
 	for _, reservedWord := range reservedWords {
 		if strings.EqualFold(table.Name, reservedWord) {
-			return &Note{
+			notes = append(notes, Note{
 				LineOffset: 0,
 				Summary:    "table name matches reserved word",
-				Message:    fmt.Sprintf("Table name %s matches a reserved word in a later MySQL/MariaDB release. For forward-compatibility consider renaming.", table.Name),
-			}
+				Message:    fmt.Sprintf("Table name %s matches a reserved word in a MySQL/MariaDB release.", table.Name),
+			})
 		}
 		for _, col := range table.Columns {
 			if strings.EqualFold(col.Name, reservedWord) {
-				return &Note{
-					LineOffset: 0,
+				notes = append(notes, Note{
+					LineOffset: FindColumnLineOffset(col, createStatement),
 					Summary:    "column name matches reserved word",
-					Message:    fmt.Sprintf("`%s`.`%s` matches a reserved word in a later MySQL/MariaDB release. For forward-compatibility consider renaming.", table.Name, col.Name),
-				}
+					Message:    fmt.Sprintf("`%s`.`%s` matches a reserved word in a MySQL/MariaDB release.", table.Name, col.Name),
+				})
 			}
 		}
 	}
-	return nil
+	return notes
 }
