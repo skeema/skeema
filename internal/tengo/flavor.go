@@ -10,7 +10,7 @@ import (
 ///// Vendor ///////////////////////////////////////////////////////////////////
 
 // Vendor represents an upstream DBMS software.
-type Vendor int
+type Vendor uint16
 
 // Constants representing different supported vendors
 const (
