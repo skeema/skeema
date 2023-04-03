@@ -140,10 +140,7 @@ func (r *Result) Annotate(stmt *tengo.Statement, sev Severity, ruleName string, 
 	r.Annotations = append(r.Annotations, annotation)
 }
 
-var (
-	reSyntaxErrorLine = regexp.MustCompile(`(?s) the right syntax to use near '.*' at line (\d+)`)
-	reErrorNumber     = regexp.MustCompile(`^Error (\d+): `)
-)
+var reSyntaxErrorLine = regexp.MustCompile(`(?s) the right syntax to use near '.*' at line (\d+)`)
 
 // AnnotateStatementErrors converts any supplied workspace.StatementError values
 // into annotations, unless the statement affects an object that the options
@@ -167,8 +164,8 @@ func (r *Result) AnnotateStatementErrors(statementErrors []*workspace.StatementE
 		var ruleName string
 		if strings.Contains(note.Message, "syntax") {
 			ruleName = "sql-syntax"
-		} else if matches := reErrorNumber.FindStringSubmatch(note.Message); matches != nil {
-			ruleName = fmt.Sprintf("sql-%s", matches[1])
+		} else if errorNumber := stmtErr.ErrorNumber(); errorNumber > 0 {
+			ruleName = fmt.Sprintf("sql-%d", errorNumber)
 		}
 		r.Annotate(stmtErr.Statement, SeverityError, ruleName, note)
 	}

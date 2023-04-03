@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/VividCortex/mysqlerr"
+	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
@@ -238,6 +239,16 @@ func (se *StatementError) Error() string {
 
 func (se *StatementError) String() string {
 	return se.Error()
+}
+
+// ErrorNumber returns the server error code corresponding to Err if it is a
+// driver-provided error. Otherwise, it returns 0.
+func (se *StatementError) ErrorNumber() uint16 {
+	var merr *mysql.MySQLError
+	if errors.As(se.Err, &merr) {
+		return merr.Number
+	}
+	return 0
 }
 
 // Schema captures the result of executing the SQL from an fs.LogicalSchema

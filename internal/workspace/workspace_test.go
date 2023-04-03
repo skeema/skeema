@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/VividCortex/mysqlerr"
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
@@ -132,6 +133,9 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaErrors(t *testing.T) {
 	err = wsSchema.Failures[0] // compile-time check of satisfying interface
 	if errorText := err.Error(); errorText == "" {
 		t.Error("Unexpectedly found blank error text")
+	}
+	if errNo := wsSchema.Failures[0].ErrorNumber(); errNo != mysqlerr.ER_PARSE_ERROR {
+		t.Errorf("Expected StatementError.ErrorNumber() to return %d, instead found %d", mysqlerr.ER_PARSE_ERROR, errNo)
 	}
 
 	// Test handling of fatal error
