@@ -38,18 +38,7 @@ For download links and more information, visit [skeema.io](https://www.skeema.io
 
 ## Credits
 
-Created and maintained by [@evanelias](https://github.com/evanelias).
-
-Additional [contributions](https://github.com/skeema/skeema/graphs/contributors) by:
-
-* [@tomkrouper](https://github.com/tomkrouper)
-* [@efixler](https://github.com/efixler)
-* [@chrisjpalmer](https://github.com/chrisjpalmer)
-* [@johlo](https://github.com/johlo)
-* [@blueish](https://github.com/blueish)
-* [@alexandre-vaniachine](https://github.com/alexandre-vaniachine)
-* [@estahn](https://github.com/estahn)
-* [@tonyqiu2020](https://github.com/tonyqiu2020)
+Created and maintained by [@evanelias](https://github.com/evanelias), and developed with assistance from our many [contributors](https://github.com/skeema/skeema/graphs/contributors) and [users](https://www.skeema.io/about/).
 
 Support for stored procedures and functions generously sponsored by [Psyonix](https://psyonix.com).
 
@@ -57,7 +46,7 @@ Support for partitioned tables generously sponsored by [Etsy](https://www.etsy.c
 
 ## License
 
-**Copyright 2023 Skeema LLC**
+**Source code copyright 2023 Skeema LLC and the Skeema authors**
 
 ```text
 Licensed under the Apache License, Version 2.0 (the "License");
