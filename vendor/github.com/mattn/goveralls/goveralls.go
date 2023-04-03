@@ -265,21 +265,32 @@ func processParallelFinish(jobID, token string) error {
 	defer res.Body.Close()
 	bodyBytes, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return fmt.Errorf("Unable to read response body from coveralls: %s", err)
+		return fmt.Errorf("unable to read response body from coveralls: %s", err)
 	}
 
-	if res.StatusCode >= http.StatusInternalServerError && *shallow {
-		fmt.Println("coveralls server failed internally")
-		return nil
+	if *shallow {
+		if res.StatusCode >= http.StatusInternalServerError {
+			fmt.Println("coveralls server failed internally")
+			return nil
+		}
+
+		// XXX: It looks that Coveralls is under maintenance.
+		// Coveralls serves the maintenance page as a static HTML hosting,
+		// and the maintenance page doesn't accept POST method.
+		// See https://github.com/mattn/goveralls/issues/204
+		if res.StatusCode == http.StatusMethodNotAllowed {
+			fmt.Println("it looks that Coveralls is under maintenance. visit https://status.coveralls.io/")
+			return nil
+		}
 	}
 
-	if res.StatusCode != 200 {
-		return fmt.Errorf("Bad response status from coveralls: %d\n%s", res.StatusCode, bodyBytes)
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("bad response status from coveralls: %d\n%s", res.StatusCode, bodyBytes)
 	}
 
 	var response WebHookResponse
 	if err = json.Unmarshal(bodyBytes, &response); err != nil {
-		return fmt.Errorf("Unable to unmarshal response JSON from coveralls: %s\n%s", err, bodyBytes)
+		return fmt.Errorf("unable to unmarshal response JSON from coveralls: %s\n%s", err, bodyBytes)
 	}
 
 	if !response.Done {
@@ -499,20 +510,31 @@ func process() error {
 	defer res.Body.Close()
 	bodyBytes, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return fmt.Errorf("Unable to read response body from coveralls: %s", err)
+		return fmt.Errorf("unable to read response body from coveralls: %s", err)
 	}
 
-	if res.StatusCode >= http.StatusInternalServerError && *shallow {
-		fmt.Println("coveralls server failed internally")
-		return nil
+	if *shallow {
+		if res.StatusCode >= http.StatusInternalServerError {
+			fmt.Println("coveralls server failed internally")
+			return nil
+		}
+
+		// XXX: It looks that Coveralls is under maintenance.
+		// Coveralls serves the maintenance page as a static HTML hosting,
+		// and the maintenance page doesn't accept POST method.
+		// See https://github.com/mattn/goveralls/issues/204
+		if res.StatusCode == http.StatusMethodNotAllowed {
+			fmt.Println("it looks that Coveralls is under maintenance. visit https://status.coveralls.io/")
+			return nil
+		}
 	}
 
 	if res.StatusCode != 200 {
-		return fmt.Errorf("Bad response status from coveralls: %d\n%s", res.StatusCode, bodyBytes)
+		return fmt.Errorf("bad response status from coveralls: %d\n%s", res.StatusCode, bodyBytes)
 	}
 	var response Response
 	if err = json.Unmarshal(bodyBytes, &response); err != nil {
-		return fmt.Errorf("Unable to unmarshal response JSON from coveralls: %s\n%s", err, bodyBytes)
+		return fmt.Errorf("unable to unmarshal response JSON from coveralls: %s\n%s", err, bodyBytes)
 	}
 	if response.Error {
 		return errors.New(response.Message)

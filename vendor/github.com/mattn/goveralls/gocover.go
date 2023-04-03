@@ -12,13 +12,23 @@ import (
 	"fmt"
 	"go/build"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"golang.org/x/tools/cover"
 )
 
-func findFile(file string) (string, error) {
+func findFile(rootPackage string, rootDir string, file string) (string, error) {
+	// If we find a file that is inside the root package, we already know
+	// where it should be!
+	if rootPackage != "" {
+		if relPath, _ := filepath.Rel(rootPackage, file); !strings.HasPrefix(relPath, "..") {
+			// The file is inside the root package...
+			return filepath.Join(rootDir, relPath), nil
+		}
+	}
+
 	dir, file := filepath.Split(file)
 	pkg, err := build.Import(dir, ".", build.FindOnly)
 	if err != nil {
@@ -102,9 +112,17 @@ func mergeTwoProfBlock(left, right []cover.ProfileBlock) []cover.ProfileBlock {
 
 // toSF converts profiles to sourcefiles for coveralls.
 func toSF(profs []*cover.Profile) ([]*SourceFile, error) {
+	// find root package to reduce build.Import calls when importing files from relative root
+	// https://github.com/mattn/goveralls/pull/195
+	rootDirectory, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("get working dir: %v", err)
+	}
+	rootPackage := findRootPackage(rootDirectory)
+
 	var rv []*SourceFile
 	for _, prof := range profs {
-		path, err := findFile(prof.FileName)
+		path, err := findFile(rootPackage, rootDirectory, prof.FileName)
 		if err != nil {
 			return nil, fmt.Errorf("cannot find file %q: %v", prof.FileName, err)
 		}
@@ -146,7 +164,7 @@ func parseCover(fn string) ([]*SourceFile, error) {
 	for _, p := range strings.Split(fn, ",") {
 		profs, err := cover.ParseProfiles(p)
 		if err != nil {
-			return nil, fmt.Errorf("Error parsing coverage: %v", err)
+			return nil, fmt.Errorf("error parsing coverage: %v", err)
 		}
 		pfss = append(pfss, profs)
 	}

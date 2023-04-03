@@ -119,13 +119,6 @@ func runCommand(gitPath string, args ...string) (string, error) {
 	return string(ret), nil
 }
 
-func firstLine(s string) string {
-	if idx := strings.Index(s, "\n"); idx >= 0 {
-		return s[:idx]
-	}
-	return s
-}
-
 var varNames = [...]string{
 	"GIT_BRANCH",
 
