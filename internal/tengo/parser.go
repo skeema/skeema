@@ -72,9 +72,19 @@ func ParseStatementsInString(s string) (result []*Statement, err error) {
 // later in the string.
 // For situations that require a specific error value, or the ability to detect
 // zero or 2+ statements in the input, use ParseStatementsInString instead.
+// If the statement is a compound statement, the returned Statement.Delimiter
+// will be a blank string; otherwise, it will be the default of ";".
 func ParseStatementInString(s string) *Statement {
 	statements, err := ParseStatementsInString(s)
 	if err == nil && len(statements) > 0 {
+		// Since this function is intended to process strings that only contain
+		// exactly one statement, there's no opportunity for an explicit DELIMITER
+		// command to be present before a compound statement, but we know a non-
+		// standard delimiter is required; we can't leave delimiter as ";" since
+		// this would be detrimental to methods that manipulate statement trailers.
+		if statements[0].Compound {
+			statements[0].Delimiter = ""
+		}
 		return statements[0]
 	}
 	return &Statement{}
@@ -505,13 +515,9 @@ func processDelimiterCommand(p *parser, _ []Token) (stmt *Statement, err error) 
 }
 
 func processCreateStatement(p *parser, tokens []Token) (stmt *Statement, err error) {
-	tokens = p.nextTokens(tokens, 20)
-	if len(tokens) < 2 {
-		return p.finishStatement(), p.err
-	}
-
 	var processor statementProcessor
-	if tokens[0].typ == TokenWord {
+	tokens = p.nextTokens(tokens, 20)
+	if len(tokens) >= 2 && tokens[0].typ == TokenWord {
 		processor = createProcessors[strings.ToLower(tokens[0].val)]
 	}
 	if processor == nil {
@@ -535,7 +541,7 @@ func processCreateTable(p *parser, tokens []Token) (*Statement, error) {
 
 	matched, tokens := p.skipUntilSequence(tokens, "select")
 	if matched != nil {
-		p.err = MalformedSQLError{
+		p.err = &MalformedSQLError{
 			str:        "Statements of the form CREATE TABLE...SELECT are not supported",
 			filePath:   p.filePath,
 			lineNumber: p.lineNumber,

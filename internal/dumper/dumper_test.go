@@ -323,6 +323,7 @@ func getDir(dirPath string) (*fs.Dir, error) {
 	cmd := mybase.NewCommand("dumpertest", "", "", nil)
 	util.AddGlobalOptions(cmd)
 	workspace.AddCommandOptions(cmd)
+	cmd.AddArg("environment", "production", false)
 	cfg := &mybase.Config{
 		CLI: &mybase.CommandLine{Command: cmd},
 	}

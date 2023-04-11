@@ -21,7 +21,7 @@ type MalformedSQLError struct {
 }
 
 // Error satisfies the builtin error interface.
-func (mse MalformedSQLError) Error() string {
+func (mse *MalformedSQLError) Error() string {
 	var parts []string
 	if mse.filePath != "" {
 		parts = append(parts, "File "+mse.filePath+": ")

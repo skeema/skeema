@@ -89,12 +89,15 @@ func (sqlFile *SQLFile) AddStatement(stmt *tengo.Statement) {
 	}
 
 	// If there are any statements left, examine the last statement to see what
-	// the delimiter and default database are at the end of the file.
+	// the delimiter and default database are at the end of the file. Also ensure
+	// the last statement has a trailing delimiter and newline.
 	currentDelimiter := ";"
 	var defaultDatabase string
 	if len(sqlFile.Statements) > 0 {
-		currentDelimiter = sqlFile.Statements[len(sqlFile.Statements)-1].Delimiter
-		defaultDatabase = sqlFile.Statements[len(sqlFile.Statements)-1].DefaultDatabase
+		lastStmt := sqlFile.Statements[len(sqlFile.Statements)-1]
+		currentDelimiter = lastStmt.Delimiter
+		defaultDatabase = lastStmt.DefaultDatabase
+		lastStmt.NormalizeTrailer()
 	}
 
 	// Add a DELIMITER command before stmt, if needed
@@ -108,11 +111,10 @@ func (sqlFile *SQLFile) AddStatement(stmt *tengo.Statement) {
 
 	// Adjust a few stmt fields as needed; append it to the file's statement list;
 	// add another DELIMITER command if needed; mark file as dirty
-	stmt.Text, _ = stmt.SplitTextBody()
-	stmt.Text += currentDelimiter + "\n"
-	stmt.Delimiter = currentDelimiter
 	stmt.File = sqlFile.FilePath
 	stmt.DefaultDatabase = defaultDatabase
+	stmt.Delimiter = currentDelimiter
+	stmt.NormalizeTrailer()
 	sqlFile.Statements = append(sqlFile.Statements, stmt)
 	if currentDelimiter != ";" {
 		sqlFile.Statements = append(sqlFile.Statements, makeDelimiterCommand(";", defaultDatabase, sqlFile.FilePath))

@@ -91,6 +91,28 @@ func (stmt *Statement) SplitTextBody() (body string, suffix string) {
 	return body, stmt.Text[len(body):]
 }
 
+// NormalizeTrailer ensures the statement text ends in a delimiter (if required
+// based on the statement type) and newline. This method modifies stmt in-place.
+func (stmt *Statement) NormalizeTrailer() {
+	body, trailer := stmt.SplitTextBody()
+
+	// If delimiter isn't known, or this is a DELIMITER command line, or a noop/
+	// comment line, or unknown statement: just ensure there's a trailing newline
+	if stmt.Delimiter == "" || stmt.Delimiter == "\000" || stmt.Type == StatementTypeUnknown || stmt.Type == StatementTypeNoop {
+		if !strings.Contains(trailer, "\n") {
+			stmt.Text += "\n"
+		}
+		return
+	}
+
+	if !strings.Contains(trailer, stmt.Delimiter) {
+		stmt.Text = body + stmt.Delimiter + trailer
+	}
+	if !strings.Contains(trailer, "\n") {
+		stmt.Text += "\n"
+	}
+}
+
 // Compounder is implemented by types that have the ability to represent
 // compound statements, requiring special delimiter handling.
 type Compounder interface {

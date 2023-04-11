@@ -32,7 +32,10 @@ func DumpSchema(schema *tengo.Schema, dir *fs.Dir, opts Options) (int, error) {
 		return 0, errors.New("unsupported format of .sql files")
 	}
 
-	filesWithDiffs := modifiedFiles(schema, dir, opts)
+	if err := updateCreateStatements(schema, dir, opts); err != nil {
+		return 0, err
+	}
+	filesWithDiffs := dir.DirtyFiles()
 	for n, file := range filesWithDiffs {
 		if opts.CountOnly {
 			log.Infof("File %s requires formatting changes", file.FilePath)
@@ -53,19 +56,15 @@ func DumpSchema(schema *tengo.Schema, dir *fs.Dir, opts Options) (int, error) {
 	return len(filesWithDiffs), nil
 }
 
-// modifiedFiles determines what SQLFile and Statement changes are needed to
-// complete the requested dump operation, and returns the affected SQLFiles.
-// If opts.CountOnly is false, the SQLFile and Statement changes will be made
-// in-place to the in-memory values in dir, but are not actually persisted to
-// the filesystem by this function.
-func modifiedFiles(schema *tengo.Schema, dir *fs.Dir, opts Options) []*fs.SQLFile {
+// updateCreateStatements determines what SQLFile and Statement changes are
+// needed to dump the schema definition to the filesystem, and marks the
+// relevant files as dirty. If opts.CountOnly is false, the SQLFile and
+// Statement changes will be made in-place to the in-memory values in dir, in
+// addition to files being marked as dirty. No writes are ever persisted to the
+// filesystem by this function.
+func updateCreateStatements(schema *tengo.Schema, dir *fs.Dir, opts Options) error {
 	// TODO: handle dirs that contain multiple logical schemas by name
-	var logicalSchema *fs.LogicalSchema
-	if len(dir.LogicalSchemas) > 0 {
-		logicalSchema = dir.LogicalSchemas[0]
-	} else {
-		logicalSchema = fs.NewLogicalSchema()
-	}
+	logicalSchema := dir.LogicalSchemas[0]
 
 	dbObjects := schema.Objects()
 	for key, object := range dbObjects {
@@ -104,7 +103,7 @@ func modifiedFiles(schema *tengo.Schema, dir *fs.Dir, opts Options) []*fs.SQLFil
 		if newStmt.Type != tengo.StatementTypeCreate || newStmt.ObjectKey() != key {
 			log.Errorf("%s is unexpectedly not able to be parsed by Skeema\nPlease file an issue report at https://github.com/skeema/skeema/issues with the problematic statement, redacting sensitive portions if necessary:\n%s", key, canonicalCreate)
 			log.Error("Unfortunately this error is fatal and prevents Skeema from being usable in your environment until this is resolved.")
-			return nil
+			return errors.New("fatal parser exception")
 		}
 
 		if stmt == nil {
@@ -140,5 +139,5 @@ func modifiedFiles(schema *tengo.Schema, dir *fs.Dir, opts Options) []*fs.SQLFil
 		}
 	}
 
-	return dir.DirtyFiles()
+	return nil
 }

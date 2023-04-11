@@ -160,6 +160,18 @@ func (dir *Dir) CreateOptionFile(optionFile *mybase.File) (err error) {
 		return err
 	}
 	dir.Config.AddSource(dir.OptionFile)
+
+	// If the option file configures a schema name, add an empty logical schema
+	// to the dir. (Normally this is handled by parseContents() if the dir's config
+	// has a schema, but clearly the dir didn't have an option file yet when that
+	// was called.)
+	if len(dir.LogicalSchemas) == 0 && dir.HasSchema() {
+		ls := NewLogicalSchema()
+		ls.CharSet = dir.Config.Get("default-character-set")
+		ls.Collation = dir.Config.Get("default-collation")
+		dir.LogicalSchemas = []*LogicalSchema{ls}
+	}
+
 	return nil
 }
 

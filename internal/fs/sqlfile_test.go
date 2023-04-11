@@ -60,11 +60,11 @@ func TestSQLFileAddStatement(t *testing.T) {
 		ObjectType: tengo.ObjectTypeProc,
 		ObjectName: "whatever",
 		Text:       create,
-		Delimiter:  ";", // this matches how ParseStatementInString will always return it
+		Delimiter:  "", // this matches how ParseStatementInString will return it for compound statement
 		Compound:   true,
 	}
 	sf.AddStatement(stmt)
-	if len(sf.Statements) != 4 || !sf.Dirty || sf.Statements[2].Text != strings.TrimRight(create, ";")+"//\n" {
+	if len(sf.Statements) != 4 || !sf.Dirty || sf.Statements[2].Text != create+"//\n" {
 		t.Fatalf("Unexpected values in SQLFile: dirty=%t, len(statements)=%d, text[2]=%q", sf.Dirty, len(sf.Statements), sf.Statements[2].Text)
 	}
 

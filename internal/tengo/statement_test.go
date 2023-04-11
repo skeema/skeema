@@ -94,3 +94,37 @@ func TestStatementBody(t *testing.T) {
 		}
 	}
 }
+
+func TestStatementNormalizeTrailer(t *testing.T) {
+	cases := []struct {
+		text      string
+		typ       StatementType
+		delimiter string
+		expected  string
+	}{
+		{"DELIMITER ;", StatementTypeCommand, "\000", "DELIMITER ;\n"},
+		{"DELIMITER ;\n", StatementTypeCommand, "\000", "DELIMITER ;\n"},
+		{"DELIMITER ;;", StatementTypeCommand, "\000", "DELIMITER ;;\n"},
+		{"USE foo", StatementTypeCommand, ";", "USE foo;\n"},
+		{"USE foo\n", StatementTypeCommand, ";", "USE foo;\n"},
+		{"USE foo   \t\n", StatementTypeCommand, ";", "USE foo;   \t\n"},
+		{"USE foo;", StatementTypeCommand, ";", "USE foo;\n"},
+		{"USE foo;\n", StatementTypeCommand, ";", "USE foo;\n"},
+		{"USE foo;  \r\n", StatementTypeCommand, ";", "USE foo;  \r\n"},
+		{"# this is a comment\n#this too   ", StatementTypeNoop, ";", "# this is a comment\n#this too   \n"},
+		{"   ", StatementTypeNoop, ";", "   \n"},
+		{"LOAD DATA INFILE BIP BLOOP BLOOP", StatementTypeUnknown, ";", "LOAD DATA INFILE BIP BLOOP BLOOP\n"},
+	}
+
+	for n, tc := range cases {
+		stmt := &Statement{
+			Text:      tc.text,
+			Type:      tc.typ,
+			Delimiter: tc.delimiter,
+		}
+		stmt.NormalizeTrailer()
+		if stmt.Text != tc.expected {
+			t.Errorf("cases[%d]: Expected normalized text to be %q, instead found %q", n, tc.expected, stmt.Text)
+		}
+	}
+}
