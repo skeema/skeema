@@ -9,6 +9,7 @@ import (
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/linter"
 	"github.com/skeema/skeema/internal/tengo"
+	"github.com/skeema/skeema/internal/util"
 )
 
 // ClientState provides information on where and how a SQL statement would be
@@ -137,6 +138,7 @@ func ApplyTarget(t *Target, printer Printer) (Result, error) {
 			return result, ConfigError(err.Error())
 		}
 		lintOpts.OnlyKeys(keys)
+		lintOpts.StripAnnotationNewlines = !util.StderrIsTerminal()
 		lintResult := linter.CheckSchema(t.DesiredSchema, lintOpts)
 		lintResult.SortByFile()
 		for _, annotation := range lintResult.Annotations {

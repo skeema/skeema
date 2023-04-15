@@ -9,6 +9,7 @@ import (
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/linter"
 	"github.com/skeema/skeema/internal/tengo"
+	"github.com/skeema/skeema/internal/util"
 	"github.com/skeema/skeema/internal/workspace"
 )
 
@@ -121,6 +122,7 @@ func lintWalker(dir *fs.Dir, maxDepth int) *linter.Result {
 // returned. This function does not recurse into subdirs.
 func lintDir(dir *fs.Dir) *linter.Result {
 	opts, err := linter.OptionsForDir(dir)
+	opts.StripAnnotationNewlines = !util.StderrIsTerminal()
 	if err != nil && len(dir.LogicalSchemas) > 0 {
 		return linter.BadConfigResult(dir, err)
 	}

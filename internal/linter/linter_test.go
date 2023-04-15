@@ -300,6 +300,46 @@ func (s IntegrationSuite) TestCheckSchemaAllowAllDefiner(t *testing.T) {
 	}
 }
 
+func (s IntegrationSuite) TestCheckSchemaStripAnnotationNewlines(t *testing.T) {
+	// Confirm that lint-dupe-index normally contains newlines
+	dir := getDir(t, "testdata/validcfg")
+	forceOnlyRulesWarning(dir.Config, "dupe-index")
+	opts, err := OptionsForDir(dir)
+	if err != nil {
+		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
+	}
+	logicalSchema := dir.LogicalSchemas[0]
+	wsOpts, err := workspace.OptionsForDir(dir, s.d.Instance)
+	if err != nil {
+		t.Fatalf("Unexpected error from workspace.OptionsForDir: %v", err)
+	}
+	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
+	if err != nil {
+		t.Fatalf("Unexpected error from workspace.ExecLogicalSchema: %v", err)
+	}
+	result := CheckSchema(wsSchema, opts)
+	if len(result.Annotations) == 0 || len(result.Exceptions) > 0 {
+		t.Fatalf("Unexpected result from CheckSchema: %d annotations, %d exceptions", len(result.Annotations), len(result.Exceptions))
+	}
+	for _, a := range result.Annotations {
+		if !strings.Contains(a.Message, "\n") {
+			t.Fatal("Test setup assertion failed: annotation for lint-dupe-index did not contain any newlines to begin with")
+		}
+	}
+
+	// Now test again with StripAnnotationNewlines enabled, confirm no newlines
+	opts.StripAnnotationNewlines = true
+	result = CheckSchema(wsSchema, opts)
+	if len(result.Annotations) == 0 || len(result.Exceptions) > 0 {
+		t.Fatalf("Unexpected result from CheckSchema: %d annotations, %d exceptions", len(result.Annotations), len(result.Exceptions))
+	}
+	for _, a := range result.Annotations {
+		if strings.Contains(a.Message, "\n") {
+			t.Errorf("Annotation for lint-dupe-index still contained newline even with StripAnnotationNewlines: %q", a.Message)
+		}
+	}
+}
+
 func (s *IntegrationSuite) Setup(backend string) (err error) {
 	s.d, err = s.manager.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
 		Name:              fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),
