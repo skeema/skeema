@@ -39,10 +39,11 @@ func AddCommandOptions(cmd *mybase.Command) {
 
 // Options contains parsed settings controlling linter behavior.
 type Options struct {
-	RuleSeverity map[string]Severity
-	RuleConfig   map[string]interface{}
-	Flavor       tengo.Flavor
-	onlyKeys     map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
+	RuleSeverity            map[string]Severity
+	RuleConfig              map[string]interface{}
+	Flavor                  tengo.Flavor
+	StripAnnotationNewlines bool                     // if true, remove newlines inside annotation messages
+	onlyKeys                map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
 }
 
 // AllowList returns a slice of configured allowed values for the given rule.

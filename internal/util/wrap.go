@@ -2,6 +2,7 @@ package util
 
 import (
 	"errors"
+	"os"
 	"strings"
 
 	"github.com/mitchellh/go-wordwrap"
@@ -11,7 +12,7 @@ import (
 // TerminalWidth returns the width of the supplied file descriptor if it is a
 // terminal. Otherwise, 0 and an error are returned.
 func TerminalWidth(fd int) (int, error) {
-	if !terminal.IsTerminal(fd) {
+	if !isTerminal(fd) {
 		return 0, errors.New("supplied fd is not a terminal")
 	}
 	width, _, err := terminal.GetSize(fd)
@@ -31,4 +32,31 @@ func WrapStringWithPadding(s string, lim int, padder string) string {
 	}
 	s = wordwrap.WrapString(s, uint(lim-len(padder)))
 	return strings.ReplaceAll(s, "\n", "\n"+padder)
+}
+
+// StdoutIsTerminal returns true if os.Stdout is a terminal.
+func StdoutIsTerminal() bool {
+	return isTerminal(int(os.Stdout.Fd()))
+}
+
+// StderrIsTerminal returns true if os.Stderr is a terminal.
+func StderrIsTerminal() bool {
+	return isTerminal(int(os.Stderr.Fd()))
+}
+
+// StdinIsTerminal returns true if os.Stdin is a terminal.
+func StdinIsTerminal() bool {
+	return isTerminal(int(os.Stdin.Fd()))
+}
+
+var fdIsTerminal map[int]bool
+
+func isTerminal(fd int) bool {
+	if fdIsTerminal == nil {
+		fdIsTerminal = make(map[int]bool)
+	} else if cachedResult, ok := fdIsTerminal[fd]; ok {
+		return cachedResult
+	}
+	fdIsTerminal[fd] = terminal.IsTerminal(fd)
+	return fdIsTerminal[fd]
 }

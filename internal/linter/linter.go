@@ -3,6 +3,7 @@ package linter
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/tengo"
@@ -31,6 +32,9 @@ func CheckSchema(wsSchema *workspace.Schema, opts Options) *Result {
 			r := rulesByName[ruleName]
 			output := r.CheckerFunc.CheckObject(object, stmt.Text, wsSchema.Schema, opts)
 			for _, lo := range output {
+				if opts.StripAnnotationNewlines {
+					lo.Message = strings.ReplaceAll(lo.Message, "\n", " ")
+				}
 				result.Annotate(stmt, severity, ruleName, lo)
 			}
 		}

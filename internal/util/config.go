@@ -173,7 +173,7 @@ var PasswordPromptInput PasswordInputSource
 func init() {
 	// Don't attempt interactive password prompt if STDIN isn't a TTY, or if
 	// running a test suite
-	if !terminal.IsTerminal(int(os.Stdin.Fd())) || strings.HasSuffix(os.Args[0], ".test") || strings.HasSuffix(os.Args[0], ".test.exe") {
+	if !StdinIsTerminal() || strings.HasSuffix(os.Args[0], ".test") || strings.HasSuffix(os.Args[0], ".test.exe") {
 		PasswordPromptInput = PasswordInputSource(NoInteractiveInput)
 	} else {
 		PasswordPromptInput = PasswordInputSource(InteractivePasswordInput)
@@ -192,7 +192,7 @@ func PromptPassword(promptArgs ...interface{}) (string, error) {
 	}
 
 	w := os.Stderr
-	if !terminal.IsTerminal(int(w.Fd())) && terminal.IsTerminal(int(os.Stdout.Fd())) {
+	if !StderrIsTerminal() && StdoutIsTerminal() {
 		w = os.Stdout
 	}
 	fmt.Fprintf(w, promptArgs[0].(string), promptArgs[1:]...)
