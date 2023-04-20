@@ -39,20 +39,8 @@ func (t *Target) SchemaFromDir() *tengo.Schema {
 	return &schemaCopy
 }
 
-// dryRun returns true if this target is only being used for dry-run purposes,
-// rather than actually wanting to apply changes to this target.
-func (t *Target) dryRun() bool {
-	return t.Dir.Config.GetBool("dry-run")
-}
-
-// briefOutput returns true if this target is only being evaluated for having
-// differences or not.
-func (t *Target) briefOutput() bool {
-	return t.Dir.Config.GetBool("brief") && t.dryRun()
-}
-
 func (t *Target) logApplyStart() {
-	if t.dryRun() {
+	if t.Dir.Config.GetBool("dry-run") {
 		log.Infof("Generating diff of %s %s vs %s%c*.sql", t.Instance, t.SchemaName, t.Dir, os.PathSeparator)
 	} else {
 		log.Infof("Pushing changes from %s%c*.sql to %s %s", t.Dir, os.PathSeparator, t.Instance, t.SchemaName)
@@ -65,7 +53,7 @@ func (t *Target) logApplyStart() {
 func (t *Target) logApplyEnd(result Result) {
 	if result.Differences {
 		verb := "push"
-		if t.dryRun() {
+		if t.Dir.Config.GetBool("dry-run") {
 			verb = "diff"
 		}
 		log.Infof("%s %s: %s complete\n", t.Instance, t.SchemaName, verb)
@@ -77,9 +65,9 @@ func (t *Target) logApplyEnd(result Result) {
 func (t *Target) processSQL(stmts []PlannedStatement, printer Printer) (skipCount int) {
 	for i, stmt := range stmts {
 		printer.Print(stmt)
-		if !t.dryRun() {
+		if !t.Dir.Config.GetBool("dry-run") {
 			if err := stmt.Execute(); err != nil {
-				log.Errorf("Error running SQL statement on %s %s: %s\nFull SQL statement: %s", t.Instance, t.SchemaName, err, stmt.Statement())
+				log.Errorf("Error running SQL statement on %s %s: %s\nFull SQL statement: %s%s", t.Instance, t.SchemaName, err, stmt.Statement(), stmt.ClientState().Delimiter)
 				skipped := len(stmts) - i
 				skipCount += skipped
 				if skipped > 1 {
@@ -109,6 +97,7 @@ func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int)
 		log.Errorf("Skipping %s: %s\n", dir.Path, dir.ParseError)
 		return nil, 1
 	}
+
 	if dir.Config.Changed("host") && dir.HasSchema() {
 		var instances []*tengo.Instance
 		instances, skipCount = instancesForDir(dir)

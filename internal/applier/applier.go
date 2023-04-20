@@ -185,8 +185,7 @@ func countAndNoun(n int, nouns ...string) string {
 // directory's configuration.
 func StatementModifiersForDir(dir *fs.Dir) (mods tengo.StatementModifiers, err error) {
 	mods.NextAutoInc = tengo.NextAutoIncIfIncreased
-	forceAllowUnsafe := dir.Config.GetBool("brief") && dir.Config.GetBool("dry-run")
-	mods.AllowUnsafe = forceAllowUnsafe || dir.Config.GetBool("allow-unsafe")
+	mods.AllowUnsafe = dir.Config.GetBool("allow-unsafe")
 	mods.CompareMetadata = dir.Config.GetBool("compare-metadata")
 	mods.VirtualColValidation = dir.Config.GetBool("alter-validate-virtual")
 	if dir.Config.GetBool("exact-match") {

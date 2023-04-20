@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
@@ -447,6 +448,10 @@ func (s SkeemaIntegrationSuite) TestDiffHandler(t *testing.T) {
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
 
 	// Confirm --brief works as expected
+	defer func() {
+		// --brief manipulates the log level, so we must restore it after
+		log.SetLevel(log.DebugLevel)
+	}()
 	oldStdout := os.Stdout
 	if outFile, err := os.Create("diff-brief.out"); err != nil {
 		t.Fatalf("Unable to redirect stdout to a file: %s", err)

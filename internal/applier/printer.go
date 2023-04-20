@@ -35,7 +35,7 @@ type instanceDiffPrinter struct {
 // the supplied configuration requests only outputting names of instances that
 // have differences.
 func NewPrinter(cfg *mybase.Config) Printer {
-	if cfg.GetBool("dry-run") && cfg.GetBool("brief") {
+	if cfg.GetBool("brief") {
 		return &instanceDiffPrinter{
 			seenInstance: make(map[string]bool),
 		}

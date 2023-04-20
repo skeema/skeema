@@ -15,7 +15,7 @@ import (
 // bring a table from the version currently in the instance to the version
 // specified in the filesystem.
 func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
-	if !t.Dir.Config.GetBool("verify") || len(diff.TableDiffs) == 0 || t.briefOutput() {
+	if !t.Dir.Config.GetBool("verify") || len(diff.TableDiffs) == 0 {
 		return nil
 	}
 
