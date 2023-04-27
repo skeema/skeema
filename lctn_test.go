@@ -195,6 +195,15 @@ func (s SkeemaIntegrationSuite) TestLowerCaseTableNames2(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema push lctn2")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff lctn2")
 
+	// Important: If Docker Desktop for Mac is configured to use VirtioFS instead
+	// of gRPC FUSE, VirtioFS is exhibiting odd behavior which breaks LCTN=2
+	// database servers when schema names contain uppercase characters. This will
+	// usually cause some of the CREATE TABLEs in the above push operation to error
+	// oddly. We've reported the Docker issue at https://github.com/docker/for-mac/issues/6820
+	if t.Failed() {
+		t.Fatal("LCTN=2 instance is not functioning as expected. Check if Docker for Mac is using VirtioFS, and if so, switch to gRPC FUSE and re-run this test. Alternatively, run the test using only SKEEMA_TEST_IMAGES=mysql:8.0\nFor more information on the VirtioFS incompatibility here, see https://github.com/docker/for-mac/issues/6820")
+	}
+
 	// lint should show no problems on either environment by default, unless
 	// lint-name-case is enabled
 	s.handleCommand(t, CodeSuccess, ".", "skeema lint lctn0 --skip-format")
