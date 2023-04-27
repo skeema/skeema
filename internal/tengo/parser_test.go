@@ -113,6 +113,7 @@ func TestParseStatementsInFileFail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error from os.Open: %v", err)
 	}
+	defer f.Close()
 	r := bufio.NewReader(f)
 	if statements, err := ParseStatements(r, filePath); err != nil {
 		t.Errorf("Unexpected error parsing nodelimiter1.sql: %s", err)

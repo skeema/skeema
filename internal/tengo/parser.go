@@ -53,6 +53,7 @@ func ParseStatementsInFile(filePath string) (result []*Statement, err error) {
 	if err != nil {
 		return nil, err
 	}
+	defer f.Close()
 	return ParseStatements(f, filePath)
 }
 
