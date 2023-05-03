@@ -347,6 +347,9 @@ func (dir *Dir) FirstInstance() (*tengo.Instance, error) {
 func (dir *Dir) ValidateInstance(instance *tengo.Instance) error {
 	ok, err := instance.Valid()
 	if !ok {
+		if instance.Password == "" {
+			err = fmt.Errorf("%w\nNo password was supplied for this login attempt, but the server likely requires a password. For information on how to use Skeema's password option, see https://www.skeema.io/docs/options/#password", err)
+		}
 		return err
 	}
 

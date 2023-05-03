@@ -123,7 +123,16 @@ func ProcessSpecialGlobalOptions(cfg *mybase.Config) error {
 	if cfg.GetRaw("password") == "" {
 		val, err := PromptPassword()
 		if err != nil {
-			return err
+			var more string
+			if cfg.OnCLI("password") && len(cfg.CLI.ArgValues) > 0 {
+				more = "If you are trying to supply a password value directly on the command-line, you must omit the space between the " +
+					"option flag and the value. For example, to use a password of \"asdf\", use either --password=asdf or -pasdf without " +
+					"any space before the value. This matches the password-handling behavior of the standard `mysql` client."
+			} else {
+				more = "Interactive password prompting requires an input terminal. To supply a password non-interactively, configure the " +
+					"password value in a global option file, or supply it directly on the command-line, or set the $MYSQL_PWD environment variable."
+			}
+			return fmt.Errorf("%w\n%s For more information, see https://www.skeema.io/docs/options/#password", err, more)
 		}
 		// We single-quote-wrap the value (escaping any internal single-quotes) to
 		// prevent a redundant pw prompt on an empty string, and also to prevent
