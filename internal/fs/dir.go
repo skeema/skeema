@@ -724,7 +724,7 @@ func (dir *Dir) parseContents() {
 				// quite rare for a typo to trigger this -- only happens when misspelling
 				// CREATE or the object type for example.
 				dir.UnparsedStatements = append(dir.UnparsedStatements, stmt)
-			} else if stmt.ObjectQualifier != "" || (stmt.Type == tengo.StatementTypeCommand && len(stmt.Text) > 4 && strings.ToLower(stmt.Text[0:3]) == "use") {
+			} else if stmt.ObjectQualifier != "" || (stmt.Type == tengo.StatementTypeCommand && len(stmt.Text) > 4 && strings.EqualFold(stmt.Text[0:3], "use")) {
 				// Statements which refer to specific schema names can be problematic, since
 				// this conflicts with the ability to specify the schema name dynamically
 				// in the .skeema config file.

@@ -259,7 +259,7 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 		col := &Column{
 			Name:          rawColumn.Name,
 			TypeInDB:      rawColumn.Type,
-			Nullable:      strings.ToUpper(rawColumn.IsNullable) == "YES",
+			Nullable:      strings.EqualFold(rawColumn.IsNullable, "YES"),
 			AutoIncrement: strings.Contains(rawColumn.Extra, "auto_increment"),
 			Comment:       rawColumn.Comment,
 			Invisible:     strings.Contains(rawColumn.Extra, "INVISIBLE"),
@@ -394,7 +394,7 @@ func queryIndexesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 			Type:      rawIndex.Type,
 			Invisible: (rawIndex.Visible == "NO"),
 		}
-		if strings.ToUpper(index.Name) == "PRIMARY" {
+		if strings.EqualFold(index.Name, "PRIMARY") {
 			primaryKeyByTableName[rawIndex.TableName] = index
 			index.PrimaryKey = true
 		} else {
@@ -520,7 +520,7 @@ func queryChecksInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor
 		check := &Check{
 			Name:     rawCheck.Name,
 			Clause:   rawCheck.Clause,
-			Enforced: strings.ToUpper(rawCheck.Enforced) != "NO",
+			Enforced: !strings.EqualFold(rawCheck.Enforced, "NO"),
 		}
 		checksByTableName[rawCheck.TableName] = append(checksByTableName[rawCheck.TableName], check)
 	}

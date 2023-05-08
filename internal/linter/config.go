@@ -57,9 +57,8 @@ func (opts *Options) AllowList(ruleName string) []string {
 // This method can only be used by rules that use RelatedListOption to configure
 // their related option and config func.
 func (opts *Options) IsAllowed(ruleName, value string) bool {
-	value = strings.ToLower(value)
 	for _, allowedValue := range opts.AllowList(ruleName) {
-		if value == strings.ToLower(allowedValue) {
+		if strings.EqualFold(value, allowedValue) {
 			return true
 		}
 	}

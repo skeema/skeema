@@ -130,7 +130,7 @@ func makeCompressionMessage(tableName, mode, clause string, opts Options) string
 	}
 
 	// Table is compressed, but allow-compression prohibits ANY compression
-	if len(allowed) == 1 && strings.ToLower(allowed[0]) == "none" {
+	if len(allowed) == 1 && strings.EqualFold(allowed[0], "none") {
 		return fmt.Sprintf("Table %s is using compression clause %s, but option allow-compression is configured to prohibit use of compression.", tableName, clause)
 	}
 

@@ -643,7 +643,7 @@ func processStoredProgram(p *parser, tokens []Token) (stmt *Statement, err error
 		if t.typ == TokenDelimiter && (p.explicitDelimiter || !compound) {
 			break
 		}
-		if !compound && t.typ == TokenWord && strings.ToLower(t.val) == "begin" {
+		if !compound && t.typ == TokenWord && strings.EqualFold(t.val, "begin") {
 			compound = true
 		}
 	}

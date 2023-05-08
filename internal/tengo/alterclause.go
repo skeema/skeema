@@ -309,19 +309,21 @@ func (mc ModifyColumn) Clause(mods StatementModifiers) string {
 // increasing the size of a varchar is safe, but decreasing the size or (in most
 // cases) changing the column type entirely is considered unsafe.
 func (mc ModifyColumn) Unsafe() bool {
+	// Simple cases: virtual columns can always be "safely" changed since they
+	// aren't stored; changing charset is always unsafe; otherwise, leaving type
+	// as-is is safe
 	if mc.OldColumn.Virtual {
 		return false
 	}
-
 	if mc.OldColumn.CharSet != mc.NewColumn.CharSet {
 		return true
+	}
+	if strings.EqualFold(mc.OldColumn.TypeInDB, mc.NewColumn.TypeInDB) {
+		return false
 	}
 
 	oldType := strings.ToLower(mc.OldColumn.TypeInDB)
 	newType := strings.ToLower(mc.NewColumn.TypeInDB)
-	if oldType == newType {
-		return false
-	}
 
 	// signed -> unsigned is always unsafe
 	// (The opposite is checked later specifically for the integer types)

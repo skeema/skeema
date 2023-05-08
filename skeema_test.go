@@ -341,6 +341,9 @@ func (s *SkeemaIntegrationSuite) compareDirSQLFiles(t *testing.T, a, b *fs.Dir) 
 }
 
 var reDisplayWidth = regexp.MustCompile(`(tinyint|smallint|mediumint|int|bigint)\((\d+)\)( unsigned)?( zerofill)?`)
+var repAlwaysCollation = strings.NewReplacer("DEFAULT CHARSET=latin1;", "DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;",
+	"DEFAULT CHARSET=latin1\n", "DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci\n",
+	"DEFAULT CHARSET=utf8mb4;", "DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;")
 
 // compareDirLogicalSchemas compares LogicalSchemas between a and b. Of these, a
 // should be the expected (golden) dir, and b the dir generated from the logic
@@ -364,9 +367,7 @@ func (s *SkeemaIntegrationSuite) compareDirLogicalSchemas(t *testing.T, a, b *fs
 					aText = reDisplayWidth.ReplaceAllString(aText, "$1$3$4")
 				}
 				if flavor.AlwaysShowCollate() {
-					aText = strings.Replace(aText, "DEFAULT CHARSET=latin1;", "DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;", 1)
-					aText = strings.Replace(aText, "DEFAULT CHARSET=latin1\n", "DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci\n", 1)
-					aText = strings.Replace(aText, "DEFAULT CHARSET=utf8mb4;", "DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;", 1)
+					aText = repAlwaysCollation.Replace(aText)
 				}
 				if aText != bText {
 					t.Errorf("Mismatch for %s:\n%s:\n%s\n\n%s:\n%s\n", key, aStmt.Location(), aText, bStmt.Location(), bText)

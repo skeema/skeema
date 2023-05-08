@@ -37,6 +37,8 @@ type definerConfig struct {
 }
 
 var reDefinerCheckerOffset = regexp.MustCompile("(?i)definer")
+var repDefinerQuotes = strings.NewReplacer("'", "", "`", "")
+var repDefinerWildcards = strings.NewReplacer("%", ".*", "_", ".")
 
 func definerChecker(object tengo.DefKeyer, createStatement string, schema *tengo.Schema, opts Options) []Note {
 	dc := opts.RuleConfig["definer"].(*definerConfig)
@@ -90,11 +92,9 @@ func definerConfiger(config *mybase.Config) interface{} {
 		allowedDefinersMatch:  make([]*regexp.Regexp, len(values)),
 	}
 	for i, definer := range values {
-		definer = strings.Replace(definer, "'", "", -1)
-		definer = strings.Replace(definer, "`", "", -1)
+		definer = repDefinerQuotes.Replace(definer)
 		definer = regexp.QuoteMeta(definer)
-		definer = strings.Replace(definer, "%", ".*", -1)
-		definer = strings.Replace(definer, "_", ".", -1)
+		definer = repDefinerWildcards.Replace(definer)
 		dc.allowedDefinersMatch[i] = regexp.MustCompile(fmt.Sprintf("^%s$", definer))
 	}
 	return dc
