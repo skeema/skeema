@@ -1,3 +1,6 @@
+### ⚠️ This is a fork of Skeema that's configured to ignore column order ⚠️ 
+This is a feature that's [been requested](https://github.com/skeema/skeema/issues/178) but has had no movement. 
+
 [![Skeema](https://www.skeema.io/img/logo.png)](https://www.skeema.io)
 
 [![build status](https://img.shields.io/github/actions/workflow/status/skeema/skeema/tests.yml?branch=main)](https://github.com/skeema/skeema/actions)

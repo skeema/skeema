@@ -282,26 +282,15 @@ var reDisplayWidth = regexp.MustCompile(`(tinyint|smallint|mediumint|int|bigint)
 
 // Clause returns a MODIFY COLUMN clause of an ALTER TABLE statement.
 func (mc ModifyColumn) Clause(mods StatementModifiers) string {
-	var positionClause string
-	if mc.PositionFirst {
-		// Positioning variables are mutually exclusive
-		if mc.PositionAfter != nil {
-			panic(fmt.Errorf("Modified column %s cannot be both first and after another column", mc.NewColumn.Name))
-		}
-		positionClause = " FIRST"
-	} else if mc.PositionAfter != nil {
-		positionClause = fmt.Sprintf(" AFTER %s", EscapeIdentifier(mc.PositionAfter.Name))
-	}
-
 	// Emit a no-op if we're not re-ordering the column and it only has cosmetic
 	// differences, such as presence/lack of int display width, or presence/lack
 	// of charset/collation clauses that are equal to the table's defaults anyway.
 	// (These situations only come up in MySQL 8, under various edge cases.)
-	if !mods.StrictColumnDefinition && positionClause == "" && mc.OldColumn.Equivalent(mc.NewColumn) {
+	if !mods.StrictColumnDefinition && mc.OldColumn.Equivalent(mc.NewColumn) {
 		return ""
 	}
 
-	return fmt.Sprintf("MODIFY COLUMN %s%s", mc.NewColumn.Definition(mods.Flavor, mc.Table), positionClause)
+	return fmt.Sprintf("MODIFY COLUMN %s", mc.NewColumn.Definition(mods.Flavor, mc.Table))
 }
 
 // Unsafe returns true if this clause is potentially destructive of data.
