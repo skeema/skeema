@@ -5,16 +5,16 @@ go 1.19
 require (
 	github.com/VividCortex/mysqlerr v1.0.0
 	github.com/fsouza/go-dockerclient v1.9.7
-	github.com/go-sql-driver/mysql v1.7.0
+	github.com/go-sql-driver/mysql v1.7.1
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/mattn/goveralls v0.0.11
 	github.com/mitchellh/go-wordwrap v1.0.1
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/sirupsen/logrus v1.9.0
-	github.com/skeema/mybase v1.0.16
+	github.com/skeema/mybase v1.0.17
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616
 	golang.org/x/sync v0.1.0
-	golang.org/x/term v0.6.0
+	golang.org/x/term v0.8.0
 )
 
 require (
@@ -35,6 +35,6 @@ require (
 	github.com/opencontainers/runc v1.1.5 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
-	golang.org/x/sys v0.6.0 // indirect
+	golang.org/x/sys v0.8.0 // indirect
 	golang.org/x/tools v0.1.12 // indirect
 )
