@@ -46,7 +46,9 @@ func NewTempSchema(opts Options) (_ *TempSchema, retErr error) {
 
 	lockName := fmt.Sprintf("skeema.%s", ts.schemaName)
 	if ts.releaseLock, err = getLock(ts.inst, lockName, opts.LockTimeout); err != nil {
-		return nil, fmt.Errorf("Unable to lock temporary schema on %s: %s", ts.inst, err)
+		return nil, fmt.Errorf("Unable to lock temp-schema workspace on %s: %s\n"+
+			"Usually this means another copy of Skeema is already holding the lock and operating on this database server. If you are certain that your operation will not conflict, try supplying a different name for --temp-schema on the command-line.",
+			ts.inst, err)
 	}
 
 	// If NewTempSchema errors, don't continue to hold the lock

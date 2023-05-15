@@ -413,20 +413,20 @@ func getLock(instance *tengo.Instance, lockName string, maxWait time.Duration) (
 			case <-done:
 				err := lockConn.QueryRowContext(context.Background(), "SELECT RELEASE_LOCK(?)", lockName).Scan(&result)
 				if err != nil || result != 1 {
-					log.Warnf("%s: Failed to release lock, or lock released early due to connection being dropped: %s [%d]", instance, err, result)
+					log.Warnf("%s: Failed to release workspace lock, or lock released early due to connection being dropped: %s [%d]", instance, err, result)
 				}
 				return
 			case <-time.After(750 * time.Millisecond):
 				err := lockConn.QueryRowContext(context.Background(), "SELECT 1").Scan(&result)
 				if err != nil {
-					log.Warnf("%s: Lock released early due to connection being dropped: %s", instance, err)
+					log.Warnf("%s: Workspace lock released early due to connection being dropped: %s", instance, err)
 					return
 				}
 			}
 		}
 	}
 
-	var getLockResult int
+	var getLockResult, attempts int
 	start := time.Now()
 	for time.Since(start) < maxWait {
 		// Only using a timeout of 1 sec on each query to avoid potential issues with
@@ -438,6 +438,9 @@ func getLock(instance *tengo.Instance, lockName string, maxWait time.Duration) (
 			go connMaintainer()
 			return release, nil
 		}
+		if attempts++; attempts == 3 {
+			log.Warnf("Obtaining a workspace lock on %s is taking longer than expected. Some other Skeema process or thread may be holding the lock already. This operation will be re-attempted for up to %s total.", instance, maxWait)
+		}
 	}
-	return nil, errors.New("Unable to acquire lock")
+	return nil, errors.New("Unable to acquire lock before timeout")
 }
