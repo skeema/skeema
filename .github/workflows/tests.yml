@@ -20,7 +20,8 @@ jobs:
       - name: Run gofmt
         run: test -z "$(gofmt -s -d *.go internal/*/*.go 2>&1)"
 
-      - name: Run golint
+      - name: Run golint if a PR
+        if: github.event_name == 'pull_request'
         run: go install golang.org/x/lint/golint && go list -f '{{.Dir}}' ./... | xargs golint -set_exit_status
         
       - name: Run go vet
