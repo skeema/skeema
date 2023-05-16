@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/VividCortex/mysqlerr"
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/tengo"
@@ -347,8 +348,16 @@ func (dir *Dir) FirstInstance() (*tengo.Instance, error) {
 func (dir *Dir) ValidateInstance(instance *tengo.Instance) error {
 	ok, err := instance.Valid()
 	if !ok {
-		if instance.Password == "" {
+		if instance.Password == "" && tengo.IsDatabaseError(err, mysqlerr.ER_ACCESS_DENIED_ERROR) {
 			err = fmt.Errorf("%w\nNo password was supplied for this login attempt, but the server likely requires a password. For information on how to use Skeema's password option, see https://www.skeema.io/docs/options/#password", err)
+		} else if dir.Config.Changed("connect-options") {
+			if tengo.IsDatabaseError(err, mysqlerr.ER_SPECIFIC_ACCESS_DENIED_ERROR) {
+				err = fmt.Errorf("%w\nCheck your Skeema configuration for connect-options. Typically this error means one of your session variables requires privileges that your user lacks.\nFor more information, see https://www.skeema.io/docs/options/#connect-options", err)
+			} else if tengo.IsDatabaseError(err, mysqlerr.ER_UNKNOWN_SYSTEM_VARIABLE, mysqlerr.ER_INCORRECT_GLOBAL_LOCAL_VAR) {
+				err = fmt.Errorf("%w\nCheck your Skeema configuration for connect-options. Typically this error means one of your session variable names has a typo, or the variable does not exist at the session scope in your specific server version.", err)
+			} else if tengo.IsDatabaseError(err, mysqlerr.ER_WRONG_VALUE_FOR_VAR, mysqlerr.ER_WRONG_TYPE_FOR_VAR) {
+				err = fmt.Errorf("%w\nCheck your Skeema configuration for connect-options. Typically this error means one of your session variable values has a typo, or the value is not supported in your specific server version.", err)
+			}
 		}
 		return err
 	}
