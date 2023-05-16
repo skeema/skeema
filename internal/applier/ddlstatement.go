@@ -1,7 +1,6 @@
 package applier
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -71,8 +70,7 @@ func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, targe
 	if ddl.stmt, err = diff.Statement(mods); tengo.IsForbiddenDiff(err) {
 		terminalWidth, _ := util.TerminalWidth(int(os.Stderr.Fd()))
 		commentedOutStmt := "  # " + util.WrapStringWithPadding(ddl.stmt, terminalWidth-29, "  # ")
-		errorText := fmt.Sprintf("Preventing execution of unsafe or potentially destructive statement:\n%s\nUse --allow-unsafe or --safe-below-size to permit this operation. For more information, see Safety Options section of --help.", commentedOutStmt)
-		return nil, errors.New(errorText) // Intentionally avoiding fmt.Errorf here to avoid golint complaining about capitalization
+		return nil, fmt.Errorf("Preventing execution of unsafe or potentially destructive statement:\n%s\nUse --allow-unsafe or --safe-below-size to permit this operation. For more information, see Safety Options section of --help.", commentedOutStmt)
 	} else if err != nil {
 		// Leave the error untouched/unwrapped to allow caller to handle appropriately
 		return nil, err
@@ -126,9 +124,7 @@ func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, targe
 		}
 
 		if ddl.shellOut, err = util.NewInterpolatedShellOut(wrapper, variables); err != nil {
-			// Intentionally avoiding fmt.Errorf here to avoid golint complaining about capitalization
-			errorText := fmt.Sprintf("A fatal error occurred with pre-processing a DDL statement: %s.", err)
-			return nil, errors.New(errorText)
+			return nil, fmt.Errorf("A fatal error occurred with pre-processing a DDL statement: %w.", err)
 		}
 	}
 

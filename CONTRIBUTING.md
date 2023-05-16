@@ -52,7 +52,9 @@ All of these situations can be avoided by having a full discussion on the issue 
 
 * Skeema uses only standard Go toolchain invocations (`go build`, `go test`, etc), so there's no notion of a makefile or build script.
 
-* CI is currently using GitHub Actions. CI ensures that all tests pass, all files are formatted according to `gofmt`, and all lint checks in `golint` pass as well.
+* CI is currently using GitHub Actions. CI ensures all files are formatted according to `gofmt`, checks that `go vet` succeeds, and runs our large suite of unit, integration, and end-to-end tests.
+
+* We do not currently use an automated Golang source code linter, but we do review for stylistic concerns manually in PRs. Please try to match existing style and comment conventions, especially for exported functions/symbols, even in internal packages.
 
 * Code coverage is tracked via Coveralls, which will automatically comment on PRs with the coverage delta. Each PR should maintain or improve the current coverage percentage, unless there's a compelling reason otherwise.
 
