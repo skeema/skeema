@@ -3,7 +3,6 @@ package workspace
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"sync"
 
@@ -158,32 +157,7 @@ func (ld *LocalDocker) ConnectionPool(params string) (*sqlx.DB, error) {
 	// different sibling subdirectories with differing configurations).
 	// So, here we must merge the params arg (callsite-dependent) over top of the
 	// LocalDocker params (dir-dependent).
-	var finalParams string
-	if ld.defaultConnParams == "" && params == "" {
-		// By default, disable TLS for connections to the DockerizedInstance, since
-		// we know it's on the local machine
-		finalParams = "tls=false"
-	} else {
-		v, err := url.ParseQuery(ld.defaultConnParams)
-		if err != nil {
-			return nil, err
-		}
-
-		// Forcibly disable TLS, regardless of what was in ld.defaultConnParams.
-		// This is necessary since ld.defaultConnParams is typically populated using
-		// Dir.InstanceDefaultParams() which sets tls=preferred by default.
-		v.Set("tls", "false")
-
-		// Apply overrides from params arg
-		overrides, err := url.ParseQuery(params)
-		if err != nil {
-			return nil, err
-		}
-		for name := range overrides {
-			v.Set(name, overrides.Get(name))
-		}
-		finalParams = v.Encode()
-	}
+	finalParams := tengo.MergeParamStrings(ld.defaultConnParams, params)
 	return ld.d.CachedConnectionPool(ld.schemaName, finalParams)
 }
 

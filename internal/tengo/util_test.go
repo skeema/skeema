@@ -2,6 +2,8 @@ package tengo
 
 import (
 	"fmt"
+	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -125,6 +127,33 @@ func TestStripDisplayWidth(t *testing.T) {
 			t.Errorf("Expected StripDisplayWidth(%q) to return %q,%t; instead found %q,%t", input, expected, expectStripped, actual, actualStripped)
 		}
 	}
+}
+
+func TestMergeParamStrings(t *testing.T) {
+	assertParamString := func(defaultOptions, addOptions, expectOptions string) {
+		t.Helper()
+		// can't compare strings directly since order may be different
+		result := MergeParamStrings(defaultOptions, addOptions)
+		parsedResult, err := url.ParseQuery(result)
+		if err != nil {
+			t.Fatalf("url.ParseQuery(\"%s\") returned error: %s", result, err)
+		}
+		parsedExpected, err := url.ParseQuery(expectOptions)
+		if err != nil {
+			t.Fatalf("url.ParseQuery(\"%s\") returned error: %s", expectOptions, err)
+		}
+		if !reflect.DeepEqual(parsedResult, parsedExpected) {
+			t.Errorf("Expected param map %v, instead found %v", parsedExpected, parsedResult)
+		}
+	}
+
+	assertParamString("", "", "")
+	assertParamString("param1=value1", "", "param1=value1")
+	assertParamString("", "param1=value1", "param1=value1")
+	assertParamString("param1=value1", "param1=value1", "param1=value1")
+	assertParamString("param1=value1", "param1=hello", "param1=hello")
+	assertParamString("param1=value1&readTimeout=5s&interpolateParams=0", "param2=value2", "param1=value1&readTimeout=5s&interpolateParams=0&param2=value2")
+	assertParamString("param1=value1&readTimeout=5s&interpolateParams=0", "param1=value3", "param1=value3&readTimeout=5s&interpolateParams=0")
 }
 
 func TestLongestIncreasingSubsequence(t *testing.T) {

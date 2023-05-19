@@ -89,7 +89,7 @@ func TestInstanceBuildParamString(t *testing.T) {
 		}
 
 		// can't compare strings directly since order may be different
-		result := instance.buildParamString(addOptions)
+		result := instance.BuildParamString(addOptions)
 		parsedResult, err := url.ParseQuery(result)
 		if err != nil {
 			t.Fatalf("url.ParseQuery(\"%s\") returned error: %s", result, err)

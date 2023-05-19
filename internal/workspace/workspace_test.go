@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -185,22 +186,26 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 		}
 		return opts
 	}
-	assertOptsError := func(cliFlags string) {
+	assertOptsError := func(cliFlags string, supplyInstance bool) {
 		t.Helper()
 		dir := s.getParsedDir(t, "testdata/simple", cliFlags)
-		if _, err := OptionsForDir(dir, s.d.Instance); err == nil {
+		var inst *tengo.Instance
+		if supplyInstance {
+			inst = s.d.Instance
+		}
+		if _, err := OptionsForDir(dir, inst); err == nil {
 			t.Errorf("Expected non-nil error from OptionsForDir with CLI flags %s, but err was nil", cliFlags)
 		}
 	}
 
 	// Test error conditions
-	assertOptsError("--workspace=invalid")
-	assertOptsError("--workspace=docker --docker-cleanup=invalid")
-	assertOptsError("--workspace=docker --connect-options='autocommit=0'")
-	assertOptsError("--workspace=temp-schema --temp-schema-threads=0")
-	assertOptsError("--workspace=temp-schema --temp-schema-threads=-20")
-	assertOptsError("--workspace=temp-schema --temp-schema-threads=banana")
-	assertOptsError("--workspace=temp-schema --temp-schema-binlog=potato")
+	assertOptsError("--workspace=invalid", true)
+	assertOptsError("--workspace=docker --docker-cleanup=invalid", true)
+	assertOptsError("--workspace=docker --connect-options='autocommit=0'", false)
+	assertOptsError("--workspace=temp-schema --temp-schema-threads=0", true)
+	assertOptsError("--workspace=temp-schema --temp-schema-threads=-20", true)
+	assertOptsError("--workspace=temp-schema --temp-schema-threads=banana", true)
+	assertOptsError("--workspace=temp-schema --temp-schema-binlog=potato", true)
 
 	// Test default configuration, which should use temp-schema with drop cleanup
 	if opts := getOpts(""); opts.Type != TypeTempSchema || opts.CleanupAction != CleanupActionDrop {
@@ -231,6 +236,36 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	// Test docker with specific flavor
 	if opts = getOpts("--workspace=docker --flavor=mysql:5.5"); opts.Flavor.String() != "mysql:5.5" {
 		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	}
+
+	// Mess with the instance and its sql_mode, to simulate docker workspace using
+	// a real instance's nonstandard sql_mode
+	forceSQLMode := func(sqlMode string) {
+		t.Helper()
+		db, err := s.d.ConnectionPool("", "")
+		if err != nil {
+			t.Fatalf("Unexpected error from ConnectionPool: %v", err)
+		}
+		if _, err := db.Exec("SET GLOBAL sql_mode = " + sqlMode); err != nil {
+			t.Fatalf("Unexpected error from Exec: %v", err)
+		}
+		s.d.CloseAll() // force next conn to re-hydrate vars including sql_mode
+	}
+	forceSQLMode("'REAL_AS_FLOAT,PIPES_AS_CONCAT'")
+	defer forceSQLMode("DEFAULT")
+	opts = getOpts("--workspace=docker")
+	expectValues := map[string]string{
+		"sql_mode": "'REAL_AS_FLOAT,PIPES_AS_CONCAT'",
+		"tls":      "false",
+	}
+	values, err := url.ParseQuery(opts.DefaultConnParams)
+	if err != nil {
+		t.Fatalf("Unexpected error from ParseQuery: %v", err)
+	}
+	for variable, expected := range expectValues {
+		if actual := values.Get(variable); actual != expected {
+			t.Errorf("Expected param %s to be %s, instead found %s", variable, expected, actual)
+		}
 	}
 }
 

@@ -165,30 +165,23 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerConnParams(t *testing.T) {
 		t.Fatalf("Unexpected error from New(): %s", err)
 	}
 
-	// Check behavior of default connection params, as well as overrides
-	assertWaitTimeout := func(params string, expected int, shouldErr bool) {
+	// Check behavior of default connection params, as well as overrides, with
+	// no instance supplied
+	assertSessionVar := func(params, variable, expected string) {
 		t.Helper()
 		db, err := ws.ConnectionPool(params)
-		if shouldErr {
-			if err == nil {
-				t.Error("Expected error, but it was nil")
-			}
-			return
-		} else if err != nil {
+		if err != nil {
 			t.Errorf("Unexpected error from ConnectionPool(): %v", err)
 		}
-		var waitTimeout int
-		if err := db.QueryRow("SELECT @@wait_timeout").Scan(&waitTimeout); err != nil {
-			t.Fatalf("Unexpected error querying wait_timeout: %s", err)
-		} else if waitTimeout != expected {
-			t.Errorf("DefaultConnParams not working as expected; found wait_timeout %d, expected %d", waitTimeout, expected)
+		var result string
+		if err := db.QueryRow("SELECT @@" + variable).Scan(&result); err != nil {
+			t.Fatalf("Unexpected error querying %s: %v", variable, err)
+		} else if result != expected {
+			t.Errorf("DefaultConnParams not working as expected; found %s %s, expected %s", variable, result, expected)
 		}
 	}
-	assertWaitTimeout("", 123, false)
-	assertWaitTimeout("wait_timeout=456", 456, false)
-	assertWaitTimeout("wait_timeout=456&%%%%%%", 0, true)
-	ws.(*LocalDocker).defaultConnParams = "%%%%"
-	assertWaitTimeout("wait_timeout=456", 0, true)
+	assertSessionVar("", "wait_timeout", "123")
+	assertSessionVar("wait_timeout=456", "wait_timeout", "456")
 
 	if err := ws.Cleanup(nil); err != nil {
 		t.Errorf("Unexpected error from cleanup: %s", err)

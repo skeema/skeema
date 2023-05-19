@@ -112,7 +112,7 @@ func (ts *TempSchema) bulkDropOptions() tengo.BulkDropOptions {
 // workspace schema, using the supplied connection params (which may be blank).
 func (ts *TempSchema) ConnectionPool(params string) (*sqlx.DB, error) {
 	if ts.mdlTimeout > 0 && !strings.Contains(params, "lock_wait_timeout") {
-		params = strings.TrimLeft(fmt.Sprintf("%s&lock_wait_timeout=%d", params, ts.mdlTimeout), "&")
+		params = tengo.MergeParamStrings(params, fmt.Sprintf("lock_wait_timeout=%d", ts.mdlTimeout))
 	}
 	return ts.inst.CachedConnectionPool(ts.schemaName, params)
 }

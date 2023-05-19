@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"sync"
 	"time"
 
@@ -126,7 +127,26 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 		opts.Type = TypeLocalDocker
 		opts.Flavor = tengo.ParseFlavor(dir.Config.Get("flavor"))
 		opts.SkipBinlog = true
-		if instance != nil {
+		if instance == nil {
+			// Without an instance, we just take the directory's default params config
+			// and apply tls=false on top, since we know the Dockerized instance will be
+			// on the local machine.
+			defaultParams, err := dir.InstanceDefaultParams()
+			if err != nil {
+				return Options{}, err
+			}
+			opts.DefaultConnParams = tengo.MergeParamStrings(defaultParams, "tls=false")
+		} else {
+			// With an instance, we can copy the instance's default params (which
+			// typically came from connect-options / dir.InstanceDefaultParams anyway),
+			// sql_mode, lower_case_table_names, and (if needed) flavor.
+			// Note that we're manually shoving the instance's sql_mode into the params;
+			// we need it present regardless of whether connect-options set it explicitly.
+			// Many companies use non-default global sql_mode, especially on RDS, and we
+			// want the Dockerized instance to match. We're also disabling tls since
+			// Dockerized instance is local and instance probably has tls=preferred.
+			overrides := "tls=false&sql_mode=" + url.QueryEscape("'"+instance.SQLMode()+"'")
+			opts.DefaultConnParams = instance.BuildParamString(overrides)
 			opts.NameCaseMode = instance.NameCaseMode()
 			if !opts.Flavor.Known() {
 				opts.Flavor = instance.Flavor().Family()
@@ -139,9 +159,6 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 			opts.CleanupAction = CleanupActionStop
 		} else if cleanup == "destroy" {
 			opts.CleanupAction = CleanupActionDestroy
-		}
-		if opts.DefaultConnParams, err = dir.InstanceDefaultParams(); err != nil {
-			return Options{}, err
 		}
 	} else {
 		opts.Type = TypeTempSchema

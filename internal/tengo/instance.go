@@ -94,7 +94,12 @@ func (instance *Instance) String() string {
 	}
 }
 
-func (instance *Instance) buildParamString(params string) string {
+// BuildParamString returns a DB connection parameter string, which first takes
+// the instance's default params and then applies overrides on top.
+// The arg should be a URL query string formatted value, for example
+// "foo=bar&fizz=buzz" to apply foo=bar and fizz=buzz on top of any instance
+// default parameters.
+func (instance *Instance) BuildParamString(params string) string {
 	v := url.Values{}
 	for defName, defValue := range instance.defaultParams {
 		v.Set(defName, defValue)
@@ -116,7 +121,7 @@ func (instance *Instance) buildParamString(params string) string {
 // The connection pool's max size, max conn lifetime, and max idle time are all
 // tuned automatically to intelligent defaults based on auto-discovered limits.
 func (instance *Instance) ConnectionPool(defaultSchema, params string) (*sqlx.DB, error) {
-	fullParams := instance.buildParamString(params)
+	fullParams := instance.BuildParamString(params)
 	return instance.rawConnectionPool(defaultSchema, fullParams, false)
 }
 
@@ -125,7 +130,7 @@ func (instance *Instance) ConnectionPool(defaultSchema, params string) (*sqlx.DB
 // combination of defaultSchema and params, a pre-existing connection pool will
 // be returned. See ConnectionPool for usage of the args for this method.
 func (instance *Instance) CachedConnectionPool(defaultSchema, params string) (*sqlx.DB, error) {
-	fullParams := instance.buildParamString(params)
+	fullParams := instance.BuildParamString(params)
 	key := fmt.Sprintf("%s?%s", defaultSchema, fullParams)
 
 	instance.m.Lock()
@@ -213,6 +218,7 @@ func (instance *Instance) CloseAll() {
 		db.Close()
 		delete(instance.connectionPool, key)
 	}
+	instance.valid = false // force future conns to re-hydrate vars
 	instance.m.Unlock()
 }
 
@@ -220,7 +226,12 @@ func (instance *Instance) CloseAll() {
 // distribution/fork/vendor as well as major and minor version. If this is
 // unable to be determined or an error occurs, FlavorUnknown will be returned.
 func (instance *Instance) Flavor() Flavor {
-	instance.Valid() // force an attempt to hydrate flavor, if not done already
+	// Attempt to hydrate flavor, unless it was already done OR explicitly forced
+	// via ForceFlavor. (This call pattern differs slightly from other hydrated
+	// fields, since other fields don't have a notion of forcing an override value.)
+	if instance.flavor == FlavorUnknown {
+		instance.Valid()
+	}
 	return instance.flavor
 }
 
@@ -272,6 +283,15 @@ func (instance *Instance) LockWaitTimeout() int {
 	return instance.lockWaitTimeout
 }
 
+// SQLMode returns the full session-level sql_mode string for connections
+// using default parameters, or a blank string if it could not be queried.
+func (instance *Instance) SQLMode() string {
+	if ok, _ := instance.Valid(); !ok {
+		return ""
+	}
+	return strings.Join(instance.sqlMode, ",")
+}
+
 // hydrateVars populates several non-exported Instance fields by querying
 // various global and session variables. Failures are ignored; these variables
 // are designed to help inform behavior but are not strictly mandatory.
@@ -309,7 +329,10 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 		return
 	}
 	instance.valid = true
-	instance.flavor = IdentifyFlavor(result.Version, result.VersionComment)
+	if instance.flavor == FlavorUnknown {
+		// Only set flavor if it wasn't already forced to some value
+		instance.flavor = IdentifyFlavor(result.Version, result.VersionComment)
+	}
 	instance.sqlMode = strings.Split(result.SQLMode, ",")
 	instance.waitTimeout = result.WaitTimeout
 	instance.lockWaitTimeout = result.LockWaitTimeout

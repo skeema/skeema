@@ -218,6 +218,21 @@ func paramMap(dsn string) map[string]string {
 	return result
 }
 
+// MergeParamStrings combines two query-string-style formatted DB connection
+// parameter strings, with the latter string overriding the former in cases of
+// conflicts.
+// This is inefficient and should be avoided in hot paths; eventually we will
+// move away from DSNs and use Connectors instead, which will remove the need
+// for this logic.
+func MergeParamStrings(params, overrides string) string {
+	v, _ := url.ParseQuery(params)
+	v2, _ := url.ParseQuery(overrides)
+	for name := range v2 {
+		v.Set(name, v2.Get(name))
+	}
+	return v.Encode()
+}
+
 // longestIncreasingSubsequence implements an algorithm useful in computing
 // diffs for column order or trigger order.
 func longestIncreasingSubsequence(input []int) []int {
