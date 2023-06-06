@@ -94,7 +94,9 @@ func ApplyTarget(t *Target, printer Printer) (Result, error) {
 	}
 
 	diff := tengo.NewSchemaDiff(schemaFromInstance, schemaFromDir)
-	if err := VerifyDiff(diff, t); err != nil {
+	if vopts, err := VerifierOptionsForTarget(t); err != nil {
+		return result, err
+	} else if err := VerifyDiff(diff, vopts); err != nil {
 		return result, err
 	}
 

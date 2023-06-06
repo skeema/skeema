@@ -10,11 +10,34 @@ import (
 	"github.com/skeema/skeema/internal/workspace"
 )
 
-// VerifyDiff verifies the result of all AlterTable values found in
-// diff.TableDiffs, confirming that applying the corresponding ALTER would
-// bring a table from the version currently in the instance to the version
-// specified in the filesystem.
-func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
+// VerifierOptions specifies configuration for the diff verification operation.
+// All fields are mandatory, even though some may be redundant with
+// WorkspaceOptions in some situations.
+type VerifierOptions struct {
+	AllAlters           bool // if false, only verify unsupported alter diffs; if true, verify all alter diffs
+	Flavor              tengo.Flavor
+	DefaultCharacterSet string
+	DefaultCollation    string
+	WorkspaceOptions    workspace.Options
+}
+
+// VerifierOptionsForTarget returns VerifierOptions based on the target's
+// configuration.
+func VerifierOptionsForTarget(t *Target) (opts VerifierOptions, err error) {
+	opts = VerifierOptions{
+		AllAlters:           t.Dir.Config.GetBool("verify"),
+		Flavor:              t.Instance.Flavor(),
+		DefaultCharacterSet: t.Dir.Config.Get("default-character-set"),
+		DefaultCollation:    t.Dir.Config.Get("default-collation"),
+	}
+	opts.WorkspaceOptions, err = workspace.OptionsForDir(t.Dir, t.Instance)
+	return
+}
+
+// VerifyDiff verifies the result of AlterTable values found in diff.TableDiffs,
+// confirming that applying the corresponding ALTER would bring a table from the
+// version currently in the instance to the version specified in the filesystem.
+func VerifyDiff(diff *tengo.SchemaDiff, vopts VerifierOptions) error {
 	// If diff contains no ALTER TABLEs, nothing to verify
 	altersInDiff := diff.FilteredTableDiffs(tengo.DiffTypeAlter)
 	if len(altersInDiff) == 0 {
@@ -39,7 +62,7 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 		StrictForeignKeyNaming: true,                         // ditto
 		StrictColumnDefinition: true,                         // ditto (only affects MySQL 8 edge cases)
 		SkipPreDropAlters:      true,                         // ignore DROP PARTITIONs that were only generated to speed up a DROP TABLE
-		Flavor:                 t.Instance.Flavor(),
+		Flavor:                 vopts.Flavor,
 	}
 	if mods.Flavor.Matches(tengo.FlavorMySQL55) {
 		mods.AlgorithmClause = "" // MySQL 5.5 doesn't support ALGORITHM clause
@@ -51,9 +74,8 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 	// potentially mark some as supported (if they generate non-blank SQL which
 	// properly verifies due to not actually touching unsupported features)
 	logicalSchema := fs.NewLogicalSchema()
-	logicalSchema.CharSet = t.Dir.Config.Get("default-character-set")
-	logicalSchema.Collation = t.Dir.Config.Get("default-collation")
-	wantVerify := t.Dir.Config.GetBool("verify")
+	logicalSchema.CharSet = vopts.DefaultCharacterSet
+	logicalSchema.Collation = vopts.DefaultCollation
 	desiredTables := make(map[string]*tengo.Table)
 	unsupportedTables := make(map[string]*tengo.TableDiff)
 	for _, td := range altersInDiff {
@@ -62,7 +84,7 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 			continue
 		} else if err != nil && tengo.IsUnsupportedDiff(err) {
 			unsupportedTables[td.From.Name] = td
-		} else if !wantVerify {
+		} else if !vopts.AllAlters {
 			continue
 		}
 
@@ -91,11 +113,7 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 		return nil
 	}
 
-	opts, err := workspace.OptionsForDir(t.Dir, t.Instance)
-	if err != nil {
-		return err
-	}
-	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, opts)
+	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, vopts.WorkspaceOptions)
 	if err == nil && len(wsSchema.Failures) > 0 {
 		err = wsSchema.Failures[0]
 	}

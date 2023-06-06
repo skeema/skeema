@@ -829,23 +829,27 @@ func (s SkeemaIntegrationSuite) TestUnsupportedAlter(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
 	// Coverage for extra non-InnoDB warning text -- just ensuring no panic, and
-	// no need for allow-unsafe (since diff is not supported)
+	// no need for allow-unsafe (since diff is not supported, due to USING BTREE
+	// clause on an index for a MyISAM table)
+	s.dbExec(t, "product", "ALTER TABLE users ENGINE=MyISAM")
 	contents = fs.ReadTestFile(t, "mydb/product/users.sql")
-	contents = strings.Replace(contents, "UNIQUE KEY `name` (`name`)", "UNIQUE KEY `name2` (`name`) USING BTREE", 1)
-	contents = strings.Replace(contents, "ENGINE=InnoDB", "ENGINE=MyISAM", 1)
+	contents = strings.ReplaceAll(contents, "credits", "funds")
+	contents = strings.ReplaceAll(contents, "UNIQUE KEY `name` (`name`)", "UNIQUE KEY `name2` (`name`) USING BTREE")
+	contents = strings.ReplaceAll(contents, "InnoDB", "MyISAM")
 	fs.WriteTestFile(t, "mydb/product/users.sql", contents)
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
 
-	// Force the change on the db side, and then delete the file on the fs side.
-	// Confirm diff/push still ok for *dropping* unsupported table.
-	s.dbExec(t, "product", "ALTER TABLE users DROP KEY name, ADD UNIQUE KEY `name2` (`name`) USING BTREE, ENGINE=MyISAM")
+	// Make the USING BTREE alter directly so that the table is unsupported, and
+	// then delete the users.sql file on the fs side. Confirm diff/push still ok
+	// for *dropping* unsupported table.
+	s.dbExec(t, "product", "ALTER TABLE users DROP KEY name, ADD UNIQUE KEY `name2` (`name`) USING BTREE")
 	if err := os.Remove("mydb/product/users.sql"); err != nil {
 		t.Fatalf("Unexpected error removing a file: %s", err)
 	}
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
-	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 	s.assertTableMissing(t, "product", "users", "")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 }
 
 func (s SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
