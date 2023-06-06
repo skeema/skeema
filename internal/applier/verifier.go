@@ -15,10 +15,6 @@ import (
 // bring a table from the version currently in the instance to the version
 // specified in the filesystem.
 func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
-	if !t.Dir.Config.GetBool("verify") || len(diff.TableDiffs) == 0 {
-		return nil
-	}
-
 	// If diff contains no ALTER TABLEs, nothing to verify
 	altersInDiff := diff.FilteredTableDiffs(tengo.DiffTypeAlter)
 	if len(altersInDiff) == 0 {
@@ -50,32 +46,49 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 	}
 
 	// Gather CREATE and ALTER for modified tables, and put into a LogicalSchema,
-	// which we then materialize into a real schema using a workspace
+	// which we then materialize into a real schema using a workspace.
+	// Even if verify is disabled, we still must look for unsupported diffs, to
+	// potentially mark some as supported (if they generate non-blank SQL which
+	// properly verifies due to not actually touching unsupported features)
 	logicalSchema := fs.NewLogicalSchema()
 	logicalSchema.CharSet = t.Dir.Config.Get("default-character-set")
 	logicalSchema.Collation = t.Dir.Config.Get("default-collation")
+	wantVerify := t.Dir.Config.GetBool("verify")
 	desiredTables := make(map[string]*tengo.Table)
+	unsupportedTables := make(map[string]*tengo.TableDiff)
 	for _, td := range altersInDiff {
 		stmt, err := td.Statement(mods)
-		if stmt != "" && err == nil {
-			// Note: sometimes a table's diff gets split into multiple ALTERs, but this
-			// logic can ignore that fact. If there are redundant AddStatement calls for
-			// one CREATE, the first AddStatement for that CREATE succeeds and the
-			// subsequent duplicate CREATEs error, but that is harmless in this code path!
-			logicalSchema.AddStatement(&tengo.Statement{
-				Type:       tengo.StatementTypeCreate,
-				Text:       td.From.CreateStatement,
-				ObjectType: tengo.ObjectTypeTable,
-				ObjectName: td.From.Name,
-			})
-			logicalSchema.AddStatement(&tengo.Statement{
-				Type:       tengo.StatementTypeAlter,
-				Text:       stmt,
-				ObjectType: tengo.ObjectTypeTable,
-				ObjectName: td.From.Name,
-			})
-			desiredTables[td.From.Name] = td.To
+		if stmt == "" {
+			continue
+		} else if err != nil && tengo.IsUnsupportedDiff(err) {
+			unsupportedTables[td.From.Name] = td
+		} else if !wantVerify {
+			continue
 		}
+
+		// Note: sometimes a table's diff gets split into multiple ALTERs, but this
+		// logic can ignore that fact. If there are redundant AddStatement calls for
+		// one CREATE, the first AddStatement for that CREATE succeeds and the
+		// subsequent duplicate CREATEs error, but that is harmless in this code path!
+		logicalSchema.AddStatement(&tengo.Statement{
+			Type:       tengo.StatementTypeCreate,
+			Text:       td.From.CreateStatement,
+			ObjectType: tengo.ObjectTypeTable,
+			ObjectName: td.From.Name,
+		})
+		logicalSchema.AddStatement(&tengo.Statement{
+			Type:       tengo.StatementTypeAlter,
+			Text:       stmt,
+			ObjectType: tengo.ObjectTypeTable,
+			ObjectName: td.From.Name,
+		})
+		desiredTables[td.From.Name] = td.To
+	}
+
+	// Return early if --verify was disabled and there were no verifiable
+	// unsupported tables
+	if len(desiredTables) == 0 {
+		return nil
 	}
 
 	opts, err := workspace.OptionsForDir(t.Dir, t.Instance)
@@ -103,7 +116,12 @@ func VerifyDiff(diff *tengo.SchemaDiff, t *Target) error {
 	mods.AlgorithmClause = ""
 	actualTables := wsSchema.TablesByName()
 	for name, desiredTable := range desiredTables {
-		if err := verifyTable(actualTables[name], desiredTable, mods); err != nil {
+		// If an unsupported diff passes verification, mark it as supported, but
+		// otherwise we can just ignore any error from an unsupported diff.
+		td, wasUnsupported := unsupportedTables[name]
+		if err := verifyTable(actualTables[name], desiredTable, mods); err == nil && wasUnsupported {
+			td.MarkSupported()
+		} else if err != nil && !wasUnsupported {
 			return err
 		}
 	}

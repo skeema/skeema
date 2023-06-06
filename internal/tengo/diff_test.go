@@ -676,45 +676,87 @@ func TestTableDiffUnsupportedAlter(t *testing.T) {
 	t1 := supportedTable()
 	t2 := unsupportedTable()
 
-	assertUnsupported := func(reverse bool) {
-		t.Helper()
-		var td *TableDiff
-		var subject, side string
-		if reverse { // unsupported table is on "from" side
-			td = NewAlterTable(&t2, &t1)
-			subject, side = "original state", "from"
-		} else { // unsupported table is on "to" side
-			td = NewAlterTable(&t1, &t2)
-			subject, side = "desired state", "to"
-		}
-		if td.supported {
-			t.Fatal("Expected diff to be unsupported, but it isn't")
-		}
-		stmt, err := td.Statement(StatementModifiers{})
-		if stmt != "" {
-			t.Errorf("Expected blank statement for unsupported diff, instead found %s", stmt)
-		}
-		if !IsUnsupportedDiff(err) {
-			t.Fatalf("Expected unsupported diff error, instead err=%v", err)
-		}
-
-		// Confirm extended error message, which should show what part of the
-		// unsupported diff triggered the issue.
-		extended := err.(*UnsupportedDiffError).ExtendedError()
-		expected := fmt.Sprintf(`The %s (%q side of diff) contains unexpected or unsupported clauses in SHOW CREATE TABLE.
---- %s expected CREATE
-+++ %s actual SHOW CREATE
+	// Attempt to generate a diff which would add sub-partitioning (an unsupported
+	// feature)
+	td := NewAlterTable(&t1, &t2)
+	if td.supported {
+		t.Fatal("Expected diff to be unsupported, but it isn't")
+	}
+	stmt, err := td.Statement(StatementModifiers{})
+	if !IsUnsupportedDiff(err) {
+		t.Fatalf("Expected unsupported diff error, instead err=%v", err)
+	}
+	if stmt != "" {
+		t.Errorf("Expected a blank statement string from attempt to add an unsupported feature to a table, but instead generated statement: %s", stmt)
+	}
+	expected := `The desired state ("to" side of diff) contains unexpected or unsupported clauses in SHOW CREATE TABLE.
+--- desired state expected CREATE
++++ desired state actual SHOW CREATE
 @@ -8,0 +9,2 @@
 +SUBPARTITION BY HASH (post_id)
 +SUBPARTITIONS 2
-`, subject, side, subject, subject)
-		if expected != extended {
-			t.Errorf("Output of ExtendedError() did not match expectation. Returned value:\n%s", extended)
-		}
+`
+	if actual := err.(*UnsupportedDiffError).ExtendedError(); actual != expected {
+		t.Errorf("Output of ExtendedError() did not match expectation. Returned value:\n%s", actual)
 	}
 
-	assertUnsupported(false)
-	assertUnsupported(true)
+	// Attempt to generate a diff which removes sub-partitioning. Note that in
+	// this case (*removal* of an unsupported feature) we can actually generate
+	// a DDL statement, but still with an unsupported error so that the caller
+	// knows to verify the DDL more carefully!
+	td = NewAlterTable(&t2, &t1)
+	if td.supported {
+		t.Fatal("Expected diff to be unsupported, but it isn't")
+	}
+	stmt, err = td.Statement(StatementModifiers{})
+	if !IsUnsupportedDiff(err) {
+		t.Fatalf("Expected unsupported diff error, instead err=%v", err)
+	}
+	if stmt == "" {
+		t.Error("Expected non-blank statement for removing an unsupported feature, but statement was blank")
+	}
+	expected = `The original state ("from" side of diff) contains unexpected or unsupported clauses in SHOW CREATE TABLE.
+--- original state expected CREATE
++++ original state actual SHOW CREATE
+@@ -8,0 +9,2 @@
++SUBPARTITION BY HASH (post_id)
++SUBPARTITIONS 2
+`
+	if actual := err.(*UnsupportedDiffError).ExtendedError(); actual != expected {
+		t.Errorf("Output of ExtendedError() did not match expectation. Returned value:\n%s", actual)
+	}
+
+	// Test error-handling for when a diff is both unsupported AND unsafe
+	t2.Columns = append(t2.Columns, &Column{
+		Name:     "foo_id",
+		TypeInDB: "bigint(20) unsigned",
+	})
+	t2.CreateStatement = t2.GeneratedCreateStatement(FlavorUnknown)
+	td = NewAlterTable(&t2, &t1)
+	if td.supported {
+		t.Fatal("Expected diff to be unsupported, but it isn't")
+	}
+	stmt, err = td.Statement(StatementModifiers{})
+	if !IsUnsupportedDiff(err) {
+		t.Errorf("Expected unsupported diff error, instead err is type %T, value %v", err, err)
+	}
+	if !IsForbiddenDiff(err) {
+		t.Errorf("Expected forbidden diff error, instead err is type %T, value %v", err, err)
+	}
+
+	// Test marking the diff as supported
+	if err := td.MarkSupported(); err != nil {
+		t.Errorf("Unexpected error from MarkSupported: %v", err)
+	} else if !td.supported {
+		t.Error("MarkSupported did not mutate td.supported as expected")
+	}
+	if td.MarkSupported() == nil {
+		t.Error("Expected repeated call to MarkSupported to return an error, but error was nil")
+	}
+	td = NewAlterTable(&t2, &t2)
+	if td.MarkSupported() == nil {
+		t.Error("Expected error return from MarkSupported on an empty diff, but error was nil")
+	}
 }
 
 func TestTableDiffClauses(t *testing.T) {

@@ -233,7 +233,11 @@ func (t *Table) RowFormatClause() string {
 	return ""
 }
 
-// Diff returns a set of differences between this table and another table.
+// Diff returns a set of differences between this table and another table. Some
+// edge cases are not supported, such as sub-partitioning, spatial indexes,
+// MariaDB application time periods, or various non-InnoDB table features; in
+// this case, supported will be false and clauses MAY OR MAY NOT be empty. Any
+// returned clauses in that case must be carefully verified for correctness.
 func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	from := t // keeping name as t in method definition to satisfy linter
 	if from.Name != to.Name {
@@ -247,7 +251,15 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 		return []TableAlterClause{}, true
 	}
 
-	if from.UnsupportedDDL || to.UnsupportedDDL {
+	// If we're attempting to alter a supported table into an unsupported table,
+	// don't even bother attempting to generate clauses; we know with 100%
+	// certainty that the emitted DDL will be incomplete or incorrect. (In other
+	// cases, we still attempt to generate DDL, since the alter MAY just consist
+	// of fully-supported alterations to otherwise-unsupported tables. For example:
+	// a table is unsupported due to having a spatial index, but the alter is just
+	// adding some unrelated column.)
+	supported = !from.UnsupportedDDL && !to.UnsupportedDDL
+	if !from.UnsupportedDDL && to.UnsupportedDDL {
 		return nil, false
 	}
 
@@ -447,7 +459,7 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	partClauses, partSupported := from.Partitioning.Diff(to.Partitioning)
 	clauses = append(clauses, partClauses...)
 	if !partSupported {
-		return clauses, false
+		supported = false
 	}
 
 	// If the SHOW CREATE TABLE output differed between the two tables, but we
@@ -456,10 +468,10 @@ func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	// normally shouldn't happen, but could be possible given differences between
 	// MySQL versions, vendors, storage engines, etc.
 	if len(clauses) == 0 && from.CreateStatement != "" && to.CreateStatement != "" {
-		return clauses, false
+		supported = false
 	}
 
-	return clauses, true
+	return
 }
 
 func (t *Table) compareColumnExistence(other *Table) columnsComparison {

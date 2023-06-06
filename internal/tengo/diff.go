@@ -1,6 +1,7 @@
 package tengo
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -292,8 +293,7 @@ func (dd *DatabaseDiff) Statement(_ StatementModifiers) (string, error) {
 	case DiffTypeDrop:
 		stmt := dd.From.DropStatement()
 		err := &ForbiddenDiffError{
-			Reason:    "DROP DATABASE never permitted",
-			Statement: stmt,
+			Reason: "DROP DATABASE never permitted",
 		}
 		return stmt, err
 	case DiffTypeAlter:
@@ -532,8 +532,7 @@ func (td *TableDiff) Statement(mods StatementModifiers) (string, error) {
 		stmt := td.From.DropStatement()
 		if !mods.AllowUnsafe {
 			err = &ForbiddenDiffError{
-				Reason:    "DROP TABLE not permitted",
-				Statement: stmt,
+				Reason: "DROP TABLE not permitted",
 			}
 		}
 		return stmt, err
@@ -566,18 +565,23 @@ func (td *TableDiff) Clauses(mods StatementModifiers) (string, error) {
 }
 
 func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
+	var err error
 	if !td.supported {
 		if td.To.UnsupportedDDL {
-			return "", &UnsupportedDiffError{
+			subjectAndVerb := `The desired state ("to" side of diff) contains `
+			if td.From.UnsupportedDDL {
+				subjectAndVerb = "Both sides of the diff contain "
+			}
+			err = &UnsupportedDiffError{
 				ObjectKey:      td.ObjectKey(),
-				Reason:         "The desired state (\"to\" side of diff) contains unexpected or unsupported clauses in SHOW CREATE TABLE.",
+				Reason:         subjectAndVerb + "unexpected or unsupported clauses in SHOW CREATE TABLE.",
 				ExpectedCreate: td.To.GeneratedCreateStatement(mods.Flavor),
 				ExpectedDesc:   "desired state expected CREATE",
 				ActualCreate:   td.To.CreateStatement,
 				ActualDesc:     "desired state actual SHOW CREATE",
 			}
 		} else if td.From.UnsupportedDDL {
-			return "", &UnsupportedDiffError{
+			err = &UnsupportedDiffError{
 				ObjectKey:      td.ObjectKey(),
 				Reason:         "The original state (\"from\" side of diff) contains unexpected or unsupported clauses in SHOW CREATE TABLE.",
 				ExpectedCreate: td.From.GeneratedCreateStatement(mods.Flavor),
@@ -586,7 +590,7 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 				ActualDesc:     "original state actual SHOW CREATE",
 			}
 		} else {
-			return "", &UnsupportedDiffError{
+			err = &UnsupportedDiffError{
 				ObjectKey:      td.ObjectKey(),
 				Reason:         "The two sides of the diff vary in SHOW CREATE TABLE in unexpected ways, perhaps due to a bug in Skeema.",
 				ExpectedCreate: td.From.CreateStatement,
@@ -605,13 +609,12 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 
 	clauseStrings := make([]string, 0, len(td.alterClauses))
 	var partitionClauseString string
-	var err error
 	for _, clause := range td.alterClauses {
-		if err == nil && !mods.AllowUnsafe {
+		if !mods.AllowUnsafe {
 			if clause, ok := clause.(Unsafer); ok && clause.Unsafe() {
 				err = &ForbiddenDiffError{
-					Reason:    "Unsafe or potentially destructive ALTER TABLE not permitted",
-					Statement: "",
+					Reason:     "Unsafe or potentially destructive ALTER TABLE not permitted",
+					WrappedErr: err,
 				}
 			}
 		}
@@ -633,7 +636,7 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 		}
 	}
 	if len(clauseStrings) == 0 && partitionClauseString == "" {
-		return "", nil
+		return "", err
 	}
 
 	if mods.LockClause != "" {
@@ -663,10 +666,23 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 		partitionClauseString = fmt.Sprintf(" %s", partitionClauseString)
 	}
 	stmt := fmt.Sprintf("%s %s%s", td.From.AlterStatement(), strings.Join(clauseStrings, ", "), partitionClauseString)
-	if fde, isForbiddenDiff := err.(*ForbiddenDiffError); isForbiddenDiff {
-		fde.Statement = stmt
-	}
 	return stmt, err
+}
+
+// MarkSupported provides a mechanism for callers to vouch for the correctness
+// of a TableDiff that was automatically marked as unsupported. This should only
+// be used in cases where a table with UnsupportedDDL is being altered in a way
+// which either doesn't interact with the unsupported features, or easily
+// removes those features. It is the caller's responsibility to first verify
+// that the TableDiff's Statement() returns accurate, non-empty SQL.
+func (td *TableDiff) MarkSupported() error {
+	if td == nil || len(td.alterClauses) == 0 {
+		return errors.New("cannot mark TableDiff as supported: no alter clauses were generated")
+	} else if td.supported {
+		return errors.New("cannot mark TableDiff as supported: supported is already true")
+	}
+	td.supported = true
+	return nil
 }
 
 ///// RoutineDiff //////////////////////////////////////////////////////////////
@@ -747,8 +763,7 @@ func (rd *RoutineDiff) Statement(mods StatementModifiers) (string, error) {
 		var err error
 		if !mods.AllowUnsafe {
 			err = &ForbiddenDiffError{
-				Reason:    fmt.Sprintf("DROP %s not permitted", rd.From.Type.Caps()),
-				Statement: stmt,
+				Reason: fmt.Sprintf("DROP %s not permitted", rd.From.Type.Caps()),
 			}
 		}
 		return stmt, err
@@ -769,8 +784,8 @@ func (rd *RoutineDiff) IsCompoundStatement() bool {
 // statement modifiers do not permit the generated ObjectDiff to be used in this
 // situation.
 type ForbiddenDiffError struct {
-	Reason    string
-	Statement string
+	Reason     string
+	WrappedErr error // could be UnsupportedDiffError or another ForbiddenDiffError
 }
 
 // Error satisfies the builtin error interface.
@@ -778,11 +793,16 @@ func (e *ForbiddenDiffError) Error() string {
 	return e.Reason
 }
 
+// Unwrap returns a wrapped error, if any was set.
+func (e *ForbiddenDiffError) Unwrap() error {
+	return e.WrappedErr
+}
+
 // IsForbiddenDiff returns true if err represents an "unsafe" alteration that
 // has not explicitly been permitted by the supplied StatementModifiers.
 func IsForbiddenDiff(err error) bool {
-	_, ok := err.(*ForbiddenDiffError)
-	return ok
+	var fderr *ForbiddenDiffError
+	return errors.As(err, &fderr)
 }
 
 // UnsupportedDiffError can be returned by ObjectDiff.Statement if Tengo is
@@ -824,6 +844,6 @@ func (e *UnsupportedDiffError) ExtendedError() string {
 // IsUnsupportedDiff returns true if err represents an object that cannot be
 // diff'ed due to use of features not supported by this package.
 func IsUnsupportedDiff(err error) bool {
-	_, ok := err.(*UnsupportedDiffError)
-	return ok
+	var uderr *UnsupportedDiffError
+	return errors.As(err, &uderr)
 }

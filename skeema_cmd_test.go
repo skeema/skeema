@@ -806,23 +806,46 @@ func (s SkeemaIntegrationSuite) TestUnsupportedAlter(t *testing.T) {
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --debug")
 	s.handleCommand(t, CodePartialError, ".", "skeema push")
 
-	// diff/push still ok if *creating* or *dropping* unsupported table
+	// diff/push still ok if *creating* unsupported table
 	s.dbExec(t, "product", "DROP TABLE subscriptions")
 	s.assertTableMissing(t, "product", "subscriptions", "")
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
 	s.assertTableExists(t, "product", "subscriptions", "")
-	if err := os.Remove("mydb/product/subscriptions.sql"); err != nil {
+
+	// diff/push still ok if altering unsupported table to remove its unsupported
+	// feature, since the generated alter is verified, even with --skip-verify
+	contents = fs.ReadTestFile(t, "mydb/product/subscriptions.sql")
+	contents = strings.Replace(contents, "SUBPARTITION BY HASH (post_id)", "", 1)
+	contents = strings.Replace(contents, "SUBPARTITION BY HASH (`post_id`)", "", 1)
+	contents = strings.Replace(contents, "SUBPARTITIONS 2", "", 1)
+	if strings.Contains(contents, "SUBPARTITION") {
+		t.Fatalf("Failed to properly remove unsupported clause from subscriptions.sql -- contents:\n%s", contents)
+	} else {
+		fs.WriteTestFile(t, "mydb/product/subscriptions.sql", contents)
+	}
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --partitioning=modify --skip-verify")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --partitioning=modify --skip-verify")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// Coverage for extra non-InnoDB warning text -- just ensuring no panic, and
+	// no need for allow-unsafe (since diff is not supported)
+	contents = fs.ReadTestFile(t, "mydb/product/users.sql")
+	contents = strings.Replace(contents, "UNIQUE KEY `name` (`name`)", "UNIQUE KEY `name2` (`name`) USING BTREE", 1)
+	contents = strings.Replace(contents, "ENGINE=InnoDB", "ENGINE=MyISAM", 1)
+	fs.WriteTestFile(t, "mydb/product/users.sql", contents)
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
+
+	// Force the change on the db side, and then delete the file on the fs side.
+	// Confirm diff/push still ok for *dropping* unsupported table.
+	s.dbExec(t, "product", "ALTER TABLE users DROP KEY name, ADD UNIQUE KEY `name2` (`name`) USING BTREE, ENGINE=MyISAM")
+	if err := os.Remove("mydb/product/users.sql"); err != nil {
 		t.Fatalf("Unexpected error removing a file: %s", err)
 	}
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
-	s.assertTableMissing(t, "product", "subscriptions", "")
-
-	// coverage for non-InnoDB extra warning text -- just ensuring no panic and
-	// no unsafe-for-diff problem
-	s.sourceSQL(t, "unsupported2.sql")
-	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	s.assertTableMissing(t, "product", "users", "")
 }
 
 func (s SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {

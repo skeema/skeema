@@ -1231,6 +1231,9 @@ func TestTableAlterTablespace(t *testing.T) {
 }
 
 func TestTableAlterUnsupportedTable(t *testing.T) {
+	// Even if a table uses unsupported features, we can generate a diff of just
+	// the supported parts of the ALTER, although it still returns !supported in
+	// this situation
 	from, to := unsupportedTable(), unsupportedTable()
 	newCol := &Column{
 		Name:     "age",
@@ -1240,18 +1243,23 @@ func TestTableAlterUnsupportedTable(t *testing.T) {
 	}
 	to.Columns = append(to.Columns, newCol)
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
-	if tableAlters, supported := from.Diff(&to); len(tableAlters) != 0 || supported {
-		t.Fatalf("Expected diff of unsupported tables to yield no alters; instead found %d", len(tableAlters))
+	if tableAlters, supported := from.Diff(&to); len(tableAlters) != 1 || supported {
+		t.Fatalf("Expected diff of unsupported tables to yield one alter clause and false; instead found %d alters, %t", len(tableAlters), supported)
 	}
 
-	// Confirm same behavior even if only one side is marked as unsupported
+	// Diff that only adds unsupported feature doesn't yield any alter clauses
 	from, to = supportedTable(), unsupportedTable()
 	if tableAlters, supported := from.Diff(&to); len(tableAlters) != 0 || supported {
-		t.Fatalf("Expected diff of unsupported tables to yield no alters; instead found %d", len(tableAlters))
+		t.Fatalf("Expected diff of unsupported tables to yield no alter clauses and false; instead found %d alters, %t", len(tableAlters), supported)
 	}
+
+	// However, the opposite is not true:
+	// Even though sub-partitioning is not supported, a diff that entirely
+	// removes partitioning can be generated successfully, though still with
+	// !supported
 	from, to = to, from
-	if tableAlters, supported := from.Diff(&to); len(tableAlters) != 0 || supported {
-		t.Fatalf("Expected diff of unsupported tables to yield no alters; instead found %d", len(tableAlters))
+	if tableAlters, supported := from.Diff(&to); len(tableAlters) != 1 || supported {
+		t.Fatalf("Expected diff of unsupported tables to yield one alter clause and false; instead found %d alters, %t", len(tableAlters), supported)
 	}
 }
 
