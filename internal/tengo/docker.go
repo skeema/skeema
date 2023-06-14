@@ -347,6 +347,9 @@ func (di *DockerizedInstance) SourceSQL(filePath string) (string, error) {
 	}
 	defer f.Close()
 	cmd := []string{"mysql", "-tvvv", "-u", "root", "-h", "127.0.0.1", "--default-character-set", "utf8mb4"}
+	if di.Flavor().Min(FlavorMariaDB110) {
+		cmd[0] = "mariadb" // MariaDB 11.0+ images don't include `mysql` symlink
+	}
 	if di.RootPassword != "" {
 		cmd = append(cmd, fmt.Sprintf("-p%s", di.RootPassword))
 	}

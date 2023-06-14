@@ -195,6 +195,7 @@ var (
 	FlavorMariaDB109  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 9, 0}}
 	FlavorMariaDB1010 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 10, 0}}
 	FlavorMariaDB1011 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 11, 0}}
+	FlavorMariaDB110  = Flavor{Vendor: VendorMariaDB, Version: Version{11, 0, 0}}
 )
 
 // ParseFlavor returns a Flavor value based on the supplied string in format
@@ -237,11 +238,11 @@ func IdentifyFlavor(versionString, versionComment string) (flavor Flavor) {
 	// If the vendor is still unknown after the above checks, it may be because
 	// various distribution methods adjust one or both of those strings. Fall
 	// back to sane defaults for known major versions.
-	// This logic will need to change whenever MySQL 9+ or MariaDB 11+ exists.
+	// This logic will need to change whenever MySQL 10+ or MariaDB 12+ exists.
 	if flavor.Vendor == VendorUnknown {
-		if flavor.Version[0] == 10 {
+		if flavor.Version[0] == 10 || flavor.Version[0] == 11 {
 			flavor.Vendor = VendorMariaDB
-		} else if flavor.Version[0] == 5 || flavor.Version[0] == 8 {
+		} else if flavor.Version[0] == 5 || flavor.Version[0] == 8 || flavor.Version[0] == 9 {
 			flavor.Vendor = VendorMySQL
 		}
 	}
@@ -357,7 +358,7 @@ func (fl Flavor) Supported() bool {
 	case VendorMySQL:
 		return fl.Version.AtLeast(Version{5, 5}) && fl.Version.Below(Version{8, 1}) // MySQL 5.5.0-8.0.x is supported
 	case VendorMariaDB:
-		return fl.Version.AtLeast(Version{10, 1}) && fl.Version.Below(Version{11, 0}) // MariaDB 10.1-10.11 is supported
+		return fl.Version.AtLeast(Version{10, 1}) && fl.Version.Below(Version{11, 1}) // MariaDB 10.1-11.0 is supported
 	default:
 		return false
 	}

@@ -279,11 +279,11 @@ func TestFlavorSupported(t *testing.T) {
 		FlavorMariaDB104.Dot(22): true,
 		FlavorMariaDB107:         true,
 		FlavorUnknown:            false,
-		{VendorUnknown, Version{5, 5, 20}, VariantNone}:  false,
-		{VendorMySQL, Version{8, 2, 12}, VariantNone}:    false,
-		{VendorMySQL, Version{10, 6}, VariantNone}:       false,
-		{VendorMariaDB, Version{11, 0, 12}, VariantNone}: false,
-		{VendorMySQL, Version{}, VariantNone}:            false,
+		{VendorUnknown, Version{5, 5, 20}, VariantNone}:   false,
+		{VendorMySQL, Version{8, 2, 12}, VariantNone}:     false,
+		{VendorMySQL, Version{10, 6}, VariantNone}:        false,
+		{VendorMariaDB, Version{11, 12, 13}, VariantNone}: false,
+		{VendorMySQL, Version{}, VariantNone}:             false,
 	}
 	for flavor, expected := range cases {
 		if flavor.Supported() != expected {
