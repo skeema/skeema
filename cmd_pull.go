@@ -75,6 +75,11 @@ func pullWalker(dir *fs.Dir, maxDepth int) error {
 		// If we cannot pull due to lack of an instance, make it clear to the user
 		if instance == nil {
 			log.Errorf("Skipping %s: No host defined for environment %q", dir, dir.Config.Get("environment"))
+			if dir.Config.Changed("host-wrapper") {
+				log.Error("The host-wrapper option controls which hosts this directory maps to, but the executed script returned no hostnames.")
+			} else {
+				log.Errorf("This command requires a hostname to pull from, which can be specified using the host option in a [%s] section of the .skeema file in this directory, or in a parent directory.", dir.Config.Get("environment"))
+			}
 			return NewExitValue(CodeBadConfig, "")
 		}
 

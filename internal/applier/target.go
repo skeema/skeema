@@ -120,11 +120,17 @@ func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int)
 		}
 	} else if dir.HasSchema() {
 		// If we have a schema defined but no host, display a warning
-		log.Warnf("Skipping %s: no host defined for environment %q\n", dir, dir.Config.Get("environment"))
+		log.Warnf("Skipping %s: no host defined for environment %q", dir, dir.Config.Get("environment"))
+		if dir.Config.Changed("host-wrapper") {
+			log.Warn("The host-wrapper option controls which hosts this directory maps to, but a .skeema file also needs to set the host option to some value (even just a placeholder value) for this command to properly map directories to hosts and schemas.\n")
+		} else {
+			log.Warnf("This command requires a hostname, which can be specified using the host option in a [%s] section of the .skeema file in this directory, or in a parent directory.\n", dir.Config.Get("environment"))
+		}
+
 	} else if dir.OptionFile != nil && dir.OptionFile.SomeSectionHasOption("schema") {
 		// If we don't have a schema defined, but we would if some other environment
 		// had been selected, display a warning
-		log.Warnf("Skipping %s: no schema defined for environment %q\n", dir, dir.Config.Get("environment"))
+		log.Warnf("Skipping %s: no schema defined for environment %q\nOther environments do define a schema name. Refer to the .skeema file in this directory for details.\n", dir, dir.Config.Get("environment"))
 	}
 
 	subdirs, err := dir.Subdirs()
@@ -150,7 +156,10 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 	if dir.Config.GetBool("first-only") {
 		onlyInstance, err := dir.FirstInstance()
 		if onlyInstance == nil && err == nil {
-			log.Warnf("Skipping %s: dir maps to an empty list of instances\n", dir)
+			log.Warnf("Skipping %s: directory maps to an empty list of instances", dir)
+			if dir.Config.Changed("host-wrapper") {
+				log.Warnf("The host-wrapper option controls which hosts this directory maps to, but the executed script returned no hostnames.\n")
+			}
 			return nil, 0
 		} else if err != nil {
 			log.Errorf("Skipping %s: %s\n", dir, err)
@@ -166,13 +175,16 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 		log.Errorf("Skipping %s: %s\n", dir, err)
 		return nil, 1
 	} else if len(rawInstances) == 0 {
-		log.Warnf("Skipping %s: dir maps to an empty list of instances\n", dir)
+		log.Warnf("Skipping %s: directory maps to an empty list of instances", dir)
+		if dir.Config.Changed("host-wrapper") {
+			log.Warnf("The host-wrapper option controls which hosts this directory maps to, but the executed script returned no hostnames.\n")
+		}
 		return nil, 0
 	}
 	// dir.Instances doesn't pre-check for connectivity problems, so do that now
 	for _, inst := range rawInstances {
 		if err := dir.ValidateInstance(inst); err != nil {
-			log.Errorf("Skipping %s for %s: %s", inst, dir, err)
+			log.Errorf("Skipping %s for %s: %s\n", inst, dir, err)
 			skipCount++
 			continue
 		}
