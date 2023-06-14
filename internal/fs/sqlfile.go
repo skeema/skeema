@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"unicode"
 
@@ -175,17 +174,6 @@ func (sqlFile *SQLFile) statementIndex(stmt *tengo.Statement) int {
 	panic(fmt.Errorf("Statement previously at %s not actually found in file", stmt.Location()))
 }
 
-// NormalizeFileName forces name to lowercase on operating systems that
-// traditionally have case-insensitive operating systems. This is intended for
-// use in string-keyed maps, to avoid the possibility of having multiple
-// distinct map keys which actually refer to the same file.
-func NormalizeFileName(name string) string {
-	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
-		return strings.ToLower(name)
-	}
-	return name
-}
-
 // FileNameForObject returns a string containing the filename to use for the
 // SQLFile representing the supplied object name. Special characters in the
 // objectName will be removed; however, there is no risk of "conflicts" since
@@ -195,32 +183,21 @@ func FileNameForObject(objectName string) string {
 	if objectName == "" {
 		objectName = "symbols"
 	}
-	return NormalizeFileName(objectName) + ".sql"
-}
-
-// PathForObject returns a string containing a path to use for the SQLFile
-// representing the supplied object name. Special characters in the objectName
-// will be removed; however, there is no risk of "conflicts" since a single
-// SQLFile can store definitions for multiple objects.
-func PathForObject(dirPath, objectName string) string {
-	return filepath.Join(dirPath, FileNameForObject(objectName))
+	return objectName + ".sql"
 }
 
 func removeSpecialChars(r rune) rune {
 	if unicode.IsSpace(r) {
 		return -1
 	}
-	banned := []rune{
-		'.',
+	switch r {
+	case '.',
 		'\\', '/',
 		'"', '\'', '`',
 		':', '*', '?', '|', '~', '#', '&', '-',
-		'<', '>', '{', '}', '[', ']', '(', ')',
+		'<', '>', '{', '}', '[', ']', '(', ')':
+		return -1
+	default:
+		return r
 	}
-	for _, bad := range banned {
-		if r == bad {
-			return -1
-		}
-	}
-	return r
 }

@@ -1,8 +1,6 @@
 package fs
 
 import (
-	"fmt"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -203,29 +201,18 @@ func TestSQLFileWrite(t *testing.T) {
 	}
 }
 
-func TestPathForObject(t *testing.T) {
-	cases := []struct {
-		DirPath    string
-		ObjectName string
-		Expected   string
-	}{
-		{"", "foobar", "foobar.sql"},
-		{"/foo/bar", "baz", "/foo/bar/baz.sql"},
-		{"/var/schemas", "", "/var/schemas/symbols.sql"},
-		{"/var/schemas", "[*]. ({`'\"})", "/var/schemas/symbols.sql"},
-		{"/var/schemas", "foo_bar", "/var/schemas/foo_bar.sql"},
-		{"/var/schemas", "foo-bar", "/var/schemas/foobar.sql"},
-		{"/var/schemas", "../../etc/passwd", "/var/schemas/etcpasswd.sql"},
+func TestFileNameForObject(t *testing.T) {
+	cases := map[string]string{
+		"foobar":           "foobar.sql",
+		"":                 "symbols.sql",
+		"[*]. \t({`'\"})":  "symbols.sql",
+		"foo_bar":          "foo_bar.sql",
+		"foo-bar":          "foobar.sql",
+		"../../etc/passwd": "etcpasswd.sql",
 	}
-	for _, c := range cases {
-		if runtime.GOOS == "windows" {
-			if c.DirPath != "" {
-				c.DirPath = fmt.Sprintf("C:%s", strings.ReplaceAll(c.DirPath, "/", "\\"))
-				c.Expected = fmt.Sprintf("C:%s", strings.ReplaceAll(c.Expected, "/", "\\"))
-			}
-		}
-		if actual := PathForObject(c.DirPath, c.ObjectName); actual != c.Expected {
-			t.Errorf("Expected PathForObject(%q, %q) to return %q, instead found %q", c.DirPath, c.ObjectName, c.Expected, actual)
+	for input, expected := range cases {
+		if actual := FileNameForObject(input); actual != expected {
+			t.Errorf("Expected FileNameForObject(%q) to return %q, instead found %q", input, expected, actual)
 		}
 	}
 }

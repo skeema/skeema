@@ -49,6 +49,9 @@ func TestParseDir(t *testing.T) {
 			}
 		}
 	}
+	if dir.retainMapKeyCasing {
+		t.Error("dir retainMapKeyCasing is unexpectedly true")
+	}
 
 	// Confirm that parsing ~ should cause it to be its own repoBase, since we
 	// do not search beyond HOME for .skeema files or .git dirs
@@ -359,6 +362,95 @@ func TestParseDirIgnorePatterns(t *testing.T) {
 	var ce ConfigError
 	if !errors.As(err, &ce) {
 		t.Errorf("Expected err to be ConfigError, instead type is %T and it does not unwrap to ConfigError", err)
+	}
+}
+
+// TestDirParseDirCasingConflict covers situations where object names or file
+// names only differ by casing. Normally we downcase filenames for use as
+// map keys to avoid introducing files which only differ by casing, UNLESS a dir
+// ALREADY has files with such a conflict (which can only happen on a case-
+// sensitive filesystem anyway).
+func TestDirParseDirCasingConflict(t *testing.T) {
+	// Test behavior with empty dir: new conflicts won't be created
+	dirPath := t.TempDir()
+	dir := getDir(t, dirPath)
+	if dir.retainMapKeyCasing {
+		t.Fatal("Expected retainMapKeyCasing to be false, but it was true")
+	}
+	mixedCase := dir.FileFor(tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: "Foo"})
+	lowerCase := dir.FileFor(tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: "foo"})
+	if expected := filepath.Join(dirPath, "Foo.sql"); mixedCase.FilePath != expected {
+		t.Errorf("Unexpected FilePath: expected %s, found %s", expected, mixedCase.FilePath)
+	} else if lowerCase.FilePath != mixedCase.FilePath {
+		t.Errorf("Unexpected FilePath: expected %s, found %s", mixedCase.FilePath, lowerCase.FilePath)
+	} else if len(dir.SQLFiles) != 1 {
+		t.Errorf("Expected 1 SQL file (both tables using same file), instead found %d", len(dir.SQLFiles))
+	}
+	if another := dir.FileFor(&tengo.Statement{File: filepath.Join(dirPath, "FOO.sql")}); another.FilePath != mixedCase.FilePath {
+		t.Errorf("Unexpected FilePath: expected %s, found %s", mixedCase.FilePath, another.FilePath)
+	}
+	if another := dir.FileFor(&tengo.Statement{File: filepath.Join(dirPath, "foo.sql")}); another.FilePath != mixedCase.FilePath {
+		t.Errorf("Unexpected FilePath: expected %s, found %s", mixedCase.FilePath, another.FilePath)
+	}
+
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+		// Do a variant of above test in which some files already exist. Confirm that
+		// attempts to introduce a conflict just re-use the existing file with
+		// whatever casing it already had.
+		WriteTestFile(t, filepath.Join(dirPath, "AAA.sql"), "CREATE TABLE AAA (id int);\nCREATE TABLE aaa (id int);")
+		WriteTestFile(t, filepath.Join(dirPath, "foobar.sql"), "CREATE TABLE foobar (id int);")
+		dir = getDir(t, dirPath) // need to re-parse dir now that files present
+		if dir.retainMapKeyCasing {
+			t.Fatal("Expected retainMapKeyCasing to be false, but it was true")
+		}
+		if len(dir.SQLFiles) != 2 {
+			t.Errorf("Expected 2 SQL files, instead found %d", len(dir.SQLFiles))
+		}
+		if len(dir.LogicalSchemas[0].Creates) != 3 {
+			t.Errorf("Expected 3 CREATEs, instead found %d", len(dir.LogicalSchemas[0].Creates))
+		}
+		another := dir.FileFor(tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: "aAa"})
+		if expected := filepath.Join(dirPath, "AAA.sql"); another.FilePath != expected {
+			t.Errorf("Unexpected FilePath: expected %s, found %s", expected, another.FilePath)
+		}
+		another = dir.FileFor(tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: "FOObar"})
+		if expected := filepath.Join(dirPath, "foobar.sql"); another.FilePath != expected {
+			t.Errorf("Unexpected FilePath: expected %s, found %s", expected, another.FilePath)
+		}
+		if len(dir.SQLFiles) != 2 {
+			t.Errorf("Expected 2 SQL files, instead found %d", len(dir.SQLFiles))
+		}
+
+	} else {
+		// On case-sensitive filesystems, we can do a more thorough test by actually
+		// creating casing conflicts. Test behavior of a dir that has 3 SQL files, 2
+		// of which only differ by casing
+		WriteTestFile(t, filepath.Join(dirPath, "AAA.sql"), "CREATE TABLE AAA (id int);")
+		WriteTestFile(t, filepath.Join(dirPath, "FooBar.sql"), "CREATE TABLE FooBar (id int);")
+		WriteTestFile(t, filepath.Join(dirPath, "foobar.sql"), "CREATE TABLE foobar (id int);")
+		dir = getDir(t, dirPath) // need to re-parse dir now that files present
+		if !dir.retainMapKeyCasing {
+			t.Fatal("Expected retainMapKeyCasing to be true, but it was false")
+		}
+		if len(dir.SQLFiles) != 3 {
+			t.Errorf("Expected 3 SQL files, instead found %d", len(dir.SQLFiles))
+		}
+		mixedCase := dir.FileFor(tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: "FooBar"})
+		lowerCase := dir.FileFor(tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: "foobar"})
+		if mixedCase.FilePath == lowerCase.FilePath {
+			t.Errorf("Expected paths to differ, but both are %s", mixedCase.FilePath)
+		}
+		upperAAA := dir.FileFor(tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: "AAA"})
+		lowerAAA := dir.FileFor(tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: "aaa"})
+		if upperAAA.FilePath == lowerAAA.FilePath {
+			t.Errorf("Expected paths to differ, but both are %s", mixedCase.FilePath)
+		}
+		if exists, err := upperAAA.Exists(); !exists || err != nil {
+			t.Errorf("Unexpected return from Exists: %t, %v", exists, err)
+		}
+		if exists, err := lowerAAA.Exists(); exists || err != nil {
+			t.Errorf("Unexpected return from Exists: %t, %v", exists, err)
+		}
 	}
 }
 

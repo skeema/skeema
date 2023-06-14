@@ -24,13 +24,14 @@ type Dir struct {
 	Path                  string
 	Config                *mybase.Config
 	OptionFile            *mybase.File
-	SQLFiles              map[string]*SQLFile   // .sql files, keyed by normalized absolute file path
+	SQLFiles              map[string]*SQLFile   // .sql files, keyed by absolute file path, usually with file name lowercased
 	UnparsedStatements    []*tengo.Statement    // statements with unknown type / not supported by this package
 	NamedSchemaStatements []*tengo.Statement    // statements with explicit schema names: USE command or CREATEs with schema name qualifier
 	LogicalSchemas        []*LogicalSchema      // for now, always 0 or 1 elements; 2+ in same dir to be supported in future
 	IgnorePatterns        []tengo.ObjectPattern // regexes for matching objects that should be ignored
 	ParseError            error                 // any fatal error found parsing dir's config or contents
 	repoBase              string                // absolute path of containing repo, or topmost-found .skeema file
+	retainMapKeyCasing    bool                  // if true, map keys in SQLFiles retain original casing; used only when conflicting filenames found
 }
 
 // ParseDir parses the specified directory, including all *.sql files in it,
@@ -213,25 +214,42 @@ func (dir *Dir) Port() (int, bool) {
 // *tengo.Statement with non-empty File field, that path will be used as-is.
 // Otherwise, FileFor returns the default location for the supplied keyer based
 // on its type and name. In either case, if no known SQLFile exists at that
-// location yet, FileFor will instantiate a new SQLFile value for it.
+// location yet, FileFor will instantiate a new SQLFile value for it, but no
+// underlying filesystem file is created/written by this method.
 func (dir *Dir) FileFor(keyer tengo.ObjectKeyer) *SQLFile {
-	var filePath string
+	var dirPath, base string
 	if stmt, ok := keyer.(*tengo.Statement); ok && stmt.File != "" {
-		filePath = stmt.File
+		dirPath, base = filepath.Split(stmt.File)
 	} else {
-		objName := keyer.ObjectKey().Name
-		filePath = PathForObject(dir.Path, NormalizeFileName(objName))
+		dirPath = dir.Path
+		base = FileNameForObject(keyer.ObjectKey().Name)
+	}
+
+	// Build the real file path, as well as a version of the path usable as a
+	// map key. For looking up whether we already have a file at that path, the
+	// file name will be lowercased as a map key, *unless* the dir already had at
+	// least one naming conflict when the dir was initially processed (e.g. both
+	// "Foo.sql" and "foo.sql" already existed). We want to avoid introducing that
+	// scenario since on case-insensitive systems these will refer to the same
+	// file.
+	filePathReal := filepath.Join(dirPath, base)
+	var filePathKey string
+	if dir.retainMapKeyCasing {
+		filePathKey = filePathReal
+	} else {
+		filePathKey = filepath.Join(dirPath, strings.ToLower(base))
 	}
 
 	// No file yet at that path: return a new SQLFile, but no need to mark it
-	// dirty yet -- that will happen anyway once a statement is added to the file
-	if dir.SQLFiles[filePath] == nil {
-		dir.SQLFiles[filePath] = &SQLFile{
-			FilePath:   filePath,
+	// dirty / actually create the file or write anything. The caller can handle
+	// that if they're adding a statement to the file.
+	if dir.SQLFiles[filePathKey] == nil {
+		dir.SQLFiles[filePathKey] = &SQLFile{
+			FilePath:   filePathReal,
 			Statements: []*tengo.Statement{},
 		}
 	}
-	return dir.SQLFiles[filePath]
+	return dir.SQLFiles[filePathKey]
 }
 
 // DirtyFiles returns a slice of SQLFiles that have been marked as dirty.
@@ -691,18 +709,35 @@ func (dir *Dir) parseContents() {
 		return
 	}
 
-	// Tokenize and parse any *.sql files
-	var sqlFilePaths []string
-	if sqlFilePaths, dir.ParseError = sqlFiles(dir.Path, dir.repoBase); dir.ParseError != nil {
+	// See what *.sql files are here
+	var sqlFileNames []string
+	if sqlFileNames, dir.ParseError = sqlFiles(dir.Path, dir.repoBase); dir.ParseError != nil {
 		return
 	}
-	dir.SQLFiles = make(map[string]*SQLFile, len(sqlFilePaths))
-	logicalSchemasByName := make(map[string]*LogicalSchema)
-	for _, filePath := range sqlFilePaths {
-		sf := &SQLFile{
-			FilePath: filePath,
+
+	// See if there are any case-insensitive file name conflicts, since that
+	// affects how we key the file names. We seek to avoid introducing any new
+	// conflicts: if tables `Foo` and `foo` both exist, we normally want to put
+	// them in the same file to avoid problems on Mac/Windows, UNLESS the dir
+	// ALREADY has a situation where "Foo.sql" and "foo.sql" both exist.
+	dir.SQLFiles = make(map[string]*SQLFile, len(sqlFileNames))
+	for _, fileName := range sqlFileNames {
+		normalizedPath := filepath.Join(dir.Path, strings.ToLower(fileName))
+		if _, already := dir.SQLFiles[normalizedPath]; already {
+			dir.retainMapKeyCasing = true
+			dir.SQLFiles = make(map[string]*SQLFile, len(sqlFileNames))
+			break
 		}
-		sf.Statements, dir.ParseError = tengo.ParseStatementsInFile(filePath)
+		dir.SQLFiles[normalizedPath] = nil
+	}
+
+	// Tokenize, parse, and track all *.sql files
+	logicalSchemasByName := make(map[string]*LogicalSchema)
+	for _, fileName := range sqlFileNames {
+		sf := &SQLFile{
+			FilePath: filepath.Join(dir.Path, fileName),
+		}
+		sf.Statements, dir.ParseError = tengo.ParseStatementsInFile(sf.FilePath)
 		if dir.ParseError != nil {
 			// Treat errors here as fatal. This includes: i/o error opening or reading
 			// the .sql file; file had unterminated quote or backtick or comment.
@@ -729,7 +764,7 @@ func (dir *Dir) parseContents() {
 			}
 			if stmt.Type == tengo.StatementTypeUnknown {
 				// Statements which could not be parsed, meaning of an unsupported statement
-				// type (e.g. INSERTs), are simply ignored. This is not fatal, since it is
+				// type (e.g. SELECTs), are simply ignored. This is not fatal, since it is
 				// quite rare for a typo to trigger this -- only happens when misspelling
 				// CREATE or the object type for example.
 				dir.UnparsedStatements = append(dir.UnparsedStatements, stmt)
@@ -740,7 +775,13 @@ func (dir *Dir) parseContents() {
 				dir.NamedSchemaStatements = append(dir.NamedSchemaStatements, stmt)
 			}
 		}
-		dir.SQLFiles[filePath] = sf
+		var filePathKey string
+		if dir.retainMapKeyCasing {
+			filePathKey = sf.FilePath
+		} else {
+			filePathKey = filepath.Join(dir.Path, strings.ToLower(fileName))
+		}
+		dir.SQLFiles[filePathKey] = sf
 	}
 
 	// Prune any logical schema which didn't have any relevant statements (e.g.
@@ -930,14 +971,15 @@ func parseOptionFile(dirPath, repoBase string, baseConfig *mybase.Config) (*myba
 	return f, nil
 }
 
-// sqlFiles returns a slice of absolute file paths for all *.sql files found in
+// sqlFiles returns a slice of relative file names for all *.sql files found in
 // the supplied directory path. This function does not recursively search
 // subdirs, and does not parse or validate the file contents in any way. An
 // error will only be returned if the directory cannot be read. The file names
-// (but not directory path) are forced to lowercase on operating systems that
-// use case-insensitive filesystems by default.
-// The repoBase affects evaluation of symlinks: any link destinations outside
-// of the repoBase are ignored and excluded from the result.
+// are not manipulated here; the caller may need to adjust them before using as
+// map keys on a case-insensitive filesystem.
+// The repoBase affects evaluation of symlinks: any symlink destinations outside
+// of the repoBase are ignored and excluded from the result, and ditto for
+// symlinks that don't directly point to regular files (regardless of location).
 func sqlFiles(dirPath, repoBase string) (result []string, err error) {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
@@ -965,7 +1007,10 @@ func sqlFiles(dirPath, repoBase string) (result []string, err error) {
 			if !strings.HasPrefix(dest, repoBase) {
 				continue
 			}
-			if fi, err = os.Lstat(dest); err != nil { // using Lstat here to prevent symlinks-to-symlinks
+			// Make fi now point to the symlink destination. Lstat is used here to
+			// intentionally only allow one level of indirection; multi-hop symlinks
+			// will get filtered out by the fi.Mode().IsRegular() check below.
+			if fi, err = os.Lstat(dest); err != nil {
 				continue
 			}
 		}
@@ -973,7 +1018,7 @@ func sqlFiles(dirPath, repoBase string) (result []string, err error) {
 			// Note we intentionally use name, not destName, here. For symlinks we want
 			// to return the symlink, not the destination, since the destination could
 			// be in a different directory.
-			result = append(result, filepath.Join(dirPath, NormalizeFileName(name)))
+			result = append(result, name)
 		}
 	}
 	return result, nil
