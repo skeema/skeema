@@ -20,7 +20,7 @@ import (
 func AddGlobalOptions(cmd *mybase.Command) {
 	// Options typically only found in .skeema files -- all hidden by default
 	cmd.AddOption(mybase.StringOption("host", 0, "", "Database hostname or IP address").Hidden())
-	cmd.AddOption(mybase.StringOption("port", 0, "3306", "Port to use for database host").Hidden())
+	cmd.AddOption(mybase.StringOption("port", 'P', "3306", "Port to use for database host").Hidden())
 	cmd.AddOption(mybase.StringOption("socket", 'S', "/tmp/mysql.sock", "Absolute path to Unix socket file used if host is localhost").Hidden())
 	cmd.AddOption(mybase.StringOption("schema", 0, "", "Database schema name").Hidden())
 	cmd.AddOption(mybase.StringOption("default-character-set", 0, "", "Schema-level default character set").Hidden())
@@ -107,7 +107,7 @@ func ProcessSpecialGlobalOptions(cfg *mybase.Config) error {
 	cmdSuite := cfg.CLI.Command.Root()
 	for _, name := range []string{"host", "schema"} {
 		if cfg.Changed(name) && cfg.FindOption(name) == cmdSuite.Options()[name] {
-			return fmt.Errorf("Option %s cannot be set via %s for this command", name, cfg.Source(name))
+			return fmt.Errorf("The %s option cannot be set via %s for this command. For more information, visit https://www.skeema.io/docs/config/#limitations-on-host-and-schema-options", name, cfg.Source(name))
 		}
 	}
 
