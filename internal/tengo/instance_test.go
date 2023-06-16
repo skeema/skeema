@@ -379,8 +379,42 @@ func (s TengoIntegrationSuite) TestInstanceGrantChecks(t *testing.T) {
 	if !s.d.CanSkipBinlog() {
 		t.Fatal("Expected all Dockerized instances to be able to skip binlogs, but CanSkipBinlogs returned false")
 	}
-	if _, err := s.d.Connect("", "sql_log_bin=0"); err != nil {
+	if _, err := s.d.CachedConnectionPool("", "sql_log_bin=0"); err != nil {
 		t.Errorf("Error connecting with sql_log_bin=0: %v", err)
+	}
+
+	// Now create a less-privileged user, and confirm behavior. Note that for
+	// MariaDB 11.0, we intentionally grant SUPER since this no longer confers
+	// fine-grained privs.
+	var morePrivs string
+	if s.d.Flavor().Min(FlavorMariaDB110) {
+		morePrivs = ", SUPER"
+	}
+	db, err := s.d.CachedConnectionPool("", "")
+	if err != nil {
+		t.Fatalf("Unable to establish connection pool: %v", err)
+	}
+	dbExec := func(query string) {
+		t.Helper()
+		if _, err := db.Exec(query); err != nil {
+			t.Fatalf("Error running query on DockerizedInstance.\nQuery: %s\nError: %s", query, err)
+		}
+	}
+	t.Cleanup(func() {
+		dbExec("DROP USER 'notroot'@'%'")
+	})
+	dbExec(fmt.Sprintf("CREATE USER 'notroot'@'%%' IDENTIFIED BY '%s'", s.d.Password))
+	dbExec(fmt.Sprintf("GRANT SELECT, CREATE, DROP, ALTER, INDEX, CREATE ROUTINE, ALTER ROUTINE%s ON *.* TO 'notroot'@'%%'", morePrivs))
+	unprivDSN := strings.Replace(s.d.BaseDSN, s.d.User, "notroot", 1)
+	unprivInst, _ := NewInstance("mysql", unprivDSN)
+	if ok, err := unprivInst.Valid(); !ok {
+		t.Fatalf("Valid returned false, %v", err)
+	}
+	if unprivInst.CanSkipBinlog() {
+		t.Error("CanSkipBinlog unexpectedly returned true for unprivileged user")
+	}
+	if _, err := unprivInst.ConnectionPool("", "sql_log_bin=0"); err == nil {
+		t.Error("Expected error connecting with sql_log_bin=0, but err was nil")
 	}
 }
 
@@ -418,7 +452,7 @@ func TestInstanceGrantChecksRegexes(t *testing.T) {
 		"GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, RELOAD, SHUTDOWN, PROCESS, FILE, REFERENCES, INDEX, ALTER, SHOW DATABASES, SUPER, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, REPLICATION SLAVE, REPLICATION CLIENT, CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, CREATE USER, EVENT, TRIGGER, CREATE TABLESPACE, CREATE ROLE, DROP ROLE ON *.* TO `foo`@`%`",
 		"GRANT APPLICATION_PASSWORD_ADMIN,AUDIT_ADMIN,BACKUP_ADMIN,BINLOG_ADMIN,BINLOG_ENCRYPTION_ADMIN,CLONE_ADMIN,CONNECTION_ADMIN,ENCRYPTION_KEY_ADMIN,GROUP_REPLICATION_ADMIN,INNODB_REDO_LOG_ARCHIVE,PERSIST_RO_VARIABLES_ADMIN,REPLICATION_APPLIER,REPLICATION_SLAVE_ADMIN,RESOURCE_GROUP_ADMIN,RESOURCE_GROUP_USER,ROLE_ADMIN,SERVICE_CONNECTION_ADMIN,SESSION_VARIABLES_ADMIN,SET_USER_ID,SYSTEM_USER,SYSTEM_VARIABLES_ADMIN,TABLE_ENCRYPTION_ADMIN,XA_RECOVER_ADMIN ON *.* TO `foo`@`%`",
 		"GRANT BINLOG ADMIN ON *.* TO 'foo'@'%'", // MariaDB 10.5+, not to be confused with MySQL 8.0's BINLOG_ADMIN with an underscore!
-		"GRANT SUPER ON *.* TO 'foo'@'%'",
+		"GRANT SUPER ON *.* TO 'foo'@'%'",        // inst is FlavorUnknown, so it won't trip on MariaDB 11's SUPER change
 	}
 	for n, grant := range binlogSkipGrants {
 		inst.grants = []string{}

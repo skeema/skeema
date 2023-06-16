@@ -351,13 +351,23 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 // MariaDB 10.5+ as per https://jira.mariadb.org/browse/MDEV-21957; note the
 // space in the name (not to be confused with BINLOG_ADMIN with an underscore,
 // which is a MySQL 8.0 privilege which does NOT control sql_log_bin!)
-var reSkipBinlog = regexp.MustCompile(`(?:ALL PRIVILEGES ON \*\.\*|SUPER|SESSION_VARIABLES_ADMIN|SYSTEM_VARIABLES_ADMIN|BINLOG ADMIN)[,\s]`)
+// Meanwhile MariaDB 11.0 weakens SUPER to no longer confer fine-grained privs.
+var (
+	reSkipBinlog         = regexp.MustCompile(`(?:ALL PRIVILEGES ON \*\.\*|SUPER|SESSION_VARIABLES_ADMIN|SYSTEM_VARIABLES_ADMIN|BINLOG ADMIN)[,\s]`)
+	reSkipBinlogMaria110 = regexp.MustCompile(`(?:ALL PRIVILEGES ON \*\.\*|BINLOG ADMIN)[,\s]`)
+)
 
 // CanSkipBinlog returns true if instance.User has privileges necessary to
 // set sql_log_bin=0. If an error occurs in checking grants, this method returns
 // false as a safe fallback.
 func (instance *Instance) CanSkipBinlog() bool {
-	return instance.checkGrantsRegexp(reSkipBinlog)
+	var re *regexp.Regexp
+	if instance.Flavor().Min(FlavorMariaDB110) {
+		re = reSkipBinlogMaria110
+	} else {
+		re = reSkipBinlog
+	}
+	return instance.checkGrantsRegexp(re)
 }
 
 func (instance *Instance) checkGrantsRegexp(re *regexp.Regexp) bool {
