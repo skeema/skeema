@@ -1,7 +1,6 @@
 package tengo
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -139,7 +138,7 @@ func (s *Schema) Diff(other *Schema) *SchemaDiff {
 
 // DropStatement returns a SQL statement that, if run, would drop this schema.
 func (s *Schema) DropStatement() string {
-	return fmt.Sprintf("DROP DATABASE %s", EscapeIdentifier(s.Name))
+	return "DROP DATABASE " + EscapeIdentifier(s.Name)
 }
 
 // CreateStatement returns a SQL statement that, if run, would create this
@@ -147,12 +146,12 @@ func (s *Schema) DropStatement() string {
 func (s *Schema) CreateStatement() string {
 	var charSet, collate string
 	if s.CharSet != "" {
-		charSet = fmt.Sprintf(" CHARACTER SET %s", s.CharSet)
+		charSet = " CHARACTER SET " + s.CharSet
 	}
 	if s.Collation != "" {
-		collate = fmt.Sprintf(" COLLATE %s", s.Collation)
+		collate = " COLLATE " + s.Collation
 	}
-	return fmt.Sprintf("CREATE DATABASE %s%s%s", EscapeIdentifier(s.Name), charSet, collate)
+	return "CREATE DATABASE " + EscapeIdentifier(s.Name) + charSet + collate
 }
 
 // AlterStatement returns a SQL statement that, if run, would alter this
@@ -165,15 +164,15 @@ func (s *Schema) CreateStatement() string {
 func (s *Schema) AlterStatement(charSet, collation string) string {
 	var charSetClause, collateClause string
 	if s.CharSet != charSet && charSet != "" {
-		charSetClause = fmt.Sprintf(" CHARACTER SET %s", charSet)
+		charSetClause = " CHARACTER SET " + charSet
 	}
 	if s.Collation != collation && collation != "" {
-		collateClause = fmt.Sprintf(" COLLATE %s", collation)
+		collateClause = " COLLATE " + collation
 	}
 	if charSetClause == "" && collateClause == "" {
 		return ""
 	}
-	return fmt.Sprintf("ALTER DATABASE %s%s%s", EscapeIdentifier(s.Name), charSetClause, collateClause)
+	return "ALTER DATABASE " + EscapeIdentifier(s.Name) + charSetClause + collateClause
 }
 
 // tablesToPartitions returns a map whose keys are all tables in the schema

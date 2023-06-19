@@ -229,14 +229,11 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 	schema := s.GetSchema(t, "testing")
-	db, err := s.d.Connect("testing", "")
+	db, err := s.d.CachedConnectionPool("testing", "")
 	if err != nil {
 		t.Fatalf("Unexpected error from Connect: %s", err)
 	}
-	var sqlMode string
-	if err = db.QueryRow("SELECT @@sql_mode").Scan(&sqlMode); err != nil {
-		t.Fatalf("Unexpected error from Scan: %s", err)
-	}
+	sqlMode := s.d.SQLMode()
 
 	procsByName := schema.ProceduresByName()
 	actualProc1 := procsByName["proc1"]

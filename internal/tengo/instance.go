@@ -145,11 +145,6 @@ func (instance *Instance) CachedConnectionPool(defaultSchema, params string) (*s
 	return db, err
 }
 
-// Connect is an alias for CachedConnectionPool.
-func (instance *Instance) Connect(defaultSchema string, params string) (*sqlx.DB, error) {
-	return instance.CachedConnectionPool(defaultSchema, params)
-}
-
 func (instance *Instance) rawConnectionPool(defaultSchema, fullParams string, alreadyLocked bool) (*sqlx.DB, error) {
 	fullDSN := fmt.Sprintf("%s%s?%s", instance.BaseDSN, defaultSchema, fullParams)
 	db, err := sqlx.Connect(instance.Driver, fullDSN)
@@ -731,27 +726,25 @@ func (instance *Instance) DropSchema(schema string, opts BulkDropOptions) error 
 		return err
 	}
 
-	// No need to actually obtain the fully hydrated schema value; we already know
-	// it has no tables after the call above, and the schema's name alone is
-	// sufficient to call Schema.DropStatement() to generate the necessary SQL
-	s := &Schema{
-		Name: schema,
-	}
 	db, err := instance.CachedConnectionPool("", opts.params())
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec(s.DropStatement())
+
+	// Now that the tables have been removed, we can drop the schema without
+	// risking a long lock impacting the DB negatively
+	err = dropSchema(db, schema)
 	if IsDatabaseError(err, mysqlerr.ER_LOCK_WAIT_TIMEOUT) {
 		// we do 1 retry upon seeing a metadata locking conflict, consistent with
 		// logic in DropTablesInSchema
-		_, err = db.Exec(s.DropStatement())
+		err = dropSchema(db, schema)
 	}
 	if err != nil {
 		return err
 	}
 
-	prefix := fmt.Sprintf("%s?", schema)
+	// Close any connection pools for that database name
+	prefix := schema + "?"
 	instance.m.Lock()
 	defer instance.m.Unlock()
 	for key, connPool := range instance.connectionPool {
@@ -761,6 +754,14 @@ func (instance *Instance) DropSchema(schema string, opts BulkDropOptions) error 
 		}
 	}
 	return nil
+}
+
+// dropSchema executes a DROP DATABASE on the supplied database name. This isn't
+// exported directly because it is unsafe to drop things in this manner in
+// production, as it holds locks for a long time if many tables are present.
+func dropSchema(db *sqlx.DB, schema string) error {
+	_, err := db.Exec("DROP DATABASE " + EscapeIdentifier(schema))
+	return err
 }
 
 // AlterSchema changes the character set and/or collation of the supplied schema

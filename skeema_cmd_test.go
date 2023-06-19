@@ -1347,15 +1347,8 @@ END`
 	funcs := schema.FunctionsByName()
 	if r2, ok := funcs["routine2"]; !ok {
 		t.Fatal("Unable to locate routine2")
-	} else {
-		var serverSQLMode string
-		db, _ := s.d.CachedConnectionPool("", "")
-		if err := db.QueryRow("SELECT @@global.sql_mode").Scan(&serverSQLMode); err != nil {
-			t.Fatalf("Unexpected error querying sql_mode: %s", err)
-		}
-		if r2.SQLMode != serverSQLMode {
-			t.Errorf("Expected routine2 to have sql_mode %s, instead found %s", serverSQLMode, r2.SQLMode)
-		}
+	} else if serverSQLMode := s.d.SQLMode(); r2.SQLMode != serverSQLMode {
+		t.Errorf("Expected routine2 to have sql_mode %s, instead found %s", serverSQLMode, r2.SQLMode)
 	}
 
 	// Lint that new file; confirm new formatting matches expectation.

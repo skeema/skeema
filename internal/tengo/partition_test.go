@@ -264,7 +264,7 @@ func (s TengoIntegrationSuite) TestPartitionedIntrospection(t *testing.T) {
 
 	// Ensure that instance.go's tablesToPartitions() returns the same result as
 	// Schema.tablesToPartitions() on the introspected schema.
-	db, err := s.d.Connect("partitionparty", "")
+	db, err := s.d.CachedConnectionPool("partitionparty", "")
 	if err != nil {
 		t.Fatalf("Unable to connect to db: %v", err)
 	}
@@ -321,7 +321,7 @@ func (s TengoIntegrationSuite) TestDropPartitionedTable(t *testing.T) {
 
 	// Execute the statements to confirm they are syntactically valid and in the
 	// correct order (e.g. ALTERs to drop partitions come before DROP TABLE)
-	db, err := s.d.Connect("partitionparty", "")
+	db, err := s.d.CachedConnectionPool("partitionparty", "")
 	if err != nil {
 		t.Fatalf("Unable to connect to db: %v", err)
 	}
@@ -370,7 +370,7 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 	if tableFromDB.CreateStatement != tableFromUnitP.CreateStatement {
 		t.Fatalf("Test requires no drift between definition of unit test table and corresponding actual table; found %q vs %q", tableFromDB.CreateStatement, tableFromUnitP.CreateStatement)
 	}
-	db, err := s.d.Connect("partitionparty", "")
+	db, err := s.d.CachedConnectionPool("partitionparty", "")
 	if err != nil {
 		t.Fatalf("Unable to connect to DockerizedInstance: %v", err)
 	}

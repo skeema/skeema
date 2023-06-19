@@ -322,17 +322,54 @@ func (di *DockerizedInstance) String() string {
 
 // NukeData drops all non-system schemas and tables in the containerized
 // mysql-server, making it useful as a per-test cleanup method in
-// implementations of IntegrationTestSuite.BeforeTest.
+// implementations of IntegrationTestSuite.BeforeTest. This method should
+// never be used on a "real" production database!
 func (di *DockerizedInstance) NukeData() error {
 	schemas, err := di.Instance.SchemaNames()
 	if err != nil {
 		return err
 	}
+	db, err := di.Instance.CachedConnectionPool("", "")
+	if err != nil {
+		return err
+	}
+	var retries []string
 	for _, schema := range schemas {
-		if err := di.Instance.DropSchema(schema, BulkDropOptions{MaxConcurrency: 10}); err != nil {
-			return err
+		// Just run a DROP DATABASE directly, without dropping tables first. This is
+		// not safe in prod, but fine for tests.
+		if err := dropSchema(db, schema); err != nil {
+			retries = append(retries, schema)
 		}
 	}
+
+	// Retry failures once, this time using a connection pool with
+	// foreign_key_checks disabled, in case the issue was cross-DB FKs. (This is
+	// rare, and we generally already had a pool without that set, which is why
+	// we don't use it from the start.)
+	if len(retries) > 0 {
+		db, err := di.Instance.ConnectionPool("", "foreign_key_checks=0")
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		for _, schema := range retries {
+			if err := dropSchema(db, schema); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Close all schema-specific cached connection pools. Cache key format is
+	// "schema?params", so any key not beginning with ? is schema-specific.
+	di.Instance.m.Lock()
+	defer di.Instance.m.Unlock()
+	for key, connPool := range di.Instance.connectionPool {
+		if len(key) > 0 && key[0] != '?' {
+			connPool.Close()
+			delete(di.Instance.connectionPool, key)
+		}
+	}
+
 	return nil
 }
 

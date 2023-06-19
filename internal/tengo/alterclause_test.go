@@ -156,7 +156,7 @@ func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
 
 	runAlter := func(clause TableAlterClause) {
 		t.Helper()
-		db, err := s.d.Connect("testing", "")
+		db, err := s.d.CachedConnectionPool("testing", "")
 		if err != nil {
 			t.Fatalf("Unable to connect to DockerizedInstance: %s", err)
 		}

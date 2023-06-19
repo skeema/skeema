@@ -148,7 +148,7 @@ func TestInstanceIntrospectionParams(t *testing.T) {
 
 func (s TengoIntegrationSuite) TestInstanceConnect(t *testing.T) {
 	// Connecting to invalid schema should return an error
-	db, err := s.d.Connect("does-not-exist", "")
+	db, err := s.d.CachedConnectionPool("does-not-exist", "")
 	if err == nil {
 		t.Error("err is unexpectedly nil")
 	} else if db != nil {
@@ -156,7 +156,7 @@ func (s TengoIntegrationSuite) TestInstanceConnect(t *testing.T) {
 	}
 
 	// Connecting without specifying a default schema should be successful
-	db, err = s.d.Connect("", "")
+	db, err = s.d.CachedConnectionPool("", "")
 	if err != nil {
 		t.Errorf("Unexpected connection error: %s", err)
 	} else if db == nil {
@@ -164,7 +164,7 @@ func (s TengoIntegrationSuite) TestInstanceConnect(t *testing.T) {
 	}
 
 	// Connecting again with same schema and params should return the existing connection pool
-	db2, err := s.d.Connect("", "")
+	db2, err := s.d.CachedConnectionPool("", "")
 	if err != nil {
 		t.Errorf("Unexpected connection error: %s", err)
 	} else if db2 != db {
@@ -172,7 +172,7 @@ func (s TengoIntegrationSuite) TestInstanceConnect(t *testing.T) {
 	}
 
 	// Connecting again with different schema should return a different connection pool
-	db3, err := s.d.Connect("information_schema", "")
+	db3, err := s.d.CachedConnectionPool("information_schema", "")
 	if err != nil {
 		t.Errorf("Unexpected connection error: %s", err)
 	} else if db3 == db {
@@ -180,7 +180,7 @@ func (s TengoIntegrationSuite) TestInstanceConnect(t *testing.T) {
 	}
 
 	// Connecting again with different params should return a different connection pool
-	db4, err := s.d.Connect("information_schema", "foreign_key_checks=0&wait_timeout=20")
+	db4, err := s.d.CachedConnectionPool("information_schema", "foreign_key_checks=0&wait_timeout=20")
 	if err != nil {
 		t.Errorf("Unexpected connection error: %s", err)
 	} else if db4 == db || db4 == db3 {
@@ -285,7 +285,7 @@ func (s TengoIntegrationSuite) TestInstanceLockWaitTimeout(t *testing.T) {
 func (s TengoIntegrationSuite) TestInstanceCloseAll(t *testing.T) {
 	makePool := func(defaultSchema, params string) {
 		t.Helper()
-		db, err := s.d.Connect(defaultSchema, params)
+		db, err := s.d.CachedConnectionPool(defaultSchema, params)
 		if err != nil {
 			t.Fatalf("Unexpected connection error: %s", err)
 		} else if db == nil {
@@ -693,7 +693,7 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesDeadlock(t *testing.T) {
 
 	s.SourceTestSQL(t, "integration-ext.sql", "rows.sql")
 
-	db, err := s.d.Connect("", "foreign_key_checks=0")
+	db, err := s.d.CachedConnectionPool("", "foreign_key_checks=0")
 	if err != nil {
 		t.Fatalf("Unable to connect to DockerizedInstance: %s", err)
 	}
@@ -741,7 +741,7 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesSkipsViews(t *testing.T) {
 		FROM     information_schema.partitions p
 		WHERE    p.table_schema = 'testing' AND
 		         p.table_name LIKE 'view%'`
-	db, err := s.d.Connect("", "")
+	db, err := s.d.CachedConnectionPool("", "")
 	if err != nil {
 		t.Fatalf("Unexpected error obtaining connection pool: %v", err)
 	}

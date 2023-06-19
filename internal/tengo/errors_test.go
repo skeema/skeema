@@ -11,7 +11,7 @@ func (s TengoIntegrationSuite) TestIsDatabaseError(t *testing.T) {
 	if IsDatabaseError(err1) {
 		t.Errorf("IsDatabaseError unexpectedly returned true for non-database error type=%T", err1)
 	}
-	_, err2 := s.d.Connect("doesnt_exist", "")
+	_, err2 := s.d.CachedConnectionPool("doesnt_exist", "")
 	if !IsDatabaseError(err2) {
 		t.Errorf("IsDatabaseError unexpectedly returned false for error of type=%T", err2)
 	}

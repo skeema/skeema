@@ -759,7 +759,7 @@ func (rd *RoutineDiff) Statement(mods StatementModifiers) (string, error) {
 		if rd.ForMetadata {
 			comment = fmt.Sprintf("# Dropping and re-creating %s to update metadata\n", rd.ObjectKey())
 		}
-		stmt := fmt.Sprintf("%s%s", comment, rd.From.DropStatement())
+		stmt := comment + rd.From.DropStatement()
 		var err error
 		if !mods.AllowUnsafe {
 			err = &ForbiddenDiffError{
