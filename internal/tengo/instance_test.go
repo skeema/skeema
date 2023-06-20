@@ -195,6 +195,7 @@ func (s TengoIntegrationSuite) TestInstanceCanConnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error from NewInstance: %s", err)
 	}
+	defer inst.CloseAll()
 
 	if ok, err := inst.CanConnect(); !ok || err != nil {
 		t.Fatalf("Unexpected return from CanConnect(): %t / %s", ok, err)
@@ -242,6 +243,7 @@ func (s TengoIntegrationSuite) TestInstanceValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error from NewInstance: %s", err)
 	}
+	defer inst.CloseAll()
 	if ok, err := inst.Valid(); !ok || err != nil {
 		t.Fatalf("Valid() unexpectedly returned %t / %v", ok, err)
 	}
@@ -410,6 +412,7 @@ func (s TengoIntegrationSuite) TestInstanceGrantChecks(t *testing.T) {
 	if ok, err := unprivInst.Valid(); !ok {
 		t.Fatalf("Valid returned false, %v", err)
 	}
+	defer unprivInst.CloseAll()
 	if unprivInst.CanSkipBinlog() {
 		t.Error("CanSkipBinlog unexpectedly returned true for unprivileged user")
 	}
