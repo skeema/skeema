@@ -11,6 +11,7 @@ import (
 
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/fs"
+	"github.com/skeema/skeema/internal/shellout"
 	"github.com/skeema/skeema/internal/tengo"
 	"github.com/skeema/skeema/internal/util"
 	"github.com/skeema/skeema/internal/workspace"
@@ -194,10 +195,7 @@ func (s *IntegrationSuite) BeforeTest(backend string) error {
 
 func (s *IntegrationSuite) setupScratchDir(t *testing.T, subdir string) {
 	t.Helper()
-	shellout := util.ShellOut{
-		Dir:     s.testdata(subdir, "input"),
-		Command: fmt.Sprintf("cp *.sql %s", s.scratchPath()),
-	}
+	shellout := shellout.New("cp *.sql " + s.scratchPath()).WithWorkingDir(s.testdata(subdir, "input"))
 	if err := shellout.Run(); err != nil {
 		t.Fatalf("Unexpected error from shellout: %v", err)
 	}

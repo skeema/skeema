@@ -14,6 +14,7 @@ import (
 	"github.com/VividCortex/mysqlerr"
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/internal/shellout"
 	"github.com/skeema/skeema/internal/tengo"
 	"github.com/skeema/skeema/internal/util"
 )
@@ -190,7 +191,7 @@ func (dir *Dir) Hostnames() ([]string, error) {
 			"DIRPATH":     dir.Path,
 			"SCHEMA":      dir.Config.GetAllowEnvVar("schema"),
 		}
-		shellOut, err := util.NewInterpolatedShellOut(dir.Config.Get("host-wrapper"), variables)
+		shellOut, err := shellout.New(dir.Config.Get("host-wrapper")).WithVariables(variables)
 		if err != nil {
 			return nil, err
 		}
@@ -421,7 +422,7 @@ func (dir *Dir) SchemaNames(instance *tengo.Instance) (names []string, err error
 			"DIRNAME":     dir.BaseName(),
 			"DIRPATH":     dir.Path,
 		}
-		shellOut, err := util.NewInterpolatedShellOut(schemaValue, variables)
+		shellOut, err := shellout.New(schemaValue).WithVariables(variables)
 		if err == nil {
 			names, err = shellOut.RunCaptureSplit()
 		}

@@ -8,6 +8,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/internal/shellout"
 	"github.com/skeema/skeema/internal/tengo"
 	"github.com/skeema/skeema/internal/util"
 )
@@ -18,7 +19,7 @@ import (
 type DDLStatement struct {
 	stmt     string
 	compound bool
-	shellOut *util.ShellOut
+	shellOut *shellout.Command
 
 	instance      *tengo.Instance
 	schemaName    string
@@ -123,7 +124,7 @@ func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, targe
 			variables["TABLE"] = variables["NAME"]
 		}
 
-		if ddl.shellOut, err = util.NewInterpolatedShellOut(wrapper, variables); err != nil {
+		if ddl.shellOut, err = shellout.New(wrapper).WithVariables(variables); err != nil {
 			return nil, fmt.Errorf("A fatal error occurred with pre-processing a DDL statement: %w.", err)
 		}
 	}

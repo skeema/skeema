@@ -4,7 +4,7 @@
 //go:build !windows
 // +build !windows
 
-package util
+package shellout
 
 import (
 	"context"
@@ -14,13 +14,13 @@ import (
 	"strings"
 )
 
-func (s *ShellOut) cmd() (*exec.Cmd, error) {
-	if s.Timeout > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), s.Timeout)
-		s.cancelFunc = cancel
-		return exec.CommandContext(ctx, "/bin/sh", "-c", s.Command), nil
+func (c *Command) cmd() (*exec.Cmd, error) {
+	if c.timeout > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+		c.cancelFunc = cancel
+		return exec.CommandContext(ctx, "/bin/sh", "-c", c.command), nil
 	}
-	return exec.Command("/bin/sh", "-c", s.Command), nil
+	return exec.Command("/bin/sh", "-c", c.command), nil
 }
 
 // noQuotesNeeded is a regexp for detecting which variable values do not require
