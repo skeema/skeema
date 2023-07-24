@@ -106,7 +106,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerShutdown(t *testing.T) {
 	if ld, err = NewLocalDocker(opts); err != nil {
 		t.Fatalf("Unexpected error from NewLocalDocker(): %s", err)
 	}
-	containerName := ld.d.Name
+	containerName := ld.d.ContainerName()
 	// Intentionally don't call Cleanup; subsequent tests should still succeed
 	// since lock will inherently be released when container is stopped!
 	Shutdown()
@@ -117,7 +117,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerShutdown(t *testing.T) {
 	lookupOpts := tengo.DockerizedInstanceOptions{
 		Name: containerName,
 	}
-	if _, err := cstore.dockerClient.GetInstance(lookupOpts); err != nil {
+	if _, err := tengo.GetDockerizedInstance(lookupOpts); err != nil {
 		t.Errorf("Unable to re-fetch container %s by name: %s", containerName, err)
 	}
 
@@ -141,7 +141,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerShutdown(t *testing.T) {
 	if ok, _ := ld.d.CanConnect(); ok {
 		t.Error("Expected container to be destroyed, but CanConnect returned true")
 	}
-	if _, err := cstore.dockerClient.GetInstance(lookupOpts); err == nil {
+	if _, err := tengo.GetDockerizedInstance(lookupOpts); err == nil {
 		t.Errorf("Expected container %s to be destroyed, but able re-fetch container by name without error", containerName)
 	}
 }

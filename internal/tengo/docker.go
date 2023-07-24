@@ -1,64 +1,72 @@
 package tengo
 
 import (
-	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 
-	docker "github.com/fsouza/go-dockerclient"
 	"github.com/go-sql-driver/mysql"
+	"github.com/skeema/skeema/internal/shellout"
+	terminal "golang.org/x/term"
 )
 
-// DockerClientOptions specifies options when instantiating a Docker client.
-// No options are currently supported, but this may change in the future.
-type DockerClientOptions struct{}
+var dockerEngineArch string
 
-// DockerClient manages lifecycle of local Docker containers for sandbox
-// database instances. It wraps and hides the implementation of a specific
-// Docker client implementation. (This package currently uses
-// github.com/fsouza/go-dockerclient, but may later switch to the official
-// Docker Golang client.)
-type DockerClient struct {
-	client  *docker.Client
-	Options DockerClientOptions
-}
-
-// NewDockerClient is a constructor for DockerClient
-func NewDockerClient(opts DockerClientOptions) (*DockerClient, error) {
-	var dc *DockerClient
-	client, err := docker.NewClientFromEnv()
-	if err == nil {
-		dc = &DockerClient{
-			client:  client,
-			Options: opts,
-		}
+// checkDockerCLI confirms that we have a working `docker` command-line client
+// binary on the PATH, and it can communicate with a Docker Engine server and
+// fetch the engine's architecture. If successful, this result is memoized so
+// that subsequent calls have no effect.
+// This should be called at the start of any exported function that interacts
+// with Docker. It does not need to be called from DockerizedInstance methods
+// though, since if we already have a DockerizedInstance value, it means we've
+// successfully interacted with Docker already.
+func checkDockerCLI() error {
+	if dockerEngineArch != "" {
+		return nil
 	}
-	return dc, err
-}
-
-// ServerArchitecture returns the architecture of the Docker engine's server,
-// with values like those of runtime.GOARCH. The result is typically the same
-// as runtime.GOARCH in most situations, but may differ if e.g. the binary was
-// compiled as amd64 but is running on an m1 Mac via Rosetta 2.
-func (dc *DockerClient) ServerArchitecture() (string, error) {
-	info, err := dc.client.Info()
+	out, errOut, err := shellout.New(`docker info --format "{{json .}}"`).RunCaptureSeparate()
 	if err != nil {
-		return "", err
+		if _, pathErr := exec.LookPath("docker"); pathErr != nil && out == "" {
+			return errors.New("unable to find `docker` command-line client among directories in PATH")
+		}
+		return fmt.Errorf("error invoking `docker` command-line client: %w: %s", err, errOut)
 	}
+	result := struct {
+		ServerErrors []string
+		Architecture string
+	}{}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		return fmt.Errorf("error decoding JSON response from `docker` command-line client: %w", err)
+	}
+	if len(result.ServerErrors) > 0 {
+		return fmt.Errorf("error response from Docker engine: %s", strings.Join(result.ServerErrors, "; "))
+	}
+
+	dockerEngineArch = result.Architecture
 	conversions := map[string]string{
 		"x86_64":  "amd64",
 		"aarch64": "arm64",
 	}
-	if converted, ok := conversions[info.Architecture]; ok {
-		return converted, nil
+	if converted, ok := conversions[dockerEngineArch]; ok {
+		dockerEngineArch = converted
 	}
-	return info.Architecture, nil
+	return nil
+}
+
+// DockerEngineArchitecture returns the architecture of the Docker engine's
+// server, with values like those of runtime.GOARCH. The result is typically the
+// same as runtime.GOARCH in most situations, but may differ from GOARCH if e.g.
+// running an amd64 Skeema binary on Apple Silicon via Rosetta 2.
+func DockerEngineArchitecture() (string, error) {
+	err := checkDockerCLI()
+	return dockerEngineArch, err
 }
 
 // DockerizedInstanceOptions specifies options for creating or finding a
@@ -72,79 +80,64 @@ type DockerizedInstanceOptions struct {
 	CommandArgs       []string
 }
 
-// CreateInstance attempts to create a Docker container with the supplied name
-// (any arbitrary name, or blank to assign random) and image (such as
-// "mysql:5.6", or just "mysql" to indicate latest). A connection pool will be
-// established for the instance.
-func (dc *DockerClient) CreateInstance(opts DockerizedInstanceOptions) (*DockerizedInstance, error) {
+// DockerizedInstance is a database instance running in a local Docker
+// container.
+type DockerizedInstance struct {
+	*Instance
+	containerName    string
+	portMap          map[int]int // keys are container ports, values are host ports
+	hasDataBindMount bool
+}
+
+// CreateDockerizedInstance attempts to create a database instance inside a
+// Docker container. Of the opts fields, only Image is mandatory. A connection
+// pool will be established for the instance.
+func CreateDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstance, error) {
+	if err := checkDockerCLI(); err != nil {
+		return nil, err
+	}
 	if opts.Image == "" {
-		return nil, errors.New("CreateInstance: image cannot be empty string")
+		return nil, errors.New("CreateDockerizedInstance: Image field cannot be empty string")
 	}
 
-	tokens := strings.SplitN(opts.Image, ":", 2)
-	repository := tokens[0]
-	tag := "latest"
-	if len(tokens) > 1 {
-		tag = tokens[1]
+	dflags := []string{
+		"-d",                     // detach
+		"-p 127.0.0.1::3306/tcp", // Map container's 3306 to random host port on localhost-only interface
+		"-e MYSQL_ROOT_HOST=%",   // Ensure root@% is created on mysql/mysql-server images
+		"-e LANG=C.UTF-8",        // ensure client programs can pass multi-byte chars correctly in DockerizedInstance.SourceSQL
 	}
-
-	// Pull image from remote if missing
-	if _, err := dc.client.InspectImage(opts.Image); err != nil {
-		opts := docker.PullImageOptions{
-			Repository: repository,
-			Tag:        tag,
-		}
-		if err := dc.client.PullImage(opts, docker.AuthConfiguration{}); err != nil {
-			return nil, err
-		}
-	}
-
-	// Create and start container.
-	// Use MYSQL_ROOT_HOST=% to ensure user root@% is created; Dockerhub "official"
-	// images do this by default, but mysql/mysql-server does not. Regardless of
-	// this, the HostConfig restricts connections to the host machine anyway.
-	// Use LANG=C.UTF-8 to ensure client programs can pass multi-byte chars
-	// correctly, since DockerizedInstance.SourceSQL shells out to the client.
-	env := []string{"MYSQL_ROOT_HOST=%", "LANG=C.UTF-8"}
 	if opts.RootPassword == "" {
-		env = append(env, "MYSQL_ALLOW_EMPTY_PASSWORD=1")
+		dflags = append(dflags, "-e MYSQL_ALLOW_EMPTY_PASSWORD=1")
 	} else {
-		env = append(env, fmt.Sprintf("MYSQL_ROOT_PASSWORD=%s", opts.RootPassword))
+		dflags = append(dflags, "-e {ROOTPWDENV}")
 	}
-	ccopts := docker.CreateContainerOptions{
-		Name: opts.Name,
-		Config: &docker.Config{
-			Image: opts.Image,
-			Env:   env,
-			Cmd:   opts.CommandArgs,
-		},
-		HostConfig: &docker.HostConfig{
-			PortBindings: map[docker.Port][]docker.PortBinding{
-				"3306/tcp": {
-					{HostIP: "127.0.0.1"},
-				},
-			},
-		},
+	if opts.Name != "" {
+		dflags = append(dflags, "--name {NAME}")
 	}
 	if opts.DataBindMount != "" {
-		ccopts.HostConfig.Binds = []string{opts.DataBindMount + ":/var/lib/mysql"}
+		dflags = append(dflags, "-v {DATABINDMOUNT}")
 	}
-	di := &DockerizedInstance{
-		DockerizedInstanceOptions: opts,
-		Manager:                   dc,
-	}
-	var err error
-	if di.container, err = dc.client.CreateContainer(ccopts); err != nil {
-		return nil, err
-	} else if err = di.Start(); err != nil {
-		return di, err
-	}
+	flagString := strings.Join(dflags, " ")
 
-	// Confirm containerized database is reachable, and create Tengo instance
-	if err := di.TryConnect(); err != nil {
-		return di, err
+	var argString string
+	if len(opts.CommandArgs) > 0 {
+		argString = " " + strings.Join(opts.CommandArgs, " ")
 	}
-	return di, nil
+	vars := map[string]string{
+		"ROOTPWDENV":    "MYSQL_ROOT_PASSWORD=" + opts.RootPassword,
+		"NAME":          opts.Name,
+		"DATABINDMOUNT": opts.DataBindMount + ":/var/lib/mysql",
+	}
+	dockerRunCmd := "docker run " + flagString + " " + opts.Image + argString
+	c := shellout.New(dockerRunCmd).WithVariablesStrict(vars)
+	out, errOut, err := c.RunCaptureSeparate()
+	if err != nil {
+		return nil, fmt.Errorf("unable to create Docker container using `%s`: %w: %s", dockerRunCmd, err, errOut)
+	}
+	if opts.Name == "" {
+		opts.Name = strings.TrimSpace(out)
+	}
+	return newDockerizedInstance(opts)
 }
 
 // GetInstance attempts to find an existing container with name equal to
@@ -155,114 +148,199 @@ func (dc *DockerClient) CreateInstance(opts DockerizedInstanceOptions) (*Dockeri
 // If a non-blank opts.Image is supplied, and the existing container has a
 // a different image, the instance's flavor will be examined as a fallback. If
 // it also does not match the requested image, an error will be returned.
-func (dc *DockerClient) GetInstance(opts DockerizedInstanceOptions) (*DockerizedInstance, error) {
-	var err error
-	di := &DockerizedInstance{
-		Manager:                   dc,
-		DockerizedInstanceOptions: opts,
-	}
-	if di.container, err = dc.client.InspectContainer(opts.Name); err != nil {
+func GetDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstance, error) {
+	if err := checkDockerCLI(); err != nil {
 		return nil, err
 	}
-	actualImage := di.container.Image
-	if strings.HasPrefix(actualImage, "sha256:") {
-		if imageInfo, err := dc.client.InspectImage(actualImage[7:]); err == nil {
-			for _, rt := range imageInfo.RepoTags {
-				if rt == opts.Image || opts.Image == "" {
-					actualImage = rt
-					break
-				}
-			}
+	if opts.Name == "" {
+		return nil, errors.New("GetDockerizedInstance: Name field cannot be empty string")
+	}
+
+	if err := startDockerContainer(opts.Name); err != nil {
+		return nil, err
+	}
+	di, err := newDockerizedInstance(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// If an image name was provided, and we're able to parse it into a Flavor,
+	// confirm the DockerizedInstance flavor matches what was requested. This
+	// check intentionally ignores point release numbers.
+	if opts.Image != "" {
+		// Treat "foo/mysql" or "foo/mysql-server" as "mysql"
+		adjustedImage := strings.ReplaceAll(opts.Image, "-server", "")
+		if _, name, ok := strings.Cut(adjustedImage, "/"); ok {
+			adjustedImage = name
+		}
+		if imageFlavor := ParseFlavor(adjustedImage); imageFlavor.Supported() && imageFlavor.Family() != di.Flavor().Family() {
+			return nil, fmt.Errorf("Container %s based on unexpected flavor: expected %s, found %s", opts.Name, imageFlavor.Family(), di.Flavor().Family())
 		}
 	}
-	if opts.Image == "" {
-		di.Image = actualImage
+
+	return di, nil
+}
+
+// newDockerizedInstance creates a new DockerizedInstance value with all fields
+// populated. The container referred to in opts.Name should already exist and be
+// in the running state prior to calling this function.
+func newDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstance, error) {
+	di := &DockerizedInstance{
+		containerName:    opts.Name,
+		hasDataBindMount: (opts.DataBindMount != ""),
 	}
-	if err = di.Start(); err != nil {
+	if err := di.hydratePortMap(); err != nil {
 		return nil, err
 	}
-	if err = di.TryConnect(); err != nil {
-		return nil, err
+
+	var pass string
+	if opts.RootPassword != "" {
+		pass = fmt.Sprintf(":%s", opts.RootPassword)
 	}
-	// The actual image may not match the requested one if, for example, the tag
-	// for version a.b previously pointed to a.b.c but now points to a.b.d. We
-	// check the instance's flavor as a fallback.
-	if opts.Image != "" && opts.Image != actualImage && opts.Image != di.Flavor().String() && opts.Image != di.Flavor().Family().String() {
-		return nil, fmt.Errorf("Container %s based on unexpected image: expected %s, found %s", opts.Name, opts.Image, actualImage)
+	dsn := fmt.Sprintf("root%s@tcp(127.0.0.1:%d)/?%s", pass, di.portMap[3306], opts.DefaultConnParams)
+	if inst, err := NewInstance("mysql", dsn); err != nil {
+		return nil, err
+	} else {
+		di.Instance = inst
+	}
+
+	if err := di.TryConnect(); err != nil {
+		return nil, err
 	}
 	return di, nil
 }
 
-// GetOrCreateInstance attempts to fetch an existing Docker container with name
-// equal to opts.Name. If it exists and its image (or flavor) matches
+// hydratePortMap populates di.portMap, if this hasn't already happened.
+func (di *DockerizedInstance) hydratePortMap() (err error) {
+	if di.portMap == nil {
+		di.portMap = make(map[int]int)
+	}
+
+	vars := map[string]string{
+		"NAME": di.containerName,
+	}
+	inspectCommand := `docker inspect --type container --format="{{json .NetworkSettings.Ports}}" {NAME}`
+	c := shellout.New(inspectCommand).WithVariablesStrict(vars)
+
+	// Attempt this up to 5 times, since the port mapping often isn't immediately
+	// available right after starting the container.
+	for n := 1; n <= 5 && len(di.portMap) == 0; n++ {
+		time.Sleep(time.Duration(n) * time.Millisecond)
+		var out string
+		out, err = c.RunCaptureCombined()
+		if err != nil || out == "" {
+			continue
+		}
+		var ports map[string][]map[string]string
+		if err = json.Unmarshal([]byte(out), &ports); err != nil {
+			err = fmt.Errorf("unable to decode JSON response from `docker` command-line client: %w", err)
+			continue
+		}
+		for containerPortProto, hostPortInfos := range ports {
+			containerPortStr, proto, _ := strings.Cut(containerPortProto, "/")
+			containerPort, _ := strconv.Atoi(containerPortStr)
+			if proto == "tcp" && containerPort > 0 && len(hostPortInfos) > 0 && hostPortInfos[0]["HostPort"] != "" {
+				hostPort, _ := strconv.Atoi(hostPortInfos[0]["HostPort"])
+				di.portMap[containerPort] = hostPort
+			}
+		}
+	}
+
+	if err != nil {
+		err = fmt.Errorf("Unable to find port mapping for container %s: %w", di.containerName, err)
+	} else if di.portMap[3306] == 0 {
+		err = fmt.Errorf("Unable to find port mapping for container %s", di.containerName)
+	}
+	return err
+}
+
+// GetOrCreateDockerizedInstance attempts to fetch an existing Docker container
+// with name equal to opts.Name. If it exists and its image (or flavor) matches
 // opts.Image, and there are no errors starting or connecting to the instance,
 // it will be returned. If it exists but its image/flavor don't match, or it
 // cannot be started or connected to, an error will be returned. If no container
 // exists with this name, a new one will attempt to be created.
-func (dc *DockerClient) GetOrCreateInstance(opts DockerizedInstanceOptions) (*DockerizedInstance, error) {
-	di, err := dc.GetInstance(opts)
-	if err == nil {
-		return di, nil
-	} else if _, ok := err.(*docker.NoSuchContainer); ok {
-		return dc.CreateInstance(opts)
+func GetOrCreateDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstance, error) {
+	if opts.Name == "" || opts.Image == "" {
+		return nil, errors.New("GetOrCreateDockerizedInstance: Name and Image fields must both be non-empty")
 	}
-	return nil, err
-}
+	di, getErr := GetDockerizedInstance(opts)
+	if getErr == nil {
+		return di, nil
+	}
 
-// DockerizedInstance is a database instance running in a local Docker
-// container.
-type DockerizedInstance struct {
-	*Instance
-	DockerizedInstanceOptions
-	Manager   *DockerClient
-	container *docker.Container
+	// Try creating the container, regardless of what the error was; this way we
+	// aren't reliant on potentially-brittle error string matching. However, if
+	// the create call ALSO errors, we examine the original get call's error text
+	// to attempt to determine which of the two errors seems more relevant. This
+	// error-reporting logic may break if the Docker CLI error text changes, but
+	// it won't completely break the overall functionality of this function.
+	di, createErr := CreateDockerizedInstance(opts)
+	if createErr == nil {
+		return di, nil
+	} else if strings.Contains(strings.ToLower(getErr.Error()), "no such container") {
+		return nil, createErr
+	} else {
+		return nil, getErr
+	}
 }
 
 // Start starts the corresponding containerized mysql-server. If it is not
 // already running, an error will be returned if it cannot be started. If it is
 // already running, nil will be returned.
 func (di *DockerizedInstance) Start() error {
-	err := di.Manager.client.StartContainer(di.container.ID, nil)
-	if _, ok := err.(*docker.ContainerAlreadyRunning); err == nil || ok {
-		di.container, err = di.Manager.client.InspectContainer(di.container.ID)
+	if err := startDockerContainer(di.containerName); err != nil {
+		return err
+	}
+	// Randomly-assigned port on host side will have changed
+	if err := di.hydratePortMap(); err != nil {
+		return err
+	}
+	oldPortStr := fmt.Sprintf(":%d", di.Instance.Port)
+	newPortStr := fmt.Sprintf(":%d", di.portMap[3306])
+	di.Instance.BaseDSN = strings.Replace(di.Instance.BaseDSN, oldPortStr, newPortStr, 1)
+	di.Instance.Port = di.portMap[3306]
+	return nil
+}
 
-		// In some cases it appears StartContainer returns prior to the port mapping
-		// being in place. Retry the inspection up to 5 more times if so.
-		for n := 1; err == nil && di.Port() == 0; n++ {
-			if n >= 6 {
-				return fmt.Errorf("Unable to find port mapping for container %s", di.Name)
-			}
-			time.Sleep(time.Duration(n) * time.Millisecond)
-			di.container, err = di.Manager.client.InspectContainer(di.container.ID)
-		}
+func startDockerContainer(name string) error {
+	vars := map[string]string{
+		"NAME": name,
+	}
+	s := shellout.New("docker start {NAME}").WithVariablesStrict(vars)
+	out, err := s.RunCaptureCombined()
+	if err != nil {
+		err = fmt.Errorf("%w: %s", err, out)
 	}
 	return err
 }
 
 // Stop halts the corresponding containerized mysql-server, but does not
-// destroy the container. The connection pool will be removed. If the container
-// was not already running, nil will be returned.
+// destroy the container. If the container was not already running, no error
+// is returned.
 func (di *DockerizedInstance) Stop() error {
 	di.CloseAll()
-	err := di.Manager.client.StopContainer(di.container.ID, 10)
-	if _, ok := err.(*docker.ContainerNotRunning); !ok && err != nil {
-		return err
+	di.portMap = nil
+	vars := map[string]string{
+		"NAME": di.containerName,
 	}
-	return nil
+	s := shellout.New("docker stop {NAME}").WithVariablesStrict(vars)
+	out, err := s.RunCaptureCombined()
+	if err != nil {
+		err = fmt.Errorf("%w: %s", err, out)
+	}
+	return err
 }
 
 // Destroy stops and deletes the corresponding containerized mysql-server.
 func (di *DockerizedInstance) Destroy() error {
 	di.CloseAll()
-	rcopts := docker.RemoveContainerOptions{
-		ID:            di.container.ID,
-		Force:         true,
-		RemoveVolumes: true,
+	di.portMap = nil
+	vars := map[string]string{
+		"NAME": di.containerName,
 	}
-	err := di.Manager.client.RemoveContainer(rcopts)
-	if _, ok := err.(*docker.NoSuchContainer); ok {
-		err = nil
-	}
+	s := shellout.New("docker rm -v -f {NAME}").WithVariablesStrict(vars)
+	_, err := s.RunCaptureCombined()
 	return err
 }
 
@@ -271,12 +349,8 @@ func (di *DockerizedInstance) Destroy() error {
 // established within 30 seconds.
 func (di *DockerizedInstance) TryConnect() (err error) {
 	var ok bool
-	di.Instance, err = NewInstance("mysql", di.DSN())
-	if err != nil {
-		return err
-	}
 	maxAttempts := 120
-	if di.DataBindMount != "" { // bind mounted dir causes slower startup
+	if di.hasDataBindMount { // bind mounted dir causes slower startup
 		maxAttempts *= 2
 	}
 	for attempts := 0; attempts < maxAttempts; attempts++ {
@@ -291,29 +365,18 @@ func (di *DockerizedInstance) TryConnect() (err error) {
 // Port returns the actual port number on localhost that maps to the container's
 // internal port 3306.
 func (di *DockerizedInstance) Port() int {
-	return di.PortMap(3306)
+	return di.portMap[3306]
 }
 
 // PortMap returns the port number on localhost that maps to the container's
 // specified internal tcp port.
 func (di *DockerizedInstance) PortMap(containerPort int) int {
-	portAndProto := docker.Port(fmt.Sprintf("%d/tcp", containerPort))
-	portBindings, ok := di.container.NetworkSettings.Ports[portAndProto]
-	if !ok || len(portBindings) == 0 {
-		return 0
-	}
-	result, _ := strconv.Atoi(portBindings[0].HostPort)
-	return result
+	return di.portMap[containerPort]
 }
 
-// DSN returns a github.com/go-sql-driver/mysql formatted DSN corresponding
-// to its containerized mysql-server instance.
-func (di *DockerizedInstance) DSN() string {
-	var pass string
-	if di.RootPassword != "" {
-		pass = fmt.Sprintf(":%s", di.RootPassword)
-	}
-	return fmt.Sprintf("root%s@tcp(127.0.0.1:%d)/?%s", pass, di.Port(), di.DefaultConnParams)
+// ContainerName returns the DockerizedInstance's container name.
+func (di *DockerizedInstance) ContainerName() string {
+	return di.containerName
 }
 
 func (di *DockerizedInstance) String() string {
@@ -373,60 +436,70 @@ func (di *DockerizedInstance) NukeData() error {
 	return nil
 }
 
-// SourceSQL reads the specified file and executes it against the containerized
-// mysql-server. The file should contain one or more valid SQL instructions,
-// typically a mix of DML and/or DDL statements. It is useful as a per-test
-// setup method in implementations of IntegrationTestSuite.BeforeTest.
-func (di *DockerizedInstance) SourceSQL(filePath string) (string, error) {
-	f, err := os.Open(filePath)
-	if err != nil {
-		return "", fmt.Errorf("SourceSQL %s: Unable to open setup file %s: %s", di, filePath, err)
+// SourceSQL reads the specified files and executes them sequentially against
+// the containerized mysql-server. Each file should contain one or more valid
+// SQL instructions, typically a mix of DML and/or DDL statements. This is
+// useful as a per-test setup method in implementations of
+// IntegrationTestSuite.BeforeTest.
+func (di *DockerizedInstance) SourceSQL(filePaths ...string) (string, error) {
+	readers := make([]io.Reader, len(filePaths))
+	for n := range filePaths {
+		f, err := os.Open(filePaths[n])
+		if err != nil {
+			return "", fmt.Errorf("SourceSQL %s: Unable to open %s: %s", di, filePaths[n], err)
+		}
+		defer f.Close()
+		readers[n] = f
 	}
-	defer f.Close()
+	combinedInput := io.MultiReader(readers...)
 	cmd := []string{"mysql", "-tvvv", "-u", "root", "-h", "127.0.0.1", "--default-character-set", "utf8mb4"}
 	if di.Flavor().Min(FlavorMariaDB110) {
 		cmd[0] = "mariadb" // MariaDB 11.0+ images don't include `mysql` symlink
 	}
-	if di.RootPassword != "" {
-		cmd = append(cmd, fmt.Sprintf("-p%s", di.RootPassword))
-	}
-	stdoutStr, stderrStr, err := di.Exec(cmd, f)
-	stderrStr = strings.Replace(stderrStr, "Warning: Using a password on the command line interface can be insecure.\n", "", 1)
+	stdoutStr, stderrStr, err := di.Exec(cmd, combinedInput)
 	if err != nil || strings.Contains(stderrStr, "ERROR") {
-		err = fmt.Errorf("SourceSQL %s: Error sourcing file %s: %s", di, filePath, stderrStr)
+		var inputStr string
+		if len(filePaths) == 1 {
+			inputStr = "file " + filePaths[0]
+		} else {
+			inputStr = "files " + strings.Join(filePaths, ", ")
+		}
+		err = fmt.Errorf("SourceSQL %s: Error sourcing %s: %v %s", di, inputStr, err, stderrStr)
 	}
 	return stdoutStr, err
 }
 
 // Exec executes the supplied command/args in the container, blocks until
 // completion, and returns STDOUT and STDERR. An input stream may optionally
-// be supplied for the exec's STDIN.
-func (di *DockerizedInstance) Exec(cmd []string, stdin io.Reader) (string, string, error) {
-	ceopts := docker.CreateExecOptions{
-		AttachStdout: true,
-		AttachStderr: true,
-		AttachStdin:  true,
-		Cmd:          cmd,
-		Container:    di.container.ID,
+// be supplied for the exec's STDIN, or supply nil to use the parent process's
+// STDIN and possibly allocate a TTY. If di.Instance.Password is non-blank, the
+// $MYSQL_PWD env variable will be set to it automatically.
+func (di *DockerizedInstance) Exec(cmd []string, stdin io.Reader) (stdoutStr string, stderrStr string, err error) {
+	dflags := []string{
+		"-i",
 	}
-	exec, err := di.Manager.client.CreateExec(ceopts)
-	if err != nil {
-		return "", "", err
+	if di.Password != "" {
+		dflags = append(dflags, "-e {PWDENV}")
 	}
-	var stdout, stderr bytes.Buffer
-	seopts := docker.StartExecOptions{
-		OutputStream: &stdout,
-		ErrorStream:  &stderr,
-		InputStream:  stdin,
+	if fd := int(os.Stdin.Fd()); stdin == nil && terminal.IsTerminal(fd) {
+		dflags = append(dflags, "-t")
 	}
-	if err = di.Manager.client.StartExec(exec.ID, seopts); err != nil {
-		return "", "", err
+	vars := map[string]string{
+		"PWDENV": "MYSQL_PWD=" + di.Password,
+		"NAME":   di.containerName,
 	}
-	execInfo, err := di.Manager.client.InspectExec(exec.ID)
-	if err == nil && execInfo.ExitCode > 0 {
-		err = fmt.Errorf("Process returned exit code %d", execInfo.ExitCode)
+
+	// Ensure each element of cmd is separately quoted if needed
+	cmdPlaceholders := make([]string, len(cmd))
+	for n := range cmd {
+		varKey := fmt.Sprintf("ARG%d", n)
+		vars[varKey] = cmd[n]
+		cmdPlaceholders[n] = "{" + varKey + "}"
 	}
-	return stdout.String(), stderr.String(), err
+
+	commandString := "docker exec " + strings.Join(dflags, " ") + " {NAME} " + strings.Join(cmdPlaceholders, " ")
+	s := shellout.New(commandString).WithStdin(stdin).WithVariablesStrict(vars)
+	return s.RunCaptureSeparate()
 }
 
 // ContainerNameForImage returns a usable container name (or portion of a name)

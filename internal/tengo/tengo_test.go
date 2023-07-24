@@ -20,17 +20,12 @@ func TestIntegration(t *testing.T) {
 		fmt.Println("To run integration tests, you may set SKEEMA_TEST_IMAGES to a comma-separated")
 		fmt.Println("list of Docker images. Example:\n# SKEEMA_TEST_IMAGES=\"mysql:5.6,mysql:5.7\" go test")
 	}
-	manager, err := NewDockerClient(DockerClientOptions{})
-	if err != nil {
-		t.Errorf("Unable to create sandbox manager: %s", err)
-	}
-	suite := &TengoIntegrationSuite{manager: manager}
+	suite := &TengoIntegrationSuite{}
 	RunSuite(suite, t, images)
 }
 
 type TengoIntegrationSuite struct {
-	manager *DockerClient
-	d       *DockerizedInstance
+	d *DockerizedInstance
 }
 
 func (s *TengoIntegrationSuite) Setup(backend string) (err error) {
@@ -40,7 +35,7 @@ func (s *TengoIntegrationSuite) Setup(backend string) (err error) {
 		RootPassword: "fakepw",
 		CommandArgs:  []string{"--skip-log-bin"}, // override MySQL 8 default of enabling binlog
 	}
-	s.d, err = s.manager.GetOrCreateInstance(opts)
+	s.d, err = GetOrCreateDockerizedInstance(opts)
 	return err
 }
 
@@ -60,11 +55,11 @@ func (s *TengoIntegrationSuite) BeforeTest(backend string) error {
 // relative to the testdata subdir. If any errors occur, the test fails.
 func (s *TengoIntegrationSuite) SourceTestSQL(t *testing.T, files ...string) {
 	t.Helper()
-	for _, f := range files {
-		fPath := filepath.Join("testdata", f)
-		if _, err := s.d.SourceSQL(fPath); err != nil {
-			t.Fatal(err.Error())
-		}
+	for n := range files {
+		files[n] = filepath.Join("testdata", files[n])
+	}
+	if _, err := s.d.SourceSQL(files...); err != nil {
+		t.Fatal(err.Error())
 	}
 }
 

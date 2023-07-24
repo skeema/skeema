@@ -47,17 +47,12 @@ func TestIntegration(t *testing.T) {
 		fmt.Println("To run integration tests, you may set SKEEMA_TEST_IMAGES to a comma-separated")
 		fmt.Println("list of Docker images. Example:\n# SKEEMA_TEST_IMAGES=\"mysql:5.6,mysql:5.7\" go test")
 	}
-	manager, err := tengo.NewDockerClient(tengo.DockerClientOptions{})
-	if err != nil {
-		t.Errorf("Unable to create sandbox manager: %s", err)
-	}
-	suite := &ApplierIntegrationSuite{manager: manager}
+	suite := &ApplierIntegrationSuite{}
 	tengo.RunSuite(suite, t, images)
 }
 
 type ApplierIntegrationSuite struct {
-	manager *tengo.DockerClient
-	d       []*tengo.DockerizedInstance
+	d []*tengo.DockerizedInstance
 }
 
 func (s *ApplierIntegrationSuite) Setup(backend string) error {
@@ -71,7 +66,7 @@ func (s *ApplierIntegrationSuite) Setup(backend string) error {
 			if n > 0 {
 				containerName = fmt.Sprintf("%s-%d", containerName, n+1)
 			}
-			s.d[n], err = s.manager.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
+			s.d[n], err = tengo.GetOrCreateDockerizedInstance(tengo.DockerizedInstanceOptions{
 				Name:         containerName,
 				Image:        backend,
 				RootPassword: "fakepw",

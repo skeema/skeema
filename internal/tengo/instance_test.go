@@ -190,7 +190,7 @@ func (s TengoIntegrationSuite) TestInstanceConnect(t *testing.T) {
 
 func (s TengoIntegrationSuite) TestInstanceCanConnect(t *testing.T) {
 	// Force a connection that has defaultParams
-	dsn := fmt.Sprintf("%s?wait_timeout=5&timeout=1s", s.d.DSN())
+	dsn := s.d.BaseDSN + "?wait_timeout=5&timeout=1s"
 	inst, err := NewInstance("mysql", dsn)
 	if err != nil {
 		t.Fatalf("Unexpected error from NewInstance: %s", err)
@@ -230,7 +230,7 @@ func (s TengoIntegrationSuite) TestInstanceValid(t *testing.T) {
 		t.Fatalf("Valid() unexpectedly returned %t / %v", ok, err)
 	}
 
-	dsn := s.d.DSN()
+	dsn := s.d.BaseDSN
 	dsn = strings.Replace(dsn, s.d.Password, "wrongpass", 1)
 	inst, err := NewInstance("mysql", dsn)
 	if err != nil {
@@ -239,7 +239,7 @@ func (s TengoIntegrationSuite) TestInstanceValid(t *testing.T) {
 	if ok, err := inst.Valid(); ok || err == nil {
 		t.Fatalf("Valid() unexpectedly returned %t / %v despite wrong password", ok, err)
 	}
-	inst, err = NewInstance("mysql", s.d.DSN())
+	inst, err = NewInstance("mysql", s.d.BaseDSN)
 	if err != nil {
 		t.Fatalf("Unexpected error from NewInstance: %s", err)
 	}
@@ -259,7 +259,7 @@ func (s TengoIntegrationSuite) TestInstanceNameCaseMode(t *testing.T) {
 
 	// An invalid Instance should return a special value since it cannot be
 	// introspected
-	dsn := s.d.DSN()
+	dsn := s.d.BaseDSN
 	dsn = strings.Replace(dsn, s.d.Password, "wrongpass", 1)
 	inst, err := NewInstance("mysql", dsn)
 	if err != nil {
@@ -312,53 +312,11 @@ func (s TengoIntegrationSuite) TestInstanceCloseAll(t *testing.T) {
 	assertPoolCount(1)
 }
 
-func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
-	imageToFlavor := map[string]Flavor{
-		"mysql:5.5":     FlavorMySQL55,
-		"mysql:5.6":     FlavorMySQL56,
-		"mysql:5.7":     FlavorMySQL57,
-		"mysql:8.0":     FlavorMySQL80,
-		"percona:5.5":   FlavorPercona55,
-		"percona:5.6":   FlavorPercona56,
-		"percona:5.7":   FlavorPercona57,
-		"percona:8.0":   FlavorPercona80,
-		"mariadb:10.1":  FlavorMariaDB101,
-		"mariadb:10.2":  FlavorMariaDB102,
-		"mariadb:10.3":  FlavorMariaDB103,
-		"mariadb:10.4":  FlavorMariaDB104,
-		"mariadb:10.5":  FlavorMariaDB105,
-		"mariadb:10.6":  FlavorMariaDB106,
-		"mariadb:10.7":  FlavorMariaDB107,
-		"mariadb:10.8":  FlavorMariaDB108,
-		"mariadb:10.9":  FlavorMariaDB109,
-		"mariadb:10.10": FlavorMariaDB1010,
-		"mariadb:10.11": FlavorMariaDB1011,
-		"mariadb:11.0":  FlavorMariaDB110,
-	}
-
-	// Determine expected Flavor value of the Dockerized instance being tested
-	var expected Flavor
-	if result, ok := imageToFlavor[s.d.Image]; ok {
-		expected = result
-	} else {
-		for image, result := range imageToFlavor {
-			tokens := strings.SplitN(image, ":", 2)
-			if len(tokens) < 2 {
-				continue
-			}
-			repository, tag := tokens[0], tokens[1]
-			if strings.Contains(s.d.Image, repository) && strings.Contains(s.d.Image, tag) {
-				expected = result
-				break
-			}
-		}
-	}
-	if expected == FlavorUnknown {
-		t.Skip("SKIPPING TEST - no image map defined for", s.d.Image)
-	}
+func (s TengoIntegrationSuite) TestInstanceSetFlavor(t *testing.T) {
+	// Ensure flavor is hydrated already
 	actualFlavor := s.d.Flavor()
-	if !actualFlavor.Matches(expected) {
-		t.Errorf("Expected image=%s to yield flavor=%s, instead found %s", s.d.Image, expected, actualFlavor.Family())
+	if actualFlavor == FlavorUnknown {
+		t.Fatal("Unable to determine test instance flavor")
 	}
 
 	// Confirm that SetFlavor does not work once flavor hydrated
@@ -368,7 +326,7 @@ func (s TengoIntegrationSuite) TestInstanceFlavorVersion(t *testing.T) {
 
 	// Nuke the hydrated flavor, and confirm SetFlavor now works
 	s.d.ForceFlavor(FlavorUnknown)
-	if err := s.d.SetFlavor(expected); err != nil || s.d.Flavor() != expected {
+	if err := s.d.SetFlavor(actualFlavor.Family()); err != nil || s.d.Flavor() != actualFlavor.Family() {
 		t.Errorf("Unexpected outcome from SetFlavor: error=%v, flavor=%s", err, s.d.Flavor())
 	}
 	s.d.ForceFlavor(actualFlavor)
@@ -544,12 +502,12 @@ func (s TengoIntegrationSuite) TestInstanceShowCreateTable(t *testing.T) {
 
 	t1expected := aTableForFlavor(s.d.Flavor(), 1)
 	if t1create != t1expected.CreateStatement {
-		t.Errorf("Mismatch for SHOW CREATE TABLE\nActual return from %s:\n%s\n----------\nExpected output: %s", s.d.Image, t1create, t1expected.CreateStatement)
+		t.Errorf("Mismatch for SHOW CREATE TABLE\nActual return from %s:\n%s\n----------\nExpected output: %s", s.d.Flavor(), t1create, t1expected.CreateStatement)
 	}
 
 	t2expected := anotherTableForFlavor(s.d.Flavor())
 	if t2create != t2expected.CreateStatement {
-		t.Errorf("Mismatch for SHOW CREATE TABLE\nActual return from %s:\n%s\n----------\nExpected output: %s", s.d.Image, t2create, t2expected.CreateStatement)
+		t.Errorf("Mismatch for SHOW CREATE TABLE\nActual return from %s:\n%s\n----------\nExpected output: %s", s.d.Flavor(), t2create, t2expected.CreateStatement)
 	}
 
 	// Test nonexistent table

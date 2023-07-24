@@ -36,16 +36,11 @@ func TestIntegration(t *testing.T) {
 		fmt.Println("To run integration tests, you may set SKEEMA_TEST_IMAGES to a comma-separated")
 		fmt.Println("list of Docker images. Example:\n# SKEEMA_TEST_IMAGES=\"mysql:5.6,mysql:5.7\" go test")
 	}
-	manager, err := tengo.NewDockerClient(tengo.DockerClientOptions{})
-	if err != nil {
-		t.Errorf("Unable to create sandbox manager: %s", err)
-	}
-	suite := &SkeemaIntegrationSuite{manager: manager}
+	suite := &SkeemaIntegrationSuite{}
 	tengo.RunSuite(suite, t, images)
 }
 
 type SkeemaIntegrationSuite struct {
-	manager  *tengo.DockerClient
 	d        *tengo.DockerizedInstance
 	repoPath string
 }
@@ -64,7 +59,7 @@ func (s *SkeemaIntegrationSuite) Setup(backend string) (err error) {
 		RootPassword: "fakepw",
 		CommandArgs:  []string{"--skip-log-bin"}, // override MySQL 8 default of enabling binlog
 	}
-	s.d, err = s.manager.GetOrCreateInstance(opts)
+	s.d, err = tengo.GetOrCreateDockerizedInstance(opts)
 	return err
 }
 

@@ -983,9 +983,9 @@ func (s SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 	// MariaDB does not consider STORAGE or COLUMN_FORMAT clauses as valid SQL.
 	// Ditto for MySQL 5.5.
 	if s.d.Flavor().IsMariaDB() {
-		t.Skip("Test not relevant for MariaDB-based image", s.d.Image)
+		t.Skip("Test not relevant for MariaDB-based image", s.d.Flavor())
 	} else if s.d.Flavor().Matches(tengo.FlavorMySQL55) {
-		t.Skip("Test not relevant for 5.5-based image", s.d.Image)
+		t.Skip("Test not relevant for 5.5-based image", s.d.Flavor())
 	}
 
 	withClauses := "CREATE TABLE `problems` (\n" +
@@ -1415,10 +1415,13 @@ func (s SkeemaIntegrationSuite) TestTempSchemaBinlog(t *testing.T) {
 	}
 
 	// Create an instance with log-bin enabled
-	opts := s.d.DockerizedInstanceOptions
-	opts.Name = strings.Replace(opts.Name, "skeema-test-", "skeema-test-binlog-", 1)
-	opts.CommandArgs = []string{"--log-bin", "--server-id=1"}
-	dinst, err := s.manager.GetOrCreateInstance(opts)
+	opts := tengo.DockerizedInstanceOptions{
+		Name:         strings.Replace(s.d.ContainerName(), "skeema-test-", "skeema-test-binlog-", 1),
+		Image:        s.d.Flavor().Family().String(),
+		RootPassword: s.d.Password,
+		CommandArgs:  []string{"--log-bin", "--server-id=1"},
+	}
+	dinst, err := tengo.GetOrCreateDockerizedInstance(opts)
 	if err != nil {
 		t.Fatalf("Unable to create Dockerized instance with log-bin enabled: %v", err)
 	}

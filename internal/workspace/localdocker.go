@@ -24,8 +24,7 @@ type LocalDocker struct {
 }
 
 var cstore struct {
-	dockerClient *tengo.DockerClient
-	containers   map[string]*tengo.DockerizedInstance
+	containers map[string]*tengo.DockerizedInstance
 	sync.Mutex
 }
 
@@ -45,10 +44,7 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 
 	cstore.Lock()
 	defer cstore.Unlock()
-	if cstore.dockerClient == nil {
-		if cstore.dockerClient, err = tengo.NewDockerClient(tengo.DockerClientOptions{}); err != nil {
-			return nil, err
-		}
+	if cstore.containers == nil {
 		cstore.containers = make(map[string]*tengo.DockerizedInstance)
 		tengo.UseFilteredDriverLogger()
 	}
@@ -60,7 +56,9 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	}
 
 	image := opts.Flavor.String()
-	if arch, _ := cstore.dockerClient.ServerArchitecture(); arch == "arm64" && opts.Flavor.IsMySQL() {
+	if arch, err := tengo.DockerEngineArchitecture(); err != nil {
+		return nil, err
+	} else if arch == "arm64" && opts.Flavor.IsMySQL() {
 		// MySQL 8.0.29+ images are available for arm64 on DockerHub via _/mysql;
 		// for older MySQL 8 versions we must use mysql/mysql-server instead.
 		// Pre-8 MySQL, or any version of Percona Server, are not available.
@@ -90,7 +88,7 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 			commandArgs = append(commandArgs, "--lower-case-table-names=1")
 		}
 		log.Infof("Using container %s (image=%s) for workspace operations", opts.ContainerName, image)
-		ld.d, err = cstore.dockerClient.GetOrCreateInstance(tengo.DockerizedInstanceOptions{
+		ld.d, err = tengo.GetOrCreateDockerizedInstance(tengo.DockerizedInstanceOptions{
 			Name:              opts.ContainerName,
 			Image:             image,
 			RootPassword:      opts.RootPassword,
@@ -198,7 +196,7 @@ func (ld *LocalDocker) Cleanup(schema *tengo.Schema) error {
 // container name does not begin with the prefix, no shutdown occurs.
 func (ld *LocalDocker) shutdown(args ...interface{}) bool {
 	if len(args) > 0 {
-		if prefix, ok := args[0].(string); !ok || !strings.HasPrefix(ld.d.Name, prefix) {
+		if prefix, ok := args[0].(string); !ok || !strings.HasPrefix(ld.d.ContainerName(), prefix) {
 			return false
 		}
 	}
@@ -207,16 +205,16 @@ func (ld *LocalDocker) shutdown(args ...interface{}) bool {
 	defer cstore.Unlock()
 
 	if ld.cleanupAction == CleanupActionStop {
-		log.Infof("Stopping container %s", ld.d.Name)
+		log.Infof("Stopping container %s", ld.d.ContainerName())
 		if err := ld.d.Stop(); err != nil {
-			log.Warnf("Failed to stop container %s: %v", ld.d.Name, err)
+			log.Warnf("Failed to stop container %s: %v", ld.d.ContainerName(), err)
 		}
 	} else if ld.cleanupAction == CleanupActionDestroy {
-		log.Infof("Destroying container %s", ld.d.Name)
+		log.Infof("Destroying container %s", ld.d.ContainerName())
 		if err := ld.d.Destroy(); err != nil {
-			log.Warnf("Failed to destroy container %s: %v", ld.d.Name, err)
+			log.Warnf("Failed to destroy container %s: %v", ld.d.ContainerName(), err)
 		}
 	}
-	delete(cstore.containers, ld.d.Name)
+	delete(cstore.containers, ld.d.ContainerName())
 	return true
 }
