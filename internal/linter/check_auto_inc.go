@@ -37,7 +37,7 @@ var intTypeMaxes = map[string]uint64{
 	"bigint unsigned":    math.MaxUint64,
 }
 
-func autoIncChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts Options) *Note {
+func autoIncChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts *Options) *Note {
 	// Find the auto_increment column in the table, or return nil if none
 	if table.NextAutoIncrement == 0 {
 		return nil

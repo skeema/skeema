@@ -31,7 +31,7 @@ var (
 	reBlockSizeEnum   = regexp.MustCompile(`^(1|2|4|8|16)kb$`)
 )
 
-func compressionChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts Options) *Note {
+func compressionChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts *Options) *Note {
 	// Only InnoDB tables are checked by this linter rule at this time.
 	if table.Engine != "InnoDB" {
 		return nil
@@ -99,7 +99,7 @@ func tableCompressionMode(table *tengo.Table) (mode string, clause string) {
 // makeCompressionMessage is a helper function to translate allow-compression
 // enum strings into a human-friendly message including the list of
 // corresponding allowed CREATE option clauses.
-func makeCompressionMessage(tableName, mode, clause string, opts Options) string {
+func makeCompressionMessage(tableName, mode, clause string, opts *Options) string {
 	allowed := opts.AllowList("compression")
 	var clauses []string
 	for _, value := range allowed {

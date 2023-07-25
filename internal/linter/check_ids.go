@@ -18,7 +18,7 @@ func init() {
 	})
 }
 
-func idsChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ Options) []Note {
+func idsChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ *Options) []Note {
 	results := make([]Note, 0)
 	for _, col := range table.Columns {
 		lowerColName := strings.ToLower(col.Name)

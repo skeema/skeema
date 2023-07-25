@@ -16,7 +16,7 @@ func init() {
 	})
 }
 
-func nullableChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ Options) []Note {
+func nullableChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ *Options) []Note {
 	results := make([]Note, 0)
 	for _, col := range table.Columns {
 		if col.Nullable {

@@ -24,7 +24,7 @@ func init() {
 	RegisterRule(rule)
 }
 
-func engineChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts Options) *Note {
+func engineChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts *Options) *Note {
 	if opts.IsAllowed("engine", table.Engine) {
 		return nil
 	}

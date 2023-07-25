@@ -16,7 +16,7 @@ func init() {
 	})
 }
 
-func reservedWordChecker(object tengo.DefKeyer, createStatement string, schema *tengo.Schema, opts Options) (notes []Note) {
+func reservedWordChecker(object tengo.DefKeyer, createStatement string, schema *tengo.Schema, opts *Options) (notes []Note) {
 	// For all object types, we check the object name
 	key := object.ObjectKey()
 	if tengo.IsVendorReservedWord(key.Name, opts.Flavor.Vendor) {

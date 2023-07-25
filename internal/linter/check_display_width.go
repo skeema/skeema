@@ -34,7 +34,7 @@ var signedDefaultWidths = map[string]int{
 	"bigint":    20, // unsigned also 20
 }
 
-func displayWidthChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ Options) []Note {
+func displayWidthChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ *Options) []Note {
 	results := make([]Note, 0)
 	for _, col := range table.Columns {
 		if !strings.Contains(col.TypeInDB, "int(") {

@@ -86,7 +86,7 @@ func TestOptionsForDir(t *testing.T) {
 }
 
 func TestOptionsIgnore(t *testing.T) {
-	var opts Options
+	var opts *Options
 	assertIgnore := func(ot tengo.ObjectType, name string, expected bool) {
 		t.Helper()
 		key := tengo.ObjectKey{Type: ot, Name: name}
@@ -101,7 +101,7 @@ func TestOptionsIgnore(t *testing.T) {
 		{Type: tengo.ObjectTypeTable, Name: "tigers"},
 		{Type: tengo.ObjectTypeProc, Name: "pounce"},
 	}
-	opts = Options{}
+	opts = &Options{}
 	opts.OnlyKeys(keys)
 	assertIgnore(tengo.ObjectTypeTable, "multi1", true)
 	assertIgnore(tengo.ObjectTypeTable, "cats", false)
@@ -115,15 +115,15 @@ func TestOptionsEquals(t *testing.T) {
 		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
 	}
 	other, _ := OptionsForDir(dir)
-	if !opts.Equals(&other) {
+	if !opts.Equals(other) {
 		t.Errorf("Two equivalent options structs are unexpectedly not equal: %+v vs %+v", opts, other)
 	}
-	if other.RuleSeverity["charset"] = SeverityError; opts.Equals(&other) {
+	if other.RuleSeverity["charset"] = SeverityError; opts.Equals(other) {
 		t.Error("Equals unexpectedly still returning true even after changing a severity value")
 	}
 
 	other, _ = OptionsForDir(dir)
-	if other.RuleConfig["auto-inc"] = []string{}; opts.Equals(&other) {
+	if other.RuleConfig["auto-inc"] = []string{}; opts.Equals(other) {
 		t.Error("Equals unexpectedly still returning true even after changing a rule config")
 	}
 
@@ -132,17 +132,17 @@ func TestOptionsEquals(t *testing.T) {
 		{Type: tengo.ObjectTypeTable, Name: "cats"},
 		{Type: tengo.ObjectTypeTable, Name: "dogs"},
 	})
-	if opts.Equals(&other) {
+	if opts.Equals(other) {
 		t.Error("Equals unexpectedly still returning true even after calling OnlyKeys")
 	}
 
 	other, _ = OptionsForDir(dir)
 	opts.Flavor, other.Flavor = tengo.FlavorMySQL80, tengo.FlavorMySQL80
-	if !opts.Equals(&other) {
+	if !opts.Equals(other) {
 		t.Error("Equals returning wrong value with same flavor")
 	}
 	other.Flavor = tengo.FlavorPercona80
-	if opts.Equals(&other) {
+	if opts.Equals(other) {
 		t.Error("Equals returning wrong value with different flavor")
 	}
 }

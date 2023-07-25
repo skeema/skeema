@@ -16,7 +16,7 @@ func init() {
 	})
 }
 
-func nameCaseChecker(object tengo.DefKeyer, createStatement string, _ *tengo.Schema, _ Options) []Note {
+func nameCaseChecker(object tengo.DefKeyer, createStatement string, _ *tengo.Schema, _ *Options) []Note {
 	var message string
 	key := object.ObjectKey()
 	name, typ := key.Name, key.Type

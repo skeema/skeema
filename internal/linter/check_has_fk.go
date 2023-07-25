@@ -18,7 +18,7 @@ func init() {
 
 var reHasFK = regexp.MustCompile(`(?i)foreign key`)
 
-func hasForeignKeysChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ Options) *Note {
+func hasForeignKeysChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ *Options) *Note {
 	if len(table.ForeignKeys) == 0 {
 		return nil
 	}

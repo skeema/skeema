@@ -24,7 +24,7 @@ func init() {
 	RegisterRule(rule)
 }
 
-func pkTypeChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts Options) *Note {
+func pkTypeChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts *Options) *Note {
 	if table.PrimaryKey == nil {
 		// This checker is expected to be used in combination with check-pk
 		// so if there is no PK, we don't need to complain twice.

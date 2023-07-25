@@ -102,8 +102,8 @@ func (opts *Options) shouldIgnore(keyer tengo.ObjectKeyer) bool {
 
 // OptionsForDir returns Options based on the configuration in an fs.Dir,
 // effectively converting between mybase options and linter options.
-func OptionsForDir(dir *fs.Dir) (Options, error) {
-	opts := Options{
+func OptionsForDir(dir *fs.Dir) (*Options, error) {
+	opts := &Options{
 		RuleSeverity: make(map[string]Severity),
 		RuleConfig:   make(map[string]interface{}),
 		Flavor:       tengo.ParseFlavor(dir.Config.Get("flavor")),
@@ -118,7 +118,7 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 		}
 		val, err := dir.Config.GetEnum(r.optionName(), string(SeverityIgnore), string(SeverityWarning), string(SeverityError))
 		if err != nil {
-			return Options{}, ConfigError{Dir: dir, err: err}
+			return nil, ConfigError{Dir: dir, err: err}
 		}
 		opts.RuleSeverity[name] = Severity(val)
 	}
@@ -137,9 +137,9 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 		for _, oldName := range dir.Config.GetSlice(oldOptionName, ',', true) {
 			oldName = strings.ToLower(oldName)
 			if newName, ok := deprecatedNames[oldName]; !ok {
-				return Options{}, NewConfigError(dir, "Option %s is deprecated and cannot include value %s. Please see individual lint-* options instead.", oldOptionName, oldName)
+				return nil, NewConfigError(dir, "Option %s is deprecated and cannot include value %s. Please see individual lint-* options instead.", oldOptionName, oldName)
 			} else if dir.Config.Changed(fmt.Sprintf("lint-%s", newName)) && severity != opts.RuleSeverity[newName] {
-				return Options{}, NewConfigError(dir, "Deprecated option %s has been set to a value that conflicts with newer option %s. Please remove %s from your configuration to resolve this.", oldOptionName, newName, oldOptionName)
+				return nil, NewConfigError(dir, "Deprecated option %s has been set to a value that conflicts with newer option %s. Please remove %s from your configuration to resolve this.", oldOptionName, newName, oldOptionName)
 			} else {
 				opts.RuleSeverity[newName] = severity
 			}
@@ -155,7 +155,7 @@ func OptionsForDir(dir *fs.Dir) (Options, error) {
 		}
 		ruleConfig := rule.ConfigFunc(dir.Config)
 		if err, ok := ruleConfig.(error); ok {
-			return Options{}, ConfigError{Dir: dir, err: err}
+			return nil, ConfigError{Dir: dir, err: err}
 		}
 		if ruleConfig != nil {
 			opts.RuleConfig[name] = ruleConfig

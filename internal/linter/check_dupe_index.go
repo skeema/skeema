@@ -16,7 +16,7 @@ func init() {
 	})
 }
 
-func dupeIndexChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ Options) []Note {
+func dupeIndexChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ *Options) []Note {
 	makeNote := func(dupeIndexName, betterIndexName string, equivalent bool) Note {
 		re := regexp.MustCompile(fmt.Sprintf("(?i)(key|index)\\s+`?%s(?:`|\\s)", dupeIndexName))
 		var reason string

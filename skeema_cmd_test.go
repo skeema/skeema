@@ -295,6 +295,7 @@ func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
 	// Invalid options should error with CodeBadConfig
 	s.handleCommand(t, CodeBadConfig, ".", "skeema lint --workspace=doesnt-exist")
 	s.handleCommand(t, CodeBadConfig, "mydb/product", "skeema lint --password=wrong")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema lint --lint-pk=fatal")
 
 	// Alter a few files in a way that is still valid SQL, but doesn't match
 	// the database's native format. Lint with --skip-format should do nothing;

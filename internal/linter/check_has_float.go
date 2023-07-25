@@ -16,7 +16,7 @@ func init() {
 	})
 }
 
-func hasFloatChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ Options) []Note {
+func hasFloatChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ *Options) []Note {
 	results := make([]Note, 0)
 	for _, col := range table.Columns {
 		if strings.HasPrefix(col.TypeInDB, "float") || strings.HasPrefix(col.TypeInDB, "double") {

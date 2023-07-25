@@ -16,7 +16,7 @@ func init() {
 	})
 }
 
-func hasTimeChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts Options) []Note {
+func hasTimeChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts *Options) []Note {
 	results := make([]Note, 0)
 	onlyWarning := (opts.RuleSeverity["has-time"] == SeverityWarning)
 	oldTimestampDefaults := !opts.Flavor.Min(tengo.FlavorMySQL80) && !opts.Flavor.Min(tengo.FlavorMariaDB1010)

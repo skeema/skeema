@@ -40,7 +40,7 @@ var reDefinerCheckerOffset = regexp.MustCompile("(?i)definer")
 var repDefinerQuotes = strings.NewReplacer("'", "", "`", "")
 var repDefinerWildcards = strings.NewReplacer("%", ".*", "_", ".")
 
-func definerChecker(object tengo.DefKeyer, createStatement string, schema *tengo.Schema, opts Options) []Note {
+func definerChecker(object tengo.DefKeyer, createStatement string, schema *tengo.Schema, opts *Options) []Note {
 	dc := opts.RuleConfig["definer"].(*definerConfig)
 
 	// Performance hack for default settings case

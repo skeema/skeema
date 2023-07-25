@@ -24,7 +24,7 @@ func init() {
 	RegisterRule(rule)
 }
 
-func charsetChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts Options) []Note {
+func charsetChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts *Options) []Note {
 	// If utf8mb3 is on the allow-list, ensure its alias utf8 is as well, and vice
 	// versa. This is intended to handle MySQL 8.0.24+ and MariaDB 10.6+ which have
 	// started to change how these aliases work.
@@ -67,7 +67,7 @@ func charsetChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 	return results
 }
 
-func makeCharsetMessage(table *tengo.Table, column *tengo.Column, opts Options) string {
+func makeCharsetMessage(table *tengo.Table, column *tengo.Column, opts *Options) string {
 	var subject, charSet, using, allowedList, moreInfo string
 	if column == nil {
 		subject = fmt.Sprintf("Table %s", table.Name)

@@ -15,7 +15,7 @@ func init() {
 	})
 }
 
-func pkChecker(table *tengo.Table, _ string, _ *tengo.Schema, _ Options) *Note {
+func pkChecker(table *tengo.Table, _ string, _ *tengo.Schema, _ *Options) *Note {
 	if table.PrimaryKey != nil {
 		return nil
 	}

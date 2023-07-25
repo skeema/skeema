@@ -145,7 +145,7 @@ var reSyntaxErrorLine = regexp.MustCompile(`(?s) the right syntax to use near '.
 // AnnotateStatementErrors converts any supplied workspace.StatementError values
 // into annotations, unless the statement affects an object that the options
 // indicate should be ignored.
-func (r *Result) AnnotateStatementErrors(statementErrors []*workspace.StatementError, opts Options) {
+func (r *Result) AnnotateStatementErrors(statementErrors []*workspace.StatementError, opts *Options) {
 	for _, stmtErr := range statementErrors {
 		if opts.shouldIgnore(stmtErr.ObjectKey()) {
 			r.Debug("Skipping %s due to ignore options", stmtErr.ObjectKey())
@@ -174,7 +174,7 @@ func (r *Result) AnnotateStatementErrors(statementErrors []*workspace.StatementE
 // AnnotateMixedSchemaNames adds warnings for any unsupported combinations of
 // schema names within a directory, for example USE commands or dbname prefixes
 // in CREATEs in a dir that also configures a schema name in .skeema.
-func (r *Result) AnnotateMixedSchemaNames(dir *fs.Dir, opts Options) {
+func (r *Result) AnnotateMixedSchemaNames(dir *fs.Dir, opts *Options) {
 	// Allow specific schema names if there's no .skeema file, or no configuration
 	// of schema name in .skeema
 	if dir.OptionFile == nil || len(dir.LogicalSchemas) == 0 {

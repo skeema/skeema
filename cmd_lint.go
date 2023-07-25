@@ -122,10 +122,15 @@ func lintWalker(dir *fs.Dir, maxDepth int) *linter.Result {
 // returned. This function does not recurse into subdirs.
 func lintDir(dir *fs.Dir) *linter.Result {
 	opts, err := linter.OptionsForDir(dir)
-	opts.StripAnnotationNewlines = !util.StderrIsTerminal()
-	if err != nil && len(dir.LogicalSchemas) > 0 {
+	if err != nil {
+		// If there's nothing to lint here anyway, return an empty result instead
+		// of surfacing the error on what may be an empty intermediate directory.
+		if len(dir.LogicalSchemas) == 0 {
+			return &linter.Result{}
+		}
 		return linter.BadConfigResult(dir, err)
 	}
+	opts.StripAnnotationNewlines = !util.StderrIsTerminal()
 
 	// Get workspace options for dir. This involves connecting to the first defined
 	// instance, so that any auto-detect-related settings work properly. However,

@@ -15,7 +15,7 @@ func init() {
 	})
 }
 
-func hasRoutinesChecker(routine *tengo.Routine, _ string, _ *tengo.Schema, _ Options) *Note {
+func hasRoutinesChecker(routine *tengo.Routine, _ string, _ *tengo.Schema, _ *Options) *Note {
 	return &Note{
 		Summary: "Routine present",
 		Message: fmt.Sprintf("%s %s found. Some environments restrict use of stored procedures and functions for reasons of scalability or operational complexity.", routine.Type, routine.Name),
