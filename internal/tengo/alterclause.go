@@ -37,15 +37,11 @@ type AddColumn struct {
 func (ac AddColumn) Clause(mods StatementModifiers) string {
 	var positionClause string
 	if ac.PositionFirst {
-		// Positioning variables are mutually exclusive
-		if ac.PositionAfter != nil {
-			panic(fmt.Errorf("New column %s cannot be both first and after another column", ac.Column.Name))
-		}
 		positionClause = " FIRST"
 	} else if ac.PositionAfter != nil {
-		positionClause = fmt.Sprintf(" AFTER %s", EscapeIdentifier(ac.PositionAfter.Name))
+		positionClause = " AFTER " + EscapeIdentifier(ac.PositionAfter.Name)
 	}
-	return fmt.Sprintf("ADD COLUMN %s%s", ac.Column.Definition(mods.Flavor, ac.Table), positionClause)
+	return "ADD COLUMN " + ac.Column.Definition(mods.Flavor, ac.Table) + positionClause
 }
 
 ///// DropColumn ///////////////////////////////////////////////////////////////
@@ -284,24 +280,26 @@ var reDisplayWidth = regexp.MustCompile(`(tinyint|smallint|mediumint|int|bigint)
 func (mc ModifyColumn) Clause(mods StatementModifiers) string {
 	var positionClause string
 	if mc.PositionFirst {
-		// Positioning variables are mutually exclusive
-		if mc.PositionAfter != nil {
-			panic(fmt.Errorf("Modified column %s cannot be both first and after another column", mc.NewColumn.Name))
-		}
 		positionClause = " FIRST"
 	} else if mc.PositionAfter != nil {
-		positionClause = fmt.Sprintf(" AFTER %s", EscapeIdentifier(mc.PositionAfter.Name))
+		positionClause = " AFTER " + EscapeIdentifier(mc.PositionAfter.Name)
+	}
+
+	// If the only difference is a position difference, and LaxColumnOrder is
+	// enabled, emit a no-op.
+	if positionClause != "" && mods.LaxColumnOrder && mc.OldColumn.Equals(mc.NewColumn) {
+		return ""
 	}
 
 	// Emit a no-op if we're not re-ordering the column and it only has cosmetic
 	// differences, such as presence/lack of int display width, or presence/lack
 	// of charset/collation clauses that are equal to the table's defaults anyway.
 	// (These situations only come up in MySQL 8, under various edge cases.)
-	if !mods.StrictColumnDefinition && positionClause == "" && mc.OldColumn.Equivalent(mc.NewColumn) {
+	if !mods.StrictColumnDefinition && (positionClause == "" || mods.LaxColumnOrder) && mc.OldColumn.Equivalent(mc.NewColumn) {
 		return ""
 	}
 
-	return fmt.Sprintf("MODIFY COLUMN %s%s", mc.NewColumn.Definition(mods.Flavor, mc.Table), positionClause)
+	return "MODIFY COLUMN " + mc.NewColumn.Definition(mods.Flavor, mc.Table) + positionClause
 }
 
 // Unsafe returns true if this clause is potentially destructive of data.

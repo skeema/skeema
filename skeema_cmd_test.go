@@ -445,8 +445,14 @@ func (s SkeemaIntegrationSuite) TestDiffHandler(t *testing.T) {
 		t.Error("Expected --skip-dry-run to have no effect on `skeema diff`, but it disabled dry-run")
 	}
 
+	// Confirm simple diff that adds a column
 	s.dbExec(t, "analytics", "ALTER TABLE pageviews DROP COLUMN domain")
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
+
+	// Confirm behavior of lax-column-order
+	s.dbExec(t, "product", "ALTER TABLE posts MODIFY COLUMN `body` text FIRST")
+	s.handleCommand(t, CodeDifferencesFound, "mydb/product", "skeema diff")
+	s.handleCommand(t, CodeSuccess, "mydb/product", "skeema diff --lax-column-order")
 
 	// Confirm --brief works as expected
 	defer func() {

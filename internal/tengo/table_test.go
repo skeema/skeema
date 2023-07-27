@@ -680,6 +680,9 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	if !ta.PositionFirst || ta.PositionAfter != nil || !strings.Contains(ta.Clause(StatementModifiers{}), " FIRST") {
 		t.Errorf("Expected modified column to be after nil / first=true, instead found after %v / first=%t", ta.PositionAfter, ta.PositionFirst)
 	}
+	if clauseWithMods := ta.Clause(StatementModifiers{LaxColumnOrder: true}); clauseWithMods != "" {
+		t.Errorf("Expected Clause to return a blank string with LaxColumnOrder enabled, instead found: %s", clauseWithMods)
+	}
 
 	// Reposition same col to last position
 	to = aTable(1)
@@ -702,6 +705,9 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	if !ta.NewColumn.Equals(ta.OldColumn) {
 		t.Errorf("Column definition unexpectedly changed: was %s, now %s", ta.OldColumn.Definition(FlavorUnknown, nil), ta.NewColumn.Definition(FlavorUnknown, nil))
 	}
+	if clauseWithMods := ta.Clause(StatementModifiers{LaxColumnOrder: true}); clauseWithMods != "" {
+		t.Errorf("Expected Clause to return a blank string with LaxColumnOrder enabled, instead found: %s", clauseWithMods)
+	}
 
 	// Repos to last position AND change column definition
 	movedCol.Nullable = !movedCol.Nullable
@@ -719,6 +725,9 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	}
 	if ta.NewColumn.Equals(ta.OldColumn) {
 		t.Errorf("Column definition unexpectedly NOT changed: still %s", ta.NewColumn.Definition(FlavorUnknown, nil))
+	}
+	if ta.Clause(StatementModifiers{LaxColumnOrder: true}) == "" {
+		t.Error("Since non-positioning changes are present, expected Clause to return a non-blank string even with LaxColumnOrder enabled, but it was blank")
 	}
 
 	// Start over; delete a col, move last col to its former position, and add a new col after that

@@ -35,6 +35,7 @@ func init() {
 		mybase.BoolOption("exact-match", 0, false, "Follow *.sql table definitions exactly, even for differences with no functional impact"),
 		mybase.BoolOption("compare-metadata", 0, false, "For stored programs, detect changes to creation-time sql_mode or DB collation"),
 		mybase.BoolOption("alter-validate-virtual", 0, false, "Apply a WITH VALIDATION clause to ALTER TABLEs affecting virtual columns"),
+		mybase.BoolOption("lax-column-order", 0, false, "When comparing tables, don't re-order columns if they only differ by position"),
 		mybase.StringOption("alter-lock", 0, "", `Apply a LOCK clause to all ALTER TABLEs (valid values: "none", "shared", "exclusive")`),
 		mybase.StringOption("alter-algorithm", 0, "", `Apply an ALGORITHM clause to all ALTER TABLEs (valid values: "inplace", "copy", "instant", "nocopy")`),
 		mybase.StringOption("partitioning", 0, "keep", `Specify handling of partitioning status on the database side (valid values: "keep", "remove", "modify")`),
