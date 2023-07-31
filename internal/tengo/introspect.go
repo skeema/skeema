@@ -232,6 +232,7 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 		CharSet            sql.NullString `db:"character_set_name"`
 		Collation          sql.NullString `db:"collation_name"`
 		CollationIsDefault sql.NullString `db:"is_default"`
+		SpatialReferenceID sql.NullInt64  `db:"srs_id"`
 	}
 	query := `
 		SELECT    SQL_BUFFER_RESULT
@@ -241,16 +242,24 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 		          %s AS generation_expression,
 		          c.column_comment AS column_comment,
 		          c.character_set_name AS character_set_name,
-		          c.collation_name AS collation_name, co.is_default AS is_default
+		          c.collation_name AS collation_name, co.is_default AS is_default,
+		          %s AS srs_id
 		FROM      information_schema.columns c
 		LEFT JOIN information_schema.collations co ON co.collation_name = c.collation_name
 		WHERE     c.table_schema = ?
 		ORDER BY  c.table_name, c.ordinal_position`
-	genExpr := "NULL"
+	genExpr, srid := "NULL", "NULL"
 	if flavor.GeneratedColumns() {
 		genExpr = "c.generation_expression"
 	}
-	query = fmt.Sprintf(query, genExpr)
+	if flavor.Min(FlavorMySQL80) {
+		srid = "c.srs_id"
+	}
+	// Note: we could get MariaDB SRIDs from information_schema.geometry_columns.srid
+	// but since MariaDB doesn't expose its REF_SYSTEM_ID attribute in SHOW CREATE
+	// TABLE there's currently no point to querying them
+
+	query = fmt.Sprintf(query, genExpr, srid)
 	if err := db.SelectContext(ctx, &rawColumns, query, schema); err != nil {
 		return nil, fmt.Errorf("Error querying information_schema.columns for schema %s: %s", schema, err)
 	}
@@ -326,6 +335,10 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 			col.CharSet = rawColumn.CharSet.String
 			col.Collation = rawColumn.Collation.String
 			col.CollationIsDefault = (rawColumn.CollationIsDefault.String != "")
+		}
+		if rawColumn.SpatialReferenceID.Valid { // Spatial columns in MySQL 8+ can have optional SRID
+			col.HasSpatialReference = true
+			col.SpatialReferenceID = uint32(rawColumn.SpatialReferenceID.Int64)
 		}
 		if columnsByTableName[rawColumn.TableName] == nil {
 			columnsByTableName[rawColumn.TableName] = make([]*Column, 0)

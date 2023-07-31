@@ -7,23 +7,25 @@ import (
 
 // Column represents a single column of a table.
 type Column struct {
-	Name               string `json:"name"`
-	TypeInDB           string `json:"type"`
-	Nullable           bool   `json:"nullable,omitempty"`
-	AutoIncrement      bool   `json:"autoIncrement,omitempty"`
-	Default            string `json:"default,omitempty"` // Stored as an expression, i.e. quote-wrapped if string
-	OnUpdate           string `json:"onUpdate,omitempty"`
-	GenerationExpr     string `json:"generationExpression,omitempty"` // Only populated if generated column
-	Virtual            bool   `json:"virtual,omitempty"`
-	CharSet            string `json:"charSet,omitempty"`            // Only populated if textual type
-	Collation          string `json:"collation,omitempty"`          // Only populated if textual type
-	CollationIsDefault bool   `json:"collationIsDefault,omitempty"` // Only populated if textual type; indicates default for CharSet
-	ForceShowCharSet   bool   `json:"forceShowCharSet,omitempty"`   // Always include CharSet in SHOW CREATE; only true in MySQL 8 edge cases
-	ForceShowCollation bool   `json:"forceShowCollation,omitempty"` // Always include Collation in SHOW CREATE; only true in MySQL 8 edge cases
-	Compression        string `json:"compression,omitempty"`        // Only non-empty if using column compression in Percona Server or MariaDB
-	Comment            string `json:"comment,omitempty"`
-	Invisible          bool   `json:"invisible,omitempty"` // True if an invisible column (MariaDB 10.3+, MySQL 8.0.23+)
-	CheckClause        string `json:"check,omitempty"`     // Only non-empty for MariaDB inline check constraint clause
+	Name                string `json:"name"`
+	TypeInDB            string `json:"type"`
+	Nullable            bool   `json:"nullable,omitempty"`
+	AutoIncrement       bool   `json:"autoIncrement,omitempty"`
+	Default             string `json:"default,omitempty"` // Stored as an expression, i.e. quote-wrapped if string
+	OnUpdate            string `json:"onUpdate,omitempty"`
+	GenerationExpr      string `json:"generationExpression,omitempty"` // Only populated if generated column
+	Virtual             bool   `json:"virtual,omitempty"`
+	CharSet             string `json:"charSet,omitempty"`            // Only populated if textual type
+	Collation           string `json:"collation,omitempty"`          // Only populated if textual type
+	CollationIsDefault  bool   `json:"collationIsDefault,omitempty"` // Only populated if textual type; indicates default for CharSet
+	ForceShowCharSet    bool   `json:"forceShowCharSet,omitempty"`   // Always include CharSet in SHOW CREATE; only true in MySQL 8 edge cases
+	ForceShowCollation  bool   `json:"forceShowCollation,omitempty"` // Always include Collation in SHOW CREATE; only true in MySQL 8 edge cases
+	Compression         string `json:"compression,omitempty"`        // Only non-empty if using column compression in Percona Server or MariaDB
+	Comment             string `json:"comment,omitempty"`
+	Invisible           bool   `json:"invisible,omitempty"` // True if an invisible column (MariaDB 10.3+, MySQL 8.0.23+)
+	CheckClause         string `json:"check,omitempty"`     // Only non-empty for MariaDB inline check constraint clause
+	SpatialReferenceID  uint32 `json:"srid,omitempty"`      // Can be non-zero only for spatial types in MySQL 8+
+	HasSpatialReference bool   `json:"has_srid,omitempty"`  // True if SRID attribute present; disambiguates SRID 0 vs no SRID
 }
 
 // Definition returns this column's definition clause, for use as part of a DDL
@@ -31,7 +33,8 @@ type Column struct {
 // SET clause to be omitted if the table and column have the same *collation*
 // (mirroring the specific display logic used by SHOW CREATE TABLE)
 func (c *Column) Definition(flavor Flavor, table *Table) string {
-	var compression, charSet, collation, generated, nullability, visibility, autoIncrement, defaultValue, onUpdate, colFormat, comment, check string
+	var compression, charSet, collation, generated, nullability, srid, visibility,
+		autoIncrement, defaultValue, onUpdate, colFormat, comment, check string
 	if c.Compression != "" && flavor.IsMariaDB() {
 		// MariaDB puts compression modifiers in a different place than Percona Server
 		compression = fmt.Sprintf(" /*!100301 %s*/", c.Compression)
@@ -72,6 +75,11 @@ func (c *Column) Definition(flavor Flavor, table *Table) string {
 		// Oddly the timestamp type always displays nullability
 		nullability = " NULL"
 	}
+	if c.HasSpatialReference && flavor.Min(FlavorMySQL80) {
+		// Although MariaDB also attribute syntax for this (REF_SYSTEM_ID), it isn't
+		// exposed in SHOW CREATE TABLE, so here we restrict to MySQL only
+		srid = fmt.Sprintf(" /*!80003 SRID %d */", c.SpatialReferenceID)
+	}
 	if c.Invisible {
 		if flavor.IsMariaDB() {
 			visibility = " INVISIBLE"
@@ -97,13 +105,16 @@ func (c *Column) Definition(flavor Flavor, table *Table) string {
 	if c.CheckClause != "" {
 		check = fmt.Sprintf(" CHECK (%s)", c.CheckClause)
 	}
+
+	// Attribute ordering differs slightly between MariaDB and MySQL. Also only
+	// Maria has inline checks, and only MySQL exposes SRID in SHOW CREATE TABLE.
 	clauses := []string{
 		EscapeIdentifier(c.Name), " ", c.TypeInDB, compression, charSet, collation, generated, nullability,
 	}
 	if flavor.IsMariaDB() {
 		clauses = append(clauses, visibility, autoIncrement, defaultValue, onUpdate, colFormat, comment, check)
 	} else {
-		clauses = append(clauses, autoIncrement, defaultValue, onUpdate, visibility, colFormat, comment)
+		clauses = append(clauses, autoIncrement, srid, defaultValue, onUpdate, visibility, colFormat, comment)
 	}
 	return strings.Join(clauses, "")
 }

@@ -153,7 +153,7 @@ func TestUnitTableFlavors(t *testing.T) {
 // subtest.
 func flavorTestFiles(flavor Flavor) []string {
 	// Non-flavor-specific
-	result := []string{"integration-ext.sql", "partition.sql", "rows.sql", "views.sql"}
+	result := []string{"integration-ext.sql", "partition.sql", "rows.sql", "views.sql", "spatial.sql"}
 
 	if flavor.Min(FlavorMySQL80.Dot(13)) {
 		result = append(result, "default-expr.sql")
