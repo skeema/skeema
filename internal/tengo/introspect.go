@@ -408,12 +408,9 @@ func queryIndexesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 			Invisible: (rawIndex.Visible == "NO"),
 		}
 		if strings.EqualFold(index.Name, "PRIMARY") {
-			primaryKeyByTableName[rawIndex.TableName] = index
 			index.PrimaryKey = true
+			primaryKeyByTableName[rawIndex.TableName] = index
 		} else {
-			if secondaryIndexesByTableName[rawIndex.TableName] == nil {
-				secondaryIndexesByTableName[rawIndex.TableName] = make([]*Index, 0)
-			}
 			secondaryIndexesByTableName[rawIndex.TableName] = append(secondaryIndexesByTableName[rawIndex.TableName], index)
 		}
 		fullNameStr := fmt.Sprintf("%s.%s.%s", schema, rawIndex.TableName, rawIndex.Name)
@@ -428,11 +425,12 @@ func queryIndexesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 		for len(index.Parts) < int(rawIndex.SeqInIndex) {
 			index.Parts = append(index.Parts, IndexPart{})
 		}
-		index.Parts[rawIndex.SeqInIndex-1] = IndexPart{
-			ColumnName:   rawIndex.ColumnName.String,
-			Expression:   rawIndex.Expression.String,
-			PrefixLength: uint16(rawIndex.SubPart.Int64),
-			Descending:   (rawIndex.Collation.String == "D"),
+		part := &index.Parts[rawIndex.SeqInIndex-1]
+		part.ColumnName = rawIndex.ColumnName.String
+		part.Expression = rawIndex.Expression.String
+		part.Descending = (rawIndex.Collation.String == "D")
+		if rawIndex.Type != "SPATIAL" { // Sub-part value only used for non-SPATIAL indexes
+			part.PrefixLength = uint16(rawIndex.SubPart.Int64)
 		}
 	}
 	return primaryKeyByTableName, secondaryIndexesByTableName, nil
