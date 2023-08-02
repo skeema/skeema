@@ -132,7 +132,7 @@ func CreateDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstan
 	c := shellout.New(dockerRunCmd).WithVariablesStrict(vars)
 	out, errOut, err := c.RunCaptureSeparate()
 	if err != nil {
-		return nil, fmt.Errorf("unable to create Docker container using `%s`: %w: %s", dockerRunCmd, err, errOut)
+		return nil, fmt.Errorf("unable to create Docker container using `%s`: %w: %s", c, err, errOut)
 	}
 	if opts.Name == "" {
 		opts.Name = strings.TrimSpace(out)
@@ -168,11 +168,7 @@ func GetDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstance,
 	// confirm the DockerizedInstance flavor matches what was requested. This
 	// check intentionally ignores point release numbers.
 	if opts.Image != "" {
-		// Treat "foo/mysql" or "foo/mysql-server" as "mysql"
-		adjustedImage := strings.ReplaceAll(opts.Image, "-server", "")
-		if _, name, ok := strings.Cut(adjustedImage, "/"); ok {
-			adjustedImage = name
-		}
+		adjustedImage := simplifiedImageName(opts.Image)
 		if imageFlavor := ParseFlavor(adjustedImage); imageFlavor.Supported() && imageFlavor.Family() != di.Flavor().Family() {
 			return nil, fmt.Errorf("Container %s based on unexpected flavor: expected %s, found %s", opts.Name, imageFlavor.Family(), di.Flavor().Family())
 		}
@@ -502,13 +498,32 @@ func (di *DockerizedInstance) Exec(cmd []string, stdin io.Reader) (stdoutStr str
 	return s.RunCaptureSeparate()
 }
 
+// simplifiedImageName attempts to convert the supplied image:tag string into
+// one that can be processed by ParseFlavor. It is primarily designed to convert
+// "mysql/mysql-server:tag" images into "mysql:tag" strings, and likewise for
+// "container-registry.oracle.com/mysql/community-server:tag" images.
+func simplifiedImageName(image string) string {
+	base, tag, hasTag := strings.Cut(image, ":")
+	if base != "mysql" && base != "percona" && base != "mariadb" {
+		if strings.Contains(base, "maria") {
+			base = "mariadb"
+		} else if strings.Contains(base, "percona") {
+			base = "percona"
+		} else if strings.Contains(base, "mysql") {
+			base = "mysql"
+		}
+	}
+	if hasTag {
+		return base + ":" + tag
+	}
+	return base
+}
+
 // ContainerNameForImage returns a usable container name (or portion of a name)
 // based on the supplied image name.
 func ContainerNameForImage(image string) string {
-	if strings.Contains(image, "/") {
-		image = strings.Replace(image, "/mysql-server", "", 1)
-		image = strings.ReplaceAll(image, "/", "-")
-	}
+	image = simplifiedImageName(image)
+	image = strings.ReplaceAll(image, "/", "-")
 	return strings.ReplaceAll(image, ":", "-")
 }
 

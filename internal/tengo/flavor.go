@@ -180,10 +180,12 @@ var (
 	FlavorMySQL56     = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}}
 	FlavorMySQL57     = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}}
 	FlavorMySQL80     = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}}
+	FlavorMySQL81     = Flavor{Vendor: VendorMySQL, Version: Version{8, 1, 0}}
 	FlavorPercona55   = Flavor{Vendor: VendorMySQL, Version: Version{5, 5, 0}, Variants: VariantPercona}
 	FlavorPercona56   = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}, Variants: VariantPercona}
 	FlavorPercona57   = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}, Variants: VariantPercona}
 	FlavorPercona80   = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}, Variants: VariantPercona}
+	FlavorPercona81   = Flavor{Vendor: VendorMySQL, Version: Version{8, 1, 0}, Variants: VariantPercona}
 	FlavorMariaDB101  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1, 0}}
 	FlavorMariaDB102  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2, 0}}
 	FlavorMariaDB103  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3, 0}}
@@ -255,14 +257,11 @@ func IdentifyFlavor(versionString, versionComment string) (flavor Flavor) {
 // omit the label and/or some version components if desired; zero values will be
 // returned for any missing or erroneous component.
 func SplitVersionedIdentifier(s string) (name string, version Version, label string) {
-	tokens := strings.SplitN(s, ":", 2)
-	name = tokens[0]
-	if len(tokens) > 1 {
-		vtokens := strings.SplitN(tokens[1], "-", 2)
-		if len(vtokens) > 1 {
-			label = vtokens[1]
-		}
-		version, _ = ParseVersion(vtokens[0])
+	name, fullVersion, hasVersion := strings.Cut(s, ":")
+	if hasVersion {
+		var versionString string
+		versionString, label, _ = strings.Cut(fullVersion, "-")
+		version, _ = ParseVersion(versionString)
 	}
 	return
 }
@@ -356,7 +355,7 @@ func (fl Flavor) IsMariaDB() bool {
 func (fl Flavor) Supported() bool {
 	switch fl.Vendor {
 	case VendorMySQL:
-		return fl.Version.AtLeast(Version{5, 5}) && fl.Version.Below(Version{8, 1}) // MySQL 5.5.0-8.0.x is supported
+		return fl.Version.AtLeast(Version{5, 5}) && fl.Version.Below(Version{8, 2}) // MySQL 5.5.0-8.1.x is supported
 	case VendorMariaDB:
 		return fl.Version.AtLeast(Version{10, 1}) && fl.Version.Below(Version{11, 1}) // MariaDB 10.1-11.0 is supported
 	default:

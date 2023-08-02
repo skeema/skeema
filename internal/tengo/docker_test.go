@@ -11,7 +11,7 @@ import (
 // under CI normally, since the logic will rarely change and the test can be
 // time-consuming to run.
 func TestDocker(t *testing.T) {
-	images := SplitEnv("SKEEMA_TEST_IMAGES")
+	images := SkeemaTestImages(t)
 	if os.Getenv("CI") == "" || os.Getenv("CI") == "0" || os.Getenv("CI") == "false" || len(images) < 2 {
 		t.Skip("Skipping Docker sandbox meta-testing. To run, set env CI and at least 2 SKEEMA_TEST_IMAGES.")
 	}
@@ -145,10 +145,13 @@ func TestDockerCLIMissing(t *testing.T) {
 
 func TestContainerNameForImage(t *testing.T) {
 	testcases := map[string]string{
-		"mysql:5.7":              "mysql-5.7",
-		"mariadb:11.0":           "mariadb-11.0",
-		"thirdparty/mysql:8.0":   "thirdparty-mysql-8.0",
-		"mysql/mysql-server:8.0": "mysql-8.0",
+		"mysql:5.7":                               "mysql-5.7",
+		"mariadb:11.0":                            "mariadb-11.0",
+		"thirdparty/mysql:8.0":                    "mysql-8.0",
+		"thirdparty/percona:8.0":                  "percona-8.0",
+		"example.com/maria/maria-community:10.11": "mariadb-10.11",
+		"mysql/mysql-server:8.0":                  "mysql-8.0",
+		"container-registry.oracle.com/mysql/community-server:8.1": "mysql-8.1",
 	}
 	for input, expected := range testcases {
 		if actual := ContainerNameForImage(input); actual != expected {

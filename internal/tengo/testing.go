@@ -69,14 +69,40 @@ func RunSuite(suite IntegrationTestSuite, t *testing.T, backends []string) {
 	}
 }
 
-// SplitEnv examines the specified environment variable and splits its value on
-// commas to return a list of strings. Note that if the env variable is blank or
-// unset, an empty slice will be returned; this behavior differs from that of
-// strings.Split.
-func SplitEnv(key string) []string {
-	value := os.Getenv(key)
-	if value == "" {
-		return []string{}
+// SkeemaTestImages examines the SKEEMA_TEST_IMAGES env variable (which
+// should be set to a comma-separated list of Docker images) and returns a slice
+// of strings. It may perform some conversions in the process, if the configured
+// images are only available from non-Dockerhub locations. If no images are
+// configured, the test will be marked as skipped. If any configured images are
+// known to be unavailable for the system's architecture, the test is marked as
+// failed.
+func SkeemaTestImages(t *testing.T) []string {
+	t.Helper()
+	envString := strings.TrimSpace(os.Getenv("SKEEMA_TEST_IMAGES"))
+	if envString == "" {
+		fmt.Println("SKEEMA_TEST_IMAGES env var is not set, so integration tests will be skipped!")
+		fmt.Println("To run integration tests, you may set SKEEMA_TEST_IMAGES to a comma-separated")
+		fmt.Println("list of Docker images. For example:")
+		fmt.Println(`$ SKEEMA_TEST_IMAGES="mysql:8.0,mariadb:10.11" go test`)
+		t.SkipNow()
 	}
-	return strings.Split(value, ",")
+
+	arch, err := DockerEngineArchitecture()
+	if err != nil {
+		t.Fatalf("Unable to obtain Docker engine architecture: %v", err)
+	}
+
+	images := strings.Split(envString, ",")
+	for n, image := range images {
+		// No MySQL 5.x or Percona Server builds available for arm64
+		if arch == "arm64" && (strings.HasPrefix(image, "percona:") || strings.HasPrefix(image, "mysql:5")) {
+			t.Fatalf("SKEEMA_TEST_IMAGES env var includes %s, but this image is not available for %s", image, arch)
+		}
+
+		// MySQL 8.1+ innovation releases do not appear to be available on Dockerhub yet
+		if strings.HasPrefix(image, "mysql:8.") && image[8] != '0' {
+			images[n] = strings.Replace(image, "mysql:", "container-registry.oracle.com/mysql/community-server:", 1)
+		}
+	}
+	return images
 }

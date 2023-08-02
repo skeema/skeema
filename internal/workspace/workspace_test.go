@@ -25,12 +25,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestIntegration(t *testing.T) {
-	images := tengo.SplitEnv("SKEEMA_TEST_IMAGES")
-	if len(images) == 0 {
-		fmt.Println("SKEEMA_TEST_IMAGES env var is not set, so integration tests will be skipped!")
-		fmt.Println("To run integration tests, you may set SKEEMA_TEST_IMAGES to a comma-separated")
-		fmt.Println("list of Docker images. Example:\n# SKEEMA_TEST_IMAGES=\"mysql:5.6,mysql:5.7\" go test")
-	}
+	images := tengo.SkeemaTestImages(t)
 	suite := &WorkspaceIntegrationSuite{}
 	tengo.RunSuite(suite, t, images)
 }
