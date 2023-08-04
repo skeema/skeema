@@ -58,10 +58,6 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	image := opts.Flavor.String()
 	if arch, err := tengo.DockerEngineArchitecture(); err != nil {
 		return nil, err
-	} else if opts.Flavor.Min(tengo.FlavorMySQL81) && opts.Flavor.Variants == tengo.VariantNone {
-		// MySQL 8.1+ images are not available yet on DockerHub, for any arch. Obtain
-		// them from Oracle Container Registry instead.
-		image = strings.Replace(image, "mysql:", "container-registry.oracle.com/mysql/community-server:", 1)
 	} else if arch == "arm64" && opts.Flavor.IsMySQL() {
 		// MySQL 8.0.29+ images are available for arm64 on DockerHub via _/mysql;
 		// for older MySQL 8 versions we must use mysql/mysql-server instead.

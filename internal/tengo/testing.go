@@ -93,15 +93,10 @@ func SkeemaTestImages(t *testing.T) []string {
 	}
 
 	images := strings.Split(envString, ",")
-	for n, image := range images {
+	for _, image := range images {
 		// No MySQL 5.x or Percona Server builds available for arm64
 		if arch == "arm64" && (strings.HasPrefix(image, "percona:") || strings.HasPrefix(image, "mysql:5")) {
 			t.Fatalf("SKEEMA_TEST_IMAGES env var includes %s, but this image is not available for %s", image, arch)
-		}
-
-		// MySQL 8.1+ innovation releases do not appear to be available on Dockerhub yet
-		if strings.HasPrefix(image, "mysql:8.") && image[8] != '0' {
-			images[n] = strings.Replace(image, "mysql:", "container-registry.oracle.com/mysql/community-server:", 1)
 		}
 	}
 	return images
