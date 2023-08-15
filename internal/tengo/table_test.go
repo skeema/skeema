@@ -1289,7 +1289,7 @@ func BenchmarkColumnModifications(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cc := tbl1.compareColumnExistence(tbl2)
+		cc := compareColumnExistence(tbl1, tbl2)
 		cc.columnModifications()
 	}
 }

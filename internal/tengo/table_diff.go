@@ -1,0 +1,767 @@
+package tengo
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
+// TableDiff represents a difference between two tables.
+type TableDiff struct {
+	Type         DiffType
+	From         *Table
+	To           *Table
+	alterClauses []TableAlterClause
+	supported    bool
+}
+
+// ObjectKey returns a value representing the type and name of the table being
+// diff'ed. The name will be the From side table, unless the diffType is
+// DiffTypeCreate, in which case the To side table name is used.
+func (td *TableDiff) ObjectKey() ObjectKey {
+	if td == nil {
+		return ObjectKey{}
+	}
+	if td.Type == DiffTypeCreate {
+		return td.To.ObjectKey()
+	}
+	return td.From.ObjectKey()
+}
+
+// DiffType returns the type of diff operation.
+func (td *TableDiff) DiffType() DiffType {
+	if td == nil {
+		return DiffTypeNone
+	}
+	return td.Type
+}
+
+// NewCreateTable returns a *TableDiff representing a CREATE TABLE statement,
+// i.e. a table that only exists in the "to" side schema in a diff.
+func NewCreateTable(table *Table) *TableDiff {
+	return &TableDiff{
+		Type:      DiffTypeCreate,
+		To:        table,
+		supported: true,
+	}
+}
+
+// NewAlterTable returns a *TableDiff representing an ALTER TABLE statement,
+// i.e. a table that exists in the "from" and "to" side schemas but with one
+// or more differences. If the supplied tables are identical, nil will be
+// returned instead of a TableDiff.
+func NewAlterTable(from, to *Table) *TableDiff {
+	clauses, supported := from.Diff(to)
+	if supported && len(clauses) == 0 {
+		return nil
+	}
+	return &TableDiff{
+		Type:         DiffTypeAlter,
+		From:         from,
+		To:           to,
+		alterClauses: clauses,
+		supported:    supported,
+	}
+}
+
+// NewDropTable returns a *TableDiff representing a DROP TABLE statement,
+// i.e. a table that only exists in the "from" side schema in a diff.
+func NewDropTable(table *Table) *TableDiff {
+	return &TableDiff{
+		Type:      DiffTypeDrop,
+		From:      table,
+		supported: true,
+	}
+}
+
+// PreDropAlters returns a slice of *TableDiff to run prior to dropping a
+// table. For tables partitioned with RANGE or LIST partitioning, this returns
+// ALTERs to drop all partitions but one. In all other cases, this returns nil.
+func PreDropAlters(table *Table) []*TableDiff {
+	if table.Partitioning == nil || table.Partitioning.SubMethod != "" {
+		return nil
+	}
+	// Only RANGE, RANGE COLUMNS, LIST, LIST COLUMNS support ALTER TABLE...DROP
+	// PARTITION clause
+	if !strings.HasPrefix(table.Partitioning.Method, "RANGE") && !strings.HasPrefix(table.Partitioning.Method, "LIST") {
+		return nil
+	}
+
+	fakeTo := &Table{}
+	*fakeTo = *table
+	fakeTo.Partitioning = nil
+	var result []*TableDiff
+	for _, p := range table.Partitioning.Partitions[0 : len(table.Partitioning.Partitions)-1] {
+		clause := ModifyPartitions{
+			Drop:         []*Partition{p},
+			ForDropTable: true,
+		}
+		result = append(result, &TableDiff{
+			Type:         DiffTypeAlter,
+			From:         table,
+			To:           fakeTo,
+			alterClauses: []TableAlterClause{clause},
+			supported:    true,
+		})
+	}
+	return result
+}
+
+// SplitAddForeignKeys looks through a TableDiff's alterClauses and pulls out
+// any AddForeignKey clauses into a separate TableDiff. The first returned
+// TableDiff is guaranteed to contain no AddForeignKey clauses, and the second
+// returned value is guaranteed to only consist of AddForeignKey clauses. If
+// the receiver contained no AddForeignKey clauses, the first return value will
+// be the receiver, and the second will be nil. If the receiver contained only
+// AddForeignKey clauses, the first return value will be nil, and the second
+// will be the receiver.
+// This method is useful for several reasons: it is desirable to only add FKs
+// after other alters have been made (since FKs rely on indexes on both sides);
+// it is illegal to drop and re-add an FK with the same name in the same ALTER;
+// some versions of MySQL recommend against dropping and adding FKs in the same
+// ALTER even if they have different names.
+func (td *TableDiff) SplitAddForeignKeys() (*TableDiff, *TableDiff) {
+	if td.Type != DiffTypeAlter || !td.supported || len(td.alterClauses) == 0 {
+		return td, nil
+	}
+
+	addFKClauses := make([]TableAlterClause, 0)
+	otherClauses := make([]TableAlterClause, 0, len(td.alterClauses))
+	for _, clause := range td.alterClauses {
+		if _, ok := clause.(AddForeignKey); ok {
+			addFKClauses = append(addFKClauses, clause)
+		} else {
+			otherClauses = append(otherClauses, clause)
+		}
+	}
+	if len(addFKClauses) == 0 {
+		return td, nil
+	} else if len(otherClauses) == 0 {
+		return nil, td
+	}
+	result1 := &TableDiff{
+		Type:         DiffTypeAlter,
+		From:         td.From,
+		To:           td.To,
+		alterClauses: otherClauses,
+		supported:    true,
+	}
+	result2 := &TableDiff{
+		Type:         DiffTypeAlter,
+		From:         td.From,
+		To:           td.To,
+		alterClauses: addFKClauses,
+		supported:    true,
+	}
+	return result1, result2
+}
+
+// SplitConflicts looks through a TableDiff's alterClauses and pulls out any
+// clauses that need to be placed into a separate TableDiff in order to yield
+// legal or error-free DDL. Currently this only handles attempts to add multiple
+// FULLTEXT indexes in a single ALTER, but may handle additional cases in the
+// future.
+// This method returns a slice of TableDiffs. The first element will be
+// equivalent to the receiver (td) with any conflicting clauses removed;
+// subsequent slice elements, if any, will be separate TableDiffs each
+// consisting of individual conflicting clauses.
+// This method does not interact with AddForeignKey clauses; see dedicated
+// method SplitAddForeignKeys for that logic.
+func (td *TableDiff) SplitConflicts() (result []*TableDiff) {
+	if td == nil {
+		return nil
+	} else if td.Type != DiffTypeAlter || !td.supported || len(td.alterClauses) == 0 {
+		return []*TableDiff{td}
+	}
+
+	var seenAddFulltext bool
+	keepClauses := make([]TableAlterClause, 0, len(td.alterClauses))
+	separateClauses := make([]TableAlterClause, 0)
+	for _, clause := range td.alterClauses {
+		if addIndex, ok := clause.(AddIndex); ok && addIndex.Index.Type == "FULLTEXT" {
+			if seenAddFulltext {
+				separateClauses = append(separateClauses, clause)
+				continue
+			}
+			seenAddFulltext = true
+		}
+		keepClauses = append(keepClauses, clause)
+	}
+
+	result = append(result, &TableDiff{
+		Type:         DiffTypeAlter,
+		From:         td.From,
+		To:           td.To,
+		alterClauses: keepClauses,
+		supported:    true,
+	})
+	for n := range separateClauses {
+		result = append(result, &TableDiff{
+			Type:         DiffTypeAlter,
+			From:         td.From,
+			To:           td.To,
+			alterClauses: []TableAlterClause{separateClauses[n]},
+			supported:    true,
+		})
+	}
+	return result
+}
+
+// Statement returns the full DDL statement corresponding to the TableDiff. A
+// blank string may be returned if the mods indicate the statement should be
+// skipped. If the mods indicate the statement should be disallowed, it will
+// still be returned as-is, but the error will be non-nil. Be sure not to
+// ignore the error value of this method.
+func (td *TableDiff) Statement(mods StatementModifiers) (string, error) {
+	if td == nil {
+		return "", nil
+	}
+
+	var err error
+	switch td.Type {
+	case DiffTypeCreate:
+		stmt := td.To.CreateStatement
+		if td.To.Partitioning != nil && mods.Partitioning == PartitioningRemove {
+			stmt = td.To.UnpartitionedCreateStatement(mods.Flavor)
+		}
+		if td.To.HasAutoIncrement() && (mods.NextAutoInc == NextAutoIncIgnore || mods.NextAutoInc == NextAutoIncIfAlready) {
+			stmt, _ = ParseCreateAutoInc(stmt)
+		}
+		return stmt, nil
+	case DiffTypeAlter:
+		return td.alterStatement(mods)
+	case DiffTypeDrop:
+		stmt := td.From.DropStatement()
+		if !mods.AllowUnsafe {
+			err = &ForbiddenDiffError{
+				Reason: "DROP TABLE not permitted",
+			}
+		}
+		return stmt, err
+	default: // DiffTypeRename not supported yet
+		panic(fmt.Errorf("Unsupported diff type %d", td.Type))
+	}
+}
+
+// Clauses returns the body of the statement represented by the table diff.
+// For DROP statements, this will be an empty string. For CREATE statements,
+// it will be everything after "CREATE TABLE [name] ". For ALTER statements,
+// it will be everything after "ALTER TABLE [name] ".
+func (td *TableDiff) Clauses(mods StatementModifiers) (string, error) {
+	stmt, err := td.Statement(mods)
+	if stmt == "" {
+		return stmt, err
+	}
+	switch td.Type {
+	case DiffTypeCreate:
+		prefix := fmt.Sprintf("CREATE TABLE %s ", EscapeIdentifier(td.To.Name))
+		return strings.Replace(stmt, prefix, "", 1), err
+	case DiffTypeAlter:
+		prefix := fmt.Sprintf("%s ", td.From.AlterStatement())
+		return strings.Replace(stmt, prefix, "", 1), err
+	case DiffTypeDrop:
+		return "", err
+	default: // DiffTypeRename not supported yet
+		panic(fmt.Errorf("Unsupported diff type %d", td.Type))
+	}
+}
+
+func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
+	var err error
+	if !td.supported {
+		if td.To.UnsupportedDDL {
+			subjectAndVerb := `The desired state ("to" side of diff) contains `
+			if td.From.UnsupportedDDL {
+				subjectAndVerb = "Both sides of the diff contain "
+			}
+			err = &UnsupportedDiffError{
+				ObjectKey:      td.ObjectKey(),
+				Reason:         subjectAndVerb + "unexpected or unsupported clauses in SHOW CREATE TABLE.",
+				ExpectedCreate: td.To.GeneratedCreateStatement(mods.Flavor),
+				ExpectedDesc:   "desired state expected CREATE",
+				ActualCreate:   td.To.CreateStatement,
+				ActualDesc:     "desired state actual SHOW CREATE",
+			}
+		} else if td.From.UnsupportedDDL {
+			err = &UnsupportedDiffError{
+				ObjectKey:      td.ObjectKey(),
+				Reason:         "The original state (\"from\" side of diff) contains unexpected or unsupported clauses in SHOW CREATE TABLE.",
+				ExpectedCreate: td.From.GeneratedCreateStatement(mods.Flavor),
+				ExpectedDesc:   "original state expected CREATE",
+				ActualCreate:   td.From.CreateStatement,
+				ActualDesc:     "original state actual SHOW CREATE",
+			}
+		} else {
+			err = &UnsupportedDiffError{
+				ObjectKey:      td.ObjectKey(),
+				Reason:         "The two sides of the diff vary in SHOW CREATE TABLE in unexpected ways, perhaps due to a bug in Skeema.",
+				ExpectedCreate: td.From.CreateStatement,
+				ExpectedDesc:   "original state actual SHOW CREATE",
+				ActualCreate:   td.To.CreateStatement,
+				ActualDesc:     "desired state actual SHOW CREATE",
+			}
+		}
+	}
+
+	// Force StrictIndexOrder to be enabled for InnoDB tables that have no primary
+	// key and at least one unique index with non-nullable columns
+	if !mods.StrictIndexOrder && td.To.Engine == "InnoDB" && td.To.ClusteredIndexKey() != td.To.PrimaryKey {
+		mods.StrictIndexOrder = true
+	}
+
+	clauseStrings := make([]string, 0, len(td.alterClauses))
+	var partitionClauseString string
+	for _, clause := range td.alterClauses {
+		if !mods.AllowUnsafe {
+			if clause, ok := clause.(Unsafer); ok && clause.Unsafe() {
+				err = &ForbiddenDiffError{
+					Reason:     "Unsafe or potentially destructive ALTER TABLE not permitted",
+					WrappedErr: err,
+				}
+			}
+		}
+		if clauseString := clause.Clause(mods); clauseString != "" {
+			switch clause.(type) {
+			case PartitionBy, RemovePartitioning:
+				// Adding or removing partitioning must occur at the end of the ALTER
+				// TABLE, and oddly *without* a preceeding comma
+				partitionClauseString = clauseString
+			case ModifyPartitions:
+				// Other partitioning-related clauses cannot appear alongside any other
+				// clauses, including ALGORITHM or LOCK clauses
+				mods.LockClause = ""
+				mods.AlgorithmClause = ""
+				clauseStrings = append(clauseStrings, clauseString)
+			default:
+				clauseStrings = append(clauseStrings, clauseString)
+			}
+		}
+	}
+	if len(clauseStrings) == 0 && partitionClauseString == "" {
+		return "", err
+	}
+
+	if mods.LockClause != "" {
+		lockClause := fmt.Sprintf("LOCK=%s", strings.ToUpper(mods.LockClause))
+		clauseStrings = append([]string{lockClause}, clauseStrings...)
+	}
+	if mods.AlgorithmClause != "" {
+		algorithmClause := fmt.Sprintf("ALGORITHM=%s", strings.ToUpper(mods.AlgorithmClause))
+		clauseStrings = append([]string{algorithmClause}, clauseStrings...)
+	}
+	if mods.VirtualColValidation {
+		var canValidate bool
+		for _, clause := range td.alterClauses {
+			switch clause := clause.(type) {
+			case AddColumn:
+				canValidate = canValidate || clause.Column.Virtual
+			case ModifyColumn:
+				canValidate = canValidate || clause.NewColumn.Virtual
+			}
+		}
+		if canValidate {
+			clauseStrings = append(clauseStrings, "WITH VALIDATION")
+		}
+	}
+
+	if len(clauseStrings) > 0 && partitionClauseString != "" {
+		partitionClauseString = fmt.Sprintf(" %s", partitionClauseString)
+	}
+	stmt := fmt.Sprintf("%s %s%s", td.From.AlterStatement(), strings.Join(clauseStrings, ", "), partitionClauseString)
+	return stmt, err
+}
+
+// MarkSupported provides a mechanism for callers to vouch for the correctness
+// of a TableDiff that was automatically marked as unsupported. This should only
+// be used in cases where a table with UnsupportedDDL is being altered in a way
+// which either doesn't interact with the unsupported features, or easily
+// removes those features. It is the caller's responsibility to first verify
+// that the TableDiff's Statement() returns accurate, non-empty SQL.
+func (td *TableDiff) MarkSupported() error {
+	if td == nil || len(td.alterClauses) == 0 {
+		return errors.New("cannot mark TableDiff as supported: no alter clauses were generated")
+	} else if td.supported {
+		return errors.New("cannot mark TableDiff as supported: supported is already true")
+	}
+	td.supported = true
+	return nil
+}
+
+func diffTables(from, to *Table) (clauses []TableAlterClause, supported bool) {
+	if from.Name != to.Name {
+		panic(errors.New("Table renaming not yet supported"))
+	}
+
+	// If both tables have same output for SHOW CREATE TABLE, we know they're the same.
+	// We do this check prior to the UnsupportedDDL check so that we only emit the
+	// warning if the tables actually changed.
+	if from.CreateStatement != "" && from.CreateStatement == to.CreateStatement {
+		return []TableAlterClause{}, true
+	}
+
+	// If we're attempting to alter a supported table into an unsupported table,
+	// don't even bother attempting to generate clauses; we know with 100%
+	// certainty that the emitted DDL will be incomplete or incorrect. (In other
+	// cases, we still attempt to generate DDL, since the alter MAY just consist
+	// of fully-supported alterations to otherwise-unsupported tables. For example:
+	// a table is unsupported due to having a spatial index, but the alter is just
+	// adding some unrelated column.)
+	supported = !from.UnsupportedDDL && !to.UnsupportedDDL
+	if !from.UnsupportedDDL && to.UnsupportedDDL {
+		return nil, false
+	}
+
+	clauses = make([]TableAlterClause, 0)
+
+	// Check for default charset or collation changes first, prior to looking at
+	// column adds, to ensure the default change affects any new columns that don't
+	// explicitly override the table default
+	if from.CharSet != to.CharSet || from.Collation != to.Collation {
+		clauses = append(clauses, ChangeCharSet{
+			FromCharSet:   from.CharSet,
+			FromCollation: from.Collation,
+			ToCharSet:     to.CharSet,
+			ToCollation:   to.Collation,
+		})
+	}
+
+	// Process column drops, modifications, adds. Must be done in this specific order
+	// so that column reordering works properly.
+	cc := compareColumnExistence(from, to)
+	clauses = append(clauses, cc.columnDrops()...)
+	clauses = append(clauses, cc.columnModifications()...)
+	clauses = append(clauses, cc.columnAdds()...)
+
+	// Compare PK
+	if !from.PrimaryKey.Equals(to.PrimaryKey) {
+		if from.PrimaryKey == nil {
+			clauses = append(clauses, AddIndex{Index: to.PrimaryKey})
+		} else if to.PrimaryKey == nil {
+			clauses = append(clauses, DropIndex{Index: from.PrimaryKey})
+		} else {
+			drop := DropIndex{Index: from.PrimaryKey}
+			add := AddIndex{Index: to.PrimaryKey}
+			clauses = append(clauses, drop, add)
+		}
+	}
+
+	// Compare secondary indexes. Aside from visibility changes in MySQL 8+, there
+	// is no way to modify an index without dropping and re-adding it. There's also
+	// no way to re-position an index without dropping and re-adding all
+	// preexisting indexes that now come after.
+	fromIndexes := from.SecondaryIndexesByName()
+	toIndexes := to.SecondaryIndexesByName()
+	var fromIndexStillExist []*Index // ordered list of indexes from "from" that still exist in "to"
+	for _, fromIndex := range from.SecondaryIndexes {
+		if _, stillExists := toIndexes[fromIndex.Name]; stillExists {
+			fromIndexStillExist = append(fromIndexStillExist, fromIndex)
+		} else {
+			clauses = append(clauses, DropIndex{Index: fromIndex})
+		}
+	}
+	var reorderIndexes bool
+	for n, toIndex := range to.SecondaryIndexes {
+		if fromIndex, existedBefore := fromIndexes[toIndex.Name]; !existedBefore {
+			clauses = append(clauses, AddIndex{Index: toIndex})
+			reorderIndexes = true
+		} else if !fromIndex.EqualsIgnoringVisibility(toIndex) {
+			clauses = append(clauses, DropIndex{Index: fromIndex}, AddIndex{Index: toIndex})
+			reorderIndexes = true
+		} else {
+			if fromIndex.Invisible != toIndex.Invisible {
+				clauses = append(clauses, AlterIndex{
+					Index:          fromIndex,
+					NewInvisible:   toIndex.Invisible,
+					alsoReordering: reorderIndexes,
+				})
+			}
+			if reorderIndexes {
+				clauses = append(clauses,
+					DropIndex{Index: fromIndex, reorderOnly: true},
+					AddIndex{Index: toIndex, reorderOnly: true},
+				)
+			} else if fromIndexStillExist[n].Name != toIndex.Name {
+				// If we get here, reorderIndexes was previously false, meaning anything
+				// *before* this position was identical on both sides. We can therefore leave
+				// *this* index alone and just reorder anything that now comes *after* it.
+				reorderIndexes = true
+			}
+		}
+	}
+
+	// Compare foreign keys
+	fromForeignKeys := from.foreignKeysByName()
+	toForeignKeys := to.foreignKeysByName()
+	fkChangeCosmeticOnly := func(fk *ForeignKey, others []*ForeignKey) bool {
+		for _, other := range others {
+			if fk.Equivalent(other) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, toFk := range toForeignKeys {
+		if _, existedBefore := fromForeignKeys[toFk.Name]; !existedBefore {
+			clauses = append(clauses, AddForeignKey{
+				ForeignKey:   toFk,
+				cosmeticOnly: fkChangeCosmeticOnly(toFk, from.ForeignKeys),
+			})
+		}
+	}
+	for _, fromFk := range fromForeignKeys {
+		toFk, stillExists := toForeignKeys[fromFk.Name]
+		if !stillExists {
+			clauses = append(clauses, DropForeignKey{
+				ForeignKey:   fromFk,
+				cosmeticOnly: fkChangeCosmeticOnly(fromFk, to.ForeignKeys),
+			})
+		} else if !fromFk.Equals(toFk) {
+			cosmeticOnly := fromFk.Equivalent(toFk) // e.g. just changes between RESTRICT and NO ACTION
+			drop := DropForeignKey{
+				ForeignKey:   fromFk,
+				cosmeticOnly: cosmeticOnly,
+			}
+			add := AddForeignKey{
+				ForeignKey:   toFk,
+				cosmeticOnly: cosmeticOnly,
+			}
+			clauses = append(clauses, drop, add)
+		}
+	}
+
+	// Compare check constraints. Although the order of check constraints has no
+	// functional impact, ordering changes must nonetheless must be detected, as
+	// MariaDB lists checks in creation order for I_S and SHOW CREATE.
+	fromChecks := from.checksByName()
+	toChecks := to.checksByName()
+	var fromCheckStillExist []*Check // ordered list of checks from "from" that still exist in "to"
+	for _, fromCheck := range from.Checks {
+		if _, stillExists := toChecks[fromCheck.Name]; stillExists {
+			fromCheckStillExist = append(fromCheckStillExist, fromCheck)
+		} else {
+			clauses = append(clauses, DropCheck{Check: fromCheck})
+		}
+	}
+	var reorderChecks bool
+	for n, toCheck := range to.Checks {
+		if fromCheck, existedBefore := fromChecks[toCheck.Name]; !existedBefore {
+			clauses = append(clauses, AddCheck{Check: toCheck})
+			reorderChecks = true
+		} else if fromCheck.Clause != toCheck.Clause {
+			clauses = append(clauses, DropCheck{Check: fromCheck}, AddCheck{Check: toCheck})
+			reorderChecks = true
+		} else if fromCheck.Enforced != toCheck.Enforced {
+			// Note: if MariaDB ever supports NOT ENFORCED, this will need extra logic
+			// similar to how AlterIndex.alsoReordering works!
+			clauses = append(clauses, AlterCheck{Check: fromCheck, NewEnforcement: toCheck.Enforced})
+		} else if reorderChecks {
+			clauses = append(clauses,
+				DropCheck{Check: fromCheck, reorderOnly: true},
+				AddCheck{Check: toCheck, reorderOnly: true})
+		} else if fromCheckStillExist[n].Name != toCheck.Name {
+			// If we get here, reorderChecks was previously false, meaning anything
+			// *before* this position was identical on both sides. We can therefore leave
+			// *this* check alone and just reorder anything that now comes *after* it.
+			reorderChecks = true
+		}
+	}
+
+	// Compare storage engine
+	if from.Engine != to.Engine {
+		clauses = append(clauses, ChangeStorageEngine{NewStorageEngine: to.Engine})
+	}
+
+	// Compare next auto-inc value
+	if from.NextAutoIncrement != to.NextAutoIncrement && to.HasAutoIncrement() {
+		cai := ChangeAutoIncrement{
+			NewNextAutoIncrement: to.NextAutoIncrement,
+			OldNextAutoIncrement: from.NextAutoIncrement,
+		}
+		clauses = append(clauses, cai)
+	}
+
+	// Compare create options
+	if from.CreateOptions != to.CreateOptions {
+		cco := ChangeCreateOptions{
+			OldCreateOptions: from.CreateOptions,
+			NewCreateOptions: to.CreateOptions,
+		}
+		clauses = append(clauses, cco)
+	}
+
+	// Compare comment
+	if from.Comment != to.Comment {
+		clauses = append(clauses, ChangeComment{NewComment: to.Comment})
+	}
+
+	// Compare tablespace
+	if from.Tablespace != to.Tablespace {
+		clauses = append(clauses, ChangeTablespace{NewTablespace: to.Tablespace})
+	}
+
+	// Compare partitioning. This must be performed last due to a MySQL requirement
+	// of PARTITION BY / REMOVE PARTITIONING occurring last in a multi-clause ALTER
+	// TABLE.
+	// Note that some partitioning differences aren't supported yet, and others are
+	// intentionally ignored.
+	partClauses, partSupported := from.Partitioning.Diff(to.Partitioning)
+	clauses = append(clauses, partClauses...)
+	if !partSupported {
+		supported = false
+	}
+
+	// If the SHOW CREATE TABLE output differed between the two tables, but we
+	// did not generate any clauses, this indicates some aspect of the change is
+	// unsupported (even though the two tables are individually supported). This
+	// normally shouldn't happen, but could be possible given differences between
+	// MySQL versions, vendors, storage engines, etc.
+	if len(clauses) == 0 && from.CreateStatement != "" && to.CreateStatement != "" {
+		supported = false
+	}
+
+	return
+}
+
+func compareColumnExistence(self, other *Table) columnsComparison {
+	cc := columnsComparison{
+		fromTable:           self,
+		toTable:             other,
+		fromColumnsByName:   self.ColumnsByName(),
+		fromStillPresent:    make([]bool, len(self.Columns)),
+		toAlreadyExisted:    make([]bool, len(other.Columns)),
+		fromOrderCommonCols: make([]*Column, 0, len(self.Columns)),
+		toOrderCommonCols:   make([]*Column, 0, len(other.Columns)),
+	}
+	toColumnsByName := other.ColumnsByName()
+	for n, col := range self.Columns {
+		if _, existsInOther := toColumnsByName[col.Name]; existsInOther {
+			cc.fromStillPresent[n] = true
+			cc.fromOrderCommonCols = append(cc.fromOrderCommonCols, col)
+		}
+	}
+	for n, col := range other.Columns {
+		if _, existsInSelf := cc.fromColumnsByName[col.Name]; existsInSelf {
+			cc.toAlreadyExisted[n] = true
+			cc.toOrderCommonCols = append(cc.toOrderCommonCols, col)
+			if !cc.commonColumnsMoved && col.Name != cc.fromOrderCommonCols[len(cc.toOrderCommonCols)-1].Name {
+				cc.commonColumnsMoved = true
+			}
+		}
+	}
+	return cc
+}
+
+type columnsComparison struct {
+	fromTable           *Table
+	fromColumnsByName   map[string]*Column
+	fromStillPresent    []bool
+	fromOrderCommonCols []*Column
+	toTable             *Table
+	toAlreadyExisted    []bool
+	toOrderCommonCols   []*Column
+	commonColumnsMoved  bool
+}
+
+func (cc *columnsComparison) columnDrops() []TableAlterClause {
+	clauses := make([]TableAlterClause, 0)
+
+	// Loop through cols in "from" table, and process column drops
+	for fromPos, stillPresent := range cc.fromStillPresent {
+		if !stillPresent {
+			clauses = append(clauses, DropColumn{
+				Column: cc.fromTable.Columns[fromPos],
+			})
+		}
+	}
+	return clauses
+}
+
+func (cc *columnsComparison) columnAdds() []TableAlterClause {
+	clauses := make([]TableAlterClause, 0)
+
+	// Loop through cols in "to" table, and process column adds
+	for toPos, alreadyExisted := range cc.toAlreadyExisted {
+		if alreadyExisted {
+			continue
+		}
+		add := AddColumn{
+			Table:  cc.toTable,
+			Column: cc.toTable.Columns[toPos],
+		}
+
+		// Determine if the new col was positioned in a specific place.
+		// i.e. are there any pre-existing cols that come after it?
+		var existingColsAfter bool
+		for _, afterAlreadyExisted := range cc.toAlreadyExisted[toPos+1:] {
+			if afterAlreadyExisted {
+				existingColsAfter = true
+				break
+			}
+		}
+		if existingColsAfter {
+			if toPos == 0 {
+				add.PositionFirst = true
+			} else {
+				add.PositionAfter = cc.toTable.Columns[toPos-1]
+			}
+		}
+		clauses = append(clauses, add)
+	}
+	return clauses
+}
+
+func (cc *columnsComparison) columnModifications() []TableAlterClause {
+	clauses := make([]TableAlterClause, 0)
+	commonCount := len(cc.fromOrderCommonCols)
+	if commonCount == 0 {
+		// no common cols = no possible MODIFY COLUMN clauses
+		return clauses
+	} else if !cc.commonColumnsMoved {
+		// If all common cols are at same position, efficient comparison is simpler
+		for toPos, toCol := range cc.toOrderCommonCols {
+			if fromCol := cc.fromOrderCommonCols[toPos]; !fromCol.Equals(toCol) {
+				clauses = append(clauses, ModifyColumn{
+					Table:     cc.toTable,
+					OldColumn: fromCol,
+					NewColumn: toCol,
+				})
+			}
+		}
+		return clauses
+	}
+
+	// If one or more common columns were re-positioned, identify the longest
+	// increasing subsequence in the "from" side, to determine which columns can
+	// stay put vs which ones need to be repositioned.
+	toColPos := make(map[string]int, commonCount)
+	for toPos, col := range cc.toOrderCommonCols {
+		toColPos[col.Name] = toPos
+	}
+	fromIndexToPos := make([]int, commonCount)
+	for fromPos, fromCol := range cc.fromOrderCommonCols {
+		fromIndexToPos[fromPos] = toColPos[fromCol.Name]
+	}
+	stayPut := make([]bool, commonCount)
+	for _, toPos := range longestIncreasingSubsequence(fromIndexToPos) {
+		stayPut[toPos] = true
+	}
+
+	// For each common column (relative to the "to" order), emit a MODIFY COLUMN
+	// clause if the col was reordered or modified.
+	for toPos, toCol := range cc.toOrderCommonCols {
+		fromCol := cc.fromColumnsByName[toCol.Name]
+		if moved := !stayPut[toPos]; moved || !fromCol.Equals(toCol) {
+			modify := ModifyColumn{
+				Table:         cc.toTable,
+				OldColumn:     fromCol,
+				NewColumn:     toCol,
+				PositionFirst: moved && toPos == 0,
+			}
+			if moved && toPos > 0 {
+				modify.PositionAfter = cc.toOrderCommonCols[toPos-1]
+			}
+			clauses = append(clauses, modify)
+		}
+	}
+	return clauses
+}

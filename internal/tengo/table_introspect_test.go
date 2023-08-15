@@ -1,8 +1,6 @@
 package tengo
 
 import (
-	"context"
-	"database/sql"
 	"strings"
 	"testing"
 )
@@ -224,100 +222,6 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 				}
 			}
 		}
-	}
-}
-
-func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
-	schema := s.GetSchema(t, "testing")
-	db, err := s.d.CachedConnectionPool("testing", "")
-	if err != nil {
-		t.Fatalf("Unexpected error from Connect: %s", err)
-	}
-	sqlMode := s.d.SQLMode()
-
-	procsByName := schema.ProceduresByName()
-	actualProc1 := procsByName["proc1"]
-	if actualProc1 == nil || len(procsByName) != 1 {
-		t.Fatal("Unexpected result from ProceduresByName()")
-	}
-	expectProc1 := aProc(schema.Collation, sqlMode)
-	if !expectProc1.Equals(actualProc1) {
-		t.Errorf("Actual proc did not equal expected.\nACTUAL: %+v\nEXPECTED: %+v\n", actualProc1, &expectProc1)
-	}
-
-	funcsByName := schema.FunctionsByName()
-	actualFunc1 := funcsByName["func1"]
-	if actualFunc1 == nil || len(funcsByName) != 2 {
-		t.Fatal("Unexpected result from FunctionsByName()")
-	}
-	expectFunc1 := aFunc(schema.Collation, sqlMode)
-	if !expectFunc1.Equals(actualFunc1) {
-		t.Errorf("Actual func did not equal expected.\nACTUAL: %+v\nEXPECTED: %+v\n", actualFunc1, &expectFunc1)
-	}
-	if actualFunc1.Equals(actualProc1) {
-		t.Error("Equals not behaving as expected, proc1 and func1 should not be equal")
-	}
-
-	// confirm 4-byte characters in the body come through properly
-	if func2 := funcsByName["func2"]; !strings.Contains(func2.Body, "\U0001F4A9") {
-		t.Errorf("Expected to find 4-byte char \U0001F4A9 in func2.Body, but did not. Body contents:\n%s", func2.Body)
-	}
-
-	// If this flavor supports using mysql.proc to bulk-fetch routines, confirm
-	// the result is identical to using the individual SHOW CREATE queries
-	if !s.d.Flavor().Min(FlavorMySQL80) {
-		db, err := s.d.ConnectionPool("testing", "")
-		if err != nil {
-			t.Fatalf("Unexpected error from ConnectionPool: %v", err)
-		}
-		fastResults, err := querySchemaRoutines(context.Background(), db, "testing", s.d.Flavor())
-		if err != nil {
-			t.Fatalf("Unexpected error from querySchemaRoutines: %v", err)
-		}
-		oldFlavor := s.d.Flavor()
-		s.d.ForceFlavor(FlavorMySQL80)
-		slowResults, err := querySchemaRoutines(context.Background(), db, "testing", s.d.Flavor())
-		s.d.ForceFlavor(oldFlavor)
-		if err != nil {
-			t.Fatalf("Unexpected error from querySchemaRoutines: %v", err)
-		}
-		for n, r := range fastResults {
-			if !r.Equals(slowResults[n]) {
-				t.Errorf("Routine[%d] mismatch\nFast path value: %+v\nSlow path value: %+v\n", n, r, slowResults[n])
-			}
-		}
-	}
-
-	// Coverage for MariaDB 10.8 IN/OUT/INOUT params in funcs
-	if fl := s.d.Flavor(); fl.Min(FlavorMariaDB108) {
-		s.SourceTestSQL(t, "maria108.sql")
-		schema := s.GetSchema(t, "testing")
-		funcsByName := schema.FunctionsByName()
-		f := funcsByName["maria108func"]
-		if defn := f.Definition(fl); defn != f.CreateStatement {
-			t.Errorf("Generated function definition does not match SHOW CREATE FUNCTION. Generated definition:\n%s\nSHOW CREATE FUNCTION:\n%s", defn, f.CreateStatement)
-		} else if !strings.Contains(defn, "INOUT") {
-			t.Errorf("Functions with IN/OUT/INOUT params not introspected properly. Generated definition:\n%s", defn)
-		}
-	}
-
-	// Coverage for various nil cases and error conditions
-	schema = nil
-	if procCount := len(schema.ProceduresByName()); procCount != 0 {
-		t.Errorf("nil schema unexpectedly contains %d procedures by name", procCount)
-	}
-	var r *Routine
-	if actualFunc1.Equals(r) || !r.Equals(r) {
-		t.Error("Equals not behaving as expected")
-	}
-	if _, err = showCreateRoutine(context.Background(), db, actualProc1.Name, ObjectTypeFunc); err != sql.ErrNoRows {
-		t.Errorf("Unexpected error return from showCreateRoutine: expected sql.ErrNoRows, found %s", err)
-	}
-	if _, err = showCreateRoutine(context.Background(), db, actualFunc1.Name, ObjectTypeProc); err != sql.ErrNoRows {
-		t.Errorf("Unexpected error return from showCreateRoutine: expected sql.ErrNoRows, found %s", err)
-	}
-	if _, err = showCreateRoutine(context.Background(), db, actualFunc1.Name, ObjectTypeTable); err == nil {
-		t.Error("Expected non-nil error return from showCreateRoutine with invalid type, instead found nil")
 	}
 }
 
