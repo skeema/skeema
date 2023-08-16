@@ -1408,6 +1408,22 @@ END`
 			t.Errorf("Expected %s to exist, instead found %t, err=%v", phrase, exists, err)
 		}
 	}
+
+	// Change all 3 of procedure routine2's characteristics in the db. Do a push,
+	// which should use ALTER PROCEDURE and be safe.
+	s.dbExec(t, "product", "ALTER PROCEDURE routine2 SQL SECURITY INVOKER READS SQL DATA")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// Repeat the previous test, but this time add a COMMENT. Due to a server bug
+	// in MySQL 8.0+, ALTER ... COMMENT '' does not function properly, so Skeema
+	// always emits DROP/re-CREATE (or CREATE OR REPLACE) in this situation, for
+	// all flavors.
+	s.dbExec(t, "product", "ALTER PROCEDURE routine2 SQL SECURITY INVOKER READS SQL DATA COMMENT 'whatever'")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 }
 
 // TestTempSchemaBinlog provides coverage for the temp-schema-binlog option.

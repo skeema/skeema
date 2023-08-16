@@ -158,12 +158,31 @@ func TestSchemaDiffRoutines(t *testing.T) {
 		t.Errorf("Modifier AllowUnsafe=true not working; error (%s) returned for %s", err, stmt)
 	}
 
-	// Test alter, which is handled by a drop and re-add in MySQL/Percona, and
-	// OR REPLACE in MariaDB.
+	// Test modification of a characteristic field, which is handled by ALTER and
+	// is always safe.
+	s1r2 := aProc("latin1_swedish_ci", "")
+	s1r2.SecurityType = "DEFINER"
+	s1r2.Comment = "a comment"
+	s1r2.CreateStatement = s1r2.Definition(FlavorUnknown)
+	s1.Routines = append(s1.Routines, &s1r2)
+	sd = NewSchemaDiff(&s2, &s1)
+	if len(sd.RoutineDiffs) != 1 {
+		t.Fatalf("Incorrect number of routine diffs: expected 1, found %d", len(sd.RoutineDiffs))
+	}
+	rd = sd.RoutineDiffs[0]
+	if rd.DiffType() != DiffTypeAlter {
+		t.Fatalf("Incorrect type of diff returned: expected %s, found %s", DiffTypeAlter, rd.DiffType())
+	}
+	mods := StatementModifiers{Flavor: FlavorMySQL57}
+	if stmt, err := rd.Statement(mods); err != nil || stmt != "ALTER PROCEDURE `"+s1r2.Name+"` SQL SECURITY DEFINER COMMENT 'a comment'" {
+		t.Errorf("Unexpected return from Statement: %s, %v", stmt, err)
+	}
+
+	// Test modification of a non-characteristic field, which is handled by a drop
+	// and re-add in MySQL/Percona, and OR REPLACE in MariaDB.
 	// Since this is a creation-time metadata change, also test statement modifier
 	// affecting whether or not those changes are suppressed.
-	s1r2 := aProc("utf8mb4_general_ci", "")
-	s1.Routines = append(s1.Routines, &s1r2)
+	s1r2 = aProc("utf8mb4_general_ci", "")
 	sd = NewSchemaDiff(&s2, &s1)
 	if len(sd.RoutineDiffs) != 2 {
 		t.Fatalf("Incorrect number of routine diffs: expected 2, found %d", len(sd.RoutineDiffs))
@@ -182,7 +201,7 @@ func TestSchemaDiffRoutines(t *testing.T) {
 	if rd.To != &s1r2 || rd.ObjectKey().Name != s1r2.Name {
 		t.Error("Pointer in diff does not point to expected value")
 	}
-	mods := StatementModifiers{Flavor: FlavorMySQL57}
+	mods = StatementModifiers{Flavor: FlavorMySQL57}
 	for _, od := range sd.ObjectDiffs() {
 		stmt, err := od.Statement(mods)
 		if stmt != "" || err != nil {
@@ -232,4 +251,44 @@ func TestSchemaDiffRoutines(t *testing.T) {
 	if rd.IsCompoundStatement() { // the function body in aFunc() is just a single RETURN
 		t.Error("Unexpected return value from IsCompoundStatement(): found true, expected false")
 	}
+}
+
+func aProc(dbCollation, sqlMode string) Routine {
+	r := Routine{
+		Name: "proc1",
+		Type: ObjectTypeProc,
+		Body: `BEGIN
+  SELECT @iterations + 1, 98.76 INTO iterations, pct;
+  END`,
+		ParamString:       "\n    IN name varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin,\n    INOUT iterations int(10) unsigned,   OUT pct decimal(5, 2)\n",
+		ReturnDataType:    "",
+		Definer:           "root@%",
+		DatabaseCollation: dbCollation,
+		Comment:           "",
+		Deterministic:     false,
+		SQLDataAccess:     "READS SQL DATA",
+		SecurityType:      "INVOKER",
+		SQLMode:           sqlMode,
+	}
+	r.CreateStatement = r.Definition(FlavorUnknown)
+	return r
+}
+
+func aFunc(dbCollation, sqlMode string) Routine {
+	r := Routine{
+		Name:              "func1",
+		Type:              ObjectTypeFunc,
+		Body:              "return mult * 2.0",
+		ParamString:       "mult float(10,2)",
+		ReturnDataType:    "float",
+		Definer:           "root@%",
+		DatabaseCollation: dbCollation,
+		Comment:           "hello world",
+		Deterministic:     true,
+		SQLDataAccess:     "NO SQL",
+		SecurityType:      "DEFINER",
+		SQLMode:           sqlMode,
+	}
+	r.CreateStatement = r.Definition(FlavorUnknown)
+	return r
 }

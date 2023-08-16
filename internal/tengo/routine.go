@@ -111,6 +111,34 @@ func (r *Routine) Equals(other *Routine) bool {
 	return *r == *other
 }
 
+// equalsIgnoringCharacteristics returns true if two routines are identical,
+// or only differ by characteristics which can be adjusted in-place using ALTER:
+// SQLDataAccess, SecurityType, or Comment.
+func (r *Routine) equalsIgnoringCharacteristics(other *Routine) bool {
+	// shortcut if both nil pointers, or both pointing to same underlying struct
+	if r == other {
+		return true
+	}
+	// if one is nil, but the two pointers aren't equal, then one is non-nil
+	if r == nil || other == nil {
+		return false
+	}
+
+	if r.Name != other.Name || r.Type != other.Type || r.Body != other.Body || r.Definer != other.Definer {
+		return false
+	}
+	if r.Deterministic != other.Deterministic {
+		return false // arguably a characteristic, but nonetheless not supported for ALTER...
+	}
+	if r.ParamString != other.ParamString || r.ReturnDataType != other.ReturnDataType {
+		return false
+	}
+	if r.DatabaseCollation != other.DatabaseCollation || r.SQLMode != other.SQLMode {
+		return false
+	}
+	return true
+}
+
 // DropStatement returns a SQL statement that, if run, would drop this routine.
 func (r *Routine) DropStatement() string {
 	return fmt.Sprintf("DROP %s %s", r.Type.Caps(), EscapeIdentifier(r.Name))
@@ -159,12 +187,18 @@ func (r *Routine) parseCreateStatement(flavor Flavor, schema string) error {
 
 ///// Diff logic ///////////////////////////////////////////////////////////////
 
-// RoutineDiff represents a difference between two routines.
+// RoutineDiff represents a difference between two routines. For diffs modifying
+// an existing routine, if it is a characteristic-only change, this will be
+// represented as a single RoutineDiff with DiffTypeAlter. Otherwise a
+// modification including non-characteristic changes will be represented as
+// two separate RoutineDiffs: one DiffTypeDrop and one DiffTypeCreate. This is
+// needed to handle flavors which don't support CREATE OR REPLACE syntax.
+// Flavors that *do* support CREATE OR REPLACE will simply blank-out the DROP
+// portion of the pair.
 type RoutineDiff struct {
-	From        *Routine
-	To          *Routine
-	ForReplace  bool // if true, routine is being dropped/re-created to replace
-	ForMetadata bool // if true, routine is being replaced only to update creation-time metadata
+	Type DiffType
+	From *Routine
+	To   *Routine
 }
 
 // ObjectKey returns a value representing the type and name of the routine being
@@ -182,14 +216,10 @@ func (rd *RoutineDiff) ObjectKey() ObjectKey {
 
 // DiffType returns the type of diff operation.
 func (rd *RoutineDiff) DiffType() DiffType {
-	if rd == nil || (rd.To == nil && rd.From == nil) {
+	if rd == nil {
 		return DiffTypeNone
-	} else if rd.To == nil {
-		return DiffTypeDrop
-	} else if rd.From == nil {
-		return DiffTypeCreate
 	}
-	return DiffTypeAlter
+	return rd.Type
 }
 
 // Statement returns the full DDL statement corresponding to the RoutineDiff. A
@@ -197,57 +227,88 @@ func (rd *RoutineDiff) DiffType() DiffType {
 // skipped. If the mods indicate the statement should be disallowed, it will
 // still be returned as-is, but the error will be non-nil. Be sure not to
 // ignore the error value of this method.
-func (rd *RoutineDiff) Statement(mods StatementModifiers) (string, error) {
+func (rd *RoutineDiff) Statement(mods StatementModifiers) (stmt string, err error) {
 	if rd == nil {
 		return "", nil
 	}
 
-	// If we're replacing a routine only because its creation-time sql_mode or
-	// db collation has changed, only proceed if mods indicate we should. (This
-	// type of replacement is effectively opt-in because it is counter-intuitive
-	// and obscure.)
-	if rd.ForMetadata && !mods.CompareMetadata {
-		return "", nil
+	// MySQL and MariaDB both support ALTER only for a limited set of changes.
+	// Handle this first since it's the simplest case.
+	if rd.Type == DiffTypeAlter {
+		return rd.alterStatement(mods)
 	}
 
-	var comment string
-	mariaReplace := rd.ForReplace && mods.Flavor.IsMariaDB()
-	switch rd.DiffType() {
-	case DiffTypeCreate:
-		if mariaReplace && rd.ForMetadata {
-			comment = fmt.Sprintf("# Replacing %s to update metadata\n", rd.ObjectKey())
+	// It's not an ALTER, so it's either a DROP or CREATE. This may be a related
+	// pair if it represents a non-characteristic modification to an existing
+	// routine. Detect some special-case types of replacements.
+	var metadataOnlyReplace, mariaReplace bool
+	if rd.From != nil && rd.To != nil { // related pair for a replacement
+		// If we're replacing a routine only because its creation-time sql_mode or
+		// db collation has changed, only proceed if mods indicate we should. (This
+		// type of replacement is effectively opt-in because it is counter-intuitive
+		// and obscure.)
+		if rd.From.CreateStatement == rd.To.CreateStatement {
+			if !mods.CompareMetadata {
+				return "", nil
+			}
+			metadataOnlyReplace = true
 		}
-		stmt := rd.To.CreateStatement
+
+		// MariaDB can use CREATE OR REPLACE to modify routines in a single statement
+		mariaReplace = mods.Flavor.IsMariaDB()
+	}
+
+	if rd.Type == DiffTypeDrop {
 		if mariaReplace {
-			stmt = strings.Replace(stmt, "CREATE ", "CREATE OR REPLACE ", 1)
+			return "", nil // omit the DROP part of the pair entirely
 		}
-		return comment + stmt, nil
-	case DiffTypeDrop:
-		// MariaDB 10.1+ can use CREATE OR REPLACE, so omit any replacement-motivated
-		// DROP statements
-		if mariaReplace {
-			return "", nil
+		if metadataOnlyReplace {
+			stmt = "# Dropping and re-creating " + rd.ObjectKey().String() + " to update metadata\n" + rd.From.DropStatement()
+		} else {
+			stmt = rd.From.DropStatement()
 		}
-		if rd.ForMetadata {
-			comment = fmt.Sprintf("# Dropping and re-creating %s to update metadata\n", rd.ObjectKey())
-		}
-		stmt := comment + rd.From.DropStatement()
-		var err error
 		if !mods.AllowUnsafe {
 			err = &ForbiddenDiffError{
-				Reason: fmt.Sprintf("DROP %s not permitted", rd.From.Type.Caps()),
+				Reason: "DROP " + rd.From.Type.Caps() + " not permitted",
 			}
 		}
 		return stmt, err
-	default: // DiffTypeAlter and DiffTypeRename not supported yet
-		return "", fmt.Errorf("Unsupported diff type %d", rd.DiffType())
+	} else if rd.Type == DiffTypeCreate {
+		stmt = rd.To.CreateStatement
+		if mariaReplace {
+			stmt = strings.Replace(stmt, "CREATE ", "CREATE OR REPLACE ", 1)
+			if metadataOnlyReplace {
+				stmt = "# Replacing " + rd.ObjectKey().String() + " to update metadata\n" + stmt
+			}
+		}
+		return stmt, nil
 	}
+
+	// DiffTypeRename not used, no equivalent syntax
+	return "", fmt.Errorf("Unsupported diff type %d", rd.DiffType())
+}
+
+func (rd *RoutineDiff) alterStatement(_ StatementModifiers) (stmt string, err error) {
+	var clauses []string
+	if rd.From.SQLDataAccess != rd.To.SQLDataAccess {
+		clauses = append(clauses, rd.To.SQLDataAccess)
+	}
+	if rd.From.SecurityType != rd.To.SecurityType {
+		clauses = append(clauses, "SQL SECURITY "+rd.To.SecurityType)
+	}
+	if rd.From.Comment != rd.To.Comment {
+		clauses = append(clauses, fmt.Sprintf("COMMENT '%s'", EscapeValueForCreateTable(rd.To.Comment)))
+	}
+	if len(clauses) > 0 {
+		stmt = "ALTER " + rd.To.Type.Caps() + " " + EscapeIdentifier(rd.To.Name) + " " + strings.Join(clauses, " ")
+	}
+	return stmt, nil
 }
 
 // IsCompoundStatement returns true if the diff is a compound CREATE statement,
 // requiring special delimiter handling.
 func (rd *RoutineDiff) IsCompoundStatement() bool {
-	return rd.To != nil && ParseStatementInString(rd.To.CreateStatement).Compound
+	return rd.Type == DiffTypeCreate && ParseStatementInString(rd.To.CreateStatement).Compound
 }
 
 func compareRoutines(from, to *Schema) []*RoutineDiff {
@@ -261,30 +322,29 @@ func compareRoutines(from, to *Schema) []*RoutineDiff {
 // In other words, both fromByName and toByName should only contain procs, or
 // both only contain funcs. No validation of this is performed here.
 func compareRoutinesByName(fromByName map[string]*Routine, toByName map[string]*Routine) (routineDiffs []*RoutineDiff) {
-	for name, fromRoutine := range fromByName {
-		toRoutine, stillExists := toByName[name]
+	for name, from := range fromByName {
+		to, stillExists := toByName[name]
 		if !stillExists {
-			routineDiffs = append(routineDiffs, &RoutineDiff{From: fromRoutine})
-		} else if !fromRoutine.Equals(toRoutine) {
-			// Determine if only the creation-time metadata (db collation, sql_mode)
-			// has changed, and flag the diffs if so. This type of change requires
-			// StatementModifiers to execute, since its appearance is counterintuitive
-			// (since otherwise it looks like a routine is being dropped and recreated
-			// with the exact same statement)
-			metadataOnly := fromRoutine.CreateStatement == toRoutine.CreateStatement
-
-			// TODO: Currently this handles all changes to existing routines via DROP-
-			// then-ADD, but characteristic-only changes could use ALTER FUNCTION /
-			// ALTER PROCEDURE instead.
-			routineDiffs = append(routineDiffs,
-				&RoutineDiff{From: fromRoutine, ForReplace: true, ForMetadata: metadataOnly},
-				&RoutineDiff{To: toRoutine, ForReplace: true, ForMetadata: metadataOnly},
-			)
+			routineDiffs = append(routineDiffs, &RoutineDiff{Type: DiffTypeDrop, From: from})
+		} else if !from.Equals(to) {
+			// Determine if the only difference is in characteristics which can be
+			// adjusted in-place using an ALTER. One special-case is needed to work
+			// around a MySQL 8.0+ bug, where ALTER cannot be used to remove a COMMENT
+			// clause; this means we must *always* avoid ALTER in that situation because
+			// the DB flavor is not known at this point in time
+			if from.equalsIgnoringCharacteristics(to) && (from.Comment == "" || to.Comment != "") {
+				routineDiffs = append(routineDiffs, &RoutineDiff{Type: DiffTypeAlter, From: from, To: to})
+			} else {
+				routineDiffs = append(routineDiffs,
+					&RoutineDiff{Type: DiffTypeDrop, From: from, To: to},
+					&RoutineDiff{Type: DiffTypeCreate, From: from, To: to},
+				)
+			}
 		}
 	}
-	for name, toRoutine := range toByName {
+	for name, to := range toByName {
 		if _, alreadyExists := fromByName[name]; !alreadyExists {
-			routineDiffs = append(routineDiffs, &RoutineDiff{To: toRoutine})
+			routineDiffs = append(routineDiffs, &RoutineDiff{Type: DiffTypeCreate, To: to})
 		}
 	}
 	return
