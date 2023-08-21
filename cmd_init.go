@@ -185,7 +185,7 @@ func createHostOptionFile(cfg *mybase.Config, hostDir *fs.Dir, inst *tengo.Insta
 	if cfg.Changed("schema") {
 		suffix = "; skipping schema-level subdirs"
 	}
-	log.Infof("Using host dir %s for %s%s\n", hostDir.Path, inst, suffix)
+	log.Infof("Using host dir %s for %s%s", hostDir.Path, inst, suffix)
 	return nil
 }
 
@@ -246,6 +246,5 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *fs.Dir, makeSubdir bool) erro
 	if _, err = dumper.DumpSchema(s, dir, dumpOpts); err != nil {
 		return NewExitValue(CodeCantCreate, "Unable to write in %s: %s", dir, err)
 	}
-	os.Stderr.WriteString("\n")
 	return nil
 }
