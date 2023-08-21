@@ -262,14 +262,19 @@ func (rd *RoutineDiff) Statement(mods StatementModifiers) (stmt string, err erro
 		if mariaReplace {
 			return "", nil // omit the DROP part of the pair entirely
 		}
+		stmt = rd.From.DropStatement()
 		if metadataOnlyReplace {
-			stmt = "# Dropping and re-creating " + rd.ObjectKey().String() + " to update metadata\n" + rd.From.DropStatement()
-		} else {
-			stmt = rd.From.DropStatement()
+			stmt = "# Dropping and re-creating " + rd.ObjectKey().String() + " to update metadata\n" + stmt
 		}
 		if !mods.AllowUnsafe {
-			err = &ForbiddenDiffError{
-				Reason: "DROP " + rd.From.Type.Caps() + " not permitted",
+			if rd.To == nil { // pure DROP, always unsafe
+				err = &ForbiddenDiffError{
+					Reason: "Dropping a " + string(rd.From.Type) + " is risky, since you must first ensure that it is not used in any application queries, or referenced by other routines.",
+				}
+			} else { // DROP just ahead of re-CREATE to replace routine in MySQL
+				err = &ForbiddenDiffError{
+					Reason: "Modifying a " + string(rd.From.Type) + " in MySQL is risky, since it must be dropped and re-created, and this is not atomic. Application queries may fail if they attempt to call the routine during the brief moment after the DROP and before the re-CREATE.",
+				}
 			}
 		}
 		return stmt, err
@@ -280,8 +285,19 @@ func (rd *RoutineDiff) Statement(mods StatementModifiers) (stmt string, err erro
 			if metadataOnlyReplace {
 				stmt = "# Replacing " + rd.ObjectKey().String() + " to update metadata\n" + stmt
 			}
+		} else if rd.From != nil && !mods.AllowUnsafe { // CREATE motivated by replacement in MySQL: mark the CREATE unsafe just for symmetry
+			err = &ForbiddenDiffError{Reason: "See explanation above DROP " + rd.From.Type.Caps()}
 		}
-		return stmt, nil
+
+		// If modifying a routine to adjust the params or return, mark the CREATE as
+		// unsafe, even in MariaDB. In MySQL, this intentionally overwrites the
+		// general-purpose Reason set above.
+		if rd.From != nil && !mods.AllowUnsafe && (rd.From.ParamString != rd.To.ParamString || rd.From.ReturnDataType != rd.To.ReturnDataType) {
+			err = &ForbiddenDiffError{
+				Reason: "Modifying the parameters or return type of a routine is risky, since it may break call-sites in application queries, or in other routines. There is no way to simultaneously deploy application and routine changes in an atomic fashion.",
+			}
+		}
+		return stmt, err
 	}
 
 	// DiffTypeRename not used, no equivalent syntax

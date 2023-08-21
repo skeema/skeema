@@ -208,8 +208,13 @@ func TestSchemaDiffRoutines(t *testing.T) {
 			t.Errorf("Unexpected return from Statement: %s / %v", stmt, err)
 		}
 	}
-	mods.AllowUnsafe = true
 	mods.CompareMetadata = true
+	for _, od := range sd.ObjectDiffs() {
+		if stmt, err := od.Statement(mods); err == nil { // expectation: both statements should be forbidden in MySQL without AllowUnsafe
+			t.Errorf("Unexpected return from Statement: %s / %v", stmt, err)
+		}
+	}
+	mods.AllowUnsafe = true
 	for n, od := range sd.ObjectDiffs() {
 		stmt, err := od.Statement(mods)
 		if stmt == "" || err != nil || (n == 0 && !strings.HasPrefix(stmt, "# ")) {
@@ -230,6 +235,19 @@ func TestSchemaDiffRoutines(t *testing.T) {
 		if n == 1 && (!strings.HasPrefix(stmt, "# ") || !strings.Contains(stmt, "CREATE OR REPLACE")) {
 			t.Errorf("Unexpected statement from Statement[1]: %q", stmt)
 		}
+	}
+
+	// Confirm that adjusting the param string is considered unsafe, even in mariadb
+	s1r2.ParamString = "\n    IN iterations int(10) unsigned\n"
+	sd = NewSchemaDiff(&s2, &s1)
+	if len(sd.RoutineDiffs) != 2 {
+		t.Fatalf("Incorrect number of routine diffs: expected 2, found %d", len(sd.RoutineDiffs))
+	}
+	if stmt, err := sd.RoutineDiffs[0].Statement(mods); stmt != "" || err != nil {
+		t.Errorf("Unexpected return from diff[0].Statement: %s / %v", stmt, err)
+	}
+	if stmt, err := sd.RoutineDiffs[1].Statement(mods); err == nil {
+		t.Errorf("Unexpected return from diff[1].Statement: %s / %v", stmt, err)
 	}
 
 	// Confirm that procs and funcs with same name are handled properly, including
