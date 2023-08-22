@@ -114,6 +114,7 @@ type Variant uint32
 const (
 	VariantPercona Variant = 1 << iota
 	VariantAurora
+	VariantTiDB
 )
 
 // Variant zero value constants can either express no variant or unknown variants.
@@ -130,6 +131,9 @@ func (variant Variant) String() string {
 	}
 	if variant&VariantAurora != 0 {
 		ss = append(ss, "aurora")
+	}
+	if variant&VariantTiDB != 0 {
+		ss = append(ss, "tidb")
 	}
 	return strings.Join(ss, "-")
 }
@@ -186,6 +190,8 @@ var (
 	FlavorPercona57   = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}, Variants: VariantPercona}
 	FlavorPercona80   = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}, Variants: VariantPercona}
 	FlavorPercona81   = Flavor{Vendor: VendorMySQL, Version: Version{8, 1, 0}, Variants: VariantPercona}
+	FlavorTiDB57      = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}, Variants: VariantTiDB}
+	FlavorTiDB80      = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}, Variants: VariantTiDB}
 	FlavorMariaDB101  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1, 0}}
 	FlavorMariaDB102  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2, 0}}
 	FlavorMariaDB103  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3, 0}}
@@ -228,6 +234,9 @@ func IdentifyFlavor(versionString, versionComment string) (flavor Flavor) {
 	if strings.Contains(versionComment, "percona") || strings.Contains(versionString, "percona") {
 		flavor.Vendor = VendorMySQL
 		flavor.Variants = VariantPercona
+	} else if strings.Contains(versionComment, "tidb") || strings.Contains(versionString, "tidb") {
+		flavor.Vendor = VendorMySQL
+		flavor.Variants = VariantTiDB
 	} else {
 		for _, attempt := range []Vendor{VendorMariaDB, VendorMySQL} {
 			if vs := attempt.String(); strings.Contains(versionComment, vs) || strings.Contains(versionString, vs) {

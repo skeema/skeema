@@ -98,6 +98,9 @@ func InitHandler(cfg *mybase.Config) error {
 
 	// Iterate over the schemas. For each one, create a dir with .skeema and *.sql files
 	for _, s := range schemas {
+		if inst.IsSystemSchema(s.Name) { // skip over system schemas
+			continue
+		}
 		s.StripMatches(hostDir.IgnorePatterns)
 		if err := PopulateSchemaDir(s, hostDir, separateSchemaSubdir); err != nil {
 			return err
