@@ -198,6 +198,7 @@ var (
 	FlavorMariaDB1010 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 10, 0}}
 	FlavorMariaDB1011 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 11, 0}}
 	FlavorMariaDB110  = Flavor{Vendor: VendorMariaDB, Version: Version{11, 0, 0}}
+	FlavorMariaDB111  = Flavor{Vendor: VendorMariaDB, Version: Version{11, 1, 0}}
 )
 
 // ParseFlavor returns a Flavor value based on the supplied string in format
@@ -357,7 +358,7 @@ func (fl Flavor) Supported() bool {
 	case VendorMySQL:
 		return fl.Version.AtLeast(Version{5, 5}) && fl.Version.Below(Version{8, 2}) // MySQL 5.5.0-8.1.x is supported
 	case VendorMariaDB:
-		return fl.Version.AtLeast(Version{10, 1}) && fl.Version.Below(Version{11, 1}) // MariaDB 10.1-11.0 is supported
+		return fl.Version.AtLeast(Version{10, 1}) && fl.Version.Below(Version{11, 2}) // MariaDB 10.1-11.1 is supported
 	default:
 		return false
 	}
