@@ -1,7 +1,7 @@
 name: Tests
 on: [push, pull_request]
 env:
-  GOVERSION: "1.19"
+  GOVERSION: "1.20"
   SKEEMA_TEST_IMAGES: "mysql:5.7,mysql:8.0,mariadb:10.11"
 jobs:
   test:
