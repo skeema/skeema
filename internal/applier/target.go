@@ -2,6 +2,8 @@ package applier
 
 import (
 	"database/sql"
+	"errors"
+	"fmt"
 	"os"
 
 	log "github.com/sirupsen/logrus"
@@ -226,6 +228,11 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 	}
 	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, opts)
 	if err != nil {
+		// Since `skeema diff` / `skeema push` is often used in Docker-based CI, add
+		// extra text if the error was caused by lack of Docker CLI on PATH
+		if errors.Is(err, tengo.ErrNoDockerCLI) {
+			err = fmt.Errorf("%w\nSkeema v1.11+ no longer includes a built-in Docker client. If you are using workspace=docker while also running `skeema` itself in a container, be sure to put a Linux `docker` client CLI binary in the container as well.\nFor more information, see https://github.com/skeema/skeema/issues/186#issuecomment-1648483625", err)
+		}
 		log.Errorf("Skipping %s: %s\n", dir, err)
 		return nil, len(instances)
 	}

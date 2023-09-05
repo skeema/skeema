@@ -19,6 +19,8 @@ import (
 
 var dockerEngineArch string
 
+var ErrNoDockerCLI = errors.New("unable to find `docker` command-line client among directories in PATH")
+
 // checkDockerCLI confirms that we have a working `docker` command-line client
 // binary on the PATH, and it can communicate with a Docker Engine server and
 // fetch the engine's architecture. If successful, this result is memoized so
@@ -34,7 +36,7 @@ func checkDockerCLI() error {
 	out, errOut, err := shellout.New(`docker info --format "{{json .}}"`).RunCaptureSeparate()
 	if err != nil {
 		if _, pathErr := exec.LookPath("docker"); pathErr != nil && out == "" {
-			return errors.New("unable to find `docker` command-line client among directories in PATH")
+			return ErrNoDockerCLI
 		}
 		return fmt.Errorf("error invoking `docker` command-line client: %w: %s", err, errOut)
 	}

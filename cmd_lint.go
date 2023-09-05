@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	log "github.com/sirupsen/logrus"
@@ -157,6 +158,11 @@ func lintDir(dir *fs.Dir) *linter.Result {
 		// workspace
 		wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
 		if err != nil {
+			// Since `skeema lint` is often used in Docker-based CI, add extra
+			// explanatory text if the error was caused by lack of Docker CLI on PATH
+			if errors.Is(err, tengo.ErrNoDockerCLI) {
+				err = fmt.Errorf("%w\nSkeema v1.11+ no longer includes a built-in Docker client. If you are using workspace=docker while also running `skeema` itself in a container, be sure to put a Linux `docker` client CLI binary in the container as well.\nFor more information, see https://github.com/skeema/skeema/issues/186#issuecomment-1648483625", err)
+			}
 			result.Fatal(err)
 			continue
 		}
