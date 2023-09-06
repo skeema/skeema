@@ -79,6 +79,9 @@ func (t *Target) processSQL(stmts []PlannedStatement, printer Printer) (skipCoun
 			}
 		}
 	}
+	if printerFinisher, ok := printer.(Finisher); ok && len(stmts) > 0 {
+		printerFinisher.Finish(t)
+	}
 	return
 }
 

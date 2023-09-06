@@ -14,6 +14,13 @@ type Printer interface {
 	Print(ps PlannedStatement)
 }
 
+// Finisher is an interface for printers that have cleanup output when finished
+// operating on a given Target.
+type Finisher interface {
+	Printer
+	Finish(*Target)
+}
+
 // standardPrinter displays full output for each statement.
 type standardPrinter struct {
 	lastStdoutInstance  string
@@ -72,6 +79,17 @@ func (p *standardPrinter) Print(stmt PlannedStatement) {
 		p.lastStdoutDelimiter = cs.Delimiter
 	}
 	fmt.Print(stmt.Statement(), cs.Delimiter, "\n")
+}
+
+// Finish restores the standard semicolon delimiter, if the previous statement
+// was for the supplied target and it used a nonstandard delimiter.
+func (p *standardPrinter) Finish(t *Target) {
+	p.m.Lock()
+	defer p.m.Unlock()
+	if p.lastStdoutDelimiter != ";" && t.Instance.String() == p.lastStdoutInstance && t.SchemaName == p.lastStdoutSchema {
+		fmt.Print("DELIMITER ;\n")
+		p.lastStdoutDelimiter = ";"
+	}
 }
 
 // Print outputs distinct instances that have statements.
