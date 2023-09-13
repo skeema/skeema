@@ -26,6 +26,8 @@ func TerminalWidth(fd int) (int, error) {
 // To also pad the first line, prepend the padding to the *return value* of
 // this function; this permits using a different header/padding on the first
 // line if desired.
+// If lim isn't larger than the length of padder, s is returned unchanged.
+// Passing a zero or negative lim safely makes this function a no-op.
 func WrapStringWithPadding(s string, lim int, padder string) string {
 	if lim <= len(padder) {
 		return s

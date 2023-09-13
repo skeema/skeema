@@ -4,6 +4,8 @@ package applier
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/fs"
@@ -106,34 +108,51 @@ func ApplyTarget(t *Target, printer Printer) (Result, error) {
 	objDiffs := diff.ObjectDiffs()
 	stmts := make([]PlannedStatement, 0, len(objDiffs))
 	keys := make([]tengo.ObjectKey, 0, len(objDiffs))
+	var unsafeTables, unsafeNonTables, stderrTerminalWidth int
+	var fatalErr error
 	for _, objDiff := range objDiffs {
+		key := objDiff.ObjectKey()
 		ddl, err := NewDDLStatement(objDiff, mods, t)
-		if ddl == nil && err == nil {
-			continue // Skip entirely if mods made the statement a noop
-		}
-		result.Differences = true
-		if err == nil {
-			stmts = append(stmts, ddl)
-			keys = append(keys, objDiff.ObjectKey())
-		} else if unsupportedErr, ok := err.(*tengo.UnsupportedDiffError); ok {
-			result.UnsupportedCount++
-			log.Warnf("Skipping %s: Skeema does not support generating a diff of this table. Use --debug to see which properties of this table are not supported.", unsupportedErr.ObjectKey)
+		if tengo.IsUnsupportedDiff(err) {
+			var nonInnoWarning string
 			if td, ok := objDiff.(*tengo.TableDiff); ok && td.From != nil && td.From.Engine != "InnoDB" {
-				log.Warnf("This table's storage engine is %s. Skeema is primarily designed to operate on InnoDB tables. Diff support for other engines is less complete.", td.From.Engine)
+				nonInnoWarning = " This table's storage engine is " + td.From.Engine + ", but Skeema is designed to operate primarily on InnoDB tables."
 			}
-			log.Debug(unsupportedErr.ExtendedError())
-		} else {
-			result.SkipCount += len(objDiffs)
-			log.Errorf(err.Error())
-			if len(objDiffs) > 1 {
-				log.Warnf("Skipping %d additional operations for %s %s due to previous error\n", len(objDiffs)-1, t.Instance, t.SchemaName)
+			log.Warnf("Skipping %s: Skeema does not support generating a diff of this table.%s Use --debug to see which properties of this table are not supported.", key, nonInnoWarning)
+			log.Debug(err.Error())
+			result.UnsupportedCount++
+			result.Differences = true
+			continue
+		}
+		if ddl != nil {
+			stmts = append(stmts, ddl)
+			keys = append(keys, key)
+			result.Differences = true
+		}
+		if tengo.IsUnsafeDiff(err) {
+			if unsafeTables+unsafeNonTables == 0 {
+				// Attempt to fetch terminal width if this is first unsafe stmt error.
+				// If stderr isn't a terminal, this is fine, no wrapping occurs.
+				stderrTerminalWidth, _ = util.TerminalWidth(int(os.Stderr.Fd()))
 			}
-			return result, nil
+			log.Error(err.Error() + " Generated SQL statement:\n# " + util.WrapStringWithPadding(ddl.stmt, stderrTerminalWidth-29, "# "))
+			if key.Type == tengo.ObjectTypeTable {
+				unsafeTables++
+			} else {
+				unsafeNonTables++
+			}
+		} else if err != nil {
+			fatalErr = err
 		}
 	}
 
-	// Lint any modified objects; output the result; skip target if any
-	// annotations are at the error level
+	if fatalErr != nil {
+		result.SkipCount += len(stmts)
+		return result, fatalErr
+	}
+
+	// Lint any modified objects, and log any linter annotations
+	var lintResult *linter.Result
 	if t.Dir.Config.GetBool("lint") {
 		lintOpts, err := linter.OptionsForDir(t.Dir)
 		if err != nil {
@@ -141,16 +160,32 @@ func ApplyTarget(t *Target, printer Printer) (Result, error) {
 		}
 		lintOpts.OnlyKeys(keys)
 		lintOpts.StripAnnotationNewlines = !util.StderrIsTerminal()
-		lintResult := linter.CheckSchema(t.DesiredSchema, lintOpts)
+		lintResult = linter.CheckSchema(t.DesiredSchema, lintOpts)
 		lintResult.SortByFile()
 		for _, annotation := range lintResult.Annotations {
 			annotation.Log()
 		}
-		if lintResult.ErrorCount > 0 {
-			result.SkipCount += len(objDiffs)
-			log.Warnf("Skipping %s %s due to %s\n", t.Instance, t.SchemaName, countAndNoun(lintResult.ErrorCount, "linter error"))
-			return result, nil
+	}
+
+	// Exit early if we had an unsafe statements and/or linter errors
+	var fatalProblems []string
+	var solution string
+	if unsafeTables+unsafeNonTables > 0 {
+		var onlyTables string
+		if unsafeNonTables == 0 {
+			onlyTables = "or --safe-below-size "
 		}
+		solution = ". Use --allow-unsafe " + onlyTables + "to permit this operation. Refer to the Safety Options section of --help."
+		fatalProblems = append(fatalProblems, countAndNoun(unsafeTables+unsafeNonTables, "unsafe statement"))
+	}
+	if lintResult != nil && lintResult.ErrorCount > 0 {
+		solution = "" // Remove message about allow-unsafe if there are also linter errors
+		fatalProblems = append(fatalProblems, countAndNoun(lintResult.ErrorCount, "linter error"))
+	}
+	if len(fatalProblems) > 0 {
+		result.SkipCount += len(stmts)
+		log.Warnf("Skipping %s %s due to %s%s\n", t.Instance, t.SchemaName, strings.Join(fatalProblems, " and "), solution)
+		return result, nil
 	}
 
 	// Print SQL; if not dry-run, execute it; final logging; return result

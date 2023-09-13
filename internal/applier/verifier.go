@@ -161,7 +161,7 @@ func verifyTable(actual, desired *tengo.Table, mods tengo.StatementModifiers) er
 		unsupportedErr.Reason = strings.Replace(unsupportedErr.Reason, "original state", "post-verification state", 1)
 		unsupportedErr.ExpectedDesc = strings.Replace(unsupportedErr.ExpectedDesc, "original state", "post-verification state", 1)
 		unsupportedErr.ActualDesc = strings.Replace(unsupportedErr.ActualDesc, "original state", "post-verification state", 1)
-		return fmt.Errorf(header+". This may indicate a Skeema bug.\nRun command again with --skip-verify if this discrepancy is safe to ignore.\nDebug details: %s", unsupportedErr.ExtendedError())
+		return fmt.Errorf(header+". This may indicate a Skeema bug.\nRun command again with --skip-verify if this discrepancy is safe to ignore.\nDebug details: %s", unsupportedErr.Error())
 	} else if err != nil {
 		return fmt.Errorf(header+" due to unexpected error: %w.\nRun command again with --skip-verify if this is safe to ignore.", err)
 	} else if stmt != "" {

@@ -151,8 +151,8 @@ func TestSchemaDiffRoutines(t *testing.T) {
 	}
 
 	// Test impact of statement modifiers (allowing/forbidding drop) on previous drop
-	if stmt, err := rd.Statement(StatementModifiers{AllowUnsafe: false}); stmt == "" || !IsForbiddenDiff(err) {
-		t.Errorf("Modifier AllowUnsafe=false not working; expected forbidden diff error for %s, instead err=%v", stmt, err)
+	if stmt, err := rd.Statement(StatementModifiers{AllowUnsafe: false}); stmt == "" || !IsUnsafeDiff(err) {
+		t.Errorf("Modifier AllowUnsafe=false not working; expected unsafe diff error for %s, instead err=%v", stmt, err)
 	}
 	if stmt, err := rd.Statement(StatementModifiers{AllowUnsafe: true}); stmt == "" || err != nil {
 		t.Errorf("Modifier AllowUnsafe=true not working; error (%s) returned for %s", err, stmt)
@@ -209,8 +209,8 @@ func TestSchemaDiffRoutines(t *testing.T) {
 		}
 	}
 	mods.CompareMetadata = true
-	for _, od := range sd.ObjectDiffs() {
-		if stmt, err := od.Statement(mods); err == nil { // expectation: both statements should be forbidden in MySQL without AllowUnsafe
+	for n, od := range sd.ObjectDiffs() {
+		if stmt, err := od.Statement(mods); (err == nil && n == 0) || (err != nil && n == 1) { // expectation: first statement (DROP) is unsafe in MySQL, second (CREATE) is not
 			t.Errorf("Unexpected return from Statement: %s / %v", stmt, err)
 		}
 	}

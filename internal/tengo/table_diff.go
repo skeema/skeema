@@ -233,8 +233,8 @@ func (td *TableDiff) Statement(mods StatementModifiers) (string, error) {
 	case DiffTypeDrop:
 		stmt := td.From.DropStatement()
 		if !mods.AllowUnsafe {
-			err = &ForbiddenDiffError{
-				Reason: "DROP TABLE not permitted",
+			err = &UnsafeDiffError{
+				Reason: "Desired drop of table " + EscapeIdentifier(td.From.Name) + " would cause all of its data to be lost.",
 			}
 		}
 		return stmt, err
@@ -275,7 +275,6 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 				subjectAndVerb = "Both sides of the diff contain "
 			}
 			err = &UnsupportedDiffError{
-				ObjectKey:      td.ObjectKey(),
 				Reason:         subjectAndVerb + "unexpected or unsupported clauses in SHOW CREATE TABLE.",
 				ExpectedCreate: td.To.GeneratedCreateStatement(mods.Flavor),
 				ExpectedDesc:   "desired state expected CREATE",
@@ -284,7 +283,6 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 			}
 		} else if td.From.UnsupportedDDL {
 			err = &UnsupportedDiffError{
-				ObjectKey:      td.ObjectKey(),
 				Reason:         "The original state (\"from\" side of diff) contains unexpected or unsupported clauses in SHOW CREATE TABLE.",
 				ExpectedCreate: td.From.GeneratedCreateStatement(mods.Flavor),
 				ExpectedDesc:   "original state expected CREATE",
@@ -293,8 +291,7 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 			}
 		} else {
 			err = &UnsupportedDiffError{
-				ObjectKey:      td.ObjectKey(),
-				Reason:         "The two sides of the diff vary in SHOW CREATE TABLE in unexpected ways, perhaps due to a bug in Skeema.",
+				Reason:         "Skeema does not support generation of the necessary DDL to convert the original table definition to the desired state.",
 				ExpectedCreate: td.From.CreateStatement,
 				ExpectedDesc:   "original state actual SHOW CREATE",
 				ActualCreate:   td.To.CreateStatement,
@@ -310,13 +307,13 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 	}
 
 	clauseStrings := make([]string, 0, len(td.alterClauses))
+	var unsafeReasons []string
 	var partitionClauseString string
 	for _, clause := range td.alterClauses {
 		if !mods.AllowUnsafe {
-			if clause, ok := clause.(Unsafer); ok && clause.Unsafe() {
-				err = &ForbiddenDiffError{
-					Reason:     "Unsafe or potentially destructive ALTER TABLE not permitted",
-					WrappedErr: err,
+			if clause, ok := clause.(Unsafer); ok {
+				if unsafe, reason := clause.Unsafe(); unsafe {
+					unsafeReasons = append(unsafeReasons, reason)
 				}
 			}
 		}
@@ -337,6 +334,13 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 			}
 		}
 	}
+	if len(unsafeReasons) > 0 {
+		err = &UnsafeDiffError{
+			Reason:     "Desired alteration for " + td.ObjectKey().String() + " is not safe: " + strings.Join(unsafeReasons, "; ") + ".",
+			WrappedErr: err,
+		}
+	}
+
 	if len(clauseStrings) == 0 && partitionClauseString == "" {
 		return "", err
 	}
@@ -364,11 +368,11 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 		}
 	}
 
+	var spacer string
 	if len(clauseStrings) > 0 && partitionClauseString != "" {
-		partitionClauseString = fmt.Sprintf(" %s", partitionClauseString)
+		spacer = " "
 	}
-	stmt := fmt.Sprintf("%s %s%s", td.From.AlterStatement(), strings.Join(clauseStrings, ", "), partitionClauseString)
-	return stmt, err
+	return td.From.AlterStatement() + " " + strings.Join(clauseStrings, ", ") + spacer + partitionClauseString, err
 }
 
 // MarkSupported provides a mechanism for callers to vouch for the correctness

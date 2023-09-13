@@ -1,8 +1,8 @@
 package applier
 
 import (
+	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -28,9 +28,11 @@ type DDLStatement struct {
 
 // NewDDLStatement creates and returns a DDLStatement. If the statement ends up
 // being a no-op due to mods, both returned values will be nil. In the case of
-// an error constructing the statement (mods disallowing destructive DDL,
-// invalid variable interpolation in --alter-wrapper, etc), the DDLStatement
-// pointer will be nil, and a non-nil error will be returned.
+// a fatal error constructing the statement (invalid variable interpolation in
+// --alter-wrapper, etc), ddl will be nil and err will be non-nil. In some
+// error situations, such as destructive DDL that hasn't been allowed by mods,
+// both return values will be non-nil so that the caller can properly evaluate
+// or log the ddl despite the error.
 func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, target *Target) (ddl *DDLStatement, err error) {
 	ddl = &DDLStatement{
 		instance:   target.Instance,
@@ -54,7 +56,7 @@ func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, targe
 		// If --safe-below-size option in use, enable additional statement modifier
 		// if the table's size is less than the supplied option value
 		if safeBelowSize, err := target.Dir.Config.GetBytes("safe-below-size"); err != nil {
-			return nil, err
+			return nil, ConfigError("option safe-below-size has been configured to an invalid value")
 		} else if tableSize < int64(safeBelowSize) {
 			mods.AllowUnsafe = true
 			log.Debugf("Allowing unsafe operations for %s: size=%d < safe-below-size=%d", diff.ObjectKey(), tableSize, safeBelowSize)
@@ -64,20 +66,7 @@ func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, targe
 	// Options may indicate some/all DDL gets executed by shelling out to another program.
 	wrapper, err := getWrapper(target.Dir.Config, diff, tableSize, &mods)
 	if err != nil {
-		return nil, err
-	}
-
-	// Get the raw DDL statement as a string, handling errors and noops correctly
-	if ddl.stmt, err = diff.Statement(mods); tengo.IsForbiddenDiff(err) {
-		terminalWidth, _ := util.TerminalWidth(int(os.Stderr.Fd()))
-		commentedOutStmt := "  # " + util.WrapStringWithPadding(ddl.stmt, terminalWidth-29, "  # ")
-		return nil, fmt.Errorf("Preventing execution of unsafe or potentially destructive statement:\n%s\nUse --allow-unsafe or --safe-below-size to permit this operation. For more information, see Safety Options section of --help.", commentedOutStmt)
-	} else if err != nil {
-		// Leave the error untouched/unwrapped to allow caller to handle appropriately
-		return nil, err
-	} else if ddl.stmt == "" {
-		// Noop statements (due to mods) must be skipped by caller
-		return nil, nil
+		return nil, ConfigError(err.Error())
 	}
 
 	// Determine if the statement is a compound statement, requiring special
@@ -85,6 +74,20 @@ func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, targe
 	// implement this interface; others never generate compound statements.
 	if compounder, ok := diff.(tengo.Compounder); ok && compounder.IsCompoundStatement() {
 		ddl.compound = true
+	}
+
+	// Get the raw DDL statement as a string, handling no-op statements and errors:
+	// If a blank statement was returned, either due to a no-op OR an error that
+	// prevented statement generation, return a nil DDLStatement alongside any
+	// error value (which may or may not be nil!)
+	// However for e.g. unsafe statement errors, we have a non-blank statement,
+	// which we intentionally return as a non-nil DDLStatement alongside the error,
+	// so that the caller can log the offending statement.
+	ddl.stmt, err = diff.Statement(mods)
+	if ddl.stmt == "" {
+		return nil, err
+	} else if err != nil {
+		return ddl, err
 	}
 
 	if wrapper == "" {
@@ -125,7 +128,7 @@ func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, targe
 		}
 
 		if ddl.shellOut, err = shellout.New(wrapper).WithVariables(variables); err != nil {
-			return nil, fmt.Errorf("A fatal error occurred with pre-processing a DDL statement: %w.", err)
+			return nil, fmt.Errorf("A fatal error occurred with pre-processing a DDL statement: %w", err)
 		}
 	}
 
@@ -179,7 +182,7 @@ func getWrapper(config *mybase.Config, diff tengo.ObjectDiff, tableSize int64, m
 	if diff.ObjectKey().Type == tengo.ObjectTypeTable && diff.DiffType() == tengo.DiffTypeAlter && config.Changed("alter-wrapper") {
 		minSize, err := config.GetBytes("alter-wrapper-min-size")
 		if err != nil {
-			return "", ConfigError(err.Error())
+			return "", errors.New("option alter-wrapper-min-size has been configured to an invalid value")
 		}
 		if tableSize >= int64(minSize) {
 			wrapper = config.Get("alter-wrapper")

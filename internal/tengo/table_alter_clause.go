@@ -16,9 +16,11 @@ type TableAlterClause interface {
 
 // Unsafer interface represents a type of clause that may have the ability to
 // destroy data. Structs satisfying this interface can indicate whether or not
-// this particular clause destroys data.
+// this particular clause is unsafe, and if so, the reason why.
+// If a TableAlterClause struct does NOT implement this interface, it is
+// considered to always be safe.
 type Unsafer interface {
-	Unsafe() bool
+	Unsafe() (unsafe bool, reason string)
 }
 
 ///// AddColumn ////////////////////////////////////////////////////////////////
@@ -61,8 +63,11 @@ func (dc DropColumn) Clause(_ StatementModifiers) string {
 // Unsafe returns true if this clause is potentially destructive of data.
 // DropColumn is always unsafe, unless it's a virtual column (which is easy to
 // roll back; there's no inherent data loss from dropping a virtual column).
-func (dc DropColumn) Unsafe() bool {
-	return !dc.Column.Virtual
+func (dc DropColumn) Unsafe() (unsafe bool, reason string) {
+	if unsafe = !dc.Column.Virtual; unsafe {
+		reason = "column " + EscapeIdentifier(dc.Column.Name) + " would be dropped"
+	}
+	return
 }
 
 ///// AddIndex /////////////////////////////////////////////////////////////////
@@ -257,8 +262,8 @@ func (rc RenameColumn) Clause(_ StatementModifiers) string {
 // RenameColumn is always considered unsafe, despite it not directly destroying
 // data, because it is high-risk for interfering with application logic that may
 // be continuing to use the old column name.
-func (rc RenameColumn) Unsafe() bool {
-	return true
+func (rc RenameColumn) Unsafe() (unsafe bool, reason string) {
+	return true, "column " + EscapeIdentifier(rc.OldColumn.Name) + " would be renamed, and there is no way to deploy application code for this change at the same moment as the schema change"
 }
 
 ///// ModifyColumn /////////////////////////////////////////////////////////////
@@ -302,31 +307,42 @@ func (mc ModifyColumn) Clause(mods StatementModifiers) string {
 	return "MODIFY COLUMN " + mc.NewColumn.Definition(mods.Flavor, mc.Table) + positionClause
 }
 
-// Unsafe returns true if this clause is potentially destructive of data.
+// Unsafe returns true if this clause is potentially destroys/corrupts existing
+// data, or restricts the range of data that may be stored. (Although the server
+// can also catch the latter case and prevent the ALTER, this only happens if
+// existing data conflicts *in a given environment*, and also depends on strict
+// sql_mode being enabled.)
 // ModifyColumn's safety depends on the nature of the column change; for example,
 // increasing the size of a varchar is safe, but decreasing the size or (in most
 // cases) changing the column type entirely is considered unsafe.
-func (mc ModifyColumn) Unsafe() bool {
-	// Simple cases: virtual columns can always be "safely" changed since they
-	// aren't stored; changing charset is always unsafe; otherwise, leaving type
-	// as-is is safe
+func (mc ModifyColumn) Unsafe() (unsafe bool, reason string) {
+	genericReason := "column " + mc.OldColumn.Name + " would be modified in a potentially lossy way"
+
+	// Simple cases:
+	// * virtual columns can always be "safely" changed since they aren't stored
+	// * changing charset is always unsafe: requires careful orchestration to avoid
+	//   corrupting data in some cases (e.g. "latin1" that actually stores unicode
+	//   requires an intermediate change to binary); also can require timing with
+	//   application code deployments
+	// * otherwise, leaving column type as-is is safe
 	if mc.OldColumn.Virtual {
-		return false
+		return false, ""
 	}
 	if mc.OldColumn.CharSet != mc.NewColumn.CharSet {
-		return true
+		return true, genericReason
 	}
 	if strings.EqualFold(mc.OldColumn.TypeInDB, mc.NewColumn.TypeInDB) {
-		return false
+		return false, ""
 	}
 
 	oldType := strings.ToLower(mc.OldColumn.TypeInDB)
 	newType := strings.ToLower(mc.NewColumn.TypeInDB)
 
-	// signed -> unsigned is always unsafe
+	// signed -> unsigned is always unsafe: this means any existing negative values
+	// can no longer be stored
 	// (The opposite is checked later specifically for the integer types)
 	if !strings.Contains(oldType, "unsigned") && strings.Contains(newType, "unsigned") {
-		return true
+		return true, genericReason
 	}
 
 	bothSamePrefix := func(prefix ...string) bool {
@@ -338,24 +354,35 @@ func (mc ModifyColumn) Unsafe() bool {
 		return false
 	}
 
-	// For enum and set, adding to end of value list is safe; any other change is unsafe
+	// For enum and set, adding to end of value list is safe. Any other change is
+	// unsafe: re-numbering an enum or set can affect any queries using numeric
+	// values, and can affect applications that need to maintain matching enum
+	// value lists
 	if bothSamePrefix("enum", "set") {
-		return !strings.HasPrefix(newType, oldType[0:len(oldType)-1])
+		// Ignore the closing paren on oldType when checking prefix
+		if !strings.HasPrefix(newType, oldType[0:len(oldType)-1]) {
+			return true, genericReason
+		}
+		return false, ""
 	}
 
-	// decimal(a,b) -> decimal(x,y) unsafe if x < a or y < b
+	// decimal(a,b) -> decimal(x,y) unsafe if x < a or y < b: reduces range of
+	// values that may be stored in the column
 	if bothSamePrefix("decimal") {
 		re := regexp.MustCompile(`^decimal\((\d+),(\d+)\)`)
 		oldMatches := re.FindStringSubmatch(oldType)
 		newMatches := re.FindStringSubmatch(newType)
 		if oldMatches == nil || newMatches == nil {
-			return true
+			return true, genericReason
 		}
 		oldPrecision, _ := strconv.Atoi(oldMatches[1])
 		oldScale, _ := strconv.Atoi(oldMatches[2])
 		newPrecision, _ := strconv.Atoi(newMatches[1])
 		newScale, _ := strconv.Atoi(newMatches[2])
-		return (newPrecision < oldPrecision || newScale < oldScale)
+		if newPrecision < oldPrecision || newScale < oldScale {
+			return true, genericReason
+		}
+		return false, ""
 	}
 
 	// bit(x) -> bit(y) unsafe if y < x
@@ -364,30 +391,37 @@ func (mc ModifyColumn) Unsafe() bool {
 		oldMatches := re.FindStringSubmatch(oldType)
 		newMatches := re.FindStringSubmatch(newType)
 		if oldMatches == nil || newMatches == nil {
-			return true
+			return true, genericReason
 		}
 		oldSize, _ := strconv.Atoi(oldMatches[1])
 		newSize, _ := strconv.Atoi(newMatches[1])
-		return newSize < oldSize
+		if newSize < oldSize {
+			return true, genericReason
+		}
+		return false, ""
 	}
 
-	// time, timestamp, datetime: unsafe if decreasing or removing fractional second precision
-	// but always safe if adding fsp when none was there before
+	// time, timestamp, datetime: unsafe if decreasing or removing fractional
+	// second precision (which reduces range of allowed values), but always safe
+	// if adding fsp when none was there before.
 	if bothSamePrefix("time", "timestamp", "datetime") {
 		if !strings.ContainsRune(oldType, '(') {
-			return false
+			return false, ""
 		} else if !strings.ContainsRune(newType, '(') {
-			return true
+			return true, genericReason
 		}
 		re := regexp.MustCompile(`^[^(]+\((\d+)\)`)
 		oldMatches := re.FindStringSubmatch(oldType)
 		newMatches := re.FindStringSubmatch(newType)
 		if oldMatches == nil || newMatches == nil {
-			return true
+			return true, genericReason
 		}
 		oldSize, _ := strconv.Atoi(oldMatches[1])
 		newSize, _ := strconv.Atoi(newMatches[1])
-		return newSize < oldSize
+		if newSize < oldSize {
+			return true, genericReason
+		}
+		return false, ""
 	}
 
 	// float or double:
@@ -398,21 +432,24 @@ func (mc ModifyColumn) Unsafe() bool {
 	// No extra check for unsigned->signed needed; although float/double support these, they don't affect max values
 	if bothSamePrefix("float", "double") || (strings.HasPrefix(oldType, "float") && strings.HasPrefix(newType, "double")) {
 		if !strings.ContainsRune(newType, '(') { // no parens = max allowed for type
-			return false
+			return false, ""
 		} else if !strings.ContainsRune(oldType, '(') {
-			return true
+			return true, genericReason
 		}
 		re := regexp.MustCompile(`^(?:float|double)\((\d+),(\d+)\)`)
 		oldMatches := re.FindStringSubmatch(oldType)
 		newMatches := re.FindStringSubmatch(newType)
 		if oldMatches == nil || newMatches == nil {
-			return true
+			return true, genericReason
 		}
 		oldPrecision, _ := strconv.Atoi(oldMatches[1])
 		oldScale, _ := strconv.Atoi(oldMatches[2])
 		newPrecision, _ := strconv.Atoi(newMatches[1])
 		newScale, _ := strconv.Atoi(newMatches[2])
-		return (newPrecision < oldPrecision || newScale < oldScale)
+		if newPrecision < oldPrecision || newScale < oldScale {
+			return true, genericReason
+		}
+		return false, ""
 	}
 
 	// ints: unsafe if reducing to a smaller-storage type. Also unsafe if switching
@@ -428,10 +465,12 @@ func (mc ModifyColumn) Unsafe() bool {
 		}
 	}
 	if oldRank > 0 && newRank > 0 {
-		if strings.Contains(oldType, "unsigned") && !strings.Contains(newType, "unsigned") {
-			return oldRank >= newRank
+		if oldRank > newRank {
+			return true, genericReason
+		} else if oldRank == newRank && strings.Contains(oldType, "unsigned") && !strings.Contains(newType, "unsigned") {
+			return true, genericReason
 		}
-		return oldRank > newRank
+		return false, ""
 	}
 
 	// Conversions between string types (char, varchar, *text): unsafe if
@@ -457,7 +496,10 @@ func (mc ModifyColumn) Unsafe() bool {
 	oldString, oldStringSize := isStringType(oldType)
 	newString, newStringSize := isStringType(newType)
 	if oldString && newString {
-		return newStringSize < oldStringSize
+		if newStringSize < oldStringSize {
+			return true, genericReason
+		}
+		return false, ""
 	}
 
 	// MariaDB introduces some new convenience types, which have safe conversions
@@ -475,13 +517,13 @@ func (mc ModifyColumn) Unsafe() bool {
 		return false
 	}
 	if isConversionBetween("inet6", "binary(16)", "char(39)", "varchar(39)") { // MariaDB 10.5+ inet6 type
-		return false
+		return false, ""
 	}
 	if isConversionBetween("inet4", "binary(4)", "char(15)", "varchar(15)") { // MariaDB 10.10+ inet4 type
-		return false
+		return false, ""
 	}
 	if isConversionBetween("uuid", "binary(16)", "char(32)", "varchar(32)", "char(36)", "varchar(36)") { // MariaDB 10.7+ uuid type
-		return false
+		return false, ""
 	}
 
 	// Conversions between variable-length binary types (varbinary, *blob):
@@ -489,7 +531,7 @@ func (mc ModifyColumn) Unsafe() bool {
 	// Note: This logic intentionally does not handle fixed-length binary(x)
 	// conversions. Any changes with binary(x), even to binary(y) with y>x, are
 	// treated as unsafe. The right-zero-padding behavior of binary type means any
-	// size change effectively modifies the stored values.
+	// size change effectively modifies the stored values if they are big-endian.
 	isVarBinType := func(typ string) (bool, uint64) {
 		blobMap := map[string]uint64{
 			"tinyblob":   255,
@@ -511,11 +553,14 @@ func (mc ModifyColumn) Unsafe() bool {
 	oldVarBin, oldVarBinSize := isVarBinType(oldType)
 	newVarBin, newVarBinSize := isVarBinType(newType)
 	if oldVarBin && newVarBin {
-		return newVarBinSize < oldVarBinSize
+		if newVarBinSize < oldVarBinSize {
+			return true, genericReason
+		}
+		return false, ""
 	}
 
 	// All other changes considered unsafe.
-	return true
+	return true, genericReason
 }
 
 ///// ChangeAutoIncrement //////////////////////////////////////////////////////
@@ -694,8 +739,8 @@ func (cse ChangeStorageEngine) Clause(_ StatementModifiers) string {
 // Unsafe returns true if this clause is potentially destructive of data.
 // ChangeStorageEngine is always considered unsafe, due to the potential
 // complexity in converting a table's data to the new storage engine.
-func (cse ChangeStorageEngine) Unsafe() bool {
-	return true
+func (cse ChangeStorageEngine) Unsafe() (unsafe bool, reason string) {
+	return true, "storage engine changes have significant operational implications"
 }
 
 ///// PartitionBy //////////////////////////////////////////////////////////////
@@ -766,6 +811,13 @@ func (mp ModifyPartitions) Clause(mods StatementModifiers) string {
 }
 
 // Unsafe returns true if this clause is potentially destructive of data.
-func (mp ModifyPartitions) Unsafe() bool {
-	return len(mp.Drop) > 0
+func (mp ModifyPartitions) Unsafe() (unsafe bool, reason string) {
+	if unsafe = len(mp.Drop) > 0; unsafe {
+		noun := fmt.Sprintf("%d partitions", len(mp.Drop))
+		if len(mp.Drop) == 1 {
+			noun = "a partition"
+		}
+		reason = noun + " would be dropped"
+	}
+	return
 }

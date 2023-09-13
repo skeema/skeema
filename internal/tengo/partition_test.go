@@ -197,8 +197,8 @@ func TestSchemaDiffDropPartitionedTable(t *testing.T) {
 			if stmt != expectStatements[n] {
 				t.Errorf("Statement[%d]: Expected %q, found %q", n, expectStatements[n], stmt)
 			}
-			if !IsForbiddenDiff(err) {
-				t.Errorf("Statement[%d]: Expected forbidden diff error, instead err=%v", n, err)
+			if !IsUnsafeDiff(err) {
+				t.Errorf("Statement[%d]: Expected unsafe diff error, instead err=%v", n, err)
 			}
 			if _, err = od.Statement(StatementModifiers{AllowUnsafe: true}); err != nil {
 				t.Errorf("Statement[%d]: Expected no error with AllowUnsafe enabled, instead found err=%v", n, err)

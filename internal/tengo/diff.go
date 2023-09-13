@@ -259,8 +259,11 @@ func (dd *DatabaseDiff) Statement(_ StatementModifiers) (string, error) {
 		return dd.To.CreateStatement(), nil
 	case DiffTypeDrop:
 		stmt := dd.From.DropStatement()
-		err := &ForbiddenDiffError{
-			Reason: "DROP DATABASE never permitted",
+		var err error
+		if len(dd.From.Objects()) > 0 {
+			err = &UnsafeDiffError{
+				Reason: "Desired drop of " + dd.ObjectKey().String() + " would cause data loss.",
+			}
 		}
 		return stmt, err
 	case DiffTypeAlter:
@@ -271,35 +274,34 @@ func (dd *DatabaseDiff) Statement(_ StatementModifiers) (string, error) {
 
 ///// Errors ///////////////////////////////////////////////////////////////////
 
-// ForbiddenDiffError can be returned by ObjectDiff.Statement when the supplied
+// UnsafeDiffError can be returned by ObjectDiff.Statement when the supplied
 // statement modifiers do not permit the generated ObjectDiff to be used in this
 // situation.
-type ForbiddenDiffError struct {
+type UnsafeDiffError struct {
 	Reason     string
-	WrappedErr error // could be UnsupportedDiffError or another ForbiddenDiffError
+	WrappedErr error // could be UnsupportedDiffError or another UnsafeDiffError
 }
 
 // Error satisfies the builtin error interface.
-func (e *ForbiddenDiffError) Error() string {
+func (e *UnsafeDiffError) Error() string {
 	return e.Reason
 }
 
 // Unwrap returns a wrapped error, if any was set.
-func (e *ForbiddenDiffError) Unwrap() error {
+func (e *UnsafeDiffError) Unwrap() error {
 	return e.WrappedErr
 }
 
-// IsForbiddenDiff returns true if err represents an "unsafe" alteration that
+// IsUnsafeDiff returns true if err represents an "unsafe" alteration that
 // has not explicitly been permitted by the supplied StatementModifiers.
-func IsForbiddenDiff(err error) bool {
-	var fderr *ForbiddenDiffError
-	return errors.As(err, &fderr)
+func IsUnsafeDiff(err error) bool {
+	var uderr *UnsafeDiffError
+	return errors.As(err, &uderr)
 }
 
 // UnsupportedDiffError can be returned by ObjectDiff.Statement if Tengo is
 // unable to transform the object due to use of unsupported features.
 type UnsupportedDiffError struct {
-	ObjectKey      ObjectKey
 	Reason         string
 	ExpectedCreate string
 	ExpectedDesc   string
@@ -307,14 +309,8 @@ type UnsupportedDiffError struct {
 	ActualDesc     string
 }
 
-// Error satisfies the builtin error interface.
+// Error returns a string with information about why the diff is not supported.
 func (e *UnsupportedDiffError) Error() string {
-	return fmt.Sprintf("%s uses unsupported features and cannot be diff'ed", e.ObjectKey)
-}
-
-// ExtendedError returns a string with more information about why the diff is
-// not supported.
-func (e *UnsupportedDiffError) ExtendedError() string {
 	diff := difflib.UnifiedDiff{
 		A:        difflib.SplitLines(e.ExpectedCreate),
 		B:        difflib.SplitLines(e.ActualCreate),
@@ -324,12 +320,9 @@ func (e *UnsupportedDiffError) ExtendedError() string {
 	}
 	diffText, err := difflib.GetUnifiedDiffString(diff)
 	if err != nil {
-		return err.Error()
+		diffText = err.Error()
 	}
-	if e.Reason != "" {
-		diffText = e.Reason + "\n" + diffText
-	}
-	return diffText
+	return e.Reason + "\n" + diffText
 }
 
 // IsUnsupportedDiff returns true if err represents an object that cannot be

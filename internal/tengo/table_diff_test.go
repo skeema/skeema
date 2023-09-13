@@ -43,8 +43,8 @@ func TestSchemaDiffAddOrDropTable(t *testing.T) {
 	}
 
 	// Test impact of statement modifiers (allowing/forbidding drop) on previous drop
-	if stmt, err := td2.Statement(StatementModifiers{AllowUnsafe: false}); !IsForbiddenDiff(err) {
-		t.Errorf("Modifier AllowUnsafe=false not working; expected forbidden diff error for %s, instead err=%v", stmt, err)
+	if stmt, err := td2.Statement(StatementModifiers{AllowUnsafe: false}); !IsUnsafeDiff(err) {
+		t.Errorf("Modifier AllowUnsafe=false not working; expected unsafe diff error for %s, instead err=%v", stmt, err)
 	}
 	if stmt, err := td2.Statement(StatementModifiers{AllowUnsafe: true}); err != nil {
 		t.Errorf("Modifier AllowUnsafe=true not working; error (%s) returned for %s", err, stmt)
@@ -433,8 +433,8 @@ func TestTableDiffUnsupportedAlter(t *testing.T) {
 +SUBPARTITION BY HASH (post_id)
 +SUBPARTITIONS 2
 `
-	if actual := err.(*UnsupportedDiffError).ExtendedError(); actual != expected {
-		t.Errorf("Output of ExtendedError() did not match expectation. Returned value:\n%s", actual)
+	if actual := err.(*UnsupportedDiffError).Error(); actual != expected {
+		t.Errorf("Output of Error() did not match expectation. Returned value:\n%s", actual)
 	}
 
 	// Attempt to generate a diff which removes sub-partitioning. Note that in
@@ -459,8 +459,8 @@ func TestTableDiffUnsupportedAlter(t *testing.T) {
 +SUBPARTITION BY HASH (post_id)
 +SUBPARTITIONS 2
 `
-	if actual := err.(*UnsupportedDiffError).ExtendedError(); actual != expected {
-		t.Errorf("Output of ExtendedError() did not match expectation. Returned value:\n%s", actual)
+	if actual := err.(*UnsupportedDiffError).Error(); actual != expected {
+		t.Errorf("Output of Error() did not match expectation. Returned value:\n%s", actual)
 	}
 
 	// Test error-handling for when a diff is both unsupported AND unsafe
@@ -477,8 +477,8 @@ func TestTableDiffUnsupportedAlter(t *testing.T) {
 	if !IsUnsupportedDiff(err) {
 		t.Errorf("Expected unsupported diff error, instead err is type %T, value %v", err, err)
 	}
-	if !IsForbiddenDiff(err) {
-		t.Errorf("Expected forbidden diff error, instead err is type %T, value %v", err, err)
+	if !IsUnsafeDiff(err) {
+		t.Errorf("Expected unsafe diff error, instead err is type %T, value %v", err, err)
 	}
 
 	// Test marking the diff as supported
@@ -686,7 +686,7 @@ func TestModifyColumnUnsafe(t *testing.T) {
 			OldColumn: &Column{TypeInDB: type1},
 			NewColumn: &Column{TypeInDB: type2},
 		}
-		if actual := mc.Unsafe(); actual != expected {
+		if actual, _ := mc.Unsafe(); actual != expected {
 			t.Errorf("For %s -> %s, expected unsafe=%t, instead found unsafe=%t", type1, type2, expected, actual)
 		}
 	}
@@ -785,12 +785,12 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		OldColumn: &Column{TypeInDB: "varchar(30)", CharSet: "latin1"},
 		NewColumn: &Column{TypeInDB: "varchar(30)", CharSet: "utf8mb4"},
 	}
-	if !mc.Unsafe() {
+	if unsafe, _ := mc.Unsafe(); !unsafe {
 		t.Error("For changing character set, expected unsafe=true, instead found unsafe=false")
 	}
 	mc.NewColumn.CharSet = "latin1"
 	mc.NewColumn.Collation = "latin1_bin"
-	if mc.Unsafe() {
+	if unsafe, _ := mc.Unsafe(); unsafe {
 		t.Error("For changing collation but not character set, expected unsafe=false, instead found unsafe=true")
 	}
 
@@ -800,11 +800,11 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		OldColumn: &Column{TypeInDB: "bigint(20)", GenerationExpr: "id * 2", Virtual: true},
 		NewColumn: &Column{TypeInDB: "int(11)", GenerationExpr: "id * 2", Virtual: true},
 	}
-	if mc.Unsafe() {
+	if unsafe, _ := mc.Unsafe(); unsafe {
 		t.Error("Expected virtual column modification to be safe, but Unsafe() returned true")
 	}
 	mc.OldColumn.Virtual = false
-	if !mc.Unsafe() {
+	if unsafe, _ := mc.Unsafe(); !unsafe {
 		t.Error("Expected stored column modification to be unsafe, but Unsafe() returned false")
 	}
 }
