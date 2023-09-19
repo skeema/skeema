@@ -93,6 +93,22 @@ func TestTableRowFormatClause(t *testing.T) {
 	}
 }
 
+func TestTableUniqueConstraintsWithColumn(t *testing.T) {
+	table := aTable(1)
+	ucs := table.UniqueConstraintsWithColumn(table.Columns[0])
+	if len(ucs) != 1 || ucs[0].Name != "PRIMARY" {
+		t.Errorf("Unexpected return from UniqueConstraintsWithColumn: %v", ucs)
+	}
+	ucs = table.UniqueConstraintsWithColumn(table.Columns[1])
+	if len(ucs) != 0 {
+		t.Errorf("Unexpected return from UniqueConstraintsWithColumn: %v", ucs)
+	}
+	ucs = table.UniqueConstraintsWithColumn(table.Columns[4])
+	if len(ucs) != 1 || ucs[0].Name != "idx_ssn" {
+		t.Errorf("Unexpected return from UniqueConstraintsWithColumn: %v", ucs)
+	}
+}
+
 func TestTableAlterAddOrDropColumn(t *testing.T) {
 	from := aTable(1)
 	to := aTable(1)
@@ -661,7 +677,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	to := aTable(1)
 
 	// Reposition a col to first position
-	movedColPos := 3
+	movedColPos := 4
 	movedCol := to.Columns[movedColPos]
 	to.Columns = append(to.Columns[:movedColPos], to.Columns[movedColPos+1:]...)
 	to.Columns = append([]*Column{movedCol}, to.Columns...)
@@ -709,8 +725,10 @@ func TestTableAlterModifyColumn(t *testing.T) {
 		t.Errorf("Expected Clause to return a blank string with LaxColumnOrder enabled, instead found: %s", clauseWithMods)
 	}
 
-	// Repos to last position AND change column definition
-	movedCol.Nullable = !movedCol.Nullable
+	// Re-pos to last position AND change column definition, adjusting the
+	// collation. Since this column is used in a unique index, the collation
+	// change should be detected as unsafe.
+	movedCol.Collation = strings.Replace(movedCol.Collation, "general_ci", "unicode_ci", 1)
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
 	tableAlters, supported = from.Diff(&to)
 	if len(tableAlters) != 1 || !supported {
@@ -726,8 +744,14 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	if ta.NewColumn.Equals(ta.OldColumn) {
 		t.Errorf("Column definition unexpectedly NOT changed: still %s", ta.NewColumn.Definition(FlavorUnknown, nil))
 	}
+	if !ta.InUniqueConstraint {
+		t.Error("Expected InUniqueConstraint to be true, but it was false")
+	}
 	if ta.Clause(StatementModifiers{LaxColumnOrder: true}) == "" {
 		t.Error("Since non-positioning changes are present, expected Clause to return a non-blank string even with LaxColumnOrder enabled, but it was blank")
+	}
+	if unsafe, reason := ta.Unsafe(); !unsafe || !strings.Contains(reason, movedCol.Name) {
+		t.Errorf("Unexpected return from Unsafe(): %t, %q", unsafe, reason)
 	}
 
 	// Start over; delete a col, move last col to its former position, and add a new col after that

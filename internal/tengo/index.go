@@ -111,12 +111,12 @@ func (idx *Index) Equivalent(other *Index) bool {
 
 // RedundantTo returns true if idx is equivalent to, or a strict subset of,
 // other. Both idx and other should be indexes of the same table.
-// A non-unique index is considered redundant to any other index having the
-// same (or more) columns in the same order, unless its parts have a greater
-// column prefix length. A unique index can only be redundant to the primary key
-// or an exactly equivalent unique index; another unique index with more cols
-// may coexist due to the desired constraint semantics. A primary key is never
-// redundant to another index.
+// A non-unique index is considered redundant to any other same-type index
+// having the same (or more) columns in the same order, unless its parts have a
+// greater column prefix length. A unique index can only be redundant to the
+// primary key or an exactly equivalent unique index; another unique index with
+// more cols may coexist due to the desired constraint semantics. A primary key
+// is never redundant to another index.
 func (idx *Index) RedundantTo(other *Index) bool {
 	if idx == nil || other == nil {
 		return false

@@ -272,11 +272,12 @@ func (rc RenameColumn) Unsafe() (unsafe bool, reason string) {
 // ModifyColumn represents a column that exists in both versions of the table,
 // but with a different definition. It satisfies the TableAlterClause interface.
 type ModifyColumn struct {
-	Table         *Table
-	OldColumn     *Column
-	NewColumn     *Column
-	PositionFirst bool
-	PositionAfter *Column
+	Table              *Table
+	OldColumn          *Column
+	NewColumn          *Column
+	PositionFirst      bool
+	PositionAfter      *Column
+	InUniqueConstraint bool // true if column is part of a unique index (or PK) in both old and new version of table
 }
 
 var reDisplayWidth = regexp.MustCompile(`(tinyint|smallint|mediumint|int|bigint)\((\d+)\)( unsigned)?( zerofill)?`)
@@ -316,7 +317,7 @@ func (mc ModifyColumn) Clause(mods StatementModifiers) string {
 // increasing the size of a varchar is safe, but decreasing the size or (in most
 // cases) changing the column type entirely is considered unsafe.
 func (mc ModifyColumn) Unsafe() (unsafe bool, reason string) {
-	genericReason := "column " + mc.OldColumn.Name + " would be modified in a potentially lossy way"
+	genericReason := "modification to column " + mc.OldColumn.Name + " may require lossy data conversion"
 
 	// Simple cases:
 	// * virtual columns can always be "safely" changed since they aren't stored
@@ -324,11 +325,23 @@ func (mc ModifyColumn) Unsafe() (unsafe bool, reason string) {
 	//   corrupting data in some cases (e.g. "latin1" that actually stores unicode
 	//   requires an intermediate change to binary); also can require timing with
 	//   application code deployments
+	// * changing collation is unsafe if the column is part of any unique index
+	//   or primary key: the change affects equality comparisons of the unique
+	//   constraint
+	// * changing, adding, or removing SRID is unsafe: changing or adding it
+	//   restricts what data can be in the column; removing it would prevent
+	//   a usable spatial index from being added to the column
 	// * otherwise, leaving column type as-is is safe
 	if mc.OldColumn.Virtual {
 		return false, ""
 	}
 	if mc.OldColumn.CharSet != mc.NewColumn.CharSet {
+		return true, genericReason
+	}
+	if mc.OldColumn.Collation != mc.NewColumn.Collation && mc.InUniqueConstraint {
+		return true, "collation change for column " + mc.OldColumn.Name + " affects equality comparisons in unique index"
+	}
+	if mc.OldColumn.SpatialReferenceID != mc.NewColumn.SpatialReferenceID || mc.OldColumn.HasSpatialReference != mc.NewColumn.HasSpatialReference {
 		return true, genericReason
 	}
 	if strings.EqualFold(mc.OldColumn.TypeInDB, mc.NewColumn.TypeInDB) {
@@ -405,6 +418,11 @@ func (mc ModifyColumn) Unsafe() (unsafe bool, reason string) {
 	// second precision (which reduces range of allowed values), but always safe
 	// if adding fsp when none was there before.
 	if bothSamePrefix("time", "timestamp", "datetime") {
+		// Since "time" and "timestamp" both begin with prefix "time", bothSamePrefix
+		// will be tricked and we need to handle that mismatch explicitly
+		if strings.HasPrefix(oldType, "timestamp") != strings.HasPrefix(newType, "timestamp") {
+			return true, genericReason
+		}
 		if !strings.ContainsRune(oldType, '(') {
 			return false, ""
 		} else if !strings.ContainsRune(newType, '(') {

@@ -725,9 +725,10 @@ func (cc *columnsComparison) columnModifications() []TableAlterClause {
 		for toPos, toCol := range cc.toOrderCommonCols {
 			if fromCol := cc.fromOrderCommonCols[toPos]; !fromCol.Equals(toCol) {
 				clauses = append(clauses, ModifyColumn{
-					Table:     cc.toTable,
-					OldColumn: fromCol,
-					NewColumn: toCol,
+					Table:              cc.toTable,
+					OldColumn:          fromCol,
+					NewColumn:          toCol,
+					InUniqueConstraint: cc.colInUniqueConstraint(fromCol, toCol),
 				})
 			}
 		}
@@ -756,10 +757,11 @@ func (cc *columnsComparison) columnModifications() []TableAlterClause {
 		fromCol := cc.fromColumnsByName[toCol.Name]
 		if moved := !stayPut[toPos]; moved || !fromCol.Equals(toCol) {
 			modify := ModifyColumn{
-				Table:         cc.toTable,
-				OldColumn:     fromCol,
-				NewColumn:     toCol,
-				PositionFirst: moved && toPos == 0,
+				Table:              cc.toTable,
+				OldColumn:          fromCol,
+				NewColumn:          toCol,
+				PositionFirst:      moved && toPos == 0,
+				InUniqueConstraint: cc.colInUniqueConstraint(fromCol, toCol),
 			}
 			if moved && toPos > 0 {
 				modify.PositionAfter = cc.toOrderCommonCols[toPos-1]
@@ -768,4 +770,28 @@ func (cc *columnsComparison) columnModifications() []TableAlterClause {
 		}
 	}
 	return clauses
+}
+
+// colInUniqueConstraint returns true if the old and new versions of the column
+// are in at least one unique constraint that existed in both old and new
+// versions of the table. This information is useful for determining if a
+// collation change is unsafe due to affecting string equality for one or more
+// indexes.
+func (cc *columnsComparison) colInUniqueConstraint(fromCol, toCol *Column) bool {
+	fromUniques := cc.fromTable.UniqueConstraintsWithColumn(fromCol)
+	if len(fromUniques) == 0 {
+		return false
+	}
+	toUniques := cc.toTable.UniqueConstraintsWithColumn(toCol)
+	if len(toUniques) == 0 {
+		return false
+	}
+	for _, fromIdx := range fromUniques {
+		for _, toIdx := range toUniques {
+			if toIdx.Name == fromIdx.Name {
+				return true
+			}
+		}
+	}
+	return false
 }

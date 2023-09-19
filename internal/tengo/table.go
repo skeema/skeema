@@ -232,6 +232,32 @@ func (t *Table) RowFormatClause() string {
 	return ""
 }
 
+// UniqueConstraintsWithColumn returns a slice of Indexes which have uniqueness
+// constraints (primary key or unique secondary index) and include col as one
+// of the index parts. If col is not part of any uniqueness constraints, a nil
+// slice is returned.
+func (t *Table) UniqueConstraintsWithColumn(col *Column) []*Index {
+	var result []*Index
+	if t.PrimaryKey != nil && indexHasColumn(t.PrimaryKey, col) {
+		result = append(result, t.PrimaryKey)
+	}
+	for _, idx := range t.SecondaryIndexes {
+		if idx.Unique && indexHasColumn(idx, col) {
+			result = append(result, idx)
+		}
+	}
+	return result
+}
+
+func indexHasColumn(idx *Index, col *Column) bool {
+	for _, part := range idx.Parts {
+		if part.ColumnName == col.Name {
+			return true
+		}
+	}
+	return false
+}
+
 // Diff returns a set of differences between this table and another table. Some
 // edge cases are not supported, such as sub-partitioning, spatial indexes,
 // MariaDB application time periods, or various non-InnoDB table features; in

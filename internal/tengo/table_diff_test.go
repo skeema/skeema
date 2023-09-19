@@ -708,6 +708,11 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		{"varchar(20)", "varbinary(20)"},
 		{"timestamp(5)", "timestamp"},
 		{"datetime(4)", "datetime(3)"},
+		{"timestamp", "time"},
+		{"timestamp", "time(3)"},
+		{"time", "timestamp"},
+		{"time(4)", "timestamp"},
+		{"time(4)", "timestamp(5)"},
 		{"float", "float(10,5)"},
 		{"double", "float"},
 		{"float(10,5)", "float(10,4)"},
@@ -749,6 +754,7 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		{"varbinary(255)", "tinyblob"},
 		{"tinyblob", "varbinary(255)"},
 		{"timestamp", "timestamp(5)"},
+		{"time", "time(5)"},
 		{"datetime(3)", "datetime(4)"},
 		{"float(10,5)", "float"},
 		{"float", "double"},
@@ -780,7 +786,8 @@ func TestModifyColumnUnsafe(t *testing.T) {
 	}
 
 	// Special case: confirm changing the character set of a column is unsafe, but
-	// changing collation within same character set is safe
+	// changing collation within same character set is safe (as long as col isn't
+	// in a unique index or PK)
 	mc := ModifyColumn{
 		OldColumn: &Column{TypeInDB: "varchar(30)", CharSet: "latin1"},
 		NewColumn: &Column{TypeInDB: "varchar(30)", CharSet: "utf8mb4"},
@@ -806,6 +813,22 @@ func TestModifyColumnUnsafe(t *testing.T) {
 	mc.OldColumn.Virtual = false
 	if unsafe, _ := mc.Unsafe(); !unsafe {
 		t.Error("Expected stored column modification to be unsafe, but Unsafe() returned false")
+	}
+
+	// Special case: confirm changing SRID, or adding/removing SRID, is unsafe
+	mc = ModifyColumn{
+		OldColumn: &Column{TypeInDB: "geometry", SpatialReferenceID: 0, HasSpatialReference: false},
+		NewColumn: &Column{TypeInDB: "geometry", SpatialReferenceID: 0, HasSpatialReference: true},
+	}
+	if unsafe, _ := mc.Unsafe(); !unsafe {
+		t.Error("Expected addition of SRID to be unsafe even for SRID 0, but Unsafe() returned false")
+	}
+	mc = ModifyColumn{
+		OldColumn: &Column{TypeInDB: "geometry", SpatialReferenceID: 0, HasSpatialReference: true},
+		NewColumn: &Column{TypeInDB: "geometry", SpatialReferenceID: 4326, HasSpatialReference: true},
+	}
+	if unsafe, _ := mc.Unsafe(); !unsafe {
+		t.Error("Expected change of SRID to be unsafe, but Unsafe() returned false")
 	}
 }
 
