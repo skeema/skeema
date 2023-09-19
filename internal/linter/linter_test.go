@@ -290,6 +290,9 @@ func (s IntegrationSuite) TestCheckSchemaAllowAllDefiner(t *testing.T) {
 	}
 }
 
+// TestCheckSchemaStripAnnotationNewlines ensures that if the
+// StripAnnotationNewlines option is enabled, linter annotation messages do not
+// ever contain internal newlines.
 func (s IntegrationSuite) TestCheckSchemaStripAnnotationNewlines(t *testing.T) {
 	// Confirm that lint-dupe-index normally contains newlines
 	dir := getDir(t, "testdata/validcfg")
@@ -298,6 +301,7 @@ func (s IntegrationSuite) TestCheckSchemaStripAnnotationNewlines(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
 	}
+	opts.Flavor = s.d.Flavor()
 	logicalSchema := dir.LogicalSchemas[0]
 	wsOpts, err := workspace.OptionsForDir(dir, s.d.Instance)
 	if err != nil {
@@ -328,6 +332,40 @@ func (s IntegrationSuite) TestCheckSchemaStripAnnotationNewlines(t *testing.T) {
 			t.Errorf("Annotation for lint-dupe-index still contained newline even with StripAnnotationNewlines: %q", a.Message)
 		}
 	}
+}
+
+// TestCheckSchemaSpatialIndexSRID confirms that the dupe-index checker will
+// flag SPATIAL indexes in MySQL 8 if their column lacks an SRID.
+func (s IntegrationSuite) TestCheckSchemaSpatialIndexSRID(t *testing.T) {
+	if !s.d.Flavor().Min(tengo.FlavorMySQL80) {
+		t.Skip("Test only relevant for MySQL 8.0+")
+	}
+	dir := getDir(t, "testdata/spatialmysql8")
+	forceOnlyRulesWarning(dir.Config, "dupe-index")
+	opts, err := OptionsForDir(dir)
+	if err != nil {
+		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
+	}
+
+	opts.Flavor = s.d.Flavor()
+	logicalSchema := dir.LogicalSchemas[0]
+	wsOpts, err := workspace.OptionsForDir(dir, s.d.Instance)
+	if err != nil {
+		t.Fatalf("Unexpected error from workspace.OptionsForDir: %v", err)
+	}
+	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
+	if err != nil {
+		t.Fatalf("Unexpected error from workspace.ExecLogicalSchema: %v", err)
+	}
+	if len(wsSchema.Failures) > 0 {
+		t.Fatalf("Unexpected workspace failure: %s", wsSchema.Failures[0])
+	}
+	result := CheckSchema(wsSchema, opts)
+	if len(result.Annotations) == 0 || len(result.Exceptions) > 0 {
+		t.Fatalf("Unexpected result from CheckSchema: %d annotations, %d exceptions", len(result.Annotations), len(result.Exceptions))
+	}
+	expected := expectedAnnotations(logicalSchema, s.d.Flavor())
+	compareAnnotations(t, expected, result)
 }
 
 func (s *IntegrationSuite) Setup(backend string) (err error) {
