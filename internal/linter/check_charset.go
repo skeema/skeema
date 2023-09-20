@@ -70,11 +70,11 @@ func charsetChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 func makeCharsetMessage(table *tengo.Table, column *tengo.Column, opts *Options) string {
 	var subject, charSet, using, allowedList, moreInfo string
 	if column == nil {
-		subject = fmt.Sprintf("Table %s", table.Name)
+		subject = "Table " + tengo.EscapeIdentifier(table.Name)
 		charSet = table.CharSet
 		using = "default character set"
 	} else {
-		subject = fmt.Sprintf("Column %s of table %s", column.Name, table.Name)
+		subject = fmt.Sprintf("Column %s of %s", column.Name, table.ObjectKey())
 		charSet = column.CharSet
 		using = "character set"
 	}

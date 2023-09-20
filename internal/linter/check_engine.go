@@ -29,7 +29,7 @@ func engineChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, 
 		return nil
 	}
 	re := regexp.MustCompile(fmt.Sprintf(`(?i)ENGINE\s*=?\s*%s`, table.Engine))
-	message := fmt.Sprintf("Table %s is using storage engine %s, which is not configured to be permitted.", table.Name, table.Engine)
+	message := fmt.Sprintf("Table %s is using storage engine %s, which is not configured to be permitted.", tengo.EscapeIdentifier(table.Name), table.Engine)
 	allowedEngines := opts.AllowList("engine")
 	if len(allowedEngines) == 1 {
 		message = fmt.Sprintf("%s Only the %s storage engine is listed in option allow-engine.", message, allowedEngines[0])

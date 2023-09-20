@@ -67,8 +67,8 @@ func autoIncChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 			allowedStr = "none (disallow auto_increment entirely)"
 		}
 		message := fmt.Sprintf(
-			"Column %s of table %s is an auto_increment column using data type %s, which is not configured to be permitted. The following data types are listed in option allow-auto-inc: %s.",
-			col.Name, table.Name, colType, allowedStr,
+			"Column %s of %s is an auto_increment column using data type %s, which is not configured to be permitted. The following data types are listed in option allow-auto-inc: %s.",
+			col.Name, table.ObjectKey(), colType, allowedStr,
 		)
 		if !strings.Contains(colType, "unsigned") && strings.Contains(allowedStr, "unsigned") {
 			message += "\nIn general, auto_increment columns should be unsigned, since behavior of auto_increment is undefined with negative numbers."
@@ -86,8 +86,8 @@ func autoIncChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 	// a Note if that value exceeds 80% of the column type's max value
 	if maxVal, ok := intTypeMaxes[colType]; ok && float64(table.NextAutoIncrement)/float64(maxVal) > 0.8 {
 		message := fmt.Sprintf(
-			"Column %s of table %s defines a next auto_increment value of %d, which is %4.1f%% of the maximum for type %s. Be careful to avoid exhausting the ID space.",
-			col.Name, table.Name, table.NextAutoIncrement, float64(table.NextAutoIncrement)/float64(maxVal)*100.0, colType,
+			"Column %s of %s defines a next auto_increment value of %d, which is %4.1f%% of the maximum for type %s. Be careful to avoid exhausting the ID space.",
+			col.Name, table.ObjectKey(), table.NextAutoIncrement, float64(table.NextAutoIncrement)/float64(maxVal)*100.0, colType,
 		)
 		return &Note{
 			LineOffset: FindColumnLineOffset(col, createStatement),

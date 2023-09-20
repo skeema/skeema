@@ -26,8 +26,8 @@ func hasEnumChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 				typeWithoutValues = "set"
 			}
 			message := fmt.Sprintf(
-				"Column %s of table %s is using type %s. This data type can cause operational difficulties due to lack of flexibility, and may be prone to subtle errors.",
-				col.Name, table.Name, typeWithoutValues,
+				"Column %s of %s is using type %s. This data type can cause operational difficulties due to lack of flexibility, and may be prone to subtle errors.",
+				col.Name, table.ObjectKey(), typeWithoutValues,
 			)
 			results = append(results, Note{
 				LineOffset: FindColumnLineOffset(col, createStatement),

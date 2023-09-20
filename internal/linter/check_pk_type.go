@@ -38,8 +38,8 @@ func pkTypeChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, 
 			colType := baseColType(col.TypeInDB)
 			if !opts.IsAllowed("pk-type", colType) {
 				message := fmt.Sprintf(
-					"Column %s of table %s is using data type %s, which is not configured to be permitted in a primary key. The following data types are listed in option allow-pk-type: %s.",
-					col.Name, table.Name, col.TypeInDB, allowedStr,
+					"Column %s of %s is using data type %s, which is not configured to be permitted in a primary key. The following data types are listed in option allow-pk-type: %s.",
+					col.Name, table.ObjectKey(), col.TypeInDB, allowedStr,
 				)
 				return &Note{
 					LineOffset: FindColumnLineOffset(col, createStatement),

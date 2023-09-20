@@ -38,7 +38,7 @@ func zeroDateChecker(table *tengo.Table, createStatement string, _ *tengo.Schema
 				results = append(results, Note{
 					LineOffset: FindColumnLineOffset(col, createStatement),
 					Summary:    summary,
-					Message:    fmt.Sprintf("Column %s of table %s has a default value of %s. %s prevent use of strict sql_mode, which provides important safety checks. Consider making the column %sDEFAULT NULL instead.", col.Name, table.Name, col.Default, subject, recoNullable),
+					Message:    fmt.Sprintf("Column %s of %s has a default value of %s. %s prevent use of strict sql_mode, which provides important safety checks. Consider making the column %sDEFAULT NULL instead.", col.Name, table.ObjectKey(), col.Default, subject, recoNullable),
 				})
 			}
 		}

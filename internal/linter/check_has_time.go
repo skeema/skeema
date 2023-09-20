@@ -25,8 +25,8 @@ func hasTimeChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 		var message string
 		if strings.HasPrefix(col.TypeInDB, "timestamp") {
 			message = fmt.Sprintf(
-				"Column %s of table %s is using type timestamp. This column type cannot store values beyond January 2038, which is problematic for software with long-term support requirements. It should not be used for storing arbitrary future dates, especially from user input.\nAlso note that timestamps have automatic timezone conversion behavior, between the time_zone session variable and UTC.",
-				col.Name, table.Name,
+				"Column %s of %s is using type timestamp. This column type cannot store values beyond January 2038, which is problematic for software with long-term support requirements. It should not be used for storing arbitrary future dates, especially from user input.\nAlso note that timestamps have automatic timezone conversion behavior, between the time_zone session variable and UTC.",
+				col.Name, table.ObjectKey(),
 			)
 			if oldTimestampDefaults && !alreadySeenTimestamp && !col.Nullable {
 				when := "MySQL 8"
@@ -38,8 +38,8 @@ func hasTimeChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 			alreadySeenTimestamp = true
 		} else if strings.Contains(col.TypeInDB, "time") {
 			message = fmt.Sprintf(
-				"Column %s of table %s is using type %s. Please note this data type does not include timezone information, and does not perform automatic timezone conversions on storage or retrieval.",
-				col.Name, table.Name, col.TypeInDB,
+				"Column %s of %s is using type %s. Please note this data type does not include timezone information, and does not perform automatic timezone conversions on storage or retrieval.",
+				col.Name, table.ObjectKey(), col.TypeInDB,
 			)
 			if onlyWarning {
 				message += " Consider strictly using UTC in all contexts to prevent issues with timezone conversions and daylight savings time transitions."

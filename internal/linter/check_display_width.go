@@ -56,8 +56,8 @@ func displayWidthChecker(table *tengo.Table, createStatement string, _ *tengo.Sc
 		defaultWidth := strconv.Itoa(defaultWidthInt)
 		if displayWidth != defaultWidth {
 			message := fmt.Sprintf(
-				"Column %s of table %s is using display width %s, but the default for %s%s is %s.\nInteger display widths do not control what range of values may be stored in a column. Typically they have no effect whatsoever. If in doubt, omit the width entirely, or use the default of %s(%s)%s.",
-				col.Name, table.Name, displayWidth,
+				"Column %s of %s is using display width %s, but the default for %s%s is %s.\nInteger display widths do not control what range of values may be stored in a column. Typically they have no effect whatsoever. If in doubt, omit the width entirely, or use the default of %s(%s)%s.",
+				col.Name, table.ObjectKey(), displayWidth,
 				rawType, matches[3], defaultWidth,
 				rawType, defaultWidth, matches[3],
 			)

@@ -1,8 +1,6 @@
 package linter
 
 import (
-	"fmt"
-
 	"github.com/skeema/skeema/internal/tengo"
 )
 
@@ -29,10 +27,9 @@ func pkChecker(table *tengo.Table, _ string, _ *tengo.Schema, _ *Options) *Note 
 			}
 		}
 	}
-	message := fmt.Sprintf("Table %s does not define a PRIMARY KEY.%s", table.Name, advice)
 	return &Note{
 		LineOffset: 0,
 		Summary:    "No primary key",
-		Message:    message,
+		Message:    "Table " + tengo.EscapeIdentifier(table.Name) + " does not define a PRIMARY KEY." + advice,
 	}
 }

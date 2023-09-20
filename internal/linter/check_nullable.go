@@ -21,8 +21,8 @@ func nullableChecker(table *tengo.Table, createStatement string, _ *tengo.Schema
 	for _, col := range table.Columns {
 		if col.Nullable {
 			message := fmt.Sprintf(
-				"Column %s of table %s permits NULL values. To prevent this, please add a NOT NULL clause to the column definition.",
-				col.Name, table.Name,
+				"Column %s of %s permits NULL values. To prevent this, please add a NOT NULL clause to the column definition.",
+				col.Name, table.ObjectKey(),
 			)
 			results = append(results, Note{
 				LineOffset: FindColumnLineOffset(col, createStatement),

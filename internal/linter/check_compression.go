@@ -45,7 +45,7 @@ func compressionChecker(table *tengo.Table, createStatement string, _ *tengo.Sch
 	note := &Note{
 		LineOffset: FindLastLineOffset(reAnyCompression, createStatement),
 		Summary:    "Table compression setting not permitted",
-		Message:    makeCompressionMessage(table.Name, mode, clause, opts),
+		Message:    makeCompressionMessage(tengo.EscapeIdentifier(table.Name), mode, clause, opts),
 	}
 
 	// If table is not compressed, but uncompressed tables are not permitted due

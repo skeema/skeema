@@ -28,9 +28,9 @@ func dupeIndexChecker(table *tengo.Table, createStatement string, _ *tengo.Schem
 	makeNoteDupeIndex := func(dupeIndexName, betterIndexName string, equivalent bool) Note {
 		var reason string
 		if equivalent {
-			reason = fmt.Sprintf("Indexes %s and %s of table %s are functionally identical.\nOne of them should be dropped.", dupeIndexName, betterIndexName, table.Name)
+			reason = fmt.Sprintf("Indexes %s and %s of %s are functionally identical.\nOne of them should be dropped.", dupeIndexName, betterIndexName, table.ObjectKey())
 		} else {
-			reason = fmt.Sprintf("Index %s of table %s is redundant to larger index %s.\nConsider dropping index %s.", dupeIndexName, table.Name, betterIndexName, dupeIndexName)
+			reason = fmt.Sprintf("Index %s of %s is redundant to larger index %s.\nConsider dropping index %s.", dupeIndexName, table.ObjectKey(), betterIndexName, dupeIndexName)
 		}
 		return makeNote(dupeIndexName, reason+" Redundant indexes waste disk space, and harm write performance.")
 	}
@@ -57,7 +57,7 @@ func dupeIndexChecker(table *tengo.Table, createStatement string, _ *tengo.Schem
 			}
 			for _, part := range idx.Parts { // spatial indexes currently only ever have 1 part, but iterate for robustness
 				if col := colsByName[part.ColumnName]; col != nil && !col.HasSpatialReference {
-					message := fmt.Sprintf("Spatial index %s of table %s includes column %s, which lacks an SRID attribute. The database server's query optimizer will not actually use this index.", idx.Name, table.Name, col.Name)
+					message := fmt.Sprintf("Spatial index %s of %s includes column %s, which lacks an SRID attribute. The database server's query optimizer will not actually use this index.", idx.Name, table.ObjectKey(), col.Name)
 					results = append(results, makeNote(idx.Name, message))
 				}
 			}

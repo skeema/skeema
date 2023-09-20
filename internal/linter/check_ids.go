@@ -33,8 +33,8 @@ func idsChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ *
 		}
 
 		message := fmt.Sprintf(
-			"Column %s of table %s is using data type %s. If this column is intended to store an integer ID, please use data type bigint unsigned instead.",
-			col.Name, table.Name, col.TypeInDB,
+			"Column %s of %s is using data type %s. If this column is intended to store an integer ID, please use data type bigint unsigned instead.",
+			col.Name, table.ObjectKey(), col.TypeInDB,
 		)
 		results = append(results, Note{
 			LineOffset: FindColumnLineOffset(col, createStatement),

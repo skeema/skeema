@@ -50,7 +50,7 @@ func definerChecker(object tengo.DefKeyer, createStatement string, schema *tengo
 
 	var typ, name, definer string
 	if object, ok := object.(*tengo.Routine); ok {
-		typ, name, definer = strings.Title(string(object.Type)), object.Name, object.Definer
+		typ, name, definer = strings.Title(string(object.Type)), tengo.EscapeIdentifier(object.Name), object.Definer
 	} else {
 		return nil
 	}
