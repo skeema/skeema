@@ -241,17 +241,29 @@ func (rd *RoutineDiff) Statement(mods StatementModifiers) (stmt string, err erro
 	// It's not an ALTER, so it's either a DROP or CREATE. This may be a related
 	// pair if it represents a non-characteristic modification to an existing
 	// routine. Detect some special-case types of replacements.
-	var metadataOnlyReplace, mariaReplace bool
+	var metadataOnlyReplace, mariaReplace, clearCommentReplace bool
 	if rd.From != nil && rd.To != nil { // related pair for a replacement
-		// If we're replacing a routine only because its creation-time sql_mode or
-		// db collation has changed, only proceed if mods indicate we should. (This
-		// type of replacement is effectively opt-in because it is counter-intuitive
-		// and obscure.)
 		if rd.From.CreateStatement == rd.To.CreateStatement {
+			// If we're replacing a routine only because its creation-time sql_mode or
+			// db collation has changed, only proceed if mods indicate we should. (This
+			// type of replacement is effectively opt-in because it is counter-intuitive
+			// and obscure.)
 			if !mods.CompareMetadata {
 				return "", nil
 			}
 			metadataOnlyReplace = true
+		} else if rd.From.Comment != rd.To.Comment && rd.From.equalsIgnoringCharacteristics(rd.To) {
+			// Setting a comment to a blank string requires a DROP/CREATE pair in MySQL
+			// 8.0+ due to a server bug, so compareRoutines() always emits a DROP/CREATE
+			// pair since the flavor is not known at that time. For non-MySQL8+ flavors,
+			// we then convert this pair back into a single ALTER.
+			clearCommentReplace = true
+
+			// However, if *only* the comment has changed, suppress the diff entirely
+			// if mods indicate not to generate comment-only changes
+			if mods.LaxComments && rd.From.SQLDataAccess == rd.To.SQLDataAccess && rd.From.SecurityType == rd.To.SecurityType {
+				return "", nil
+			}
 		}
 
 		// MariaDB can use CREATE OR REPLACE to modify routines in a single statement
@@ -259,8 +271,9 @@ func (rd *RoutineDiff) Statement(mods StatementModifiers) (stmt string, err erro
 	}
 
 	if rd.Type == DiffTypeDrop {
-		if mariaReplace {
-			return "", nil // omit the DROP part of the pair entirely
+		// Omit the DROP part of the pair entirely in cases where we're doing an atomic replacement or alter
+		if mariaReplace || (clearCommentReplace && !mods.Flavor.Min(FlavorMySQL80)) {
+			return "", nil
 		}
 		stmt = rd.From.DropStatement()
 		if metadataOnlyReplace {
@@ -278,7 +291,11 @@ func (rd *RoutineDiff) Statement(mods StatementModifiers) (stmt string, err erro
 			}
 		}
 		return stmt, err
+
 	} else if rd.Type == DiffTypeCreate {
+		if clearCommentReplace && !mods.Flavor.Min(FlavorMySQL80) {
+			return rd.alterStatement(mods)
+		}
 		stmt = rd.To.CreateStatement
 		if mariaReplace {
 			stmt = strings.Replace(stmt, "CREATE ", "CREATE OR REPLACE ", 1)
@@ -302,7 +319,7 @@ func (rd *RoutineDiff) Statement(mods StatementModifiers) (stmt string, err erro
 	return "", fmt.Errorf("Unsupported diff type %d", rd.DiffType())
 }
 
-func (rd *RoutineDiff) alterStatement(_ StatementModifiers) (stmt string, err error) {
+func (rd *RoutineDiff) alterStatement(mods StatementModifiers) (stmt string, err error) {
 	var clauses []string
 	if rd.From.SQLDataAccess != rd.To.SQLDataAccess {
 		clauses = append(clauses, rd.To.SQLDataAccess)
@@ -310,7 +327,7 @@ func (rd *RoutineDiff) alterStatement(_ StatementModifiers) (stmt string, err er
 	if rd.From.SecurityType != rd.To.SecurityType {
 		clauses = append(clauses, "SQL SECURITY "+rd.To.SecurityType)
 	}
-	if rd.From.Comment != rd.To.Comment {
+	if rd.From.Comment != rd.To.Comment && (len(clauses) > 0 || !mods.LaxComments) {
 		clauses = append(clauses, fmt.Sprintf("COMMENT '%s'", EscapeValueForCreateTable(rd.To.Comment)))
 	}
 	if len(clauses) > 0 {

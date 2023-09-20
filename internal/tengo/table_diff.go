@@ -309,6 +309,7 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 	clauseStrings := make([]string, 0, len(td.alterClauses))
 	var unsafeReasons []string
 	var partitionClauseString string
+	var changingComment bool
 	for _, clause := range td.alterClauses {
 		if !mods.AllowUnsafe {
 			if clause, ok := clause.(Unsafer); ok {
@@ -323,15 +324,17 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 				// Adding or removing partitioning must occur at the end of the ALTER
 				// TABLE, and oddly *without* a preceeding comma
 				partitionClauseString = clauseString
+				continue // do NOT append to clauseStrings
 			case ModifyPartitions:
 				// Other partitioning-related clauses cannot appear alongside any other
 				// clauses, including ALGORITHM or LOCK clauses
 				mods.LockClause = ""
 				mods.AlgorithmClause = ""
-				clauseStrings = append(clauseStrings, clauseString)
-			default:
-				clauseStrings = append(clauseStrings, clauseString)
+			case ChangeComment:
+				// Track this for LaxComments modifier
+				changingComment = true
 			}
+			clauseStrings = append(clauseStrings, clauseString)
 		}
 	}
 	if len(unsafeReasons) > 0 {
@@ -342,6 +345,12 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 	}
 
 	if len(clauseStrings) == 0 && partitionClauseString == "" {
+		return "", err
+	}
+
+	// LaxComments means "only change the comment if some other non-comment thing
+	// is also being changed"
+	if mods.LaxComments && len(clauseStrings) == 1 && partitionClauseString == "" && changingComment {
 		return "", err
 	}
 
@@ -443,9 +452,10 @@ func diffTables(from, to *Table) (clauses []TableAlterClause, supported bool) {
 		} else if to.PrimaryKey == nil {
 			clauses = append(clauses, DropIndex{Index: from.PrimaryKey})
 		} else {
-			drop := DropIndex{Index: from.PrimaryKey}
-			add := AddIndex{Index: to.PrimaryKey}
-			clauses = append(clauses, drop, add)
+			clauses = append(clauses,
+				DropIndex{Index: from.PrimaryKey, replacedBy: to.PrimaryKey},
+				AddIndex{Index: to.PrimaryKey, replaces: from.PrimaryKey},
+			)
 		}
 	}
 
@@ -469,7 +479,10 @@ func diffTables(from, to *Table) (clauses []TableAlterClause, supported bool) {
 			clauses = append(clauses, AddIndex{Index: toIndex})
 			reorderIndexes = true
 		} else if !fromIndex.EqualsIgnoringVisibility(toIndex) {
-			clauses = append(clauses, DropIndex{Index: fromIndex}, AddIndex{Index: toIndex})
+			clauses = append(clauses,
+				DropIndex{Index: fromIndex, replacedBy: toIndex},
+				AddIndex{Index: toIndex, replaces: fromIndex},
+			)
 			reorderIndexes = true
 		} else {
 			if fromIndex.Invisible != toIndex.Invisible {
@@ -481,8 +494,8 @@ func diffTables(from, to *Table) (clauses []TableAlterClause, supported bool) {
 			}
 			if reorderIndexes {
 				clauses = append(clauses,
-					DropIndex{Index: fromIndex, reorderOnly: true},
-					AddIndex{Index: toIndex, reorderOnly: true},
+					DropIndex{Index: fromIndex, replacedBy: toIndex, reorderOnly: true},
+					AddIndex{Index: toIndex, replaces: fromIndex, reorderOnly: true},
 				)
 			} else if fromIndexStillExist[n].Name != toIndex.Name {
 				// If we get here, reorderIndexes was previously false, meaning anything

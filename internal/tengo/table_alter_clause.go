@@ -77,7 +77,8 @@ func (dc DropColumn) Unsafe() (unsafe bool, reason string) {
 // side ("from") version. It satisfies the TableAlterClause interface.
 type AddIndex struct {
 	Index       *Index
-	reorderOnly bool // true if index is being dropped and re-added just to re-order
+	replaces    *Index // previous index definition if this is a replacement; nil otherwise
+	reorderOnly bool   // true if index is being dropped and re-added just to re-order
 }
 
 // Clause returns an ADD KEY clause of an ALTER TABLE statement.
@@ -85,7 +86,16 @@ func (ai AddIndex) Clause(mods StatementModifiers) string {
 	if !mods.StrictIndexOrder && ai.reorderOnly {
 		return ""
 	}
-	return fmt.Sprintf("ADD %s", ai.Index.Definition(mods.Flavor))
+	if mods.LaxComments && ai.replaces != nil && ai.Index.Comment != ai.replaces.Comment && ai.Index.Equivalent(ai.replaces) {
+		// If visibility has changed, delegate to AlterIndex; otherwise, nothing
+		// differs but the comment, so emit a blank string with LaxComments
+		if ai.Index.Invisible != ai.replaces.Invisible {
+			alter := AlterIndex{Index: ai.replaces, NewInvisible: ai.Index.Invisible}
+			return alter.Clause(mods)
+		}
+		return ""
+	}
+	return "ADD " + ai.Index.Definition(mods.Flavor)
 }
 
 ///// DropIndex ////////////////////////////////////////////////////////////////
@@ -95,7 +105,8 @@ func (ai AddIndex) Clause(mods StatementModifiers) string {
 // ("to") version. It satisfies the TableAlterClause interface.
 type DropIndex struct {
 	Index       *Index
-	reorderOnly bool // true if index is being dropped and re-added just to re-order
+	replacedBy  *Index // new index definition if this is a replacement; nil otherwise
+	reorderOnly bool   // true if index is being dropped and re-added just to re-order
 }
 
 // Clause returns a DROP KEY clause of an ALTER TABLE statement.
@@ -103,10 +114,13 @@ func (di DropIndex) Clause(mods StatementModifiers) string {
 	if !mods.StrictIndexOrder && di.reorderOnly {
 		return ""
 	}
+	if mods.LaxComments && di.replacedBy != nil && di.Index.Comment != di.replacedBy.Comment && di.Index.Equivalent(di.replacedBy) {
+		return ""
+	}
 	if di.Index.PrimaryKey {
 		return "DROP PRIMARY KEY"
 	}
-	return fmt.Sprintf("DROP KEY %s", EscapeIdentifier(di.Index.Name))
+	return "DROP KEY " + EscapeIdentifier(di.Index.Name)
 }
 
 ///// AlterIndex ///////////////////////////////////////////////////////////////
@@ -128,17 +142,17 @@ func (ai AlterIndex) Clause(mods StatementModifiers) string {
 	if ai.alsoReordering && mods.StrictIndexOrder {
 		return ""
 	}
-	clause := fmt.Sprintf("ALTER INDEX %s ", EscapeIdentifier(ai.Index.Name))
+	clause := "ALTER INDEX " + EscapeIdentifier(ai.Index.Name)
 	if mods.Flavor.Min(FlavorMySQL80) {
 		if ai.NewInvisible {
-			return clause + "INVISIBLE"
+			return clause + " INVISIBLE"
 		}
-		return clause + "VISIBLE"
+		return clause + " VISIBLE"
 	} else if mods.Flavor.Min(FlavorMariaDB106) {
 		if ai.NewInvisible {
-			return clause + "IGNORED"
+			return clause + " IGNORED"
 		}
-		return clause + "NOT IGNORED"
+		return clause + " NOT IGNORED"
 	}
 	return "" // Flavor without invisible/ignored index support
 }
@@ -267,7 +281,7 @@ func (rc RenameColumn) Unsafe() (unsafe bool, reason string) {
 }
 
 ///// ModifyColumn /////////////////////////////////////////////////////////////
-// for changing type, nullable, auto-incr, default, and/or position
+// for changing type, nullable, auto-incr, default, position, etc
 
 // ModifyColumn represents a column that exists in both versions of the table,
 // but with a different definition. It satisfies the TableAlterClause interface.
@@ -289,6 +303,22 @@ func (mc ModifyColumn) Clause(mods StatementModifiers) string {
 		positionClause = " FIRST"
 	} else if mc.PositionAfter != nil {
 		positionClause = " AFTER " + EscapeIdentifier(mc.PositionAfter.Name)
+	}
+
+	// LaxComments means we only emit a MODIFY COLUMN if something OTHER than the
+	// comment differs; but if we do emit a MODIFY COLUMN we still want to use the
+	// new comment value.
+	if mods.LaxComments && mc.OldColumn.Comment != mc.NewColumn.Comment {
+		oldColumnCopy := *mc.OldColumn
+		oldColumnCopy.Comment = mc.NewColumn.Comment
+		if positionClause == "" && oldColumnCopy.Equals(mc.NewColumn) {
+			return ""
+		}
+		// Manipulate mc.OldColumn so that LaxComments can be used in combination
+		// with other modifiers and still work as expected. Since mc is passed by
+		// value, we can make OldColumn point to a different Column without affecting
+		// anything outside of this method.
+		mc.OldColumn = &oldColumnCopy
 	}
 
 	// If the only difference is a position difference, and LaxColumnOrder is
@@ -713,6 +743,9 @@ type ChangeComment struct {
 // Clause returns a clause of an ALTER TABLE statement that changes a table's
 // comment.
 func (cc ChangeComment) Clause(_ StatementModifiers) string {
+	// Note: mods.LaxComments is handled in TableDiff.alterStatement() rather than
+	// here, since that modifier's effect depends on whether anything else besides
+	// the comment is also changing
 	return fmt.Sprintf("COMMENT '%s'", EscapeValueForCreateTable(cc.NewComment))
 }
 

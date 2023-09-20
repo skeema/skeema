@@ -142,6 +142,9 @@ func (c *Column) Equals(other *Column) bool {
 // unnecessary (equal to table's default); or when comparing a table across
 // different versions of MySQL 8 (one which supports int display widths, and
 // one that removes them).
+// Note that, for the purposes of this method, column comments are NOT
+// considered cosmetic. This method returns false if c and other only differ
+// by a comment.
 func (c *Column) Equivalent(other *Column) bool {
 	// If they're equal, they're also equivalent
 	if c.Equals(other) {

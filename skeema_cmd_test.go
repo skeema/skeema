@@ -454,6 +454,19 @@ func (s SkeemaIntegrationSuite) TestDiffHandler(t *testing.T) {
 	s.handleCommand(t, CodeDifferencesFound, "mydb/product", "skeema diff")
 	s.handleCommand(t, CodeSuccess, "mydb/product", "skeema diff --lax-column-order")
 
+	// Undo the previous change, and then confirm behavior of lax-comments
+	s.handleCommand(t, CodeSuccess, "mydb/product", "skeema push")
+	s.handleCommand(t, CodeSuccess, "mydb/product", "skeema diff") // just confirming push had the intended effect
+	s.dbExec(t, "product", "ALTER TABLE posts COMMENT 'hello world table comment', MODIFY COLUMN `body` text COMMENT 'hello world column comment'")
+	s.handleCommand(t, CodeDifferencesFound, "mydb/product", "skeema diff")
+	s.handleCommand(t, CodeSuccess, "mydb/product", "skeema diff --lax-comments")
+
+	// Test combination of lax-comments with lax-column-order
+	s.dbExec(t, "product", "ALTER TABLE posts COMMENT 'hello world table comment', MODIFY COLUMN `body` text COMMENT 'hello world column comment' FIRST")
+	s.handleCommand(t, CodeDifferencesFound, "mydb/product", "skeema diff --lax-comments")
+	s.handleCommand(t, CodeDifferencesFound, "mydb/product", "skeema diff --lax-column-order")
+	s.handleCommand(t, CodeSuccess, "mydb/product", "skeema diff --lax-comments --lax-column-order")
+
 	// Confirm --brief works as expected
 	defer func() {
 		// --brief manipulates the log level, so we must restore it after
@@ -1409,8 +1422,8 @@ END`
 		}
 	}
 
-	// Change all 3 of procedure routine2's characteristics in the db. Do a push,
-	// which should use ALTER PROCEDURE and be safe.
+	// Change procedure routine2's characteristics in the db. Do a push, which
+	// should use ALTER PROCEDURE and be safe.
 	s.dbExec(t, "product", "ALTER PROCEDURE routine2 SQL SECURITY INVOKER READS SQL DATA")
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
@@ -1418,12 +1431,27 @@ END`
 
 	// Repeat the previous test, but this time add a COMMENT. Due to a server bug
 	// in MySQL 8.0+, ALTER ... COMMENT '' does not function properly, so Skeema
-	// always emits DROP/re-CREATE (or CREATE OR REPLACE) in this situation, for
-	// all flavors.
+	// always emits DROP/re-CREATE (or CREATE OR REPLACE) in this situation for
+	// MySQL 8.0+.
+	// Also confirm that --lax-comments does not suppress these diffs, since other
+	// characteristics besides the comment are also being changed.
 	s.dbExec(t, "product", "ALTER PROCEDURE routine2 SQL SECURITY INVOKER READS SQL DATA COMMENT 'whatever'")
-	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
-	s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
+	if s.d.Flavor().Min(tengo.FlavorMySQL80) {
+		s.handleCommand(t, CodeFatalError, ".", "skeema diff --lax-comments")
+		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe --lax-comments")
+		s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe --lax-comments")
+	} else {
+		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --lax-comments")
+		s.handleCommand(t, CodeSuccess, ".", "skeema push --lax-comments")
+	}
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+
+	// Repeat the previous test, this time ONLY adding a comment, and confirm that
+	// use of --lax-comments suppresses the diff entirely.
+	s.dbExec(t, "product", "ALTER PROCEDURE routine2 COMMENT 'whatever'")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff --lax-comments")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --lax-comments")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
 }
 
 // TestTempSchemaBinlog provides coverage for the temp-schema-binlog option.

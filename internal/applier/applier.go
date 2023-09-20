@@ -226,6 +226,7 @@ func StatementModifiersForDir(dir *fs.Dir) (mods tengo.StatementModifiers, err e
 	mods.CompareMetadata = dir.Config.GetBool("compare-metadata")
 	mods.VirtualColValidation = dir.Config.GetBool("alter-validate-virtual")
 	mods.LaxColumnOrder = dir.Config.GetBool("lax-column-order")
+	mods.LaxComments = dir.Config.GetBool("lax-comments")
 	if dir.Config.GetBool("exact-match") {
 		mods.StrictIndexOrder = true
 		mods.StrictCheckOrder = true // only affects MariaDB

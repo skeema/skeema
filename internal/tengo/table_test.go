@@ -258,12 +258,58 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 	if ta2.Index != from.SecondaryIndexes[1] {
 		t.Error("Pointer in table alter[0] does not point to expected value")
 	}
+	if ta2.Clause(StatementModifiers{}) == "" {
+		t.Error("Clause unexpectedly returns blank string")
+	}
 	ta, ok = tableAlters[1].(AddIndex)
 	if !ok {
 		t.Fatalf("Incorrect type of table alter[1] returned: expected %T, found %T", ta, tableAlters[1])
 	}
 	if ta.Index != to.SecondaryIndexes[1] {
 		t.Error("Pointer in table alter[1] does not point to expected value")
+	}
+	if ta.Clause(StatementModifiers{}) == "" {
+		t.Error("Clause unexpectedly returns blank string")
+	}
+
+	// Start over; change the comment of the last existing secondary index, with or
+	// without other changes, and test behavior of StatementModifiers.LaxComments
+	to = aTable(1)
+	to.SecondaryIndexes[1].Comment = "hello I am an index"
+	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
+	tableAlters, supported = from.Diff(&to)
+	if len(tableAlters) != 2 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
+	}
+	mods := StatementModifiers{}
+	if tableAlters[0].Clause(mods) == "" || tableAlters[1].Clause(mods) == "" {
+		t.Error("Clause unexpectedly returns blank string")
+	}
+	mods.LaxComments = true
+	if tableAlters[0].Clause(mods) != "" || tableAlters[1].Clause(mods) != "" {
+		t.Error("Clause unexpectedly returns non-blank string")
+	}
+	to.SecondaryIndexes[1].Invisible = true
+	to.CreateStatement = to.GeneratedCreateStatement(FlavorMySQL80)
+	mods.Flavor = FlavorMySQL80
+	tableAlters, supported = from.Diff(&to)
+	if len(tableAlters) != 2 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
+	}
+	if tableAlters[0].Clause(mods) != "" {
+		t.Error("Clause unexpectedly returns non-blank string")
+	}
+	if clause := tableAlters[1].Clause(mods); !strings.HasPrefix(clause, "ALTER") {
+		t.Errorf("Clause returned unexpected string: %s", clause)
+	}
+	to.SecondaryIndexes[1].Unique = true
+	to.CreateStatement = to.GeneratedCreateStatement(FlavorMySQL80)
+	tableAlters, supported = from.Diff(&to)
+	if len(tableAlters) != 2 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
+	}
+	if tableAlters[0].Clause(mods) == "" || tableAlters[1].Clause(mods) == "" {
+		t.Error("Clause unexpectedly returns blank string")
 	}
 
 	// Start over; change the primary key
@@ -1202,6 +1248,7 @@ func TestTableAlterChangeComment(t *testing.T) {
 		return t
 	}
 	assertChangeComment := func(a, b *Table, expected string) {
+		t.Helper()
 		tableAlters, supported := a.Diff(b)
 		if expected == "" {
 			if len(tableAlters) != 0 || !supported {
@@ -1227,6 +1274,24 @@ func TestTableAlterChangeComment(t *testing.T) {
 	to = getTableWithComment("I'm a table-level comment!")
 	assertChangeComment(&from, &to, "COMMENT 'I''m a table-level comment!'")
 	assertChangeComment(&to, &from, "COMMENT ''")
+
+	// Test behavior of StatementModifiers.LaxComments: should suppress the comment
+	// change only if there are no other alterations to the table. This behavior
+	// is implemented at the TableDiff level, rather than AlterClause.
+	assertChangeCommentLax := func(a, b *Table, expectDiff bool) {
+		t.Helper()
+		stmt, err := NewAlterTable(a, b).Statement(StatementModifiers{LaxComments: true, AllowUnsafe: true})
+		if err != nil {
+			t.Errorf("Unexpected error returned from Statment: %v", err)
+		} else if (stmt != "") != expectDiff {
+			t.Errorf("Unexpected return string from Statement: %q", stmt)
+		}
+	}
+	assertChangeCommentLax(&from, &to, false)
+	assertChangeCommentLax(&to, &from, false)
+	to.Columns[0].TypeInDB = "smallint(5)"
+	assertChangeCommentLax(&from, &to, true)
+	assertChangeCommentLax(&to, &from, true)
 }
 
 func TestTableAlterTablespace(t *testing.T) {
