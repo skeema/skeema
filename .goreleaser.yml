@@ -43,7 +43,7 @@ nfpms:
 brews:
   -
     name: skeema
-    tap:
+    repository:
       owner: skeema
       name: homebrew-tap
     commit_author:
