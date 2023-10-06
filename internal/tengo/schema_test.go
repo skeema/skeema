@@ -119,3 +119,29 @@ func (s TengoIntegrationSuite) TestSchemaStripMatches(t *testing.T) {
 	schema = nil
 	schema.StripMatches([]ObjectPattern{matchFunc})
 }
+
+func (s TengoIntegrationSuite) TestSchemaStripTablePartitioning(t *testing.T) {
+	s.SourceTestSQL(t, "partition.sql")
+
+	// testing.followed_posts uses sub-partitioning and is unsupported for diffs.
+	// After stripping partitioning, it should now be supported for diffs.
+	schema, table := s.GetSchemaAndTable(t, "testing", "followed_posts")
+	if !table.UnsupportedDDL {
+		t.Fatal("Test setup assertion failed: testing.followed_posts is already supported for diff operations")
+	}
+	schema.StripTablePartitioning(s.d.Flavor())
+	table = schema.Table("followed_posts")
+	if table.Partitioning != nil || table.UnsupportedDDL {
+		t.Errorf("StripTablePartitioning did not have expected effect on %s", table.ObjectKey())
+	}
+
+	// Many partitioned tables in schema partitionparty from partition.sql.
+	// Confirm stripping works as expected.
+	schema = s.GetSchema(t, "partitionparty")
+	schema.StripTablePartitioning(s.d.Flavor())
+	for _, table := range schema.Tables {
+		if table.Partitioning != nil {
+			t.Errorf("StripTablePartitioning did not have expected effect on %s", table.ObjectKey())
+		}
+	}
+}

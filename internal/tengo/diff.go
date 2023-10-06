@@ -45,7 +45,7 @@ type ObjectDiff interface {
 
 // NextAutoIncMode enumerates various ways of handling AUTO_INCREMENT
 // discrepancies between two tables.
-type NextAutoIncMode int
+type NextAutoIncMode uint8
 
 // Constants for how to handle next-auto-inc values in table diffs. Usually
 // these are ignored in diffs entirely, but in some cases they are included.
@@ -58,7 +58,7 @@ const (
 
 // PartitioningMode enumerates ways of handling partitioning status -- that is,
 // presence or lack of a PARTITION BY clause.
-type PartitioningMode int
+type PartitioningMode uint8
 
 // Constants for how to handle partitioning status differences.
 const (

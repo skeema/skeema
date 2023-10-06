@@ -517,12 +517,13 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 	// changes (analytics) but not for schemas with 1 or more unsafe changes
 	// (product). It shouldn't not affect the `bonus` schema (which exists on db
 	// but not on filesystem, but push should never drop schemas)
-	s.handleCommand(t, CodeFatalError, "", "skeema push")            // CodeFatalError due to unsafe changes not being allowed
-	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff") // analytics dir was pushed fine tho
-	s.assertTableExists(t, "analytics", "pageviews", "")             // re-created by push
-	s.assertTableMissing(t, "product", "users", "credits")           // product DDL skipped due to unsafe stmt
-	s.assertTableExists(t, "product", "posts", "featured")           // product DDL skipped due to unsafe stmt
-	s.assertTableExists(t, "bonus", "placeholder", "")               // not affected by push (never drops schemas)
+	s.handleCommand(t, CodeFatalError, "", "skeema push")                          // CodeFatalError due to unsafe changes not being allowed
+	s.handleCommand(t, CodeBadConfig, ".", "skeema push --safe-below-size=potato") // only triggers an error when there are ALTERs present
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff")               // analytics dir was pushed fine tho
+	s.assertTableExists(t, "analytics", "pageviews", "")                           // re-created by push
+	s.assertTableMissing(t, "product", "users", "credits")                         // product DDL skipped due to unsafe stmt
+	s.assertTableExists(t, "product", "posts", "featured")                         // product DDL skipped due to unsafe stmt
+	s.assertTableExists(t, "bonus", "placeholder", "")                             // not affected by push (never drops schemas)
 
 	// The "skip whole schema upon unsafe stmt" rule also affects schema-level DDL
 	if product, err := s.d.Schema("product"); err != nil || product == nil {

@@ -1,7 +1,6 @@
 package applier
 
 import (
-	"fmt"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -165,8 +164,7 @@ func objectDiffExpected(t *testing.T, diff tengo.ObjectDiff, ddl *DDLStatement, 
 		}
 	}
 	if runtime.GOOS == "windows" {
-		expected = fmt.Sprintf(`%s"`, strings.ReplaceAll(expected, "/bin/echo ", `echo "`))
-		expected = strings.ReplaceAll(expected, "`", "``")
+		expected = strings.ReplaceAll(expected, "/bin/echo ", `echo "`) + `"`
 		expected = strings.ReplaceAll(expected, "'\"'\"'", "''")
 	}
 	return

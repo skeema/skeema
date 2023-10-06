@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/fs"
@@ -23,6 +22,10 @@ type Target struct {
 	DesiredSchema *workspace.Schema
 }
 
+func (t *Target) String() string {
+	return t.Instance.String() + " " + t.SchemaName
+}
+
 // SchemaFromInstance introspects and returns the instance's version of the
 // schema, if it exists.
 func (t *Target) SchemaFromInstance() (*tengo.Schema, error) {
@@ -39,50 +42,6 @@ func (t *Target) SchemaFromDir() *tengo.Schema {
 	schemaCopy := *t.DesiredSchema.Schema
 	schemaCopy.Name = t.SchemaName
 	return &schemaCopy
-}
-
-func (t *Target) logApplyStart() {
-	if t.Dir.Config.GetBool("dry-run") {
-		log.Infof("Generating diff of %s %s vs %s%c*.sql", t.Instance, t.SchemaName, t.Dir, os.PathSeparator)
-	} else {
-		log.Infof("Pushing changes from %s%c*.sql to %s %s", t.Dir, os.PathSeparator, t.Instance, t.SchemaName)
-	}
-	if len(t.Dir.UnparsedStatements) > 0 {
-		log.Warnf("Ignoring %d unsupported or unparseable statements found in this directory's *.sql files; run `skeema lint` for more info", len(t.Dir.UnparsedStatements))
-	}
-}
-
-func (t *Target) logApplyEnd(result Result) {
-	if result.Differences {
-		verb := "push"
-		if t.Dir.Config.GetBool("dry-run") {
-			verb = "diff"
-		}
-		log.Infof("%s %s: %s complete\n", t.Instance, t.SchemaName, verb)
-	} else {
-		log.Infof("%s %s: No differences found\n", t.Instance, t.SchemaName)
-	}
-}
-
-func (t *Target) processSQL(stmts []PlannedStatement, printer Printer) (skipCount int) {
-	for i, stmt := range stmts {
-		printer.Print(stmt)
-		if !t.Dir.Config.GetBool("dry-run") {
-			if err := stmt.Execute(); err != nil {
-				log.Errorf("Error running SQL statement on %s %s: %s\nFull SQL statement: %s%s", t.Instance, t.SchemaName, err, stmt.Statement(), stmt.ClientState().Delimiter)
-				skipped := len(stmts) - i
-				skipCount += skipped
-				if skipped > 1 {
-					log.Warnf("Skipping %d remaining operations for %s %s due to previous error", skipped-1, t.Instance, t.SchemaName)
-				}
-				return
-			}
-		}
-	}
-	if printerFinisher, ok := printer.(Finisher); ok && len(stmts) > 0 {
-		printerFinisher.Finish(t)
-	}
-	return
 }
 
 // TargetGroup represents a group of Targets that all have the same Instance.
@@ -240,7 +199,10 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 		return nil, len(instances)
 	}
 	if len(wsSchema.Failures) > 0 {
-		logFailedStatements(dir, wsSchema.Failures)
+		for _, stmtErr := range wsSchema.Failures {
+			log.Error(stmtErr.Error())
+		}
+		log.Warnf("Skipping %s due to %s\n", dir, countAndNoun(len(wsSchema.Failures), "SQL error"))
 		return nil, len(instances)
 	}
 
@@ -305,15 +267,4 @@ func TargetGroupsForDir(dir *fs.Dir) ([]TargetGroup, int) {
 		groups = append(groups, tg)
 	}
 	return groups, skipCount
-}
-
-func logFailedStatements(dir *fs.Dir, failures []*workspace.StatementError) {
-	for _, stmtErr := range failures {
-		log.Error(stmtErr.Error())
-	}
-	noun := "errors"
-	if len(failures) == 1 {
-		noun = "error"
-	}
-	log.Warnf("Skipping %s due to %d SQL %s\n", dir, len(failures), noun)
 }

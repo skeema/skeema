@@ -1,12 +1,17 @@
 package applier
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
 	"github.com/skeema/skeema/internal/util"
+	"github.com/skeema/skeema/internal/workspace"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -40,6 +45,31 @@ func TestResultMerge(t *testing.T) {
 	}
 }
 
+func TestResultSummary(t *testing.T) {
+	testCases := []struct {
+		skipCount        int
+		unsupportedCount int
+		expectedSummary  string
+	}{
+		{0, 0, ""},
+		{1, 0, "Skipped 1 operation due to problem"},
+		{2, 0, "Skipped 2 operations due to problems"},
+		{0, 1, "Skipped 1 operation due to unsupported feature"},
+		{0, 2, "Skipped 2 operations due to unsupported features"},
+		{1, 1, "Skipped 2 operations due to problems or unsupported features"},
+		{2, 2, "Skipped 4 operations due to problems or unsupported features"},
+	}
+	for _, tc := range testCases {
+		r := Result{
+			SkipCount:        tc.skipCount,
+			UnsupportedCount: tc.unsupportedCount,
+		}
+		if actualSummary := r.Summary(); actualSummary != tc.expectedSummary {
+			t.Errorf("Unexpected return from Result.Summary(): expected %q, found %q", tc.expectedSummary, actualSummary)
+		}
+	}
+}
+
 func TestIntegration(t *testing.T) {
 	images := tengo.SkeemaTestImages(t)
 	suite := &ApplierIntegrationSuite{}
@@ -48,6 +78,99 @@ func TestIntegration(t *testing.T) {
 
 type ApplierIntegrationSuite struct {
 	d []*tengo.DockerizedInstance
+}
+
+func (s ApplierIntegrationSuite) TestCreatePlanForTarget(t *testing.T) {
+	sourceSQL := func(filename string) {
+		t.Helper()
+		if _, err := s.d[0].SourceSQL(filepath.Join("testdata", filename)); err != nil {
+			t.Fatalf("Unexpected error from SourceSQL on %s: %s", filename, err)
+		}
+	}
+	getSchema := func(schemaName string) *tengo.Schema {
+		t.Helper()
+		schema, err := s.d[0].Schema(schemaName)
+		if err != nil {
+			t.Fatalf("Unable to obtain schema %s: %s", schemaName, err)
+		}
+		return schema
+	}
+
+	// Use the schema as-is from setup.sql for the "from" side of the diff;
+	// make a few modifications to the DB and then use that for the "to" side
+	sourceSQL("setup.sql")
+	instSchema := getSchema("product")
+	sourceSQL("plan.sql")
+	fsSchema := getSchema("product")
+
+	// Hackily set up test args manually
+	configMap := map[string]string{
+		"allow-unsafe":           "0",
+		"ddl-wrapper":            "",
+		"alter-wrapper":          "",
+		"alter-wrapper-min-size": "0",
+		"alter-algorithm":        "",
+		"alter-lock":             "",
+		"safe-below-size":        "0",
+		"connect-options":        "",
+		"environment":            "production",
+		"foreign-key-checks":     "",
+	}
+	dir := &fs.Dir{
+		Path:   "/var/tmp/fakedir",
+		Config: mybase.SimpleConfig(configMap),
+	}
+	target := &Target{
+		Instance:   s.d[0].Instance,
+		Dir:        dir,
+		SchemaName: "product",
+		DesiredSchema: &workspace.Schema{
+			Schema: fsSchema,
+		},
+	}
+	diff := tengo.NewSchemaDiff(instSchema, fsSchema)
+	if objDiffCount := len(diff.ObjectDiffs()); objDiffCount != 4 {
+		t.Fatalf("Expected 4 object diffs, instead found %d", objDiffCount)
+	}
+
+	// Based on the DDL in plan.sql, we expect 1 unsupported change and 3 supported
+	// ones (of which 1 is unsafe)
+	var pse *PlannedStatementError
+	var unsuppErr *tengo.UnsupportedDiffError
+	var unsafeErr *tengo.UnsafeDiffError
+	expectedUnsupportedKey := tengo.ObjectKey{Name: "comments", Type: tengo.ObjectTypeTable}
+	expectedUnsafeKey := tengo.ObjectKey{Name: "subscriptions", Type: tengo.ObjectTypeTable}
+	plan, err := CreatePlanForTarget(target, diff, tengo.StatementModifiers{})
+	if err != nil {
+		t.Fatalf("Unexpected fatal error from CreatePlanForTarget: %v", err)
+	}
+	if plan.Target != target {
+		t.Error("Target field of plan does not point to expected supplied Target")
+	}
+	if len(plan.Statements) != 3 {
+		t.Errorf("Expected plan to contain 3 statements, instead found %d", len(plan.Statements))
+	}
+	if len(plan.DiffKeys) != 3 {
+		t.Errorf("Expected plan to contain 3 object keys, instead found %d", len(plan.DiffKeys))
+	}
+	if len(plan.Unsupported) != 1 {
+		t.Errorf("Expected plan to contain 1 unsupported error, instead found %d", len(plan.Unsupported))
+	} else if !errors.As(plan.Unsupported[0], &pse) {
+		t.Errorf("plan.Unsupported[0] is not expected type: found %T, expected %T", plan.Unsupported[0], pse)
+	} else if pse.Key != expectedUnsupportedKey {
+		t.Errorf("Unexpected object key in plan.Unsupported[0]: %s", pse.Key)
+	} else if !errors.As(plan.Unsupported[0], &unsuppErr) {
+		t.Errorf("plan.Unsupported[0] is not expected type: found %T, expected %T", plan.Unsupported[0], unsuppErr)
+	}
+	if len(plan.Unsafe) != 1 {
+		t.Errorf("Expected plan to contain 1 unsafe error, instead found %d", len(plan.Unsafe))
+	} else if !errors.As(plan.Unsafe[0], &pse) {
+		t.Errorf("plan.Unsafe[0] is not expected type: found %T, expected %T", plan.Unsafe[0], pse)
+	} else if pse.Key != expectedUnsafeKey {
+		t.Errorf("Unexpected object key in plan.Unsafe[0]: %s", pse.Key)
+	} else if !errors.As(plan.Unsafe[0], &unsafeErr) {
+		t.Errorf("plan.Unsafe[0] is not expected type: found %T, expected %T", plan.Unsafe[0], unsafeErr)
+	}
 }
 
 func (s *ApplierIntegrationSuite) Setup(backend string) error {

@@ -193,3 +193,21 @@ func (s *Schema) tablesToPartitions() map[string][]string {
 	}
 	return result
 }
+
+// StripTablePartitioning removes partitioning information from all Tables in s.
+// This method only affects the in-memory representation of the schema; it does
+// not actually execute DDL or make any change to a real database Instance.
+func (s *Schema) StripTablePartitioning(flavor Flavor) {
+	for _, table := range s.Tables {
+		if table.Partitioning != nil {
+			table.CreateStatement = table.UnpartitionedCreateStatement(flavor)
+			table.Partitioning = nil
+			// If the table was unsupported-for-diff only due to subpartitioning, mark
+			// table as supported now. (Note that UnpartitionedCreateStatement does NOT
+			// rely on GeneratedCreateStatement, so this comparison is safe.)
+			if table.UnsupportedDDL && table.CreateStatement == table.GeneratedCreateStatement(flavor) {
+				table.UnsupportedDDL = false
+			}
+		}
+	}
+}
