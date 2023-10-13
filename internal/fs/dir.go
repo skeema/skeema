@@ -769,6 +769,16 @@ func (dir *Dir) parseContents() {
 				// quite rare for a typo to trigger this -- only happens when misspelling
 				// CREATE or the object type for example.
 				dir.UnparsedStatements = append(dir.UnparsedStatements, stmt)
+			} else if stmt.Type == tengo.StatementTypeCreateUnsupported {
+				// Statements which could be parsed, but are unsupported edge cases: these
+				// are treated like StatementTypeUnknown, and additionally get an automatic
+				// entry in dir.IgnorePatterns, so that the affected object is ignored on
+				// the database side as well.
+				dir.UnparsedStatements = append(dir.UnparsedStatements, stmt)
+				dir.IgnorePatterns = append(dir.IgnorePatterns, tengo.ObjectPattern{
+					Type:    stmt.ObjectType,
+					Pattern: regexp.MustCompile("^" + regexp.QuoteMeta(stmt.ObjectName) + "$"),
+				})
 			} else if stmt.ObjectQualifier != "" || (stmt.Type == tengo.StatementTypeCommand && len(stmt.Text) > 4 && strings.EqualFold(stmt.Text[0:3], "use")) {
 				// Statements which refer to specific schema names can be problematic, since
 				// this conflicts with the ability to specify the schema name dynamically

@@ -16,7 +16,8 @@ const (
 	StatementTypeNoop                  // entirely whitespace and/or comments
 	StatementTypeCommand               // currently just USE or DELIMITER
 	StatementTypeCreate
-	StatementTypeAlter // not actually ever parsed yet
+	StatementTypeCreateUnsupported // edge cases like CREATE...SELECT
+	StatementTypeAlter             // not actually ever parsed yet
 	// Other types will be added once they are supported by the package
 )
 

@@ -313,12 +313,22 @@ func TestParseDirRedundantDelimiter(t *testing.T) {
 	}
 }
 
-func TestParseDirCreateSelect(t *testing.T) {
-	// This dir contains a CREATE ... SELECT statement, which is explicitly not
-	// supported at this time.
-	_, err := ParseDir("testdata/createselect", getValidConfig(t))
-	if err == nil {
-		t.Fatal("In dir testdata/createselect, expected error from ParseDir(), but instead err is nil")
+func TestParseDirCreateUnsupported(t *testing.T) {
+	// This dir contains 2 normal non-ignored tables, 1 normal ignored table,
+	// 2 system-versioned tables (one of which is bitemporal), 1 create...select,
+	// and one gibberish statement.
+	dir, err := ParseDir("testdata/createunsupported", getValidConfig(t))
+	if err != nil {
+		t.Fatalf("Unexpected error from ParseDir: %v", err)
+	}
+	if len(dir.LogicalSchemas[0].Creates) != 2 { // from the 2 non-ignored tables
+		t.Errorf("Expected 2 CREATES in the logical schema, instead found %d", len(dir.LogicalSchemas[0].Creates))
+	}
+	if len(dir.IgnorePatterns) != 4 { // 3 from the unsupported statements + 1 from ignore-table in .skeema
+		t.Errorf("Expected 4 IgnorePatterns, instead found %d", len(dir.IgnorePatterns))
+	}
+	if len(dir.UnparsedStatements) != 4 { // 3 from the unsupported creates + 1 gibberish statement
+		t.Errorf("Expected 4 UnparsedStatements, instead found %d", len(dir.UnparsedStatements))
 	}
 }
 
@@ -495,9 +505,9 @@ func TestDirSubdirs(t *testing.T) {
 
 	dir = getDir(t, "testdata")
 	subs, err = dir.Subdirs()
-	// Expect at least 5 parse errors: 3 with unterminated quotes/comments, 1 bad
-	// symlink in cfgsymlinks2, 1 forbidden statement in createselect
-	if len(subs) < 19 || err != nil || countParseErrors(subs) < 5 {
+	// Expect at least 4 parse errors: 3 with unterminated quotes/comments + 1 bad
+	// symlink in cfgsymlinks2
+	if len(subs) < 19 || err != nil || countParseErrors(subs) < 4 {
 		t.Errorf("Unexpected return from Subdirs(): %d subs, %d parse errors, err=%v", len(subs), countParseErrors(subs), err)
 	}
 }
