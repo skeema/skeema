@@ -1,1 +1,7 @@
-*Thank you for your interest. Please refer to the Contributing link in the sidebar for guidance. Be sure to reference an existing issue number in your pull request description.*
+<!--
+Thank you for your interest in contributing to Skeema!
+
+Please read the Contributing link in the sidebar before proceeding.
+
+Be sure to reference an existing issue number in your pull request description.
+-->

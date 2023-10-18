@@ -8,18 +8,19 @@ assignees: ''
 ---
 
 **Describe the bug**
-*A clear and concise description of what the bug is.*
+<!-- A clear and concise description of what the bug is. -->
 
 **Environment**
-- Skeema version: *[e.g. v1.5.0]*
-- Database vendor, version, OS/platform: *[e.g. MySQL 8.0.23 running on Linux]*
+- Skeema version and OS: <!-- For example, "v1.11.0-community running on MacOS" -->
+- Database vendor, version, OS/platform: <!-- e.g. "MySQL 8.0.32 running on RDS" -->
 - Any other environmental notes or special configuration:
 
 **To Reproduce**
-*Steps to reproduce the behavior.*
+<!-- Steps to reproduce the behavior. -->
 
 **Expected behavior**
-*A clear and concise description of what you expected to happen.*
+<!-- A clear and concise description of what you expected to happen. -->
 
 **Additional context**
-*Add any other context about the problem here.*
+<!-- Add any other context about the problem here. -->
+

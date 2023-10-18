@@ -9,7 +9,10 @@ import (
 
 ///// Vendor ///////////////////////////////////////////////////////////////////
 
-// Vendor represents an upstream DBMS software.
+// Vendor represents an upstream DBMS software. Vendors are used for DBMS
+// projects with separate codebases and versioning practices.
+// For projects that track an upstream Vendor's codebase and apply changes as a
+// patch-set, see Variant instead, later in this file.
 type Vendor uint16
 
 // Constants representing different supported vendors
@@ -104,9 +107,14 @@ func ParseVersion(s string) (ver Version, err error) {
 
 ///// Variant //////////////////////////////////////////////////////////////////
 
-// Variant represents a patch-set/branch that tracks a Vendor, rather than being
-// a hard fork. Variants are used as bit flags, so in theory a Flavor may consist
+// Variant represents a database product which tracks an upstream Vendor's
+// codebase and versioning but adds a patch-set of changes on top, rather than
+// being a hard fork or partially-compatible reimplementation.
+// Variants are used as bit flags, so in theory a Flavor may consist
 // of multiple variants, although currently none do.
+// Do NOT use a Variant to represent a completely separate DBMS which just
+// happens to speak the same wire protocol as a Vendor, or provides partial
+// compatibility with a Vendor through a completely separate codebase.
 type Variant uint32
 
 // Constants representing variants. Not all entries here are necessarily
@@ -176,16 +184,18 @@ var FlavorUnknown = Flavor{}
 // comparison with these, although they're useful as args to Flavor.Matches()
 // and Flavor.Min().
 var (
-	FlavorMySQL55     = Flavor{Vendor: VendorMySQL, Version: Version{5, 5, 0}}
-	FlavorMySQL56     = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}}
-	FlavorMySQL57     = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}}
-	FlavorMySQL80     = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}}
-	FlavorMySQL81     = Flavor{Vendor: VendorMySQL, Version: Version{8, 1, 0}}
-	FlavorPercona55   = Flavor{Vendor: VendorMySQL, Version: Version{5, 5, 0}, Variants: VariantPercona}
-	FlavorPercona56   = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}, Variants: VariantPercona}
-	FlavorPercona57   = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}, Variants: VariantPercona}
-	FlavorPercona80   = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}, Variants: VariantPercona}
-	FlavorPercona81   = Flavor{Vendor: VendorMySQL, Version: Version{8, 1, 0}, Variants: VariantPercona}
+	FlavorMySQL55 = Flavor{Vendor: VendorMySQL, Version: Version{5, 5, 0}}
+	FlavorMySQL56 = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}}
+	FlavorMySQL57 = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}}
+	FlavorMySQL80 = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}}
+	FlavorMySQL81 = Flavor{Vendor: VendorMySQL, Version: Version{8, 1, 0}}
+
+	FlavorPercona55 = Flavor{Vendor: VendorMySQL, Version: Version{5, 5, 0}, Variants: VariantPercona}
+	FlavorPercona56 = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}, Variants: VariantPercona}
+	FlavorPercona57 = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}, Variants: VariantPercona}
+	FlavorPercona80 = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}, Variants: VariantPercona}
+	FlavorPercona81 = Flavor{Vendor: VendorMySQL, Version: Version{8, 1, 0}, Variants: VariantPercona}
+
 	FlavorMariaDB101  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1, 0}}
 	FlavorMariaDB102  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2, 0}}
 	FlavorMariaDB103  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3, 0}}

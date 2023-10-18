@@ -7,4 +7,5 @@ assignees: ''
 
 ---
 
-*Please refer to the Contributing link in the sidebar for guidance.*
+<!-- If this is your first feature request here, be sure to read the Contributing link in the sidebar before proceeding. -->
+
