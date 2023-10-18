@@ -259,50 +259,6 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	}
 }
 
-// TestPrefab confirms that ExecLogicalSchema still functions properly with a
-// pre-supplied workspace. This provides a way of using Workspace providers from
-// other packages with ExecLogicalSchema.
-func (s WorkspaceIntegrationSuite) TestPrefab(t *testing.T) {
-	dir := s.getParsedDir(t, "testdata/simple", "")
-	opts, err := OptionsForDir(dir, s.d.Instance)
-	if err != nil {
-		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
-	}
-	opts.LockTimeout = 100 * time.Millisecond
-
-	ws, err := New(opts)
-	if err != nil {
-		t.Fatalf("Unexpected error from New: %s", err)
-	}
-
-	// Confirm the schema exists after the call to New
-	if _, err := ws.IntrospectSchema(); err != nil {
-		t.Errorf("Expected IntrospectSchema returned unexpected error %s", err)
-	}
-
-	opts = Options{
-		Type:            TypePrefab,
-		PrefabWorkspace: ws,
-		Concurrency:     10,
-	}
-	wsSchema, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts)
-	if err != nil {
-		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
-	}
-	if len(wsSchema.Failures) > 0 {
-		t.Errorf("Expected no StatementErrors, instead found %d", len(wsSchema.Failures))
-	}
-	if len(wsSchema.Tables) < 4 {
-		t.Errorf("Expected at least 4 tables, but instead found %d", len(wsSchema.Tables))
-	}
-
-	// Confirm that Cleanup still ran, removing the schema, causing
-	// IntrospectSchema to now fail
-	if _, err := ws.IntrospectSchema(); err == nil {
-		t.Error("Expected IntrospectSchema to return an error, but it did not")
-	}
-}
-
 func (s *WorkspaceIntegrationSuite) Setup(backend string) (err error) {
 	s.d, err = tengo.GetOrCreateDockerizedInstance(tengo.DockerizedInstanceOptions{
 		Name:         fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),

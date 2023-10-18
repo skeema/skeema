@@ -48,7 +48,6 @@ type Type int
 const (
 	TypeTempSchema  Type = iota // A temporary schema on a real pre-supplied Instance
 	TypeLocalDocker             // A schema on an ephemeral Docker container on localhost
-	TypePrefab                  // A pre-supplied Workspace, possibly from another package
 )
 
 // CleanupAction represents how to clean up a workspace.
@@ -87,7 +86,6 @@ type Options struct {
 	DefaultConnParams   string // only TypeLocalDocker
 	RootPassword        string // only TypeLocalDocker
 	NameCaseMode        tengo.NameCaseMode
-	PrefabWorkspace     Workspace     // only TypePrefab
 	LockTimeout         time.Duration // max wait for workspace user-level locking, via GET_LOCK()
 	Concurrency         int
 	SkipBinlog          bool
@@ -101,8 +99,6 @@ func New(opts Options) (Workspace, error) {
 		return NewTempSchema(opts)
 	case TypeLocalDocker:
 		return NewLocalDocker(opts)
-	case TypePrefab:
-		return opts.PrefabWorkspace, nil
 	}
 	return nil, fmt.Errorf("Unsupported workspace type %v", opts.Type)
 }
