@@ -1282,7 +1282,7 @@ func TestTableAlterChangeComment(t *testing.T) {
 		t.Helper()
 		stmt, err := NewAlterTable(a, b).Statement(StatementModifiers{LaxComments: true, AllowUnsafe: true})
 		if err != nil {
-			t.Errorf("Unexpected error returned from Statment: %v", err)
+			t.Errorf("Unexpected error returned from Statement: %v", err)
 		} else if (stmt != "") != expectDiff {
 			t.Errorf("Unexpected return string from Statement: %q", stmt)
 		}
