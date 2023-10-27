@@ -189,12 +189,14 @@ var (
 	FlavorMySQL57 = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}}
 	FlavorMySQL80 = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}}
 	FlavorMySQL81 = Flavor{Vendor: VendorMySQL, Version: Version{8, 1, 0}}
+	FlavorMySQL82 = Flavor{Vendor: VendorMySQL, Version: Version{8, 2, 0}}
 
 	FlavorPercona55 = Flavor{Vendor: VendorMySQL, Version: Version{5, 5, 0}, Variants: VariantPercona}
 	FlavorPercona56 = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}, Variants: VariantPercona}
 	FlavorPercona57 = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}, Variants: VariantPercona}
 	FlavorPercona80 = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}, Variants: VariantPercona}
 	FlavorPercona81 = Flavor{Vendor: VendorMySQL, Version: Version{8, 1, 0}, Variants: VariantPercona}
+	FlavorPercona82 = Flavor{Vendor: VendorMySQL, Version: Version{8, 2, 0}, Variants: VariantPercona}
 
 	FlavorMariaDB101  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1, 0}}
 	FlavorMariaDB102  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2, 0}}
@@ -366,7 +368,7 @@ func (fl Flavor) IsMariaDB() bool {
 func (fl Flavor) Supported() bool {
 	switch fl.Vendor {
 	case VendorMySQL:
-		return fl.Version.AtLeast(Version{5, 5}) && fl.Version.Below(Version{8, 2}) // MySQL 5.5.0-8.1.x is supported
+		return fl.Version.AtLeast(Version{5, 5}) && fl.Version.Below(Version{8, 3}) // MySQL 5.5-8.2 is supported
 	case VendorMariaDB:
 		return fl.Version.AtLeast(Version{10, 1}) && fl.Version.Below(Version{11, 2}) // MariaDB 10.1-11.1 is supported
 	default:
