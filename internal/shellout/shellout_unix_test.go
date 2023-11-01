@@ -209,7 +209,7 @@ func TestEscapeVarValue(t *testing.T) {
 }
 
 func TestCommandTimeout(t *testing.T) {
-	c := New("sleep 1").WithTimeout(10 * time.Millisecond)
+	c := New("sleep 1").WithTimeout(200 * time.Millisecond)
 	if err := c.Run(); err == nil {
 		t.Error("timeout not working as expected")
 	}
