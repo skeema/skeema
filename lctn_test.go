@@ -28,10 +28,10 @@ func (s SkeemaIntegrationSuite) TestLowerCaseTableNames1(t *testing.T) {
 
 	// Create an instance with lctn=1
 	opts := tengo.DockerizedInstanceOptions{
-		Name:         strings.Replace(s.d.ContainerName(), "skeema-test-", "skeema-test-lctn1-", 1),
-		Image:        s.d.Flavor().Family().String(),
-		RootPassword: s.d.Password,
-		CommandArgs:  []string{"--skip-log-bin", "--lower-case-table-names=1"},
+		Name:                strings.Replace(s.d.ContainerName(), "skeema-test-", "skeema-test-lctn1-", 1),
+		Image:               s.d.Flavor().Family().String(),
+		RootPassword:        s.d.Password,
+		LowerCaseTableNames: 1,
 	}
 	dinst, err := tengo.GetOrCreateDockerizedInstance(opts)
 	if err != nil {
@@ -168,11 +168,11 @@ func (s SkeemaIntegrationSuite) TestLowerCaseTableNames2(t *testing.T) {
 
 	// Create an instance with lctn=2
 	opts := tengo.DockerizedInstanceOptions{
-		Name:          strings.Replace(s.d.ContainerName(), "skeema-test-", "skeema-test-lctn2-", 1),
-		Image:         s.d.Flavor().Family().String(),
-		RootPassword:  s.d.Password,
-		CommandArgs:   []string{"--skip-log-bin", "--lower-case-table-names=2"},
-		DataBindMount: t.TempDir(),
+		Name:                strings.Replace(s.d.ContainerName(), "skeema-test-", "skeema-test-lctn2-", 1),
+		Image:               s.d.Flavor().Family().String(),
+		RootPassword:        s.d.Password,
+		DataBindMount:       t.TempDir(),
+		LowerCaseTableNames: 2,
 	}
 	dinst, err := tengo.GetOrCreateDockerizedInstance(opts)
 	if err != nil {

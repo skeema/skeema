@@ -188,7 +188,6 @@ func (s *ApplierIntegrationSuite) Setup(backend string) error {
 				Name:         containerName,
 				Image:        backend,
 				RootPassword: "fakepw",
-				CommandArgs:  []string{"--skip-log-bin"}, // override MySQL 8 default of enabling binlog
 			})
 			return err
 		})

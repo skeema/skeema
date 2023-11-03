@@ -74,12 +74,15 @@ func DockerEngineArchitecture() (string, error) {
 // DockerizedInstanceOptions specifies options for creating or finding a
 // sandboxed database instance inside a Docker container.
 type DockerizedInstanceOptions struct {
-	Name              string
-	Image             string
-	RootPassword      string
-	DefaultConnParams string
-	DataBindMount     string // Host path to bind-mount as /var/lib/mysql in container
-	CommandArgs       []string
+	Name              string // Name for new container, or look up existing container by name
+	Image             string // Image for new container, or verify flavor of existing container
+	RootPassword      string // Root password for new instance, or for connecting to existing instance
+	DefaultConnParams string // Options formatted as URL query string, used for conns to new or existing instance
+
+	// Options that only affect new container creation:
+	DataBindMount       string // Host path to bind-mount as /var/lib/mysql in container
+	EnableBinlog        bool   // Enable or disable binary log in database server
+	LowerCaseTableNames uint8  // lower_case_table_names setting (0, 1, or 2) in database server
 }
 
 // DockerizedInstance is a database instance running in a local Docker
@@ -121,10 +124,24 @@ func CreateDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstan
 	}
 	flagString := strings.Join(dflags, " ")
 
-	var argString string
-	if len(opts.CommandArgs) > 0 {
-		argString = " " + strings.Join(opts.CommandArgs, " ")
+	// Because DockerizedInstance is designed for creating special-purpose
+	// instances used only for schema management, we can configure the server in a
+	// way that reduces resource usage
+	serverArgs := []string{
+		"--innodb-log-file-size=16777216",    // use smaller 16MB redo log files, instead of default of 48MB-96MB (varies by flavor)
+		"--innodb-buffer-pool-size=33554432", // use smaller 32MB buffer pool, instead of default of 128MB
+		"--performance-schema=0",             // disable performance_schema to reduce memory usage and other overhead
 	}
+	if opts.EnableBinlog {
+		serverArgs = append(serverArgs, "--log-bin", "--server-id=1")
+	} else {
+		serverArgs = append(serverArgs, "--skip-log-bin")
+	}
+	if opts.LowerCaseTableNames > 0 {
+		serverArgs = append(serverArgs, fmt.Sprintf("--lower-case-table-names=%d", opts.LowerCaseTableNames))
+	}
+	argString := " " + strings.Join(serverArgs, " ")
+
 	vars := map[string]string{
 		"ROOTPWDENV":    "MYSQL_ROOT_PASSWORD=" + opts.RootPassword,
 		"NAME":          opts.Name,

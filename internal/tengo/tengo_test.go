@@ -28,7 +28,6 @@ func (s *TengoIntegrationSuite) Setup(backend string) (err error) {
 		Name:         fmt.Sprintf("skeema-test-%s", ContainerNameForImage(backend)),
 		Image:        backend,
 		RootPassword: "fakepw",
-		CommandArgs:  []string{"--skip-log-bin"}, // override MySQL 8 default of enabling binlog
 	}
 	s.d, err = GetOrCreateDockerizedInstance(opts)
 	return err

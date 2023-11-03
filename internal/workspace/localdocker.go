@@ -78,23 +78,22 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	if cstore.containers[opts.ContainerName] != nil {
 		ld.d = cstore.containers[opts.ContainerName]
 	} else {
-		commandArgs := []string{"--skip-log-bin"} // override MySQL 8 default of enabling binlog (never needed in workspace)
-
+		dopts := tengo.DockerizedInstanceOptions{
+			Name:              opts.ContainerName,
+			Image:             image,
+			RootPassword:      opts.RootPassword,
+			DefaultConnParams: "", // intentionally not set here; see important comment in ConnectionPool()
+		}
 		// If real inst had lower_case_table_names=1, use that in the container as
 		// well. (No need for similar logic with lower_case_table_names=2; this cannot
 		// be used on Linux, and code in ExecLogicalSchema already gets us close
 		// enough to this mode's behavior.)
 		if opts.NameCaseMode == tengo.NameCaseLower {
-			commandArgs = append(commandArgs, "--lower-case-table-names=1")
+			dopts.LowerCaseTableNames = 1
 		}
+
 		log.Infof("Using container %s (image=%s) for workspace operations", opts.ContainerName, image)
-		ld.d, err = tengo.GetOrCreateDockerizedInstance(tengo.DockerizedInstanceOptions{
-			Name:              opts.ContainerName,
-			Image:             image,
-			RootPassword:      opts.RootPassword,
-			DefaultConnParams: "", // intentionally not set here; see important comment in ConnectionPool()
-			CommandArgs:       commandArgs,
-		})
+		ld.d, err = tengo.GetOrCreateDockerizedInstance(dopts)
 		if ld.d != nil {
 			cstore.containers[opts.ContainerName] = ld.d
 			RegisterShutdownFunc(ld.shutdown)

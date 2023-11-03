@@ -1471,7 +1471,7 @@ func (s SkeemaIntegrationSuite) TestTempSchemaBinlog(t *testing.T) {
 		Name:         strings.Replace(s.d.ContainerName(), "skeema-test-", "skeema-test-binlog-", 1),
 		Image:        s.d.Flavor().Family().String(),
 		RootPassword: s.d.Password,
-		CommandArgs:  []string{"--log-bin", "--server-id=1"},
+		EnableBinlog: true,
 	}
 	dinst, err := tengo.GetOrCreateDockerizedInstance(opts)
 	if err != nil {
