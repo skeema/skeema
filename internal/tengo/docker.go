@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -81,6 +82,7 @@ type DockerizedInstanceOptions struct {
 
 	// Options that only affect new container creation:
 	DataBindMount       string // Host path to bind-mount as /var/lib/mysql in container
+	DataTmpfs           bool   // Use tmpfs for /var/lib/mysql. Only used if DataBindMount == "" && runtime.GOOS == "linux"
 	EnableBinlog        bool   // Enable or disable binary log in database server
 	LowerCaseTableNames uint8  // lower_case_table_names setting (0, 1, or 2) in database server
 }
@@ -121,6 +123,8 @@ func CreateDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstan
 	}
 	if opts.DataBindMount != "" {
 		dflags = append(dflags, "-v {DATABINDMOUNT}")
+	} else if opts.DataTmpfs && runtime.GOOS == "linux" {
+		dflags = append(dflags, "--tmpfs /var/lib/mysql")
 	}
 	flagString := strings.Join(dflags, " ")
 

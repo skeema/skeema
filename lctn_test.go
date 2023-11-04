@@ -26,12 +26,13 @@ func (s SkeemaIntegrationSuite) TestLowerCaseTableNames1(t *testing.T) {
 		t.Skip("Skipping lower_case_table_names=1 testing. To run, set env var SKEEMA_TEST_LCTN=true and/or CI=1.")
 	}
 
-	// Create an instance with lctn=1
+	// Create an ephemeral instance with lctn=1
 	opts := tengo.DockerizedInstanceOptions{
 		Name:                strings.Replace(s.d.ContainerName(), "skeema-test-", "skeema-test-lctn1-", 1),
 		Image:               s.d.Flavor().Family().String(),
 		RootPassword:        s.d.Password,
 		LowerCaseTableNames: 1,
+		DataTmpfs:           true, // since we destroy the container after this test anyway
 	}
 	dinst, err := tengo.GetOrCreateDockerizedInstance(opts)
 	if err != nil {

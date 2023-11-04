@@ -78,11 +78,16 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	if cstore.containers[opts.ContainerName] != nil {
 		ld.d = cstore.containers[opts.ContainerName]
 	} else {
+		// DefaultConnParams is intentionally not set here; see important comment in
+		// ConnectionPool() for reasoning.
+		// DataTmpfs is enabled automatically here if the container is going to be
+		// destroyed at end-of-process anyway, since this improves perf. It only has
+		// an effect on Linux, and is ignored on other OSes.
 		dopts := tengo.DockerizedInstanceOptions{
-			Name:              opts.ContainerName,
-			Image:             image,
-			RootPassword:      opts.RootPassword,
-			DefaultConnParams: "", // intentionally not set here; see important comment in ConnectionPool()
+			Name:         opts.ContainerName,
+			Image:        image,
+			RootPassword: opts.RootPassword,
+			DataTmpfs:    (ld.cleanupAction == CleanupActionDestroy),
 		}
 		// If real inst had lower_case_table_names=1, use that in the container as
 		// well. (No need for similar logic with lower_case_table_names=2; this cannot
