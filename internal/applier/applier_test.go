@@ -1,7 +1,6 @@
 package applier
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -115,6 +114,14 @@ func (s ApplierIntegrationSuite) TestCreatePlanForTarget(t *testing.T) {
 		"connect-options":        "",
 		"environment":            "production",
 		"foreign-key-checks":     "",
+		"verify":                 "true",
+		"default-character-set":  "latin1",
+		"default-collation":      "latin1_swedish_ci",
+		"workspace":              "temp-schema",
+		"temp-schema":            "_skeema_tmp",
+		"temp-schema-binlog":     "auto",
+		"temp-schema-threads":    "5",
+		"reuse-temp-schema":      "false",
 	}
 	dir := &fs.Dir{
 		Path:   "/var/tmp/fakedir",
@@ -135,9 +142,6 @@ func (s ApplierIntegrationSuite) TestCreatePlanForTarget(t *testing.T) {
 
 	// Based on the DDL in plan.sql, we expect 1 unsupported change and 3 supported
 	// ones (of which 1 is unsafe)
-	var pse *PlannedStatementError
-	var unsuppErr *tengo.UnsupportedDiffError
-	var unsafeErr *tengo.UnsafeDiffError
 	expectedUnsupportedKey := tengo.ObjectKey{Name: "comments", Type: tengo.ObjectTypeTable}
 	expectedUnsafeKey := tengo.ObjectKey{Name: "subscriptions", Type: tengo.ObjectTypeTable}
 	plan, err := CreatePlanForTarget(target, diff, tengo.StatementModifiers{})
@@ -154,22 +158,14 @@ func (s ApplierIntegrationSuite) TestCreatePlanForTarget(t *testing.T) {
 		t.Errorf("Expected plan to contain 3 object keys, instead found %d", len(plan.DiffKeys))
 	}
 	if len(plan.Unsupported) != 1 {
-		t.Errorf("Expected plan to contain 1 unsupported error, instead found %d", len(plan.Unsupported))
-	} else if !errors.As(plan.Unsupported[0], &pse) {
-		t.Errorf("plan.Unsupported[0] is not expected type: found %T, expected %T", plan.Unsupported[0], pse)
-	} else if pse.Key != expectedUnsupportedKey {
-		t.Errorf("Unexpected object key in plan.Unsupported[0]: %s", pse.Key)
-	} else if !errors.As(plan.Unsupported[0], &unsuppErr) {
-		t.Errorf("plan.Unsupported[0] is not expected type: found %T, expected %T", plan.Unsupported[0], unsuppErr)
+		t.Errorf("Expected plan to contain 1 unsupported statement, instead found %d", len(plan.Unsupported))
+	} else if details, ok := plan.Unsupported[expectedUnsupportedKey]; !ok || details == "" {
+		t.Errorf("plan.Unsupported does not have expected contents: found %v", plan.Unsupported)
 	}
 	if len(plan.Unsafe) != 1 {
-		t.Errorf("Expected plan to contain 1 unsafe error, instead found %d", len(plan.Unsafe))
-	} else if !errors.As(plan.Unsafe[0], &pse) {
-		t.Errorf("plan.Unsafe[0] is not expected type: found %T, expected %T", plan.Unsafe[0], pse)
-	} else if pse.Key != expectedUnsafeKey {
-		t.Errorf("Unexpected object key in plan.Unsafe[0]: %s", pse.Key)
-	} else if !errors.As(plan.Unsafe[0], &unsafeErr) {
-		t.Errorf("plan.Unsafe[0] is not expected type: found %T, expected %T", plan.Unsafe[0], unsafeErr)
+		t.Errorf("Expected plan to contain 1 unsafe statement, instead found %d", len(plan.Unsafe))
+	} else if unsafe := plan.Unsafe[0]; unsafe.Key != expectedUnsafeKey || unsafe.Statement == "" || unsafe.Reason == "" {
+		t.Errorf("Unexpected values in plan.Unsafe[0]: %+v", plan.Unsafe[0])
 	}
 }
 

@@ -14,7 +14,6 @@ import (
 // All fields are mandatory, even though some may be redundant with
 // WorkspaceOptions in some situations.
 type VerifierOptions struct {
-	AllAlters           bool // if false, only verify unsupported alter diffs; if true, verify all alter diffs
 	Flavor              tengo.Flavor
 	DefaultCharacterSet string
 	DefaultCollation    string
@@ -25,7 +24,6 @@ type VerifierOptions struct {
 // configuration.
 func VerifierOptionsForTarget(t *Target) (opts VerifierOptions, err error) {
 	opts = VerifierOptions{
-		AllAlters:           t.Dir.Config.GetBool("verify"),
 		Flavor:              t.Instance.Flavor(),
 		DefaultCharacterSet: t.Dir.Config.Get("default-character-set"),
 		DefaultCollation:    t.Dir.Config.Get("default-collation"),
@@ -37,13 +35,7 @@ func VerifierOptionsForTarget(t *Target) (opts VerifierOptions, err error) {
 // VerifyDiff verifies the result of AlterTable values found in diff.TableDiffs,
 // confirming that applying the corresponding ALTER would bring a table from the
 // version currently in the instance to the version specified in the filesystem.
-func VerifyDiff(diff *tengo.SchemaDiff, vopts VerifierOptions) error {
-	// If diff contains no ALTER TABLEs, nothing to verify
-	altersInDiff := diff.FilteredTableDiffs(tengo.DiffTypeAlter)
-	if len(altersInDiff) == 0 {
-		return nil
-	}
-
+func VerifyDiff(altersInDiff []*tengo.TableDiff, vopts VerifierOptions) error {
 	// The goal of VerifyDiff is to confirm that the diff contains the correct and
 	// complete set of differences between all modified tables. We use a strict set
 	// of statement modifiers that will transform the initial state into an exact
@@ -82,10 +74,8 @@ func VerifyDiff(diff *tengo.SchemaDiff, vopts VerifierOptions) error {
 		stmt, err := td.Statement(mods)
 		if stmt == "" {
 			continue
-		} else if err != nil && tengo.IsUnsupportedDiff(err) {
+		} else if tengo.IsUnsupportedDiff(err) {
 			unsupportedTables[td.From.Name] = td
-		} else if !vopts.AllAlters {
-			continue
 		}
 
 		// Note: sometimes a table's diff gets split into multiple ALTERs, but this
@@ -107,8 +97,7 @@ func VerifyDiff(diff *tengo.SchemaDiff, vopts VerifierOptions) error {
 		desiredTables[td.From.Name] = td.To
 	}
 
-	// Return early if --verify was disabled and there were no verifiable
-	// unsupported tables
+	// Return early if nothing to verify
 	if len(desiredTables) == 0 {
 		return nil
 	}
@@ -153,15 +142,15 @@ func VerifyDiff(diff *tengo.SchemaDiff, vopts VerifierOptions) error {
 // second diff returns a non-empty ALTER, an error, or an unsupported diff, it
 // means the first diff did not properly do its job, so verification fails.
 func verifyTable(actual, desired *tengo.Table, mods tengo.StatementModifiers) error {
-	var unsupportedErr *tengo.UnsupportedDiffError
+	var errUnsupported *tengo.UnsupportedDiffError
 	td := tengo.NewAlterTable(actual, desired)
 	stmt, err := td.Statement(mods)
-	header := "Diff verification failure on table " + desired.Name
-	if errors.As(err, &unsupportedErr) {
-		unsupportedErr.Reason = strings.Replace(unsupportedErr.Reason, "original state", "post-verification state", 1)
-		unsupportedErr.ExpectedDesc = strings.Replace(unsupportedErr.ExpectedDesc, "original state", "post-verification state", 1)
-		unsupportedErr.ActualDesc = strings.Replace(unsupportedErr.ActualDesc, "original state", "post-verification state", 1)
-		return fmt.Errorf(header+". This may indicate a Skeema bug.\nRun command again with --skip-verify if this discrepancy is safe to ignore.\nDebug details: %s", unsupportedErr.Error())
+	header := "Diff verification failure on table " + tengo.EscapeIdentifier(desired.Name)
+	if errors.As(err, &errUnsupported) {
+		errUnsupported.Reason = strings.Replace(errUnsupported.Reason, "original state", "post-verification state", 1)
+		errUnsupported.ExpectedDesc = strings.Replace(errUnsupported.ExpectedDesc, "original state", "post-verification state", 1)
+		errUnsupported.ActualDesc = strings.Replace(errUnsupported.ActualDesc, "original state", "post-verification state", 1)
+		return fmt.Errorf(header+". This may indicate a Skeema bug.\nRun command again with --skip-verify if this discrepancy is safe to ignore.\nDebug details: %s", errUnsupported.Error())
 	} else if err != nil {
 		return fmt.Errorf(header+" due to unexpected error: %w.\nRun command again with --skip-verify if this is safe to ignore.", err)
 	} else if stmt != "" {

@@ -196,20 +196,6 @@ func (sd *SchemaDiff) String() string {
 	return strings.Join(diffStatements, "")
 }
 
-// FilteredTableDiffs returns any TableDiffs of the specified type(s).
-func (sd *SchemaDiff) FilteredTableDiffs(onlyTypes ...DiffType) []*TableDiff {
-	result := make([]*TableDiff, 0, len(sd.TableDiffs))
-	for _, td := range sd.TableDiffs {
-		for _, typ := range onlyTypes {
-			if td.Type == typ {
-				result = append(result, td)
-				break
-			}
-		}
-	}
-	return result
-}
-
 ///// DatabaseDiff /////////////////////////////////////////////////////////////
 
 // DatabaseDiff represents differences of schema characteristics (default
@@ -279,8 +265,7 @@ func (dd *DatabaseDiff) Statement(_ StatementModifiers) (string, error) {
 // statement modifiers do not permit the generated ObjectDiff to be used in this
 // situation.
 type UnsafeDiffError struct {
-	Reason     string
-	WrappedErr error // could be UnsupportedDiffError or another UnsafeDiffError
+	Reason string
 }
 
 // Error satisfies the builtin error interface.
@@ -288,16 +273,11 @@ func (e *UnsafeDiffError) Error() string {
 	return e.Reason
 }
 
-// Unwrap returns a wrapped error, if any was set.
-func (e *UnsafeDiffError) Unwrap() error {
-	return e.WrappedErr
-}
-
 // IsUnsafeDiff returns true if err represents an "unsafe" alteration that
 // has not explicitly been permitted by the supplied StatementModifiers.
 func IsUnsafeDiff(err error) bool {
-	var uderr *UnsafeDiffError
-	return errors.As(err, &uderr)
+	var errUnsafe *UnsafeDiffError
+	return errors.As(err, &errUnsafe)
 }
 
 // UnsupportedDiffError can be returned by ObjectDiff.Statement if Tengo is
@@ -308,6 +288,7 @@ type UnsupportedDiffError struct {
 	ExpectedDesc   string
 	ActualCreate   string
 	ActualDesc     string
+	WrappedErr     error // either an UnsafeDiffError or nil
 }
 
 // Error returns a string with information about why the diff is not supported.
@@ -326,9 +307,14 @@ func (e *UnsupportedDiffError) Error() string {
 	return e.Reason + "\n" + diffText
 }
 
+// Unwrap returns a wrapped error, if any was set.
+func (e *UnsupportedDiffError) Unwrap() error {
+	return e.WrappedErr
+}
+
 // IsUnsupportedDiff returns true if err represents an object that cannot be
 // diff'ed due to use of features not supported by this package.
 func IsUnsupportedDiff(err error) bool {
-	var uderr *UnsupportedDiffError
-	return errors.As(err, &uderr)
+	var errUnsupported *UnsupportedDiffError
+	return errors.As(err, &errUnsupported)
 }

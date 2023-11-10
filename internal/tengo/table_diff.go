@@ -267,39 +267,6 @@ func (td *TableDiff) Clauses(mods StatementModifiers) (string, error) {
 }
 
 func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
-	var err error
-	if !td.supported {
-		if td.To.UnsupportedDDL {
-			subjectAndVerb := `The desired state ("to" side of diff) contains `
-			if td.From.UnsupportedDDL {
-				subjectAndVerb = "Both sides of the diff contain "
-			}
-			err = &UnsupportedDiffError{
-				Reason:         subjectAndVerb + "unexpected or unsupported clauses in SHOW CREATE TABLE.",
-				ExpectedCreate: td.To.GeneratedCreateStatement(mods.Flavor),
-				ExpectedDesc:   "desired state expected CREATE",
-				ActualCreate:   td.To.CreateStatement,
-				ActualDesc:     "desired state actual SHOW CREATE",
-			}
-		} else if td.From.UnsupportedDDL {
-			err = &UnsupportedDiffError{
-				Reason:         "The original state (\"from\" side of diff) contains unexpected or unsupported clauses in SHOW CREATE TABLE.",
-				ExpectedCreate: td.From.GeneratedCreateStatement(mods.Flavor),
-				ExpectedDesc:   "original state expected CREATE",
-				ActualCreate:   td.From.CreateStatement,
-				ActualDesc:     "original state actual SHOW CREATE",
-			}
-		} else {
-			err = &UnsupportedDiffError{
-				Reason:         "Skeema does not support generation of the necessary DDL to convert the original table definition to the desired state.",
-				ExpectedCreate: td.From.CreateStatement,
-				ExpectedDesc:   "original state actual SHOW CREATE",
-				ActualCreate:   td.To.CreateStatement,
-				ActualDesc:     "desired state actual SHOW CREATE",
-			}
-		}
-	}
-
 	// Force StrictIndexOrder to be enabled for InnoDB tables that have no primary
 	// key and at least one unique index with non-nullable columns
 	if !mods.StrictIndexOrder && td.To.Engine == "InnoDB" && td.To.ClusteredIndexKey() != td.To.PrimaryKey {
@@ -337,10 +304,51 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 			clauseStrings = append(clauseStrings, clauseString)
 		}
 	}
+
+	// Determine any errors: unsafe, unsupported, or both.
+	// The "both" situation happens when the table uses unsupported features but
+	// we're still able to generate at least a partial diff, and that partial diff
+	// is unsafe. In that case, the UnsupportedDiffError wraps the UnsafeDiffError
+	// (instead of vice versa) for purposes of using the unsupported error message
+	// as the primary error message.
+	var err error
 	if len(unsafeReasons) > 0 {
 		err = &UnsafeDiffError{
-			Reason:     "Desired alteration for " + td.ObjectKey().String() + " is not safe: " + strings.Join(unsafeReasons, "; ") + ".",
-			WrappedErr: err,
+			Reason: "Desired alteration for " + td.ObjectKey().String() + " is not safe: " + strings.Join(unsafeReasons, "; ") + ".",
+		}
+	}
+	if !td.supported {
+		if td.To.UnsupportedDDL {
+			subjectAndVerb := `The desired state ("to" side of diff) contains `
+			if td.From.UnsupportedDDL {
+				subjectAndVerb = "Both sides of the diff contain "
+			}
+			err = &UnsupportedDiffError{
+				Reason:         subjectAndVerb + "unexpected or unsupported clauses in SHOW CREATE TABLE.",
+				ExpectedCreate: td.To.GeneratedCreateStatement(mods.Flavor),
+				ExpectedDesc:   "desired state expected CREATE",
+				ActualCreate:   td.To.CreateStatement,
+				ActualDesc:     "desired state actual SHOW CREATE",
+				WrappedErr:     err,
+			}
+		} else if td.From.UnsupportedDDL {
+			err = &UnsupportedDiffError{
+				Reason:         "The original state (\"from\" side of diff) contains unexpected or unsupported clauses in SHOW CREATE TABLE.",
+				ExpectedCreate: td.From.GeneratedCreateStatement(mods.Flavor),
+				ExpectedDesc:   "original state expected CREATE",
+				ActualCreate:   td.From.CreateStatement,
+				ActualDesc:     "original state actual SHOW CREATE",
+				WrappedErr:     err,
+			}
+		} else {
+			err = &UnsupportedDiffError{
+				Reason:         "Skeema does not support generation of the necessary DDL to convert the original table definition to the desired state.",
+				ExpectedCreate: td.From.CreateStatement,
+				ExpectedDesc:   "original state actual SHOW CREATE",
+				ActualCreate:   td.To.CreateStatement,
+				ActualDesc:     "desired state actual SHOW CREATE",
+				WrappedErr:     err,
+			}
 		}
 	}
 

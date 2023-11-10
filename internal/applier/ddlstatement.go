@@ -64,7 +64,7 @@ func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, targe
 	}
 
 	// Options may indicate some/all DDL gets executed by shelling out to another program.
-	wrapper, err := getWrapper(target.Dir.Config, diff, tableSize, &mods)
+	wrapper, mods, err := getWrapper(target.Dir.Config, diff, tableSize, mods)
 	if err != nil {
 		return nil, ConfigError(err.Error())
 	}
@@ -177,12 +177,12 @@ func getTableSize(target *Target, tableName string) (int64, error) {
 // getWrapper returns the command-line for executing diff as a shell-out, if
 // configured to do so. Any variable placeholders in the returned string have
 // NOT been interpolated yet.
-func getWrapper(config *mybase.Config, diff tengo.ObjectDiff, tableSize int64, mods *tengo.StatementModifiers) (string, error) {
+func getWrapper(config *mybase.Config, diff tengo.ObjectDiff, tableSize int64, mods tengo.StatementModifiers) (string, tengo.StatementModifiers, error) {
 	wrapper := config.Get("ddl-wrapper")
 	if diff.ObjectKey().Type == tengo.ObjectTypeTable && diff.DiffType() == tengo.DiffTypeAlter && config.Changed("alter-wrapper") {
 		minSize, err := config.GetBytes("alter-wrapper-min-size")
 		if err != nil {
-			return "", errors.New("option alter-wrapper-min-size has been configured to an invalid value")
+			return "", mods, errors.New("option alter-wrapper-min-size has been configured to an invalid value")
 		}
 		if tableSize >= int64(minSize) {
 			wrapper = config.Get("alter-wrapper")
@@ -192,6 +192,7 @@ func getWrapper(config *mybase.Config, diff tengo.ObjectDiff, tableSize int64, m
 			// for a configuration using built-in online DDL for small tables, and an
 			// external OSC tool for large tables, without risk of ALGORITHM or LOCK
 			// clauses breaking expectations of the OSC tool.
+			// Note that this is only done for --alter-wrapper but not --ddl-wrapper.
 			if minSize > 0 {
 				log.Debugf("Using alter-wrapper for %s: size=%d >= alter-wrapper-min-size=%d", diff.ObjectKey(), tableSize, minSize)
 				if mods.AlgorithmClause != "" || mods.LockClause != "" {
@@ -204,7 +205,7 @@ func getWrapper(config *mybase.Config, diff tengo.ObjectDiff, tableSize int64, m
 			log.Debugf("Skipping alter-wrapper for %s: size=%d < alter-wrapper-min-size=%d", diff.ObjectKey(), tableSize, minSize)
 		}
 	}
-	return wrapper, nil
+	return wrapper, mods, nil
 }
 
 // getConnectParams returns the necessary connection params (session variables)

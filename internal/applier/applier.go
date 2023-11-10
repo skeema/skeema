@@ -31,17 +31,13 @@ type PlannedStatement interface {
 	ClientState() ClientState
 }
 
-// PlannedStatementError represents a difference/statement that is either unsafe
-// (and not permitted by the Target's configuration) or unsupported.
-type PlannedStatementError struct {
-	error                     // either tengo.UnsafeDiffError or tengo.UnsupportedDiffError
-	Key       tengo.ObjectKey // which object the error pertains to
-	Statement string          // can be blank if Error is a tengo.UnsupportedDiffError
-}
-
-// Unwrap returns the underlying error.
-func (pse *PlannedStatementError) Unwrap() error {
-	return pse.error
+// UnsafeStatement represents a SQL statement that is destructive, lossy, or
+// otherwise operationally risky to execute. If such statements are present and
+// not specially approved, the apply process is prevented.
+type UnsafeStatement struct {
+	Key       tengo.ObjectKey
+	Statement string
+	Reason    string
 }
 
 // Plan represents a set of ordered statements that, if executed, will bring a
@@ -52,9 +48,9 @@ func (pse *PlannedStatementError) Unwrap() error {
 type Plan struct {
 	Target      *Target
 	Statements  []PlannedStatement
-	DiffKeys    []tengo.ObjectKey // objects with non-blank supported schema differences, regardless of unsafe
-	Unsupported []*PlannedStatementError
-	Unsafe      []*PlannedStatementError
+	DiffKeys    []tengo.ObjectKey          // objects with non-blank supported schema differences
+	Unsupported map[tengo.ObjectKey]string // map of object key => details on why unsupported
+	Unsafe      []UnsafeStatement
 }
 
 // Run prints each statement in the plan, and also executes them if the Target's
@@ -165,12 +161,6 @@ func ApplyTarget(t *Target, printer Printer) (Result, error) {
 	}
 
 	diff := tengo.NewSchemaDiff(schemaFromInstance, schemaFromDir)
-	if vopts, err := VerifierOptionsForTarget(t); err != nil {
-		return result, err
-	} else if err := VerifyDiff(diff, vopts); err != nil {
-		return result, err
-	}
-
 	plan, err := CreatePlanForTarget(t, diff, mods)
 	result.UnsupportedCount = len(plan.Unsupported)
 	result.Differences = (len(plan.DiffKeys) + len(plan.Unsupported)) > 0
@@ -178,13 +168,13 @@ func ApplyTarget(t *Target, printer Printer) (Result, error) {
 		result.SkipCount += len(plan.Statements)
 		return result, err
 	}
-	for _, pse := range plan.Unsupported {
+	for key, details := range plan.Unsupported {
 		var nonInnoWarning string
-		if table := schemaFromInstance.Table(pse.Key.Name); pse.Key.Type == tengo.ObjectTypeTable && table != nil && table.Engine != "InnoDB" {
+		if table := schemaFromInstance.Table(key.Name); key.Type == tengo.ObjectTypeTable && table != nil && table.Engine != "InnoDB" {
 			nonInnoWarning = " This table's storage engine is " + table.Engine + ", but Skeema is designed to operate primarily on InnoDB tables."
 		}
-		log.Warnf("Skipping %s: Skeema does not support generating a diff of this table.%s Use --debug to see which properties of this table are not supported.", pse.Key, nonInnoWarning)
-		log.Debug(pse.Error())
+		log.Warnf("Skipping %s: Skeema does not support generating a diff of this table.%s Use --debug to see which properties of this table are not supported.", key, nonInnoWarning)
+		log.Debug(details)
 	}
 
 	// Log errors for unsafe statements, and start to build summary error message
@@ -193,9 +183,9 @@ func ApplyTarget(t *Target, printer Printer) (Result, error) {
 	if len(plan.Unsafe) > 0 {
 		onlyTablesMessage := "or --safe-below-size "
 		stderrTerminalWidth, _ := util.TerminalWidth(int(os.Stderr.Fd())) // safe to ignore error; if STDERR not tty, no line-wrapping is used
-		for _, pse := range plan.Unsafe {
-			log.Error(pse.Error() + " Generated SQL statement:\n# " + util.WrapStringWithPadding(pse.Statement, stderrTerminalWidth-29, "# "))
-			if pse.Key.Type != tengo.ObjectTypeTable {
+		for _, unsafe := range plan.Unsafe {
+			log.Error(unsafe.Reason + " Generated SQL statement:\n# " + util.WrapStringWithPadding(unsafe.Statement, stderrTerminalWidth-29, "# "))
+			if unsafe.Key.Type != tengo.ObjectTypeTable {
 				onlyTablesMessage = "" // remove message about --safe-below-size, doesn't work on non-tables
 			}
 		}
@@ -244,21 +234,78 @@ func ApplyTarget(t *Target, printer Printer) (Result, error) {
 // the caller can measure how many statements had to be skipped.
 func CreatePlanForTarget(t *Target, diff *tengo.SchemaDiff, mods tengo.StatementModifiers) (*Plan, error) {
 	var fatalErr error
-	objDiffs := diff.ObjectDiffs()
-	plan := &Plan{
-		Target:     t,
-		Statements: make([]PlannedStatement, 0, len(objDiffs)),
-		DiffKeys:   make([]tengo.ObjectKey, 0, len(objDiffs)),
+
+	// First pass over the full schema diff: Filter out no-ops based on mods (e.g.
+	// auto_inc discrepancies); determine what ALTER TABLEs need verification.
+	// We verify the correctness of ALTER TABLEs in a workspace in these cases:
+	// * If --verify is enabled (as it is by default), we verify any table with at
+	//   least one ALTER TABLE that wasn't blank due to mods
+	// * If Statement returns a tengo.UnsupportedDiffError, we want to see if any
+	//   supported part of the diff could be generated (using stricter mods), and
+	//   verify it if so. If it passes verification (meaning, the generated diff
+	//   actually fully converts the table from the original to the desired state)
+	//   then we can mark it as supported and handle it like any other diff.
+	verifyAllAlterTables := t.Dir.Config.GetBool("verify")
+	allObjDiffs := diff.ObjectDiffs()
+	objDiffs := make([]tengo.ObjectDiff, 0, len(allObjDiffs))
+	allAlterTables := make([]*tengo.TableDiff, 0)
+	verifyKeys := make(map[tengo.ObjectKey]bool)
+	for _, objDiff := range allObjDiffs {
+		// Filter out cases where stmt is blank and err is nil. That return combo
+		// indicates a no-op difference, i.e. ignored based on the options supplied.
+		stmt, err := objDiff.Statement(mods)
+		if stmt != "" || err != nil {
+			objDiffs = append(objDiffs, objDiff)
+		}
+
+		// Extra bookkeeping for ALTER TABLE verification:
+		// Track all ALTER TABLEs (even if no-ops) in an ordered slice, as well as
+		// tracking object keys needing verification as per the two cases described in
+		// bullets above. This is necessary since some types of diffs are split into
+		// multiple separate ALTER TABLE on the same table, for edge cases with adding
+		// foreign keys or adding fulltext indexes. If *any* of the diffs for a given
+		// table require verification, we need all those ALTERs for that table, even
+		// if some were no-ops when applying statement mods. (Verification uses a
+		// different set of mods, so these might not remain no-ops for verification.)
+		// Maintaining the original diff order among the ALTER TABLEs is also required
+		// for ensuring foreign keys get added after any new parent-table indexes they
+		// depend on.
+		if td, ok := objDiff.(*tengo.TableDiff); ok && td.DiffType() == tengo.DiffTypeAlter {
+			allAlterTables = append(allAlterTables, td)
+			if (stmt != "" && verifyAllAlterTables) || tengo.IsUnsupportedDiff(err) {
+				verifyKeys[objDiff.ObjectKey()] = true
+			}
+		}
 	}
 
+	// Run verification on ALTER TABLEs if needed
+	if len(verifyKeys) > 0 {
+		var toVerify []*tengo.TableDiff
+		for _, td := range allAlterTables {
+			if verifyKeys[td.ObjectKey()] {
+				toVerify = append(toVerify, td)
+			}
+		}
+		if vopts, err := VerifierOptionsForTarget(t); err != nil {
+			fatalErr = err
+		} else if err := VerifyDiff(toVerify, vopts); err != nil {
+			fatalErr = err
+		}
+	}
+
+	plan := &Plan{
+		Target:      t,
+		Statements:  make([]PlannedStatement, 0, len(objDiffs)),
+		DiffKeys:    make([]tengo.ObjectKey, 0, len(objDiffs)),
+		Unsupported: make(map[tengo.ObjectKey]string),
+	}
+
+	// Second pass over diffs: build plan
 	for _, objDiff := range objDiffs {
 		key := objDiff.ObjectKey()
 		ddl, err := NewDDLStatement(objDiff, mods, t)
 		if tengo.IsUnsupportedDiff(err) {
-			plan.Unsupported = append(plan.Unsupported, &PlannedStatementError{
-				error: err,
-				Key:   key,
-			})
+			plan.Unsupported[key] = err.Error()
 			continue
 		}
 		if ddl != nil {
@@ -266,10 +313,10 @@ func CreatePlanForTarget(t *Target, diff *tengo.SchemaDiff, mods tengo.Statement
 			plan.DiffKeys = append(plan.DiffKeys, key)
 		}
 		if tengo.IsUnsafeDiff(err) {
-			plan.Unsafe = append(plan.Unsafe, &PlannedStatementError{
-				error:     err,
+			plan.Unsafe = append(plan.Unsafe, UnsafeStatement{
 				Key:       key,
 				Statement: ddl.stmt,
+				Reason:    err.Error(),
 			})
 		} else if err != nil && fatalErr == nil {
 			fatalErr = err
