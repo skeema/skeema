@@ -1,11 +1,15 @@
 package tengo
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // This file contains public functions and structs designed to make integration
@@ -57,6 +61,36 @@ func RunSuite(suite IntegrationTestSuite, t *testing.T, backends []string) {
 						suite.Teardown(backend)
 						t.Fatalf("RunSuite %s: BeforeTest(%s) failed: %s", suiteName, backend, err)
 					}
+					// Capture output and only display if test fails or is skipped. Note that
+					// this approach does not permit concurrent subtest execution.
+					realOut, realErr := os.Stdout, os.Stderr
+					realLogOutput := log.StandardLogger().Out
+					if r, w, err := os.Pipe(); err == nil {
+						os.Stdout = w
+						os.Stderr = w
+						log.SetOutput(w)
+						outChan := make(chan []byte)
+						defer func() {
+							w.Close()
+							os.Stdout = realOut
+							os.Stderr = realErr
+							log.SetOutput(realLogOutput)
+							testOutput := <-outChan
+							if subt.Failed() || subt.Skipped() {
+								os.Stderr.Write(testOutput)
+							}
+						}()
+						go func() {
+							var b bytes.Buffer
+							_, err := io.Copy(&b, r) // prevent pipe from filling up
+							if err == nil {
+								outChan <- b.Bytes()
+							} else {
+								outChan <- fmt.Appendf(nil, "Unable to buffer test output: %v", err)
+							}
+							close(outChan)
+						}()
+					}
 					method.Func.Call([]reflect.Value{reflect.ValueOf(suite), reflect.ValueOf(subt)})
 				}
 				t.Run(subtestName, subtest)
@@ -80,7 +114,9 @@ func SkeemaTestImages(t *testing.T) []string {
 	t.Helper()
 	envString := strings.TrimSpace(os.Getenv("SKEEMA_TEST_IMAGES"))
 	if envString == "" {
-		fmt.Println("SKEEMA_TEST_IMAGES env var is not set, so integration tests will be skipped!")
+		fmt.Println("*** IMPORTANT ***")
+		fmt.Println("SKEEMA_TEST_IMAGES env var is not set, so integration tests will be skipped.")
+		fmt.Println("The VAST majority of Skeema's test coverage is in these integration tests!")
 		fmt.Println("To run integration tests, you may set SKEEMA_TEST_IMAGES to a comma-separated")
 		fmt.Println("list of Docker images. For example:")
 		fmt.Println(`$ SKEEMA_TEST_IMAGES="mysql:8.0,mariadb:10.11" go test`)

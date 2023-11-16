@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"strings"
@@ -472,22 +473,19 @@ func (s SkeemaIntegrationSuite) TestDiffHandler(t *testing.T) {
 		// --brief manipulates the log level, so we must restore it after
 		log.SetLevel(log.DebugLevel)
 	}()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Unable to redirect stdout to a pipe: %v", err)
+	}
 	oldStdout := os.Stdout
-	if outFile, err := os.Create("diff-brief.out"); err != nil {
-		t.Fatalf("Unable to redirect stdout to a file: %s", err)
-	} else {
-		os.Stdout = outFile
-		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --brief")
-		outFile.Close()
-		os.Stdout = oldStdout
-		expectOut := fmt.Sprintf("%s\n", s.d.Instance)
-		actualOut := fs.ReadTestFile(t, "diff-brief.out")
-		if actualOut != expectOut {
-			t.Errorf("Unexpected output from `skeema diff --brief`\nExpected:\n%sActual:\n%s", expectOut, actualOut)
-		}
-		if err := os.Remove("diff-brief.out"); err != nil {
-			t.Fatalf("Unable to delete diff-brief.out: %s", err)
-		}
+	os.Stdout = w
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --brief")
+	w.Close()
+	os.Stdout = oldStdout
+	expectOut := s.d.Instance.String() + "\n"
+	actualOut, err := io.ReadAll(r)
+	if err != nil || string(actualOut) != expectOut {
+		t.Errorf("Unexpected output from `skeema diff --brief`. Expected: %q   Actual: %q", expectOut, string(actualOut))
 	}
 }
 

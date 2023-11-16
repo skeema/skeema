@@ -2,7 +2,10 @@ package main
 
 import (
 	"errors"
+	"os"
 	"testing"
+
+	log "github.com/sirupsen/logrus"
 )
 
 func TestExitCode(t *testing.T) {
@@ -58,11 +61,19 @@ func TestHighestExitCode(t *testing.T) {
 }
 
 func TestExit(t *testing.T) {
-	// Defer a fix to restore the real exit handler, since it will be manipulated
-	// by the test.
+	origExitFunc := exitFunc
+	origLogOutput := log.StandardLogger().Out
+
+	// Defer a fix to restore the real exit handler and logger, since they will be
+	// manipulated by the test.
 	defer func() {
-		exitFunc = realExit
+		exitFunc = origExitFunc
+		log.SetOutput(origLogOutput)
 	}()
+
+	if _, w, err := os.Pipe(); err == nil {
+		log.SetOutput(w)
+	}
 
 	expectNextExitCode := func(expectCode int) {
 		t.Helper()
@@ -85,6 +96,12 @@ func TestExit(t *testing.T) {
 }
 
 func TestPanicHandler(t *testing.T) {
+	// Override the logger, so that the scary panic log output is not displayed
+	origLogOutput := log.StandardLogger().Out
+	if _, w, err := os.Pipe(); err == nil {
+		log.SetOutput(w)
+	}
+
 	// Override the exit function used by Exit() so that it doesn't actually exit
 	// the program. Defer a fix to restore the real exit handler, and then defer
 	// the panic handler *after* that, since deferred functions are executed LIFO.
@@ -95,7 +112,8 @@ func TestPanicHandler(t *testing.T) {
 	}
 	defer func() {
 		exitFunc = realExit
+		log.SetOutput(origLogOutput)
 	}()
 	defer panicHandler()
-	panic(errors.New("If this test passes, this was actually caught properly, don't worry about the surrounding text"))
+	panic(errors.New("If this test passes, this was actually caught properly"))
 }
