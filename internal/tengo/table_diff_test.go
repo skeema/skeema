@@ -652,13 +652,12 @@ func TestAlterTableStatementVirtualColValidation(t *testing.T) {
 	// Adding a non-virtual column, even if generated: VirtualColValidation has
 	// no effect
 	col := &Column{
-		Name:               "full_name",
-		TypeInDB:           "varchar(100)",
-		Nullable:           true,
-		CharSet:            "utf8",
-		Collation:          "utf8_general_ci",
-		CollationIsDefault: true,
-		GenerationExpr:     "CONCAT(first_name, ' ', last_name)",
+		Name:           "full_name",
+		TypeInDB:       "varchar(100)",
+		Nullable:       true,
+		CharSet:        "utf8",
+		Collation:      "utf8_general_ci",
+		GenerationExpr: "CONCAT(first_name, ' ', last_name)",
 	}
 	to.Columns = append(to.Columns, col)
 	assertWithValidation(false)
@@ -846,7 +845,8 @@ func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
 		sqlPath = "pagecompression-maria.sql"
 	}
 	s.SourceTestSQL(t, sqlPath)
-	uncompTable := s.GetTable(t, "testing", "actor_in_film")
+	schema := s.GetSchema(t, "testing")
+	uncompTable := getTable(t, schema, "actor_in_film")
 	if uncompTable.CreateOptions != "" {
 		t.Fatal("Fixture table has changed without test logic being updated")
 	}
@@ -862,9 +862,10 @@ func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
 		if _, err := db.Exec(query); err != nil {
 			t.Fatalf("Unexpected error from query %q: %v", query, err)
 		}
+		schema = s.GetSchema(t, "testing") // re-introspect to reflect changes from the DDL
 	}
 
-	compTable := s.GetTable(t, "testing", "actor_in_film_comp")
+	compTable := getTable(t, schema, "actor_in_film_comp")
 	if compTable.UnsupportedDDL {
 		t.Fatal("Table with page compression is unexpectedly unsupported for diff")
 	}
@@ -876,7 +877,7 @@ func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
 		t.Fatalf("Unexpected return from diff: %d clauses, supported=%t", len(clauses), supported)
 	}
 	runAlter(clauses[0])
-	refetchedTable := s.GetTable(t, "testing", "actor_in_film")
+	refetchedTable := getTable(t, schema, "actor_in_film")
 	// Just comparing string length because the *order* of create options may
 	// randomly differ from what was specified in DDL
 	if len(refetchedTable.CreateOptions) != len(compTable.CreateOptions) {
@@ -889,7 +890,7 @@ func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
 		t.Fatalf("Unexpected return from diff: %d clauses, supported=%t", len(clauses), supported)
 	}
 	runAlter(clauses[0])
-	refetchedTable = s.GetTable(t, "testing", "actor_in_film")
+	refetchedTable = getTable(t, schema, "actor_in_film")
 	if refetchedTable.CreateOptions != "" {
 		t.Fatalf("Expected refetched table to have create options \"\", instead found %q", refetchedTable.CreateOptions)
 	}
@@ -1056,10 +1057,18 @@ func (s TengoIntegrationSuite) TestAlterCheckConstraints(t *testing.T) {
 			t.Fatalf("Unexpected error executing statement %q: %v", stmt, err)
 		}
 	}
+	getTableCopy := func(tableName string) *Table {
+		t.Helper()
+		// Re-introspect the schema so that we can get a pointer to a new
+		// Table value, vs normal getTable() which will keep returning a pointer
+		// to the same Table value
+		schema := s.GetSchema(t, "testing")
+		return getTable(t, schema, tableName)
+	}
 
 	// Test addition of checks
-	tableNoChecks := s.GetTable(t, "testing", "grab_bag")
-	tableChecks := s.GetTable(t, "testing", "grab_bag")
+	tableNoChecks := getTableCopy("grab_bag")
+	tableChecks := getTableCopy("grab_bag")
 	tableChecks.Checks = []*Check{
 		{Name: "alivecheck", Clause: "alive != 0", Enforced: true},
 		{Name: "stringythings", Clause: "code != 'ABCD1234' AND name != code", Enforced: true},
@@ -1067,13 +1076,13 @@ func (s TengoIntegrationSuite) TestAlterCheckConstraints(t *testing.T) {
 	tableChecks.CreateStatement = tableChecks.GeneratedCreateStatement(flavor)
 	td := NewAlterTable(tableNoChecks, tableChecks)
 	execAlter(td)
-	tableChecks = s.GetTable(t, "testing", "grab_bag")
+	tableChecks = getTableCopy("grab_bag")
 	if tableChecks.UnsupportedDDL {
 		t.Fatal("Table is unexpectedly unsupported for diffs now")
 	}
 
 	// Confirm that modifying a check's name or clause = drop and re-add
-	tableChecks2 := s.GetTable(t, "testing", "grab_bag")
+	tableChecks2 := getTableCopy("grab_bag")
 	tableChecks2.Checks[0].Clause = "alive = 1"
 	tableChecks2.Checks[1].Name = "stringycheck"
 	tableChecks2.CreateStatement = tableChecks2.GeneratedCreateStatement(flavor)
@@ -1082,7 +1091,7 @@ func (s TengoIntegrationSuite) TestAlterCheckConstraints(t *testing.T) {
 		t.Errorf("Expected 4 alterClauses, instead found %d", len(td.alterClauses))
 	}
 	execAlter(td)
-	tableChecks = s.GetTable(t, "testing", "grab_bag")
+	tableChecks = getTableCopy("grab_bag")
 	if tableChecks.UnsupportedDDL {
 		t.Fatal("Table is unexpectedly unsupported for diffs now")
 	}
@@ -1093,7 +1102,7 @@ func (s TengoIntegrationSuite) TestAlterCheckConstraints(t *testing.T) {
 	// Confirm functionality related to MySQL's ALTER CHECK clause and the NOT
 	// ENFORCED modifier
 	if flavor.Vendor != VendorMariaDB {
-		tableChecks2 = s.GetTable(t, "testing", "grab_bag")
+		tableChecks2 = getTableCopy("grab_bag")
 		tableChecks2.Checks[1].Enforced = false
 		tableChecks2.CreateStatement = tableChecks2.GeneratedCreateStatement(flavor)
 		td = NewAlterTable(tableChecks, tableChecks2)
@@ -1101,7 +1110,7 @@ func (s TengoIntegrationSuite) TestAlterCheckConstraints(t *testing.T) {
 			t.Errorf("Expected 1 alterClause, instead found %d", len(td.alterClauses))
 		}
 		execAlter(td)
-		tableChecks2 = s.GetTable(t, "testing", "grab_bag")
+		tableChecks2 = getTableCopy("grab_bag")
 		if tableChecks2.UnsupportedDDL {
 			t.Fatal("Table is unexpectedly unsupported for diffs now")
 		}
@@ -1112,7 +1121,7 @@ func (s TengoIntegrationSuite) TestAlterCheckConstraints(t *testing.T) {
 		// Now do the reverse: set the check back to enforced
 		td = NewAlterTable(tableChecks2, tableChecks)
 		execAlter(td)
-		tableChecks = s.GetTable(t, "testing", "grab_bag")
+		tableChecks = getTableCopy("grab_bag")
 		if tableChecks.UnsupportedDDL {
 			t.Fatal("Table is unexpectedly unsupported for diffs now")
 		}

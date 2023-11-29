@@ -73,18 +73,17 @@ func TestColumnEquivalent(t *testing.T) {
 
 	// Test situations involving forcing show charset/collation
 	a = &Column{
-		Name:               "col",
-		TypeInDB:           "varchar(20)",
-		Default:            "NULL",
-		Nullable:           true,
-		CharSet:            "utf8mb4",
-		Collation:          "utf8mb4_0900_ai_ci",
-		CollationIsDefault: true,
+		Name:      "col",
+		TypeInDB:  "varchar(20)",
+		Default:   "NULL",
+		Nullable:  true,
+		CharSet:   "utf8mb4",
+		Collation: "utf8mb4_0900_ai_ci",
 	}
 	*b = *a
-	b.ForceShowCharSet = true
+	b.ShowCharSet = true
 	assertEquivalent(true)
-	b.ForceShowCollation = true
+	b.ShowCollation = true
 	assertEquivalent(true)
 	b.TypeInDB = "varchar(21)"
 	assertEquivalent(false)

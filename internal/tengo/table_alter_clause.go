@@ -43,7 +43,7 @@ func (ac AddColumn) Clause(mods StatementModifiers) string {
 	} else if ac.PositionAfter != nil {
 		positionClause = " AFTER " + EscapeIdentifier(ac.PositionAfter.Name)
 	}
-	return "ADD COLUMN " + ac.Column.Definition(mods.Flavor, ac.Table) + positionClause
+	return "ADD COLUMN " + ac.Column.Definition(mods.Flavor) + positionClause
 }
 
 ///// DropColumn ///////////////////////////////////////////////////////////////
@@ -335,7 +335,7 @@ func (mc ModifyColumn) Clause(mods StatementModifiers) string {
 		return ""
 	}
 
-	return "MODIFY COLUMN " + mc.NewColumn.Definition(mods.Flavor, mc.Table) + positionClause
+	return "MODIFY COLUMN " + mc.NewColumn.Definition(mods.Flavor) + positionClause
 }
 
 // Unsafe returns true if this clause is potentially destroys/corrupts existing

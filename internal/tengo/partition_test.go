@@ -364,15 +364,24 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 	s.SourceTestSQL(t, "partition.sql")
 	flavor := s.d.Flavor()
 	mods := StatementModifiers{AllowUnsafe: true, Flavor: flavor}
-	tableFromDB := s.GetTable(t, "partitionparty", "prange")
+	schema := s.GetSchema(t, "partitionparty")
+	db, err := s.d.CachedConnectionPool("partitionparty", "")
+	if err != nil {
+		t.Fatalf("Unable to connect to DockerizedInstance: %v", err)
+	}
+	execStmt := func(stmt string) {
+		t.Helper()
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("Unexpected error executing statement %q: %v", stmt, err)
+		}
+		schema = s.GetSchema(t, "partitionparty") // re-introspect to reflect changes from DDL
+	}
+
+	tableFromDB := getTable(t, schema, "prange")
 	tableFromUnit := unpartitionedTable(flavor)
 	tableFromUnitP := partitionedTable(flavor)
 	if tableFromDB.CreateStatement != tableFromUnitP.CreateStatement {
 		t.Fatalf("Test requires no drift between definition of unit test table and corresponding actual table; found %q vs %q", tableFromDB.CreateStatement, tableFromUnitP.CreateStatement)
-	}
-	db, err := s.d.CachedConnectionPool("partitionparty", "")
-	if err != nil {
-		t.Fatalf("Unable to connect to DockerizedInstance: %v", err)
 	}
 
 	// Confirm that combining REMOVE PARTITIONING with other clauses works
@@ -389,10 +398,8 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 	)
 	tableFromUnit.CreateStatement = tableFromUnit.GeneratedCreateStatement(flavor)
 	stmt, _ := NewAlterTable(tableFromDB, &tableFromUnit).Statement(mods)
-	if _, err := db.Exec(stmt); err != nil {
-		t.Fatalf("Unexpected error running statement %q: %v", stmt, err)
-	}
-	tableFromDB = s.GetTable(t, "partitionparty", "prange")
+	execStmt(stmt)
+	tableFromDB = getTable(t, schema, "prange")
 	if tableFromDB.Partitioning != nil || len(tableFromDB.Columns) != len(tableFromUnit.Columns) {
 		t.Fatalf("Statement %q did not have the intended effect", stmt)
 	}
@@ -400,10 +407,8 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 	// Now confirm combining PARTITION BY with other clauses works properly,
 	// again because the syntax is unusual (no comma before partitioning clause)
 	stmt, _ = NewAlterTable(tableFromDB, &tableFromUnitP).Statement(mods)
-	if _, err := db.Exec(stmt); err != nil {
-		t.Fatalf("Unexpected error running statement %q: %v", stmt, err)
-	}
-	tableFromDB = s.GetTable(t, "partitionparty", "prange")
+	execStmt(stmt)
+	tableFromDB = getTable(t, schema, "prange")
 	if tableFromDB.CreateStatement != tableFromUnitP.CreateStatement {
 		t.Fatalf("Statement %q did not have the intended effect", stmt)
 	}
@@ -418,10 +423,8 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 	tableFromUnitP.Partitioning.Expression = strings.Replace(tableFromUnitP.Partitioning.Expression, "customer_", "", 1)
 	tableFromUnitP.CreateStatement = tableFromUnitP.GeneratedCreateStatement(flavor)
 	stmt, _ = NewAlterTable(tableFromDB, &tableFromUnitP).Statement(mods)
-	if _, err := db.Exec(stmt); err != nil {
-		t.Fatalf("Unexpected error running statement %q: %v", stmt, err)
-	}
-	tableFromDB = s.GetTable(t, "partitionparty", "prange")
+	execStmt(stmt)
+	tableFromDB = getTable(t, schema, "prange")
 	if tableFromDB.CreateStatement != tableFromUnitP.CreateStatement {
 		t.Fatalf("Statement %q did not have the intended effect", stmt)
 	}
@@ -459,29 +462,28 @@ func unpartitionedTable(flavor Flavor) Table {
 			TypeInDB: "int(10) unsigned",
 		},
 		{
-			Name:               "info",
-			TypeInDB:           "text",
-			Nullable:           true,
-			CharSet:            "latin1",
-			Collation:          "latin1_swedish_ci",
-			CollationIsDefault: true,
+			Name:      "info",
+			TypeInDB:  "text",
+			Nullable:  true,
+			CharSet:   "latin1",
+			Collation: "latin1_swedish_ci",
 		},
 	}
 	if flavor.Min(FlavorMariaDB102) { // only Maria 10.2+ allows blob default literals
 		columns[2].Default = "NULL"
 	}
 	t := Table{
-		Name:               "prange",
-		Engine:             "InnoDB",
-		CharSet:            "latin1",
-		Collation:          "latin1_swedish_ci",
-		CollationIsDefault: true,
-		CreateOptions:      "ROW_FORMAT=REDUNDANT",
-		Columns:            columns,
-		PrimaryKey:         primaryKey(columns[0], columns[1]),
-		SecondaryIndexes:   []*Index{},
-		ForeignKeys:        []*ForeignKey{},
-		NextAutoIncrement:  1,
+		Name:              "prange",
+		Engine:            "InnoDB",
+		CharSet:           "latin1",
+		Collation:         "latin1_swedish_ci",
+		ShowCollation:     flavor.AlwaysShowCollate(),
+		CreateOptions:     "ROW_FORMAT=REDUNDANT",
+		Columns:           columns,
+		PrimaryKey:        primaryKey(columns[0], columns[1]),
+		SecondaryIndexes:  []*Index{},
+		ForeignKeys:       []*ForeignKey{},
+		NextAutoIncrement: 1,
 	}
 	t.CreateStatement = t.GeneratedCreateStatement(flavor)
 	if flavor.OmitIntDisplayWidth() {

@@ -15,12 +15,11 @@ type Column struct {
 	OnUpdate            string `json:"onUpdate,omitempty"`
 	GenerationExpr      string `json:"generationExpression,omitempty"` // Only populated if generated column
 	Virtual             bool   `json:"virtual,omitempty"`
-	CharSet             string `json:"charSet,omitempty"`            // Only populated if textual type
-	Collation           string `json:"collation,omitempty"`          // Only populated if textual type
-	CollationIsDefault  bool   `json:"collationIsDefault,omitempty"` // Only populated if textual type; indicates default for CharSet
-	ForceShowCharSet    bool   `json:"forceShowCharSet,omitempty"`   // Always include CharSet in SHOW CREATE; only true in MySQL 8 edge cases
-	ForceShowCollation  bool   `json:"forceShowCollation,omitempty"` // Always include Collation in SHOW CREATE; only true in MySQL 8 edge cases
-	Compression         string `json:"compression,omitempty"`        // Only non-empty if using column compression in Percona Server or MariaDB
+	CharSet             string `json:"charSet,omitempty"`       // Only populated if textual type
+	Collation           string `json:"collation,omitempty"`     // Only populated if textual type
+	ShowCharSet         bool   `json:"showCharSet,omitempty"`   // Include CHARACTER SET in SHOW CREATE TABLE: always true if different than table default, sometimes true in other cases
+	ShowCollation       bool   `json:"showCollation,omitempty"` // Include COLLATE in SHOW CREATE TABLE: logic differs by flavor
+	Compression         string `json:"compression,omitempty"`   // Only non-empty if using column compression in Percona Server or MariaDB
 	Comment             string `json:"comment,omitempty"`
 	Invisible           bool   `json:"invisible,omitempty"` // True if an invisible column (MariaDB 10.3+, MySQL 8.0.23+)
 	CheckClause         string `json:"check,omitempty"`     // Only non-empty for MariaDB inline check constraint clause
@@ -29,38 +28,19 @@ type Column struct {
 }
 
 // Definition returns this column's definition clause, for use as part of a DDL
-// statement. A table may optionally be supplied, which simply causes CHARACTER
-// SET clause to be omitted if the table and column have the same *collation*
-// (mirroring the specific display logic used by SHOW CREATE TABLE)
-func (c *Column) Definition(flavor Flavor, table *Table) string {
+// statement.
+func (c *Column) Definition(flavor Flavor) string {
 	var compression, charSet, collation, generated, nullability, srid, visibility,
 		autoIncrement, defaultValue, onUpdate, colFormat, comment, check string
 	if c.Compression != "" && flavor.IsMariaDB() {
 		// MariaDB puts compression modifiers in a different place than Percona Server
 		compression = fmt.Sprintf(" /*!100301 %s*/", c.Compression)
 	}
-	if c.CharSet != "" && (table == nil || c.Collation != table.Collation || c.ForceShowCharSet) {
-		charSet = fmt.Sprintf(" CHARACTER SET %s", c.CharSet)
+	if c.CharSet != "" && c.ShowCharSet {
+		charSet = " CHARACTER SET " + c.CharSet
 	}
-	// MySQL pre-8.0, MariaDB pre-Nov'22: Collations are displayed if not the
-	//     default for the charset.
-	// MySQL 8.0: ditto, but also collations are displayed in other cases which
-	//     must be parsed from SHOW CREATE (surfaced as ForceShowCollation).
-	//     Typically this is any time a charset is displayed, but not if the table
-	//     was upgraded from pre-8.0.
-	// MariaDB Nov'22 onwards: Collations are displayed if (and only if) the
-	//     character set is displayed, based on charset display logic (which is
-	//     partially based on the collation anyway)
-	if c.Collation != "" {
-		var showCollate bool
-		if flavor.AlwaysShowCollate() {
-			showCollate = (charSet != "")
-		} else {
-			showCollate = !c.CollationIsDefault || c.ForceShowCollation
-		}
-		if showCollate {
-			collation = " COLLATE " + c.Collation
-		}
+	if c.Collation != "" && c.ShowCollation {
+		collation = " COLLATE " + c.Collation
 	}
 	if c.GenerationExpr != "" {
 		genKind := "STORED"
@@ -170,8 +150,8 @@ func (c *Column) Equivalent(other *Column) bool {
 	// then check equality again to determine equivalence.
 	selfCopy := *c
 	selfCopy.TypeInDB = other.TypeInDB
-	selfCopy.ForceShowCharSet = other.ForceShowCharSet
-	selfCopy.ForceShowCollation = other.ForceShowCollation
+	selfCopy.ShowCharSet = other.ShowCharSet
+	selfCopy.ShowCollation = other.ShowCollation
 	if (other.CharSet == "utf8mb3" && c.CharSet == "utf8") || (other.CharSet == "utf8" && c.CharSet == "utf8mb3") {
 		selfCopy.CharSet = other.CharSet
 	}

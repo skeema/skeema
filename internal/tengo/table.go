@@ -8,23 +8,23 @@ import (
 
 // Table represents a single database table.
 type Table struct {
-	Name               string             `json:"name"`
-	Engine             string             `json:"storageEngine"`
-	CharSet            string             `json:"defaultCharSet"`
-	Collation          string             `json:"defaultCollation"`
-	CollationIsDefault bool               `json:"collationIsDefault"`      // true if Collation is default for CharSet
-	CreateOptions      string             `json:"createOptions,omitempty"` // row_format, stats_persistent, stats_auto_recalc, etc
-	Columns            []*Column          `json:"columns"`
-	PrimaryKey         *Index             `json:"primaryKey,omitempty"`
-	SecondaryIndexes   []*Index           `json:"secondaryIndexes,omitempty"`
-	ForeignKeys        []*ForeignKey      `json:"foreignKeys,omitempty"`
-	Checks             []*Check           `json:"checks,omitempty"`
-	Comment            string             `json:"comment,omitempty"`
-	Tablespace         string             `json:"tablespace,omitempty"`
-	NextAutoIncrement  uint64             `json:"nextAutoIncrement,omitempty"`
-	Partitioning       *TablePartitioning `json:"partitioning,omitempty"`       // nil if table isn't partitioned
-	UnsupportedDDL     bool               `json:"unsupportedForDiff,omitempty"` // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
-	CreateStatement    string             `json:"showCreateTable"`              // complete SHOW CREATE TABLE obtained from an instance
+	Name              string             `json:"name"`
+	Engine            string             `json:"storageEngine"`
+	CharSet           string             `json:"defaultCharSet"`
+	Collation         string             `json:"defaultCollation"`
+	ShowCollation     bool               `json:"showCollation,omitempty"` // Include default COLLATE in SHOW CREATE TABLE: logic differs by flavor
+	CreateOptions     string             `json:"createOptions,omitempty"` // row_format, stats_persistent, stats_auto_recalc, etc
+	Columns           []*Column          `json:"columns"`
+	PrimaryKey        *Index             `json:"primaryKey,omitempty"`
+	SecondaryIndexes  []*Index           `json:"secondaryIndexes,omitempty"`
+	ForeignKeys       []*ForeignKey      `json:"foreignKeys,omitempty"`
+	Checks            []*Check           `json:"checks,omitempty"`
+	Comment           string             `json:"comment,omitempty"`
+	Tablespace        string             `json:"tablespace,omitempty"`
+	NextAutoIncrement uint64             `json:"nextAutoIncrement,omitempty"`
+	Partitioning      *TablePartitioning `json:"partitioning,omitempty"`       // nil if table isn't partitioned
+	UnsupportedDDL    bool               `json:"unsupportedForDiff,omitempty"` // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
+	CreateStatement   string             `json:"showCreateTable"`              // complete SHOW CREATE TABLE obtained from an instance
 }
 
 // ObjectKey returns a value useful for uniquely refering to a Table within a
@@ -62,7 +62,7 @@ func (t *Table) DropStatement() string {
 func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 	defs := make([]string, len(t.Columns), len(t.Columns)+len(t.SecondaryIndexes)+len(t.ForeignKeys)+len(t.Checks)+1)
 	for n, c := range t.Columns {
-		defs[n] = c.Definition(flavor, t)
+		defs[n] = c.Definition(flavor)
 	}
 	if t.PrimaryKey != nil {
 		defs = append(defs, t.PrimaryKey.Definition(flavor))
@@ -91,12 +91,12 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 		charSet = "utf8mb3"
 	}
 	var collate string
-	if !t.CollationIsDefault || (t.CharSet == "utf8mb4" && flavor.Min(FlavorMySQL80)) || flavor.AlwaysShowCollate() {
-		collate = fmt.Sprintf(" COLLATE=%s", t.Collation)
+	if t.ShowCollation {
+		collate = " COLLATE=" + t.Collation
 	}
 	var createOptions string
 	if t.CreateOptions != "" {
-		createOptions = fmt.Sprintf(" %s", t.CreateOptions)
+		createOptions = " " + t.CreateOptions
 	}
 	var comment string
 	if t.Comment != "" {

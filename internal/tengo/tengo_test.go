@@ -66,20 +66,13 @@ func (s *TengoIntegrationSuite) GetSchema(t *testing.T, schemaName string) *Sche
 	return schema
 }
 
-func (s *TengoIntegrationSuite) GetTable(t *testing.T, schemaName, tableName string) *Table {
+func getTable(t *testing.T, schema *Schema, tableName string) *Table {
 	t.Helper()
-	_, table := s.GetSchemaAndTable(t, schemaName, tableName)
-	return table
-}
-
-func (s *TengoIntegrationSuite) GetSchemaAndTable(t *testing.T, schemaName, tableName string) (*Schema, *Table) {
-	t.Helper()
-	schema := s.GetSchema(t, schemaName)
 	table := schema.Table(tableName)
 	if table == nil {
-		t.Fatalf("Table %s.%s unexpectedly does not exist", schemaName, tableName)
+		t.Fatalf("Table %s.%s unexpectedly does not exist", schema.Name, tableName)
 	}
-	return schema, table
+	return table
 }
 
 // TestObjectKeyString confirms behavior of ObjectKey.String()
@@ -134,7 +127,7 @@ func TestUnitTableFlavors(t *testing.T) {
 	if table2.GeneratedCreateStatement(FlavorMariaDB102) == orig2.GeneratedCreateStatement(FlavorUnknown) {
 		t.Errorf("MariaDB 10.2: Expected GeneratedCreateStatement to differ vs FlavorUnknown, but it did not")
 	}
-	colClause := table2.Columns[3].Definition(FlavorMariaDB102, &table2)
+	colClause := table2.Columns[3].Definition(FlavorMariaDB102)
 	if !strings.Contains(colClause, "DEFAULT NULL") {
 		t.Errorf("MariaDB 10.2: Expected text column to now emit a default value, but it did not")
 	}
@@ -201,6 +194,9 @@ func flavorTestFiles(flavor Flavor) []string {
 
 	if flavor.Min(FlavorMariaDB108) { // descending indexes, IN/OUT/INOUT func params
 		result = append(result, "maria108.sql")
+	}
+	if flavor.Min(FlavorMariaDB1010) { // uca1400 collations
+		result = append(result, "uca1400.sql")
 	}
 
 	return result
@@ -274,28 +270,25 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 			AutoIncrement: true,
 		},
 		{
-			Name:               "first_name",
-			TypeInDB:           "varchar(45)",
-			CharSet:            utf8mb3,
-			Collation:          utf8mb3DefaultCollation,
-			CollationIsDefault: true,
+			Name:      "first_name",
+			TypeInDB:  "varchar(45)",
+			CharSet:   utf8mb3,
+			Collation: utf8mb3DefaultCollation,
 		},
 		{
-			Name:               "last_name",
-			Nullable:           true,
-			TypeInDB:           "varchar(45)",
-			Default:            "NULL",
-			CharSet:            utf8mb3,
-			Collation:          utf8mb3DefaultCollation,
-			CollationIsDefault: true,
+			Name:      "last_name",
+			Nullable:  true,
+			TypeInDB:  "varchar(45)",
+			Default:   "NULL",
+			CharSet:   utf8mb3,
+			Collation: utf8mb3DefaultCollation,
 		},
 		lastUpdateCol,
 		{
-			Name:               "ssn",
-			TypeInDB:           "char(10)",
-			CharSet:            utf8mb3,
-			Collation:          utf8mb3DefaultCollation,
-			CollationIsDefault: true,
+			Name:      "ssn",
+			TypeInDB:  "char(10)",
+			CharSet:   utf8mb3,
+			Collation: utf8mb3DefaultCollation,
 		},
 		aliveCol,
 		{
@@ -330,7 +323,7 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 
 	utf8mb3Table := utf8mb3
 	if flavor.Min(FlavorMySQL80.Dot(24)) {
-		// 8.0.24+ changes how utf8mb3 is expressed for table-level default in
+		// 8.0.24-8.0.28 changes how utf8mb3 is expressed for table-level default in
 		// SHOW CREATE, but not anywhere else
 		utf8mb3Table = "utf8mb3"
 	} else if flavor.AlwaysShowCollate() {
@@ -350,16 +343,16 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
   KEY `+"`"+`idx_actor_name`+"`"+` (`+"`"+`last_name`+"`"+`(10),`+"`"+`first_name`+"`"+`(1))
 ) ENGINE=InnoDB%s DEFAULT CHARSET=%s`, autoIncClause, utf8mb3Table)
 	table := Table{
-		Name:               "actor",
-		Engine:             "InnoDB",
-		CharSet:            utf8mb3,
-		Collation:          utf8mb3DefaultCollation,
-		CollationIsDefault: true,
-		Columns:            columns,
-		PrimaryKey:         primaryKey(columns[0]),
-		SecondaryIndexes:   secondaryIndexes,
-		NextAutoIncrement:  nextAutoInc,
-		CreateStatement:    stmt,
+		Name:              "actor",
+		Engine:            "InnoDB",
+		CharSet:           utf8mb3,
+		Collation:         utf8mb3DefaultCollation,
+		ShowCollation:     flavor.AlwaysShowCollate(),
+		Columns:           columns,
+		PrimaryKey:        primaryKey(columns[0]),
+		SecondaryIndexes:  secondaryIndexes,
+		NextAutoIncrement: nextAutoInc,
+		CreateStatement:   stmt,
 	}
 	if flavor.OmitIntDisplayWidth() {
 		stripIntDisplayWidths(&table)
@@ -378,11 +371,10 @@ func anotherTableForFlavor(flavor Flavor) Table {
 			TypeInDB: "smallint(5) unsigned",
 		},
 		{
-			Name:               "film_name",
-			TypeInDB:           "varchar(60)",
-			CharSet:            "latin1",
-			Collation:          "latin1_swedish_ci",
-			CollationIsDefault: true,
+			Name:      "film_name",
+			TypeInDB:  "varchar(60)",
+			CharSet:   "latin1",
+			Collation: "latin1_swedish_ci",
 		},
 	}
 	secondaryIndex := &Index{
@@ -399,20 +391,20 @@ func anotherTableForFlavor(flavor Flavor) Table {
   KEY ` + "`" + `film_name` + "`" + ` (` + "`" + `film_name` + "`" + `)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1`
 	table := Table{
-		Name:               "actor_in_film",
-		Engine:             "InnoDB",
-		CharSet:            "latin1",
-		Collation:          "latin1_swedish_ci",
-		CollationIsDefault: true,
-		Columns:            columns,
-		PrimaryKey:         primaryKey(columns[0], columns[1]),
-		SecondaryIndexes:   []*Index{secondaryIndex},
-		CreateStatement:    stmt,
+		Name:             "actor_in_film",
+		Engine:           "InnoDB",
+		CharSet:          "latin1",
+		Collation:        "latin1_swedish_ci",
+		ShowCollation:    flavor.AlwaysShowCollate(),
+		Columns:          columns,
+		PrimaryKey:       primaryKey(columns[0], columns[1]),
+		SecondaryIndexes: []*Index{secondaryIndex},
+		CreateStatement:  stmt,
 	}
 	if flavor.OmitIntDisplayWidth() {
 		stripIntDisplayWidths(&table)
 	}
-	if flavor.AlwaysShowCollate() {
+	if table.ShowCollation {
 		table.CreateStatement += " COLLATE=latin1_swedish_ci"
 	}
 	return table
@@ -471,12 +463,11 @@ func supportedTableForFlavor(flavor Flavor) Table {
 			Nullable: true,
 		},
 		{
-			Name:               "metadata",
-			Nullable:           true,
-			TypeInDB:           "text",
-			CharSet:            "latin1",
-			Collation:          "latin1_swedish_ci",
-			CollationIsDefault: true,
+			Name:      "metadata",
+			Nullable:  true,
+			TypeInDB:  "text",
+			CharSet:   "latin1",
+			Collation: "latin1_swedish_ci",
 		},
 	}
 	stmt := strings.Replace(`CREATE TABLE ~followed_posts~ (
@@ -490,23 +481,23 @@ func supportedTableForFlavor(flavor Flavor) Table {
 		columns[3].Default = "NULL"
 		stmt = strings.Replace(stmt, " text", " text DEFAULT NULL", 1)
 	}
-	if flavor.AlwaysShowCollate() {
-		stmt += " COLLATE=latin1_swedish_ci"
-	}
 
 	table := Table{
-		Name:               "followed_posts",
-		Engine:             "InnoDB",
-		CharSet:            "latin1",
-		Collation:          "latin1_swedish_ci",
-		CollationIsDefault: true,
-		Columns:            columns,
-		PrimaryKey:         primaryKey(columns[0:2]...),
-		SecondaryIndexes:   []*Index{},
-		CreateStatement:    stmt,
+		Name:             "followed_posts",
+		Engine:           "InnoDB",
+		CharSet:          "latin1",
+		Collation:        "latin1_swedish_ci",
+		ShowCollation:    flavor.AlwaysShowCollate(),
+		Columns:          columns,
+		PrimaryKey:       primaryKey(columns[0:2]...),
+		SecondaryIndexes: []*Index{},
+		CreateStatement:  stmt,
 	}
 	if flavor.OmitIntDisplayWidth() {
 		stripIntDisplayWidths(&table)
+	}
+	if table.ShowCollation {
+		table.CreateStatement += " COLLATE=latin1_swedish_ci"
 	}
 	return table
 }
@@ -524,11 +515,10 @@ func foreignKeyTable() Table {
 			Nullable: true,
 		},
 		{
-			Name:               "product_line",
-			TypeInDB:           "char(12)",
-			CharSet:            "latin1",
-			Collation:          "latin1_swedish_ci",
-			CollationIsDefault: true,
+			Name:      "product_line",
+			TypeInDB:  "char(12)",
+			CharSet:   "latin1",
+			Collation: "latin1_swedish_ci",
 		},
 		{
 			Name:     "model",
@@ -595,16 +585,15 @@ func foreignKeyTable() Table {
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1`, "~", "`", -1)
 
 	return Table{
-		Name:               "warranties",
-		Engine:             "InnoDB",
-		CharSet:            "latin1",
-		Collation:          "latin1_swedish_ci",
-		CollationIsDefault: true,
-		Columns:            columns,
-		PrimaryKey:         primaryKey(columns[0]),
-		SecondaryIndexes:   secondaryIndexes,
-		ForeignKeys:        foreignKeys,
-		CreateStatement:    stmt,
+		Name:             "warranties",
+		Engine:           "InnoDB",
+		CharSet:          "latin1",
+		Collation:        "latin1_swedish_ci",
+		Columns:          columns,
+		PrimaryKey:       primaryKey(columns[0]),
+		SecondaryIndexes: secondaryIndexes,
+		ForeignKeys:      foreignKeys,
+		CreateStatement:  stmt,
 	}
 }
 

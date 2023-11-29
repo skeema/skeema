@@ -575,7 +575,7 @@ func TestTableAlterIndexReorder(t *testing.T) {
 	// [0] is UNIQUE KEY `idx_ssn` (`ssn`)
 	// [1] is KEY `idx_actor_name` (`last_name`(10),`first_name`(1))
 	// [2] is KEY `idx_alive_lastname` (`alive`, `last_name`(10))
-	getTable := func() Table {
+	getTableSimple := func() Table {
 		table := aTable(1)
 		table.SecondaryIndexes = append(table.SecondaryIndexes, &Index{
 			Name: "idx_alive_lastname",
@@ -609,7 +609,7 @@ func TestTableAlterIndexReorder(t *testing.T) {
 		}
 	}
 
-	from, to := getTable(), getTable()
+	from, to := getTableSimple(), getTableSimple()
 	orig := from.SecondaryIndexes
 
 	// Reorder to's last couple indexes ([1] and [2]). Resulting diff should
@@ -648,7 +648,7 @@ func TestTableAlterIndexReorder(t *testing.T) {
 	// * modify visibility of [2] (suppressed if mods.StrictIndexOrder)
 	// * drop [2] (suppressed unless mods.StrictIndexOrder)
 	// * re-add [2] (suppressed unless mods.StrictIndexOrder)
-	to = getTable()
+	to = getTableSimple()
 	to.SecondaryIndexes[1].Parts[1].PrefixLength = 8
 	to.SecondaryIndexes[2].Invisible = true
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
@@ -684,7 +684,7 @@ func TestTableAlterIndexReorder(t *testing.T) {
 	// Adding a new index before [1] should also result in dropping the old [1]
 	// and [2], and then re-adding them back in that order. But statement should
 	// only refer to adding the new index unless mods.StrictIndexOrder used.
-	to = getTable()
+	to = getTableSimple()
 	newIdx := &Index{
 		Name: "idx_firstname",
 		Parts: []IndexPart{
@@ -765,7 +765,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 		t.Errorf("Expected modified column to be after %s / first=false, instead found after %v / first=%t", shouldBeAfter.Name, ta.PositionAfter, ta.PositionFirst)
 	}
 	if !ta.NewColumn.Equals(ta.OldColumn) {
-		t.Errorf("Column definition unexpectedly changed: was %s, now %s", ta.OldColumn.Definition(FlavorUnknown, nil), ta.NewColumn.Definition(FlavorUnknown, nil))
+		t.Errorf("Column definition unexpectedly changed: was %s, now %s", ta.OldColumn.Definition(FlavorUnknown), ta.NewColumn.Definition(FlavorUnknown))
 	}
 	if clauseWithMods := ta.Clause(StatementModifiers{LaxColumnOrder: true}); clauseWithMods != "" {
 		t.Errorf("Expected Clause to return a blank string with LaxColumnOrder enabled, instead found: %s", clauseWithMods)
@@ -788,7 +788,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 		t.Errorf("Expected modified column to be after %s / first=false, instead found after %v / first=%t", shouldBeAfter.Name, ta.PositionAfter, ta.PositionFirst)
 	}
 	if ta.NewColumn.Equals(ta.OldColumn) {
-		t.Errorf("Column definition unexpectedly NOT changed: still %s", ta.NewColumn.Definition(FlavorUnknown, nil))
+		t.Errorf("Column definition unexpectedly NOT changed: still %s", ta.NewColumn.Definition(FlavorUnknown))
 	}
 	if !ta.InUniqueConstraint {
 		t.Error("Expected InUniqueConstraint to be true, but it was false")
@@ -859,7 +859,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 		t.Errorf("Expected modified column to not be moved, instead found after %v / first=%t", ta.PositionAfter, ta.PositionFirst)
 	}
 	if ta.NewColumn.Equals(from.Columns[4]) {
-		t.Errorf("Column definition unexpectedly NOT changed: still %s", ta.NewColumn.Definition(FlavorUnknown, nil))
+		t.Errorf("Column definition unexpectedly NOT changed: still %s", ta.NewColumn.Definition(FlavorUnknown))
 	}
 
 	// Start over; change one column and move another column
@@ -881,7 +881,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 			if mc.PositionAfter.Name != to.Columns[0].Name {
 				t.Errorf("Re-ordered column expected to be AFTER %s, instead AFTER %s", to.Columns[0].Name, mc.PositionAfter.Name)
 			}
-			if mc.OldColumn.Definition(FlavorUnknown, nil) != mc.NewColumn.Definition(FlavorUnknown, nil) {
+			if mc.OldColumn.Definition(FlavorUnknown) != mc.NewColumn.Definition(FlavorUnknown) {
 				t.Error("Expected re-ordered column definition to remain unchanged, but it was modified")
 			}
 		} else if mc.NewColumn.TypeInDB != "char(12)" || mc.PositionAfter != nil || mc.PositionFirst {
@@ -1118,11 +1118,11 @@ func TestTableAlterChangeAutoIncrement(t *testing.T) {
 }
 
 func TestTableAlterChangeCharSet(t *testing.T) {
-	getTableWithCharSet := func(charSet, collation string, collationIsDefault bool) Table {
+	getTableWithCharSet := func(charSet, collation string) Table {
 		t := aTable(1)
 		t.CharSet = charSet
 		t.Collation = collation
-		t.CollationIsDefault = collationIsDefault
+		t.ShowCollation = !collationIsDefault(collation, charSet, FlavorUnknown)
 		t.CreateStatement = t.GeneratedCreateStatement(FlavorUnknown)
 		return t
 	}
@@ -1147,33 +1147,33 @@ func TestTableAlterChangeCharSet(t *testing.T) {
 		}
 	}
 
-	from := getTableWithCharSet("utf8mb4", "utf8mb4_general_ci", true)
-	to := getTableWithCharSet("utf8mb4", "utf8mb4_general_ci", true)
+	from := getTableWithCharSet("utf8mb4", "utf8mb4_general_ci")
+	to := getTableWithCharSet("utf8mb4", "utf8mb4_general_ci")
 	assertChangeCharSet(&from, &to, "")
 
-	to = getTableWithCharSet("utf8mb4", "utf8mb4_swedish_ci", false)
+	to = getTableWithCharSet("utf8mb4", "utf8mb4_swedish_ci")
 	assertChangeCharSet(&from, &to, "DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_swedish_ci")
 	assertChangeCharSet(&to, &from, "DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci")
 
-	to = getTableWithCharSet("latin1", "latin1_swedish_ci", true)
+	to = getTableWithCharSet("latin1", "latin1_swedish_ci")
 	assertChangeCharSet(&from, &to, "DEFAULT CHARACTER SET = latin1 COLLATE = latin1_swedish_ci")
 	assertChangeCharSet(&to, &from, "DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci")
 
-	to = getTableWithCharSet("latin1", "latin1_general_ci", false)
+	to = getTableWithCharSet("latin1", "latin1_general_ci")
 	assertChangeCharSet(&from, &to, "DEFAULT CHARACTER SET = latin1 COLLATE = latin1_general_ci")
 	assertChangeCharSet(&to, &from, "DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci")
 
 	// Confirm "utf8" and "utf8mb3" are treated as identical, but generate a blank
 	// TableAlterClause since the SHOW CREATEs may legitimately differ if comparing
 	// tables introspected from different flavors/versions
-	from = getTableWithCharSet("utf8", "utf8_general_ci", true)
-	to = getTableWithCharSet("utf8mb3", "utf8_general_ci", true)
+	from = getTableWithCharSet("utf8", "utf8_general_ci")
+	to = getTableWithCharSet("utf8mb3", "utf8_general_ci")
 	assertChangeCharSet(&from, &to, "")
-	to = getTableWithCharSet("utf8mb3", "utf8mb3_general_ci", true)
+	to = getTableWithCharSet("utf8mb3", "utf8mb3_general_ci")
 	assertChangeCharSet(&from, &to, "")
 
 	// Confirm "utf8" and "utf8mb4" are not treated as identical
-	to = getTableWithCharSet("utf8mb4", "utf8mb4_general_ci", true)
+	to = getTableWithCharSet("utf8mb4", "utf8mb4_general_ci")
 	assertChangeCharSet(&from, &to, "DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci")
 }
 

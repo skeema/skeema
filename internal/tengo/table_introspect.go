@@ -83,6 +83,26 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 	// matches expectation
 	for _, t := range tables {
 		t.Columns = columnsByTableName[t.Name]
+		for _, col := range t.Columns {
+			// Set ShowCharSet and ShowCollation for each column as appropriate. This
+			// isn't handled by queryColumnsInSchema because it requires the full table.
+			if col.Collation != "" {
+				// Column-level CHARACTER SET shown whenever the *collation* differs from
+				// table's default
+				col.ShowCharSet = (col.Collation != t.Collation)
+				if flavor.AlwaysShowCollate() {
+					// Since Nov 2022, MariaDB always shows a COLLATE clause if showing charset
+					col.ShowCollation = col.ShowCharSet
+				} else {
+					// Other flavors show a COLLATE clause whenever the collation isn't the
+					// default one for the charset.
+					col.ShowCollation = !collationIsDefault(col.Collation, col.CharSet, flavor)
+				}
+				// Note: MySQL 8 has additional edge cases for both ShowCharSet and
+				// ShowCollation, both of which are handled later in fixShowCharSets
+			}
+		}
+
 		t.PrimaryKey = primaryKeyByTableName[t.Name]
 		t.SecondaryIndexes = secondaryIndexesByTableName[t.Name]
 		t.ForeignKeys = foreignKeysByTableName[t.Name]
@@ -167,25 +187,21 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 
 func queryTablesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) ([]*Table, bool, error) {
 	var rawTables []struct {
-		Name               string         `db:"table_name"`
-		Type               string         `db:"table_type"`
-		Engine             sql.NullString `db:"engine"`
-		TableCollation     sql.NullString `db:"table_collation"`
-		CreateOptions      sql.NullString `db:"create_options"`
-		Comment            string         `db:"table_comment"`
-		CharSet            string         `db:"character_set_name"`
-		CollationIsDefault string         `db:"is_default"`
+		Name           string         `db:"table_name"`
+		Type           string         `db:"table_type"`
+		Engine         sql.NullString `db:"engine"`
+		TableCollation sql.NullString `db:"table_collation"`
+		CreateOptions  sql.NullString `db:"create_options"`
+		Comment        string         `db:"table_comment"`
 	}
 	query := `
 		SELECT SQL_BUFFER_RESULT
-		       t.table_name AS table_name, t.table_type AS table_type,
-		       t.engine AS engine, t.table_collation AS table_collation,
-		       t.create_options AS create_options, t.table_comment AS table_comment,
-		       c.character_set_name AS character_set_name, c.is_default AS is_default
-		FROM   information_schema.tables t
-		JOIN   information_schema.collations c ON t.table_collation = c.collation_name
-		WHERE  t.table_schema = ?
-		AND    t.table_type = 'BASE TABLE'`
+		       table_name AS table_name, table_type AS table_type,
+		       engine AS engine, table_collation AS table_collation,
+		       create_options AS create_options, table_comment AS table_comment
+		FROM   information_schema.tables
+		WHERE  table_schema = ?
+		AND    table_type = 'BASE TABLE'`
 	if err := db.SelectContext(ctx, &rawTables, query, schema); err != nil {
 		return nil, false, fmt.Errorf("Error querying information_schema.tables for schema %s: %s", schema, err)
 	}
@@ -200,12 +216,22 @@ func queryTablesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor
 		// have a non-NULL tables.auto_increment if the original CREATE specified one.
 		// Instead the value is parsed from SHOW CREATE TABLE in querySchemaTables().
 		tables[n] = &Table{
-			Name:               rawTable.Name,
-			Engine:             rawTable.Engine.String,
-			CharSet:            rawTable.CharSet,
-			Collation:          rawTable.TableCollation.String,
-			CollationIsDefault: rawTable.CollationIsDefault != "",
-			Comment:            rawTable.Comment,
+			Name:      rawTable.Name,
+			Engine:    rawTable.Engine.String,
+			Collation: rawTable.TableCollation.String,
+			Comment:   rawTable.Comment,
+		}
+		if underscore := strings.IndexByte(tables[n].Collation, '_'); underscore > 0 {
+			tables[n].CharSet = tables[n].Collation[0:underscore]
+			if flavor.AlwaysShowCollate() {
+				tables[n].ShowCollation = true
+			} else if !collationIsDefault(tables[n].Collation, tables[n].CharSet, flavor) {
+				tables[n].ShowCollation = true
+			} else if tables[n].CharSet == "utf8mb4" && flavor.Min(FlavorMySQL80) {
+				tables[n].ShowCollation = true
+			}
+		} else {
+			tables[n].CharSet = "undefined"
 		}
 		if rawTable.CreateOptions.Valid && rawTable.CreateOptions.String != "" {
 			if strings.Contains(strings.ToUpper(rawTable.CreateOptions.String), "PARTITIONED") {
@@ -230,29 +256,27 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 		Comment            string         `db:"column_comment"`
 		CharSet            sql.NullString `db:"character_set_name"`
 		Collation          sql.NullString `db:"collation_name"`
-		CollationIsDefault sql.NullString `db:"is_default"`
 		SpatialReferenceID sql.NullInt64  `db:"srs_id"`
 	}
 	query := `
-		SELECT    SQL_BUFFER_RESULT
-		          c.table_name AS table_name, c.column_name AS column_name,
-		          c.column_type AS column_type, c.is_nullable AS is_nullable,
-		          c.column_default AS column_default, c.extra AS extra,
-		          %s AS generation_expression,
-		          c.column_comment AS column_comment,
-		          c.character_set_name AS character_set_name,
-		          c.collation_name AS collation_name, co.is_default AS is_default,
-		          %s AS srs_id
-		FROM      information_schema.columns c
-		LEFT JOIN information_schema.collations co ON co.collation_name = c.collation_name
-		WHERE     c.table_schema = ?
-		ORDER BY  c.table_name, c.ordinal_position`
+		SELECT   SQL_BUFFER_RESULT
+		         table_name AS table_name, column_name AS column_name,
+		         column_type AS column_type, is_nullable AS is_nullable,
+		         column_default AS column_default, extra AS extra,
+		         %s AS generation_expression,
+		         column_comment AS column_comment,
+		         character_set_name AS character_set_name,
+		         collation_name AS collation_name,
+		         %s AS srs_id
+		FROM     information_schema.columns
+		WHERE    table_schema = ?
+		ORDER BY table_name, ordinal_position`
 	genExpr, srid := "NULL", "NULL"
 	if flavor.GeneratedColumns() {
-		genExpr = "c.generation_expression"
+		genExpr = "generation_expression"
 	}
 	if flavor.Min(FlavorMySQL80) {
-		srid = "c.srs_id"
+		srid = "srs_id"
 	}
 	// Note: we could get MariaDB SRIDs from information_schema.geometry_columns.srid
 	// but since MariaDB doesn't expose its REF_SYSTEM_ID attribute in SHOW CREATE
@@ -333,7 +357,9 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 		if rawColumn.Collation.Valid { // only text-based column types have a notion of charset and collation
 			col.CharSet = rawColumn.CharSet.String
 			col.Collation = rawColumn.Collation.String
-			col.CollationIsDefault = (rawColumn.CollationIsDefault.String != "")
+			// note: fields ShowCharSet and ShowCollation are set by caller, since these
+			// require comparing things to the table's defaults, and we don't have the
+			// full table here
 		}
 		if rawColumn.SpatialReferenceID.Valid { // Spatial columns in MySQL 8+ can have optional SRID
 			col.HasSpatialReference = true
@@ -665,8 +691,8 @@ func fixCreateOptionsOrder(t *Table, flavor Flavor) {
 	}
 }
 
-// fixShowCharSets parses SHOW CREATE TABLE to set ForceShowCharSet and
-// ForceShowCollation for columns when needed in MySQL 8:
+// fixShowCharSets parses SHOW CREATE TABLE to set ShowCharSet and ShowCollation
+// for columns when needed in MySQL 8:
 //
 // Prior to MySQL 8, the logic behind inclusion of column-level CHARACTER SET
 // and COLLATE clauses in SHOW CREATE TABLE was weird but straightforward:
@@ -687,11 +713,11 @@ func fixShowCharSets(t *Table) {
 			continue // non-character-based column type, nothing to do
 		}
 		line := lines[n+1] // columns start on second line of CREATE TABLE
-		if col.Collation == t.Collation && strings.Contains(line, "CHARACTER SET "+col.CharSet) {
-			col.ForceShowCharSet = true
+		if !col.ShowCharSet && strings.Contains(line, "CHARACTER SET "+col.CharSet) {
+			col.ShowCharSet = true
 		}
-		if col.CollationIsDefault && strings.Contains(line, "COLLATE "+col.Collation) {
-			col.ForceShowCollation = true
+		if !col.ShowCollation && strings.Contains(line, "COLLATE "+col.Collation) {
+			col.ShowCollation = true
 		}
 	}
 }
@@ -710,7 +736,7 @@ func fixGenerationExpr(t *Table, flavor Flavor) {
 		if col.GenerationExpr == "" {
 			continue
 		}
-		if colDefinition := col.Definition(flavor, t); !strings.Contains(t.CreateStatement, colDefinition) {
+		if colDefinition := col.Definition(flavor); !strings.Contains(t.CreateStatement, colDefinition) {
 			var genKind string
 			if col.Virtual {
 				genKind = "VIRTUAL"
@@ -830,7 +856,7 @@ func fixDefaultExpression(t *Table, flavor Flavor) {
 		} else {
 			continue
 		}
-		if colDefinition := col.Definition(flavor, t); !strings.Contains(t.CreateStatement, colDefinition) {
+		if colDefinition := col.Definition(flavor); !strings.Contains(t.CreateStatement, colDefinition) {
 			defaultClause := " DEFAULT " + col.Default
 			after := colDefinition[strings.Index(colDefinition, defaultClause)+len(defaultClause):]
 			reTemplate := `(?m)^\s*` + regexp.QuoteMeta(EscapeIdentifier(col.Name)) + matcher + regexp.QuoteMeta(after)

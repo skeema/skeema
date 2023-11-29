@@ -125,7 +125,8 @@ func (s TengoIntegrationSuite) TestSchemaStripTablePartitioning(t *testing.T) {
 
 	// testing.followed_posts uses sub-partitioning and is unsupported for diffs.
 	// After stripping partitioning, it should now be supported for diffs.
-	schema, table := s.GetSchemaAndTable(t, "testing", "followed_posts")
+	schema := s.GetSchema(t, "testing")
+	table := getTable(t, schema, "followed_posts")
 	if !table.UnsupportedDDL {
 		t.Fatal("Test setup assertion failed: testing.followed_posts is already supported for diff operations")
 	}

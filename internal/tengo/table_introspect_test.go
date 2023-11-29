@@ -11,7 +11,8 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	s.SourceTestSQL(t, flavorTestFiles(flavor)...)
 
 	// Ensure our unit test fixtures and integration test fixtures match
-	schema, aTableFromDB := s.GetSchemaAndTable(t, "testing", "actor")
+	schema := s.GetSchema(t, "testing")
+	aTableFromDB := getTable(t, schema, "actor")
 	aTableFromUnit := aTableForFlavor(flavor, 1)
 	aTableFromUnit.CreateStatement = "" // Prevent diff from short-circuiting on equivalent CREATEs
 	clauses, supported := aTableFromDB.Diff(&aTableFromUnit)
@@ -21,7 +22,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		t.Errorf("Diff of testing.actor unexpectedly found %d clauses; expected 0. Clauses: %+v", len(clauses), clauses)
 	}
 
-	aTableFromDB = s.GetTable(t, "testing", "actor_in_film")
+	aTableFromDB = getTable(t, schema, "actor_in_film")
 	aTableFromUnit = anotherTableForFlavor(flavor)
 	aTableFromUnit.CreateStatement = "" // Prevent diff from short-circuiting on equivalent CREATEs
 	clauses, supported = aTableFromDB.Diff(&aTableFromUnit)
@@ -60,15 +61,22 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// ensure character set handling works properly. Recent flavors tend to change
 	// many SHOW CREATE TABLE behaviors.
-	schema = s.GetSchema(t, "testcharcoll")
-	for _, table := range schema.Tables {
+	var seenUCA1400 bool
+	schema2 := s.GetSchema(t, "testcharcoll")
+	for _, table := range schema2.Tables {
 		if table.UnsupportedDDL {
 			t.Errorf("Table %s unexpectedly not supported for diff.\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", table.Name, table.GeneratedCreateStatement(flavor), table.CreateStatement)
 		}
+		if strings.Contains(table.Collation, "uca1400") {
+			seenUCA1400 = true
+		}
+	}
+	if s.d.Flavor().Min(FlavorMariaDB1010) && !seenUCA1400 {
+		t.Error("Failed to introspect table with a uca1400 collation")
 	}
 
 	// Test various flavor-specific ordering fixes
-	aTableFromDB = s.GetTable(t, "testing", "grab_bag")
+	aTableFromDB = getTable(t, schema, "grab_bag")
 	if aTableFromDB.UnsupportedDDL {
 		t.Error("Cannot test various order-fixups because testing.grab_bag is unexpectedly not supported for diff")
 	} else {
@@ -96,7 +104,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Test introspection of default expressions, if flavor supports them
 	if flavor.Min(FlavorMariaDB102) || flavor.Min(FlavorMySQL80.Dot(13)) {
-		table := s.GetTable(t, "testing", "testdefaults")
+		table := getTable(t, schema, "testdefaults")
 		// Ensure 3-byte chars in default expression are introspected properly
 		if !strings.Contains(table.CreateStatement, "\u20AC") {
 			t.Errorf("Expected default expression to contain 3-byte char \u20AC, but it did not. CREATE statement:\n%s", table.CreateStatement)
@@ -112,7 +120,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Test introspection of generated columns, if flavor supports them
 	if flavor.GeneratedColumns() {
-		table := s.GetTable(t, "testing", "staff")
+		table := getTable(t, schema, "staff")
 		// Ensure 3-byte chars in generation expression are introspected properly
 		if !strings.Contains(table.CreateStatement, "\u20AC") {
 			t.Errorf("Expected generation expression to contain 3-byte char \u20AC, but it did not. CREATE statement:\n%s", table.CreateStatement)
@@ -140,7 +148,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Test advanced index functionality in MySQL 8+
 	if flavor.Min(FlavorMySQL80) {
-		table := s.GetTable(t, "testing", "my8idx")
+		table := getTable(t, schema, "my8idx")
 		if !strings.Contains(table.CreateStatement, "\u20AC") {
 			t.Errorf("Expected functional index expression to contain 3-byte char \u20AC, but it did not. CREATE statement:\n%s", table.CreateStatement)
 		}
@@ -158,7 +166,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 			t.Errorf("Unexpected index part expressions found: [0].Expression=%q, [1].Expression=%q", idx.Parts[0].Expression, idx.Parts[1].Expression)
 		}
 	} else if flavor.Min(FlavorMariaDB106) {
-		table := s.GetTable(t, "testing", "maria106idx")
+		table := getTable(t, schema, "maria106idx")
 		idx := table.SecondaryIndexes[0]
 		if !idx.Invisible {
 			t.Errorf("Expected index %s to be ignored, but it was not", idx.Name)
@@ -167,7 +175,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Test invisible column support in flavors supporting it
 	if flavor.Min(FlavorMariaDB103) || flavor.Min(FlavorMySQL80.Dot(23)) {
-		table := s.GetTable(t, "testing", "invistest")
+		table := getTable(t, schema, "invistest")
 		for n, col := range table.Columns {
 			expectInvis := (n == 0 || n == 4 || n == 5)
 			if col.Invisible != expectInvis {
@@ -179,7 +187,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	// Include coverage for fulltext parsers if MySQL 5.7+. (Although these are
 	// supported in other flavors too, no alternative parsers ship with them.)
 	if flavor.Min(FlavorMySQL57) {
-		table := s.GetTable(t, "testing", "ftparser")
+		table := getTable(t, schema, "ftparser")
 		indexes := table.SecondaryIndexesByName()
 		if idx := indexes["ftdesc"]; idx.FullTextParser != "ngram" || idx.Type != "FULLTEXT" {
 			t.Errorf("Expected index %s to be FULLTEXT with ngram parser, instead found type=%s / parser=%s", idx.Name, idx.Type, idx.FullTextParser)
@@ -194,12 +202,12 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Coverage for column compression
 	if flavor.Min(FlavorPercona56.Dot(33)) {
-		table := s.GetTable(t, "testing", "colcompr")
+		table := getTable(t, schema, "colcompr")
 		if table.Columns[1].Compression != "COMPRESSED" {
 			t.Errorf("Unexpected value for compression column attribute: found %q", table.Columns[1].Compression)
 		}
 	} else if flavor.Min(FlavorMariaDB103) {
-		table := s.GetTable(t, "testing", "colcompr")
+		table := getTable(t, schema, "colcompr")
 		if table.Columns[1].Compression != "COMPRESSED" {
 			t.Errorf("Unexpected value for compression column attribute: found %q", table.Columns[1].Compression)
 		}
@@ -207,7 +215,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Include tables with check constraints if supported by flavor
 	if flavor.HasCheckConstraints() {
-		tablesWithChecks := []*Table{s.GetTable(t, "testing", "has_checks1"), s.GetTable(t, "testing", "has_checks2")}
+		tablesWithChecks := []*Table{getTable(t, schema, "has_checks1"), getTable(t, schema, "has_checks2")}
 		for _, table := range tablesWithChecks {
 			if len(table.Checks) == 0 {
 				t.Errorf("Expected table %s to have at least one CHECK constraint, but it did not", table.Name)
@@ -324,19 +332,19 @@ func TestFixShowCharSets(t *testing.T) {
   ~g~ char(10) CHARACTER SET utf8 COLLATE utf8_unicode_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8_unicode_ci`, "~", "`")
 	table := &Table{
-		Name:               "many_permutations",
-		Engine:             "InnoDB",
-		CharSet:            "utf8",
-		Collation:          "utf8_unicode_ci",
-		CollationIsDefault: false,
+		Name:          "many_permutations",
+		Engine:        "InnoDB",
+		CharSet:       "utf8",
+		Collation:     "utf8_unicode_ci",
+		ShowCollation: true,
 		Columns: []*Column{
-			{Name: "a", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_unicode_ci", CollationIsDefault: false},
-			{Name: "b", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", CollationIsDefault: true},
-			{Name: "c", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", CollationIsDefault: true},
-			{Name: "d", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_bin", CollationIsDefault: false},
-			{Name: "e", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", CollationIsDefault: true},
-			{Name: "f", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", CollationIsDefault: true},
-			{Name: "g", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_unicode_ci", CollationIsDefault: false},
+			{Name: "a", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_unicode_ci", ShowCharSet: false, ShowCollation: true},
+			{Name: "b", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", ShowCharSet: true, ShowCollation: false},
+			{Name: "c", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", ShowCharSet: true, ShowCollation: false},
+			{Name: "d", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_bin", ShowCharSet: true, ShowCollation: true},
+			{Name: "e", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", ShowCharSet: true, ShowCollation: false},
+			{Name: "f", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", ShowCharSet: true, ShowCollation: false},
+			{Name: "g", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_unicode_ci", ShowCharSet: false, ShowCollation: true},
 		},
 		CreateStatement: stmt,
 	}
@@ -361,15 +369,15 @@ func TestFixShowCharSets(t *testing.T) {
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1`, "~", "`")
 	table.CharSet = "latin1"
 	table.Collation = "latin1_swedish_ci"
-	table.CollationIsDefault = true
+	table.ShowCollation = false
 	table.Columns = []*Column{
-		{Name: "a", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_bin", CollationIsDefault: false},
-		{Name: "b", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", CollationIsDefault: true},
-		{Name: "c", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", CollationIsDefault: true},
-		{Name: "d", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_bin", CollationIsDefault: false},
-		{Name: "e", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", CollationIsDefault: true},
-		{Name: "f", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", CollationIsDefault: true},
-		{Name: "g", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_unicode_ci", CollationIsDefault: false},
+		{Name: "a", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_bin", ShowCharSet: true, ShowCollation: true},
+		{Name: "b", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", ShowCharSet: false, ShowCollation: false},
+		{Name: "c", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", ShowCharSet: false, ShowCollation: false},
+		{Name: "d", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_bin", ShowCharSet: true, ShowCollation: true},
+		{Name: "e", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", ShowCharSet: true, ShowCollation: false},
+		{Name: "f", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", ShowCharSet: true, ShowCollation: false},
+		{Name: "g", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_unicode_ci", ShowCharSet: true, ShowCollation: true},
 	}
 
 	// Verify initial setup: generated create should differ from CreateStatement
