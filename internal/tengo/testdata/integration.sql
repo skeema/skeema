@@ -23,7 +23,7 @@ CREATE TABLE actor_in_film (
 	film_name varchar(60) NOT NULL,
 	PRIMARY KEY (actor_id,film_name),
 	KEY film_name (film_name)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 # Keep this in sync with tengo_test.go's unsupportedTable()
 CREATE TABLE `followed_posts` (
@@ -32,7 +32,7 @@ CREATE TABLE `followed_posts` (
   `subscribed_at` int(10) unsigned DEFAULT NULL,
   `metadata` text,
   PRIMARY KEY (`post_id`,`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci
 /*!50100 PARTITION BY RANGE (user_id)
 SUBPARTITION BY HASH (post_id)
 SUBPARTITIONS 2
@@ -50,7 +50,7 @@ CREATE TABLE warranties (
   KEY customer (customer_id),
   CONSTRAINT customer_fk FOREIGN KEY (customer_id) REFERENCES purchasing.customers (id) ON DELETE SET NULL,
   CONSTRAINT product FOREIGN KEY (product_line, model) REFERENCES products (line, model) ON DELETE CASCADE ON UPDATE NO ACTION
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 CREATE TABLE grab_bag (
 	id bigint unsigned NOT NULL AUTO_INCREMENT,

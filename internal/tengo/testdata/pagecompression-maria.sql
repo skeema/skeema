@@ -8,4 +8,4 @@ CREATE TABLE actor_in_film_comp (
 	film_name varchar(60) NOT NULL,
 	PRIMARY KEY (actor_id,film_name),
 	KEY film_name (film_name)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 PAGE_COMPRESSED=1 PAGE_COMPRESSION_LEVEL=9;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci PAGE_COMPRESSED=1 PAGE_COMPRESSION_LEVEL=9;

@@ -29,7 +29,7 @@ CREATE TABLE ft_test (
 	body varchar(2000),
 	PRIMARY KEY (id),
 	/*!50601 FULLTEXT */ KEY ftbody (body)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 # MySQL 8 handles these incorrectly in information_schema, so this tests
 # introspection from SHOW CREATE TABLE instead
@@ -67,7 +67,7 @@ CREATE TABLE many_permutations1 (
 	e char(10) COLLATE latin1_general_ci,
 	f char(10) CHARACTER SET utf8mb4,
 	g char(10) COLLATE utf8mb4_general_ci
-) DEFAULT CHARSET=latin1;
+) DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 CREATE TABLE many_permutations2 (
 	a char(10),

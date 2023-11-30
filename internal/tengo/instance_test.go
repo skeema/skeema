@@ -807,6 +807,19 @@ func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
 				t.Errorf("Expected post-alter charset to be %s, instead found %s", expectCharSet, schema.CharSet)
 			}
 			if schema.Collation != expectCollation {
+				// MariaDB 11.2+ introduces new server variable character_set_collations,
+				// which can override default collation for each charset
+				if s.d.Flavor().Min(FlavorMariaDB112) {
+					var charSetCollations string
+					if db, err := s.d.CachedConnectionPool("", ""); err != nil {
+						t.Fatalf("Unable to obtain connection pool: %v", err)
+					} else if err := db.QueryRow("SELECT @@character_set_collations").Scan(&charSetCollations); err != nil {
+						t.Fatalf("Unexpected error querying @@character_set_collations: %v", err)
+					}
+					if strings.Contains(charSetCollations, schema.Collation) {
+						return
+					}
+				}
 				t.Errorf("Expected post-alter collation to be %s, instead found %s", expectCollation, schema.Collation)
 			}
 		}

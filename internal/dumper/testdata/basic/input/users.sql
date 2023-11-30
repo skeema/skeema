@@ -5,4 +5,4 @@ create table users (
   `credits` decimal(9,2),
   primary key (`id`),
   unique key `name` (`name`)
-) engine=innodb default charset=latin1;
+) engine=innodb default charset=latin1 collate=latin1_swedish_ci;

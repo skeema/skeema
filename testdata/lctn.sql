@@ -11,7 +11,7 @@ CREATE TABLE `Users` (
   `LastModified` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`ID`),
   UNIQUE KEY `Name` (`Name`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 CREATE TABLE `Posts` (
   `ID` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
@@ -21,7 +21,7 @@ CREATE TABLE `Posts` (
   `EditedAt` datetime /*!50601 DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP*/,
   PRIMARY KEY (`ID`),
   KEY `UserCreated` (`UserID`,`CreatedAt`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 CREATE TABLE `Comments` (
   `ID` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
@@ -34,4 +34,4 @@ CREATE TABLE `Comments` (
   KEY `Post` (`PostID`),
   CONSTRAINT `UserFK` FOREIGN KEY (`UserID`) REFERENCES `Users` (`ID`),
   CONSTRAINT `PostFK` FOREIGN KEY (`PostID`) REFERENCES `Posts` (`ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;

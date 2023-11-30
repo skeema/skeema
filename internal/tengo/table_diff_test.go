@@ -1071,7 +1071,7 @@ func (s TengoIntegrationSuite) TestAlterCheckConstraints(t *testing.T) {
 	tableChecks := getTableCopy("grab_bag")
 	tableChecks.Checks = []*Check{
 		{Name: "alivecheck", Clause: "alive != 0", Enforced: true},
-		{Name: "stringythings", Clause: "code != 'ABCD1234' AND name != code", Enforced: true},
+		{Name: "stringythings", Clause: "code != 'ABCD1234' AND name != 'ABCD1234'", Enforced: true},
 	}
 	tableChecks.CreateStatement = tableChecks.GeneratedCreateStatement(flavor)
 	td := NewAlterTable(tableNoChecks, tableChecks)
