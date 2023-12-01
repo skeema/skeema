@@ -1470,6 +1470,7 @@ func (s SkeemaIntegrationSuite) TestTempSchemaBinlog(t *testing.T) {
 		Image:        s.d.Flavor().Family().String(),
 		RootPassword: s.d.Password,
 		EnableBinlog: true,
+		DataTmpfs:    true, // since we destroy the container after this test anyway
 	}
 	dinst, err := tengo.GetOrCreateDockerizedInstance(opts)
 	if err != nil {
