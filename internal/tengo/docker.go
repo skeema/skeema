@@ -564,7 +564,7 @@ func (fl filteredLogger) Print(v ...interface{}) {
 			}
 		}
 	}
-	fl.logger.Print(v...)
+	fl.logger.Output(2, fmt.Sprint(v...))
 }
 
 // UseFilteredDriverLogger overrides the mysql driver's logger to avoid excessive

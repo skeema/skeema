@@ -697,7 +697,7 @@ func (s SkeemaIntegrationSuite) TestForeignKeys(t *testing.T) {
 	fs.WriteTestFile(t, "mydb/product/posts.sql", contents1)
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --exact-match")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --exact-match")
-	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff --exact-match")
 
 	// Changing an FK definition should not break push or pull, even though this
 	// will be two non-noop ALTERs to the same table

@@ -38,7 +38,12 @@ func (s SkeemaIntegrationSuite) TestLowerCaseTableNames1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unable to create Dockerized instance with lower-case-table-names=1: %v", err)
 	}
+	monitorDoneFunc, err := monitorContainerHealth(dinst)
+	if err != nil {
+		t.Fatalf("Unable to monitor Dockerized instance with lower-case-table-names=1: %v", err)
+	}
 	defer func() {
+		monitorDoneFunc()
 		if err := dinst.Destroy(); err != nil {
 			t.Errorf("Unable to destroy test instance with LCTN=1: %v", err)
 		}
