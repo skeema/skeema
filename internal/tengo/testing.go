@@ -129,10 +129,20 @@ func SkeemaTestImages(t *testing.T) []string {
 	}
 
 	images := strings.Split(envString, ",")
-	for _, image := range images {
-		// No MySQL 5.x or Percona Server builds available for arm64
-		if arch == "arm64" && (strings.HasPrefix(image, "percona:") || strings.HasPrefix(image, "mysql:5")) {
-			t.Fatalf("SKEEMA_TEST_IMAGES env var includes %s, but this image is not available for %s", image, arch)
+	for n, image := range images {
+		// No MySQL 5.x or Percona Server 5.x builds available for arm64; some
+		// Percona Server 8.0+ builds available from alternative location
+		if arch == "arm64" {
+			if strings.HasPrefix(image, "percona:5") || strings.HasPrefix(image, "mysql:5") {
+				t.Fatalf("SKEEMA_TEST_IMAGES env var includes %s, but this image is not available for %s", image, arch)
+			} else if strings.HasPrefix(image, "percona") {
+				if strings.Count(image, ".") < 2 {
+					t.Fatalf("SKEEMA_TEST_IMAGES env var includes %s, but you MUST specify a specific patch version for Percona Server on %s", image, arch)
+				}
+				images[n] = strings.Replace(image, "percona:", "percona/percona-server:", 1) + "-aarch64"
+			}
+		} else if strings.HasPrefix(image, "percona") && ParseFlavor(image).Min(FlavorPercona81) {
+			images[n] = strings.Replace(image, "percona:", "percona/percona-server:", 1)
 		}
 	}
 	return images

@@ -539,6 +539,10 @@ func simplifiedImageName(image string) string {
 		}
 	}
 	if hasTag {
+		tag, _, _ = strings.Cut(tag, "-") // discard any suffix like "-aarch64"
+		if strings.Count(tag, ".") > 1 && strings.HasSuffix(tag, ".0") {
+			tag = tag[0 : len(tag)-2] // discard any ".0" point release, e.g. "8.1.0" becomes "8.1"
+		}
 		return base + ":" + tag
 	}
 	return base

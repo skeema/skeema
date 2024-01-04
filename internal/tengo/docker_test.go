@@ -145,12 +145,14 @@ func TestDockerCLIMissing(t *testing.T) {
 
 func TestContainerNameForImage(t *testing.T) {
 	testcases := map[string]string{
-		"mysql:5.7":                               "mysql-5.7",
-		"mariadb:11.0":                            "mariadb-11.0",
-		"thirdparty/mysql:8.0":                    "mysql-8.0",
-		"thirdparty/percona:8.0":                  "percona-8.0",
-		"example.com/maria/maria-community:10.11": "mariadb-10.11",
-		"mysql/mysql-server:8.0":                  "mysql-8.0",
+		"mysql:5.7":                                                "mysql-5.7",
+		"mariadb:11.0":                                             "mariadb-11.0",
+		"thirdparty/mysql:8.0":                                     "mysql-8.0",
+		"thirdparty/percona:8.0":                                   "percona-8.0",
+		"example.com/maria/maria-community:10.11":                  "mariadb-10.11",
+		"percona/percona-server:8.0":                               "percona-8.0",
+		"percona/percona-server:8.1.0-aarch64":                     "percona-8.1",
+		"mysql/mysql-server:8.0":                                   "mysql-8.0",
 		"container-registry.oracle.com/mysql/community-server:8.1": "mysql-8.1",
 	}
 	for input, expected := range testcases {

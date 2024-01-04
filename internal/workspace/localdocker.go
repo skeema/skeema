@@ -55,26 +55,26 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 		defaultConnParams: opts.DefaultConnParams,
 	}
 
-	image := opts.Flavor.String()
-	if arch, err := tengo.DockerEngineArchitecture(); err != nil {
+	// Determine image and container name
+	arch, err := tengo.DockerEngineArchitecture()
+	if err != nil {
 		return nil, err
-	} else if arch == "arm64" && opts.Flavor.IsMySQL() {
-		// MySQL 8.0.29+ images are available for arm64 on DockerHub via _/mysql;
-		// for older MySQL 8 versions we must use mysql/mysql-server instead.
-		// Pre-8 MySQL, or any version of Percona Server, are not available.
-		if opts.Flavor.Min(tengo.FlavorMySQL80) && opts.Flavor.Variants == tengo.VariantNone {
-			if opts.Flavor.Version[2] >= 12 && opts.Flavor.Version[2] < 29 {
-				image = strings.Replace(image, "mysql:", "mysql/mysql-server:", 1)
-			}
-		} else {
-			log.Warnf("Official arm64 Docker images for %s are not available. Substituting mysql:8.0 instead for workspace purposes, which may cause behavior differences.", image)
-			opts.ContainerName = strings.Replace(opts.ContainerName, tengo.ContainerNameForImage(image), "mysql-8.0", 1)
-			image = "mysql:8.0"
-		}
+	}
+	image, err := dockerImageForFlavor(opts.Flavor, arch)
+	if err != nil {
+		log.Warn(err.Error() + ". Substituting mysql:8.0 instead for workspace purposes, which may cause behavior differences.")
+		image = "mysql:8.0"
 	}
 	if opts.ContainerName == "" {
 		opts.ContainerName = "skeema-" + tengo.ContainerNameForImage(image)
+	} else if image != opts.Flavor.String() { // attempt to fix user-supplied name if we had to adjust the image
+		oldName := tengo.ContainerNameForImage(opts.Flavor.String())
+		newName := tengo.ContainerNameForImage(image)
+		if oldName != newName {
+			opts.ContainerName = strings.Replace(opts.ContainerName, oldName, newName, 1)
+		}
 	}
+
 	if cstore.containers[opts.ContainerName] != nil {
 		ld.d = cstore.containers[opts.ContainerName]
 	} else {
@@ -221,4 +221,77 @@ func (ld *LocalDocker) shutdown(args ...interface{}) bool {
 	}
 	delete(cstore.containers, ld.d.ContainerName())
 	return true
+}
+
+// dockerImageForFlavor attempts to return the name of a Docker image for the
+// supplied flavor and arch. The arch should be supplied in the same format as
+// returned by tengo.DockerEngineArchitecture(), i.e. "amd64" or "arm64".
+// In most cases this function returns "Docker official" Dockerhub images (top-
+// level repos without an account name), but in some cases we must use a
+// different source, or return an error.
+func dockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
+	image := flavor.String()
+
+	// flavor is often supplied with a zero patch value to mean "latest patch" in
+	// terms of Docker images, for example the config "flavor=mysql:8.0" means we
+	// want the latest 8.0.X version. To ensure we can use these values in methods
+	// like tengo.Flavor.Min() properly, convert 0 to the highest value. (flavor is
+	// passed by value, so this won't affect the caller.)
+	var wantLatest bool
+	if flavor.Version[2] == 0 {
+		flavor.Version[2] = 65535
+		wantLatest = true
+	}
+
+	// Percona 8.1+ on any arch, or 8.0.33+ on arm64: use percona/percona-server.
+	// On arm64 we MUST include a patch value AND also add a "-aarch64" suffix to
+	// the tag; for now we always use 8.0.35 in place of 8.0.
+	// Below 8.0.33, Percona images for arm64 are not available at all.
+	if flavor.HasVariant(tengo.VariantPercona) {
+		if flavor.Min(tengo.FlavorPercona81) || arch == "arm64" {
+			image = strings.Replace(image, "percona:", "percona/percona-server:", 1)
+		}
+		if arch == "arm64" {
+			if !flavor.Min(tengo.FlavorPercona80.Dot(33)) {
+				return "", fmt.Errorf("%s Docker images for %s are not available", arch, image)
+			}
+			if strings.HasSuffix(image, ":8.0") {
+				image += ".35-aarch64"
+			} else if wantLatest {
+				image += ".0-aarch64"
+			} else {
+				image += "-aarch64"
+			}
+		}
+		return image, nil
+	}
+
+	// Aurora flavors from Skeema Premium: use corresponding MySQL image, but
+	// without any patch version for 5.X.Y since Aurora historically used very
+	// low patch versions.
+	// This chunk intentionally doesn't return early! It is designed to fall
+	// through to the regular MySQL logic below it.
+	if flavor.HasVariant(tengo.VariantAurora) {
+		if strings.HasPrefix(image, "aurora:5.6.") {
+			image = "mysql:5.6"
+		} else if strings.HasPrefix(image, "aurora:5.7.") {
+			image = "mysql:5.7"
+		} else {
+			image = strings.Replace(image, "aurora:", "mysql:", 1)
+		}
+	}
+
+	// MySQL on arm64: use mysql/mysql-server for 8.0.12-8.0.28.
+	// Below 8.0.12 (incl all 5.x), arm64 MySQL images are not available at all.
+	if arch == "arm64" && flavor.IsMySQL() {
+		if !flavor.Min(tengo.FlavorMySQL80.Dot(12)) {
+			return "", fmt.Errorf("%s Docker images for %s are not available", arch, image)
+		} else if !flavor.Min(tengo.FlavorMySQL80.Dot(29)) {
+			return strings.Replace(image, "mysql:", "mysql/mysql-server:", 1), nil
+		}
+		return image, nil
+	}
+
+	// All other situations: return image from flavor string as-is
+	return image, nil
 }

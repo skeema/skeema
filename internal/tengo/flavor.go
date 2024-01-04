@@ -198,6 +198,10 @@ var (
 	FlavorPercona81 = Flavor{Vendor: VendorMySQL, Version: Version{8, 1, 0}, Variants: VariantPercona}
 	FlavorPercona82 = Flavor{Vendor: VendorMySQL, Version: Version{8, 2, 0}, Variants: VariantPercona}
 
+	FlavorAurora56 = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}, Variants: VariantAurora}
+	FlavorAurora57 = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}, Variants: VariantAurora}
+	FlavorAurora80 = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}, Variants: VariantAurora}
+
 	FlavorMariaDB101  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1, 0}}
 	FlavorMariaDB102  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2, 0}}
 	FlavorMariaDB103  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3, 0}}
@@ -235,6 +239,8 @@ func ParseFlavor(s string) Flavor {
 // IdentifyFlavor returns a Flavor value based on inputs obtained from server
 // vars @@global.version and @@global.version_comment. It accounts for how some
 // distributions and/or cloud platforms manipulate those values.
+// This method can detect VariantPercona (and will include it in the return
+// value appropriately), but not VariantAurora.
 func IdentifyFlavor(versionString, versionComment string) (flavor Flavor) {
 	flavor.Version, _ = ParseVersion(versionString)
 	versionString = strings.ToLower(versionString)
