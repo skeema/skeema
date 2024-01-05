@@ -82,7 +82,7 @@ type DockerizedInstanceOptions struct {
 
 	// Options that only affect new container creation:
 	DataBindMount       string // Host path to bind-mount as /var/lib/mysql in container
-	DataTmpfs           bool   // Use tmpfs for /var/lib/mysql. Only used if DataBindMount == "" && runtime.GOOS == "linux"
+	DataTmpfs           bool   // Use tmpfs for /var/lib/mysql. Only used if no DataBindMount, runtime.GOOS is Linux, and image is from a top-level repo (e.g. "foo" but not "foo/bar")
 	EnableBinlog        bool   // Enable or disable binary log in database server
 	LowerCaseTableNames uint8  // lower_case_table_names setting (0, 1, or 2) in database server
 }
@@ -123,7 +123,11 @@ func CreateDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstan
 	}
 	if opts.DataBindMount != "" {
 		dflags = append(dflags, "-v {DATABINDMOUNT}")
-	} else if opts.DataTmpfs && runtime.GOOS == "linux" {
+	} else if opts.DataTmpfs && runtime.GOOS == "linux" && !strings.ContainsRune(opts.Image, '/') {
+		// tmpfs can only be used on *native* Linux (not Docker Desktop for Mac/Win).
+		// It can also cause permission issues with some non-Docker-official images,
+		// such as percona/percona-server; for this reason we only enable it for
+		// images from the top-level namespace, since these are known to support it.
 		dflags = append(dflags, "--tmpfs /var/lib/mysql")
 	}
 	flagString := strings.Join(dflags, " ")
