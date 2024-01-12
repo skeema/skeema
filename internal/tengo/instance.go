@@ -645,7 +645,7 @@ func tableHasRows(db *sqlx.DB, schema, table string) (bool, error) {
 	var result []int
 	query := fmt.Sprintf("SELECT 1 FROM %s.%s LIMIT 1", EscapeIdentifier(schema), EscapeIdentifier(table))
 	if err := db.Select(&result, query); err != nil {
-		return true, err
+		return true, fmt.Errorf("Error checking if table %s.%s is empty: %w", EscapeIdentifier(schema), EscapeIdentifier(table), err)
 	}
 	return len(result) != 0, nil
 }
@@ -728,7 +728,7 @@ func (instance *Instance) DropSchema(schema string, opts BulkDropOptions) error 
 
 	db, err := instance.CachedConnectionPool("", opts.params())
 	if err != nil {
-		return err
+		return fmt.Errorf("Error obtaining connection pool for dropping empty schema %s: %w", EscapeIdentifier(schema), err)
 	}
 
 	// Now that the tables have been removed, we can drop the schema without
@@ -761,7 +761,10 @@ func (instance *Instance) DropSchema(schema string, opts BulkDropOptions) error 
 // production, as it holds locks for a long time if many tables are present.
 func dropSchema(db *sqlx.DB, schema string) error {
 	_, err := db.Exec("DROP DATABASE " + EscapeIdentifier(schema))
-	return err
+	if err != nil {
+		return fmt.Errorf("Error dropping database %s: %w", EscapeIdentifier(schema), err)
+	}
+	return nil
 }
 
 // AlterSchema changes the character set and/or collation of the supplied schema
@@ -820,9 +823,31 @@ func (opts BulkDropOptions) Concurrency() int {
 // DropTablesInSchema drops all tables in a schema. If opts.OnlyIfEmpty==true,
 // returns an error if any of the tables have any rows.
 func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions) error {
-	db, err := instance.CachedConnectionPool(schema, opts.params())
+	// We can normally execute multiple DROP TABLEs concurrently, which improves
+	// performance over a slow network link (WAN / VPN) even though the server
+	// actually runs them serially. However, if the flavor doesn't have optimized
+	// DROP TABLE, each drop is slow with a large-ish buffer pool, and having all
+	// those drops queued up will cause a stall (since no other queries will be
+	// able to run in between them). So in that case, reduce concurrency to 1.
+	concurrency := opts.Concurrency()
+	if instance.bufferPoolSize >= (32*1024*1024*1024) && !instance.Flavor().Min(FlavorMySQL80.Dot(23)) {
+		concurrency = 1
+	}
+
+	// In MariaDB 10.6+, concurrent DROP TABLE can result in *InnoDB* locking
+	// conflicts if foreign keys are in-use. This causes a stall which isn't
+	// resolved until hitting innodb_lock_wait_timeout, which defaults to 50sec,
+	// longer than our default query timeout. See MDEV-32899 and MDEV-32883. To
+	// resolve this, we use a 3sec innodb_lock_wait_timeout and retry failures
+	// serially.
+	params := opts.params()
+	if concurrency > 1 && instance.Flavor().Min(FlavorMariaDB106) {
+		params += "&innodb_lock_wait_timeout=3"
+	}
+
+	db, err := instance.CachedConnectionPool(schema, params)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error obtaining connection pool for dropping tables in schema %s: %w", EscapeIdentifier(schema), err)
 	}
 
 	// Obtain table and partition names
@@ -850,40 +875,36 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 		}
 	}
 
-	// If buffer pool is over 32GB and flavor doesn't have optimized DROP TABLE,
-	// reduce drop concurrency to 1 to reduce risk of stalls
-	concurrency := opts.Concurrency()
-	if instance.bufferPoolSize >= (32*1024*1024*1024) && !instance.flavor.Min(FlavorMySQL80.Dot(23)) {
-		concurrency = 1
-	}
 	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(concurrency)
 	retries := make(chan string, len(tableMap))
 	for name, partitions := range tableMap {
 		name, partitions := name, partitions // avoid closure with loop iteration variables
-		g.Go(func() (err error) {
+		g.Go(func() error {
 			if len(partitions) > 1 && opts.PartitionsFirst {
-				err = dropPartitions(db, name, partitions[0:len(partitions)-1])
-			}
-			if err == nil {
-				_, err = db.ExecContext(ctx, "DROP TABLE "+EscapeIdentifier(name))
-				// With the new data dictionary added in MySQL 8.0, attempting to
-				// concurrently drop two tables that have a foreign key constraint between
-				// them can deadlock, so we try them serially later. Metadata lock timeouts
-				// are also more common with FKs in MySQL 8.0, so we retry those as well.
-				if IsDatabaseError(err, mysqlerr.ER_LOCK_DEADLOCK, mysqlerr.ER_LOCK_WAIT_TIMEOUT) {
-					retries <- name
-					err = nil
+				if err := dropPartitions(db, name, partitions[0:len(partitions)-1]); err != nil {
+					return err
 				}
 			}
-			return err
+			_, err := db.ExecContext(ctx, "DROP TABLE "+EscapeIdentifier(name))
+			if IsDatabaseError(err, mysqlerr.ER_LOCK_DEADLOCK, mysqlerr.ER_LOCK_WAIT_TIMEOUT) {
+				// If foreign keys are being used, DROP TABLE can encounter lock wait
+				// timeouts in various situations in MySQL 8.0+ or MariaDB 10.6+, due to
+				// concurrent drops or due to cross-schema FKs. MySQL 8.0+ can also
+				// encounter deadlocks due to concurrent drops.
+				// We retry these failed drops later in a serial manner.
+				retries <- name
+			} else if err != nil {
+				return fmt.Errorf("Error dropping table %s.%s: %w", EscapeIdentifier(schema), EscapeIdentifier(name), err)
+			}
+			return nil
 		})
 	}
 	fatalErr := g.Wait()
 	close(retries)
 	for name := range retries {
 		if _, err := db.Exec("DROP TABLE " + EscapeIdentifier(name)); err != nil {
-			return err
+			return fmt.Errorf("Error dropping table %s.%s even after retry: %w", EscapeIdentifier(schema), EscapeIdentifier(name), err)
 		}
 	}
 	return fatalErr
@@ -963,7 +984,7 @@ func tablesToPartitions(db *sqlx.DB, schema string, flavor Flavor) (map[string][
 		WHERE    p.table_schema = ?
 		ORDER BY p.table_name, p.partition_ordinal_position`
 	if err := db.Select(&rawNames, query, schema); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Error querying information_schema.partitions: %w", err)
 	}
 
 	var checkViews bool
@@ -995,7 +1016,7 @@ func tablesToPartitions(db *sqlx.DB, schema string, flavor Flavor) (map[string][
 				FROM   information_schema.views
 				WHERE  table_schema = ?`
 		if err := db.Select(&viewNames, query, schema); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("Error querying information_schema.views: %w", err)
 		}
 		for _, name := range viewNames {
 			delete(partitions, name)
@@ -1011,7 +1032,7 @@ func dropPartitions(db *sqlx.DB, table string, partitions []string) error {
 			EscapeIdentifier(table),
 			EscapeIdentifier(partName)))
 		if err != nil {
-			return err
+			return fmt.Errorf("Error dropping partition of table %s: %w", EscapeIdentifier(table), err)
 		}
 	}
 	return nil
