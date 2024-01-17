@@ -10,12 +10,10 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/fs"
-	"github.com/skeema/skeema/internal/shellout"
 	"github.com/skeema/skeema/internal/tengo"
 	"github.com/skeema/skeema/internal/util"
 )
@@ -38,9 +36,8 @@ func TestIntegration(t *testing.T) {
 }
 
 type SkeemaIntegrationSuite struct {
-	d               *tengo.DockerizedInstance
-	repoPath        string
-	monitorDoneFunc func()
+	d        *tengo.DockerizedInstance
+	repoPath string
 }
 
 func (s *SkeemaIntegrationSuite) Setup(backend string) (err error) {
@@ -57,17 +54,10 @@ func (s *SkeemaIntegrationSuite) Setup(backend string) (err error) {
 		RootPassword: "fakepw",
 	}
 	s.d, err = tengo.GetOrCreateDockerizedInstance(opts)
-	if err != nil {
-		return err
-	}
-	s.monitorDoneFunc, err = monitorContainerHealth(s.d)
 	return err
 }
 
 func (s *SkeemaIntegrationSuite) Teardown(backend string) error {
-	if s.monitorDoneFunc != nil {
-		s.monitorDoneFunc()
-	}
 	if err := s.d.Stop(); err != nil {
 		return err
 	}
@@ -484,49 +474,6 @@ func (s *SkeemaIntegrationSuite) dbExecWithParams(t *testing.T, schemaName, para
 	if err != nil {
 		t.Fatalf("Error running query on DockerizedInstance.\nSchema: %s\nQuery: %s\nError: %s", schemaName, query, err)
 	}
-}
-
-// monitorContainerHealth checks on the health of a containerized database by
-// launching a Goroutine which runs a trivial query every 1 second; upon query
-// failure, extra information is logged and the Goroutine exits.
-// monitorContainerHealth returns a function to call upon intentional container
-// shutdown (to make the monitor goroutine exit gracefully first) and any error
-// that occurred establishing its initial connection pool (which would prevent
-// monitoring altogether).
-// This is being added to help diagnose sporadic CI failures on GitHub Actions
-// which (so far) have not been reproducible outside of CI.
-func monitorContainerHealth(d *tengo.DockerizedInstance) (doneFunc func(), err error) {
-	db, err := d.ConnectionPool("", "timeout=5s&readTimeout=5s")
-	if err != nil {
-		return nil, err
-	}
-	done := make(chan struct{})
-	doneFunc = func() {
-		close(done)
-	}
-	go func() {
-		var result int
-		for {
-			select {
-			case <-done:
-				return
-			case <-time.After(time.Second):
-				err = db.QueryRow("SELECT 1").Scan(&result)
-				if err != nil {
-					log.Errorf("Unable to query %s %s: %v", d, d.ContainerName(), err)
-					vars := map[string]string{
-						"NAME": d.ContainerName(),
-					}
-					s := shellout.New("docker logs --tail 100 {NAME}").WithVariablesStrict(vars)
-					if err := s.Run(); err != nil {
-						log.Errorf("Unexpected error from `docker logs` shellout: %v", err)
-					}
-					return
-				}
-			}
-		}
-	}()
-	return doneFunc, nil
 }
 
 // getOptionFile returns a mybase.File representing the .skeema file in the

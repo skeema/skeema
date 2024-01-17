@@ -1039,12 +1039,69 @@ func dropPartitions(db *sqlx.DB, table string, partitions []string) error {
 }
 
 // DefaultCharSetAndCollation returns the instance's default character set and
-// collation
+// collation.
 func (instance *Instance) DefaultCharSetAndCollation() (serverCharSet, serverCollation string, err error) {
 	db, err := instance.CachedConnectionPool("", "")
 	if err != nil {
 		return
 	}
 	err = db.QueryRow("SELECT @@global.character_set_server, @@global.collation_server").Scan(&serverCharSet, &serverCollation)
+	return
+}
+
+// ServerProcess describes the status of a connection on an Instance.
+type ServerProcess struct {
+	ID      int64
+	User    string
+	Schema  string
+	Command string
+	Time    float64
+	State   string
+	Info    string
+}
+
+// ProcessList returns the current list of connections on instance. This is
+// primarily intended for debugging and test output at this time, and may be
+// disruptive on live production database servers, especially on MySQL 8.0+.
+func (instance *Instance) ProcessList() (plist []ServerProcess, err error) {
+	var db *sqlx.DB
+	db, err = instance.CachedConnectionPool("", "")
+	if err != nil {
+		return
+	}
+	var query string
+	if instance.Flavor().IsMariaDB() {
+		query = "SELECT Id, User, db, Command, Time, time_ms, State, Info FROM information_schema.processlist"
+	} else {
+		// TODO this should use a different approach on recent MySQL releases
+		query = "SHOW PROCESSLIST"
+	}
+	var raw []struct {
+		ID        int64          `db:"Id"`
+		User      string         `db:"User"`
+		Schema    sql.NullString `db:"db"`
+		Command   string         `db:"Command"`
+		TimeInt   uint64         `db:"Time"`
+		TimeFloat float64        `db:"time_ms"`
+		State     sql.NullString `db:"State"`
+		Info      sql.NullString `db:"Info"`
+	}
+	err = db.Select(&raw, query)
+	for _, p := range raw {
+		sp := ServerProcess{
+			ID:      p.ID,
+			User:    p.User,
+			Schema:  p.Schema.String,
+			Command: p.Command,
+			Time:    p.TimeFloat / 1000.0,
+			State:   p.State.String,
+			Info:    p.Info.String,
+		}
+		// Only MariaDB provides fractional time
+		if p.TimeInt >= 1 && sp.Time < 1.0 {
+			sp.Time = float64(p.TimeInt)
+		}
+		plist = append(plist, sp)
+	}
 	return
 }

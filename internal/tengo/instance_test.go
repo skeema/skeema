@@ -868,3 +868,17 @@ func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
 	assertNoError("testcharcoll", "latin1", "", "latin1", "latin1_swedish_ci")
 	assertNoError("testing", "utf8mb4", "utf8mb4_general_ci", "utf8mb4", "utf8mb4_general_ci")
 }
+
+func (s TengoIntegrationSuite) TestInstanceProcessList(t *testing.T) {
+	// Since ProcessList is only intended to be used ad-hoc for debugging in CI,
+	// we don't currently include test coverage of it beyond confirming the method
+	// returns at least one entry (we should always at least see the connection
+	// that queried the processlist; there may or may not be other system threads)
+	processes, err := s.d.ProcessList()
+	if err != nil {
+		t.Fatalf("Unexpected error from Instance.ProcessList: %v", err)
+	}
+	if len(processes) == 0 {
+		t.Error("Instance.ProcessList unexpectedly returned 0 rows")
+	}
+}

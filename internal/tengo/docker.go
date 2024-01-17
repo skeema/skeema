@@ -141,6 +141,7 @@ func CreateDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstan
 		"--performance-schema=0",                // disable performance_schema to reduce memory usage and other overhead
 		"--skip-innodb-adaptive-hash-index",     // AHI not beneficial to DDL-based workload
 		"--loose-innodb-log-writer-threads=off", // log writer threads harm workspace perf (loose- prefix since only in MySQL 8.0.22+)
+		"--loose-query-cache-size=0",            // ensure query cache completely disabled (loose- prefix since no longer in MySQL 8+)
 	}
 	if opts.EnableBinlog {
 		serverArgs = append(serverArgs, "--log-bin", "--server-id=1")
@@ -230,6 +231,13 @@ func newDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstance,
 	}
 
 	if err := di.TryConnect(); err != nil {
+		vars := map[string]string{
+			"NAME": opts.Name,
+		}
+		s := shellout.New("docker logs --tail 100 {NAME}").WithVariablesStrict(vars)
+		if logs, logErr := s.RunCaptureCombined(); logErr == nil {
+			err = fmt.Errorf("%w\nLast 100 lines of container logs:\n%s", err, logs)
+		}
 		return nil, err
 	}
 	return di, nil
