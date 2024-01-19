@@ -274,7 +274,7 @@ func TestFlavorSupported(t *testing.T) {
 		FlavorMySQL55:            true,
 		FlavorMySQL80:            true,
 		FlavorMySQL80.Dot(123):   true,
-		FlavorMySQL82:            true,
+		FlavorMySQL83:            true,
 		FlavorPercona56:          true,
 		FlavorMariaDB101:         true,
 		FlavorMariaDB104.Dot(22): true,
