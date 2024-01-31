@@ -130,30 +130,52 @@ func TestStripDisplayWidth(t *testing.T) {
 }
 
 func TestMergeParamStrings(t *testing.T) {
-	assertParamString := func(defaultOptions, addOptions, expectOptions string) {
+	assertParamString := func(expected string, input ...string) {
 		t.Helper()
 		// can't compare strings directly since order may be different
-		result := MergeParamStrings(defaultOptions, addOptions)
+		result := MergeParamStrings(input...)
 		parsedResult, err := url.ParseQuery(result)
 		if err != nil {
 			t.Fatalf("url.ParseQuery(\"%s\") returned error: %s", result, err)
 		}
-		parsedExpected, err := url.ParseQuery(expectOptions)
+		parsedExpected, err := url.ParseQuery(expected)
 		if err != nil {
-			t.Fatalf("url.ParseQuery(\"%s\") returned error: %s", expectOptions, err)
+			t.Fatalf("url.ParseQuery(\"%s\") returned error: %s", expected, err)
 		}
 		if !reflect.DeepEqual(parsedResult, parsedExpected) {
 			t.Errorf("Expected param map %v, instead found %v", parsedExpected, parsedResult)
 		}
 	}
 
+	assertParamString("")
 	assertParamString("", "", "")
+	assertParamString("param1=value1", "param1=value1")
+	assertParamString("param1=value1", "param1=value1", "")
 	assertParamString("param1=value1", "", "param1=value1")
-	assertParamString("", "param1=value1", "param1=value1")
 	assertParamString("param1=value1", "param1=value1", "param1=value1")
-	assertParamString("param1=value1", "param1=hello", "param1=hello")
-	assertParamString("param1=value1&readTimeout=5s&interpolateParams=0", "param2=value2", "param1=value1&readTimeout=5s&interpolateParams=0&param2=value2")
-	assertParamString("param1=value1&readTimeout=5s&interpolateParams=0", "param1=value3", "param1=value3&readTimeout=5s&interpolateParams=0")
+	assertParamString("param1=hello&param2=ok", "param1=value1", "param1=value2&param2=ok", "param1=hello")
+	assertParamString("param1=value1&readTimeout=5s&interpolateParams=0&param2=value2", "param1=value1&readTimeout=5s&interpolateParams=0", "param2=value2")
+	assertParamString("param1=value3&readTimeout=5s&interpolateParams=0", "param1=value1&readTimeout=7s&interpolateParams=0", "readTimeout=5s", "param1=value3")
+}
+
+func TestFilterSQLMode(t *testing.T) {
+	assertResult := func(input string, filter sqlModeFilter, expected string) {
+		t.Helper()
+		if actual := FilterSQLMode(input, filter); actual != expected {
+			t.Errorf("Expected FilterSQLMode(%q, %v) to return %q, instead found %q", input, filter, expected, actual)
+		}
+	}
+
+	assertResult("", IntrospectionBadSQLModes, "")
+	assertResult("REAL_AS_FLOAT,PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE,ANSI", IntrospectionBadSQLModes, "REAL_AS_FLOAT,PIPES_AS_CONCAT,IGNORE_SPACE")
+	assertResult("ANSI_QUOTES", IntrospectionBadSQLModes, "")
+
+	my57Default := "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION"
+	my80Default := "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"
+	mariaDefault := "STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION"
+	assertResult(my57Default, NonPortableSQLModes, my80Default)
+	assertResult(my80Default, NonPortableSQLModes, my80Default)
+	assertResult(mariaDefault, NonPortableSQLModes, "STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION")
 }
 
 func TestLongestIncreasingSubsequence(t *testing.T) {

@@ -246,7 +246,6 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	opts = getOpts("--workspace=docker")
 	expectValues := map[string]string{
 		"sql_mode": "'REAL_AS_FLOAT,PIPES_AS_CONCAT'",
-		"tls":      "false",
 	}
 	values, err := url.ParseQuery(opts.DefaultConnParams)
 	if err != nil {

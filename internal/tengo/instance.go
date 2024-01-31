@@ -584,16 +584,10 @@ func (instance *Instance) introspectionParams() string {
 		v.Set("collation", "binary")
 	}
 
-	keepMode := make([]string, 0, len(instance.sqlMode))
-	for _, mode := range instance.sqlMode {
-		// Strip out these problematic modes: ANSI, ANSI_QUOTES, NO_FIELD_OPTIONS, NO_KEY_OPTIONS, NO_TABLE_OPTIONS
-		if strings.HasPrefix(mode, "ANSI") || (strings.HasPrefix(mode, "NO_") && strings.HasSuffix(mode, "_OPTIONS")) {
-			continue
-		}
-		keepMode = append(keepMode, mode)
-	}
-	if len(keepMode) != len(instance.sqlMode) {
-		v.Set("sql_mode", fmt.Sprintf("'%s'", strings.Join(keepMode, ",")))
+	// Remove any problematic sql_mode values
+	keepModes := filterSQLMode(instance.sqlMode, IntrospectionBadSQLModes)
+	if len(keepModes) != len(instance.sqlMode) {
+		v.Set("sql_mode", fmt.Sprintf("'%s'", strings.Join(keepModes, ",")))
 	}
 
 	return v.Encode()

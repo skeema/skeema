@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"net/url"
 	"testing"
 	"time"
 
@@ -147,6 +148,11 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerShutdown(t *testing.T) {
 }
 
 func (s WorkspaceIntegrationSuite) TestLocalDockerConnParams(t *testing.T) {
+	// These options supply a DefaultConnParams that sets a valid session variable,
+	// as well as setting an intentionally-invalid sql_mode which mixes up modes
+	// from MySQL and MariaDB to ensure one or both modes are invalid regardless of
+	// flavor. That allows coverage for the sql_mode portability logic in
+	// LocalDocker.ConnectionPool().
 	opts := Options{
 		Type:                TypeLocalDocker,
 		CleanupAction:       CleanupActionNone,
@@ -154,7 +160,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerConnParams(t *testing.T) {
 		SchemaName:          "_skeema_tmp",
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
-		DefaultConnParams:   "wait_timeout=123",
+		DefaultConnParams:   "wait_timeout=123&sql_mode=" + url.QueryEscape("'TIME_TRUNCATE_FRACTIONAL,TIME_ROUND_FRACTIONAL'"),
 		RootPassword:        "",
 		LockTimeout:         100 * time.Millisecond,
 		Concurrency:         10,
@@ -171,7 +177,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerConnParams(t *testing.T) {
 		t.Helper()
 		db, err := ws.ConnectionPool(params)
 		if err != nil {
-			t.Errorf("Unexpected error from ConnectionPool(): %v", err)
+			t.Fatalf("Unexpected error from ConnectionPool(): %v", err)
 		}
 		var result string
 		if err := db.QueryRow("SELECT @@" + variable).Scan(&result); err != nil {

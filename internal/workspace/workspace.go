@@ -124,14 +124,13 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 		opts.Flavor = tengo.ParseFlavor(dir.Config.Get("flavor"))
 		opts.SkipBinlog = true
 		if instance == nil {
-			// Without an instance, we just take the directory's default params config
-			// and apply tls=false on top, since we know the Dockerized instance will be
-			// on the local machine.
-			defaultParams, err := dir.InstanceDefaultParams()
+			// Without an instance, we just take the directory's default params config.
+			// We no longer set tls=false here; that's handled in a non-overridable way
+			// in LocalDocker.ConnectionPool() instead.
+			opts.DefaultConnParams, err = dir.InstanceDefaultParams()
 			if err != nil {
 				return Options{}, err
 			}
-			opts.DefaultConnParams = tengo.MergeParamStrings(defaultParams, "tls=false")
 		} else {
 			// With an instance, we can copy the instance's default params (which
 			// typically came from connect-options / dir.InstanceDefaultParams anyway),
@@ -139,9 +138,9 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 			// Note that we're manually shoving the instance's sql_mode into the params;
 			// we need it present regardless of whether connect-options set it explicitly.
 			// Many companies use non-default global sql_mode, especially on RDS, and we
-			// want the Dockerized instance to match. We're also disabling tls since
-			// Dockerized instance is local and instance probably has tls=preferred.
-			overrides := "tls=false&sql_mode=" + url.QueryEscape("'"+instance.SQLMode()+"'")
+			// want the Dockerized instance to match.
+			// Also see note above re: tls=false no longer being set here.
+			overrides := "sql_mode=" + url.QueryEscape("'"+instance.SQLMode()+"'")
 			opts.DefaultConnParams = instance.BuildParamString(overrides)
 			opts.NameCaseMode = instance.NameCaseMode()
 			if !opts.Flavor.Known() {

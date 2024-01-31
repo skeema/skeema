@@ -3,9 +3,11 @@ package workspace
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 
+	"github.com/VividCortex/mysqlerr"
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/tengo"
@@ -159,8 +161,29 @@ func (ld *LocalDocker) ConnectionPool(params string) (*sqlx.DB, error) {
 	// different sibling subdirectories with differing configurations).
 	// So, here we must merge the params arg (callsite-dependent) over top of the
 	// LocalDocker params (dir-dependent).
-	finalParams := tengo.MergeParamStrings(ld.defaultConnParams, params)
-	return ld.d.CachedConnectionPool(ld.schemaName, finalParams)
+	// We also forcibly disable tls in a way which cannot be overridden, since the
+	// Docker container is local.
+	finalParams := tengo.MergeParamStrings(ld.defaultConnParams, params, "tls=false")
+	db, err := ld.d.CachedConnectionPool(ld.schemaName, finalParams)
+
+	// In the rare situation where OptionsForDir obtained sql_mode from a live
+	// instance of different flavor than our Docker image's flavor, connections may
+	// hit Error 1231 (42000): Variable 'sql_mode' can't be set to the value ...
+	// This can happen if overriding flavor on the command-line, or even
+	// automatically if the real server runs 5.7 but local machine is ARM.
+	// In this case, try conn again with all non-portable sql_mode values removed.
+	if tengo.IsDatabaseError(err, mysqlerr.ER_WRONG_VALUE_FOR_VAR) && strings.Contains(finalParams, "sql_mode") {
+		v, _ := url.ParseQuery(finalParams)
+		sqlMode := v.Get("sql_mode")
+		if len(sqlMode) > 1 {
+			sqlMode = sqlMode[1 : len(sqlMode)-1] // strip leading/trailing single-quotes
+			v.Set("sql_mode", "'"+tengo.FilterSQLMode(sqlMode, tengo.NonPortableSQLModes)+"'")
+			finalParams = v.Encode()
+			db, err = ld.d.CachedConnectionPool(ld.schemaName, finalParams)
+		}
+	}
+
+	return db, err
 }
 
 // IntrospectSchema introspects and returns the temporary workspace schema.

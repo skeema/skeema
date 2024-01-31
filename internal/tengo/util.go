@@ -218,19 +218,89 @@ func paramMap(dsn string) map[string]string {
 	return result
 }
 
-// MergeParamStrings combines two query-string-style formatted DB connection
-// parameter strings, with the latter string overriding the former in cases of
-// conflicts.
+// MergeParamStrings combines any number of query-string-style formatted DB
+// connection parameter strings. In case of conflicts for any given parameter,
+// values from later args override earlier args.
 // This is inefficient and should be avoided in hot paths; eventually we will
 // move away from DSNs and use Connectors instead, which will remove the need
 // for this logic.
-func MergeParamStrings(params, overrides string) string {
-	v, _ := url.ParseQuery(params)
-	v2, _ := url.ParseQuery(overrides)
-	for name := range v2 {
-		v.Set(name, v2.Get(name))
+func MergeParamStrings(params ...string) string {
+	if len(params) == 0 {
+		return ""
+	} else if len(params) == 1 {
+		return params[0]
 	}
-	return v.Encode()
+	base, _ := url.ParseQuery(params[0])
+	for _, overrides := range params[1:] {
+		v, _ := url.ParseQuery(overrides)
+		for name := range v {
+			base.Set(name, v.Get(name))
+		}
+	}
+	return base.Encode()
+}
+
+// sqlModeFilter maps sql_mode values (which must be in all caps) to true values
+// to indicate that these sql_mode values should be filtered out.
+type sqlModeFilter map[string]bool
+
+// IntrospectionBadSQLModes indicates which sql_mode values are problematic for
+// schema introspection purposes.
+var IntrospectionBadSQLModes = sqlModeFilter{
+	"ANSI":                     true,
+	"ANSI_QUOTES":              true,
+	"NO_FIELD_OPTIONS":         true,
+	"NO_KEY_OPTIONS":           true,
+	"NO_TABLE_OPTIONS":         true,
+	"IGNORE_BAD_TABLE_OPTIONS": true, // Only present in MariaDB
+}
+
+// NonPortableSQLModes indicates which sql_mode values are not available in all
+// flavors.
+var NonPortableSQLModes = sqlModeFilter{
+	"NO_AUTO_CREATE_USER": true, // Not present in MySQL 8.0+
+	"NO_FIELD_OPTIONS":    true, // Not present in MySQL 8.0+
+	"NO_KEY_OPTIONS":      true, // Not present in MySQL 8.0+
+	"NO_TABLE_OPTIONS":    true, // Not present in MySQL 8.0+
+	"DB2":                 true, // Not present in MySQL 8.0+
+	"MAXDB":               true, // Not present in MySQL 8.0+
+	"MSSQL":               true, // Not present in MySQL 8.0+
+	"MYSQL323":            true, // Not present in MySQL 8.0+
+	"MYSQL40":             true, // Not present in MySQL 8.0+
+	"ORACLE":              true, // Not present in MySQL 8.0+
+	"POSTGRESQL":          true, // Not present in MySQL 8.0+
+
+	"TIME_TRUNCATE_FRACTIONAL": true, // Only present in MySQL 8.0+
+
+	"IGNORE_BAD_TABLE_OPTIONS": true, // Only present in MariaDB
+	"EMPTY_STRING_IS_NULL":     true, // Only present in MariaDB 10.3+
+	"SIMULTANEOUS_ASSIGNMENT":  true, // Only present in MariaDB 10.3+
+	"TIME_ROUND_FRACTIONAL":    true, // Only present in MariaDB 10.4+
+}
+
+// FilterSQLMode splits the supplied comma-separated orig sql_mode value and
+// filters out any sql_mode values which map to true values in the supplied
+// sqlModeFilter mapping.
+func FilterSQLMode(orig string, remove sqlModeFilter) string {
+	if orig == "" {
+		return ""
+	}
+	origModes := strings.Split(orig, ",")
+	keepModes := filterSQLMode(origModes, remove)
+	if len(keepModes) == len(origModes) {
+		return orig
+	}
+	return strings.Join(keepModes, ",")
+}
+
+func filterSQLMode(origModes []string, remove sqlModeFilter) []string {
+	keepModes := make([]string, 0, len(origModes))
+	for _, mode := range origModes {
+		if !remove[mode] {
+			keepModes = append(keepModes, mode)
+		}
+	}
+	return keepModes
 }
 
 // longestIncreasingSubsequence implements an algorithm useful in computing
