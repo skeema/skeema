@@ -21,9 +21,8 @@ func init() {
 	stderr := int(os.Stderr.Fd())
 	if width, err := util.TerminalWidth(stderr); err == nil {
 		formatter.isTerminal = true
-		formatter.width = width
-		if width > 0 && width < 80 {
-			formatter.width = 80
+		if width >= 80 { // only enable word-wrapping if terminal width is at least 80
+			formatter.width = width
 		}
 	} else if testing.Testing() {
 		formatter.isTerminal = true
