@@ -3,8 +3,8 @@ package workspace
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
+	"testing"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/skeema/skeema/internal/tengo"
@@ -64,7 +64,7 @@ func NewTempSchema(opts Options) (_ *TempSchema, retErr error) {
 	// a low lock_wait_timeout on any TempSchema DDL in MySQL 8.
 	if ts.inst.Flavor().Min(tengo.FlavorMySQL80) {
 		wantLockWait := 5
-		if strings.HasSuffix(os.Args[0], ".test") || strings.HasSuffix(os.Args[0], ".test.exe") {
+		if testing.Testing() {
 			wantLockWait = 2 // use lower value in test suites so MDL-related tests aren't super slow
 		}
 		if ts.inst.LockWaitTimeout() > wantLockWait {

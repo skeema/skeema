@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"testing"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
@@ -52,7 +53,7 @@ func AddGlobalConfigFiles(cfg *mybase.Config) {
 	// Avoid using "real" global paths in test logic. Otherwise, if the user
 	// running the test happens to have a ~/.my.cnf, ~/.skeema, /etc/skeema, it
 	// it would affect the test logic.
-	if cfg.IsTest {
+	if testing.Testing() {
 		globalFilePaths = append(globalFilePaths, "fake-etc/skeema", "fake-home/.my.cnf")
 	} else {
 		if runtime.GOOS == "windows" {
@@ -182,7 +183,7 @@ var PasswordPromptInput PasswordInputSource
 func init() {
 	// Don't attempt interactive password prompt if STDIN isn't a TTY, or if
 	// running a test suite
-	if !StdinIsTerminal() || strings.HasSuffix(os.Args[0], ".test") || strings.HasSuffix(os.Args[0], ".test.exe") {
+	if !StdinIsTerminal() || testing.Testing() {
 		PasswordPromptInput = PasswordInputSource(NoInteractiveInput)
 	} else {
 		PasswordPromptInput = PasswordInputSource(InteractivePasswordInput)

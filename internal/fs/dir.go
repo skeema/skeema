@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"testing"
 
 	"github.com/VividCortex/mysqlerr"
 	log "github.com/sirupsen/logrus"
@@ -572,7 +573,7 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 		} else if sslMode == "required" {
 			sslMode = "skip-verify" // driver uses "skip-verify" to mean mysql ssl-mode=required
 		}
-	} else if dir.Config.IsTest {
+	} else if testing.Testing() {
 		sslMode = "false"
 	}
 	v.Set("tls", sslMode)

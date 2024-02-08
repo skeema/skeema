@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"testing"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/util"
@@ -24,7 +25,7 @@ func init() {
 		if width > 0 && width < 80 {
 			formatter.width = 80
 		}
-	} else if strings.HasSuffix(os.Args[0], ".test") {
+	} else if testing.Testing() {
 		formatter.isTerminal = true
 	}
 	log.SetFormatter(formatter)
