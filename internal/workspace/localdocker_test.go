@@ -196,48 +196,49 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerConnParams(t *testing.T) {
 
 func TestDockerImageForFlavor(t *testing.T) {
 	testcases := []struct {
-		flavor      tengo.Flavor
+		flavor      string
 		arch        string
 		expectImage string
 		expectErr   bool
 	}{
-		{tengo.FlavorMySQL80, "amd64", "mysql:8.0", false},
-		{tengo.FlavorMySQL80, "arm64", "mysql:8.0", false},
-		{tengo.FlavorMySQL80.Dot(28), "amd64", "mysql:8.0.28", false},
-		{tengo.FlavorMySQL80.Dot(28), "arm64", "mysql/mysql-server:8.0.28", false},
-		{tengo.FlavorMySQL80.Dot(29), "amd64", "mysql:8.0.29", false},
-		{tengo.FlavorMySQL80.Dot(29), "arm64", "mysql:8.0.29", false},
-		{tengo.FlavorMySQL80.Dot(10), "amd64", "mysql:8.0.10", false},
-		{tengo.FlavorMySQL80.Dot(10), "arm64", "", true},
-		{tengo.FlavorMySQL57, "amd64", "mysql:5.7", false},
-		{tengo.FlavorMySQL57, "arm64", "", true},
-		{tengo.FlavorPercona57, "amd64", "percona:5.7", false},
-		{tengo.FlavorPercona57, "arm64", "", true},
-		{tengo.FlavorPercona80, "amd64", "percona:8.0", false},
-		{tengo.FlavorPercona80, "arm64", "percona/percona-server:8.0.35-aarch64", false},
-		{tengo.FlavorPercona80.Dot(33), "amd64", "percona:8.0.33", false},
-		{tengo.FlavorPercona80.Dot(33), "arm64", "percona/percona-server:8.0.33-aarch64", false},
-		{tengo.FlavorPercona80.Dot(32), "amd64", "percona:8.0.32", false},
-		{tengo.FlavorPercona80.Dot(32), "arm64", "", true},
-		{tengo.FlavorPercona81, "amd64", "percona/percona-server:8.1", false},
-		{tengo.FlavorPercona81, "arm64", "percona/percona-server:8.1.0-aarch64", false},
-		{tengo.FlavorAurora56.Dot(10), "amd64", "mysql:5.6", false},
-		{tengo.FlavorAurora56.Dot(10), "arm64", "", true},
-		{tengo.FlavorAurora57.Dot(12), "amd64", "mysql:5.7", false},
-		{tengo.FlavorAurora57.Dot(12), "arm64", "", true},
-		{tengo.FlavorAurora80, "amd64", "mysql:8.0", false},
-		{tengo.FlavorAurora80, "arm64", "mysql:8.0", false},
-		{tengo.FlavorAurora80.Dot(26), "amd64", "mysql:8.0.26", false},
-		{tengo.FlavorAurora80.Dot(26), "arm64", "mysql/mysql-server:8.0.26", false},
-		{tengo.FlavorAurora80.Dot(32), "amd64", "mysql:8.0.32", false},
-		{tengo.FlavorAurora80.Dot(32), "arm64", "mysql:8.0.32", false},
-		{tengo.FlavorMariaDB101, "arm64", "mariadb:10.1", false},
-		{tengo.FlavorMariaDB112, "arm64", "mariadb:11.2", false},
+		{"mysql:8.0", "amd64", "mysql:8.0", false},
+		{"mysql:8.0", "arm64", "mysql:8.0", false},
+		{"mysql:8.0.28", "amd64", "mysql:8.0.28", false},
+		{"mysql:8.0.28", "arm64", "mysql/mysql-server:8.0.28", false},
+		{"mysql:8.0.29", "amd64", "mysql:8.0.29", false},
+		{"mysql:8.0.29", "arm64", "mysql:8.0.29", false},
+		{"mysql:8.0.10", "amd64", "mysql:8.0.10", false},
+		{"mysql:8.0.10", "arm64", "", true},
+		{"mysql:5.7", "amd64", "mysql:5.7", false},
+		{"mysql:5.7", "arm64", "", true},
+		{"percona:5.7", "amd64", "percona:5.7", false},
+		{"percona:5.7", "arm64", "", true},
+		{"percona:8.0", "amd64", "percona:8.0", false},
+		{"percona:8.0", "arm64", "percona/percona-server:8.0.35-aarch64", false},
+		{"percona:8.0.33", "amd64", "percona:8.0.33", false},
+		{"percona:8.0.33", "arm64", "percona/percona-server:8.0.33-aarch64", false},
+		{"percona:8.0.32", "amd64", "percona:8.0.32", false},
+		{"percona:8.0.32", "arm64", "", true},
+		{"percona:8.1", "amd64", "percona/percona-server:8.1", false},
+		{"percona:8.1", "arm64", "percona/percona-server:8.1.0-aarch64", false},
+		{"aurora:5.6.10", "amd64", "mysql:5.6", false},
+		{"aurora:5.6.10", "arm64", "", true},
+		{"aurora:5.7.12", "amd64", "mysql:5.7", false},
+		{"aurora:5.7.12", "arm64", "", true},
+		{"aurora:8.0", "amd64", "mysql:8.0", false},
+		{"aurora:8.0", "arm64", "mysql:8.0", false},
+		{"aurora:8.0.26", "amd64", "mysql:8.0.26", false},
+		{"aurora:8.0.26", "arm64", "mysql/mysql-server:8.0.26", false},
+		{"aurora:8.0.32", "amd64", "mysql:8.0.32", false},
+		{"aurora:8.0.32", "arm64", "mysql:8.0.32", false},
+		{"mariadb:10.1", "arm64", "mariadb:10.1", false},
+		{"mariadb:11.2", "arm64", "mariadb:11.2", false},
 	}
 	for _, tc := range testcases {
-		image, err := dockerImageForFlavor(tc.flavor, tc.arch)
+		flavor := tengo.ParseFlavor(tc.flavor)
+		image, err := dockerImageForFlavor(flavor, tc.arch)
 		if image != tc.expectImage || ((err != nil) != tc.expectErr) {
-			t.Errorf("Unexpected return from dockerImageForFlavor(%q, %q): found %q, %v", tc.flavor.String(), tc.arch, image, err)
+			t.Errorf("Unexpected return from dockerImageForFlavor(%q, %q): found %q, %v", tc.flavor, tc.arch, image, err)
 		}
 	}
 }

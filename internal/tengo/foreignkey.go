@@ -43,7 +43,7 @@ func (fk *ForeignKey) Definition(flavor Flavor) string {
 	// flavors the opposite is true. (Even though NO ACTION and RESTRICT are
 	// completely equivalent...)
 	var hiddenRule, deleteRule, updateRule string
-	if flavor.Min(FlavorMySQL80) {
+	if flavor.MinMySQL(8) {
 		hiddenRule = "NO ACTION"
 	} else {
 		hiddenRule = "RESTRICT"

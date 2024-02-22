@@ -53,7 +53,7 @@ func ReservedWordMap(flavor Flavor) map[string]bool {
 	// Now add in flavor-specific keywords
 	for word, flavors := range reservedWordsAddedInFlavor {
 		for _, flavorAddedIn := range flavors {
-			if flavor.Min(flavorAddedIn) {
+			if flavor.Vendor == flavorAddedIn.Vendor && flavor.Version.AtLeast(flavorAddedIn.Version) {
 				rwm[word] = true
 				break
 			}
@@ -324,12 +324,23 @@ var commonReservedWords = []string{
 	"zerofill",
 }
 
+// Flavor values used in map below.
+var (
+	mySQL56    = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}}
+	mySQL57    = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}}
+	mySQL80    = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}}
+	mariaDB101 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1, 0}}
+	mariaDB102 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2, 0}}
+	mariaDB103 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3, 0}}
+	mariaDB106 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 6, 0}}
+)
+
 // Mapping of lowercased reserved words to the flavor(s) that added them. A
 // few notes on keeping this list manageable:
 //   - We currently do not track point (aka dot or patch) releases here. It's
 //     possible this policy may change to better handle MySQL 8, but so far the
 //     only edge case in the past few years is "intersect" (reserved in 8.0.31+).
-//   - Some of the entries associated with FlavorMariaDB101 were actually
+//   - Some of the entries associated with mariaDB101 were actually
 //     introduced prior to that, but this package does not support pre-10.1,
 //     so 10.1 is used as a placeholder for simplicity's sake. A few other entries
 //     are inconsistently documented by the MariaDB manual, so 10.1 is used as a
@@ -340,61 +351,61 @@ var commonReservedWords = []string{
 //     reserved word only in the context of table name *aliases*, which largely
 //     means it isn't relevant to this package at this time.
 var reservedWordsAddedInFlavor = map[string][]Flavor{
-	"get":             {FlavorMySQL56},
-	"io_after_gtids":  {FlavorMySQL56},
-	"io_before_gtids": {FlavorMySQL56},
-	"master_bind":     {FlavorMySQL56},
-	"partition":       {FlavorMySQL56, FlavorMariaDB101},
+	"get":             {mySQL56},
+	"io_after_gtids":  {mySQL56},
+	"io_before_gtids": {mySQL56},
+	"master_bind":     {mySQL56},
+	"partition":       {mySQL56, mariaDB101},
 
-	"generated":       {FlavorMySQL57},
-	"optimizer_costs": {FlavorMySQL57},
-	"stored":          {FlavorMySQL57},
-	"virtual":         {FlavorMySQL57},
+	"generated":       {mySQL57},
+	"optimizer_costs": {mySQL57},
+	"stored":          {mySQL57},
+	"virtual":         {mySQL57},
 
-	"cube":         {FlavorMySQL80},
-	"cume_dist":    {FlavorMySQL80},
-	"dense_rank":   {FlavorMySQL80},
-	"empty":        {FlavorMySQL80},
-	"except":       {FlavorMySQL80, FlavorMariaDB103},
-	"first_value":  {FlavorMySQL80},
-	"function":     {FlavorMySQL80},
-	"grouping":     {FlavorMySQL80},
-	"groups":       {FlavorMySQL80},
-	"intersect":    {FlavorMySQL80, FlavorMariaDB103},
-	"json_table":   {FlavorMySQL80},
-	"lag":          {FlavorMySQL80},
-	"last_value":   {FlavorMySQL80},
-	"lateral":      {FlavorMySQL80},
-	"lead":         {FlavorMySQL80},
-	"nth_value":    {FlavorMySQL80},
-	"ntile":        {FlavorMySQL80},
-	"of":           {FlavorMySQL80},
-	"over":         {FlavorMySQL80, FlavorMariaDB102},
-	"percent_rank": {FlavorMySQL80},
-	"rank":         {FlavorMySQL80},
-	"recursive":    {FlavorMySQL80, FlavorMariaDB102},
-	"row":          {FlavorMySQL80},
-	"rows":         {FlavorMySQL80, FlavorMariaDB102},
-	"row_number":   {FlavorMySQL80},
-	"system":       {FlavorMySQL80},
-	"window":       {FlavorMySQL80}, // see comment above re: MariaDB
+	"cube":         {mySQL80},
+	"cume_dist":    {mySQL80},
+	"dense_rank":   {mySQL80},
+	"empty":        {mySQL80},
+	"except":       {mySQL80, mariaDB103},
+	"first_value":  {mySQL80},
+	"function":     {mySQL80},
+	"grouping":     {mySQL80},
+	"groups":       {mySQL80},
+	"intersect":    {mySQL80, mariaDB103},
+	"json_table":   {mySQL80},
+	"lag":          {mySQL80},
+	"last_value":   {mySQL80},
+	"lateral":      {mySQL80},
+	"lead":         {mySQL80},
+	"nth_value":    {mySQL80},
+	"ntile":        {mySQL80},
+	"of":           {mySQL80},
+	"over":         {mySQL80, mariaDB102},
+	"percent_rank": {mySQL80},
+	"rank":         {mySQL80},
+	"recursive":    {mySQL80, mariaDB102},
+	"row":          {mySQL80},
+	"rows":         {mySQL80, mariaDB102},
+	"row_number":   {mySQL80},
+	"system":       {mySQL80},
+	"window":       {mySQL80}, // see comment above re: MariaDB
 
-	"current_role":            {FlavorMariaDB101},
-	"delete_domain_id":        {FlavorMariaDB101}, // actual version unclear from docs, see comment above
-	"do_domain_ids":           {FlavorMariaDB101},
-	"general":                 {FlavorMariaDB101},
-	"ignore_domain_ids":       {FlavorMariaDB101},
-	"ignore_server_ids":       {FlavorMariaDB101},
-	"master_heartbeat_period": {FlavorMariaDB101},
-	"page_checksum":           {FlavorMariaDB101}, // actual version unclear from docs, see comment above
-	"parse_vcol_expr":         {FlavorMariaDB101}, // actual version unclear from docs, see comment above
-	"position":                {FlavorMariaDB101}, // actual version unclear from docs, see comment above
-	"ref_system_id":           {FlavorMariaDB101},
-	"returning":               {FlavorMariaDB101},
-	"slow":                    {FlavorMariaDB101},
-	"stats_auto_recalc":       {FlavorMariaDB101},
-	"stats_persistent":        {FlavorMariaDB101},
-	"stats_sample_pages":      {FlavorMariaDB101},
+	"current_role":            {mariaDB101},
+	"delete_domain_id":        {mariaDB101}, // actual version unclear from docs, see comment above
+	"do_domain_ids":           {mariaDB101},
+	"general":                 {mariaDB101},
+	"ignore_domain_ids":       {mariaDB101},
+	"ignore_server_ids":       {mariaDB101},
+	"master_heartbeat_period": {mariaDB101},
+	"page_checksum":           {mariaDB101}, // actual version unclear from docs, see comment above
+	"parse_vcol_expr":         {mariaDB101}, // actual version unclear from docs, see comment above
+	"position":                {mariaDB101}, // actual version unclear from docs, see comment above
+	"ref_system_id":           {mariaDB101},
+	"returning":               {mariaDB101},
+	"slow":                    {mariaDB101},
+	"stats_auto_recalc":       {mariaDB101},
+	"stats_persistent":        {mariaDB101},
+	"stats_sample_pages":      {mariaDB101},
 
-	"offset": {FlavorMariaDB106},
+	"offset": {mariaDB106},
 }

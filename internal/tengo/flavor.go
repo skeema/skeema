@@ -76,9 +76,35 @@ func (ver Version) AtLeast(other Version) bool {
 	return ver.pack() >= other.pack()
 }
 
+// atLeastSlice returns true if this version is greater than or equal to the
+// supplied arg. If the arg has less than 3 elements, missing elements are
+// considered to be 0; for example, a 2-element slice arg is interpretted as
+// a major.minor.0 version. Any elements beyond the 3rd are ignored.
+func (ver Version) atLeastSlice(other []uint16) bool {
+	var comp Version
+	copy(comp[:], other)
+	return ver.pack() >= comp.pack()
+}
+
 // Below returns true if this version is strictly less than the supplied arg.
 func (ver Version) Below(other Version) bool {
 	return ver.pack() < other.pack()
+}
+
+// matchesSlice returns true if this version is equal to the supplied arg. If
+// the arg has less than 3 elements, missing elements are not compared. For
+// example, a 2-element slice will check for equality of the major and minor
+// version parts, but will ignore patch version. Any elements beyond the 3rd
+// are ignored.
+func (ver Version) matchesSlice(other []uint16) bool {
+	if len(other) > 0 && ver[0] != other[0] {
+		return false
+	} else if len(other) > 1 && ver[1] != other[1] {
+		return false
+	} else if len(other) > 2 && ver[2] != other[2] {
+		return false
+	}
+	return true
 }
 
 // ParseVersion converts the supplied string in dot-separated format into a
@@ -179,47 +205,6 @@ type Flavor struct {
 // value for Flavor.
 var FlavorUnknown = Flavor{}
 
-// Flavor values representing important vendor and major/minor version
-// combinations. These all omit patch numbers! Avoid direct equality
-// comparison with these, although they're useful as args to Flavor.Matches()
-// and Flavor.Min().
-var (
-	FlavorMySQL55 = Flavor{Vendor: VendorMySQL, Version: Version{5, 5, 0}}
-	FlavorMySQL56 = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}}
-	FlavorMySQL57 = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}}
-	FlavorMySQL80 = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}}
-	FlavorMySQL81 = Flavor{Vendor: VendorMySQL, Version: Version{8, 1, 0}}
-	FlavorMySQL82 = Flavor{Vendor: VendorMySQL, Version: Version{8, 2, 0}}
-	FlavorMySQL83 = Flavor{Vendor: VendorMySQL, Version: Version{8, 3, 0}}
-
-	FlavorPercona55 = Flavor{Vendor: VendorMySQL, Version: Version{5, 5, 0}, Variants: VariantPercona}
-	FlavorPercona56 = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}, Variants: VariantPercona}
-	FlavorPercona57 = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}, Variants: VariantPercona}
-	FlavorPercona80 = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}, Variants: VariantPercona}
-	FlavorPercona81 = Flavor{Vendor: VendorMySQL, Version: Version{8, 1, 0}, Variants: VariantPercona}
-	FlavorPercona82 = Flavor{Vendor: VendorMySQL, Version: Version{8, 2, 0}, Variants: VariantPercona}
-	FlavorPercona83 = Flavor{Vendor: VendorMySQL, Version: Version{8, 3, 0}, Variants: VariantPercona}
-
-	FlavorAurora56 = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}, Variants: VariantAurora}
-	FlavorAurora57 = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}, Variants: VariantAurora}
-	FlavorAurora80 = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}, Variants: VariantAurora}
-
-	FlavorMariaDB101  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1, 0}}
-	FlavorMariaDB102  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2, 0}}
-	FlavorMariaDB103  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3, 0}}
-	FlavorMariaDB104  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 4, 0}}
-	FlavorMariaDB105  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 5, 0}}
-	FlavorMariaDB106  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 6, 0}}
-	FlavorMariaDB107  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7, 0}}
-	FlavorMariaDB108  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 8, 0}}
-	FlavorMariaDB109  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 9, 0}}
-	FlavorMariaDB1010 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 10, 0}}
-	FlavorMariaDB1011 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 11, 0}}
-	FlavorMariaDB110  = Flavor{Vendor: VendorMariaDB, Version: Version{11, 0, 0}}
-	FlavorMariaDB111  = Flavor{Vendor: VendorMariaDB, Version: Version{11, 1, 0}}
-	FlavorMariaDB112  = Flavor{Vendor: VendorMariaDB, Version: Version{11, 2, 0}}
-)
-
 // ParseFlavor returns a Flavor value based on the supplied string in format
 // "base:major.minor" or "base:major.minor.patch". The base should correspond
 // to either a stringified Vendor constant or to a stringified Variant constant.
@@ -301,20 +286,10 @@ func (fl Flavor) String() string {
 	return fmt.Sprintf("%s:%d.%d", base, fl.Version[0], fl.Version[1])
 }
 
-// Dot returns a value equal to the receiver but with the patch version set
-// to the supplied arg value. This is a convenience method, most useful as a
-// chained arg in comparisons, for example:
-//
-//	if myFlavor.Min(FlavorMySQL80.Dot(19)) { ... }
-func (fl Flavor) Dot(patch int) Flavor {
-	// note: receiver was passed by value, this does not modify receiver in-place
-	fl.Version[2] = uint16(patch)
-	return fl
-}
-
 // Family returns a copy of the receiver with a zeroed-out patch version.
 func (fl Flavor) Family() Flavor {
-	return fl.Dot(0)
+	fl.Version[2] = 0
+	return fl
 }
 
 // HasVariant returns true if the supplied Variant flag(s) (a single Variant
@@ -323,54 +298,48 @@ func (fl Flavor) HasVariant(variant Variant) bool {
 	return fl.Variants&variant == variant
 }
 
-// Matches compares equality of the vendor, version, and variants of the
-// receiver to the supplied arg. If the arg's patch version number is 0, it is
-// ignored in the comparison. Any extraneous variants on the receiver's side
-// are ignored as well. For example, if the receiver is Percona Server 5.7.30,
-// then Matches(FlavorMySQL57) returns true. However, if the receiver is
-// MySQL 5.7.30, Matches(FlavorPercona57) == false since the receiver's variants
-// are not a superset of the arg's.
-func (fl Flavor) Matches(other Flavor) bool {
-	// Always compare vendor, major version, minor version exactly
-	if fl.Vendor != other.Vendor || fl.Version[0] != other.Version[0] || fl.Version[1] != other.Version[1] {
-		return false
-	}
-	// Compare patch only if the arg has a nonzero value
-	if other.Version[2] > 0 && fl.Version[2] != other.Version[2] {
-		return false
-	}
-	// Ensure receiver has all of the arg's variants
-	return fl.Variants&other.Variants == other.Variants
+// MinMySQL returns true if the receiver's Vendor is VendorMySQL, and the
+// receiver's version is equal to or greater than the supplied version numbers.
+// Supply 1 arg to compare only major version, 2 args to compare major and
+// minor, or 3 args to compare major, minor, and patch. Extra args beyond 3 are
+// silently ignored.
+func (fl Flavor) MinMySQL(versionParts ...uint16) bool {
+	return fl.Vendor == VendorMySQL && fl.Version.atLeastSlice(versionParts)
 }
 
-// MatchesAny returns true if the receiver Matches at least one of the supplied
-// arg flavors.
-func (fl Flavor) MatchesAny(others ...Flavor) bool {
-	for _, other := range others {
-		if fl.Matches(other) {
-			return true
-		}
-	}
-	return false
+// MinMariaDB returns true if the receiver's Vendor is VendorMariaDB, and the
+// receiver's version is equal to or greater than the supplied version numbers.
+// Supply 1 arg to compare only major version, 2 args to compare major and
+// minor, or 3 args to compare major, minor, and patch. Extra args beyond 3 are
+// silently ignored.
+func (fl Flavor) MinMariaDB(versionParts ...uint16) bool {
+	return fl.Vendor == VendorMariaDB && fl.Version.atLeastSlice(versionParts)
 }
 
-// Min compares the vendor, version, and variants of the receiver to the
-// supplied arg, returning true if all of these properties are true:
-// * receiver's Vendor is equal to arg's Vendor
-// * receiver's Version is equal to or greater than arg's Version
-// * receiver's Variants are a superset of arg's Variants
-func (fl Flavor) Min(other Flavor) bool {
-	return fl.Vendor == other.Vendor && fl.Version.AtLeast(other.Version) && (fl.Variants&other.Variants == other.Variants)
+// IsMySQL returns true if the receiver's Vendor is VendorMySQL and its Version
+// matches any supplied args. Supply 0 args to only check Vendor. Supply 1 arg
+// to check Vendor and major version, 2 args for Vendor and major and minor
+// versions, or 3 args for Vendor and exact major/minor/patch.
+func (fl Flavor) IsMySQL(versionParts ...uint16) bool {
+	return fl.Vendor == VendorMySQL && fl.Version.matchesSlice(versionParts)
 }
 
-// IsMySQL returns true if the receiver's Vendor is VendorMySQL.
-func (fl Flavor) IsMySQL() bool {
-	return fl.Vendor == VendorMySQL
+// IsMariaDB returns true if the receiver's Vendor is VendorMariaDB and its
+// Version matches any supplied args. Supply 0 args to only check Vendor. Supply
+// 1 arg to check Vendor and major version, 2 args for Vendor and major and
+// minor versions, or 3 args for Vendor and exact major/minor/patch.
+func (fl Flavor) IsMariaDB(versionParts ...uint16) bool {
+	return fl.Vendor == VendorMariaDB && fl.Version.matchesSlice(versionParts)
 }
 
-// IsMariaDB returns true if the receiver's Vendor is VendorMariaDB.
-func (fl Flavor) IsMariaDB() bool {
-	return fl.Vendor == VendorMariaDB
+// IsPercona behaves like IsMySQL, with an additional check for VariantPercona.
+func (fl Flavor) IsPercona(versionParts ...uint16) bool {
+	return fl.HasVariant(VariantPercona) && fl.IsMySQL(versionParts...)
+}
+
+// IsAurora behaves like IsMySQL, with an additional check for VariantAurora.
+func (fl Flavor) IsAurora(versionParts ...uint16) bool {
+	return fl.HasVariant(VariantAurora) && fl.IsMySQL(versionParts...)
 }
 
 // Supported returns true if package tengo officially supports this flavor.
@@ -394,52 +363,53 @@ func (fl Flavor) Known() bool {
 ///// Flavor capability methods ////////////////////////////////////////////////
 //
 //    These are only introduced in situations where a single method call (i.e.
-//    Min) does not suffice, OR the capability involves a specific point release
-//    and the logic needs to be repeated in multiple places. In all other
-//    situations, generally avoid introducing new capability methods!
+//    MinMySQL) does not suffice, OR the capability involves a specific point
+//    release and the logic needs to be repeated in multiple places. In all
+//    other situations, generally avoid introducing new capability methods!
 
 // GeneratedColumns returns true if the flavor supports generated columns
 // using MySQL's native syntax. (Although MariaDB 10.1 has support for generated
 // columns, its syntax is borrowed from other DBMS, so false is returned.)
 func (fl Flavor) GeneratedColumns() bool {
-	return fl.Min(FlavorMySQL57) || fl.Min(FlavorMariaDB102)
+	return fl.MinMySQL(5, 7) || fl.MinMariaDB(10, 2)
 }
 
 // SortedForeignKeys returns true if the flavor sorts foreign keys
 // lexicographically in SHOW CREATE TABLE.
 func (fl Flavor) SortedForeignKeys() bool {
 	// MySQL sorts lexicographically in 5.6 through 8.0.18; MariaDB always does
-	return !fl.Matches(FlavorMySQL55) && !fl.Min(FlavorMySQL80.Dot(19))
+	return !fl.IsMySQL(5, 5) && !fl.MinMySQL(8, 0, 19)
 }
 
 // OmitIntDisplayWidth returns true if the flavor omits inclusion of display
 // widths from column types in the int family, aside from special cases like
 // tinyint(1).
 func (fl Flavor) OmitIntDisplayWidth() bool {
-	return fl.Min(FlavorMySQL80.Dot(19))
+	return fl.MinMySQL(8, 0, 19)
 }
 
 // HasCheckConstraints returns true if the flavor supports check constraints
 // and exposes them in information_schema.
 func (fl Flavor) HasCheckConstraints() bool {
-	if fl.Min(FlavorMySQL80.Dot(16)) || fl.Min(FlavorMariaDB103.Dot(10)) {
+	if fl.MinMySQL(8, 0, 16) || fl.MinMariaDB(10, 3, 10) {
 		return true
 	}
-	return fl.Matches(FlavorMariaDB102) && fl.Version.Patch() >= 22
+	return fl.IsMariaDB(10, 2) && fl.Version.Patch() >= 22
 }
 
-// Mapping for whether MariaDB returns true for AlwaysShowCollate: key is
-// flavor family, value is minimum patch version. Versions prior to 10.3 are
-// excluded, as are non-MariaDB versions, since the AlwaysShowCollate method
-// checks for these separately (and always returns false).
-var mariaPatchAlwaysCollate = map[Flavor]uint16{
-	FlavorMariaDB103: 37,
-	FlavorMariaDB104: 27,
-	FlavorMariaDB105: 18,
-	FlavorMariaDB106: 11,
-	FlavorMariaDB107: 7,
-	FlavorMariaDB108: 6,
-	FlavorMariaDB109: 4,
+// Mapping for whether MariaDB 10.X.Y returns true for AlwaysShowCollate: key is
+// X (minor version), value is minimum Y (patch version) for that X. Versions
+// prior to 10.3 or after 10.10 are excluded, as are non-MariaDB versions, since
+// AlwaysShowCollate checks for these separately.
+var maria10AlwaysCollate = map[uint16]uint16{
+	3:  37, // MariaDB 10.3: 10.3.37+ always shows COLLATE after CHARACTER SET
+	4:  27, // MariaDB 10.4: 10.4.27+ "
+	5:  18, // MariaDB 10.5: 10.5.18+ "
+	6:  11, // MariaDB 10.6: 10.6.11+ "
+	7:  7,  // MariaDB 10.7: 10.7.7+ "
+	8:  6,  // MariaDB 10.8: 10.8.6+ "
+	9:  4,  // MariaDB 10.9: 10.9.4+ "
+	10: 2,  // MariaDB 10.10: 10.10.2+ "
 }
 
 // AlwaysShowCollate returns true if the flavor always puts a COLLATE clause
@@ -447,10 +417,10 @@ var mariaPatchAlwaysCollate = map[Flavor]uint16{
 // the table default. This is true in MariaDB versions released Nov 2022
 // onwards. Reference: https://jira.mariadb.org/browse/MDEV-29446
 func (fl Flavor) AlwaysShowCollate() bool {
-	if !fl.Min(FlavorMariaDB103) {
+	if !fl.MinMariaDB(10, 3) { // return false for non-MariaDB or MariaDB pre-10.3
 		return false
-	} else if fl.Min(FlavorMariaDB1010.Dot(2)) {
+	} else if fl.MinMariaDB(10, 11) { // return true for MariaDB 10.11+, patch versions don't matter beyond this
 		return true
 	}
-	return fl.Version.Patch() >= mariaPatchAlwaysCollate[fl.Family()]
+	return fl.Version.Patch() >= maria10AlwaysCollate[fl.Version.Minor()]
 }

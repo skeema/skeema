@@ -159,7 +159,7 @@ func (s SkeemaIntegrationSuite) TestLowerCaseTableNames2(t *testing.T) {
 		t.Skipf("Skipping lower_case_table_names=2 testing GOOS=%s (test logic requires GOOS=darwin)", runtime.GOOS)
 	} else if os.Getenv("SKEEMA_TEST_LCTN") == "" {
 		t.Skip("Skipping lower_case_table_names=2 testing. To run, set env var SKEEMA_TEST_LCTN=true.")
-	} else if s.d.Flavor().HasVariant(tengo.VariantPercona) {
+	} else if s.d.Flavor().IsPercona() {
 		// Percona Server db init process encounters a problem when data dir is
 		// bind-mounted to a golang testing.TempDir on MacOS. More debugging is
 		// required; seems to work when a shorter all-lowercase path is used, so

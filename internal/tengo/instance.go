@@ -357,7 +357,7 @@ var (
 // false as a safe fallback.
 func (instance *Instance) CanSkipBinlog() bool {
 	var re *regexp.Regexp
-	if instance.Flavor().Min(FlavorMariaDB110) {
+	if instance.Flavor().MinMariaDB(11, 0) {
 		re = reSkipBinlogMaria110
 	} else {
 		re = reSkipBinlog
@@ -566,7 +566,7 @@ func (instance *Instance) introspectionParams() string {
 
 	// In MySQL 8, ensure we get up-to-date values for table sizes as well as next
 	// auto_increment value
-	if flavor.Min(FlavorMySQL80) {
+	if flavor.MinMySQL(8) {
 		v.Set("information_schema_stats_expiry", "0")
 	}
 
@@ -580,7 +580,7 @@ func (instance *Instance) introspectionParams() string {
 	//   collation; we must reparse from SHOW CREATE TABLE
 	// * In MariaDB, SHOW CREATE TABLE does not return 4-byte chars correctly
 	//   regardless of collation
-	if flavor.Min(FlavorMySQL57) {
+	if flavor.MinMySQL(5, 7) {
 		v.Set("collation", "binary")
 	}
 
@@ -824,7 +824,7 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 	// those drops queued up will cause a stall (since no other queries will be
 	// able to run in between them). So in that case, reduce concurrency to 1.
 	concurrency := opts.Concurrency()
-	if instance.bufferPoolSize >= (32*1024*1024*1024) && !instance.Flavor().Min(FlavorMySQL80.Dot(23)) {
+	if instance.bufferPoolSize >= (32*1024*1024*1024) && !instance.Flavor().MinMySQL(8, 0, 23) {
 		concurrency = 1
 	}
 
@@ -835,7 +835,7 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 	// resolve this, we use a 3sec innodb_lock_wait_timeout and retry failures
 	// serially.
 	params := opts.params()
-	if concurrency > 1 && instance.Flavor().Min(FlavorMariaDB106) {
+	if concurrency > 1 && instance.Flavor().MinMariaDB(10, 6) {
 		params += "&innodb_lock_wait_timeout=3"
 	}
 
@@ -1003,7 +1003,7 @@ func tablesToPartitions(db *sqlx.DB, schema string, flavor Flavor) (map[string][
 
 	// MySQL 8's new data dictionary actually includes views in
 	// information_schema.partitions, so remove them explicitly.
-	if checkViews && flavor.Min(FlavorMySQL80) {
+	if checkViews && flavor.MinMySQL(8) {
 		var viewNames []string
 		query := `
 				SELECT table_name

@@ -87,7 +87,7 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 	charSet := t.CharSet
 	// MySQL 8.0.24+ uses "utf8mb3" for table default charset in SHOW CREATE TABLE,
 	// but still "utf8" for cols there, and "utf8" everywhere in I_S
-	if charSet == "utf8" && flavor.Min(FlavorMySQL80.Dot(24)) {
+	if charSet == "utf8" && flavor.MinMySQL(8, 0, 24) {
 		charSet = "utf8mb3"
 	}
 	var collate string

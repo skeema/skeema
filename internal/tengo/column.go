@@ -55,7 +55,7 @@ func (c *Column) Definition(flavor Flavor) string {
 		// Oddly the timestamp type always displays nullability
 		nullability = " NULL"
 	}
-	if c.HasSpatialReference && flavor.Min(FlavorMySQL80) {
+	if c.HasSpatialReference && flavor.MinMySQL(8) {
 		// Although MariaDB also attribute syntax for this (REF_SYSTEM_ID), it isn't
 		// exposed in SHOW CREATE TABLE, so here we restrict to MySQL only
 		srid = fmt.Sprintf(" /*!80003 SRID %d */", c.SpatialReferenceID)
@@ -76,7 +76,7 @@ func (c *Column) Definition(flavor Flavor) string {
 	if c.OnUpdate != "" {
 		onUpdate = fmt.Sprintf(" ON UPDATE %s", c.OnUpdate)
 	}
-	if c.Compression != "" && flavor.HasVariant(VariantPercona) {
+	if c.Compression != "" && flavor.IsPercona() {
 		colFormat = fmt.Sprintf(" /*!50633 COLUMN_FORMAT %s */", c.Compression)
 	}
 	if c.Comment != "" {

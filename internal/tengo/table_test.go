@@ -290,8 +290,9 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 		t.Error("Clause unexpectedly returns non-blank string")
 	}
 	to.SecondaryIndexes[1].Invisible = true
-	to.CreateStatement = to.GeneratedCreateStatement(FlavorMySQL80)
-	mods.Flavor = FlavorMySQL80
+	mysql8 := Flavor{VendorMySQL, Version{8}, VariantNone}
+	to.CreateStatement = to.GeneratedCreateStatement(mysql8)
+	mods.Flavor = mysql8
 	tableAlters, supported = from.Diff(&to)
 	if len(tableAlters) != 2 || !supported {
 		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
@@ -303,7 +304,7 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 		t.Errorf("Clause returned unexpected string: %s", clause)
 	}
 	to.SecondaryIndexes[1].Unique = true
-	to.CreateStatement = to.GeneratedCreateStatement(FlavorMySQL80)
+	to.CreateStatement = to.GeneratedCreateStatement(mysql8)
 	tableAlters, supported = from.Diff(&to)
 	if len(tableAlters) != 2 || !supported {
 		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
@@ -527,7 +528,9 @@ func TestTableAlterAddIndexOrder(t *testing.T) {
 	// should be handled by an ALTER INDEX clause, w/o any need to drop anything.
 	to.SecondaryIndexes[1].Parts[1].PrefixLength = from.SecondaryIndexes[1].Parts[1].PrefixLength
 	to.SecondaryIndexes[0].Invisible = true
-	to.CreateStatement = to.GeneratedCreateStatement(FlavorMySQL80)
+	mysql8 := Flavor{VendorMySQL, Version{8}, VariantNone}
+	maria106 := Flavor{VendorMariaDB, Version{10, 6}, VariantNone}
+	to.CreateStatement = to.GeneratedCreateStatement(mysql8)
 	tableAlters, supported = from.Diff(&to)
 	if len(tableAlters) != 11 || !supported {
 		t.Fatalf("Incorrect number of table alters: expected 11, found %d, supported=%t", len(tableAlters), supported)
@@ -539,9 +542,9 @@ func TestTableAlterAddIndexOrder(t *testing.T) {
 		t.Errorf("Unexpected values in AlterIndex: %+v", ta)
 	} else if clauseWithoutFlavor := ta.Clause(StatementModifiers{}); clauseWithoutFlavor != "" {
 		t.Errorf("Unexpected result for AlterIndex.Clause() without a MySQL 8.0+ flavor: %q", clauseWithoutFlavor)
-	} else if clauseWithFlavor := ta.Clause(StatementModifiers{Flavor: FlavorMySQL80}); clauseWithFlavor != expectClause {
+	} else if clauseWithFlavor := ta.Clause(StatementModifiers{Flavor: mysql8}); clauseWithFlavor != expectClause {
 		t.Errorf("Unexpected result for AlterIndex.Clause() with a MySQL 8.0+ flavor: %q", clauseWithFlavor)
-	} else if clauseWithFlavor := ta.Clause(StatementModifiers{Flavor: FlavorMariaDB106}); clauseWithFlavor != strings.ReplaceAll(expectClause, "INVISIBLE", "IGNORED") {
+	} else if clauseWithFlavor := ta.Clause(StatementModifiers{Flavor: maria106}); clauseWithFlavor != strings.ReplaceAll(expectClause, "INVISIBLE", "IGNORED") {
 		t.Errorf("Unexpected result for AlterIndex.Clause() with a MariaDB 10.6 flavor: %q", clauseWithFlavor)
 	}
 
@@ -552,7 +555,7 @@ func TestTableAlterAddIndexOrder(t *testing.T) {
 		ColumnName: "last_name",
 		Descending: true,
 	})
-	to.CreateStatement = to.GeneratedCreateStatement(FlavorMySQL80)
+	to.CreateStatement = to.GeneratedCreateStatement(mysql8)
 	tableAlters, supported = from.Diff(&to)
 	if len(tableAlters) != 14 || !supported {
 		t.Fatalf("Incorrect number of table alters: expected 14, found %d, supported=%t", len(tableAlters), supported)
@@ -589,6 +592,7 @@ func TestTableAlterIndexReorder(t *testing.T) {
 		return table
 	}
 
+	mysql8 := Flavor{VendorMySQL, Version{8}, VariantNone}
 	assertClauses := func(from, to *Table, strict bool, format string, a ...interface{}) {
 		t.Helper()
 		td := NewAlterTable(from, to)
@@ -597,7 +601,7 @@ func TestTableAlterIndexReorder(t *testing.T) {
 			var err error
 			clauses, err = td.Clauses(StatementModifiers{
 				StrictIndexOrder: strict,
-				Flavor:           FlavorMySQL80,
+				Flavor:           mysql8,
 			})
 			if err != nil {
 				t.Fatalf("Unexpected error result from Clauses(): %s", err)
@@ -678,7 +682,7 @@ func TestTableAlterIndexReorder(t *testing.T) {
 			}
 		}
 		assertClauses(&from, &to, false, "DROP KEY `%s`, ADD %s, ALTER INDEX `%s` INVISIBLE", orig[1].Name, to.SecondaryIndexes[1].Definition(FlavorUnknown), orig[2].Name)
-		assertClauses(&from, &to, true, "DROP KEY `%s`, ADD %s, DROP KEY `%s`, ADD %s", orig[1].Name, to.SecondaryIndexes[1].Definition(FlavorUnknown), orig[2].Name, to.SecondaryIndexes[2].Definition(FlavorMySQL80))
+		assertClauses(&from, &to, true, "DROP KEY `%s`, ADD %s, DROP KEY `%s`, ADD %s", orig[1].Name, to.SecondaryIndexes[1].Definition(FlavorUnknown), orig[2].Name, to.SecondaryIndexes[2].Definition(mysql8))
 	}
 
 	// Adding a new index before [1] should also result in dropping the old [1]
@@ -742,7 +746,8 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	if !ta.PositionFirst || ta.PositionAfter != nil || !strings.Contains(ta.Clause(StatementModifiers{}), " FIRST") {
 		t.Errorf("Expected modified column to be after nil / first=true, instead found after %v / first=%t", ta.PositionAfter, ta.PositionFirst)
 	}
-	if clauseWithMods := ta.Clause(StatementModifiers{LaxColumnOrder: true}); clauseWithMods != "" {
+	laxColOrderMods := StatementModifiers{LaxColumnOrder: true}
+	if clauseWithMods := ta.Clause(laxColOrderMods); clauseWithMods != "" {
 		t.Errorf("Expected Clause to return a blank string with LaxColumnOrder enabled, instead found: %s", clauseWithMods)
 	}
 
@@ -767,7 +772,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	if !ta.NewColumn.Equals(ta.OldColumn) {
 		t.Errorf("Column definition unexpectedly changed: was %s, now %s", ta.OldColumn.Definition(FlavorUnknown), ta.NewColumn.Definition(FlavorUnknown))
 	}
-	if clauseWithMods := ta.Clause(StatementModifiers{LaxColumnOrder: true}); clauseWithMods != "" {
+	if clauseWithMods := ta.Clause(laxColOrderMods); clauseWithMods != "" {
 		t.Errorf("Expected Clause to return a blank string with LaxColumnOrder enabled, instead found: %s", clauseWithMods)
 	}
 
@@ -793,10 +798,10 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	if !ta.InUniqueConstraint {
 		t.Error("Expected InUniqueConstraint to be true, but it was false")
 	}
-	if ta.Clause(StatementModifiers{LaxColumnOrder: true}) == "" {
+	if ta.Clause(laxColOrderMods) == "" {
 		t.Error("Since non-positioning changes are present, expected Clause to return a non-blank string even with LaxColumnOrder enabled, but it was blank")
 	}
-	if unsafe, reason := ta.Unsafe(); !unsafe || !strings.Contains(reason, movedCol.Name) {
+	if unsafe, reason := ta.Unsafe(laxColOrderMods); !unsafe || !strings.Contains(reason, movedCol.Name) {
 		t.Errorf("Unexpected return from Unsafe(): %t, %q", unsafe, reason)
 	}
 

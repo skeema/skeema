@@ -64,7 +64,7 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 		"connect-options":        "",
 		"environment":            "production",
 	}
-	if flavor.Matches(tengo.FlavorMySQL55) {
+	if flavor.IsMySQL(5, 5) {
 		delete(configMap, "alter-algorithm")
 		delete(configMap, "alter-lock")
 	}
@@ -96,7 +96,7 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 	}
 
 	mods := tengo.StatementModifiers{AllowUnsafe: true}
-	if !flavor.Matches(tengo.FlavorMySQL55) {
+	if !flavor.IsMySQL(5, 5) {
 		mods.LockClause, mods.AlgorithmClause = "none", "inplace"
 	}
 	for _, diff := range objDiffs {

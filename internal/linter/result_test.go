@@ -137,7 +137,7 @@ func (s IntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
 		"2:sql-syntax": true,
 		"0:sql-1072":   true,
 	}
-	if s.d.Flavor().Min(tengo.FlavorMariaDB105) {
+	if s.d.Flavor().MinMariaDB(10, 5) {
 		// MariaDB 10.5+ parser changes result in different error code here
 		expectedOffsetsAndRules["0:sql-4161"] = true
 		expectedOffsetsAndRules["2:sql-syntax"] = false

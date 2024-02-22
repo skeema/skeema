@@ -1,6 +1,8 @@
 package tengo
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -127,9 +129,9 @@ func TestSplitVersionedIdentifier(t *testing.T) {
 
 func TestParseFlavor(t *testing.T) {
 	cases := map[string]Flavor{
-		"mysql:5.5.33":      FlavorMySQL55.Dot(33),
-		"percona:5.7.22":    FlavorPercona57.Dot(22),
-		"mariadb:10.6":      FlavorMariaDB106,
+		"mysql:5.5.33":      {VendorMySQL, Version{5, 5, 33}, VariantNone},
+		"percona:5.7.22":    {VendorMySQL, Version{5, 7, 22}, VariantPercona},
+		"mariadb:10.6":      {VendorMariaDB, Version{10, 6}, VariantNone},
 		"supersecretdb:9.9": {VendorUnknown, Version{9, 9}, VariantNone},
 		"":                  FlavorUnknown,
 		"aurora:8.0":        {VendorMySQL, Version{8, 0}, VariantAurora},
@@ -145,27 +147,27 @@ func TestIdentifyFlavor(t *testing.T) {
 	type testcase struct {
 		versionString  string
 		versionComment string
-		expected       Flavor
+		expected       string
 	}
 	cases := []testcase{
-		{"5.6.42", "MySQL Community Server (GPL)", FlavorMySQL56.Dot(42)},
-		{"5.7.26-0ubuntu0.18.04.1", "(Ubuntu)", FlavorMySQL57.Dot(26)},
-		{"8.0.16", "MySQL Community Server - GPL", FlavorMySQL80.Dot(16)},
-		{"5.7.23-23", "Percona Server (GPL), Release 23, Revision 500fcf5", FlavorPercona57.Dot(23)},
-		{"10.1.34-MariaDB-1~bionic", "mariadb.org binary distribution", FlavorMariaDB101.Dot(34)},
-		{"10.1.40-MariaDB-0ubuntu0.18.04.1", "Ubuntu 18.04", FlavorMariaDB101.Dot(40)},
-		{"10.2.15-MariaDB-log", "MariaDB Server", FlavorMariaDB102.Dot(15)},
-		{"10.3.8-MariaDB-log", "Source distribution", FlavorMariaDB103.Dot(8)},
-		{"10.3.16-MariaDB", "Homebrew", FlavorMariaDB103.Dot(16)},
-		{"10.3.8-0ubuntu0.18.04.1", "(Ubuntu)", FlavorMariaDB103.Dot(8)}, // due to major version 10 --> MariaDB
-		{"5.7.26", "Homebrew", FlavorMySQL57.Dot(26)},                    // due to major version 5 --> MySQL
-		{"8.0.13", "Homebrew", FlavorMySQL80.Dot(13)},                    // due to major version 8 --> MySQL
-		{"webscalesql", "webscalesql", FlavorUnknown},
-		{"6.0.3", "Source distribution", Flavor{VendorUnknown, Version{6, 0, 3}, VariantNone}},
+		{"5.6.42", "MySQL Community Server (GPL)", "mysql:5.6.42"},
+		{"5.7.26-0ubuntu0.18.04.1", "(Ubuntu)", "mysql:5.7.26"},
+		{"8.0.16", "MySQL Community Server - GPL", "mysql:8.0.16"},
+		{"5.7.23-23", "Percona Server (GPL), Release 23, Revision 500fcf5", "percona:5.7.23"},
+		{"10.1.34-MariaDB-1~bionic", "mariadb.org binary distribution", "mariadb:10.1.34"},
+		{"10.1.40-MariaDB-0ubuntu0.18.04.1", "Ubuntu 18.04", "mariadb:10.1.40"},
+		{"10.2.15-MariaDB-log", "MariaDB Server", "mariadb:10.2.15"},
+		{"10.3.8-MariaDB-log", "Source distribution", "mariadb:10.3.8"},
+		{"10.3.16-MariaDB", "Homebrew", "mariadb:10.3.16"},
+		{"10.3.8-0ubuntu0.18.04.1", "(Ubuntu)", "mariadb:10.3.8"}, // due to major version 10 --> MariaDB
+		{"5.7.26", "Homebrew", "mysql:5.7.26"},                    // due to major version 5 --> MySQL
+		{"8.0.13", "Homebrew", "mysql:8.0.13"},                    // due to major version 8 --> MySQL
+		{"webscalesql", "webscalesql", "unknown:0.0"},
+		{"6.0.3", "Source distribution", "unknown:6.0.3"},
 	}
 	for _, tc := range cases {
 		fl := IdentifyFlavor(tc.versionString, tc.versionComment)
-		if fl != tc.expected {
+		if fl.String() != tc.expected {
 			t.Errorf("Unexpected return from IdentifyFlavor(%q, %q): Expected %s, found %s", tc.versionString, tc.versionComment, tc.expected, fl)
 		}
 	}
@@ -173,11 +175,11 @@ func TestIdentifyFlavor(t *testing.T) {
 
 func TestFlavorString(t *testing.T) {
 	cases := map[Flavor]string{
-		FlavorMySQL55.Dot(33):                       "mysql:5.5.33",
-		FlavorPercona57.Dot(22):                     "percona:5.7.22",
-		FlavorMariaDB106:                            "mariadb:10.6",
-		FlavorUnknown:                               "unknown:0.0",
-		{VendorMySQL, Version{8, 0}, VariantAurora}: "aurora:8.0",
+		{VendorMySQL, Version{5, 5, 33}, VariantNone}:    "mysql:5.5.33",
+		{VendorMySQL, Version{5, 7, 22}, VariantPercona}: "percona:5.7.22",
+		{VendorMySQL, Version{8, 0}, VariantAurora}:      "aurora:8.0",
+		{VendorMariaDB, Version{10, 6}, VariantNone}:     "mariadb:10.6",
+		{}: "unknown:0.0",
 	}
 	for input, expected := range cases {
 		if actual := input.String(); actual != expected {
@@ -186,163 +188,284 @@ func TestFlavorString(t *testing.T) {
 	}
 }
 
-func TestFlavorDot(t *testing.T) {
-	f := Flavor{VendorMySQL, Version{8, 0, 19}, VariantPercona}
-	fd := f.Dot(22)
-	if f.Version.Patch() != 19 {
-		t.Error("Flavor.Dot unexpectedly modified the receiver in-place")
-	} else if fd.Version.Patch() != 22 {
-		t.Error("Flavor.Dot did not have the expected effect")
-	} else if fd.Family().Version.Patch() != 0 {
-		t.Error("Flavor.Family did not have the expected effect")
+func TestFlavorFamily(t *testing.T) {
+	cases := map[string]string{
+		"mysql:5.7":        "mysql:5.7",
+		"mysql:5.7.22":     "mysql:5.7",
+		"mysql:8":          "mysql:8.0",
+		"mariadb:10.10.10": "mariadb:10.10",
+		"percona:8.0.35":   "percona:8.0",
 	}
-}
-
-func TestFlavorHasVariant(t *testing.T) {
-	if FlavorMySQL57.HasVariant(VariantPercona) {
-		t.Error("Unexpected result from HasVariant")
-	} else if !FlavorPercona56.HasVariant(VariantPercona) {
-		t.Error("Unexpected result from HasVariant")
-	} else if FlavorPercona56.HasVariant(VariantAurora) {
-		t.Error("Unexpected result from HasVariant")
-	}
-}
-
-func TestFlavorMatches(t *testing.T) {
-	cases := []struct {
-		a        Flavor
-		b        Flavor
-		expected bool
-	}{
-		{FlavorPercona57, FlavorMySQL57, true},
-		{FlavorMySQL57, FlavorPercona57, false},
-		{FlavorMariaDB103.Dot(18), FlavorMariaDB103, true},
-		{FlavorMariaDB103.Dot(18), FlavorMariaDB102, false},
-		{FlavorMySQL80.Dot(22), FlavorMySQL80.Dot(23), false},
-		{FlavorMySQL80.Dot(22), FlavorMySQL80, true},
-		{FlavorMySQL80.Dot(22), FlavorMySQL57, false},
-	}
-	for _, tc := range cases {
-		if actual := tc.a.Matches(tc.b); actual != tc.expected {
-			t.Errorf("Expected %s.Matches(%s) to return %t, instead found %t", tc.a, tc.b, tc.expected, actual)
+	for input, expected := range cases {
+		if actual := ParseFlavor(input).Family().String(); actual != expected {
+			t.Errorf("Expected Flavor %q Family() to return %q, instead found %q", input, expected, actual)
 		}
 	}
 }
 
-func TestFlavorMatchesAny(t *testing.T) {
-	fl := FlavorMySQL57.Dot(20)
-	if fl.MatchesAny(FlavorUnknown, FlavorMySQL55, FlavorMariaDB101, FlavorMySQL80) {
-		t.Error("Unexpected true result from MatchesAny")
-	} else if !fl.MatchesAny(FlavorMySQL56, FlavorMySQL57) {
-		t.Error("Unexpected false result from MatchesAny")
+func TestFlavorHasVariant(t *testing.T) {
+	flavor := Flavor{VendorMySQL, Version{5, 5, 33}, VariantNone}
+	if flavor.HasVariant(VariantPercona) {
+		t.Error("Unexpected result from HasVariant")
+	}
+	flavor = Flavor{VendorMySQL, Version{5, 7, 22}, VariantPercona}
+	if !flavor.HasVariant(VariantPercona) {
+		t.Error("Unexpected result from HasVariant")
+	}
+	flavor = Flavor{VendorMySQL, Version{5, 7, 22}, VariantPercona}
+	if flavor.HasVariant(VariantAurora) {
+		t.Error("Unexpected result from HasVariant")
 	}
 }
 
-func TestFlavorMin(t *testing.T) {
+func parseVersionArgSlice(s string) (args []uint16) {
+	if s == "" {
+		return
+	}
+	for _, verStr := range strings.Split(s, ".") {
+		part, _ := strconv.ParseUint(verStr, 10, 16)
+		args = append(args, uint16(part))
+	}
+	return
+}
+
+func TestFlavorMinMySQL(t *testing.T) {
 	type testcase struct {
-		receiver Flavor
-		compare  Flavor
+		receiver string
+		args     string
 		expected bool
 	}
 	cases := []testcase{
-		{FlavorMySQL56, FlavorMySQL56, true},
-		{FlavorMySQL56, FlavorMySQL55, true},
-		{FlavorMySQL56, FlavorMySQL57, false},
-		{FlavorMySQL80, FlavorMySQL57, true},
-		{FlavorMySQL56, FlavorPercona56, false},
-		{FlavorMariaDB103, FlavorMySQL80, false},
-		{FlavorMySQL57.Dot(20), FlavorMySQL57, true},
-		{FlavorMySQL57.Dot(20), FlavorMySQL56, true},
-		{FlavorMySQL57.Dot(20), FlavorMySQL80, false},
-		{FlavorMySQL57, FlavorMySQL57.Dot(20), false},
-		{FlavorMySQL80, FlavorMySQL57.Dot(20), true},
-		{FlavorMySQL57.Dot(20), FlavorMySQL56.Dot(30), true},
-		{FlavorMySQL56.Dot(30), FlavorMySQL57.Dot(20), false},
-		{FlavorMySQL57.Dot(20), FlavorMySQL57.Dot(20), true},
-		{FlavorMySQL57.Dot(20), FlavorMySQL57.Dot(15), true},
-		{FlavorMySQL57.Dot(15), FlavorMySQL57.Dot(20), false},
+		{"mysql:5.6", "5.6", true},
+		{"mysql:5.6", "5.5", true},
+		{"mysql:5.6", "5.7", false},
+		{"mysql:8.0", "5.7", true},
+		{"mariadb:10.3", "8.0", false},
+		{"mysql:5.7.20", "5.7", true},
+		{"mysql:5.7.20", "5.6", true},
+		{"mysql:5.7.20", "5", true},
+		{"mysql:5.7.20", "8.0", false},
+		{"mysql:5.7", "5.7.20", false},
+		{"mysql:8.0", "5.7.20", true},
+		{"mysql:8", "5.7.20", true},
+		{"aurora:8", "8.0", true},
+		{"mysql:5.7.20", "5.6.30", true},
+		{"mysql:5.6.30", "5.7.20", false},
+		{"mysql:5.7.20", "5.7.20", true},
+		{"percona:5.7.20", "5.7.15", true},
+		{"percona:5.7.15", "5.7.20", false},
+		{"mysql:8.1", "", true},
+		{"mariadb:11.1", "", false},
 	}
 	for _, tc := range cases {
-		if actual := tc.receiver.Min(tc.compare); actual != tc.expected {
-			t.Errorf("Expected %s.Min(%s) to return %t, instead found %t", tc.receiver, tc.compare, tc.expected, actual)
+		receiver := ParseFlavor(tc.receiver)
+		args := parseVersionArgSlice(tc.args)
+		if actual := receiver.MinMySQL(args...); actual != tc.expected {
+			t.Errorf("Expected %s MinMySQL(%v) to return %t, instead found %t", tc.receiver, args, tc.expected, actual)
+		}
+	}
+}
+
+func TestFlavorMinMariaDB(t *testing.T) {
+	type testcase struct {
+		receiver string
+		args     string
+		expected bool
+	}
+	cases := []testcase{
+		{"mariadb:10.6", "", true},
+		{"mariadb:10.6", "10", true},
+		{"mariadb:10.6", "10.6", true},
+		{"mariadb:10.6", "10.6.3", false},
+		{"mariadb:10.6", "10.7", false},
+		{"mariadb:10.6.5", "10.6.3", true},
+		{"mariadb:11", "10.6.3", true},
+		{"mariadb:11", "11", true},
+		{"mariadb:11", "11.1", false},
+		{"mysql:5.7.44", "10.1.10", false},
+		{"percona:5.7.44", "10.1.10", false},
+		{"mysql:8.3.0", "", false},
+		{"aurora:8.0.32", "", false},
+	}
+	for _, tc := range cases {
+		receiver := ParseFlavor(tc.receiver)
+		args := parseVersionArgSlice(tc.args)
+		if actual := receiver.MinMariaDB(args...); actual != tc.expected {
+			t.Errorf("Expected %s MinMariaDB(%v) to return %t, instead found %t", tc.receiver, args, tc.expected, actual)
+		}
+	}
+}
+
+func TestFlavorIsMySQL(t *testing.T) {
+	type testcase struct {
+		receiver string
+		args     string
+		expected bool
+	}
+	cases := []testcase{
+		{"mysql:8.0.32", "", true},
+		{"percona:8.0.32", "", true},
+		{"aurora:8.0.32", "", true},
+		{"mariadb:11.3.2", "", false},
+		{"mysql:8.0.32", "8", true},
+		{"mysql:8.0.32", "8.0", true},
+		{"aurora:8.0.32", "8.0.32", true},
+		{"mysql:8.0.32", "8.0.33", false},
+		{"mysql:8.0.32", "5.7.32", false},
+		{"mysql:8.1", "8", true},
+		{"mysql:8.1", "8.0", false},
+	}
+	for _, tc := range cases {
+		receiver := ParseFlavor(tc.receiver)
+		args := parseVersionArgSlice(tc.args)
+		if actual := receiver.IsMySQL(args...); actual != tc.expected {
+			t.Errorf("Expected %s IsMySQL(%v) to return %t, instead found %t", tc.receiver, args, tc.expected, actual)
+		}
+	}
+}
+
+func TestFlavorIsMariaDB(t *testing.T) {
+	type testcase struct {
+		receiver string
+		args     string
+		expected bool
+	}
+	cases := []testcase{
+		{"mysql:8.0.32", "", false},
+		{"percona:8.0.32", "", false},
+		{"aurora:8.0.32", "", false},
+		{"mariadb:11.3.2", "", true},
+		{"mariadb:11.3.2", "11", true},
+		{"mariadb:11.3.2", "11.3", true},
+		{"mariadb:11.3.2", "11.3.2", true},
+		{"mariadb:11.3.2", "11.3.1", false},
+		{"mariadb:11.3.2", "11.2.2", false},
+		{"mariadb:11.3.2", "10", false},
+	}
+	for _, tc := range cases {
+		receiver := ParseFlavor(tc.receiver)
+		args := parseVersionArgSlice(tc.args)
+		if actual := receiver.IsMariaDB(args...); actual != tc.expected {
+			t.Errorf("Expected %s IsMariaDB(%v) to return %t, instead found %t", tc.receiver, args, tc.expected, actual)
+		}
+	}
+}
+
+func TestFlavorIsPercona(t *testing.T) {
+	type testcase struct {
+		receiver string
+		args     string
+		expected bool
+	}
+	cases := []testcase{
+		{"mysql:8.0.32", "", false},
+		{"aurora:8.0.32", "", false},
+		{"mariadb:11.3.2", "", false},
+		{"percona:8.0.32", "", true},
+		{"percona:8.0.32", "8", true},
+		{"percona:8.0.32", "8.0", true},
+		{"percona:8.0.32", "8.0.32", true},
+		{"percona:8.0.32", "8.0.33", false},
+	}
+	for _, tc := range cases {
+		receiver := ParseFlavor(tc.receiver)
+		args := parseVersionArgSlice(tc.args)
+		if actual := receiver.IsPercona(args...); actual != tc.expected {
+			t.Errorf("Expected %s IsPercona(%v) to return %t, instead found %t", tc.receiver, args, tc.expected, actual)
+		}
+	}
+}
+
+func TestFlavorIsAurora(t *testing.T) {
+	type testcase struct {
+		receiver string
+		args     string
+		expected bool
+	}
+	cases := []testcase{
+		{"mysql:8.0.32", "", false},
+		{"percona:8.0.32", "", false},
+		{"mariadb:11.3.2", "", false},
+		{"aurora:8.0.32", "", true},
+		{"aurora:8.0.32", "8", true},
+		{"aurora:8.0.32", "8.0", true},
+		{"aurora:8.0.32", "8.0.32", true},
+		{"aurora:8.0.32", "8.0.33", false},
+	}
+	for _, tc := range cases {
+		receiver := ParseFlavor(tc.receiver)
+		args := parseVersionArgSlice(tc.args)
+		if actual := receiver.IsAurora(args...); actual != tc.expected {
+			t.Errorf("Expected %s IsAurora(%v) to return %t, instead found %t", tc.receiver, args, tc.expected, actual)
 		}
 	}
 }
 
 func TestFlavorSupported(t *testing.T) {
-	cases := map[Flavor]bool{
-		FlavorMySQL55:            true,
-		FlavorMySQL80:            true,
-		FlavorMySQL80.Dot(123):   true,
-		FlavorMySQL83:            true,
-		FlavorPercona56:          true,
-		FlavorMariaDB101:         true,
-		FlavorMariaDB104.Dot(22): true,
-		FlavorMariaDB107:         true,
-		FlavorUnknown:            false,
-		{VendorUnknown, Version{5, 5, 20}, VariantNone}:   false,
-		{VendorMySQL, Version{8, 12, 0}, VariantNone}:     false,
-		{VendorMySQL, Version{10, 6}, VariantNone}:        false,
-		{VendorMariaDB, Version{11, 12, 13}, VariantNone}: false,
-		{VendorMySQL, Version{}, VariantNone}:             false,
+	cases := map[string]bool{
+		"mysql:5.5":        true,
+		"mysql:8.0":        true,
+		"mysql:8.0.123":    true,
+		"mysql:8.3":        true,
+		"percona:5.6":      true,
+		"mariadb:10.1":     true,
+		"mariadb:10.4.22":  true,
+		"mariadb:10.7":     true,
+		"unknown:0.0":      false,
+		"unknown:5.5.20":   false,
+		"mysql:8.12":       false,
+		"mysql:10.6":       false,
+		"mariadb:11.12.13": false,
+		"mysql:0.0":        false,
 	}
 	for flavor, expected := range cases {
-		if flavor.Supported() != expected {
+		if ParseFlavor(flavor).Supported() != expected {
 			t.Errorf("Expected %s Supported() to return %t, but it did not", flavor, expected)
 		}
 	}
 }
 
 func TestFlavorKnown(t *testing.T) {
-	cases := map[Flavor]bool{
-		FlavorMySQL55:            true,
-		FlavorMySQL80:            true,
-		FlavorMySQL80.Dot(123):   true,
-		FlavorPercona56:          true,
-		FlavorMariaDB101:         true,
-		FlavorMariaDB104.Dot(22): true,
-		FlavorMariaDB107:         true,
-		FlavorUnknown:            false,
-		{VendorUnknown, Version{5, 5, 20}, VariantNone}:  false,
-		{VendorMySQL, Version{8, 2, 12}, VariantNone}:    true,
-		{VendorMySQL, Version{10, 6}, VariantNone}:       true,
-		{VendorMariaDB, Version{11, 0, 12}, VariantNone}: true,
-		{VendorMySQL, Version{}, VariantNone}:            false,
+	cases := map[string]bool{
+		"mysql:5.5":        true,
+		"mysql:8.0":        true,
+		"mysql:8.0.123":    true,
+		"percona:5.6":      true,
+		"mariadb:10.1":     true,
+		"mariadb:10.4.22":  true,
+		"mariadb:10.7":     true,
+		"unknown:0.0":      false,
+		"unknown:5.5.20":   false,
+		"mysql:8.12":       true,
+		"mysql:10.6":       true,
+		"mariadb:11.12.13": true,
+		"mysql:0.0":        false,
 	}
 	for flavor, expected := range cases {
-		if flavor.Known() != expected {
+		if ParseFlavor(flavor).Known() != expected {
 			t.Errorf("Expected %s Known() to return %t, but it did not", flavor, expected)
 		}
 	}
 }
 
-func TestFlavorIs(t *testing.T) {
-	if FlavorUnknown.IsMySQL() || FlavorMariaDB101.IsMySQL() || !FlavorPercona80.IsMySQL() {
-		t.Error("Incorrect behavior for IsMySQL")
-	}
-	if FlavorUnknown.IsMariaDB() || FlavorMySQL80.IsMariaDB() || FlavorPercona57.IsMariaDB() || !FlavorMariaDB101.IsMariaDB() {
-		t.Error("Incorrect behavior for IsMariaDB")
-	}
-}
-
 func TestFlavorGeneratedColumns(t *testing.T) {
 	type testcase struct {
-		receiver Flavor
+		receiver string
 		expected bool
 	}
 	cases := []testcase{
-		{FlavorMySQL55, false},
-		{FlavorMySQL56, false},
-		{FlavorMySQL57, true},
-		{FlavorMySQL80, true},
-		{FlavorMariaDB101, false},
-		{FlavorMariaDB102, true},
-		{FlavorPercona56, false},
-		{FlavorPercona57, true},
-		{FlavorUnknown, false},
+		{"mysql:5.5", false},
+		{"mysql:5.6", false},
+		{"mysql:5.7", true},
+		{"mysql:8.0", true},
+		{"mariadb:10.1", false},
+		{"mariadb:10.2", true},
+		{"percona:5.6", false},
+		{"percona:5.7", true},
+		{"unknown:0.0", false},
 	}
 	for _, tc := range cases {
-		actual := tc.receiver.GeneratedColumns()
+		actual := ParseFlavor(tc.receiver).GeneratedColumns()
 		if actual != tc.expected {
 			t.Errorf("Expected %s.GeneratedColumns() to return %t, instead found %t", tc.receiver, tc.expected, actual)
 		}
@@ -351,24 +474,24 @@ func TestFlavorGeneratedColumns(t *testing.T) {
 
 func TestFlavorSortedForeignKeys(t *testing.T) {
 	type testcase struct {
-		receiver Flavor
+		receiver string
 		expected bool
 	}
 	cases := []testcase{
-		{FlavorMySQL55, false},
-		{FlavorMySQL56, true},
-		{FlavorMySQL80, true},
-		{FlavorMySQL80.Dot(19), false},
-		{FlavorPercona55, false},
-		{FlavorPercona57, true},
-		{FlavorPercona80.Dot(19), false},
-		{FlavorMariaDB101, true},
-		{FlavorMariaDB102, true},
-		{FlavorMariaDB103, true},
-		{Flavor{VendorUnknown, Version{5, 6, 0}, VariantNone}, true},
+		{"mysql:5.5", false},
+		{"mysql:5.6", true},
+		{"mysql:8.0", true},
+		{"mysql:8.0.19", false},
+		{"percona:5.5", false},
+		{"percona:5.7", true},
+		{"percona:8.0.19", false},
+		{"mariadb:10.1", true},
+		{"mariadb:10.2", true},
+		{"mariadb:10.3", true},
+		{"unknown:5.6", true},
 	}
 	for _, tc := range cases {
-		actual := tc.receiver.SortedForeignKeys()
+		actual := ParseFlavor(tc.receiver).SortedForeignKeys()
 		if actual != tc.expected {
 			t.Errorf("Expected %s.SortedForeignKeys() to return %t, instead found %t", tc.receiver, tc.expected, actual)
 		}
@@ -377,24 +500,24 @@ func TestFlavorSortedForeignKeys(t *testing.T) {
 
 func TestFlavorOmitIntDisplayWidth(t *testing.T) {
 	type testcase struct {
-		receiver Flavor
+		receiver string
 		expected bool
 	}
 	cases := []testcase{
-		{FlavorMySQL55, false},
-		{FlavorMySQL56, false},
-		{FlavorMySQL80, false},
-		{FlavorMySQL80.Dot(18), false},
-		{FlavorMySQL80.Dot(19), true},
-		{FlavorPercona55, false},
-		{FlavorPercona57, false},
-		{FlavorMySQL80.Dot(19), true},
-		{FlavorPercona80.Dot(20), true},
-		{FlavorMariaDB101, false},
-		{FlavorMariaDB104, false},
+		{"mysql:5.5", false},
+		{"mysql:5.6", false},
+		{"mysql:8.0", false},
+		{"mysql:8.0.18", false},
+		{"mysql:8.0.19", true},
+		{"percona:5.5", false},
+		{"percona:5.7", false},
+		{"mysql:8.0.19", true},
+		{"percona:8.0.20", true},
+		{"mariadb:10.1", false},
+		{"mariadb:10.4", false},
 	}
 	for _, tc := range cases {
-		actual := tc.receiver.OmitIntDisplayWidth()
+		actual := ParseFlavor(tc.receiver).OmitIntDisplayWidth()
 		if actual != tc.expected {
 			t.Errorf("Expected %s.OmitIntDisplayWidth() to return %t, instead found %t", tc.receiver, tc.expected, actual)
 		}
@@ -402,25 +525,50 @@ func TestFlavorOmitIntDisplayWidth(t *testing.T) {
 }
 
 func TestFlavorHasCheckConstraints(t *testing.T) {
-	cases := map[Flavor]bool{
-		FlavorMySQL57:            false,
-		FlavorMySQL80:            false,
-		FlavorMySQL80.Dot(15):    false,
-		FlavorPercona80.Dot(14):  false,
-		FlavorMySQL80.Dot(16):    true,
-		FlavorPercona80.Dot(17):  true,
-		FlavorMariaDB102:         false,
-		FlavorMariaDB103:         false,
-		FlavorMariaDB104:         true,
-		FlavorMariaDB101.Dot(30): false,
-		FlavorMariaDB102.Dot(21): false,
-		FlavorMariaDB102.Dot(22): true,
-		FlavorMariaDB103.Dot(9):  false,
-		FlavorMariaDB103.Dot(10): true,
+	cases := map[string]bool{
+		"mysql:5.7":       false,
+		"mysql:8.0":       false,
+		"mysql:8.0.15":    false,
+		"percona:8.0.14":  false,
+		"mysql:8.0.16":    true,
+		"percona:8.0.17":  true,
+		"mariadb:10.2":    false,
+		"mariadb:10.3":    false,
+		"mariadb:10.4":    true,
+		"mariadb:10.1.30": false,
+		"mariadb:10.2.21": false,
+		"mariadb:10.2.22": true,
+		"mariadb:10.3.9":  false,
+		"mariadb:10.3.10": true,
 	}
 	for input, expected := range cases {
-		if input.HasCheckConstraints() != expected {
+		if ParseFlavor(input).HasCheckConstraints() != expected {
 			t.Errorf("Expected %s.HasCheckConstraints() to return %t, but it did not", input, expected)
+		}
+	}
+}
+
+func TestFlavorAlwaysShowCollate(t *testing.T) {
+	cases := map[string]bool{
+		"mysql:5.7":       false,
+		"mysql:8.0":       false,
+		"percona:8.1":     false,
+		"mariadb:10.1.30": false,
+		"mariadb:10.2.20": false,
+		"mariadb:10.3.36": false,
+		"mariadb:10.3.40": true,
+		"mariadb:10.4.25": false,
+		"mariadb:10.4.27": true,
+		"mariadb:10.10.1": false,
+		"mariadb:10.10.2": true,
+		"mariadb:10.11":   true,
+		"mariadb:10.11.1": true,
+		"mariadb:11.0":    true,
+		"mariadb:11.0.3":  true,
+	}
+	for input, expected := range cases {
+		if ParseFlavor(input).AlwaysShowCollate() != expected {
+			t.Errorf("Expected %q AlwaysShowCollate() to return %t, but it did not", input, expected)
 		}
 	}
 }

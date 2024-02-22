@@ -10,7 +10,7 @@ func collationIsDefault(collation, charset string, flavor Flavor) bool {
 	if collation == "utf8mb4_0900_ai_ci" || collation == "utf8mb3_general_ci" || collation == "utf8_general_ci" {
 		return true
 	} else if collation == "utf8mb4_general_ci" {
-		return !flavor.Min(FlavorMySQL80)
+		return !flavor.MinMySQL(8)
 	} else {
 		return baseDefaultCollation[charset] == collation
 	}

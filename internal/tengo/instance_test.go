@@ -118,9 +118,9 @@ func TestInstanceIntrospectionParams(t *testing.T) {
 		t.Fatalf("NewInstance returned unexpected error: %v", err)
 	}
 	instance.valid = true // prevent calls like Flavor() from actually attempting a conn
-	assertParams := func(flavor Flavor, sqlMode, expectOptions string) {
+	assertParams := func(flavor string, sqlMode, expectOptions string) {
 		t.Helper()
-		instance.flavor = flavor
+		instance.flavor = ParseFlavor(flavor)
 		instance.sqlMode = strings.Split(sqlMode, ",")
 
 		// can't compare strings directly since order may be different
@@ -137,13 +137,13 @@ func TestInstanceIntrospectionParams(t *testing.T) {
 			t.Errorf("Expected param map %v, instead found %v", parsedExpected, parsedResult)
 		}
 	}
-	assertParams(FlavorMySQL57, "", "sql_quote_show_create=1&collation=binary")
-	assertParams(FlavorMySQL80, "", "sql_quote_show_create=1&information_schema_stats_expiry=0&collation=binary")
-	assertParams(FlavorMySQL57, "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1&collation=binary")
-	assertParams(FlavorMySQL80, "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1&information_schema_stats_expiry=0&collation=binary")
-	assertParams(FlavorMariaDB105, "ANSI_QUOTES", "sql_quote_show_create=1&sql_mode=%27%27")
-	assertParams(FlavorMySQL57, "REAL_AS_FLOAT,PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE,ONLY_FULL_GROUP_BY,ANSI", "sql_quote_show_create=1&collation=binary&sql_mode=%27REAL_AS_FLOAT%2CPIPES_AS_CONCAT%2CIGNORE_SPACE%2CONLY_FULL_GROUP_BY%27")
-	assertParams(FlavorMySQL80, "NO_FIELD_OPTIONS,NO_BACKSLASH_ESCAPES,NO_KEY_OPTIONS,NO_TABLE_OPTIONS", "sql_quote_show_create=1&collation=binary&information_schema_stats_expiry=0&sql_mode=%27NO_BACKSLASH_ESCAPES%27")
+	assertParams("mysql:5.7", "", "sql_quote_show_create=1&collation=binary")
+	assertParams("mysql:8.0", "", "sql_quote_show_create=1&information_schema_stats_expiry=0&collation=binary")
+	assertParams("mysql:5.7", "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1&collation=binary")
+	assertParams("mysql:8.0", "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1&information_schema_stats_expiry=0&collation=binary")
+	assertParams("mariadb:10.5", "ANSI_QUOTES", "sql_quote_show_create=1&sql_mode=%27%27")
+	assertParams("mysql:5.7", "REAL_AS_FLOAT,PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE,ONLY_FULL_GROUP_BY,ANSI", "sql_quote_show_create=1&collation=binary&sql_mode=%27REAL_AS_FLOAT%2CPIPES_AS_CONCAT%2CIGNORE_SPACE%2CONLY_FULL_GROUP_BY%27")
+	assertParams("mysql:8.0", "NO_FIELD_OPTIONS,NO_BACKSLASH_ESCAPES,NO_KEY_OPTIONS,NO_TABLE_OPTIONS", "sql_quote_show_create=1&collation=binary&information_schema_stats_expiry=0&sql_mode=%27NO_BACKSLASH_ESCAPES%27")
 }
 
 func (s TengoIntegrationSuite) TestInstanceConnect(t *testing.T) {
@@ -274,7 +274,7 @@ func (s TengoIntegrationSuite) TestInstanceLockWaitTimeout(t *testing.T) {
 	var expected int
 	// lock_wait_timeout defaults to a ridiculous 1 year in MySQL. MariaDB lowered
 	// it to a slightly-less-ridiculous 1 day in MariaDB 10.2.
-	if s.d.Flavor().Min(FlavorMariaDB102) {
+	if s.d.Flavor().MinMariaDB(10, 2) {
 		expected = 86400
 	} else {
 		expected = 86400 * 365
@@ -320,7 +320,7 @@ func (s TengoIntegrationSuite) TestInstanceSetFlavor(t *testing.T) {
 	}
 
 	// Confirm that SetFlavor does not work once flavor hydrated
-	if err := s.d.SetFlavor(FlavorMariaDB102); err == nil {
+	if err := s.d.SetFlavor(ParseFlavor("mariadb:10.2")); err == nil {
 		t.Error("Expected SetFlavor to return an error, but it was nil")
 	}
 
@@ -347,7 +347,7 @@ func (s TengoIntegrationSuite) TestInstanceGrantChecks(t *testing.T) {
 	// MariaDB 11.0, we intentionally grant SUPER since this no longer confers
 	// fine-grained privs.
 	var morePrivs string
-	if s.d.Flavor().Min(FlavorMariaDB110) {
+	if s.d.Flavor().MinMariaDB(11, 0) {
 		morePrivs = ", SUPER"
 	}
 	db, err := s.d.CachedConnectionPool("", "")
@@ -648,7 +648,7 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesDeadlock(t *testing.T) {
 	// With the new data dictionary, attempting to drop 2 tables concurrently can
 	// deadlock if the tables have a foreign key constraint between them. This
 	// deadlock did not occur in prior releases.
-	if !s.d.Flavor().Min(FlavorMySQL80) {
+	if !s.d.Flavor().MinMySQL(8) {
 		t.Skip("Test only relevant for flavors that have the new data dictionary")
 	}
 
@@ -709,7 +709,7 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesSkipsViews(t *testing.T) {
 	if err := db.Select(&partitions, query); err != nil {
 		t.Fatalf("Unexpected error querying information_schema.partitions: %v", err)
 	}
-	if flavor := s.d.Flavor(); flavor.Min(FlavorMySQL80) {
+	if flavor := s.d.Flavor(); flavor.MinMySQL(8) {
 		if len(partitions) != 2 {
 			t.Fatalf("Expected flavor %s to have 2 views present in information_schema.partitions; instead found %d", flavor, len(partitions))
 		}
@@ -809,7 +809,7 @@ func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
 			if schema.Collation != expectCollation {
 				// MariaDB 11.2+ introduces new server variable character_set_collations,
 				// which can override default collation for each charset
-				if s.d.Flavor().Min(FlavorMariaDB112) {
+				if s.d.Flavor().MinMariaDB(11, 2) {
 					var charSetCollations string
 					if db, err := s.d.CachedConnectionPool("", ""); err != nil {
 						t.Fatalf("Unable to obtain connection pool: %v", err)
@@ -842,7 +842,7 @@ func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
 
 	// Default collation for utf8mb4 depends on the flavor
 	var defaultCollationMB4 string
-	if s.d.Flavor().Min(FlavorMySQL80) {
+	if s.d.Flavor().MinMySQL(8) {
 		defaultCollationMB4 = "utf8mb4_0900_ai_ci"
 	} else {
 		defaultCollationMB4 = "utf8mb4_general_ci"

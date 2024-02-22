@@ -137,11 +137,12 @@ func TestOptionsEquals(t *testing.T) {
 	}
 
 	other, _ = OptionsForDir(dir)
-	opts.Flavor, other.Flavor = tengo.FlavorMySQL80, tengo.FlavorMySQL80
+	opts.Flavor = tengo.ParseFlavor("mysql:8.0")
+	other.Flavor = opts.Flavor
 	if !opts.Equals(other) {
 		t.Error("Equals returning wrong value with same flavor")
 	}
-	other.Flavor = tengo.FlavorPercona80
+	other.Flavor = tengo.ParseFlavor("percona:8.0")
 	if opts.Equals(other) {
 		t.Error("Equals returning wrong value with different flavor")
 	}

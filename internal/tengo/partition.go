@@ -59,7 +59,7 @@ func (tp *TablePartitioning) Definition(flavor Flavor) string {
 	}
 
 	opener, closer := "/*!50100", " */"
-	if flavor.Min(FlavorMariaDB102) {
+	if flavor.MinMariaDB(10, 2) {
 		// MariaDB stopped wrapping partitioning clauses in version-gated comments
 		// in 10.2.
 		opener, closer = "", ""
@@ -88,7 +88,7 @@ func (tp *TablePartitioning) partitionBy(flavor Flavor) string {
 	// TODO handle edge cases where the backticks are still present: column name is
 	// a keyword (even if not a *reserved* word) or contains special characters.
 	// See https://github.com/skeema/skeema/issues/199
-	if (strings.HasSuffix(tp.Method, "COLUMNS") || strings.HasSuffix(tp.Method, "KEY")) && !flavor.Min(FlavorMariaDB102) {
+	if (strings.HasSuffix(tp.Method, "COLUMNS") || strings.HasSuffix(tp.Method, "KEY")) && !flavor.MinMariaDB(10, 2) {
 		expr = strings.Replace(expr, "`", "", -1)
 	}
 
@@ -162,7 +162,7 @@ func (p *Partition) Definition(flavor Flavor, method string) string {
 	// backticks if the name is a keyword (even if not a *reserved* word) or has
 	// special characters. See https://github.com/skeema/skeema/issues/175
 	name := p.Name
-	if flavor.Min(FlavorMariaDB102) {
+	if flavor.MinMariaDB(10, 2) {
 		name = EscapeIdentifier(name)
 	}
 

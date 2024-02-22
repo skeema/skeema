@@ -89,16 +89,16 @@ func TestObjectKeyString(t *testing.T) {
 func TestUnitTableFlavors(t *testing.T) {
 	orig := aTable(1)
 
-	table := aTableForFlavor(FlavorMySQL57, 1)
+	table := aTableForFlavor(ParseFlavor("mysql:5.7"), 1)
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 0 {
 		t.Errorf("MySQL 5.7: Expected no diff; instead found %d differences, supported=%t", len(clauses), supported)
 	}
-	table = aTableForFlavor(FlavorMariaDB101, 1)
+	table = aTableForFlavor(ParseFlavor("mariadb:10.1"), 1)
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 0 {
 		t.Errorf("MariaDB 10.1: Expected no diff; instead found %d differences, supported=%t", len(clauses), supported)
 	}
 
-	table = aTableForFlavor(FlavorMySQL55, 1)
+	table = aTableForFlavor(ParseFlavor("mysql:5.5"), 1)
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 1 {
 		t.Errorf("MySQL 5.5: Expected 1 diff clause; instead found %d differences, supported=%t", len(clauses), supported)
 	}
@@ -108,7 +108,7 @@ func TestUnitTableFlavors(t *testing.T) {
 		}
 	}
 
-	table = aTableForFlavor(FlavorMariaDB103, 1)
+	table = aTableForFlavor(ParseFlavor("mariadb:10.3"), 1)
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 2 {
 		t.Errorf("MariaDB 10.3: Expected 2 diff clauses; instead found %d differences, supported=%t", len(clauses), supported)
 	}
@@ -118,16 +118,17 @@ func TestUnitTableFlavors(t *testing.T) {
 	if table.Columns[3].OnUpdate != "current_timestamp(2)" || table.Columns[3].Default != "current_timestamp(2)" {
 		t.Error("MariaDB 10.3: Expected current_timestamp to be lowercased, but it is not")
 	}
-	if table.GeneratedCreateStatement(FlavorMariaDB103) != table.CreateStatement {
+	if table.GeneratedCreateStatement(ParseFlavor("mariadb:10.3")) != table.CreateStatement {
 		t.Error("MariaDB 10.3: Expected function to reset CreateStatement to GeneratedCreateStatement, but it did not")
 	}
 
 	orig2 := supportedTable()
-	table2 := supportedTableForFlavor(FlavorMariaDB102)
-	if table2.GeneratedCreateStatement(FlavorMariaDB102) == orig2.GeneratedCreateStatement(FlavorUnknown) {
+	flavor := ParseFlavor("mariadb:10.2")
+	table2 := supportedTableForFlavor(flavor)
+	if table2.GeneratedCreateStatement(flavor) == orig2.GeneratedCreateStatement(FlavorUnknown) {
 		t.Errorf("MariaDB 10.2: Expected GeneratedCreateStatement to differ vs FlavorUnknown, but it did not")
 	}
-	colClause := table2.Columns[3].Definition(FlavorMariaDB102)
+	colClause := table2.Columns[3].Definition(flavor)
 	if !strings.Contains(colClause, "DEFAULT NULL") {
 		t.Errorf("MariaDB 10.2: Expected text column to now emit a default value, but it did not")
 	}
@@ -142,9 +143,9 @@ func flavorTestFiles(flavor Flavor) []string {
 	// Non-flavor-specific
 	result := []string{"integration-ext.sql", "partition.sql", "rows.sql", "views.sql", "spatial.sql"}
 
-	if flavor.Min(FlavorMySQL80.Dot(13)) {
+	if flavor.MinMySQL(8, 0, 13) {
 		result = append(result, "default-expr.sql")
-	} else if flavor.Min(FlavorMariaDB102) {
+	} else if flavor.MinMariaDB(10, 2) {
 		result = append(result, "default-expr-maria.sql") // No support for 4-byte chars in the expressions
 	}
 
@@ -156,31 +157,31 @@ func flavorTestFiles(flavor Flavor) []string {
 		}
 	}
 
-	if flavor.Min(FlavorMySQL80) {
+	if flavor.MinMySQL(8) {
 		result = append(result, "index-mysql8.sql") // functional indexes, descending indexes, invisible indexes
-	} else if flavor.Min(FlavorMariaDB106) {
+	} else if flavor.MinMariaDB(10, 6) {
 		result = append(result, "index-maria106.sql") // ignored indexes
 	}
 
-	if flavor.Min(FlavorMariaDB103) || flavor.Min(FlavorMySQL80.Dot(23)) {
+	if flavor.MinMariaDB(10, 3) || flavor.MinMySQL(8, 0, 23) {
 		result = append(result, "inviscols.sql")
 	}
 
-	if flavor.Min(FlavorMySQL57) {
+	if flavor.MinMySQL(5, 7) {
 		// other flavors may support FT parsers but don't ship with any alternatives;
 		// other flavors do not support TABLESPACE clauses in InnoDB tables
 		result = append(result, "ft-parser.sql", "inno-tablespace.sql")
 	}
 
-	if flavor.Min(FlavorPercona56.Dot(33)) {
+	if flavor.IsPercona() && flavor.MinMySQL(5, 6, 33) {
 		result = append(result, "colcompression-percona.sql")
-	} else if flavor.Min(FlavorMariaDB103) {
+	} else if flavor.MinMariaDB(10, 3) {
 		result = append(result, "colcompression-maria.sql")
 	}
 
-	if flavor.Min(FlavorMySQL57) {
+	if flavor.MinMySQL(5, 7) {
 		result = append(result, "pagecompression.sql")
-	} else if flavor.Min(FlavorMariaDB102) {
+	} else if flavor.MinMariaDB(10, 2) {
 		result = append(result, "pagecompression-maria.sql")
 	}
 
@@ -192,10 +193,10 @@ func flavorTestFiles(flavor Flavor) []string {
 		}
 	}
 
-	if flavor.Min(FlavorMariaDB108) { // descending indexes, IN/OUT/INOUT func params
+	if flavor.MinMariaDB(10, 8) { // descending indexes, IN/OUT/INOUT func params
 		result = append(result, "maria108.sql")
 	}
-	if flavor.Min(FlavorMariaDB1010) { // uca1400 collations
+	if flavor.MinMariaDB(10, 10) { // uca1400 collations
 		result = append(result, "uca1400.sql")
 	}
 
@@ -225,11 +226,11 @@ func aTable(nextAutoInc uint64) Table {
 func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 	utf8mb3 := "utf8"
 	utf8mb3DefaultCollation := "utf8_general_ci"
-	if mysql8029 := FlavorMySQL80.Dot(29); flavor.Min(mysql8029) || flavor.Min(FlavorMariaDB106) {
+	if flavor.MinMySQL(8, 0, 29) || flavor.MinMariaDB(10, 6) {
 		// MySQL 8.0.29+ and MariaDB 10.6+ report the legacy utf8 charset as utf8mb3.
 		// MySQL 8.0.30+ and MariaDB 10.6+ also update collation names accordingly.
 		utf8mb3 = "utf8mb3"
-		if !flavor.Matches(mysql8029) {
+		if !flavor.IsMySQL(8, 0, 29) {
 			utf8mb3DefaultCollation = "utf8mb3_general_ci"
 		}
 	}
@@ -240,13 +241,13 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 		OnUpdate: "CURRENT_TIMESTAMP(2)",
 	}
 	lastUpdateDef := "`last_update` timestamp(2) NOT NULL DEFAULT CURRENT_TIMESTAMP(2) ON UPDATE CURRENT_TIMESTAMP(2)"
-	if flavor.Matches(FlavorMySQL55) { // No fractional timestamps in 5.5
+	if flavor.IsMySQL(5, 5) { // No fractional timestamps in 5.5
 		lastUpdateCol.TypeInDB = "timestamp"
 		lastUpdateCol.Default = "CURRENT_TIMESTAMP"
 		lastUpdateCol.OnUpdate = "CURRENT_TIMESTAMP"
 		lastUpdateDef = "`last_update` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
 	}
-	if flavor.Min(FlavorMariaDB102) {
+	if flavor.MinMariaDB(10, 2) {
 		lastUpdateCol.Default = strings.ToLower(lastUpdateCol.Default)
 		lastUpdateCol.OnUpdate = strings.ToLower(lastUpdateCol.OnUpdate)
 		lastUpdateDef = strings.Replace(lastUpdateDef, "CURRENT_TIMESTAMP", "current_timestamp", 2)
@@ -258,7 +259,7 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 		Default:  "'1'",
 	}
 	aliveDef := "`alive` tinyint(1) unsigned NOT NULL DEFAULT '1'"
-	if flavor.Min(FlavorMariaDB102) {
+	if flavor.MinMariaDB(10, 2) {
 		aliveCol.Default = "1"
 		aliveDef = "`alive` tinyint(1) unsigned NOT NULL DEFAULT 1"
 	}
@@ -322,7 +323,7 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 	}
 
 	utf8mb3Table := utf8mb3
-	if flavor.Min(FlavorMySQL80.Dot(24)) {
+	if flavor.MinMySQL(8, 0, 24) {
 		// 8.0.24-8.0.28 changes how utf8mb3 is expressed for table-level default in
 		// SHOW CREATE, but not anywhere else
 		utf8mb3Table = "utf8mb3"
@@ -477,7 +478,7 @@ func supportedTableForFlavor(flavor Flavor) Table {
   ~metadata~ text,
   PRIMARY KEY (~post_id~,~user_id~)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1`, "~", "`", -1)
-	if flavor.Min(FlavorMariaDB102) { // allow explicit DEFAULT NULL for blob/text
+	if flavor.MinMariaDB(10, 2) { // allow explicit DEFAULT NULL for blob/text
 		columns[3].Default = "NULL"
 		stmt = strings.Replace(stmt, " text", " text DEFAULT NULL", 1)
 	}

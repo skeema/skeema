@@ -280,7 +280,7 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 	for _, clause := range td.alterClauses {
 		if !mods.AllowUnsafe {
 			if clause, ok := clause.(Unsafer); ok {
-				if unsafe, reason := clause.Unsafe(); unsafe {
+				if unsafe, reason := clause.Unsafe(mods); unsafe {
 					unsafeReasons = append(unsafeReasons, reason)
 				}
 			}

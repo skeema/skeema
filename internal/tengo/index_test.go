@@ -17,8 +17,9 @@ func TestIndexDefinition(t *testing.T) {
 		Comment:   "this is a comment",
 		Type:      "BTREE",
 	}
+	flavor := ParseFlavor("mysql:8.0")
 	expected := "UNIQUE KEY `test_idx` (`col_a`(5) DESC,((`col_b` * 2))) COMMENT 'this is a comment' /*!80000 INVISIBLE */"
-	actual := index.Definition(FlavorMySQL80)
+	actual := index.Definition(flavor)
 	if expected != actual {
 		t.Errorf("Index.Definition() expected %q, instead found %q", expected, actual)
 	}
@@ -32,7 +33,7 @@ func TestIndexDefinition(t *testing.T) {
 			didPanic = true
 		}
 	}()
-	index.Definition(FlavorMySQL80)
+	index.Definition(flavor)
 	if !didPanic {
 		t.Errorf("Expected Index.Definition() to panic on non-unique primary key, but it did not")
 	}

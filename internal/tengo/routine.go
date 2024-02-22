@@ -272,7 +272,7 @@ func (rd *RoutineDiff) Statement(mods StatementModifiers) (stmt string, err erro
 
 	if rd.Type == DiffTypeDrop {
 		// Omit the DROP part of the pair entirely in cases where we're doing an atomic replacement or alter
-		if mariaReplace || (clearCommentReplace && !mods.Flavor.Min(FlavorMySQL80)) {
+		if mariaReplace || (clearCommentReplace && !mods.Flavor.MinMySQL(8)) {
 			return "", nil
 		}
 		stmt = rd.From.DropStatement()
@@ -293,7 +293,7 @@ func (rd *RoutineDiff) Statement(mods StatementModifiers) (stmt string, err erro
 		return stmt, err
 
 	} else if rd.Type == DiffTypeCreate {
-		if clearCommentReplace && !mods.Flavor.Min(FlavorMySQL80) {
+		if clearCommentReplace && !mods.Flavor.MinMySQL(8) {
 			return rd.alterStatement(mods)
 		}
 		stmt = rd.To.CreateStatement
@@ -452,7 +452,7 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 	// If mysql.proc doesn't exist or that query fails, we then run a SHOW CREATE
 	// per routine, using multiple goroutines for performance reasons.
 	var alreadyObtained int
-	if !flavor.Min(FlavorMySQL80) {
+	if !flavor.MinMySQL(8) {
 		var rawRoutineMeta []struct {
 			Name      string `db:"name"`
 			Type      string `db:"type"`

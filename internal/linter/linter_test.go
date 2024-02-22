@@ -155,8 +155,8 @@ func (s IntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 		expectedWarningCount int
 	}{
 		{[]string{"8kb"}, s.d.Flavor(), innoTableCount - 1},
-		{[]string{"page", "8kb"}, tengo.FlavorMySQL57, innoTableCount - 1},
-		{[]string{"page"}, tengo.FlavorMariaDB103, innoTableCount},
+		{[]string{"page", "8kb"}, tengo.ParseFlavor("mysql:5.7"), innoTableCount - 1},
+		{[]string{"page"}, tengo.ParseFlavor("mariadb:10.3"), innoTableCount},
 		{[]string{"none"}, s.d.Flavor(), 2},
 		{[]string{"none", "4kb"}, s.d.Flavor(), 2},
 		{[]string{"none", "4kb", "page"}, s.d.Flavor(), 2},
@@ -176,14 +176,14 @@ func (s IntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 	// that the regexp used by tableCompressionMode() works properly.
 	// Store a mapping of table name -> expected 2nd return value of tableCompressionMode().
 	var tableExpectedClause map[string]string
-	if s.d.Flavor().Min(tengo.FlavorMySQL57) {
+	if s.d.Flavor().MinMySQL(5, 7) {
 		dir = getDir(t, "testdata/pagecomprmysql")
 		tableExpectedClause = map[string]string{
 			"page_comp_zlib": "COMPRESSION='zlib'",
 			"page_comp_lz4":  "COMPRESSION='lz4'",
 			"page_comp_none": "",
 		}
-	} else if s.d.Flavor().Min(tengo.FlavorMariaDB102) {
+	} else if s.d.Flavor().MinMariaDB(10, 2) {
 		dir = getDir(t, "testdata/pagecomprmaria")
 		tableExpectedClause = map[string]string{
 			"page_comp_1":   "`PAGE_COMPRESSED`=1",
@@ -337,7 +337,7 @@ func (s IntegrationSuite) TestCheckSchemaStripAnnotationNewlines(t *testing.T) {
 // TestCheckSchemaSpatialIndexSRID confirms that the dupe-index checker will
 // flag SPATIAL indexes in MySQL 8 if their column lacks an SRID.
 func (s IntegrationSuite) TestCheckSchemaSpatialIndexSRID(t *testing.T) {
-	if !s.d.Flavor().Min(tengo.FlavorMySQL80) {
+	if !s.d.Flavor().MinMySQL(8) {
 		t.Skip("Test only relevant for MySQL 8.0+")
 	}
 	dir := getDir(t, "testdata/spatialmysql8")
@@ -385,7 +385,7 @@ func (s *IntegrationSuite) Setup(backend string) (err error) {
 	// releases without much notice. For sake of robustness in case the default
 	// changes again or the variable is removed entirely, we try setting it to OFF
 	// in all 10.6+ but intentionally ignore errors in this exec call.
-	if s.d.Flavor().Min(tengo.FlavorMariaDB106) {
+	if s.d.Flavor().MinMariaDB(10, 6) {
 		db, err := s.d.ConnectionPool("", "")
 		if err == nil {
 			_, _ = db.Exec("SET GLOBAL innodb_read_only_compressed = OFF")

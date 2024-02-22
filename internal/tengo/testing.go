@@ -141,7 +141,7 @@ func SkeemaTestImages(t *testing.T) []string {
 				}
 				images[n] = strings.Replace(image, "percona:", "percona/percona-server:", 1) + "-aarch64"
 			}
-		} else if strings.HasPrefix(image, "percona") && ParseFlavor(image).Min(FlavorPercona81) {
+		} else if strings.HasPrefix(image, "percona") && ParseFlavor(image).MinMySQL(8, 1) {
 			images[n] = strings.Replace(image, "percona:", "percona/percona-server:", 1)
 		}
 	}

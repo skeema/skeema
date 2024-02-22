@@ -685,7 +685,7 @@ func TestModifyColumnUnsafe(t *testing.T) {
 			OldColumn: &Column{TypeInDB: type1},
 			NewColumn: &Column{TypeInDB: type2},
 		}
-		if actual, _ := mc.Unsafe(); actual != expected {
+		if actual, _ := mc.Unsafe(StatementModifiers{}); actual != expected {
 			t.Errorf("For %s -> %s, expected unsafe=%t, instead found unsafe=%t", type1, type2, expected, actual)
 		}
 	}
@@ -791,12 +791,12 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		OldColumn: &Column{TypeInDB: "varchar(30)", CharSet: "latin1"},
 		NewColumn: &Column{TypeInDB: "varchar(30)", CharSet: "utf8mb4"},
 	}
-	if unsafe, _ := mc.Unsafe(); !unsafe {
+	if unsafe, _ := mc.Unsafe(StatementModifiers{}); !unsafe {
 		t.Error("For changing character set, expected unsafe=true, instead found unsafe=false")
 	}
 	mc.NewColumn.CharSet = "latin1"
 	mc.NewColumn.Collation = "latin1_bin"
-	if unsafe, _ := mc.Unsafe(); unsafe {
+	if unsafe, _ := mc.Unsafe(StatementModifiers{}); unsafe {
 		t.Error("For changing collation but not character set, expected unsafe=false, instead found unsafe=true")
 	}
 
@@ -806,11 +806,11 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		OldColumn: &Column{TypeInDB: "bigint(20)", GenerationExpr: "id * 2", Virtual: true},
 		NewColumn: &Column{TypeInDB: "int(11)", GenerationExpr: "id * 2", Virtual: true},
 	}
-	if unsafe, _ := mc.Unsafe(); unsafe {
+	if unsafe, _ := mc.Unsafe(StatementModifiers{}); unsafe {
 		t.Error("Expected virtual column modification to be safe, but Unsafe() returned true")
 	}
 	mc.OldColumn.Virtual = false
-	if unsafe, _ := mc.Unsafe(); !unsafe {
+	if unsafe, _ := mc.Unsafe(StatementModifiers{}); !unsafe {
 		t.Error("Expected stored column modification to be unsafe, but Unsafe() returned false")
 	}
 
@@ -819,14 +819,14 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		OldColumn: &Column{TypeInDB: "geometry", SpatialReferenceID: 0, HasSpatialReference: false},
 		NewColumn: &Column{TypeInDB: "geometry", SpatialReferenceID: 0, HasSpatialReference: true},
 	}
-	if unsafe, _ := mc.Unsafe(); !unsafe {
+	if unsafe, _ := mc.Unsafe(StatementModifiers{}); !unsafe {
 		t.Error("Expected addition of SRID to be unsafe even for SRID 0, but Unsafe() returned false")
 	}
 	mc = ModifyColumn{
 		OldColumn: &Column{TypeInDB: "geometry", SpatialReferenceID: 0, HasSpatialReference: true},
 		NewColumn: &Column{TypeInDB: "geometry", SpatialReferenceID: 4326, HasSpatialReference: true},
 	}
-	if unsafe, _ := mc.Unsafe(); !unsafe {
+	if unsafe, _ := mc.Unsafe(StatementModifiers{}); !unsafe {
 		t.Error("Expected change of SRID to be unsafe, but Unsafe() returned false")
 	}
 }
@@ -836,7 +836,7 @@ func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
 	// Skip test if flavor doesn't support page compression
 	// Note that although MariaDB 10.1 supports this feature, we exclude it here
 	// since it does not seem to work out-of-the-box in Docker images
-	if !flavor.Min(FlavorMySQL57) && !flavor.Min(FlavorMariaDB102) {
+	if !flavor.MinMySQL(5, 7) && !flavor.MinMariaDB(10, 2) {
 		t.Skipf("InnoDB page compression not supported in flavor %s", flavor)
 	}
 
@@ -899,7 +899,7 @@ func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
 // TestAlterCheckConstraints provides unit test coverage relating to diffs of
 // check constraints.
 func TestAlterCheckConstraints(t *testing.T) {
-	flavor := FlavorMySQL80.Dot(23)
+	flavor := ParseFlavor("mysql:8.0.23")
 	mods := StatementModifiers{Flavor: flavor}
 
 	// Test addition of checks
@@ -932,7 +932,7 @@ func TestAlterCheckConstraints(t *testing.T) {
 				t.Errorf("Found unexpected type %T", clause)
 			}
 			strMySQL := clause.Clause(mods)
-			strMaria := clause.Clause(StatementModifiers{Flavor: FlavorMariaDB105})
+			strMaria := clause.Clause(StatementModifiers{Flavor: ParseFlavor("mariadb:10.5")})
 			if strMySQL == strMaria || !strings.Contains(strMySQL, "DROP CHECK") || !strings.Contains(strMaria, "DROP CONSTRAINT") {
 				t.Errorf("Unexpected clause differences between flavors; found MySQL %q, MariaDB %q", strMySQL, strMaria)
 			}
@@ -990,7 +990,7 @@ func TestAlterCheckConstraints(t *testing.T) {
 	}
 
 	// Create a table with 5 checks. Reorder one of them and confirm result.
-	flavor = FlavorMariaDB105
+	flavor = ParseFlavor("mariadb:10.5")
 	tableChecks, tableChecks2 = aTableForFlavor(flavor, 1), aTableForFlavor(flavor, 1)
 	tableChecks.Checks = []*Check{
 		{Name: "check1", Clause: "ssn <> '111111111'", Enforced: true},

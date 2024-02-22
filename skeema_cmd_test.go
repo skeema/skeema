@@ -528,10 +528,9 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 		t.Fatalf("Unexpected error obtaining schema: %s", err)
 	} else {
 		expectCharSet, expectCollation := "utf8", "utf8_swedish_ci"
-		mysql8029 := tengo.FlavorMySQL80.Dot(29)
-		if flavor := s.d.Flavor(); flavor.Min(mysql8029) || flavor.Min(tengo.FlavorMariaDB106) {
+		if flavor := s.d.Flavor(); flavor.MinMySQL(8, 0, 29) || flavor.MinMariaDB(10, 6) {
 			expectCharSet = "utf8mb3"
-			if !flavor.Matches(mysql8029) { // MySQL (or variants) of *exactly* 8.0.29 does not update collation names (but 8.0.30+ does)
+			if !flavor.IsMySQL(8, 0, 29) { // MySQL (or variants) of *exactly* 8.0.29 does not update collation names (but 8.0.30+ does)
 				expectCollation = "utf8mb3_swedish_ci"
 			}
 		}
@@ -657,7 +656,7 @@ func (s SkeemaIntegrationSuite) TestIndexOrdering(t *testing.T) {
 	// Edit posts.sql to put the new indexes first again, and ensure
 	// push --exact-match actually reorders them.
 	fs.WriteTestFile(t, "mydb/product/posts.sql", contentsIndexesFirst)
-	if s.d.Flavor().Matches(tengo.FlavorMySQL55) {
+	if s.d.Flavor().IsMySQL(5, 5) {
 		s.handleCommand(t, CodeSuccess, "", "skeema push --exact-match")
 	} else {
 		s.handleCommand(t, CodeSuccess, "", "skeema push --exact-match --alter-algorithm=copy")
@@ -1003,7 +1002,7 @@ func (s SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 	// Ditto for MySQL 5.5.
 	if s.d.Flavor().IsMariaDB() {
 		t.Skip("Test not relevant for MariaDB-based image", s.d.Flavor())
-	} else if s.d.Flavor().Matches(tengo.FlavorMySQL55) {
+	} else if s.d.Flavor().IsMySQL(5, 5) {
 		t.Skip("Test not relevant for 5.5-based image", s.d.Flavor())
 	}
 
@@ -1255,9 +1254,11 @@ func (s SkeemaIntegrationSuite) TestFlavorConfig(t *testing.T) {
 	// mydb/.skeema. Confirm diff behavior unaffected, meaning the instance flavor
 	// takes precedence over the dir one if both are known.
 	inst.ForceFlavor(realFlavor)
-	newFlavor := tengo.FlavorMariaDB103
+	var newFlavor tengo.Flavor
 	if realFlavor.IsMariaDB() {
-		newFlavor = tengo.FlavorMySQL57
+		newFlavor = tengo.ParseFlavor("mysql:5.7")
+	} else {
+		newFlavor = tengo.ParseFlavor("mariadb:10.3")
 	}
 	contents = fs.ReadTestFile(t, "mydb/.skeema")
 	if !strings.Contains(contents, realFlavor.Family().String()) {
@@ -1435,7 +1436,7 @@ END`
 	// Also confirm that --lax-comments does not suppress these diffs, since other
 	// characteristics besides the comment are also being changed.
 	s.dbExec(t, "product", "ALTER PROCEDURE routine2 SQL SECURITY INVOKER READS SQL DATA COMMENT 'whatever'")
-	if s.d.Flavor().Min(tengo.FlavorMySQL80) {
+	if s.d.Flavor().MinMySQL(8) {
 		s.handleCommand(t, CodeFatalError, ".", "skeema diff --lax-comments")
 		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe --lax-comments")
 		s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe --lax-comments")

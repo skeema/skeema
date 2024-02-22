@@ -20,7 +20,7 @@ type TableAlterClause interface {
 // If a TableAlterClause struct does NOT implement this interface, it is
 // considered to always be safe.
 type Unsafer interface {
-	Unsafe() (unsafe bool, reason string)
+	Unsafe(StatementModifiers) (unsafe bool, reason string)
 }
 
 ///// AddColumn ////////////////////////////////////////////////////////////////
@@ -63,7 +63,7 @@ func (dc DropColumn) Clause(_ StatementModifiers) string {
 // Unsafe returns true if this clause is potentially destructive of data.
 // DropColumn is always unsafe, unless it's a virtual column (which is easy to
 // roll back; there's no inherent data loss from dropping a virtual column).
-func (dc DropColumn) Unsafe() (unsafe bool, reason string) {
+func (dc DropColumn) Unsafe(_ StatementModifiers) (unsafe bool, reason string) {
 	if unsafe = !dc.Column.Virtual; unsafe {
 		reason = "column " + EscapeIdentifier(dc.Column.Name) + " would be dropped"
 	}
@@ -143,12 +143,12 @@ func (ai AlterIndex) Clause(mods StatementModifiers) string {
 		return ""
 	}
 	clause := "ALTER INDEX " + EscapeIdentifier(ai.Index.Name)
-	if mods.Flavor.Min(FlavorMySQL80) {
+	if mods.Flavor.MinMySQL(8) {
 		if ai.NewInvisible {
 			return clause + " INVISIBLE"
 		}
 		return clause + " VISIBLE"
-	} else if mods.Flavor.Min(FlavorMariaDB106) {
+	} else if mods.Flavor.MinMariaDB(10, 6) {
 		if ai.NewInvisible {
 			return clause + " IGNORED"
 		}
@@ -276,7 +276,7 @@ func (rc RenameColumn) Clause(_ StatementModifiers) string {
 // RenameColumn is always considered unsafe, despite it not directly destroying
 // data, because it is high-risk for interfering with application logic that may
 // be continuing to use the old column name.
-func (rc RenameColumn) Unsafe() (unsafe bool, reason string) {
+func (rc RenameColumn) Unsafe(_ StatementModifiers) (unsafe bool, reason string) {
 	return true, "column " + EscapeIdentifier(rc.OldColumn.Name) + " would be renamed, and there is no way to deploy application code for this change at the same moment as the schema change"
 }
 
@@ -346,7 +346,7 @@ func (mc ModifyColumn) Clause(mods StatementModifiers) string {
 // ModifyColumn's safety depends on the nature of the column change; for example,
 // increasing the size of a varchar is safe, but decreasing the size or (in most
 // cases) changing the column type entirely is considered unsafe.
-func (mc ModifyColumn) Unsafe() (unsafe bool, reason string) {
+func (mc ModifyColumn) Unsafe(_ StatementModifiers) (unsafe bool, reason string) {
 	genericReason := "modification to column " + mc.OldColumn.Name + " may require lossy data conversion"
 
 	// Simple cases:
@@ -790,7 +790,7 @@ func (cse ChangeStorageEngine) Clause(_ StatementModifiers) string {
 // Unsafe returns true if this clause is potentially destructive of data.
 // ChangeStorageEngine is always considered unsafe, due to the potential
 // complexity in converting a table's data to the new storage engine.
-func (cse ChangeStorageEngine) Unsafe() (unsafe bool, reason string) {
+func (cse ChangeStorageEngine) Unsafe(_ StatementModifiers) (unsafe bool, reason string) {
 	return true, "storage engine changes have significant operational implications"
 }
 
@@ -862,7 +862,7 @@ func (mp ModifyPartitions) Clause(mods StatementModifiers) string {
 }
 
 // Unsafe returns true if this clause is potentially destructive of data.
-func (mp ModifyPartitions) Unsafe() (unsafe bool, reason string) {
+func (mp ModifyPartitions) Unsafe(_ StatementModifiers) (unsafe bool, reason string) {
 	if unsafe = len(mp.Drop) > 0; unsafe {
 		noun := fmt.Sprintf("%d partitions", len(mp.Drop))
 		if len(mp.Drop) == 1 {

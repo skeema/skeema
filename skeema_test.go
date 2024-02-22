@@ -190,11 +190,11 @@ func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, d
 	// CURRENT_TIMESTAMP does not take an arg for specifying sub-second precision
 	// In MySQL 8.0+, partitions are formatted differently; the default character
 	// set is now utf8mb4; the default collation for utf8mb4 has also changed.
-	if s.d.Flavor().Min(tengo.FlavorMariaDB102) {
+	if s.d.Flavor().MinMariaDB(10, 2) {
 		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mariadb102", 1)
-	} else if s.d.Flavor().Matches(tengo.FlavorMySQL55) {
+	} else if s.d.Flavor().IsMySQL(5, 5) {
 		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mysql55", 1)
-	} else if s.d.Flavor().Min(tengo.FlavorMySQL80) {
+	} else if s.d.Flavor().MinMySQL(8) {
 		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mysql80", 1)
 	}
 
@@ -291,10 +291,9 @@ func (s *SkeemaIntegrationSuite) compareDirOptionFiles(t *testing.T, a, b *fs.Di
 				} else if fileCharSet == "utf8" {
 					// MySQL 8.0.29 uses "utf8mb3" but keeps collations as-is; MySQL 8.0.30+
 					// and MariaDB 10.6+ use "utf8mb3" and also changes collation names to match
-					mysql8029 := tengo.FlavorMySQL80.Dot(29)
-					if flavor := s.d.Flavor(); flavor.Min(mysql8029) || flavor.Min(tengo.FlavorMariaDB106) {
+					if flavor := s.d.Flavor(); flavor.MinMySQL(8, 0, 29) || flavor.MinMariaDB(10, 6) {
 						a.OptionFile.SetOptionValue(section, "default-character-set", "utf8mb3")
-						if !flavor.Matches(mysql8029) {
+						if !flavor.IsMySQL(8, 0, 29) {
 							collation, _ := a.OptionFile.OptionValue("default-collation")
 							a.OptionFile.SetOptionValue(section, "default-collation", strings.Replace(collation, "utf8_", "utf8mb3_", 1))
 						}

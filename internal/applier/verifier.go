@@ -56,7 +56,7 @@ func VerifyDiff(altersInDiff []*tengo.TableDiff, vopts VerifierOptions) error {
 		SkipPreDropAlters:      true,                         // ignore DROP PARTITIONs that were only generated to speed up a DROP TABLE
 		Flavor:                 vopts.Flavor,
 	}
-	if mods.Flavor.Matches(tengo.FlavorMySQL55) {
+	if mods.Flavor.IsMySQL(5, 5) {
 		mods.AlgorithmClause = "" // MySQL 5.5 doesn't support ALGORITHM clause
 	}
 

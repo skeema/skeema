@@ -46,7 +46,7 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 
 	// If this flavor supports using mysql.proc to bulk-fetch routines, confirm
 	// the result is identical to using the individual SHOW CREATE queries
-	if !s.d.Flavor().Min(FlavorMySQL80) {
+	if !s.d.Flavor().MinMySQL(8) {
 		db, err := s.d.ConnectionPool("testing", "")
 		if err != nil {
 			t.Fatalf("Unexpected error from ConnectionPool: %v", err)
@@ -56,7 +56,7 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 			t.Fatalf("Unexpected error from querySchemaRoutines: %v", err)
 		}
 		oldFlavor := s.d.Flavor()
-		s.d.ForceFlavor(FlavorMySQL80)
+		s.d.ForceFlavor(ParseFlavor("mysql:8.0"))
 		slowResults, err := querySchemaRoutines(context.Background(), db, "testing", s.d.Flavor())
 		s.d.ForceFlavor(oldFlavor)
 		if err != nil {
@@ -70,7 +70,7 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 	}
 
 	// Coverage for MariaDB 10.8 IN/OUT/INOUT params in funcs
-	if fl := s.d.Flavor(); fl.Min(FlavorMariaDB108) {
+	if fl := s.d.Flavor(); fl.MinMariaDB(10, 8) {
 		s.SourceTestSQL(t, "maria108.sql")
 		schema := s.GetSchema(t, "testing")
 		funcsByName := schema.FunctionsByName()
@@ -173,7 +173,7 @@ func TestSchemaDiffRoutines(t *testing.T) {
 	if rd.DiffType() != DiffTypeAlter {
 		t.Fatalf("Incorrect type of diff returned: expected %s, found %s", DiffTypeAlter, rd.DiffType())
 	}
-	mods := StatementModifiers{Flavor: FlavorMySQL57}
+	mods := StatementModifiers{Flavor: ParseFlavor("mysql:5.7")}
 	if stmt, err := rd.Statement(mods); err != nil || stmt != "ALTER PROCEDURE `"+s1r2.Name+"` SQL SECURITY DEFINER COMMENT 'a comment'" {
 		t.Errorf("Unexpected return from Statement: %s, %v", stmt, err)
 	}
@@ -201,7 +201,7 @@ func TestSchemaDiffRoutines(t *testing.T) {
 	if rd.To != &s1r2 || rd.ObjectKey().Name != s1r2.Name {
 		t.Error("Pointer in diff does not point to expected value")
 	}
-	mods = StatementModifiers{Flavor: FlavorMySQL57}
+	mods = StatementModifiers{Flavor: ParseFlavor("mysql:5.7")}
 	for _, od := range sd.ObjectDiffs() {
 		stmt, err := od.Statement(mods)
 		if stmt != "" || err != nil {
@@ -221,7 +221,7 @@ func TestSchemaDiffRoutines(t *testing.T) {
 			t.Errorf("Unexpected return from Statement: %s / %v", stmt, err)
 		}
 	}
-	mods.Flavor = FlavorMariaDB101
+	mods.Flavor = ParseFlavor("mariadb:10.1")
 	mods.AllowUnsafe = false
 	for n, od := range sd.ObjectDiffs() {
 		stmt, err := od.Statement(mods)

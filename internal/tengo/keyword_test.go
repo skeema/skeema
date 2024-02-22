@@ -6,9 +6,9 @@ import (
 )
 
 func TestReservedWordMap(t *testing.T) {
-	words57 := ReservedWordMap(FlavorMySQL57)
-	words80 := ReservedWordMap(FlavorMySQL80)
-	words80p := ReservedWordMap(FlavorPercona80)
+	words57 := ReservedWordMap(ParseFlavor("mysql:5.7"))
+	words80 := ReservedWordMap(ParseFlavor("mysql:8.0"))
+	words80p := ReservedWordMap(ParseFlavor("percona:8.0"))
 
 	// Confirm the maps are different; 8.0 map should be larger than 5.7 map
 	if len(words80) <= len(words57) {
@@ -23,9 +23,9 @@ func TestReservedWordMap(t *testing.T) {
 	// Confirm that two identical calls return a reference to the same underlying
 	// map, whereas two different flavor values do not
 	prevLen80p := len(words80p)
-	words80dupe1 := ReservedWordMap(FlavorMySQL80)
+	words80dupe1 := ReservedWordMap(ParseFlavor("mysql:8.0"))
 	words80["FAKE FOR TEST"] = true
-	words80dupe2 := ReservedWordMap(FlavorMySQL80)
+	words80dupe2 := ReservedWordMap(ParseFlavor("mysql:8.0"))
 	if len(words80) != len(words80dupe1) || len(words80) != len(words80dupe2) {
 		t.Errorf("Expected maps for identical flavor value to reference the same data, but they did not: counts %d, %d, %d", len(words80), len(words80dupe1), len(words80dupe2))
 	}
@@ -67,26 +67,26 @@ func TestVendorReservedWordMap(t *testing.T) {
 func TestIsReservedWord(t *testing.T) {
 	cases := []struct {
 		word     string
-		flavor   Flavor
+		flavor   string
 		reserved bool
 	}{
-		{"add", FlavorMySQL55, true},
-		{"add", FlavorMariaDB102, true},
-		{"add", FlavorUnknown, true},
-		{"generated", FlavorMySQL56, false},
-		{"generated", FlavorMySQL57, true},
-		{"GENerated", FlavorPercona57, true},
-		{"GENERATED", FlavorMySQL80, true},
-		{"generated", FlavorMariaDB101, false},
-		{"generated", FlavorMariaDB1010, false},
-		{"asdf", FlavorMySQL80, false},
-		{"ASDF", FlavorMariaDB1011, false},
-		{"offset", FlavorPercona80, false},
-		{"offset", FlavorMariaDB105, false},
-		{"offset", FlavorMariaDB106, true},
+		{"add", "mysql:5.5", true},
+		{"add", "mariadb:10.2", true},
+		{"add", "", true},
+		{"generated", "mysql:5.6", false},
+		{"generated", "mysql:5.7", true},
+		{"GENerated", "percona:5.7", true},
+		{"GENERATED", "mysql:8.0", true},
+		{"generated", "mariadb:10.1", false},
+		{"generated", "mariadb:10.10", false},
+		{"asdf", "mysql:8.0", false},
+		{"ASDF", "mariadb:10.11", false},
+		{"offset", "percona:8.0", false},
+		{"offset", "mariadb:10.5", false},
+		{"offset", "mariadb:10.6", true},
 	}
 	for _, tc := range cases {
-		if actual := IsReservedWord(tc.word, tc.flavor); actual != tc.reserved {
+		if actual := IsReservedWord(tc.word, ParseFlavor(tc.flavor)); actual != tc.reserved {
 			t.Errorf("IsReservedWord(%q, %q) returned %t, expected %t", tc.word, tc.flavor, actual, tc.reserved)
 		}
 	}

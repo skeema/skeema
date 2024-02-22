@@ -71,7 +71,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 			seenUCA1400 = true
 		}
 	}
-	if s.d.Flavor().Min(FlavorMariaDB1010) && !seenUCA1400 {
+	if s.d.Flavor().MinMariaDB(10, 10) && !seenUCA1400 {
 		t.Error("Failed to introspect table with a uca1400 collation")
 	}
 
@@ -103,7 +103,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Test introspection of default expressions, if flavor supports them
-	if flavor.Min(FlavorMariaDB102) || flavor.Min(FlavorMySQL80.Dot(13)) {
+	if flavor.MinMariaDB(10, 2) || flavor.MinMySQL(8, 0, 13) {
 		table := getTable(t, schema, "testdefaults")
 		// Ensure 3-byte chars in default expression are introspected properly
 		if !strings.Contains(table.CreateStatement, "\u20AC") {
@@ -147,7 +147,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Test advanced index functionality in MySQL 8+
-	if flavor.Min(FlavorMySQL80) {
+	if flavor.MinMySQL(8) {
 		table := getTable(t, schema, "my8idx")
 		if !strings.Contains(table.CreateStatement, "\u20AC") {
 			t.Errorf("Expected functional index expression to contain 3-byte char \u20AC, but it did not. CREATE statement:\n%s", table.CreateStatement)
@@ -165,7 +165,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		if idx.Parts[0].Expression != "" || idx.Parts[1].Expression == "" {
 			t.Errorf("Unexpected index part expressions found: [0].Expression=%q, [1].Expression=%q", idx.Parts[0].Expression, idx.Parts[1].Expression)
 		}
-	} else if flavor.Min(FlavorMariaDB106) {
+	} else if flavor.MinMariaDB(10, 6) {
 		table := getTable(t, schema, "maria106idx")
 		idx := table.SecondaryIndexes[0]
 		if !idx.Invisible {
@@ -174,7 +174,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Test invisible column support in flavors supporting it
-	if flavor.Min(FlavorMariaDB103) || flavor.Min(FlavorMySQL80.Dot(23)) {
+	if flavor.MinMariaDB(10, 3) || flavor.MinMySQL(8, 0, 23) {
 		table := getTable(t, schema, "invistest")
 		for n, col := range table.Columns {
 			expectInvis := (n == 0 || n == 4 || n == 5)
@@ -186,7 +186,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Include coverage for fulltext parsers if MySQL 5.7+. (Although these are
 	// supported in other flavors too, no alternative parsers ship with them.)
-	if flavor.Min(FlavorMySQL57) {
+	if flavor.MinMySQL(5, 7) {
 		table := getTable(t, schema, "ftparser")
 		indexes := table.SecondaryIndexesByName()
 		if idx := indexes["ftdesc"]; idx.FullTextParser != "ngram" || idx.Type != "FULLTEXT" {
@@ -201,12 +201,12 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Coverage for column compression
-	if flavor.Min(FlavorPercona56.Dot(33)) {
+	if flavor.IsPercona() && flavor.MinMySQL(5, 6, 33) {
 		table := getTable(t, schema, "colcompr")
 		if table.Columns[1].Compression != "COMPRESSED" {
 			t.Errorf("Unexpected value for compression column attribute: found %q", table.Columns[1].Compression)
 		}
-	} else if flavor.Min(FlavorMariaDB103) {
+	} else if flavor.MinMariaDB(10, 3) {
 		table := getTable(t, schema, "colcompr")
 		if table.Columns[1].Compression != "COMPRESSED" {
 			t.Errorf("Unexpected value for compression column attribute: found %q", table.Columns[1].Compression)
@@ -238,7 +238,8 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 // differs between these two vendors, and meanwhile MySQL has no equivalent
 // feature yet at all.
 func TestColumnCompression(t *testing.T) {
-	table := supportedTableForFlavor(FlavorPercona57)
+	flavor := ParseFlavor("percona:5.7")
+	table := supportedTableForFlavor(flavor)
 	if table.Columns[3].Name != "metadata" || table.Columns[3].Compression != "" {
 		t.Fatal("Test fixture has changed without corresponding update to this test's logic")
 	}
@@ -248,8 +249,8 @@ func TestColumnCompression(t *testing.T) {
 	if table.Columns[3].Compression != "COMPRESSED" {
 		t.Errorf("Expected column's compression to be %q, instead found %q", "COMPRESSED", table.Columns[3].Compression)
 	}
-	if table.GeneratedCreateStatement(FlavorPercona57) != table.CreateStatement {
-		t.Errorf("Unexpected mismatch in generated CREATE TABLE:\nGeneratedCreateStatement:\n%s\nCreateStatement:\n%s", table.GeneratedCreateStatement(FlavorPercona57), table.CreateStatement)
+	if table.GeneratedCreateStatement(flavor) != table.CreateStatement {
+		t.Errorf("Unexpected mismatch in generated CREATE TABLE:\nGeneratedCreateStatement:\n%s\nCreateStatement:\n%s", table.GeneratedCreateStatement(flavor), table.CreateStatement)
 	}
 
 	table.CreateStatement = strings.Replace(table.CreateStatement, "COMPRESSED */", "COMPRESSED WITH COMPRESSION_DICTIONARY `foobar` */", 1)
@@ -257,40 +258,42 @@ func TestColumnCompression(t *testing.T) {
 	if table.Columns[3].Compression != "COMPRESSED WITH COMPRESSION_DICTIONARY `foobar`" {
 		t.Errorf("Expected column's compression to be %q, instead found %q", "COMPRESSED WITH COMPRESSION_DICTIONARY `foobar`", table.Columns[3].Compression)
 	}
-	if table.GeneratedCreateStatement(FlavorPercona57) != table.CreateStatement {
-		t.Errorf("Unexpected mismatch in generated CREATE TABLE:\nGeneratedCreateStatement:\n%s\nCreateStatement:\n%s", table.GeneratedCreateStatement(FlavorPercona57), table.CreateStatement)
+	if table.GeneratedCreateStatement(flavor) != table.CreateStatement {
+		t.Errorf("Unexpected mismatch in generated CREATE TABLE:\nGeneratedCreateStatement:\n%s\nCreateStatement:\n%s", table.GeneratedCreateStatement(flavor), table.CreateStatement)
 	}
 
 	// Now indirectly test Column.Definition() for MariaDB
-	table = supportedTableForFlavor(FlavorMariaDB103)
+	flavor = ParseFlavor("mariadb:10.3")
+	table = supportedTableForFlavor(flavor)
 	table.CreateStatement = strings.Replace(table.CreateStatement, "`metadata` text", "`metadata` text /*!100301 COMPRESSED*/", 1)
 	table.Columns[3].Compression = "COMPRESSED"
-	if table.GeneratedCreateStatement(FlavorMariaDB103) != table.CreateStatement {
-		t.Errorf("Unexpected mismatch in generated CREATE TABLE:\nGeneratedCreateStatement:\n%s\nCreateStatement:\n%s", table.GeneratedCreateStatement(FlavorMariaDB103), table.CreateStatement)
+	if table.GeneratedCreateStatement(flavor) != table.CreateStatement {
+		t.Errorf("Unexpected mismatch in generated CREATE TABLE:\nGeneratedCreateStatement:\n%s\nCreateStatement:\n%s", table.GeneratedCreateStatement(flavor), table.CreateStatement)
 	}
 }
 
 // TestFixFulltextIndexParsers confirms CREATE TABLE parsing for WITH PARSER
 // clauses works properly.
 func TestFixFulltextIndexParsers(t *testing.T) {
-	table := anotherTableForFlavor(FlavorMySQL57)
+	flavor := ParseFlavor("mysql:5.7")
+	table := anotherTableForFlavor(flavor)
 	if table.SecondaryIndexes[0].Type != "BTREE" || table.SecondaryIndexes[0].FullTextParser != "" {
 		t.Fatal("Test fixture has changed without corresponding update to this test's logic")
 	}
 
 	// Confirm no parser = no change from fix
 	table.SecondaryIndexes[0].Type = "FULLTEXT"
-	table.CreateStatement = table.GeneratedCreateStatement(FlavorMySQL57)
-	fixFulltextIndexParsers(&table, FlavorMySQL57)
+	table.CreateStatement = table.GeneratedCreateStatement(flavor)
+	fixFulltextIndexParsers(&table, flavor)
 	if table.SecondaryIndexes[0].FullTextParser != "" {
 		t.Errorf("fixFulltextIndexParsers unexpectedly set parser to %q instead of %q", table.SecondaryIndexes[0].FullTextParser, "")
 	}
 
 	// Confirm parser extracted correctly from fix
 	table.SecondaryIndexes[0].FullTextParser = "ngram"
-	table.CreateStatement = table.GeneratedCreateStatement(FlavorMySQL57)
+	table.CreateStatement = table.GeneratedCreateStatement(flavor)
 	table.SecondaryIndexes[0].FullTextParser = ""
-	fixFulltextIndexParsers(&table, FlavorMySQL57)
+	fixFulltextIndexParsers(&table, flavor)
 	if table.SecondaryIndexes[0].FullTextParser != "ngram" {
 		t.Errorf("fixFulltextIndexParsers unexpectedly set parser to %q instead of %q", table.SecondaryIndexes[0].FullTextParser, "ngram")
 	}
@@ -299,21 +302,22 @@ func TestFixFulltextIndexParsers(t *testing.T) {
 // TestFixBlobDefaultExpression confirms CREATE TABLE parsing works for blob/
 // text default expressions in versions which omit them from information_schema.
 func TestFixBlobDefaultExpression(t *testing.T) {
-	table := aTableForFlavor(FlavorMySQL80, 0)
+	flavor := ParseFlavor("mysql:8.0")
+	table := aTableForFlavor(flavor, 0)
 	defExpr := "(CONCAT('hello ', 'world'))"
 	table.Columns[1].Default = defExpr
-	table.CreateStatement = table.GeneratedCreateStatement(FlavorMySQL80)
+	table.CreateStatement = table.GeneratedCreateStatement(flavor)
 	table.Columns[1].Default = "(!!!BLOBDEFAULT!!!)"
-	fixDefaultExpression(&table, FlavorMySQL80)
+	fixDefaultExpression(&table, flavor)
 	if table.Columns[1].Default != defExpr {
 		t.Errorf("fixDefaultExpression did not work or set default to unexpected value %q", table.Columns[1].Default)
 	}
 
 	// Confirm regex still correct with stuff after the default
 	table.Columns[1].Comment = "hi i am a comment"
-	table.CreateStatement = table.GeneratedCreateStatement(FlavorMySQL80)
+	table.CreateStatement = table.GeneratedCreateStatement(flavor)
 	table.Columns[1].Default = "(!!!BLOBDEFAULT!!!)"
-	fixDefaultExpression(&table, FlavorMySQL80)
+	fixDefaultExpression(&table, flavor)
 	if table.Columns[1].Default != defExpr {
 		t.Errorf("fixDefaultExpression did not work after adding comment, default is unexpected value %q", table.Columns[1].Default)
 	}
@@ -321,7 +325,7 @@ func TestFixBlobDefaultExpression(t *testing.T) {
 
 // TestFixShowCharSets provides unit test coverage for fixShowCharSets
 func TestFixShowCharSets(t *testing.T) {
-	flavor := FlavorMySQL80.Dot(24)
+	flavor := ParseFlavor("mysql:8.0.24")
 	stmt := strings.ReplaceAll(`CREATE TABLE ~many_permutations~ (
   ~a~ char(10) COLLATE utf8_unicode_ci DEFAULT NULL,
   ~b~ char(10) CHARACTER SET latin1 DEFAULT NULL,
