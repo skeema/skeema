@@ -680,14 +680,19 @@ func TestAlterTableStatementVirtualColValidation(t *testing.T) {
 }
 
 func TestModifyColumnUnsafe(t *testing.T) {
-	assertUnsafe := func(type1, type2 string, expected bool) {
+	assertUnsafeWithMods := func(type1, type2 string, mods StatementModifiers, expected bool) {
+		t.Helper()
 		mc := ModifyColumn{
 			OldColumn: &Column{TypeInDB: type1},
 			NewColumn: &Column{TypeInDB: type2},
 		}
-		if actual, _ := mc.Unsafe(StatementModifiers{}); actual != expected {
+		if actual, _ := mc.Unsafe(mods); actual != expected {
 			t.Errorf("For %s -> %s, expected unsafe=%t, instead found unsafe=%t", type1, type2, expected, actual)
 		}
+	}
+	assertUnsafe := func(type1, type2 string, expected bool) {
+		t.Helper()
+		assertUnsafeWithMods(type1, type2, StatementModifiers{}, expected)
 	}
 
 	expectUnsafe := [][]string{
@@ -730,7 +735,9 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		{"binary(17)", "inet6"},
 		{"inet6", "varbinary(16)"},
 		{"inet6", "varchar(38)"},
+		{"inet6", "inet4"},
 		{"inet4", "char(10)"},
+		{"inet4", "inet6"}, // unsafe with empty StatementModifiers; see add'l testing later below
 		{"char(31)", "uuid"},
 		{"uuid", "binary(15)"},
 	}
@@ -829,6 +836,14 @@ func TestModifyColumnUnsafe(t *testing.T) {
 	if unsafe, _ := mc.Unsafe(StatementModifiers{}); !unsafe {
 		t.Error("Expected change of SRID to be unsafe, but Unsafe() returned false")
 	}
+
+	// Special case: inet4 to inet6 is safe only in MariaDB 11.3+; opposite is
+	// still always unsafe
+	mods := StatementModifiers{Flavor: ParseFlavor("mariadb:11.2.3")}
+	assertUnsafeWithMods("inet4", "inet6", mods, true)
+	mods.Flavor = ParseFlavor("mariadb:11.3.2")
+	assertUnsafeWithMods("inet4", "inet6", mods, false)
+	assertUnsafeWithMods("inet6", "inet4", mods, true)
 }
 
 func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {

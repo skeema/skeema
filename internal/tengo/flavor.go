@@ -348,7 +348,7 @@ func (fl Flavor) Supported() bool {
 	case VendorMySQL:
 		return fl.Version.AtLeast(Version{5, 5}) && fl.Version.Below(Version{8, 4}) // MySQL 5.5-8.3 is supported
 	case VendorMariaDB:
-		return fl.Version.AtLeast(Version{10, 1}) && fl.Version.Below(Version{11, 3}) // MariaDB 10.1-11.2 is supported
+		return fl.Version.AtLeast(Version{10, 1}) && fl.Version.Below(Version{11, 4}) // MariaDB 10.1-11.3 is supported
 	default:
 		return false
 	}

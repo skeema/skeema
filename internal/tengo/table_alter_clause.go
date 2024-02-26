@@ -346,7 +346,7 @@ func (mc ModifyColumn) Clause(mods StatementModifiers) string {
 // ModifyColumn's safety depends on the nature of the column change; for example,
 // increasing the size of a varchar is safe, but decreasing the size or (in most
 // cases) changing the column type entirely is considered unsafe.
-func (mc ModifyColumn) Unsafe(_ StatementModifiers) (unsafe bool, reason string) {
+func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason string) {
 	genericReason := "modification to column " + mc.OldColumn.Name + " may require lossy data conversion"
 
 	// Simple cases:
@@ -571,6 +571,11 @@ func (mc ModifyColumn) Unsafe(_ StatementModifiers) (unsafe bool, reason string)
 		return false, ""
 	}
 	if isConversionBetween("uuid", "binary(16)", "char(32)", "varchar(32)", "char(36)", "varchar(36)") { // MariaDB 10.7+ uuid type
+		return false, ""
+	}
+	// Special case: inet4 to inet6 (and not vice versa) is safe in MariaDB 11.3+
+	// but not earlier versions
+	if oldType == "inet4" && newType == "inet6" && mods.Flavor.MinMariaDB(11, 3) {
 		return false, ""
 	}
 
