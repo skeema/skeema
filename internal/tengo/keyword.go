@@ -333,6 +333,7 @@ var (
 	mariaDB102 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2, 0}}
 	mariaDB103 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3, 0}}
 	mariaDB106 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 6, 0}}
+	mariaDB107 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7, 0}}
 )
 
 // Mapping of lowercased reserved words to the flavor(s) that added them. A
@@ -346,6 +347,9 @@ var (
 //     are inconsistently documented by the MariaDB manual, so 10.1 is used as a
 //     guess for: "delete_domain_id", "page_checksum", "parse_vcol_expr", and
 //     "position".
+//   - This list assumes the information in the MySQL and MariaDB manuals is
+//     correct, but that is not always the case. Please open a pull request if
+//     you discover a missing or incorrect entry.
 //   - We don't yet track anything specific to a Variant (e.g. Percona Server).
 //   - Some situational cases are omitted, for example "window" is a MariaDB
 //     reserved word only in the context of table name *aliases*, which largely
@@ -386,7 +390,7 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"recursive":    {mySQL80, mariaDB102},
 	"row":          {mySQL80},
 	"rows":         {mySQL80, mariaDB102},
-	"row_number":   {mySQL80},
+	"row_number":   {mySQL80, mariaDB107},
 	"system":       {mySQL80},
 	"window":       {mySQL80}, // see comment above re: MariaDB
 
@@ -399,7 +403,6 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"master_heartbeat_period": {mariaDB101},
 	"page_checksum":           {mariaDB101}, // actual version unclear from docs, see comment above
 	"parse_vcol_expr":         {mariaDB101}, // actual version unclear from docs, see comment above
-	"position":                {mariaDB101}, // actual version unclear from docs, see comment above
 	"ref_system_id":           {mariaDB101},
 	"returning":               {mariaDB101},
 	"slow":                    {mariaDB101},
