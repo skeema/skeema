@@ -311,14 +311,16 @@ func CreatePlanForTarget(t *Target, diff *tengo.SchemaDiff, mods tengo.Statement
 		if ddl != nil {
 			plan.Statements = append(plan.Statements, ddl)
 			plan.DiffKeys = append(plan.DiffKeys, key)
+			if tengo.IsUnsafeDiff(err) {
+				plan.Unsafe = append(plan.Unsafe, UnsafeStatement{
+					Key:       key,
+					Statement: ddl.stmt,
+					Reason:    err.Error(),
+				})
+			}
 		}
-		if tengo.IsUnsafeDiff(err) {
-			plan.Unsafe = append(plan.Unsafe, UnsafeStatement{
-				Key:       key,
-				Statement: ddl.stmt,
-				Reason:    err.Error(),
-			})
-		} else if err != nil && fatalErr == nil {
+		if err != nil && fatalErr == nil && !tengo.IsUnsafeDiff(err) {
+			// Track first non-unsupported, non-unsafe error for use in this function's return value
 			fatalErr = err
 		}
 	}
