@@ -13,7 +13,7 @@ assignees: ''
 **Environment**
 - Skeema version and OS: <!-- For example, "v1.11.0-community running on MacOS" -->
 - Database vendor, version, OS/platform: <!-- e.g. "MySQL 8.0.32 running on RDS" -->
-- Any other environmental notes or special configuration:
+- Any other environmental notes, special Skeema configuration, or Skeema warnings logged about your database server version:
 
 **To Reproduce**
 <!-- Steps to reproduce the behavior. -->

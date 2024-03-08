@@ -6,9 +6,11 @@ Thank you for your interest in contributing to Skeema! This document provides gu
 
 ### Bug reports
 
-Please provide as much information as possible about reproduction steps, as well as your environment (Skeema version, database version/vendor/OS/platform). Feel free to redact private company information from pastes or screenshots.
+Please provide as much information as possible about reproduction steps, as well as your environment: Skeema version, database version/vendor, and OS/platform for both client and server sides. Be specific, as seemingly minor details (Intel vs ARM, RDS vs Aurora, etc) can make a huge difference in our ability to reproduce your situation. If any general warning messages were logged by Skeema, especially regarding your database server version, definitely note them in your report. Feel free to redact private company information from pastes or screenshots.
 
 Skeema is a completely bootstrapped effort, and our ability to support free Skeema Community edition users is limited. If your company depends on Skeema, please consider subscribing to a paid [Premium](https://www.skeema.io/download/) product to support Skeema's continued development. Bug reports from paying customers are prioritized above all other work.
+
+Private technical support (outside of GitHub) is available to [Skeema Max](https://www.skeema.io/download/) subscribers. Please refer to the [Premium edition customer portal](https://app.skeema.io/portal) or [license agreement](https://www.skeema.io/cli/subscription/LICENSE) for more information.
 
 ### Feature requests
 
