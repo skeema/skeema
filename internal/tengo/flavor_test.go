@@ -401,26 +401,44 @@ func TestFlavorIsAurora(t *testing.T) {
 	}
 }
 
-func TestFlavorSupported(t *testing.T) {
+func TestFlavorTooNew(t *testing.T) {
+	// Temporarily override the globals storing the latest version info, so that
+	// this test logic doesn't need to change with each server release series
+	origLatestMySQL, origLatestMariaDB := LatestMySQLVersion, LatestMariaDBVersion
+	t.Cleanup(func() {
+		LatestMySQLVersion, LatestMariaDBVersion = origLatestMySQL, origLatestMariaDB
+	})
+	LatestMySQLVersion = Version{8, 2}
+	LatestMariaDBVersion = Version{11, 2}
+
 	cases := map[string]bool{
-		"mysql:5.5":        true,
-		"mysql:8.0":        true,
-		"mysql:8.0.123":    true,
+		"mysql:5.5":        false,
+		"mysql:8.0":        false,
+		"mysql:8.0.123":    false,
+		"mysql:8.2":        false,
+		"mysql:8.2.0":      false,
+		"mysql:8.2.99":     false,
 		"mysql:8.3":        true,
-		"percona:5.6":      true,
-		"mariadb:10.1":     true,
-		"mariadb:10.4.22":  true,
-		"mariadb:10.7":     true,
+		"mysql:8.12":       true,
+		"mysql:10.6":       true,
+		"percona:5.6":      false,
+		"percona:8.2":      false,
+		"percona:8.3":      true,
+		"mariadb:10.1":     false,
+		"mariadb:10.4.22":  false,
+		"mariadb:10.7":     false,
+		"mariadb:11.2.2":   false,
+		"mariadb:11.3":     true,
+		"mariadb:11.3.2":   true,
+		"mariadb:11.12.13": true,
 		"unknown:0.0":      false,
 		"unknown:5.5.20":   false,
-		"mysql:8.12":       false,
-		"mysql:10.6":       false,
-		"mariadb:11.12.13": false,
 		"mysql:0.0":        false,
+		"mysql:5.1":        false,
 	}
 	for flavor, expected := range cases {
-		if ParseFlavor(flavor).Supported() != expected {
-			t.Errorf("Expected %s Supported() to return %t, but it did not", flavor, expected)
+		if ParseFlavor(flavor).TooNew() != expected {
+			t.Errorf("Expected %s TooNew() to return %t, but it did not", flavor, expected)
 		}
 	}
 }
@@ -430,10 +448,13 @@ func TestFlavorKnown(t *testing.T) {
 		"mysql:5.5":        true,
 		"mysql:8.0":        true,
 		"mysql:8.0.123":    true,
+		"mysql:5.1.40":     false,
 		"percona:5.6":      true,
+		"percona:5.1":      false,
 		"mariadb:10.1":     true,
 		"mariadb:10.4.22":  true,
 		"mariadb:10.7":     true,
+		"mariadb:10.0.20":  false,
 		"unknown:0.0":      false,
 		"unknown:5.5.20":   false,
 		"mysql:8.12":       true,

@@ -7,50 +7,26 @@ import (
 	"unicode"
 )
 
-///// Vendor ///////////////////////////////////////////////////////////////////
-
-// Vendor represents an upstream DBMS software. Vendors are used for DBMS
-// projects with separate codebases and versioning practices.
-// For projects that track an upstream Vendor's codebase and apply changes as a
-// patch-set, see Variant instead, later in this file.
-type Vendor uint16
-
-// Constants representing different supported vendors
-const (
-	VendorUnknown Vendor = iota
-	VendorMySQL
-	VendorMariaDB
-)
-
-func (v Vendor) String() string {
-	switch v {
-	case VendorMySQL:
-		return "mysql"
-	case VendorMariaDB:
-		return "mariadb"
-	default:
-		return "unknown"
-	}
-}
-
-// ParseVendor converts a string to a Vendor value.
-func ParseVendor(s string) Vendor {
-	// The following loop assumes VendorUnknown==0 (and skips it by starting at 1),
-	// but otherwise makes no assumptions about the number of vendors; it loops
-	// until it hits a positive number that also yields "unknown" by virtue of
-	// the default clause in Vendor.String()'s switch statement.
-	for n := 1; Vendor(n).String() != VendorUnknown.String(); n++ {
-		if Vendor(n).String() == s {
-			return Vendor(n)
-		}
-	}
-	return VendorUnknown
-}
-
 ///// Version //////////////////////////////////////////////////////////////////
 
 // Version represents a (Major, Minor, Patch) version number tuple.
 type Version [3]uint16
+
+// Variables representing the latest major.minor releases of MySQL and MariaDB
+// at the time of this release. These intentionally exclude patch release
+// numbers; corresponding logic handles this appropriately.
+var (
+	LatestMySQLVersion   = Version{8, 3}
+	LatestMariaDBVersion = Version{11, 3}
+)
+
+// Variables representing the oldest major.minor releases of MySQL and MariaDB
+// supported by this software. These intentionally exclude patch release
+// numbers; corresponding logic handles this appropriately.
+var (
+	OldestSupportedMySQLVersion   = Version{5, 5}
+	OldestSupportedMariaDBVersion = Version{10, 1}
+)
 
 // Major returns the major component of the version number.
 func (ver Version) Major() uint16 { return ver[0] }
@@ -129,6 +105,46 @@ func ParseVersion(s string) (ver Version, err error) {
 		ver[n] = uint16(part)
 	}
 	return
+}
+
+///// Vendor ///////////////////////////////////////////////////////////////////
+
+// Vendor represents an upstream DBMS software. Vendors are used for DBMS
+// projects with separate codebases and versioning practices.
+// For projects that track an upstream Vendor's codebase and apply changes as a
+// patch-set, see Variant instead, later in this file.
+type Vendor uint16
+
+// Constants representing different supported vendors
+const (
+	VendorUnknown Vendor = iota
+	VendorMySQL
+	VendorMariaDB
+)
+
+func (v Vendor) String() string {
+	switch v {
+	case VendorMySQL:
+		return "mysql"
+	case VendorMariaDB:
+		return "mariadb"
+	default:
+		return "unknown"
+	}
+}
+
+// ParseVendor converts a string to a Vendor value.
+func ParseVendor(s string) Vendor {
+	// The following loop assumes VendorUnknown==0 (and skips it by starting at 1),
+	// but otherwise makes no assumptions about the number of vendors; it loops
+	// until it hits a positive number that also yields "unknown" by virtue of
+	// the default clause in Vendor.String()'s switch statement.
+	for n := 1; Vendor(n).String() != VendorUnknown.String(); n++ {
+		if Vendor(n).String() == s {
+			return Vendor(n)
+		}
+	}
+	return VendorUnknown
 }
 
 ///// Variant //////////////////////////////////////////////////////////////////
@@ -342,22 +358,40 @@ func (fl Flavor) IsAurora(versionParts ...uint16) bool {
 	return fl.HasVariant(VariantAurora) && fl.IsMySQL(versionParts...)
 }
 
-// Supported returns true if package tengo officially supports this flavor.
-func (fl Flavor) Supported() bool {
+// TooNew returns true if the flavor's major.minor version exceeds the highest-
+// available supported version at the time of this software's release.
+// If the vendor is unknown, this method always returns false.
+func (fl Flavor) TooNew() bool {
+	var comparison Version
 	switch fl.Vendor {
 	case VendorMySQL:
-		return fl.Version.AtLeast(Version{5, 5}) && fl.Version.Below(Version{8, 4}) // MySQL 5.5-8.3 is supported
+		comparison = LatestMySQLVersion
 	case VendorMariaDB:
-		return fl.Version.AtLeast(Version{10, 1}) && fl.Version.Below(Version{11, 4}) // MariaDB 10.1-11.3 is supported
+		comparison = LatestMariaDBVersion
 	default:
 		return false
 	}
+
+	// Bump the minor release by 1 so that version comparison works properly
+	// regardless of patch release number. For example, if LatestMariaDBVersion
+	// is {11, 3, 0}, then TooNew should return true for 11.4.X, and false for
+	// 11.3.X.
+	comparison[1]++ // safe since Version is an array (copied by value), *not* a slice (copied by reference)
+	return fl.Version.AtLeast(comparison)
 }
 
 // Known returns true if both the vendor and major version of this flavor were
-// parsed properly
+// parsed properly, and the version isn't lower than the minimum supported by
+// this package.
 func (fl Flavor) Known() bool {
-	return fl.Vendor != VendorUnknown && fl.Version.Major() > 0
+	switch fl.Vendor {
+	case VendorMySQL:
+		return fl.Version.AtLeast(OldestSupportedMySQLVersion)
+	case VendorMariaDB:
+		return fl.Version.AtLeast(OldestSupportedMariaDBVersion)
+	default:
+		return false
+	}
 }
 
 ///// Flavor capability methods ////////////////////////////////////////////////

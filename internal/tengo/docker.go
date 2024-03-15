@@ -199,7 +199,7 @@ func GetDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstance,
 	// check intentionally ignores point release numbers.
 	if opts.Image != "" {
 		adjustedImage := simplifiedImageName(opts.Image)
-		if imageFlavor := ParseFlavor(adjustedImage); imageFlavor.Supported() && imageFlavor.Family() != di.Flavor().Family() {
+		if imageFlavor := ParseFlavor(adjustedImage); imageFlavor.Known() && imageFlavor.Family() != di.Flavor().Family() {
 			return nil, fmt.Errorf("Container %s based on unexpected flavor: expected %s, found %s", opts.Name, imageFlavor.Family(), di.Flavor().Family())
 		}
 	}

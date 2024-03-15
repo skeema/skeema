@@ -159,6 +159,8 @@ func createHostOptionFile(cfg *mybase.Config, hostDir *fs.Dir, inst *tengo.Insta
 	}
 	if flavor := inst.Flavor(); flavor.Known() {
 		hostOptionFile.SetOptionValue(environment, "flavor", flavor.Family().String())
+	} else {
+		log.Warnf(`Unable to automatically determine database server's vendor/version. To set manually, use the "flavor" option in ` + hostOptionFile.Path())
 	}
 	for _, persistOpt := range []string{"user", "ignore-schema", "ignore-table", "ignore-proc", "ignore-func", "connect-options"} {
 		if cfg.OnCLI(persistOpt) {

@@ -73,10 +73,10 @@ func AddEnvHandler(cfg *mybase.Config) error {
 		dir.OptionFile.SetOptionValue(environment, "port", strconv.Itoa(inst.Port))
 	}
 
-	if flavor := inst.Flavor(); !flavor.Known() {
-		log.Warnf("Unable to automatically determine database vendor or version. To set manually, use the \"flavor\" option in %s", dir.OptionFile)
-	} else {
+	if flavor := inst.Flavor(); flavor.Known() {
 		dir.OptionFile.SetOptionValue(environment, "flavor", flavor.Family().String())
+	} else {
+		log.Warnf(`Unable to automatically determine database server's vendor/version. To set manually, use the "flavor" option in ` + dir.OptionFile.Path())
 	}
 	for _, persistOpt := range []string{"user", "ignore-schema", "ignore-table", "ignore-proc", "ignore-func", "connect-options"} {
 		if cfg.OnCLI(persistOpt) {

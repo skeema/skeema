@@ -385,14 +385,17 @@ func (dir *Dir) ValidateInstance(instance *tengo.Instance) error {
 	instFlavor := instance.Flavor()
 	confFlavor := tengo.ParseFlavor(dir.Config.Get("flavor"))
 	if instFlavor.Known() {
-		if confFlavor != tengo.FlavorUnknown && instFlavor.Family() != confFlavor.Family() {
-			log.Warnf("Instance %s actual flavor %s differs from dir %s configured flavor %s", instance, instFlavor, dir, confFlavor)
+		if confFlavor != tengo.FlavorUnknown && instFlavor.Family() != confFlavor.Family() && !dir.Config.OnCLI("flavor") {
+			log.Warnf("Instance %s actual flavor %s differs from dir %s configured flavor %s\nIf you have recently upgraded your database server version, consider using `skeema pull` to update your schema definitions.", instance, instFlavor, dir, confFlavor)
+		}
+		if instFlavor.TooNew() {
+			log.Warnf("Instance %s flavor %s is newer than this version of Skeema. To ensure correct behavior, consider upgrading to a newer release of Skeema.", instance, instFlavor)
 		}
 	} else if confFlavor.Known() {
 		log.Debugf("Instance %s flavor cannot be parsed; using dir %s configured flavor %s instead", instance, dir, confFlavor)
 		instance.SetFlavor(confFlavor)
 	} else {
-		log.Warnf("Unable to determine database vendor/version of %s. To set manually, use the \"flavor\" option in %s", instance, filepath.Join(dir.Path, ".skeema"))
+		log.Warnf(`Unable to determine database server vendor/version of %s. To set manually, use the "flavor" option in %s`, instance, filepath.Join(dir.Path, ".skeema"))
 	}
 	return nil
 }

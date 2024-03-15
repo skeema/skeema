@@ -33,8 +33,14 @@ var cstore struct {
 // NewLocalDocker finds or creates a containerized MySQL instance, creates a
 // temporary schema on it, and returns it.
 func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
-	if !opts.Flavor.Supported() {
-		return nil, fmt.Errorf("NewLocalDocker: unsupported flavor %s", opts.Flavor)
+	// Return an error if no flavor was supplied; otherwise log a warning if the
+	// supplied flavor looks problematic
+	if opts.Flavor == tengo.FlavorUnknown {
+		return nil, errors.New("no flavor supplied")
+	} else if !opts.Flavor.Known() {
+		log.Warnf("Flavor %s is not fully supported, and may not work properly with workspace=docker", opts.Flavor)
+	} else if opts.Flavor.TooNew() {
+		log.Warnf("Flavor %s is newer than this release of Skeema, and may not work properly with workspace=docker", opts.Flavor)
 	}
 
 	// NewLocalDocker names its error return so that a deferred func can check if
