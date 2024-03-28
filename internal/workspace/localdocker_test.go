@@ -214,7 +214,7 @@ func TestDockerImageForFlavor(t *testing.T) {
 		{"percona:5.7", "amd64", "percona:5.7", false},
 		{"percona:5.7", "arm64", "", true},
 		{"percona:8.0", "amd64", "percona:8.0", false},
-		{"percona:8.0", "arm64", "percona/percona-server:8.0.35-aarch64", false},
+		{"percona:8.0", "arm64", "percona/percona-server:8.0." + latestPercona80Patch + "-aarch64", false},
 		{"percona:8.0.33", "amd64", "percona:8.0.33", false},
 		{"percona:8.0.33", "arm64", "percona/percona-server:8.0.33-aarch64", false},
 		{"percona:8.0.32", "amd64", "percona:8.0.32", false},
