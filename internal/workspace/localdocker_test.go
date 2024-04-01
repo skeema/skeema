@@ -2,10 +2,15 @@ package workspace
 
 import (
 	"net/url"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/skeema/mybase"
+	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
+	"github.com/skeema/skeema/internal/util"
 )
 
 func (s WorkspaceIntegrationSuite) TestLocalDockerErrors(t *testing.T) {
@@ -191,6 +196,60 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerConnParams(t *testing.T) {
 
 	if err := ws.Cleanup(nil); err != nil {
 		t.Errorf("Unexpected error from cleanup: %s", err)
+	}
+}
+
+// When requesting a MySQL 5.x Docker workspace on arm64, MySQL 8.0 is used
+// instead, since no earlier arm64 Docker images are available. In this case
+// Skeema sets a session variable to avoid the new default collation for utf8mb4
+// in MySQL 8.0. This test confirms the behavior. It is separate from
+// WorkspaceIntegrationSuite because it is independent of the normal test image
+// logic from the SKEEMA_TEST_IMAGES env var.
+func TestLocalDockerArm64MySQL5(t *testing.T) {
+	// Despite this test being independent of the normal integration test suite,
+	// we should still skip it if Docker-based testing is not requested
+	if strings.TrimSpace(os.Getenv("SKEEMA_TEST_IMAGES")) == "" {
+		t.Skip("this Docker-related test is skipped when other integration test suites are skipped, due to blank SKEEMA_TEST_IMAGES")
+	}
+	if arch, err := tengo.DockerEngineArchitecture(); err != nil {
+		t.Skipf("unable to check Docker Engine architecture: %v", err)
+	} else if arch != "arm64" {
+		t.Skipf("test can only be run if architecture is \"arm64\", but Docker Engine reported %q", arch)
+	}
+
+	cmd := mybase.NewCommand("workspacetest", "", "", nil)
+	util.AddGlobalOptions(cmd)
+	AddCommandOptions(cmd)
+	cmd.AddArg("environment", "production", false)
+	cfg := mybase.ParseFakeCLI(t, cmd, "workspacetest")
+	dir, err := fs.ParseDir("testdata/utf8mb4", cfg)
+	if err != nil {
+		t.Fatalf("Unexpectedly cannot parse working dir: %v", err)
+	}
+	opts, err := OptionsForDir(dir, nil)
+	if err != nil {
+		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
+	}
+
+	defer Shutdown()
+	wsSchema, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts)
+	if err != nil {
+		t.Errorf("Unexpected error from ExecLogicalSchema: %v", err)
+	} else if len(wsSchema.Failures) > 0 {
+		t.Errorf("Unexpected %d failures from ExecLogicalSchema; first err %v from %s", len(wsSchema.Failures), wsSchema.Failures[0].Err, wsSchema.Failures[0].Statement.Location())
+	}
+
+	if wsSchema.Schema.Collation != "utf8mb4_general_ci" {
+		t.Errorf("Workspace schema default collation is unexpectedly %s", wsSchema.Schema.Collation)
+	}
+	for _, tbl := range wsSchema.Schema.Tables {
+		if tbl.Collation != "utf8mb4_general_ci" {
+			t.Errorf("Table %s default collation is unexpectedly %s", tbl.Name, tbl.Collation)
+		}
+		col := tbl.Columns[1] // all tables in testdata/utf8mb4/tables.sql put a varchar col in this position
+		if col.Collation != "utf8mb4_general_ci" {
+			t.Errorf("Table %s, column %s unexpectedly using collation %s", tbl.Name, col.Name, col.Collation)
+		}
 	}
 }
 

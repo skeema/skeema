@@ -77,6 +77,18 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	if err != nil {
 		log.Warn(err.Error() + ". Substituting mysql:8.0 instead for workspace purposes, which may cause behavior differences.")
 		image = "mysql:8.0"
+
+		// If the original requested flavor was MySQL 5.x, force session-level
+		// default_collation_for_utf8mb4=utf8mb4_general_ci so that any usage of
+		// utf8mb4 without an explicit collation clause will behave like it did in
+		// 5.x. The MySQL Manual warns against setting this, but it works successfully
+		// at the session level in all versions of 8.0; and our motivation here is
+		// conceptually similar to the logical replication use-case that this variable
+		// was introduced to handle.
+		if opts.Flavor.IsMySQL(5) {
+			ld.defaultConnParams += "&default_collation_for_utf8mb4=utf8mb4_general_ci"
+			ld.defaultConnParams = strings.TrimPrefix(ld.defaultConnParams, "&")
+		}
 	}
 	if opts.ContainerName == "" {
 		opts.ContainerName = "skeema-" + tengo.ContainerNameForImage(image)

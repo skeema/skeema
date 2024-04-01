@@ -1,0 +1,7 @@
+schema=edgecasetests
+default-character-set=utf8mb4
+default-collation=utf8mb4_general_ci
+
+workspace=docker
+flavor=mysql:5.7
+docker-cleanup=destroy
