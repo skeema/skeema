@@ -1468,7 +1468,7 @@ func (s SkeemaIntegrationSuite) TestTempSchemaBinlog(t *testing.T) {
 	// Create an instance with log-bin enabled
 	opts := tengo.DockerizedInstanceOptions{
 		Name:         strings.Replace(s.d.ContainerName(), "skeema-test-", "skeema-test-binlog-", 1),
-		Image:        s.d.Flavor().Family().String(),
+		Image:        imageForFlavor(t, s.d.Flavor()),
 		RootPassword: s.d.Password,
 		EnableBinlog: true,
 		DataTmpfs:    true, // since we destroy the container after this test anyway

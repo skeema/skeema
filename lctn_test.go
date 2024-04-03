@@ -29,7 +29,7 @@ func (s SkeemaIntegrationSuite) TestLowerCaseTableNames1(t *testing.T) {
 	// Create an ephemeral instance with lctn=1
 	opts := tengo.DockerizedInstanceOptions{
 		Name:                strings.Replace(s.d.ContainerName(), "skeema-test-", "skeema-test-lctn1-", 1),
-		Image:               s.d.Flavor().Family().String(),
+		Image:               imageForFlavor(t, s.d.Flavor()),
 		RootPassword:        s.d.Password,
 		LowerCaseTableNames: 1,
 		DataTmpfs:           true, // since we destroy the container after this test anyway
@@ -170,7 +170,7 @@ func (s SkeemaIntegrationSuite) TestLowerCaseTableNames2(t *testing.T) {
 	// Create an instance with lctn=2
 	opts := tengo.DockerizedInstanceOptions{
 		Name:                strings.Replace(s.d.ContainerName(), "skeema-test-", "skeema-test-lctn2-", 1),
-		Image:               s.d.Flavor().Family().String(),
+		Image:               imageForFlavor(t, s.d.Flavor()),
 		RootPassword:        s.d.Password,
 		DataBindMount:       t.TempDir(),
 		LowerCaseTableNames: 2,

@@ -295,9 +295,9 @@ func TestDockerImageForFlavor(t *testing.T) {
 	}
 	for _, tc := range testcases {
 		flavor := tengo.ParseFlavor(tc.flavor)
-		image, err := dockerImageForFlavor(flavor, tc.arch)
+		image, err := DockerImageForFlavor(flavor, tc.arch)
 		if image != tc.expectImage || ((err != nil) != tc.expectErr) {
-			t.Errorf("Unexpected return from dockerImageForFlavor(%q, %q): found %q, %v", tc.flavor, tc.arch, image, err)
+			t.Errorf("Unexpected return from DockerImageForFlavor(%q, %q): found %q, %v", tc.flavor, tc.arch, image, err)
 		}
 	}
 }

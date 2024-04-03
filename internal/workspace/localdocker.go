@@ -73,7 +73,7 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	if err != nil {
 		return nil, err
 	}
-	image, err := dockerImageForFlavor(opts.Flavor, arch)
+	image, err := DockerImageForFlavor(opts.Flavor, arch)
 	if err != nil {
 		log.Warn(err.Error() + ". Substituting mysql:8.0 instead for workspace purposes, which may cause behavior differences.")
 		image = "mysql:8.0"
@@ -269,13 +269,13 @@ func (ld *LocalDocker) shutdown(args ...interface{}) bool {
 	return true
 }
 
-// dockerImageForFlavor attempts to return the name of a Docker image for the
+// DockerImageForFlavor attempts to return the name of a Docker image for the
 // supplied flavor and arch. The arch should be supplied in the same format as
 // returned by tengo.DockerEngineArchitecture(), i.e. "amd64" or "arm64".
 // In most cases this function returns "Docker official" Dockerhub images (top-
 // level repos without an account name), but in some cases we must use a
 // different source, or return an error.
-func dockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
+func DockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
 	image := flavor.String()
 
 	// flavor is often supplied with a zero patch value to mean "latest patch" in
