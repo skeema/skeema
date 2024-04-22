@@ -71,16 +71,7 @@ func (idx *Index) Equals(other *Index) bool {
 	if idx == nil || other == nil {
 		return idx == other // only equal if BOTH are nil
 	}
-	return idx.Invisible == other.Invisible && idx.EqualsIgnoringVisibility(other)
-}
-
-// EqualsIgnoringVisibility returns true if two indexes are identical, or only
-// differ in visibility.
-func (idx *Index) EqualsIgnoringVisibility(other *Index) bool {
-	if idx == nil || other == nil {
-		return idx == other // only equal if BOTH are nil
-	}
-	return idx.Name == other.Name && idx.Comment == other.Comment && idx.Equivalent(other)
+	return idx.Name == other.Name && idx.Comment == other.Comment && idx.Invisible == other.Invisible && idx.Equivalent(other)
 }
 
 // sameParts returns true if two Indexes' Parts slices are identical.

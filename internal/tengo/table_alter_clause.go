@@ -72,87 +72,104 @@ func (dc DropColumn) Unsafe(_ StatementModifiers) (unsafe bool, reason string) {
 
 ///// AddIndex /////////////////////////////////////////////////////////////////
 
-// AddIndex represents an index that is present on the right-side ("to")
-// schema version of the table, but was not identically present on the left-
-// side ("from") version. It satisfies the TableAlterClause interface.
+// AddIndex represents an index that is only present on the right-side ("to")
+// schema version of the table.
 type AddIndex struct {
-	Index       *Index
-	replaces    *Index // previous index definition if this is a replacement; nil otherwise
-	reorderOnly bool   // true if index is being dropped and re-added just to re-order
+	Index *Index
 }
 
 // Clause returns an ADD KEY clause of an ALTER TABLE statement.
 func (ai AddIndex) Clause(mods StatementModifiers) string {
-	if !mods.StrictIndexOrder && ai.reorderOnly {
-		return ""
-	}
-	if mods.LaxComments && ai.replaces != nil && ai.Index.Comment != ai.replaces.Comment && ai.Index.Equivalent(ai.replaces) {
-		// If visibility has changed, delegate to AlterIndex; otherwise, nothing
-		// differs but the comment, so emit a blank string with LaxComments
-		if ai.Index.Invisible != ai.replaces.Invisible {
-			alter := AlterIndex{Index: ai.replaces, NewInvisible: ai.Index.Invisible}
-			return alter.Clause(mods)
-		}
-		return ""
-	}
 	return "ADD " + ai.Index.Definition(mods.Flavor)
 }
 
 ///// DropIndex ////////////////////////////////////////////////////////////////
 
-// DropIndex represents an index that was present on the left-side ("from")
-// schema version of the table, but not identically present the right-side
-// ("to") version. It satisfies the TableAlterClause interface.
+// DropIndex represents an index that was only present on the left-side ("from")
+// schema version of the table.
 type DropIndex struct {
-	Index       *Index
-	replacedBy  *Index // new index definition if this is a replacement; nil otherwise
-	reorderOnly bool   // true if index is being dropped and re-added just to re-order
+	Index *Index
 }
 
 // Clause returns a DROP KEY clause of an ALTER TABLE statement.
-func (di DropIndex) Clause(mods StatementModifiers) string {
-	if !mods.StrictIndexOrder && di.reorderOnly {
-		return ""
-	}
-	if mods.LaxComments && di.replacedBy != nil && di.Index.Comment != di.replacedBy.Comment && di.Index.Equivalent(di.replacedBy) {
-		return ""
-	}
+func (di DropIndex) Clause(_ StatementModifiers) string {
 	if di.Index.PrimaryKey {
 		return "DROP PRIMARY KEY"
 	}
 	return "DROP KEY " + EscapeIdentifier(di.Index.Name)
 }
 
-///// AlterIndex ///////////////////////////////////////////////////////////////
+///// ModifyIndex ///////////////////////////////////////////////////////////////
 
-// AlterIndex represents a change in an index's visibility in MySQL 8+ or
-// MariaDB 10.6+.
-type AlterIndex struct {
-	Index          *Index
-	NewInvisible   bool // true if index is being changed from visible to invisible
-	alsoReordering bool // true if index is also being reordered by subsequent DROP/re-ADD
+// ModifyIndex represents a logical change in any of an index's fields. This is
+// treated as one "TableAlterClause" for code clarity purposes, but often maps
+// to 2 underlying SQL syntax clauses if the index needs to be dropped
+// and recreated to perform the requested change.
+type ModifyIndex struct {
+	FromIndex          *Index
+	ToIndex            *Index
+	reorderDueToClause []TableAlterClause
+	reorderDueToMove   bool
 }
 
-// Clause returns an ALTER INDEX clause of an ALTER TABLE statement. It will be
-// suppressed if the flavor does not support invisible/ignored indexes, and/or
-// if the statement modifiers are respecting exact index order (in which case
-// this ALTER TABLE will also have DROP and re-ADD clauses for this index, which
-// prevents use of an ALTER INDEX clause.)
-func (ai AlterIndex) Clause(mods StatementModifiers) string {
-	if ai.alsoReordering && mods.StrictIndexOrder {
-		return ""
+// Clause returns INDEX related clause(s) of an ALTER TABLE statement for one
+// specific index. In most cases this must emit a DROP followed by a re-ADD,
+// but in some situations it can leverage other syntax depending on the flavor
+// and the nature of the changes.
+func (mi ModifyIndex) Clause(mods StatementModifiers) string {
+	rebuild := DropIndex{mi.FromIndex}.Clause(mods) + ", " + AddIndex{mi.ToIndex}.Clause(mods)
+	if !mi.FromIndex.Equivalent(mi.ToIndex) {
+		return rebuild
+	} else if mi.FromIndex.Comment != mi.ToIndex.Comment && !mods.LaxComments {
+		return rebuild
 	}
-	clause := "ALTER INDEX " + EscapeIdentifier(ai.Index.Name)
-	if mods.Flavor.MinMySQL(8) {
-		if ai.NewInvisible {
-			return clause + " INVISIBLE"
+
+	// If requested, rebuild indexes to match the exact relative order of index
+	// definitions in a CREATE TABLE statement
+	if mods.StrictIndexOrder {
+		if mi.reorderDueToMove {
+			return rebuild
 		}
-		return clause + " VISIBLE"
-	} else if mods.Flavor.MinMariaDB(10, 6) {
-		if ai.NewInvisible {
-			return clause + " IGNORED"
+		// With StrictIndexOrder, we may need to drop and re-add indexes in the CREATE
+		// statement that occurred after some specific clause(s) only if those
+		// clauses actually emitted something beginning with DROP. We don't need to
+		// re-order if that DDL modified the index in-place (rename or alter
+		// visibility) or if mods suppressed the DDL entirely (e.g. LaxComments).
+		for _, clause := range mi.reorderDueToClause {
+			dependentClause := clause.Clause(mods)
+			if strings.HasPrefix(dependentClause, "DROP") {
+				return rebuild
+			}
 		}
-		return clause + " NOT IGNORED"
+	}
+
+	// Renaming index
+	if mi.FromIndex.Name != mi.ToIndex.Name {
+		// RENAME KEY can only be used in MySQL 5.7+ or MariaDB 10.5+. It also can't
+		// be used alongside a visibility change of the same index in the same ALTER.
+		if (mods.Flavor.MinMySQL(5, 7) || mods.Flavor.MinMariaDB(10, 5)) && mi.FromIndex.Invisible == mi.ToIndex.Invisible {
+			return "RENAME KEY " + EscapeIdentifier(mi.FromIndex.Name) + " TO " + EscapeIdentifier(mi.ToIndex.Name)
+		}
+		// Fall back to drop-and-re-create
+		return rebuild
+	}
+
+	// Changing index visibility: syntax differs between MySQL and MariaDB
+	if mi.FromIndex.Invisible != mi.ToIndex.Invisible {
+		base := "ALTER INDEX " + EscapeIdentifier(mi.ToIndex.Name)
+		if mods.Flavor.MinMySQL(8) {
+			if mi.ToIndex.Invisible {
+				return base + " INVISIBLE"
+			} else {
+				return base + " VISIBLE"
+			}
+		} else if mods.Flavor.MinMariaDB(10, 6) {
+			if mi.ToIndex.Invisible {
+				return base + " IGNORED"
+			} else {
+				return base + " NOT IGNORED"
+			}
+		}
 	}
 	return "" // Flavor without invisible/ignored index support
 }

@@ -248,28 +248,18 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 	to.SecondaryIndexes[1].Unique = true
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
 	tableAlters, supported = from.Diff(&to)
-	if len(tableAlters) != 2 || !supported {
-		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
+	if len(tableAlters) != 1 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
 	}
-	ta2, ok = tableAlters[0].(DropIndex)
+	modify, ok := tableAlters[0].(ModifyIndex)
 	if !ok {
-		t.Fatalf("Incorrect type of table alter[0] returned: expected %T, found %T", ta2, tableAlters[0])
+		t.Fatalf("Incorrect type of alter[0] returned: expected %T, found %T", modify, tableAlters[0])
 	}
-	if ta2.Index != from.SecondaryIndexes[1] {
-		t.Error("Pointer in table alter[0] does not point to expected value")
+	if modify.FromIndex != from.SecondaryIndexes[1] || modify.ToIndex != to.SecondaryIndexes[1] {
+		t.Error("Pointers in alter[0] do not point to expected values")
 	}
-	if ta2.Clause(StatementModifiers{}) == "" {
-		t.Error("Clause unexpectedly returns blank string")
-	}
-	ta, ok = tableAlters[1].(AddIndex)
-	if !ok {
-		t.Fatalf("Incorrect type of table alter[1] returned: expected %T, found %T", ta, tableAlters[1])
-	}
-	if ta.Index != to.SecondaryIndexes[1] {
-		t.Error("Pointer in table alter[1] does not point to expected value")
-	}
-	if ta.Clause(StatementModifiers{}) == "" {
-		t.Error("Clause unexpectedly returns blank string")
+	if clause := modify.Clause(StatementModifiers{}); !strings.HasPrefix(clause, "DROP KEY ") || !strings.Contains(clause, ", ADD UNIQUE KEY ") {
+		t.Errorf("Clause contents are unexpected: got %s", clause)
 	}
 
 	// Start over; change the comment of the last existing secondary index, with or
@@ -278,39 +268,36 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 	to.SecondaryIndexes[1].Comment = "hello I am an index"
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
 	tableAlters, supported = from.Diff(&to)
-	if len(tableAlters) != 2 || !supported {
-		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
+	if len(tableAlters) != 1 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
 	}
-	mods := StatementModifiers{}
-	if tableAlters[0].Clause(mods) == "" || tableAlters[1].Clause(mods) == "" {
+	if tableAlters[0].Clause(StatementModifiers{}) == "" {
 		t.Error("Clause unexpectedly returns blank string")
 	}
-	mods.LaxComments = true
-	if tableAlters[0].Clause(mods) != "" || tableAlters[1].Clause(mods) != "" {
+	if tableAlters[0].Clause(StatementModifiers{LaxComments: true}) != "" {
 		t.Error("Clause unexpectedly returns non-blank string")
 	}
-	to.SecondaryIndexes[1].Invisible = true
 	mysql8 := Flavor{VendorMySQL, Version{8}, VariantNone}
+	to.SecondaryIndexes[1].Invisible = true
 	to.CreateStatement = to.GeneratedCreateStatement(mysql8)
-	mods.Flavor = mysql8
 	tableAlters, supported = from.Diff(&to)
-	if len(tableAlters) != 2 || !supported {
-		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
+	if len(tableAlters) != 1 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
 	}
-	if tableAlters[0].Clause(mods) != "" {
-		t.Error("Clause unexpectedly returns non-blank string")
+	if clause := tableAlters[0].Clause(StatementModifiers{Flavor: mysql8, LaxComments: false}); !strings.HasPrefix(clause, "DROP KEY ") || !strings.Contains(clause, ", ADD KEY ") {
+		t.Errorf("Clause returned unexpected string: %s", clause)
 	}
-	if clause := tableAlters[1].Clause(mods); !strings.HasPrefix(clause, "ALTER") {
+	if clause := tableAlters[0].Clause(StatementModifiers{Flavor: mysql8, LaxComments: true}); !strings.HasPrefix(clause, "ALTER") {
 		t.Errorf("Clause returned unexpected string: %s", clause)
 	}
 	to.SecondaryIndexes[1].Unique = true
 	to.CreateStatement = to.GeneratedCreateStatement(mysql8)
 	tableAlters, supported = from.Diff(&to)
-	if len(tableAlters) != 2 || !supported {
-		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
+	if len(tableAlters) != 1 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
 	}
-	if tableAlters[0].Clause(mods) == "" || tableAlters[1].Clause(mods) == "" {
-		t.Error("Clause unexpectedly returns blank string")
+	if clause := tableAlters[0].Clause(StatementModifiers{Flavor: mysql8, LaxComments: true}); !strings.HasPrefix(clause, "DROP KEY ") || !strings.Contains(clause, ", ADD UNIQUE KEY ") {
+		t.Errorf("Clause returned unexpected string: %s", clause)
 	}
 
 	// Start over; change the primary key
@@ -369,22 +356,18 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 	to.SecondaryIndexes[1].Type = "FULLTEXT"
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
 	tableAlters, supported = from.Diff(&to)
-	if len(tableAlters) != 2 || !supported {
-		t.Fatalf("Incorrect number of table alters: expected 2, found %d", len(tableAlters))
+	if len(tableAlters) != 1 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 1, found %d", len(tableAlters))
 	}
-	ta2, ok = tableAlters[0].(DropIndex)
+	modify, ok = tableAlters[0].(ModifyIndex)
 	if !ok {
-		t.Fatalf("Incorrect type of table alter[0] returned: expected %T, found %T", ta2, tableAlters[0])
+		t.Fatalf("Incorrect type of table alter[0] returned: expected %T, found %T", modify, tableAlters[0])
 	}
-	if ta2.Index != from.SecondaryIndexes[1] {
-		t.Error("Pointer in table alter[0] does not point to expected value")
+	if modify.FromIndex != from.SecondaryIndexes[1] || modify.ToIndex != to.SecondaryIndexes[1] {
+		t.Error("Pointers in alter[0] do not point to expected values")
 	}
-	ta, ok = tableAlters[1].(AddIndex)
-	if !ok {
-		t.Fatalf("Incorrect type of table alter[1] returned: expected %T, found %T", ta, tableAlters[1])
-	}
-	if ta.Index != to.SecondaryIndexes[1] {
-		t.Error("Pointer in table alter[1] does not point to expected value")
+	if clause := modify.Clause(StatementModifiers{}); !strings.HasPrefix(clause, "DROP KEY ") || !strings.Contains(clause, ", ADD FULLTEXT KEY ") {
+		t.Errorf("Clause returned unexpected string: %s", clause)
 	}
 }
 
@@ -512,64 +495,65 @@ func TestTableAlterAddIndexOrder(t *testing.T) {
 	to.SecondaryIndexes[1].Parts[1].PrefixLength = 6
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
 	tableAlters, supported = from.Diff(&to)
-	if len(tableAlters) != 12 || !supported {
-		t.Fatalf("Incorrect number of table alters: expected 12, found %d, supported=%t", len(tableAlters), supported)
+	if len(tableAlters) != 11 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 11, found %d, supported=%t", len(tableAlters), supported)
 	}
-	if ta, ok := tableAlters[0].(DropIndex); !ok {
-		t.Errorf("Expected alters[0] to be a DropIndex, instead found %T", ta)
-	}
-	if ta, ok := tableAlters[1].(AddIndex); !ok {
-		t.Errorf("Expected alters[1] to be an AddIndex, instead found %T", ta)
-	} else if ta.Index.Name != to.SecondaryIndexes[1].Name {
-		t.Errorf("Expected alters[1] to be on index %s, instead found %s", to.SecondaryIndexes[1].Name, ta.Index.Name)
+	if ta, ok := tableAlters[0].(ModifyIndex); !ok {
+		t.Errorf("Expected alters[0] to be a ModifyIndex, instead found %T", ta)
+	} else if ta.ToIndex.Name != to.SecondaryIndexes[1].Name {
+		t.Errorf("Expected alters[0] to be on index %s, instead found %s", to.SecondaryIndexes[1].Name, ta.ToIndex.Name)
+	} else if clause := ta.Clause(StatementModifiers{}); !strings.HasPrefix(clause, "DROP KEY ") || !strings.Contains(clause, ", ADD KEY ") {
+		t.Errorf("Expected alters[0] clause to be a DROP and re-ADD, instead found %s", clause)
 	}
 
 	// Revert previous change, and instead change visibility on first index. This
-	// should be handled by an ALTER INDEX clause, w/o any need to drop anything.
+	// should be handled by an ALTER INDEX clause, w/o any need to drop or move
+	// anything. However, it still generates a spurious modify clause for the
+	// second index, which returns a blank string even with strict ordering mod.
 	to.SecondaryIndexes[1].Parts[1].PrefixLength = from.SecondaryIndexes[1].Parts[1].PrefixLength
 	to.SecondaryIndexes[0].Invisible = true
 	mysql8 := Flavor{VendorMySQL, Version{8}, VariantNone}
 	maria106 := Flavor{VendorMariaDB, Version{10, 6}, VariantNone}
 	to.CreateStatement = to.GeneratedCreateStatement(mysql8)
 	tableAlters, supported = from.Diff(&to)
-	if len(tableAlters) != 11 || !supported {
-		t.Fatalf("Incorrect number of table alters: expected 11, found %d, supported=%t", len(tableAlters), supported)
+	if len(tableAlters) != 12 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 12, found %d, supported=%t", len(tableAlters), supported)
 	}
 	expectClause := "ALTER INDEX `idx_ssn` INVISIBLE"
-	if ta, ok := tableAlters[0].(AlterIndex); !ok {
-		t.Errorf("Expected alters[0] to be an AlterIndex, instead found %T", ta)
-	} else if ta.Index.Name != to.SecondaryIndexes[0].Name || !ta.NewInvisible {
-		t.Errorf("Unexpected values in AlterIndex: %+v", ta)
+	if ta, ok := tableAlters[0].(ModifyIndex); !ok {
+		t.Errorf("Expected alters[0] to be a ModifyIndex, instead found %T", ta)
+	} else if ta.ToIndex.Name != to.SecondaryIndexes[0].Name || !ta.ToIndex.Invisible {
+		t.Errorf("Unexpected values in ModifyIndex: %+v", ta)
 	} else if clauseWithoutFlavor := ta.Clause(StatementModifiers{}); clauseWithoutFlavor != "" {
-		t.Errorf("Unexpected result for AlterIndex.Clause() without a MySQL 8.0+ flavor: %q", clauseWithoutFlavor)
+		t.Errorf("Unexpected result for ModifyIndex.Clause() without a MySQL 8.0+ flavor: %q", clauseWithoutFlavor)
 	} else if clauseWithFlavor := ta.Clause(StatementModifiers{Flavor: mysql8}); clauseWithFlavor != expectClause {
-		t.Errorf("Unexpected result for AlterIndex.Clause() with a MySQL 8.0+ flavor: %q", clauseWithFlavor)
+		t.Errorf("Unexpected result for ModifyIndex.Clause() with a MySQL 8.0+ flavor: %q", clauseWithFlavor)
 	} else if clauseWithFlavor := ta.Clause(StatementModifiers{Flavor: maria106}); clauseWithFlavor != strings.ReplaceAll(expectClause, "INVISIBLE", "IGNORED") {
-		t.Errorf("Unexpected result for AlterIndex.Clause() with a MariaDB 10.6 flavor: %q", clauseWithFlavor)
+		t.Errorf("Unexpected result for ModifyIndex.Clause() with a MariaDB 10.6 flavor: %q", clauseWithFlavor)
+	}
+	if ta, ok := tableAlters[1].(ModifyIndex); !ok {
+		t.Errorf("Expected alters[1] to be a ModifyIndex, instead found %T", ta)
+	} else if clause := ta.Clause(StatementModifiers{Flavor: mysql8, StrictIndexOrder: true}); clause != "" {
+		t.Errorf("Unexpected result for ModifyIndex.Clause(): %q", clause)
 	}
 
-	// Also change another aspect of the first index. Now this should be a DROP for
-	// index [0], re-ADD for [0], DROP for index [1], re-ADD for [1], followed by
-	// 10 ADDs for the 10 new indexes.
+	// Also change another aspect of the first index. Now this should be a DROP and
+	// re-ADD for index [0], regardless of statement modifiers.
 	to.SecondaryIndexes[0].Parts = append(to.SecondaryIndexes[0].Parts, IndexPart{
 		ColumnName: "last_name",
 		Descending: true,
 	})
 	to.CreateStatement = to.GeneratedCreateStatement(mysql8)
 	tableAlters, supported = from.Diff(&to)
-	if len(tableAlters) != 14 || !supported {
-		t.Fatalf("Incorrect number of table alters: expected 14, found %d, supported=%t", len(tableAlters), supported)
+	if len(tableAlters) != 12 || !supported {
+		t.Fatalf("Incorrect number of table alters: expected 12, found %d, supported=%t", len(tableAlters), supported)
 	}
-	for n, ta := range tableAlters {
-		var ok bool
-		if n == 0 || n == 2 {
-			_, ok = ta.(DropIndex)
-		} else {
-			_, ok = ta.(AddIndex)
-		}
-		if !ok {
-			t.Errorf("Unexpected type of alter clause at position %d: %T", n, ta)
-		}
+	if _, ok := tableAlters[0].(ModifyIndex); !ok {
+		t.Errorf("Unexpected type of alter clause at position 0: %T", tableAlters[0])
+	} else if clause := tableAlters[0].Clause(StatementModifiers{}); !strings.HasPrefix(clause, "DROP KEY ") || !strings.Contains(clause, ", ADD UNIQUE KEY ") {
+		t.Errorf("Unexpected clause emitted at position 0: %s", clause)
+	} else if clause := tableAlters[0].Clause(StatementModifiers{StrictIndexOrder: true}); !strings.HasPrefix(clause, "DROP KEY ") || !strings.Contains(clause, ", ADD UNIQUE KEY ") {
+		t.Errorf("Unexpected clause emitted at position 0: %s", clause)
 	}
 }
 
@@ -592,17 +576,18 @@ func TestTableAlterIndexReorder(t *testing.T) {
 		return table
 	}
 
+	// Most test logic here uses these MySQL 8 based statement modifiers
 	mysql8 := Flavor{VendorMySQL, Version{8}, VariantNone}
-	assertClauses := func(from, to *Table, strict bool, format string, a ...interface{}) {
+	loose8 := StatementModifiers{Flavor: mysql8}
+	strict8 := StatementModifiers{Flavor: mysql8, StrictIndexOrder: true}
+
+	assertClauses := func(from, to *Table, mods StatementModifiers, format string, a ...interface{}) {
 		t.Helper()
 		td := NewAlterTable(from, to)
 		var clauses string
 		if td != nil {
 			var err error
-			clauses, err = td.Clauses(StatementModifiers{
-				StrictIndexOrder: strict,
-				Flavor:           mysql8,
-			})
+			clauses, err = td.Clauses(mods)
 			if err != nil {
 				t.Fatalf("Unexpected error result from Clauses(): %s", err)
 			}
@@ -622,72 +607,47 @@ func TestTableAlterIndexReorder(t *testing.T) {
 	to.SecondaryIndexes[1], to.SecondaryIndexes[2] = to.SecondaryIndexes[2], to.SecondaryIndexes[1]
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
 	tableAlters, _ := from.Diff(&to)
-	if len(tableAlters) != 2 {
-		t.Errorf("Expected 2 clauses, instead found %d", len(tableAlters))
+	if len(tableAlters) != 1 {
+		t.Errorf("Expected 1 clause, instead found %d", len(tableAlters))
 	} else {
-		if drop, ok := tableAlters[0].(DropIndex); !ok {
-			t.Errorf("Expected tableAlters[0] to be %T, instead found %T", drop, tableAlters[0])
-		} else if drop.Index.Name != orig[1].Name {
-			t.Errorf("Expected tableAlters[0] to drop %s, instead dropped %s", orig[1].Name, drop.Index.Name)
+		if modify, ok := tableAlters[0].(ModifyIndex); !ok {
+			t.Errorf("Expected tableAlters[0] to be %T, instead found %T", modify, tableAlters[0])
+		} else if modify.ToIndex.Name != orig[1].Name {
+			t.Errorf("Expected tableAlters[0] to affect %s, instead found %s", orig[1].Name, modify.ToIndex.Name)
 		}
-		if add, ok := tableAlters[1].(AddIndex); !ok {
-			t.Errorf("Expected tableAlters[1] to be %T, instead found %T", add, tableAlters[1])
-		} else if add.Index.Name != orig[1].Name {
-			t.Errorf("Expected tableAlters[1] to add %s, instead added %s", orig[1].Name, add.Index.Name)
-		}
-		assertClauses(&from, &to, false, "")
-		assertClauses(&from, &to, true, "DROP KEY `%s`, ADD %s", orig[1].Name, orig[1].Definition(FlavorUnknown))
+		assertClauses(&from, &to, loose8, "")
+		assertClauses(&from, &to, strict8, "DROP KEY `%s`, ADD %s", orig[1].Name, orig[1].Definition(mysql8))
 	}
 
 	// Clustered index key changes: same effect as mods.StrictIndexOrder
 	to.PrimaryKey = nil
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
-	assertClauses(&from, &to, false, "DROP PRIMARY KEY, DROP KEY `%s`, ADD %s", orig[1].Name, orig[1].Definition(FlavorUnknown))
-	assertClauses(&from, &to, true, "DROP PRIMARY KEY, DROP KEY `%s`, ADD %s", orig[1].Name, orig[1].Definition(FlavorUnknown))
+	assertClauses(&from, &to, loose8, "DROP PRIMARY KEY, DROP KEY `%s`, ADD %s", orig[1].Name, orig[1].Definition(mysql8))
+	assertClauses(&from, &to, strict8, "DROP PRIMARY KEY, DROP KEY `%s`, ADD %s", orig[1].Name, orig[1].Definition(mysql8))
 
-	// Restore to previous state, and then modify definition of [1] and visibility
+	// Restore to original state, and then modify definition of [1] and visibility
 	// of [2]. Resulting diff should:
-	// * drop [1]
-	// * re-add the modified [1]
-	// * modify visibility of [2] (suppressed if mods.StrictIndexOrder)
-	// * drop [2] (suppressed unless mods.StrictIndexOrder)
-	// * re-add [2] (suppressed unless mods.StrictIndexOrder)
+	// * drop [1] and re-add the modified [1]
+	// * modify visibility of [2] (via DROP/ADD if mods.StrictIndexOrder, or ALTER if not)
 	to = getTableSimple()
 	to.SecondaryIndexes[1].Parts[1].PrefixLength = 8
 	to.SecondaryIndexes[2].Invisible = true
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
 	tableAlters, _ = from.Diff(&to)
-	if len(tableAlters) != 5 {
-		t.Errorf("Expected 5 clauses, instead found %d", len(tableAlters))
+	if len(tableAlters) != 2 {
+		t.Errorf("Expected 2 clauses, instead found %d", len(tableAlters))
 	} else {
-		drop0, ok0 := tableAlters[0].(DropIndex)
-		add1, ok1 := tableAlters[1].(AddIndex)
-		alter2, ok2 := tableAlters[2].(AlterIndex)
-		drop3, ok3 := tableAlters[3].(DropIndex)
-		add4, ok4 := tableAlters[4].(AddIndex)
-		if !ok0 || !ok1 || !ok2 || !ok3 || !ok4 {
-			t.Errorf("One or more type mismatches; ok: %t %t %t %t %t", ok0, ok1, ok2, ok3, ok4)
-		} else {
-			if !alter2.alsoReordering {
-				t.Error("Expected AlterIndex.alsoReordering to be true, but it was not")
-			}
-			if drop0.Index.Name == drop3.Index.Name {
-				t.Errorf("Both drops refer to same index %s", drop0.Index.Name)
-			}
-			if add1.Index.Name != orig[1].Name || add1.Index.Parts[1].PrefixLength != 8 {
-				t.Errorf("tableAlters[1] does not match expectations; found %+v", add1.Index)
-			}
-			if !add4.Index.EqualsIgnoringVisibility(orig[2]) {
-				t.Errorf("tableAlters[4] does not match expectations; found %+v", add4.Index)
-			}
+		mod0, ok0 := tableAlters[0].(ModifyIndex)
+		mod1, ok1 := tableAlters[1].(ModifyIndex)
+		if !ok0 || !ok1 {
+			t.Errorf("One or more type mismatches; found types: %T, %T", mod0, mod1)
 		}
-		assertClauses(&from, &to, false, "DROP KEY `%s`, ADD %s, ALTER INDEX `%s` INVISIBLE", orig[1].Name, to.SecondaryIndexes[1].Definition(FlavorUnknown), orig[2].Name)
-		assertClauses(&from, &to, true, "DROP KEY `%s`, ADD %s, DROP KEY `%s`, ADD %s", orig[1].Name, to.SecondaryIndexes[1].Definition(FlavorUnknown), orig[2].Name, to.SecondaryIndexes[2].Definition(mysql8))
+		assertClauses(&from, &to, loose8, "DROP KEY `%s`, ADD %s, ALTER INDEX `%s` INVISIBLE", orig[1].Name, to.SecondaryIndexes[1].Definition(FlavorUnknown), orig[2].Name)
+		assertClauses(&from, &to, strict8, "DROP KEY `%s`, ADD %s, DROP KEY `%s`, ADD %s", orig[1].Name, to.SecondaryIndexes[1].Definition(FlavorUnknown), orig[2].Name, to.SecondaryIndexes[2].Definition(mysql8))
 	}
 
-	// Adding a new index before [1] should also result in dropping the old [1]
-	// and [2], and then re-adding them back in that order. But statement should
-	// only refer to adding the new index unless mods.StrictIndexOrder used.
+	// Restore to original state, and then add a new index before [1]. This should
+	// result in an ADD; then a modify on [1] and [2] if using strict ordering.
 	to = getTableSimple()
 	newIdx := &Index{
 		Name: "idx_firstname",
@@ -699,11 +659,11 @@ func TestTableAlterIndexReorder(t *testing.T) {
 	to.SecondaryIndexes = []*Index{to.SecondaryIndexes[0], newIdx, to.SecondaryIndexes[1], to.SecondaryIndexes[2]}
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
 	tableAlters, _ = from.Diff(&to)
-	if len(tableAlters) != 5 {
-		t.Errorf("Expected 5 clauses, instead found %d", len(tableAlters))
+	if len(tableAlters) != 3 {
+		t.Errorf("Expected 3 clauses, instead found %d", len(tableAlters))
 	} else {
-		assertClauses(&from, &to, false, "ADD %s", newIdx.Definition(FlavorUnknown))
-		assertClauses(&from, &to, true, "ADD %s, DROP KEY `%s`, ADD %s, DROP KEY `%s`, ADD %s", newIdx.Definition(FlavorUnknown), orig[1].Name, orig[1].Definition(FlavorUnknown), orig[2].Name, orig[2].Definition(FlavorUnknown))
+		assertClauses(&from, &to, loose8, "ADD %s", newIdx.Definition(FlavorUnknown))
+		assertClauses(&from, &to, strict8, "ADD %s, DROP KEY `%s`, ADD %s, DROP KEY `%s`, ADD %s", newIdx.Definition(FlavorUnknown), orig[1].Name, orig[1].Definition(FlavorUnknown), orig[2].Name, orig[2].Definition(FlavorUnknown))
 	}
 
 	// The opposite operation -- dropping the new index that we put before [1] --
@@ -717,8 +677,77 @@ func TestTableAlterIndexReorder(t *testing.T) {
 		} else if drop.Index.Name != newIdx.Name {
 			t.Errorf("Expected tableAlters[0] to drop %s, instead dropped %s", newIdx.Name, drop.Index.Name)
 		}
-		assertClauses(&to, &from, false, "DROP KEY `%s`", newIdx.Name)
-		assertClauses(&to, &from, true, "DROP KEY `%s`", newIdx.Name)
+		assertClauses(&to, &from, loose8, "DROP KEY `%s`", newIdx.Name)
+		assertClauses(&to, &from, strict8, "DROP KEY `%s`", newIdx.Name)
+	}
+
+	// RENAME KEY related tests need additional statement modifiers, since rename
+	// syntax is only in MySQL 5.7+ and MariaDB 10.5+.
+	mysql56 := Flavor{VendorMySQL, Version{5, 6}, VariantNone}
+	mysql57 := Flavor{VendorMySQL, Version{5, 7}, VariantNone}
+	maria104 := Flavor{VendorMariaDB, Version{10, 4}, VariantNone}
+	maria105 := Flavor{VendorMariaDB, Version{10, 5}, VariantNone}
+	loose56 := StatementModifiers{Flavor: mysql56}
+	strict104 := StatementModifiers{Flavor: maria104, StrictIndexOrder: true}
+	strict105 := StatementModifiers{Flavor: maria105, StrictIndexOrder: true}
+	loose57lc := StatementModifiers{Flavor: mysql57, LaxComments: true}
+
+	// Restore to original state, and then rename index [1]. This should emit a
+	// RENAME KEY in flavors that support it, or DROP/ADD in ones that don't.
+	// This should also emit a DROP/ADD to move [2] but it is swallowed unless
+	// the flavor doesn't support renames AND strict index ordering is enabled.
+	to = getTableSimple()
+	to.SecondaryIndexes[1].Name = "key_actor_name" // was previously "idx_actor_name"
+	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
+	tableAlters, _ = from.Diff(&to)
+	if len(tableAlters) != 2 {
+		t.Errorf("Expected 2 clauses, instead found %d", len(tableAlters))
+	} else {
+		assertClauses(&from, &to, loose8, "RENAME KEY `%s` TO `%s`", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Name)
+		assertClauses(&from, &to, strict8, "RENAME KEY `%s` TO `%s`", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Name)
+		assertClauses(&from, &to, strict105, "RENAME KEY `%s` TO `%s`", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Name)
+		assertClauses(&from, &to, loose56, "DROP KEY `%s`, ADD %s", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Definition(mysql56))
+		assertClauses(&from, &to, strict104, "DROP KEY `%s`, ADD %s, DROP KEY `%s`, ADD %s", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Definition(maria104), from.SecondaryIndexes[2].Name, from.SecondaryIndexes[2].Definition(maria104))
+	}
+
+	// Also change a comment on index [1]. When combined with LaxComments, this
+	// still surfaces as in previous case; otherwise it requires a DROP/ADD.
+	to.SecondaryIndexes[1].Comment = "hello world" // was previously empty string
+	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
+	tableAlters, _ = from.Diff(&to)
+	if len(tableAlters) != 2 {
+		t.Errorf("Expected 2 clauses, instead found %d", len(tableAlters))
+	} else {
+		assertClauses(&from, &to, loose8, "DROP KEY `%s`, ADD %s", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Definition(mysql8))
+		assertClauses(&from, &to, strict8, "DROP KEY `%s`, ADD %s, DROP KEY `%s`, ADD %s", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Definition(mysql8), from.SecondaryIndexes[2].Name, from.SecondaryIndexes[2].Definition(mysql8))
+		assertClauses(&from, &to, loose57lc, "RENAME KEY `%s` TO `%s`", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Name)
+	}
+
+	// Revert comment change from previous step; change visibility instead. This
+	// forces a DROP and re-ADD since renames and alter visibility cannot be used
+	// on the same index in the same ALTER TABLE.
+	to.SecondaryIndexes[1].Comment = ""
+	to.SecondaryIndexes[1].Invisible = true // was previously false
+	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
+	tableAlters, _ = from.Diff(&to)
+	if len(tableAlters) != 2 {
+		t.Errorf("Expected 2 clauses, instead found %d", len(tableAlters))
+	} else {
+		assertClauses(&from, &to, loose8, "DROP KEY `%s`, ADD %s", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Definition(mysql8))
+		assertClauses(&from, &to, strict8, "DROP KEY `%s`, ADD %s, DROP KEY `%s`, ADD %s", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Definition(mysql8), from.SecondaryIndexes[2].Name, from.SecondaryIndexes[2].Definition(mysql8))
+	}
+
+	// Revert visibility change, and also swap order of indexes [0] and [2]. Effect
+	// depends on use of strict ordering.
+	to.SecondaryIndexes[1].Invisible = false
+	to.SecondaryIndexes[0], to.SecondaryIndexes[2] = to.SecondaryIndexes[2], to.SecondaryIndexes[0]
+	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
+	tableAlters, _ = from.Diff(&to)
+	if len(tableAlters) != 2 {
+		t.Errorf("Expected 2 clauses, instead found %d", len(tableAlters))
+	} else {
+		assertClauses(&from, &to, loose8, "RENAME KEY `%s` TO `%s`", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Name)
+		assertClauses(&from, &to, strict105, "DROP KEY `%s`, ADD %s, DROP KEY `%s`, ADD %s", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Definition(maria105), to.SecondaryIndexes[2].Name, to.SecondaryIndexes[2].Definition(maria105))
 	}
 }
 

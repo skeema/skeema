@@ -455,64 +455,16 @@ func diffTables(from, to *Table) (clauses []TableAlterClause, supported bool) {
 
 	// Compare PK
 	if !from.PrimaryKey.Equals(to.PrimaryKey) {
-		if from.PrimaryKey == nil {
-			clauses = append(clauses, AddIndex{Index: to.PrimaryKey})
-		} else if to.PrimaryKey == nil {
+		if from.PrimaryKey != nil {
 			clauses = append(clauses, DropIndex{Index: from.PrimaryKey})
-		} else {
-			clauses = append(clauses,
-				DropIndex{Index: from.PrimaryKey, replacedBy: to.PrimaryKey},
-				AddIndex{Index: to.PrimaryKey, replaces: from.PrimaryKey},
-			)
+		}
+		if to.PrimaryKey != nil {
+			clauses = append(clauses, AddIndex{Index: to.PrimaryKey})
 		}
 	}
 
-	// Compare secondary indexes. Aside from visibility changes in MySQL 8+, there
-	// is no way to modify an index without dropping and re-adding it. There's also
-	// no way to re-position an index without dropping and re-adding all
-	// preexisting indexes that now come after.
-	fromIndexes := from.SecondaryIndexesByName()
-	toIndexes := to.SecondaryIndexesByName()
-	var fromIndexStillExist []*Index // ordered list of indexes from "from" that still exist in "to"
-	for _, fromIndex := range from.SecondaryIndexes {
-		if _, stillExists := toIndexes[fromIndex.Name]; stillExists {
-			fromIndexStillExist = append(fromIndexStillExist, fromIndex)
-		} else {
-			clauses = append(clauses, DropIndex{Index: fromIndex})
-		}
-	}
-	var reorderIndexes bool
-	for n, toIndex := range to.SecondaryIndexes {
-		if fromIndex, existedBefore := fromIndexes[toIndex.Name]; !existedBefore {
-			clauses = append(clauses, AddIndex{Index: toIndex})
-			reorderIndexes = true
-		} else if !fromIndex.EqualsIgnoringVisibility(toIndex) {
-			clauses = append(clauses,
-				DropIndex{Index: fromIndex, replacedBy: toIndex},
-				AddIndex{Index: toIndex, replaces: fromIndex},
-			)
-			reorderIndexes = true
-		} else {
-			if fromIndex.Invisible != toIndex.Invisible {
-				clauses = append(clauses, AlterIndex{
-					Index:          fromIndex,
-					NewInvisible:   toIndex.Invisible,
-					alsoReordering: reorderIndexes,
-				})
-			}
-			if reorderIndexes {
-				clauses = append(clauses,
-					DropIndex{Index: fromIndex, replacedBy: toIndex, reorderOnly: true},
-					AddIndex{Index: toIndex, replaces: fromIndex, reorderOnly: true},
-				)
-			} else if fromIndexStillExist[n].Name != toIndex.Name {
-				// If we get here, reorderIndexes was previously false, meaning anything
-				// *before* this position was identical on both sides. We can therefore leave
-				// *this* index alone and just reorder anything that now comes *after* it.
-				reorderIndexes = true
-			}
-		}
-	}
+	// Compare secondary indexes
+	clauses = append(clauses, compareSecondaryIndexes(from, to)...)
 
 	// Compare foreign keys
 	fromForeignKeys := from.foreignKeysByName()
@@ -645,6 +597,89 @@ func diffTables(from, to *Table) (clauses []TableAlterClause, supported bool) {
 	}
 
 	return
+}
+
+// Secondary indexes may be added, dropped, renamed, or have visibility changes.
+// Although relative order of indexes is usually irrelevant, we still support
+// dropping/re-adding indexes to result in a desired ordering, requiring extra
+// bookkeeping.
+// This code is relatively complex because some old flavors don't support
+// renaming, in which case we must add/drop... which then has further
+// implications if strict relative ordering is also requested.
+func compareSecondaryIndexes(from, to *Table) (clauses []TableAlterClause) {
+	fromIndexes := from.SecondaryIndexesByName()               // indexes in "from", keyed by name but later adjusted to use new name in case of rename
+	toIndexes := to.SecondaryIndexesByName()                   // indexes in "to", keyed by name
+	fromIndexStillExist := make([]*Index, 0, len(fromIndexes)) // ordered list of indexes from "from" that still exist in "to"
+
+	// Determine which indexes have been fully dropped
+	for _, fromIndex := range from.SecondaryIndexes {
+		stillExists := (toIndexes[fromIndex.Name] != nil)
+
+		// Determine if the index is "missing" on To side due to a rename: compare
+		// all seemingly-new indexes to this one
+		if !stillExists {
+			for toName, toIndex := range toIndexes {
+				// This comparison intentionally doesn't examine the Comment or Invisible
+				// fields; logic elsewhere handles that appropriately
+				if fromIndexes[toName] == nil && toIndex.Equivalent(fromIndex) {
+					// Adjust the mapping of indexes in "from" to now be keyed by its new name.
+					// This makes later lookup/comparison easier, and also "claims" the index
+					// so that it won't erroneously be used as a candidate in multiple renames!
+					delete(fromIndexes, fromIndex.Name)
+					fromIndexes[toName] = fromIndex
+					stillExists = true
+					break
+				}
+			}
+		}
+
+		// Either some corresponding index still exists on "to" side, or the index has
+		// been dropped entirely
+		if stillExists {
+			fromIndexStillExist = append(fromIndexStillExist, fromIndex)
+		} else {
+			clauses = append(clauses, DropIndex{Index: fromIndex})
+		}
+	}
+
+	var reorderDueToClause []TableAlterClause // if non-empty and using StrictIndexOrder, *may* need to re-order, depending what SQL these clauses emit
+	var reorderDueToMove bool                 // if true and using StrictIndexOrder, definitely must re-order
+	for n, toIndex := range to.SecondaryIndexes {
+		fromIndex, existedBefore := fromIndexes[toIndex.Name]
+
+		// Entirely new index, not a modification to existing index. This also
+		// means any pre-existing "To" side indexes after this must be re-ordered
+		// if caller uses StatementModifiers.StrictIndexOrder.
+		if !existedBefore {
+			clause := AddIndex{Index: toIndex}
+			clauses = append(clauses, clause)
+			reorderDueToMove = true
+			continue
+		}
+
+		// This index has changed, and/or a previous index change potentially
+		// requires dropping/re-adding subsequent indexes to maintain the requested
+		// order of secondary index definitions in the CREATE TABLE.
+		if !fromIndex.Equals(toIndex) || reorderDueToMove || len(reorderDueToClause) > 0 {
+			clause := ModifyIndex{
+				FromIndex:          fromIndex,
+				ToIndex:            toIndex,
+				reorderDueToClause: reorderDueToClause,
+				reorderDueToMove:   reorderDueToMove,
+			}
+			clauses = append(clauses, clause)
+			reorderDueToClause = append(reorderDueToClause, clause)
+		}
+
+		// The relative order of pre-existing indexes has changed. With strict
+		// ordering, all indexes *after* this one must move. This one can stay in
+		// place; the other ones' moves will result in the desired order.
+		if !reorderDueToMove && fromIndexStillExist[n].Name != fromIndex.Name {
+			reorderDueToMove = true
+		}
+	}
+
+	return clauses
 }
 
 func compareColumnExistence(self, other *Table) columnsComparison {
