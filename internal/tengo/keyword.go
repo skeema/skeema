@@ -11,7 +11,7 @@ import (
 // as well as for solving issues like #175 and #199.
 
 // This constant is used for determining map capacity for reserved word maps.
-// This is padded slightly; currently MySQL 8 has 262 keywords, vs 249 in recent
+// This is padded slightly; currently MySQL 8 has 263 keywords, vs 250 in recent
 // MariaDB releases.
 const countReservedWordsPerFlavor = 265
 
@@ -322,6 +322,7 @@ var commonReservedWords = []string{
 	"xor",
 	"year_month",
 	"zerofill",
+	"_filename", // special case mentioned separately in MySQL manual; also seems to apply to MariaDB
 }
 
 // Flavor values used in map below.
