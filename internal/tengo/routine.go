@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/VividCortex/mysqlerr"
 	"github.com/jmoiron/sqlx"
 	"golang.org/x/sync/errgroup"
 )
@@ -509,7 +508,7 @@ func showCreateRoutine(ctx context.Context, db *sqlx.DB, routine string, ot Obje
 			CreateStatement sql.NullString `db:"Create Procedure"`
 		}
 		err = db.SelectContext(ctx, &createRows, query)
-		if (err == nil && len(createRows) != 1) || IsDatabaseError(err, mysqlerr.ER_SP_DOES_NOT_EXIST) {
+		if (err == nil && len(createRows) != 1) || IsObjectNotFoundError(err) {
 			err = sql.ErrNoRows
 		} else if err == nil {
 			create = createRows[0].CreateStatement.String
@@ -519,7 +518,7 @@ func showCreateRoutine(ctx context.Context, db *sqlx.DB, routine string, ot Obje
 			CreateStatement sql.NullString `db:"Create Function"`
 		}
 		err = db.SelectContext(ctx, &createRows, query)
-		if (err == nil && len(createRows) != 1) || IsDatabaseError(err, mysqlerr.ER_SP_DOES_NOT_EXIST) {
+		if (err == nil && len(createRows) != 1) || IsObjectNotFoundError(err) {
 			err = sql.ErrNoRows
 		} else if err == nil {
 			create = createRows[0].CreateStatement.String

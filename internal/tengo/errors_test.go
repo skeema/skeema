@@ -2,7 +2,7 @@ package tengo
 
 import (
 	"errors"
-	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -17,55 +17,77 @@ func (s TengoIntegrationSuite) TestIsDatabaseError(t *testing.T) {
 	}
 }
 
-func (s TengoIntegrationSuite) TestIsSyntaxError(t *testing.T) {
+func (s TengoIntegrationSuite) TestDatabaseErrorTypeFunctions(t *testing.T) {
+	// Test IsSyntaxError
 	err := errors.New("non-db error")
 	if IsSyntaxError(err) {
 		t.Errorf("IsSyntaxError unexpectedly returned true for non-database error type=%T", err)
 	}
-
 	db, err := s.d.ConnectionPool("testing", "")
 	if err != nil {
 		t.Fatalf("Unable to get connection")
 	}
-	_, err = db.Exec("ALTER TAABBEL actor ENGINE=InnoDB")
-	if err == nil {
+	_, syntaxErr := db.Exec("ALTER TAABBEL actor ENGINE=InnoDB")
+	if syntaxErr == nil {
 		t.Error("Bad syntax still returned nil error unexpectedly")
-
-	} else if !IsSyntaxError(err) {
-		t.Errorf("Error of type %T %+v unexpectedly not considered syntax error", err, err)
+	} else if !IsSyntaxError(syntaxErr) {
+		t.Errorf("Error of type %T %+v unexpectedly not considered syntax error", syntaxErr, syntaxErr)
 	}
-	_, err = db.Exec("ALTER TABLE doesnt_exist ENGINE=InnoDB")
-	if err == nil {
+	_, doesntExistErr := db.Exec("ALTER TABLE doesnt_exist ENGINE=InnoDB")
+	if doesntExistErr == nil {
 		t.Error("Bad alter still returned nil error unexpectedly")
-	} else if IsSyntaxError(err) {
-		t.Errorf("Error of type %T %+v unexpectedly considered syntax error", err, err)
-	}
-}
-
-func (s TengoIntegrationSuite) TestIsAccessError(t *testing.T) {
-	err := errors.New("non-db error")
-	if IsAccessError(err) {
-		t.Errorf("IsAccessError unexpectedly returned true for non-database error type=%T", err)
+	} else if IsSyntaxError(doesntExistErr) {
+		t.Errorf("Error of type %T %+v unexpectedly considered syntax error", doesntExistErr, doesntExistErr)
 	}
 
+	// Test IsObjectNotFoundError
+	if !IsObjectNotFoundError(doesntExistErr) {
+		t.Errorf("Error of type %T %+v unexpectedly not considered not-found error", doesntExistErr, doesntExistErr)
+	}
+	if IsObjectNotFoundError(syntaxErr) {
+		t.Errorf("Error of type %T %+v unexpectedly considered not-found error", syntaxErr, syntaxErr)
+	}
+
+	// Test IsSessionVarNameError and IsSessionVarValueError
+	_, invalidVarNameErr := s.d.ConnectionPool("testing", "invalidvar='hello'")
+	_, globalOnlyVarNameErr := s.d.ConnectionPool("", "concurrent_insert=1")
+	_, readOnlyVarNameErr := s.d.ConnectionPool("", "version_comment='hello'")
+	_, invalidVarValueErr := s.d.ConnectionPool("testing", "sql_mode='superduperdb'")
+	_, invalidVarValTypeErr := s.d.ConnectionPool("testing", "wait_timeout='hello'")
+	if !IsSessionVarNameError(invalidVarNameErr) {
+		t.Errorf("Incorrect behavior of IsSessionVarNameError: expected true for %T %+v, but false was returned", invalidVarNameErr, invalidVarNameErr)
+	}
+	if !IsSessionVarNameError(globalOnlyVarNameErr) {
+		t.Errorf("Incorrect behavior of IsSessionVarNameError: expected true for %T %+v, but false was returned", globalOnlyVarNameErr, globalOnlyVarNameErr)
+	}
+	if !IsSessionVarNameError(readOnlyVarNameErr) {
+		t.Errorf("Incorrect behavior of IsSessionVarNameError: expected true for %T %+v, but false was returned", readOnlyVarNameErr, readOnlyVarNameErr)
+	}
+	if IsSessionVarNameError(invalidVarValueErr) || IsSessionVarNameError(invalidVarValTypeErr) {
+		t.Error("Incorrect behavior of IsSessionVarNameError: expected false, but true was returned")
+	}
+	if !IsSessionVarValueError(invalidVarValueErr) {
+		t.Errorf("Incorrect behavior of IsSessionVarValueError: expected true for %T %+v, but false was returned", invalidVarValueErr, invalidVarValueErr)
+	}
+	if !IsSessionVarValueError(invalidVarValTypeErr) {
+		t.Errorf("Incorrect behavior of IsSessionVarValueError: expected true for %T %+v, but false was returned", invalidVarValTypeErr, invalidVarValTypeErr)
+	}
+	if IsSessionVarValueError(invalidVarNameErr) || IsSessionVarValueError(globalOnlyVarNameErr) || IsSessionVarValueError(readOnlyVarNameErr) {
+		t.Error("Incorrect behavior of IsSessionVarValueError: expected false, but true was returned")
+	}
+
+	// Test IsAccessDeniedError
 	// Hack username in DSN to no longer be correct
-	inst := s.d.Instance
-	inst.BaseDSN = fmt.Sprintf("badname%s", inst.BaseDSN)
-	_, err = inst.ConnectionPool("", "")
-	if err == nil {
-		t.Error("ConnectionPool unexpectedly returned nil error")
-	} else if !IsAccessError(err) {
-		t.Errorf("Error of type %T %+v unexpectedly not considered access error", err, err)
+	s.d.Instance.BaseDSN = strings.Replace(s.d.Instance.BaseDSN, s.d.Instance.Password, "wrongpw", 1)
+	_, accessDeniedErr := s.d.Instance.ConnectionPool("", "")
+	if !IsAccessDeniedError(accessDeniedErr) {
+		t.Errorf("Error of type %T %+v unexpectedly not considered access denied error", accessDeniedErr, accessDeniedErr)
 	}
-	inst.BaseDSN = inst.BaseDSN[7:]
-	db, err := inst.ConnectionPool("testing", "")
-	if err != nil {
-		t.Errorf("ConnectionPool unexpectedly returned error: %s", err)
+	s.d.Instance.BaseDSN = strings.Replace(s.d.Instance.BaseDSN, "wrongpw", s.d.Instance.Password, 1)
+	if IsAccessDeniedError(doesntExistErr) {
+		t.Errorf("Error of type %T %+v unexpectedly considered access denied error", doesntExistErr, doesntExistErr)
 	}
-	_, err = db.Exec("ALTER TABLE doesnt_exist ENGINE=InnoDB")
-	if err == nil {
-		t.Error("Bad alter still returned nil error unexpectedly")
-	} else if IsAccessError(err) {
-		t.Errorf("Error of type %T %+v unexpectedly considered access error", err, err)
+	if IsAccessPrivilegeError(accessDeniedErr) {
+		t.Error("Incorrect behavior of IsAccessPrivilegeError")
 	}
 }

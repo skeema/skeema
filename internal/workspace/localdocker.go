@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/VividCortex/mysqlerr"
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/tengo"
@@ -195,7 +194,7 @@ func (ld *LocalDocker) ConnectionPool(params string) (*sqlx.DB, error) {
 	// This can happen if overriding flavor on the command-line, or even
 	// automatically if the real server runs 5.7 but local machine is ARM.
 	// In this case, try conn again with all non-portable sql_mode values removed.
-	if tengo.IsDatabaseError(err, mysqlerr.ER_WRONG_VALUE_FOR_VAR) && strings.Contains(finalParams, "sql_mode") {
+	if tengo.IsSessionVarValueError(err) && strings.Contains(err.Error(), "sql_mode") && strings.Contains(finalParams, "sql_mode") {
 		v, _ := url.ParseQuery(finalParams)
 		sqlMode := v.Get("sql_mode")
 		if len(sqlMode) > 1 {

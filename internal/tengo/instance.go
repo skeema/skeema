@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/VividCortex/mysqlerr"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 	"golang.org/x/sync/errgroup"
@@ -728,7 +727,7 @@ func (instance *Instance) DropSchema(schema string, opts BulkDropOptions) error 
 	// Now that the tables have been removed, we can drop the schema without
 	// risking a long lock impacting the DB negatively
 	err = dropSchema(db, schema)
-	if IsDatabaseError(err, mysqlerr.ER_LOCK_WAIT_TIMEOUT) {
+	if IsConcurrentDDLError(err) {
 		// we do 1 retry upon seeing a metadata locking conflict, consistent with
 		// logic in DropTablesInSchema
 		err = dropSchema(db, schema)
@@ -881,7 +880,7 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 				}
 			}
 			_, err := db.ExecContext(ctx, "DROP TABLE "+EscapeIdentifier(name))
-			if IsDatabaseError(err, mysqlerr.ER_LOCK_DEADLOCK, mysqlerr.ER_LOCK_WAIT_TIMEOUT) {
+			if IsConcurrentDDLError(err) {
 				// If foreign keys are being used, DROP TABLE can encounter lock wait
 				// timeouts in various situations in MySQL 8.0+ or MariaDB 10.6+, due to
 				// concurrent drops or due to cross-schema FKs. MySQL 8.0+ can also

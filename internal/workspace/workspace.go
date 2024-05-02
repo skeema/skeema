@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/VividCortex/mysqlerr"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
@@ -365,7 +364,7 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 	for n := 0; n < len(logicalSchema.Creates); n++ {
 		if err := <-errs; err != nil {
 			stmterr := err.(*StatementError)
-			if tengo.IsDatabaseError(stmterr.Err, mysqlerr.ER_LOCK_DEADLOCK, mysqlerr.ER_LOCK_WAIT_TIMEOUT, mysqlerr.ER_NO_SUCH_TABLE) {
+			if tengo.IsConcurrentDDLError(stmterr.Err) {
 				sequentialStatements = append(sequentialStatements, stmterr.Statement)
 			} else {
 				wsSchema.Failures = append(wsSchema.Failures, stmterr)

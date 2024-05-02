@@ -3,7 +3,6 @@ module github.com/skeema/skeema
 go 1.21
 
 require (
-	github.com/VividCortex/mysqlerr v1.0.0
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/mattn/goveralls v0.0.11
