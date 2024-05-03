@@ -1496,11 +1496,15 @@ func (s SkeemaIntegrationSuite) TestTempSchemaBinlog(t *testing.T) {
 			File     string `db:"File"`
 			Position string `db:"Position"`
 		}
-		if err := db.Select(&masterStatus, "SHOW MASTER STATUS"); err != nil {
-			t.Fatalf("Error running SHOW MASTER STATUS: %v", err)
+		noun := "MASTER"
+		if s.d.Flavor().MinMySQL(8, 4) {
+			noun = "BINARY LOG"
+		}
+		if err := db.Select(&masterStatus, "SHOW "+noun+" STATUS"); err != nil {
+			t.Fatalf("Error running SHOW %s STATUS: %v", noun, err)
 		}
 		if len(masterStatus) != 1 {
-			t.Fatalf("Wrong row count from SHOW MASTER STATUS: expected 1, found %d", len(masterStatus))
+			t.Fatalf("Wrong row count from SHOW %s STATUS: expected 1, found %d", noun, len(masterStatus))
 		}
 		return fmt.Sprintf("%s %s", masterStatus[0].File, masterStatus[0].Position)
 	}

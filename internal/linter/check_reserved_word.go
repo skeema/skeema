@@ -53,6 +53,9 @@ func makeReservedWordMessage(word string, flavor tengo.Flavor) string {
 	if tengo.IsReservedWord(word, flavor) {
 		when = "your version"
 		why = "This name may be problematic, since it must be backtick-wrapped in SQL queries."
+	} else if tengo.IsUnreservedWord(word, flavor) {
+		when = "a previous version"
+		why = "This name may be problematic if you need to retain compatibility with older server versions."
 	}
 	return fmt.Sprintf("%s is a reserved word in %s of %s.\n%s", tengo.EscapeIdentifier(word), when, what, why)
 }

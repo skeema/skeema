@@ -364,7 +364,7 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 	for n := 0; n < len(logicalSchema.Creates); n++ {
 		if err := <-errs; err != nil {
 			stmterr := err.(*StatementError)
-			if tengo.IsConcurrentDDLError(stmterr.Err) {
+			if tengo.IsLockConflictError(stmterr.Err) || tengo.IsObjectNotFoundError(stmterr.Err) {
 				sequentialStatements = append(sequentialStatements, stmterr.Statement)
 			} else {
 				wsSchema.Failures = append(wsSchema.Failures, stmterr)

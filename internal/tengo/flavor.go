@@ -16,7 +16,7 @@ type Version [3]uint16
 // at the time of this release. These intentionally exclude patch release
 // numbers; corresponding logic handles this appropriately.
 var (
-	LatestMySQLVersion   = Version{8, 3}
+	LatestMySQLVersion   = Version{8, 4}
 	LatestMariaDBVersion = Version{11, 3}
 )
 

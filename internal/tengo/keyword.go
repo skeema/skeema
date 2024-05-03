@@ -11,9 +11,9 @@ import (
 // as well as for solving issues like #175 and #199.
 
 // This constant is used for determining map capacity for reserved word maps.
-// This is padded slightly; currently MySQL 8 has 263 keywords, vs 250 in recent
-// MariaDB releases.
-const countReservedWordsPerFlavor = 265
+// This is padded slightly; currently MySQL 8.4 has 265 reserved words, vs 250
+// in recent MariaDB releases.
+const countReservedWordsPerFlavor = 270
 
 var (
 	keywordMutex          sync.Mutex
@@ -38,38 +38,57 @@ func ReservedWordMap(flavor Flavor) map[string]bool {
 
 	keywordMutex.Lock()
 	defer keywordMutex.Unlock()
-
 	if reservedWordsByFlavor == nil {
 		reservedWordsByFlavor = make(map[Flavor]map[string]bool)
 	}
-	rwm := make(map[string]bool, countReservedWordsPerFlavor)
-
-	// Add all keywords that are present in both MySQL 5.5 and MariaDB 10.1, which
-	// are the oldest flavors that this package supports.
-	for _, word := range commonReservedWords {
-		rwm[word] = true
-	}
-
-	// Now add in flavor-specific keywords
-	for word, flavors := range reservedWordsAddedInFlavor {
-		for _, flavorAddedIn := range flavors {
-			if flavor.Vendor == flavorAddedIn.Vendor && flavor.Version.AtLeast(flavorAddedIn.Version) {
-				rwm[word] = true
-				break
-			}
-		}
-	}
-
-	reservedWordsByFlavor[flavor] = rwm
-	return rwm
+	reservedWordsByFlavor[flavor] = buildReservedWordMap(flavor.Vendor, flavor.Version)
+	return reservedWordsByFlavor[flavor]
 }
 
 // VendorReservedWordMap returns a map containing all reserved words in any
 // version of the supplied vendor.
 // For additional documentation on the returned map, see ReservedWordMap.
 func VendorReservedWordMap(vendor Vendor) map[string]bool {
-	flavor := Flavor{Vendor: vendor, Version: Version{65535, 65535, 65535}}
+	flavor := Flavor{Vendor: vendor} // intentionally omitting version
 	return ReservedWordMap(flavor)
+}
+
+// buildReservedWordMap is a helper for building these maps. Supply a zero
+// Version in order to get a non-version-specific map for a vendor.
+func buildReservedWordMap(vendor Vendor, version Version) map[string]bool {
+	rwm := make(map[string]bool, countReservedWordsPerFlavor)
+	wantAllForVendor := (version == Version{})
+
+	// Add all words that are reserved in both MySQL 5.5 and MariaDB 10.1, which
+	// are the oldest flavors that this package supports.
+	for _, word := range commonReservedWords {
+		rwm[word] = true
+	}
+
+	// Now add in vendor-specific words, possibly also accounting for version
+	for word, flavors := range reservedWordsAddedInFlavor {
+		for _, flavorAddedIn := range flavors {
+			if vendor == flavorAddedIn.Vendor && (wantAllForVendor || version.AtLeast(flavorAddedIn.Version)) {
+				rwm[word] = true
+				break
+			}
+		}
+	}
+
+	// If a version was supplied, remove any un-reserved words for that version.
+	// We don't do this for non-version-specific vendor maps, since those
+	// intentionally include all words that have ever been reserved in any version
+	// for that vendor.
+	for word, flavors := range reservedWordsRemovedInFlavor {
+		for _, flavorRemovedIn := range flavors {
+			if vendor == flavorRemovedIn.Vendor && version.AtLeast(flavorRemovedIn.Version) {
+				delete(rwm, word)
+				break
+			}
+		}
+	}
+
+	return rwm
 }
 
 // IsReservedWord returns true if word is a reserved word in flavor, or false
@@ -87,6 +106,20 @@ func IsReservedWord(word string, flavor Flavor) bool {
 func IsVendorReservedWord(word string, vendor Vendor) bool {
 	reservedWordMap := VendorReservedWordMap(vendor)
 	return reservedWordMap[strings.ToLower(word)]
+}
+
+// IsUnreservedWord returns true if word is NOT a reserved word anymore in the
+// supplied flavor, but WAS previously a reserved word in some older version of
+// that same vendor.
+func IsUnreservedWord(word string, flavor Flavor) bool {
+	if flavors, ok := reservedWordsRemovedInFlavor[strings.ToLower(word)]; ok {
+		for _, flavorRemovedIn := range flavors {
+			if flavor.Vendor == flavorRemovedIn.Vendor && flavor.Version.AtLeast(flavorRemovedIn.Version) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Below this point are unexported variables containing keyword lists. If adding
@@ -218,7 +251,7 @@ var commonReservedWords = []string{
 	"longtext",
 	"loop",
 	"low_priority",
-	"master_ssl_verify_server_cert",
+	"master_ssl_verify_server_cert", // removed in MySQL 8.4, see reservedWordsRemovedInFlavor
 	"match",
 	"maxvalue",
 	"mediumblob",
@@ -327,14 +360,15 @@ var commonReservedWords = []string{
 
 // Flavor values used in map below.
 var (
-	mySQL56    = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, 0}}
-	mySQL57    = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, 0}}
-	mySQL80    = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, 0}}
-	mariaDB101 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1, 0}}
-	mariaDB102 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2, 0}}
-	mariaDB103 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3, 0}}
-	mariaDB106 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 6, 0}}
-	mariaDB107 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7, 0}}
+	mySQL56    = Flavor{Vendor: VendorMySQL, Version: Version{5, 6}}
+	mySQL57    = Flavor{Vendor: VendorMySQL, Version: Version{5, 7}}
+	mySQL80    = Flavor{Vendor: VendorMySQL, Version: Version{8, 0}}
+	mySQL84    = Flavor{Vendor: VendorMySQL, Version: Version{8, 4}}
+	mariaDB101 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1}}
+	mariaDB102 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2}}
+	mariaDB103 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3}}
+	mariaDB106 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 6}}
+	mariaDB107 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7}}
 )
 
 // Mapping of lowercased reserved words to the flavor(s) that added them. A
@@ -351,6 +385,11 @@ var (
 //   - This list assumes the information in the MySQL and MariaDB manuals is
 //     correct, but that is not always the case. Please open a pull request if
 //     you discover a missing or incorrect entry.
+//   - Although MySQL's information_schema.keywords table has a column
+//     indicating whether a keyword is reserved, that data is not always
+//     accurate, so it cannot be used to rebuild this list automatically.
+//     (Meanwhile, MariaDB's information_schema.keywords doesn't even have that
+//     column at all.)
 //   - We don't yet track anything specific to a Variant (e.g. Percona Server).
 //   - Some situational cases are omitted, for example "window" is a MariaDB
 //     reserved word only in the context of table name *aliases*, which largely
@@ -359,7 +398,7 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"get":             {mySQL56},
 	"io_after_gtids":  {mySQL56},
 	"io_before_gtids": {mySQL56},
-	"master_bind":     {mySQL56},
+	"master_bind":     {mySQL56}, // removed in MySQL 8.4, see reservedWordsRemovedInFlavor
 	"partition":       {mySQL56, mariaDB101},
 
 	"generated":       {mySQL57},
@@ -367,7 +406,7 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"stored":          {mySQL57},
 	"virtual":         {mySQL57},
 
-	"cube":         {mySQL80},
+	"cube":         {mySQL80}, // still reserved in 8.4, despite 8.4.0's I_S.keywords.reserved being 0, see bug 114874
 	"cume_dist":    {mySQL80},
 	"dense_rank":   {mySQL80},
 	"empty":        {mySQL80},
@@ -395,6 +434,11 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"system":       {mySQL80},
 	"window":       {mySQL80}, // see comment above re: MariaDB
 
+	"manual":      {mySQL84}, // reserved in 8.4.0, despite 8.4.0's I_S.keywords.reserved being 0, see bug 114874
+	"parallel":    {mySQL84}, // reserved in 8.4.0, despite 8.4.0's I_S.keywords.reserved being 0, see bug 114874
+	"qualify":     {mySQL84}, // reserved in 8.4.0, despite 8.4.0's I_S.keywords.reserved being 0, see bug 114874
+	"tablesample": {mySQL84}, // reserved in 8.4.0, despite 8.4.0's I_S.keywords.reserved being 0, see bug 114874
+
 	"current_role":            {mariaDB101},
 	"delete_domain_id":        {mariaDB101}, // actual version unclear from docs, see comment above
 	"do_domain_ids":           {mariaDB101},
@@ -412,4 +456,9 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"stats_sample_pages":      {mariaDB101},
 
 	"offset": {mariaDB106},
+}
+
+var reservedWordsRemovedInFlavor = map[string][]Flavor{
+	"master_bind":                   {mySQL84},
+	"master_ssl_verify_server_cert": {mySQL84},
 }

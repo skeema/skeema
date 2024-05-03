@@ -7,7 +7,7 @@ import (
 )
 
 // Constants mapping to database server error numbers
-// Useful reference: https://dev.mysql.com/doc/mysql-errors/8.0/en/server-error-reference.html
+// Useful reference: https://dev.mysql.com/doc/mysql-errors/8.4/en/server-error-reference.html
 const (
 	ER_PARSE_ERROR  = 1064
 	ER_SYNTAX_ERROR = 1149
@@ -60,14 +60,13 @@ func IsObjectNotFoundError(err error) bool {
 	return IsDatabaseError(err, ER_NO_SUCH_TABLE, ER_SP_DOES_NOT_EXIST, ER_TRG_DOES_NOT_EXIST, ER_EVENT_DOES_NOT_EXIST)
 }
 
-// IsConcurrentDDLError returns true if err is a type of error that can manifest
-// from running DDL concurrently, indicating the client should retry the DDL
-// serially instead.
-func IsConcurrentDDLError(err error) bool {
-	// * MDL conflicts can result in ER_LOCK_WAIT_TIMEOUT
-	// * Out-of-order CREATE TABLE...LIKE can result in ER_NO_SUCH_TABLE
-	// * FK-related situations can result in ER_LOCK_DEADLOCK
-	return IsDatabaseError(err, ER_LOCK_DEADLOCK, ER_LOCK_WAIT_TIMEOUT, ER_NO_SUCH_TABLE)
+// IsLockConflictError returns true if err is either a lock wait timeout
+// (including one from a metadata lock wait) or a deadlock. In the context of
+// Skeema's access patterns, these typically come up when running DDL
+// concurrently when foreign keys are in use. The client should retry such
+// failing DDL serially instead.
+func IsLockConflictError(err error) bool {
+	return IsDatabaseError(err, ER_LOCK_DEADLOCK, ER_LOCK_WAIT_TIMEOUT)
 }
 
 // IsSessionVarNameError returns true if err indicates a session variable name

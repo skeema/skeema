@@ -727,7 +727,7 @@ func (instance *Instance) DropSchema(schema string, opts BulkDropOptions) error 
 	// Now that the tables have been removed, we can drop the schema without
 	// risking a long lock impacting the DB negatively
 	err = dropSchema(db, schema)
-	if IsConcurrentDDLError(err) {
+	if IsLockConflictError(err) {
 		// we do 1 retry upon seeing a metadata locking conflict, consistent with
 		// logic in DropTablesInSchema
 		err = dropSchema(db, schema)
@@ -880,7 +880,7 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 				}
 			}
 			_, err := db.ExecContext(ctx, "DROP TABLE "+EscapeIdentifier(name))
-			if IsConcurrentDDLError(err) {
+			if IsLockConflictError(err) {
 				// If foreign keys are being used, DROP TABLE can encounter lock wait
 				// timeouts in various situations in MySQL 8.0+ or MariaDB 10.6+, due to
 				// concurrent drops or due to cross-schema FKs. MySQL 8.0+ can also

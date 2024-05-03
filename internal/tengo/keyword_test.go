@@ -84,6 +84,17 @@ func TestIsReservedWord(t *testing.T) {
 		{"offset", "percona:8.0", false},
 		{"offset", "mariadb:10.5", false},
 		{"offset", "mariadb:10.6", true},
+		{"master_bind", "mysql:5.5", false},
+		{"master_bind", "mysql:5.6", true},
+		{"master_bind", "mysql:8.3", true},
+		{"master_bind", "mysql:8.4", false},
+		{"master_bind", "mysql:8.8", false},
+		{"master_bind", "mariadb:11.3", false},
+		{"master_ssl_verify_server_cert", "mysql:5.5", true},
+		{"master_ssl_verify_server_cert", "mysql:8.0.37", true},
+		{"master_ssl_verify_server_cert", "mysql:8.3", true},
+		{"master_ssl_verify_server_cert", "mysql:8.4", false},
+		{"master_ssl_verify_server_cert", "mariadb:10.11", true},
 	}
 	for _, tc := range cases {
 		if actual := IsReservedWord(tc.word, ParseFlavor(tc.flavor)); actual != tc.reserved {
@@ -110,10 +121,45 @@ func TestIsVendorReservedWord(t *testing.T) {
 		{"except", VendorMariaDB, true},
 		{"slow", VendorMySQL, false},
 		{"slow", VendorMariaDB, true},
+		{"master_ssl_verify_server_cert", VendorMySQL, true},
+		{"Master_ssl_verify_server_cert", VendorMariaDB, true},
+		{"master_bind", VendorMySQL, true},
+		{"master_bind", VendorMariaDB, false},
 	}
 	for _, tc := range cases {
 		if actual := IsVendorReservedWord(tc.word, tc.vendor); actual != tc.reserved {
 			t.Errorf("IsVendorReservedWord(%q, %q) returned %t, expected %t", tc.word, tc.vendor, actual, tc.reserved)
+		}
+	}
+}
+
+func TestIsUnreservedWord(t *testing.T) {
+	cases := []struct {
+		word       string
+		flavor     string
+		unreserved bool
+	}{
+		{"add", "mysql:8.4", false},
+		{"add", "mariadb:11.3", false},
+		{"add", "", false},
+		{"row_number", "mysql:5.7", false},
+		{"row_number", "mysql:8.0", false},
+		{"row_number", "mariadb:10.6", false},
+		{"row_number", "mariadb:10.7", false},
+		{"asdf", "mysql:8.4", false},
+		{"asdf", "mariadb:11.3", false},
+		{"asdf", "", false},
+		{"master_ssl_verify_server_cert", "mysql:8.3", false},
+		{"master_SSL_verify_server_cert", "mysql:8.4", true},
+		{"master_ssl_verify_server_cert", "mariadb:11.3", false},
+		{"master_bind", "mysql:8.0", false},
+		{"master_bind", "mysql:8.4", true},
+		{"master_BIND", "mysql:8.5", true},
+		{"master_bind", "mariadb:11.3", false},
+	}
+	for _, tc := range cases {
+		if actual := IsUnreservedWord(tc.word, ParseFlavor(tc.flavor)); actual != tc.unreserved {
+			t.Errorf("IsUnreservedWord(%q, %q) returned %t, expected %t", tc.word, tc.flavor, actual, tc.unreserved)
 		}
 	}
 }
