@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
 	"unicode/utf8"
 )
@@ -112,17 +111,27 @@ var processors map[string]statementProcessor
 var createProcessors map[string]statementProcessor
 
 // init here registers the default set of top-level statement processors and
-// types of CREATE statement processors.
+// types of CREATE statement processors. For performance reasons, each key is
+// entered as both all-uppercase and all-lowercase. (Callsites first try using
+// the input's casing as-is, and then will fall back to strings.ToUpper only if
+// needed in order to handle a mixed-case input, which is uncommon.)
 func init() {
 	processors = map[string]statementProcessor{
+		"CREATE":    processCreateStatement,
 		"create":    processCreateStatement,
+		"USE":       processUseCommand,
 		"use":       processUseCommand,
+		"DELIMITER": processDelimiterCommand,
 		"delimiter": processDelimiterCommand,
 	}
 	createProcessors = map[string]statementProcessor{
+		"TABLE":     processCreateTable,
 		"table":     processCreateTable,
+		"FUNCTION":  processCreateRoutine,
 		"function":  processCreateRoutine,
+		"PROCEDURE": processCreateRoutine,
 		"procedure": processCreateRoutine,
+		"DEFINER":   processCreateWithDefiner,
 		"definer":   processCreateWithDefiner,
 	}
 }
@@ -189,7 +198,10 @@ func (p *parser) nextStatement() (stmt *Statement, err error) {
 
 	var processor statementProcessor
 	if t.typ == TokenWord {
-		processor = processors[strings.ToLower(string(t.val))]
+		processor = processors[string(t.val)] // optimistically see if already all uppercase or all lowercase
+		if processor == nil {                 // may have been mixed-case input, try again with ToUpper
+			processor = processors[strings.ToUpper(string(t.val))]
+		}
 	}
 	if processor == nil {
 		// Default processor is used if statement starts with a non-keyword, or with
@@ -243,12 +255,48 @@ func (p *parser) nextToken() (Token, error) {
 // then supply a subslice of any remaining tokens back to the subsequent call to
 // nextTokens.
 func (p *parser) nextTokens(tokens []Token, n int) []Token {
+	if len(tokens) == 0 {
+		tokens = make([]Token, 0, n)
+	}
 	for p.err == nil && len(tokens) < n && (len(tokens) == 0 || tokens[len(tokens)-1].typ != TokenDelimiter) {
 		t, err := p.nextToken()
 		if err == nil && t.typ != TokenFiller {
 			tokens = append(tokens, t)
 		}
 	}
+	return tokens
+}
+
+// nextTokensMinBytes attempts to grow the supplied tokens list to ensure the
+// combined length of non-filler token values is at least wantBytes, unless it
+// already is. This method won't grow a list beyond a delimiter token or error,
+// so the result is not guaranteed to meet the desired length. The result always
+// excludes TokenFiller tokens. Errors are not returned, but may be obtained via
+// p.err if necessary.
+// The supplied tokens list may be nil, if no tokens have been buffered by
+// caller. If it is non-nil, it must either contain no TokenDelimiter, or
+// have its only TokenDelimiter occur at the end of the slice. The intended
+// call pattern is similar to nextTokens.
+func (p *parser) nextTokensMinBytes(tokens []Token, wantBytes int) []Token {
+	var haveBytes int
+
+	// Check any tokens we already have
+	for _, token := range tokens {
+		haveBytes += len(token.val)
+		if haveBytes >= wantBytes {
+			return tokens
+		}
+	}
+
+	// Fetch additional tokens until delimiter or error/eof
+	for p.err == nil && haveBytes < wantBytes && (len(tokens) == 0 || tokens[len(tokens)-1].typ != TokenDelimiter) {
+		t, err := p.nextToken()
+		if err == nil && t.typ != TokenFiller {
+			haveBytes += len(t.val)
+			tokens = append(tokens, t)
+		}
+	}
+
 	return tokens
 }
 
@@ -266,108 +314,123 @@ func (p *parser) finishStatement() *Statement {
 	return stmt
 }
 
+// tokensMatchSequence confirms whether tokens begin with the sequence string,
+// which should be supplied as a single-space-delimited string of token values.
+// If tokens match the sequence, matched is true and matchedTokenCount returns
+// the count of tokens that make up sequence. If tokens do not match the full
+// sequence, matched is false and matchedTokenCount is always 0, even if a
+// partial match was present.
+// The supplied tokens must already be sufficiently long to avoid false
+// negatives. This function cannot grow or otherwise manipulate the tokens
+// slice.
+func tokensMatchSequence(tokens []Token, sequence string) (matched bool, matchedTokenCount int) {
+	for n := range tokens {
+		if toklen := len(tokens[n].val); toklen > len(sequence) {
+			// Cur token longer than sequence: can't match
+			return false, 0
+		} else if toklen == len(sequence) {
+			// Cur token same length as sequence: check for match
+			if strings.EqualFold(tokens[n].val, sequence) {
+				return true, n + 1
+			}
+			return false, 0
+		} else if sequence[toklen] != ' ' || !strings.EqualFold(tokens[n].val, sequence[:toklen]) {
+			// Lack of sequence delimiter indicates this sequence chunk isn't same
+			// length as cur token (can't match), OR it is same length but doesn't
+			// match
+			return false, 0
+		} else {
+			// tokens[n] matched. Move on to next sequence chunk, after space delimiter.
+			sequence = sequence[toklen+1:]
+		}
+	}
+	// partial match / ran out of tokens before matching full sequence
+	return false, 0
+}
+
 // matchNextSequence attempts to find a matching sequence at the start of
 // tokens. The match is greedy, meaning the longest matching wantSequence will
 // be used. The supplied tokens will be grown as needed, if possible. Supplying
-// tokens=nil is allowed. Each wantSequence should be supplied as an all-
-// lowercase single-spaced string of token values. Separate lists of matching
-// and leftover tokens will be returned; the former will be nil if no match
-// occurred.
+// tokens=nil is allowed. Each wantSequence should be supplied as a space-
+// delimited string of token values. Separate lists of matching and leftover
+// tokens will be returned; the former will be nil if no match occurred.
 func (p *parser) matchNextSequence(tokens []Token, wantSequence ...string) (matched []Token, leftovers []Token) {
 	if len(wantSequence) == 0 {
 		return nil, tokens
 	}
 
-	// Pre-process the input to determine the number of tokens in each wanted
-	// sequence, also tracking the token count in the longest wanted sequence.
-	// Then sort sequences from highest token count to least.
-	var maxWantLen int
-	sequences := make([]struct {
-		val string
-		cnt int
-	}, len(wantSequence))
-	for n, ws := range wantSequence {
-		sequences[n].val = ws + " " // trailing space enables prefix matching below
-		sequences[n].cnt = strings.Count(ws, " ") + 1
-		if sequences[n].cnt > maxWantLen {
-			maxWantLen = sequences[n].cnt
+	// Determine length of longest element of wantSequence, and then attempt to
+	// obtain enough tokens to possibly match this length
+	var longestSeqLen int
+	for n := range wantSequence {
+		if len(wantSequence[n]) > longestSeqLen {
+			longestSeqLen = len(wantSequence[n])
 		}
 	}
-	sort.Slice(sequences, func(i, j int) bool { return sequences[i].cnt > sequences[j].cnt })
+	tokens = p.nextTokensMinBytes(tokens, longestSeqLen)
 
-	// Attempt to ensure tokens list is long enough to possibly match the longest
-	// sequence, and then build a string out of the first tokens. We can then see
-	// if any sequence is a prefix of this built string. Since the sequences are
-	// sorted in desc order of token length, matching is inherently greedy.
-	tokens = p.nextTokens(tokens, maxWantLen)
-	var b strings.Builder
-	for n := 0; n < maxWantLen && n < len(tokens); n++ {
-		b.WriteString(strings.ToLower(tokens[n].val))
-		b.WriteByte(' ')
-	}
-	s := b.String()
-	for _, seq := range sequences {
-		if strings.HasPrefix(s, seq.val) {
-			return tokens[0:seq.cnt], tokens[seq.cnt:]
+	var bestSeqLen, matchedTokenCount int
+	for _, seq := range wantSequence {
+		_, matchedTokenCount = tokensMatchSequence(tokens, seq)
+		if matchedTokenCount > bestSeqLen {
+			bestSeqLen = matchedTokenCount
 		}
 	}
-	return nil, tokens // no match
+	if bestSeqLen == 0 {
+		return nil, tokens
+	}
+	return tokens[:bestSeqLen], tokens[bestSeqLen:]
 }
 
 // skipUntilSequence searches for the first occurrence of a supplied sequence.
-// It will consume any supplied tokens first, obtaining additional tokens as
-// needed. If the sequence is not found, searching stops once a delimiter or
-// error occurs. The match is greedy, meaning the longest matching wantSequence
-// will be used. Each wantSequence should be supplied as an all-lowercase
-// single-spaced string of token values. Separate lists of matching and leftover
-// tokens will be returned. If no match occurred, matched will be nil, and
-// leftovers will either contain a single delimiter token or be nil.
-func (p *parser) skipUntilSequence(tokens []Token, wantSequence ...string) (matched []Token, leftovers []Token) {
+// It will examine any supplied tokens first, obtaining additional tokens as
+// needed. If no sequence is found, searching stops once a delimiter or error
+// occurs. Each wantSequence should be supplied as a space-delimited string of
+// token values.
+// The first return value is a string consisting of the portion of the input
+// stream which corresponds to the tokens found before the first match, without
+// any leading or trailing filler tokens.
+// The second return value is the token list, which starts with the first
+// matching sequence if any was found. If no supplied sequence was found, the
+// returned token list will either consist of a single delimiter token or will
+// be nil, and the third return value will be false.
+func (p *parser) skipUntilSequence(tokens []Token, wantSequence ...string) (before string, leftovers []Token, found bool) {
 	if len(wantSequence) == 0 {
-		return nil, tokens
+		return "", tokens, false
 	}
 
-	// Pre-process the input to determine the first token of each wanted sequence,
-	// as well as the token count in the longest wanted sequence
-	wantFirst := make([]string, len(wantSequence))
-	var maxWantLen int
-	for n, ws := range wantSequence {
-		wantLen := strings.Count(ws, " ") + 1
-		if wantLen > maxWantLen {
-			maxWantLen = wantLen
-		}
-		if wantLen == 1 {
-			wantFirst[n] = ws
-		} else if firstSpace := strings.IndexByte(ws, ' '); firstSpace > -1 {
-			wantFirst[n] = ws[0:firstSpace]
+	// Determine length of longest element of wantSequence
+	var longestSeqLen int
+	for n := range wantSequence {
+		if len(wantSequence[n]) > longestSeqLen {
+			longestSeqLen = len(wantSequence[n])
 		}
 	}
 
-	// Attempt to maintain a token list of sufficient size and keep looping until
-	// we hit a delimiter or run out of tokens (the latter implying an error/EOF)
-	tokens = p.nextTokens(tokens, 5*maxWantLen)
-	for len(tokens) > 0 && tokens[0].typ != TokenDelimiter {
-		// see if first token in list matches first token of any wantSequence, and
-		// track as a candidate match if so
-		lowerFirstToken := strings.ToLower(tokens[0].val)
-		var candidates []string
-		for n, wf := range wantFirst {
-			if lowerFirstToken == wf {
-				if maxWantLen == 1 { // simplest case, every wantSequence is just one token, so our single-token match is sufficient
-					return tokens[0:1], tokens[1:]
-				}
-				candidates = append(candidates, wantSequence[n])
+	startPosInBuffer := int(tokens[0].offset)
+	endPosInBuffer := startPosInBuffer
+	var matched bool
+	for {
+		// Attempt to obtain enough tokens to match the longest sequence
+		tokens = p.nextTokensMinBytes(tokens, longestSeqLen)
+
+		// Out of tokens or hit a delimiter, and no match found
+		if len(tokens) == 0 || tokens[0].typ == TokenDelimiter {
+			return p.b.String()[startPosInBuffer:endPosInBuffer], tokens, false
+		}
+
+		// Check tokens for match
+		for _, seq := range wantSequence {
+			if matched, _ = tokensMatchSequence(tokens, seq); matched {
+				return p.b.String()[startPosInBuffer:endPosInBuffer], tokens, true
 			}
 		}
 
-		// check candidates for full match; if none, advance list
-		matched, tokens = p.matchNextSequence(tokens, candidates...)
-		if matched != nil {
-			return matched, tokens
-		}
-		tokens = p.nextTokens(tokens[1:], maxWantLen)
+		// No match. Update endPosInBuffer to be the end of tokens[0] and then
+		// advance to the next token.
+		endPosInBuffer = int(tokens[0].offset) + len(tokens[0].val)
+		tokens = tokens[1:]
 	}
-	return nil, tokens
 }
 
 func (p *parser) parseObjectNameClause(tokens []Token) (leftovers []Token) {
@@ -519,7 +582,10 @@ func processCreateStatement(p *parser, tokens []Token) (stmt *Statement, err err
 	var processor statementProcessor
 	tokens = p.nextTokens(tokens, 20)
 	if len(tokens) >= 2 && tokens[0].typ == TokenWord {
-		processor = createProcessors[strings.ToLower(tokens[0].val)]
+		processor = createProcessors[tokens[0].val] // optimistically see if already all uppercase or all lowercase
+		if processor == nil {                       // may have been mixed-case input, try again with ToUpper
+			processor = createProcessors[strings.ToUpper(tokens[0].val)]
+		}
 	}
 	if processor == nil {
 		processor = processUntilDelimiter
@@ -530,7 +596,7 @@ func processCreateStatement(p *parser, tokens []Token) (stmt *Statement, err err
 func processCreateTable(p *parser, tokens []Token) (*Statement, error) {
 	// Skip past the TABLE token, and ignore the optional IF NOT EXIST
 	// clause
-	_, tokens = p.matchNextSequence(tokens[1:], "if not exists")
+	_, tokens = p.matchNextSequence(tokens[1:], "IF NOT EXISTS")
 
 	// Attempt to parse object name; only set statement and object types if
 	// successful
@@ -548,8 +614,8 @@ func processCreateTable(p *parser, tokens []Token) (*Statement, error) {
 	// * MariaDB system-versioned tables: these use a nonstandard value in
 	//   information_schema.tables.table_type, and Skeema does not yet introspect
 	//   them, causing `skeema pull` to delete their filesystem definition
-	matched, tokens := p.skipUntilSequence(tokens, "select", "with system versioning")
-	if matched != nil {
+	_, tokens, found := p.skipUntilSequence(tokens, "SELECT", "WITH SYSTEM VERSIONING")
+	if found {
 		p.stmt.Type = StatementTypeCreateUnsupported
 	}
 
@@ -557,13 +623,13 @@ func processCreateTable(p *parser, tokens []Token) (*Statement, error) {
 }
 
 func processCreateRoutine(p *parser, tokens []Token) (*Statement, error) {
-	matched, tokens := p.matchNextSequence(tokens, "procedure", "function")
+	matched, tokens := p.matchNextSequence(tokens, "PROCEDURE", "FUNCTION")
 	if matched == nil {
 		return processUntilDelimiter(p, tokens) // cannot parse, unexpected token
 	}
 
 	// Ignore the optional IF NOT EXIST clause
-	_, tokens = p.matchNextSequence(tokens, "if not exists")
+	_, tokens = p.matchNextSequence(tokens, "IF NOT EXISTS")
 
 	// Attempt to parse object name; only set statement and object types if
 	// successful
@@ -585,13 +651,13 @@ func processCreateWithDefiner(p *parser, tokens []Token) (*Statement, error) {
 		return processUntilDelimiter(p, tokens) // cannot parse, minimal definer clause is 3 tokens + 1 next token
 	}
 
-	matched, tokens := p.matchNextSequence(tokens, "definer =")
+	matched, tokens := p.matchNextSequence(tokens, "DEFINER =")
 	if len(matched) != 2 {
 		return processUntilDelimiter(p, tokens) // cannot parse, unexpected tokens
 	}
 
 	// Consume the tokens with the definer value: one of CURRENT_USER, CURRENT_USER(), or user@host
-	if matched, tokens = p.matchNextSequence(tokens, "current_user", "current_user ( )"); matched == nil {
+	if matched, tokens = p.matchNextSequence(tokens, "CURRENT_USER", "CURRENT_USER ( )"); matched == nil {
 		if len(tokens) < 4 || tokens[1].typ != TokenSymbol || tokens[1].val != "@" {
 			return processUntilDelimiter(p, tokens) // cannot parse, expected to find user @ host
 		}
@@ -602,7 +668,10 @@ func processCreateWithDefiner(p *parser, tokens []Token) (*Statement, error) {
 	// indicated by the next token
 	var processor statementProcessor
 	if len(tokens) > 0 && tokens[0].typ == TokenWord {
-		processor = createProcessors[strings.ToLower(tokens[0].val)]
+		processor = createProcessors[tokens[0].val] // optimistically see if already all uppercase or all lowercase
+		if processor == nil {                       // may have been mixed-case input, try again with ToUpper
+			processor = createProcessors[strings.ToUpper(tokens[0].val)]
+		}
 	}
 	if processor == nil {
 		processor = processUntilDelimiter
@@ -646,7 +715,7 @@ func processStoredProgram(p *parser, tokens []Token) (stmt *Statement, err error
 		if t.typ == TokenDelimiter && (p.explicitDelimiter || !compound) {
 			break
 		}
-		if !compound && t.typ == TokenWord && strings.EqualFold(t.val, "begin") {
+		if !compound && t.typ == TokenWord && strings.EqualFold(t.val, "BEGIN") {
 			compound = true
 		}
 	}
