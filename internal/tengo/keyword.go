@@ -358,7 +358,8 @@ var commonReservedWords = []string{
 	"_filename", // special case mentioned separately in MySQL manual; also seems to apply to MariaDB
 }
 
-// Flavor values used in map below.
+// Flavor values used in maps below, in places where the same value occurs
+// multiple times
 var (
 	mySQL56    = Flavor{Vendor: VendorMySQL, Version: Version{5, 6}}
 	mySQL57    = Flavor{Vendor: VendorMySQL, Version: Version{5, 7}}
@@ -367,15 +368,13 @@ var (
 	mariaDB101 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1}}
 	mariaDB102 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2}}
 	mariaDB103 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3}}
-	mariaDB106 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 6}}
 	mariaDB107 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7}}
 )
 
 // Mapping of lowercased reserved words to the flavor(s) that added them. A
 // few notes on keeping this list manageable:
-//   - We currently do not track point (aka dot or patch) releases here. It's
-//     possible this policy may change to better handle MySQL 8, but so far the
-//     only edge case in the past few years is "intersect" (reserved in 8.0.31+).
+//   - We do not track point (aka dot or patch) releases here. The only edge
+//     case in the past few years is "intersect" (reserved in 8.0.31+).
 //   - Some of the entries associated with mariaDB101 were actually
 //     introduced prior to that, but this package does not support pre-10.1,
 //     so 10.1 is used as a placeholder for simplicity's sake. A few other entries
@@ -385,6 +384,8 @@ var (
 //   - This list assumes the information in the MySQL and MariaDB manuals is
 //     correct, but that is not always the case. Please open a pull request if
 //     you discover a missing or incorrect entry.
+//   - For updates to MySQL's list, the best reference documentation page is
+//     https://dev.mysql.com/doc/mysqld-version-reference/en/keywords.html
 //   - Although MySQL's information_schema.keywords table has a column
 //     indicating whether a keyword is reserved, that data is not always
 //     accurate, so it cannot be used to rebuild this list automatically.
@@ -434,10 +435,12 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"system":       {mySQL80},
 	"window":       {mySQL80}, // see comment above re: MariaDB
 
-	"manual":      {mySQL84}, // reserved in 8.4.0, despite 8.4.0's I_S.keywords.reserved being 0, see bug 114874
-	"parallel":    {mySQL84}, // reserved in 8.4.0, despite 8.4.0's I_S.keywords.reserved being 0, see bug 114874
-	"qualify":     {mySQL84}, // reserved in 8.4.0, despite 8.4.0's I_S.keywords.reserved being 0, see bug 114874
-	"tablesample": {mySQL84}, // reserved in 8.4.0, despite 8.4.0's I_S.keywords.reserved being 0, see bug 114874
+	"parallel": {{Vendor: VendorMySQL, Version: Version{8, 2}}}, // wrong in I_S.keywords.reserved, see bug 114874
+
+	"qualify": {{Vendor: VendorMySQL, Version: Version{8, 3}}}, // wrong in I_S.keywords.reserved, see bug 114874
+
+	"manual":      {mySQL84}, // wrong in I_S.keywords.reserved, see bug 114874
+	"tablesample": {mySQL84}, // wrong in I_S.keywords.reserved, see bug 114874
 
 	"current_role":            {mariaDB101},
 	"delete_domain_id":        {mariaDB101}, // actual version unclear from docs, see comment above
@@ -455,7 +458,7 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"stats_persistent":        {mariaDB101},
 	"stats_sample_pages":      {mariaDB101},
 
-	"offset": {mariaDB106},
+	"offset": {{Vendor: VendorMariaDB, Version: Version{10, 6}}},
 }
 
 var reservedWordsRemovedInFlavor = map[string][]Flavor{
