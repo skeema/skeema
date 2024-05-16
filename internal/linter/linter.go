@@ -15,6 +15,10 @@ import (
 // original fs.LogicalSchema is also needed, in order to generate annotations
 // corresponding to SQL statements / files / line numbers.)
 func CheckSchema(wsSchema *workspace.Schema, opts *Options) *Result {
+	// Place the actual Flavor value from the workspace into opts. (This can't
+	// be set by OptionsForDir, since the workspace isn't built yet at that time.)
+	opts.flavor = wsSchema.Flavor
+
 	result := &Result{}
 	objects := wsSchema.Objects()
 

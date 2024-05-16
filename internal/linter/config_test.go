@@ -48,9 +48,9 @@ func TestOptionsForDir(t *testing.T) {
 			t.Errorf("definerConfig did not match expectation")
 		}
 
-		// no flavor defined in dir's .skeema
-		if opts.Flavor != tengo.FlavorUnknown {
-			t.Errorf("Flavor did not match expectation: expected %s, found %s", tengo.FlavorUnknown, opts.Flavor)
+		// flavor isn't set by OptionsForDir, so it should remain at zero value
+		if opts.flavor != tengo.FlavorUnknown {
+			t.Errorf("Flavor did not match expectation: expected %s, found %s", tengo.FlavorUnknown, opts.flavor)
 		}
 	}
 
@@ -137,12 +137,12 @@ func TestOptionsEquals(t *testing.T) {
 	}
 
 	other, _ = OptionsForDir(dir)
-	opts.Flavor = tengo.ParseFlavor("mysql:8.0")
-	other.Flavor = opts.Flavor
+	opts.flavor = tengo.ParseFlavor("mysql:8.0.36")
+	other.flavor = opts.flavor
 	if !opts.Equals(other) {
 		t.Error("Equals returning wrong value with same flavor")
 	}
-	other.Flavor = tengo.ParseFlavor("percona:8.0")
+	other.flavor = tengo.ParseFlavor("percona:8.0.36")
 	if opts.Equals(other) {
 		t.Error("Equals returning wrong value with different flavor")
 	}

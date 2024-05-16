@@ -47,11 +47,6 @@ func (s IntegrationSuite) TestCheckSchema(t *testing.T) {
 		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
 	}
 
-	// There's intentionally no hardcoded flavor value in testdata/validcfg/.skeema
-	// so that we can force the value corresponding to the current Dockerized
-	// test db here
-	opts.Flavor = s.d.Flavor()
-
 	logicalSchema := dir.LogicalSchemas[0]
 	wsOpts, err := workspace.OptionsForDir(dir, s.d.Instance)
 	if err != nil {
@@ -91,11 +86,6 @@ func (s IntegrationSuite) TestCheckSchemaHidden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
 	}
-
-	// There's intentionally no hardcoded flavor value in testdata/hidden/.skeema
-	// so that we can force the value corresponding to the current Dockerized
-	// test db here
-	opts.Flavor = s.d.Flavor()
 
 	logicalSchema := dir.LogicalSchemas[0]
 	wsOpts, err := workspace.OptionsForDir(dir, s.d.Instance)
@@ -165,12 +155,15 @@ func (s IntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 	}
 	for n, c := range cases {
 		opts.RuleConfig["compression"] = c.allowList
-		opts.Flavor = c.flavor
+		wsSchema.Flavor = c.flavor
 		result := CheckSchema(wsSchema, opts)
 		if result.WarningCount != c.expectedWarningCount {
 			t.Errorf("cases[%d] expected warning count %d, instead found %d", n, c.expectedWarningCount, result.WarningCount)
 		}
 	}
+
+	// Restore wsSchema.Flavor to match the integration test's Dockerized instance
+	wsSchema.Flavor = s.d.Flavor()
 
 	// If the Dockerized test instance's Flavor supports page compression, verify
 	// that the regexp used by tableCompressionMode() works properly.
@@ -248,11 +241,6 @@ func (s IntegrationSuite) TestCheckSchemaUTF8MB3(t *testing.T) {
 		t.Fatalf("Unexpectedly found %d workspace failures", len(wsSchema.Failures))
 	}
 
-	// There's intentionally no hardcoded flavor value in testdata/validcfg/.skeema
-	// so that we can force the value corresponding to the current Dockerized
-	// test db here
-	opts.Flavor = s.d.Flavor()
-
 	result := CheckSchema(wsSchema, opts)
 	expected := expectedAnnotations(logicalSchema, s.d.Flavor())
 	compareAnnotations(t, expected, result)
@@ -279,10 +267,6 @@ func (s IntegrationSuite) TestCheckSchemaAllowAllDefiner(t *testing.T) {
 		t.Fatalf("Unexpectedly found %d workspace failures", len(wsSchema.Failures))
 	}
 
-	// There's intentionally no .skeema file here; force the flavor value
-	// corresponding to the current Dockerized test db here
-	opts.Flavor = s.d.Flavor()
-
 	// Should have no annotations at all!
 	result := CheckSchema(wsSchema, opts)
 	if len(result.Annotations) > 0 {
@@ -301,7 +285,6 @@ func (s IntegrationSuite) TestCheckSchemaStripAnnotationNewlines(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
 	}
-	opts.Flavor = s.d.Flavor()
 	logicalSchema := dir.LogicalSchemas[0]
 	wsOpts, err := workspace.OptionsForDir(dir, s.d.Instance)
 	if err != nil {
@@ -347,7 +330,6 @@ func (s IntegrationSuite) TestCheckSchemaSpatialIndexSRID(t *testing.T) {
 		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
 	}
 
-	opts.Flavor = s.d.Flavor()
 	logicalSchema := dir.LogicalSchemas[0]
 	wsOpts, err := workspace.OptionsForDir(dir, s.d.Instance)
 	if err != nil {

@@ -19,23 +19,23 @@ func init() {
 func reservedWordChecker(object tengo.DefKeyer, createStatement string, schema *tengo.Schema, opts *Options) (notes []Note) {
 	// For all object types, we check the object name
 	key := object.ObjectKey()
-	if tengo.IsVendorReservedWord(key.Name, opts.Flavor.Vendor) {
+	if tengo.IsVendorReservedWord(key.Name, opts.flavor.Vendor) {
 		notes = append(notes, Note{
 			LineOffset: 0,
 			Summary:    string(key.Type) + " name matches reserved word",
-			Message:    makeReservedWordMessage(key.Name, opts.Flavor),
+			Message:    makeReservedWordMessage(key.Name, opts.flavor),
 		})
 	}
 
 	// For tables, we also check all column names in the table
 	if table, ok := object.(*tengo.Table); ok {
-		reservedWords := tengo.VendorReservedWordMap(opts.Flavor.Vendor)
+		reservedWords := tengo.VendorReservedWordMap(opts.flavor.Vendor)
 		for _, col := range table.Columns {
 			if reservedWords[strings.ToLower(col.Name)] {
 				notes = append(notes, Note{
 					LineOffset: FindColumnLineOffset(col, createStatement),
 					Summary:    "column name matches reserved word",
-					Message:    makeReservedWordMessage(col.Name, opts.Flavor),
+					Message:    makeReservedWordMessage(col.Name, opts.flavor),
 				})
 			}
 		}

@@ -19,7 +19,7 @@ func init() {
 func hasTimeChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts *Options) []Note {
 	results := make([]Note, 0)
 	onlyWarning := (opts.RuleSeverity["has-time"] == SeverityWarning)
-	oldTimestampDefaults := !opts.Flavor.MinMySQL(8) && !opts.Flavor.MinMariaDB(10, 10)
+	oldTimestampDefaults := !opts.flavor.MinMySQL(8) && !opts.flavor.MinMariaDB(10, 10)
 	var alreadySeenTimestamp bool
 	for _, col := range table.Columns {
 		var message string
@@ -30,7 +30,7 @@ func hasTimeChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 			)
 			if oldTimestampDefaults && !alreadySeenTimestamp && !col.Nullable {
 				when := "MySQL 8"
-				if opts.Flavor.IsMariaDB() {
+				if opts.flavor.IsMariaDB() {
 					when = "MariaDB 10.10+"
 				}
 				message += "\nFinally, the automatic DEFAULT / ON UPDATE timestamp behavior depends on the explicit_defaults_for_timestamp system variable, which will flip from default OFF to default ON if you upgrade to " + when + "."

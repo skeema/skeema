@@ -51,7 +51,7 @@ func dupeIndexChecker(table *tengo.Table, createStatement string, _ *tengo.Schem
 			}
 		}
 		// MySQL 8.0+ query optimizer ignores SPATIAL indexes on cols lacking an SRID
-		if idx.Type == "SPATIAL" && opts.Flavor.MinMySQL(8) {
+		if idx.Type == "SPATIAL" && opts.flavor.MinMySQL(8) {
 			if colsByName == nil { // populate lazily
 				colsByName = table.ColumnsByName()
 			}

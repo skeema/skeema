@@ -41,8 +41,8 @@ func AddCommandOptions(cmd *mybase.Command) {
 type Options struct {
 	RuleSeverity            map[string]Severity
 	RuleConfig              map[string]interface{}
-	Flavor                  tengo.Flavor
 	StripAnnotationNewlines bool                     // if true, remove newlines inside annotation messages
+	flavor                  tengo.Flavor             // actual workspace flavor; set automatically by CheckSchema
 	onlyKeys                map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
 }
 
@@ -88,7 +88,7 @@ func (opts *Options) Equals(other *Options) bool {
 	if !reflect.DeepEqual(opts.onlyKeys, other.onlyKeys) {
 		return false
 	}
-	if opts.Flavor != other.Flavor {
+	if opts.flavor != other.flavor {
 		return false
 	}
 	return true
@@ -106,7 +106,6 @@ func OptionsForDir(dir *fs.Dir) (*Options, error) {
 	opts := &Options{
 		RuleSeverity: make(map[string]Severity),
 		RuleConfig:   make(map[string]interface{}),
-		Flavor:       tengo.ParseFlavor(dir.Config.Get("flavor")),
 	}
 
 	// Populate opts.RuleSeverity from individual rule options

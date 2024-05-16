@@ -209,8 +209,9 @@ func (ld *LocalDocker) ConnectionPool(params string) (*sqlx.DB, error) {
 }
 
 // IntrospectSchema introspects and returns the temporary workspace schema.
-func (ld *LocalDocker) IntrospectSchema() (*tengo.Schema, error) {
-	return ld.d.Schema(ld.schemaName)
+func (ld *LocalDocker) IntrospectSchema() (*tengo.Schema, tengo.Flavor, error) {
+	schema, err := ld.d.Schema(ld.schemaName)
+	return schema, ld.d.Flavor(), err
 }
 
 // Cleanup drops the temporary schema from the Dockerized instance. If any

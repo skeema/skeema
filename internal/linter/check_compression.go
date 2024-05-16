@@ -105,7 +105,7 @@ func makeCompressionMessage(tableName, mode, clause string, opts *Options) strin
 	for _, value := range allowed {
 		value = strings.ToLower(value)
 		if value == "page" {
-			if opts.Flavor.IsMariaDB() {
+			if opts.flavor.IsMariaDB() {
 				clauses = append(clauses, "PAGE_COMPRESSED=1")
 			} else {
 				clauses = append(clauses, "COMPRESSION='zlib'")

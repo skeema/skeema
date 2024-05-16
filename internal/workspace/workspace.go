@@ -30,8 +30,8 @@ type Workspace interface {
 	ConnectionPool(params string) (*sqlx.DB, error)
 
 	// IntrospectSchema returns a *tengo.Schema representing the current state
-	// of the workspace schema.
-	IntrospectSchema() (*tengo.Schema, error)
+	// of the workspace schema, along with the workspace's actual tengo.Flavor.
+	IntrospectSchema() (*tengo.Schema, tengo.Flavor, error)
 
 	// Cleanup cleans up the workspace, leaving it in a state where it could be
 	// re-used/re-initialized as needed. Repeated calls to Cleanup() may error.
@@ -264,11 +264,12 @@ func (se *StatementError) ErrorNumber() uint16 {
 
 // Schema captures the result of executing the SQL from an fs.LogicalSchema
 // in a workspace, and then introspecting the resulting schema. It wraps the
-// introspected tengo.Schema alongside the original fs.LogicalSchema and any
-// SQL errors that occurred.
+// introspected tengo.Schema, alongside the original fs.LogicalSchema, the
+// Flavor of the workspace used, and any SQL errors that occurred.
 type Schema struct {
 	*tengo.Schema
 	LogicalSchema *fs.LogicalSchema
+	Flavor        tengo.Flavor
 	Failures      []*StatementError
 }
 
@@ -383,7 +384,7 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 		}
 	}
 
-	wsSchema.Schema, err = ws.IntrospectSchema()
+	wsSchema.Schema, wsSchema.Flavor, err = ws.IntrospectSchema()
 	return wsSchema, err
 }
 
