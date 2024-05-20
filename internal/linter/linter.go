@@ -172,5 +172,8 @@ func RegisterRule(rule Rule) {
 	if rule.Description == "" || rule.DefaultSeverity == Severity("") {
 		rule.DefaultSeverity = SeverityIgnore
 	}
+	if rulesByName[rule.Name] != nil {
+		panic(fmt.Errorf("Linter rule with name %q attempted to be registered multiple times; likely indicates copypasta", rule.Name))
+	}
 	rulesByName[rule.Name] = &rule
 }

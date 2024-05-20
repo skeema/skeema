@@ -1,3 +1,9 @@
+CREATE TABLE customers (
+  id int(10) unsigned NOT NULL,
+  name varchar(80) NOT NULL,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE hasfk (
   id int(10) unsigned NOT NULL,
   customer_id int(10) unsigned DEFAULT NULL,
@@ -13,6 +19,6 @@ CREATE TABLE hasfks (
   PRIMARY KEY (id),
   KEY customer (customer_id),
   KEY product (product_id),
-  FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE SET NULL, /* annotations: has-fk */
-  FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE
+  CONSTRAINT custid FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE SET NULL, /* annotations: has-fk */
+  CONSTRAINT prodid FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE /* annotations: fk-parent */
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

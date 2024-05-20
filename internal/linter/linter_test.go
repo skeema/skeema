@@ -350,6 +350,32 @@ func (s IntegrationSuite) TestCheckSchemaSpatialIndexSRID(t *testing.T) {
 	compareAnnotations(t, expected, result)
 }
 
+func TestRegisterRuleDuplicate(t *testing.T) {
+	rule := Rule{
+		Name:            "fake-test-rule",
+		Description:     "Not a real linter rule",
+		DefaultSeverity: SeverityWarning,
+	}
+	t.Cleanup(func() {
+		delete(rulesByName, rule.Name)
+	})
+
+	// First call shouldn't panic
+	RegisterRule(rule)
+
+	// Second call should panic
+	var didPanic bool
+	defer func() {
+		if recover() != nil {
+			didPanic = true
+		}
+	}()
+	RegisterRule(rule)
+	if !didPanic {
+		t.Errorf("Expected duplicate call to RegisterRule to panic, but it did not")
+	}
+}
+
 func (s *IntegrationSuite) Setup(backend string) (err error) {
 	s.d, err = tengo.GetOrCreateDockerizedInstance(tengo.DockerizedInstanceOptions{
 		Name:              fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),
@@ -361,16 +387,17 @@ func (s *IntegrationSuite) Setup(backend string) (err error) {
 		return err
 	}
 
-	// Since some linter tests involve compressed tables, in MariaDB 10.6+ we must
-	// ensure innodb_read_only_compressed=OFF. It defaults to ON in 10.6.0-10.6.5,
-	// 10.7.0-10.7.1, and 10.8.0; the default changed to OFF in subsequent
-	// releases without much notice. For sake of robustness in case the default
-	// changes again or the variable is removed entirely, we try setting it to OFF
-	// in all 10.6+ but intentionally ignore errors in this exec call.
-	if s.d.Flavor().MinMariaDB(10, 6) {
+	// By default, MySQL 8.4.0 requires FKs to have an exact unique index on the
+	// parent table side, which would break the test tables for lint-fk-parent.
+	// It isn't clear yet if this default will remain in 8.4.1+; see MySQL bug
+	// https://bugs.mysql.com/bug.php?id=114838 for more info. For now we just
+	// attempt to disable the undocumented variable (which controls this new
+	// behavior) globally in the containerized test DB, but intentionally ignore
+	// errors in case this variable is removed.
+	if s.d.Flavor().MinMySQL(8, 4) {
 		db, err := s.d.ConnectionPool("", "")
 		if err == nil {
-			_, _ = db.Exec("SET GLOBAL innodb_read_only_compressed = OFF")
+			_, _ = db.Exec("SET GLOBAL restrict_fk_on_non_standard_key = OFF")
 		}
 	}
 

@@ -111,6 +111,18 @@ func FindColumnLineOffset(col *tengo.Column, createStatement string) int {
 	return FindFirstLineOffset(re, createStatement)
 }
 
+// FindForeignKeyLineOffset returns the line offset (i.e. line number starting
+// at 0) for the definition of the supplied foreign key within createStatement.
+// If no match occurs, 0 is returned.
+// This is useful for ObjectCheckers when populating Note.LineOffset.
+// Note that this won't ever match an automatically-named FK, since its name
+// will not be present in an arbitrarily user-formatted CREATE TABLE.
+func FindForeignKeyLineOffset(fk *tengo.ForeignKey, createStatement string) int {
+	// Prior to MySQL 8.0.16, the FK name could appear before or after FOREIGN KEY
+	re := regexp.MustCompile(fmt.Sprintf(`(?i)(%s[^,\n]*foreign)|(foreign[^,\n]*%s)`, regexp.QuoteMeta(fk.Name), regexp.QuoteMeta(fk.Name)))
+	return FindLastLineOffset(re, createStatement)
+}
+
 // Result is a combined set of linter annotations and/or Golang errors found
 // when linting a directory and its subdirs.
 type Result struct {
