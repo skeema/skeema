@@ -11,7 +11,7 @@ func init() {
 	RegisterRule(Rule{
 		CheckerFunc:     TableChecker(foreignKeyParentChecker),
 		Name:            "fk-parent",
-		Description:     "Flag any foreign key where the same-schema parent table doesn't exist or lacks a corresponding unique index",
+		Description:     "Flag foreign keys where same-schema parent table is missing or lacks unique key on referenced columns",
 		DefaultSeverity: SeverityWarning,
 	})
 }
@@ -54,10 +54,10 @@ func foreignKeyParentChecker(table *tengo.Table, createStatement string, schema 
 			if opts.flavor.IsMariaDB() {
 				reason = "A matching unique index is recommended to conform to standard SQL and ensure well-defined CASCADE behavior."
 			} else {
-				reason = "Recent MySQL releases (8.4+) are moving towards requiring a matching unique index on the parent table, in order to conform to standard SQL and ensure well-defined CASCADE behavior."
+				reason = "This can cause problems with multi-threaded group replication. Foreign keys that lack a parent-side unique index are deprecated in MySQL 8.4+ for this reason."
 			}
 			message := fmt.Sprintf(
-				"In table %s, foreign key constraint %s references parent table %s, which does not have a matching unique index on (%s).\n%s",
+				"In table %s, foreign key constraint %s references parent table %s, which does not have a corresponding UNIQUE KEY on (%s).\n%s",
 				tengo.EscapeIdentifier(table.Name),
 				tengo.EscapeIdentifier(fk.Name),
 				tengo.EscapeIdentifier(fk.ReferencedTableName),
