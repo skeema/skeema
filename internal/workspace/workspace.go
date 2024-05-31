@@ -29,9 +29,10 @@ type Workspace interface {
 	// correct default database for interacting with the workspace schema.
 	ConnectionPool(params string) (*sqlx.DB, error)
 
-	// IntrospectSchema returns a *tengo.Schema representing the current state
-	// of the workspace schema, along with the workspace's actual tengo.Flavor.
-	IntrospectSchema() (*tengo.Schema, tengo.Flavor, error)
+	// IntrospectSchema returns a struct containing the current state of the
+	// workspace schema, along with other metadata about the workspace's
+	// execution environment.
+	IntrospectSchema() (IntrospectionResult, error)
 
 	// Cleanup cleans up the workspace, leaving it in a state where it could be
 	// re-used/re-initialized as needed. Repeated calls to Cleanup() may error.
@@ -70,6 +71,14 @@ const (
 	// Shutdown(). Only used with TypeLocalDocker.
 	CleanupActionDestroy
 )
+
+// IntrospectionResult bundles a tengo.Schema with metadata from the workspace's
+// underlying tengo.Instance.
+type IntrospectionResult struct {
+	Schema  *tengo.Schema
+	Flavor  tengo.Flavor
+	SQLMode string
+}
 
 // Options represent different parameters controlling the workspace that is
 // used. Some options are specific to a Type.
@@ -384,7 +393,10 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 		}
 	}
 
-	wsSchema.Schema, wsSchema.Flavor, err = ws.IntrospectSchema()
+	result, err := ws.IntrospectSchema()
+	wsSchema.Schema = result.Schema
+	wsSchema.Flavor = result.Flavor
+
 	return wsSchema, err
 }
 

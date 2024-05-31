@@ -118,9 +118,14 @@ func (ts *TempSchema) ConnectionPool(params string) (*sqlx.DB, error) {
 }
 
 // IntrospectSchema introspects and returns the temporary workspace schema.
-func (ts *TempSchema) IntrospectSchema() (*tengo.Schema, tengo.Flavor, error) {
+func (ts *TempSchema) IntrospectSchema() (IntrospectionResult, error) {
 	schema, err := ts.inst.Schema(ts.schemaName)
-	return schema, ts.inst.Flavor(), err
+	result := IntrospectionResult{
+		Schema:  schema,
+		Flavor:  ts.inst.Flavor(),
+		SQLMode: ts.inst.SQLMode(),
+	}
+	return result, err
 }
 
 // Cleanup either drops the temporary schema (if not using reuse-temp-schema)

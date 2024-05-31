@@ -67,10 +67,10 @@ func (s WorkspaceIntegrationSuite) TestLocalDocker(t *testing.T) {
 	if has, err := ld.d.HasSchema(opts.SchemaName); !has {
 		t.Errorf("Instance does not have expected schema: has=%t err=%s", has, err)
 	}
-	if schema, flavor, err := ws.IntrospectSchema(); err != nil || schema.Name != opts.SchemaName || len(schema.Tables) > 0 || flavor.Family() != s.d.Flavor().Family() {
-		t.Errorf("Unexpected result from IntrospectSchema(): %+v / %s / %v", schema, flavor, err)
-		ws.Cleanup(schema)
-	} else if err := ws.Cleanup(schema); err != nil {
+	if result, err := ws.IntrospectSchema(); err != nil || result.Schema.Name != opts.SchemaName || len(result.Schema.Tables) > 0 || result.Flavor.Family() != s.d.Flavor().Family() || result.SQLMode != s.d.SQLMode() {
+		t.Errorf("Unexpected result from IntrospectSchema(): %+v / %v", result, err)
+		ws.Cleanup(result.Schema)
+	} else if err := ws.Cleanup(result.Schema); err != nil {
 		t.Errorf("Unexpected error from cleanup: %s", err)
 	}
 }
