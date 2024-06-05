@@ -388,7 +388,7 @@ func (dir *Dir) ValidateInstance(instance *tengo.Instance) error {
 			log.Warnf("Instance %s actual flavor %s differs from dir %s configured flavor %s\nIf you have recently upgraded your database server version, consider using `skeema pull` to update your schema definitions.", instance, instFlavor, dir, confFlavor)
 		}
 		if instFlavor.TooNew() {
-			log.Warnf("Instance %s flavor %s is newer than this version of Skeema. To ensure correct behavior, consider upgrading to a newer release of Skeema.", instance, instFlavor)
+			log.Warnf("Instance %s flavor %s is newer than this version of Skeema. To ensure correct behavior, consider upgrading to a more recent release of Skeema.", instance, instFlavor)
 		}
 	} else if confFlavor.Known() {
 		log.Debugf("Instance %s flavor cannot be parsed; using dir %s configured flavor %s instead", instance, dir, confFlavor)
