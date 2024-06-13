@@ -723,9 +723,12 @@ func TestTableAlterIndexReorder(t *testing.T) {
 		assertClauses(&from, &to, loose57lc, "RENAME KEY `%s` TO `%s`", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Name)
 	}
 
-	// Revert comment change from previous step; change visibility instead. This
-	// forces a DROP and re-ADD since renames and alter visibility cannot be used
-	// on the same index in the same ALTER TABLE.
+	// Revert comment change from previous step; change visibility instead. The
+	// emitted ModifyIndex TableAlterClause will only handle the RENAME. But when
+	// present in a TableDiff and calling SplitConflicts, a separate TableDiff
+	// with the corresponding AlterIndex will be present. This is because the
+	// server doesn't allow a rename and visibility change on the same index in
+	// the same ALTER TABLE.
 	to.SecondaryIndexes[1].Comment = ""
 	to.SecondaryIndexes[1].Invisible = true // was previously false
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
@@ -733,8 +736,21 @@ func TestTableAlterIndexReorder(t *testing.T) {
 	if len(tableAlters) != 2 {
 		t.Errorf("Expected 2 clauses, instead found %d", len(tableAlters))
 	} else {
-		assertClauses(&from, &to, loose8, "DROP KEY `%s`, ADD %s", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Definition(mysql8))
-		assertClauses(&from, &to, strict8, "DROP KEY `%s`, ADD %s, DROP KEY `%s`, ADD %s", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Definition(mysql8), from.SecondaryIndexes[2].Name, from.SecondaryIndexes[2].Definition(mysql8))
+		assertClauses(&from, &to, loose8, "RENAME KEY `%s` TO `%s`", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Name)
+		assertClauses(&from, &to, strict8, "RENAME KEY `%s` TO `%s`", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Name)
+	}
+	tds := NewAlterTable(&from, &to).SplitConflicts()
+	header := fmt.Sprintf("ALTER TABLE `%s` ", to.Name)
+	if len(tds) != 2 {
+		t.Errorf("Expected SplitConflicts to return 2 TableDiffs, instead found %d", len(tds))
+	} else if stmt, _ := tds[0].Statement(loose8); stmt != header+fmt.Sprintf("RENAME KEY `%s` TO `%s`", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Name) {
+		t.Errorf("Unexpected result of tds[0].Statement() without strict index ordering: found %s", stmt)
+	} else if stmt, _ := tds[0].Statement(strict8); stmt != header+fmt.Sprintf("RENAME KEY `%s` TO `%s`", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Name) {
+		t.Errorf("Unexpected result of tds[0].Statement() with strict index ordering: found %s", stmt)
+	} else if stmt, _ := tds[1].Statement(loose8); stmt != header+fmt.Sprintf("ALTER INDEX `%s` INVISIBLE", to.SecondaryIndexes[1].Name) {
+		t.Errorf("Unexpected result of tds[1].Statement() without strict index ordering: found %s", stmt)
+	} else if stmt, _ := tds[1].Statement(strict8); stmt != header+fmt.Sprintf("ALTER INDEX `%s` INVISIBLE", to.SecondaryIndexes[1].Name) {
+		t.Errorf("Unexpected result of tds[1].Statement() with strict index ordering: found %s", stmt)
 	}
 
 	// Revert visibility change, and also swap order of indexes [0] and [2]. Effect
@@ -749,6 +765,24 @@ func TestTableAlterIndexReorder(t *testing.T) {
 		assertClauses(&from, &to, loose8, "RENAME KEY `%s` TO `%s`", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Name)
 		assertClauses(&from, &to, strict105, "DROP KEY `%s`, ADD %s, DROP KEY `%s`, ADD %s", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Definition(maria105), to.SecondaryIndexes[2].Name, to.SecondaryIndexes[2].Definition(maria105))
 	}
+
+	// Restore the visibility change. Now we're fully testing the combination of an
+	// index reorder on [0] / [2] alongside a rename + visibility change on [1].
+	to.SecondaryIndexes[1].Invisible = true
+	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
+	tds = NewAlterTable(&from, &to).SplitConflicts()
+	if len(tds) != 2 {
+		t.Errorf("Expected SplitConflicts to return 2 TableDiffs, instead found %d", len(tds))
+	} else if stmt, _ := tds[0].Statement(loose8); stmt != header+fmt.Sprintf("RENAME KEY `%s` TO `%s`", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Name) {
+		t.Errorf("Unexpected result of tds[0].Statement() without strict index ordering: found %s", stmt)
+	} else if stmt, _ := tds[0].Statement(strict105); stmt != header+fmt.Sprintf("DROP KEY `%s`, ADD %s, DROP KEY `%s`, ADD %s", from.SecondaryIndexes[1].Name, to.SecondaryIndexes[1].Definition(maria105), to.SecondaryIndexes[2].Name, to.SecondaryIndexes[2].Definition(maria105)) {
+		t.Errorf("Unexpected result of tds[0].Statement() with strict index ordering: found %s", stmt)
+	} else if stmt, _ := tds[1].Statement(loose8); stmt != header+fmt.Sprintf("ALTER INDEX `%s` INVISIBLE", to.SecondaryIndexes[1].Name) {
+		t.Errorf("Unexpected result of tds[1].Statement() without strict index ordering: found %s", stmt)
+	} else if stmt, _ := tds[1].Statement(strict105); stmt != "" {
+		t.Errorf("Unexpected result of tds[1].Statement() with strict index ordering: found %s", stmt)
+	}
+
 }
 
 func TestTableAlterModifyColumn(t *testing.T) {

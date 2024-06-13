@@ -99,7 +99,7 @@ func (di DropIndex) Clause(_ StatementModifiers) string {
 	return "DROP KEY " + EscapeIdentifier(di.Index.Name)
 }
 
-///// ModifyIndex ///////////////////////////////////////////////////////////////
+///// ModifyIndex and AlterIndex ///////////////////////////////////////////////
 
 // ModifyIndex represents a logical change in any of an index's fields. This is
 // treated as one "TableAlterClause" for code clarity purposes, but often maps
@@ -143,32 +143,71 @@ func (mi ModifyIndex) Clause(mods StatementModifiers) string {
 		}
 	}
 
+	// If we reach this point, the index is being renamed, or the index visibility
+	// is being changed. We can't legally do both in the same ALTER TABLE; that
+	// case is split into separate ModifyIndex and AlterIndex before we reach this
+	// function; see TableDiff.SplitConflicts().
+
 	// Renaming index
+	// This logic intentionally must stay prior to the visibility-change logic, in
+	// case the latter has been split into a separate AlterIndex.
 	if mi.FromIndex.Name != mi.ToIndex.Name {
-		// RENAME KEY can only be used in MySQL 5.7+ or MariaDB 10.5+. It also can't
-		// be used alongside a visibility change of the same index in the same ALTER.
-		if (mods.Flavor.MinMySQL(5, 7) || mods.Flavor.MinMariaDB(10, 5)) && mi.FromIndex.Invisible == mi.ToIndex.Invisible {
+		// RENAME KEY can only be used in MySQL 5.7+ or MariaDB 10.5+
+		if mods.Flavor.MinMySQL(5, 7) || mods.Flavor.MinMariaDB(10, 5) {
 			return "RENAME KEY " + EscapeIdentifier(mi.FromIndex.Name) + " TO " + EscapeIdentifier(mi.ToIndex.Name)
 		}
 		// Fall back to drop-and-re-create
 		return rebuild
 	}
 
-	// Changing index visibility: syntax differs between MySQL and MariaDB
+	// Changing index visibility: delegate to AlterIndex
 	if mi.FromIndex.Invisible != mi.ToIndex.Invisible {
-		base := "ALTER INDEX " + EscapeIdentifier(mi.ToIndex.Name)
-		if mods.Flavor.MinMySQL(8) {
-			if mi.ToIndex.Invisible {
-				return base + " INVISIBLE"
-			} else {
-				return base + " VISIBLE"
-			}
-		} else if mods.Flavor.MinMariaDB(10, 6) {
-			if mi.ToIndex.Invisible {
-				return base + " IGNORED"
-			} else {
-				return base + " NOT IGNORED"
-			}
+		ai := AlterIndex{
+			Name:      mi.ToIndex.Name,
+			Invisible: mi.ToIndex.Invisible,
+		}
+		return ai.Clause(mods)
+	}
+
+	return "" // Unsupported request for this Flavor, excluded by above conditionals
+}
+
+// AlterIndex represents a change to an index's visibility. Usually this is only
+// used internally by ModifyIndex.Clause(), except in one edge-case where it
+// appears on its own: when attempting to change visibility as well as rename an
+// index, TableDiff.SplitConflicts() needs to separate the two operations into
+// distinct ALTER TABLEs to form legal DDL.
+type AlterIndex struct {
+	Name         string
+	Invisible    bool
+	linkedRename *ModifyIndex
+}
+
+// Clause returns an ALTER INDEX clause of an ALTER TABLE statement for one
+// index.
+func (ai AlterIndex) Clause(mods StatementModifiers) string {
+	// If this AlterIndex was split from a ModifyIndex by SplitConflicts(), check
+	// whether that ModifyIndex with mods required a DROP/re-ADD pair. If so, we
+	// can skip this separate ALTER INDEX, since the re-ADD will already have the
+	// correct visibility clause.
+	if ai.linkedRename != nil && strings.HasPrefix(ai.linkedRename.Clause(mods), "DROP") {
+		return ""
+	}
+
+	base := "ALTER INDEX " + EscapeIdentifier(ai.Name)
+
+	// Syntax differs between MySQL and MariaDB
+	if mods.Flavor.MinMySQL(8) {
+		if ai.Invisible {
+			return base + " INVISIBLE"
+		} else {
+			return base + " VISIBLE"
+		}
+	} else if mods.Flavor.MinMariaDB(10, 6) {
+		if ai.Invisible {
+			return base + " IGNORED"
+		} else {
+			return base + " NOT IGNORED"
 		}
 	}
 	return "" // Flavor without invisible/ignored index support

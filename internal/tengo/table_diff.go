@@ -158,9 +158,9 @@ func (td *TableDiff) SplitAddForeignKeys() (*TableDiff, *TableDiff) {
 
 // SplitConflicts looks through a TableDiff's alterClauses and pulls out any
 // clauses that need to be placed into a separate TableDiff in order to yield
-// legal or error-free DDL. Currently this only handles attempts to add multiple
-// FULLTEXT indexes in a single ALTER, but may handle additional cases in the
-// future.
+// legal or error-free DDL, due to DDL edge-cases. This includes attempts to add
+// multiple FULLTEXT indexes in a single ALTER, and attempts to rename an index
+// while also changing its visibility/ignored status.
 // This method returns a slice of TableDiffs. The first element will be
 // equivalent to the receiver (td) with any conflicting clauses removed;
 // subsequent slice elements, if any, will be separate TableDiffs each
@@ -184,6 +184,15 @@ func (td *TableDiff) SplitConflicts() (result []*TableDiff) {
 				continue
 			}
 			seenAddFulltext = true
+		} else if mi, ok := clause.(ModifyIndex); ok && mi.FromIndex.Equivalent(mi.ToIndex) && mi.FromIndex.Name != mi.ToIndex.Name && mi.FromIndex.Invisible != mi.ToIndex.Invisible {
+			// Put an AlterIndex into separateClauses so that we run that clause in its
+			// own separate ALTER TABLE, or skipped if StatementModifiers cause the
+			// original ModifyIndex to be handled as a DROP/re-ADD.
+			separateClauses = append(separateClauses, AlterIndex{
+				Name:         mi.ToIndex.Name, // use the post-rename name, since the rename happens first!
+				Invisible:    mi.ToIndex.Invisible,
+				linkedRename: &mi,
+			})
 		}
 		keepClauses = append(keepClauses, clause)
 	}
