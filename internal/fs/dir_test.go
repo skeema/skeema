@@ -16,6 +16,9 @@ import (
 	"github.com/skeema/skeema/internal/util"
 )
 
+// Location of Skeema main package's testdata dir, relative to this one
+var mainTestdata = "../../testdata"
+
 func TestParseDir(t *testing.T) {
 	dir := getDir(t, "testdata/host/db")
 	if dir.Config.Get("default-collation") != "latin1_swedish_ci" {
@@ -65,7 +68,7 @@ func TestParseDir(t *testing.T) {
 func TestParseDirErrors(t *testing.T) {
 	// Confirm error cases: nonexistent dir; non-dir file; dir with *.sql files
 	// creating same table multiple times
-	for _, dirPath := range []string{"../../bestdata", "../../testdata/setup.sql", "../../testdata"} {
+	for _, dirPath := range []string{mainTestdata + "xNoExistx", mainTestdata + "/setup.sql", mainTestdata} {
 		dir, err := ParseDir(dirPath, getValidConfig(t))
 		if err == nil || (dir != nil && dir.ParseError == nil) {
 			t.Errorf("Expected ParseDir to return nil dir and non-nil error, but dir=%v err=%v", dir, err)
@@ -76,10 +79,10 @@ func TestParseDirErrors(t *testing.T) {
 	cmd := mybase.NewCommand("fstest", "", "", nil)
 	cmd.AddArg("environment", "production", false)
 	cfg := mybase.ParseFakeCLI(t, cmd, "fstest")
-	if _, err := ParseDir("../../testdata/golden/init/mydb", cfg); err == nil {
+	if _, err := ParseDir(mainTestdata+"/golden/init/mydb", cfg); err == nil {
 		t.Error("Expected error from ParseDir(), but instead err is nil")
 	}
-	if _, err := ParseDir("../../testdata/golden/init/mydb/product", cfg); err == nil {
+	if _, err := ParseDir(mainTestdata+"/golden/init/mydb/product", cfg); err == nil {
 		t.Error("Expected error from ParseDir(), but instead err is nil")
 	}
 }
@@ -214,7 +217,7 @@ func TestDirGenerator(t *testing.T) {
 
 func TestDirNamedSchemaStatements(t *testing.T) {
 	// Test against a dir that has no named-schema statements
-	dir := getDir(t, "../../testdata/golden/init/mydb/product")
+	dir := getDir(t, mainTestdata+"/golden/init/mydb/product")
 	if len(dir.NamedSchemaStatements) > 0 {
 		t.Errorf("Expected dir %s to have no named schema statements; instead found %d", dir, len(dir.NamedSchemaStatements))
 	}
@@ -465,14 +468,14 @@ func TestDirParseDirCasingConflict(t *testing.T) {
 }
 
 func TestDirBaseName(t *testing.T) {
-	dir := getDir(t, "../../testdata/golden/init/mydb/product")
+	dir := getDir(t, mainTestdata+"/golden/init/mydb/product")
 	if bn := dir.BaseName(); bn != "product" {
 		t.Errorf("Unexpected base name: %s", bn)
 	}
 }
 
 func TestDirRelPath(t *testing.T) {
-	dir := getDir(t, "../../testdata/golden/init/mydb/product")
+	dir := getDir(t, mainTestdata+"/golden/init/mydb/product")
 	expected := "testdata/golden/init/mydb/product"
 	if runtime.GOOS == "windows" {
 		expected = strings.ReplaceAll(expected, "/", `\`)
@@ -494,7 +497,7 @@ func TestDirRelPath(t *testing.T) {
 }
 
 func TestDirSubdirs(t *testing.T) {
-	dir := getDir(t, "../../testdata/golden/init/mydb")
+	dir := getDir(t, mainTestdata+"/golden/init/mydb")
 	subs, err := dir.Subdirs()
 	if err != nil || countParseErrors(subs) > 0 {
 		t.Fatalf("Unexpected error from Subdirs(): %s", err)

@@ -18,9 +18,9 @@ func init() {
 	RegisterRule(Rule{
 		CheckerFunc:     GenericChecker(definerChecker),
 		Name:            "definer",
-		Description:     "Only allow routine definers listed in --allow-definer",
+		Description:     "Only allow definer users listed in --allow-definer for stored programs",
 		DefaultSeverity: SeverityError,
-		RelatedOption:   mybase.StringOption("allow-definer", 0, "%@%", "List of allowed routine definers for --lint-definer"),
+		RelatedOption:   mybase.StringOption("allow-definer", 0, "%@%", "List of allowed definer users for --lint-definer"),
 		ConfigFunc:      RuleConfigFunc(definerConfiger),
 	})
 }
@@ -28,8 +28,8 @@ func init() {
 // definerConfig is a custom configuration struct used by definerChecker. The
 // configuration of this rule involves custom logic to set up regular
 // expressions a single time, which is more efficient than re-computing them
-// on each routine encountered, especially in environments with a large number
-// of routines.
+// on each stored program encountered, especially in environments with a large
+// number of them.
 type definerConfig struct {
 	allowedDefinersString string
 	allowedDefinersMatch  []*regexp.Regexp
@@ -50,7 +50,7 @@ func definerChecker(object tengo.DefKeyer, createStatement string, schema *tengo
 
 	var typ, name, definer string
 	if object, ok := object.(*tengo.Routine); ok {
-		typ, name, definer = strings.Title(string(object.Type)), tengo.EscapeIdentifier(object.Name), object.Definer
+		typ, name, definer = strings.Title(string(object.Type)), object.Name, object.Definer
 	} else {
 		return nil
 	}
@@ -62,7 +62,7 @@ func definerChecker(object tengo.DefKeyer, createStatement string, schema *tengo
 	}
 	message := fmt.Sprintf(
 		"%s %s is using definer %s, which is not configured to be permitted. The following definers are listed in option allow-definer: %s.",
-		typ, name, definer, dc.allowedDefinersString,
+		typ, tengo.EscapeIdentifier(name), definer, dc.allowedDefinersString,
 	)
 	note := Note{
 		LineOffset: FindFirstLineOffset(reDefinerCheckerOffset, createStatement),

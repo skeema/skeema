@@ -82,7 +82,7 @@ type StatementModifiers struct {
 	StrictColumnDefinition bool             // If true, maintain column properties that are purely cosmetic (only affects MySQL 8)
 	LaxColumnOrder         bool             // If true, don't modify columns if they only differ by position
 	LaxComments            bool             // If true, don't modify tables/columns/indexes/routines if they only differ by comment clauses
-	CompareMetadata        bool             // If true, compare creation-time sql_mode and db collation for funcs, procs (and eventually events, triggers)
+	CompareMetadata        bool             // If true, compare creation-time sql_mode and db collation for stored programs
 	VirtualColValidation   bool             // If true, add WITH VALIDATION clause for ALTER TABLE affecting virtual columns
 	SkipPreDropAlters      bool             // If true, skip ALTERs that were only generated to make DROP TABLE faster
 	Flavor                 Flavor           // Adjust generated DDL to match vendor/version. Zero value is FlavorUnknown which makes no adjustments.
