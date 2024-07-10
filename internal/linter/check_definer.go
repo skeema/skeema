@@ -18,7 +18,7 @@ func init() {
 	RegisterRule(Rule{
 		CheckerFunc:     GenericChecker(definerChecker),
 		Name:            "definer",
-		Description:     "Only allow definer users listed in --allow-definer for stored programs",
+		Description:     "Only allow definer users listed in --allow-definer for stored objects",
 		DefaultSeverity: SeverityError,
 		RelatedOption:   mybase.StringOption("allow-definer", 0, "%@%", "List of allowed definer users for --lint-definer"),
 		ConfigFunc:      RuleConfigFunc(definerConfiger),
@@ -28,7 +28,7 @@ func init() {
 // definerConfig is a custom configuration struct used by definerChecker. The
 // configuration of this rule involves custom logic to set up regular
 // expressions a single time, which is more efficient than re-computing them
-// on each stored program encountered, especially in environments with a large
+// on each stored object encountered, especially in environments with a large
 // number of them.
 type definerConfig struct {
 	allowedDefinersString string
