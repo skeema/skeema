@@ -1074,7 +1074,7 @@ func (instance *Instance) ProcessList() (plist []ServerProcess, err error) {
 		User      string         `db:"User"`
 		Schema    sql.NullString `db:"db"`
 		Command   string         `db:"Command"`
-		TimeInt   uint64         `db:"Time"`
+		TimeInt   int64          `db:"Time"`
 		TimeFloat float64        `db:"time_ms"`
 		State     sql.NullString `db:"State"`
 		Info      sql.NullString `db:"Info"`
