@@ -6,7 +6,7 @@ continuous code coverage tracking system.
 
 # Installation
 
-`goveralls` requires a working Go installation (Go-1.2 or higher).
+`goveralls` requires a working Go installation (Go-1.13 or higher).
 
 ```bash
 $ go install github.com/mattn/goveralls@latest
@@ -38,7 +38,7 @@ docs](https://docs.coveralls.io/parallel-build-webhook) for more details).
 There is no need to run `go test` separately, as `goveralls` runs the entire
 test suite.
 
-## Github Actions
+## GitHub Actions
 
 [shogo82148/actions-goveralls](https://github.com/marketplace/actions/actions-goveralls) is available on GitHub Marketplace.
 It provides the shorthand of the GitHub Actions YAML configure.
@@ -52,9 +52,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Set up Go
-      uses: actions/setup-go@v1
+      uses: actions/setup-go@v2
       with:
-        go-version: '1.13'
+        go-version: '1.16'
     - name: Check out code
       uses: actions/checkout@v2
     - name: Install dependencies
@@ -76,56 +76,13 @@ jobs:
     #     path-to-profile: covprofile
 ```
 
-### Test with Legacy GOPATH mode
-
-If you want to use Go 1.10 or earlier, you have to set `GOPATH` environment value and the working directory.
-See <https://github.com/golang/go/wiki/GOPATH> for more detail.
-
-Here is an example for testing `example.com/owner/repo` package.
-
-```yaml
-name: Quality
-on: [push, pull_request]
-jobs:
-  test:
-    name: Test with Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - name: Set up Go
-        uses: actions/setup-go@v2
-        with:
-          go-version: '1.10'
-
-      # add this step
-      - name: Set up GOPATH
-        run: |
-          echo "GOPATH=${{ github.workspace }}" >> "$GITHUB_ENV"
-          echo "${{ github.workspace }}/bin" >> "$GITHUB_PATH"
-
-      - name: Check out code
-        uses: actions/checkout@v2
-        with:
-          path: src/example.com/owner/repo # add this
-      - name: Run Unit tests
-        run: |
-          go test -race -covermode atomic -coverprofile=covprofile ./...
-        working-directory: src/example.com/owner/repo # add this
-      - name: Install goveralls
-        run: go install github.com/mattn/goveralls@latest
-      - name: Send coverage
-        env:
-          COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: goveralls -coverprofile=covprofile -service=github
-        working-directory: src/example.com/owner/repo # add this
-```
-
 ## Travis CI
 
 ### GitHub Integration
 
-Enable Travis-CI on your github repository settings.
+Enable Travis-CI on your GitHub repository settings.
 
-For a **public** github repository put bellow's `.travis.yml`.
+For a **public** GitHub repository put bellow's `.travis.yml`.
 
 ```yml
 language: go
@@ -137,9 +94,9 @@ script:
   - $GOPATH/bin/goveralls -service=travis-ci
 ```
 
-For a **public** github repository, it is not necessary to define your repository key (`COVERALLS_TOKEN`).
+For a **public** GitHub repository, it is not necessary to define your repository key (`COVERALLS_TOKEN`).
 
-For a **private** github repository put bellow's `.travis.yml`. If you use **travis pro**, you need to specify `-service=travis-pro` instead of `-service=travis-ci`.
+For a **private** GitHub repository put bellow's `.travis.yml`. If you use **travis pro**, you need to specify `-service=travis-pro` instead of `-service=travis-ci`.
 
 ```yml
 language: go

@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/cover"
 )
 
@@ -175,4 +176,13 @@ func parseCover(fn string) ([]*SourceFile, error) {
 	}
 
 	return sourceFiles, nil
+}
+
+func findRootPackage(rootDirectory string) string {
+	modPath := filepath.Join(rootDirectory, "go.mod")
+	content, err := ioutil.ReadFile(modPath)
+	if err != nil {
+		return ""
+	}
+	return modfile.ModulePath(content)
 }

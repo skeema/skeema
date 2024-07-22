@@ -43,7 +43,6 @@ The following features are **not** yet implemented, but are planned for future r
 
 * Env vars as an option source
 * Additional ways to get config option values: floating-point, IP address, bool count of repeated option
-* API for runtime option overrides, which take precedence even over command-line flags
 * API for re-reading all option files that have changed
 * Command aliases
 
@@ -60,7 +59,7 @@ Additional [contributions](https://github.com/skeema/mybase/graphs/contributors)
 
 ## License
 
-**Copyright 2023 Skeema LLC and the Skeema authors**
+**Copyright 2024 Skeema LLC and the Skeema authors**
 
 ```text
 Licensed under the Apache License, Version 2.0 (the "License");

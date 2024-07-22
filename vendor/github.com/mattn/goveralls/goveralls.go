@@ -248,7 +248,9 @@ func processParallelFinish(jobID, token string) error {
 
 	params := make(url.Values)
 	params.Set("repo_token", token)
-	params.Set("repo_name", name)
+	if name != "" {
+		params.Set("repo_name", name)
+	}
 	params.Set("payload[build_num]", jobID)
 	params.Set("payload[status]", "done")
 	res, err := http.PostForm(*endpoint+"/webhook", params)
@@ -390,6 +392,9 @@ func process() error {
 	if prNumber := os.Getenv("CIRCLE_PR_NUMBER"); prNumber != "" {
 		// for Circle CI (pull request from forked repo)
 		pullRequest = prNumber
+	} else if prURL := os.Getenv("CIRCLE_PULL_REQUEST"); prURL != "" {
+		// for Circle CI (all other pull requests)
+		pullRequest = regexp.MustCompile(`[0-9]+$`).FindString(prURL)
 	} else if prNumber := os.Getenv("TRAVIS_PULL_REQUEST"); prNumber != "" && prNumber != "false" {
 		pullRequest = prNumber
 	} else if prNumber := os.Getenv("APPVEYOR_PULL_REQUEST_NUMBER"); prNumber != "" {
