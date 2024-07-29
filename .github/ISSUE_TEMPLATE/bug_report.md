@@ -8,7 +8,7 @@ assignees: ''
 ---
 
 **Describe the bug**
-<!-- A clear and concise description of what the bug is. -->
+<!-- A clear and concise description of what the bug is -->
 
 **Environment**
 - Skeema version and OS: <!-- For example, "v1.11.0-community running on MacOS" -->
@@ -16,11 +16,11 @@ assignees: ''
 - Any other environmental notes, special Skeema configuration, or Skeema warnings logged about your database server version:
 
 **To Reproduce**
-<!-- Steps to reproduce the behavior. -->
+<!-- Steps to reproduce the behavior -->
 
 **Expected behavior**
-<!-- A clear and concise description of what you expected to happen. -->
+<!-- A clear and concise description of what you expected to happen -->
 
 **Additional context**
-<!-- Add any other context about the problem here. -->
+<!-- Add any other context about the problem here -->
 
