@@ -25,7 +25,7 @@ TABLE `users` (
 
 --
 create function funcnodefiner() RETURNS varchar(30) RETURN "hello";
-CREATE DEFINER = CURRENT_USER() FUNCTION funccuruserparens() RETURNS int RETURN 42;
+CREATE OR REPLACE DEFINER = CURRENT_USER() FUNCTION funccuruserparens() RETURNS int RETURN 42;
 CREATE DEFINER=CURRENT_USER PROCEDURE proccurusernoparens() # this is a comment!
 	SELECT 1;
 create definer=foo@'localhost' /*lol*/ FUNCTION analytics.funcdefquote2() RETURNS int RETURN 42;
@@ -33,7 +33,7 @@ create DEFINER = 'foo'@localhost PROCEDURE `procdefquote1`() SELECT 42;
 	delimiter    "💩💩💩"
 CREATE TABLE uhoh (ummm varchar(20) default 'ok 💩💩💩 cool')💩💩💩
 DELIMITER $$ -- cool
-CREATE PROCEDURE whatever(name varchar(10))
+CREATE  Or  Replace PROCEDURE whatever(name varchar(10))
 BEGIN
 	DECLARE v1 INT; -- comment with "normal space" in front!
 	SET v1=loops;-- comment with `nbsp' in front?!?

@@ -133,6 +133,8 @@ func init() {
 		"procedure": processCreateRoutine,
 		"DEFINER":   processCreateWithDefiner,
 		"definer":   processCreateWithDefiner,
+		"OR":        processCreateOrReplace,
+		"or":        processCreateOrReplace,
 	}
 }
 
@@ -578,18 +580,22 @@ func processDelimiterCommand(p *parser, _ []Token) (stmt *Statement, err error) 
 	return p.finishStatement(), err
 }
 
-func processCreateStatement(p *parser, tokens []Token) (stmt *Statement, err error) {
-	var processor statementProcessor
+func getCreateProcessor(tokens []Token) statementProcessor {
+	if len(tokens) < 2 || tokens[0].typ != TokenWord {
+		return processUntilDelimiter // cannot parse
+	} else if processor, ok := createProcessors[tokens[0].val]; ok {
+		// keyword was all uppercase or all lowercase
+		return processor
+	} else if processor, ok := createProcessors[strings.ToUpper(tokens[0].val)]; ok {
+		// keyword was expressed using mixed case
+		return processor
+	}
+	return processUntilDelimiter // cannot parse
+}
+
+func processCreateStatement(p *parser, tokens []Token) (*Statement, error) {
 	tokens = p.nextTokens(tokens, 20)
-	if len(tokens) >= 2 && tokens[0].typ == TokenWord {
-		processor = createProcessors[tokens[0].val] // optimistically see if already all uppercase or all lowercase
-		if processor == nil {                       // may have been mixed-case input, try again with ToUpper
-			processor = createProcessors[strings.ToUpper(tokens[0].val)]
-		}
-	}
-	if processor == nil {
-		processor = processUntilDelimiter
-	}
+	processor := getCreateProcessor(tokens)
 	return processor(p, tokens)
 }
 
@@ -642,6 +648,30 @@ func processCreateRoutine(p *parser, tokens []Token) (*Statement, error) {
 	return processStoredProgram(p, tokens)
 }
 
+// We currently treat CREATE OR REPLACE identically to CREATE when processing
+// SQL; in other words, it is simply ignored by Skeema for parsing purposes.
+func processCreateOrReplace(p *parser, tokens []Token) (*Statement, error) {
+	// ensure we have enough tokens to match OR REPLACE, followed by the object
+	// type or DEFINER clause
+	tokens = p.nextTokens(tokens, 4)
+	if len(tokens) < 4 {
+		return processUntilDelimiter(p, tokens) // cannot parse
+	}
+
+	// This processor is called by processCreateStatement when the statement
+	// began with "CREATE OR", with "CREATE" being consumed already and tokens[0]
+	// being "OR". Confirm that tokens[1] is "REPLACE".
+	if !strings.EqualFold(tokens[1].val, "REPLACE") {
+		return processUntilDelimiter(p, tokens) // cannot parse, unexpected tokens
+	}
+
+	// Now delegate to the appropriate processor for the type of create statement
+	// indicated by the next token
+	tokens = tokens[2:]
+	processor := getCreateProcessor(tokens)
+	return processor(p, tokens)
+}
+
 func processCreateWithDefiner(p *parser, tokens []Token) (*Statement, error) {
 	// ensure we have enough additional tokens to match the longest definer clause
 	// format, plus one additional token to know which processor to call next
@@ -666,16 +696,7 @@ func processCreateWithDefiner(p *parser, tokens []Token) (*Statement, error) {
 
 	// Now delegate to the appropriate processor for the type of create statement
 	// indicated by the next token
-	var processor statementProcessor
-	if len(tokens) > 0 && tokens[0].typ == TokenWord {
-		processor = createProcessors[tokens[0].val] // optimistically see if already all uppercase or all lowercase
-		if processor == nil {                       // may have been mixed-case input, try again with ToUpper
-			processor = createProcessors[strings.ToUpper(tokens[0].val)]
-		}
-	}
-	if processor == nil {
-		processor = processUntilDelimiter
-	}
+	processor := getCreateProcessor(tokens)
 	return processor(p, tokens)
 }
 
