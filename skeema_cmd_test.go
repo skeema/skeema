@@ -742,6 +742,24 @@ func (s SkeemaIntegrationSuite) TestForeignKeys(t *testing.T) {
 		t.Error("Unsafe status did not properly affect both ALTERs on the table")
 	}
 
+	// MariaDB 10.11+ point releases from August 2024 contain a bug where new FKs
+	// are not validated under default settings; we've reported this as MDEV-34756
+	// and anticipate a fix in Q4's point releases. For now, we use a workaround
+	// of disabling the new innodb_alter_copy_bulk server global.
+	// The bug is present in 10.11.9, 11.1.6, 11.2.5, 11.4.3, 11.5.2. Fixes are
+	// anticipated in 10.11.10, 11.2.6, and 11.4.4. There will be no further
+	// releases of MariaDB 11.1 or 11.5, so no fix for those series.
+	// TODO: revisit once the Aug 2024 MariaDB point releases are no longer recent
+	if s.d.Flavor().MinMariaDB(10, 11, 9) {
+		db, err := s.d.CachedConnectionPool("", "")
+		if err != nil {
+			t.Fatalf("Unable to connect to DockerizedInstance: %v", err)
+		}
+		// Errors on this exec are intentionally ignored: if the variable does not
+		// exist, that means the server release is older than the bug.
+		_, _ = db.Exec("SET GLOBAL innodb_alter_copy_bulk=OFF")
+	}
+
 	// Test adding an FK where the existing data does not meet the constraint:
 	// should fail if foreign_key_checks=1, succeed if foreign_key_checks=0
 	s.dbExec(t, "product", "ALTER TABLE posts DROP FOREIGN KEY usridfk")

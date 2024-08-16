@@ -2,7 +2,7 @@ name: Tests
 on: [push, pull_request]
 env:
   GOVERSION: "1.21"
-  SKEEMA_TEST_IMAGES: "mysql:5.7,mysql:8.4,mariadb:10.11.8"
+  SKEEMA_TEST_IMAGES: "mysql:5.7,mysql:8.4,mariadb:10.11"
 jobs:
   test:
     name: Check code quality and run tests
