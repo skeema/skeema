@@ -431,30 +431,99 @@ func (fl Flavor) HasCheckConstraints() bool {
 	return fl.IsMariaDB(10, 2) && fl.Version.Patch() >= 22
 }
 
-// Mapping for whether MariaDB 10.X.Y returns true for AlwaysShowCollate: key is
-// X (minor version), value is minimum Y (patch version) for that X. Versions
-// prior to 10.3 or after 10.10 are excluded, as are non-MariaDB versions, since
-// AlwaysShowCollate checks for these separately.
-var maria10AlwaysCollate = map[uint16]uint16{
-	3:  37, // MariaDB 10.3: 10.3.37+ always shows COLLATE after CHARACTER SET
-	4:  27, // MariaDB 10.4: 10.4.27+ "
-	5:  18, // MariaDB 10.5: 10.5.18+ "
-	6:  11, // MariaDB 10.6: 10.6.11+ "
-	7:  7,  // MariaDB 10.7: 10.7.7+ "
-	8:  6,  // MariaDB 10.8: 10.8.6+ "
-	9:  4,  // MariaDB 10.9: 10.9.4+ "
-	10: 2,  // MariaDB 10.10: 10.10.2+ "
-}
+// Mapping for when to return true for AlwaysShowCollate: MariaDB releases
+// from Nov 2022 onward. See https://jira.mariadb.org/browse/MDEV-29446
+var mariaAlwaysCollate = newPointReleaseMap(
+	Version{10, 3, 37}, // MariaDB 10.3:  10.3.37+
+	Version{10, 4, 27}, // MariaDB 10.4:  10.4.27+
+	Version{10, 5, 18}, // MariaDB 10.5:  10.5.18+
+	Version{10, 6, 11}, // MariaDB 10.6:  10.6.11+
+	Version{10, 7, 7},  // MariaDB 10.7:  10.7.7+
+	Version{10, 8, 6},  // MariaDB 10.8:  10.8.6+
+	Version{10, 9, 4},  // MariaDB 10.9:  10.9.4+
+	Version{10, 10, 2}, // MariaDB 10.10: 10.10.2+ (and any major.minor above this)
+)
 
 // AlwaysShowCollate returns true if the flavor always puts a COLLATE clause
 // after a CHARACTER SET clause in SHOW CREATE TABLE, for columns as well as
 // the table default. This is true in MariaDB versions released Nov 2022
-// onwards. Reference: https://jira.mariadb.org/browse/MDEV-29446
+// onwards.
 func (fl Flavor) AlwaysShowCollate() bool {
-	if !fl.MinMariaDB(10, 3) { // return false for non-MariaDB or MariaDB pre-10.3
+	if fl.IsMariaDB() {
+		return mariaAlwaysCollate.check(fl.Version)
+	}
+	return false
+}
+
+// Mapping for when to use /*M! style comments for compressed columns: MariaDB
+// releases from Aug 2024 onward. See https://jira.mariadb.org/browse/MDEV-34318
+var mariaNewCompressedColMarker = newPointReleaseMap(
+	Version{10, 5, 26}, // MariaDB 10.5:  10.5.26+
+	Version{10, 6, 19}, // MariaDB 10.6:  10.6.19+
+	Version{10, 11, 9}, // MariaDB 10.11: 10.11.9+
+	Version{11, 1, 6},  // MariaDB 11.1:  11.1.6+
+	Version{11, 2, 5},  // MariaDB 11.2:  11.2.5+
+	Version{11, 4, 3},  // MariaDB 11.4:  11.4.3+
+	Version{11, 5, 2},  // MariaDB 11.5:  11.5.2+ (and any major.minor above this)
+)
+
+// compressedColumnOpenComment returns the opening tag of a version-gated
+// comment which preceeds a column compression clause. In MariaDB, this varies
+// between pre-and post-Aug 2024 point releases.
+// This method always returns a non-empty string, even if fl does not support
+// column compression.
+func (fl Flavor) compressedColumnOpenComment() string {
+	if !fl.IsMariaDB() {
+		return "/*!50633 " // Percona Server 5.6.33+
+	} else if mariaNewCompressedColMarker.check(fl.Version) {
+		return "/*M!100301 " // MariaDB releases from Aug 2024 or later
+	} else {
+		return "/*!100301 " // MariaDB releases before Aug 2024
+	}
+}
+
+///// Point-release mapping helpers ////////////////////////////////////////////
+//
+//    MariaDB sometimes changes things in SHOW CREATE TABLE affecting all patch
+//    releases in a given quarter, across multiple major.minor version series.
+//    These types and functions power lookup maps for these changes.
+
+func packMajorMinor(ver Version) uint64 {
+	return (uint64(ver[0]) << 32) + (uint64(ver[1]) << 16)
+}
+
+type pointReleaseMap struct {
+	alwaysFalseBelow  Version
+	alwaysTrueAtLeast Version
+	conditionals      map[uint64]uint16 // packed major and minor => minimum patch to return true. (no entry = always false!)
+}
+
+func newPointReleaseMap(versions ...Version) *pointReleaseMap {
+	prm := &pointReleaseMap{
+		conditionals: make(map[uint64]uint16, len(versions)),
+	}
+	var minPacked, maxPacked uint64
+	for n, ver := range versions {
+		packed := packMajorMinor(ver)
+		if n == 0 || packed < minPacked {
+			prm.alwaysFalseBelow = ver
+			minPacked = packed
+		}
+		if packed > maxPacked {
+			prm.alwaysTrueAtLeast = ver
+			maxPacked = packed
+		}
+		prm.conditionals[packed] = ver[2]
+	}
+	return prm
+}
+
+func (prm *pointReleaseMap) check(ver Version) bool {
+	if prm == nil || len(prm.conditionals) == 0 || ver.Below(prm.alwaysFalseBelow) {
 		return false
-	} else if fl.MinMariaDB(10, 11) { // return true for MariaDB 10.11+, patch versions don't matter beyond this
+	} else if ver.AtLeast(prm.alwaysTrueAtLeast) {
 		return true
 	}
-	return fl.Version.Patch() >= maria10AlwaysCollate[fl.Version.Minor()]
+	minPatch, ok := prm.conditionals[packMajorMinor(ver)]
+	return ok && ver[2] >= minPatch
 }

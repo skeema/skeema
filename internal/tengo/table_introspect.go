@@ -245,6 +245,10 @@ func queryTablesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor
 
 func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) (map[string][]*Column, error) {
 	stripDisplayWidth := flavor.OmitIntDisplayWidth()
+	var mariaCompressedColMarker string
+	if flavor.MinMariaDB(10, 3) {
+		mariaCompressedColMarker = " " + flavor.compressedColumnOpenComment() + "COMPRESSED"
+	}
 	var rawColumns []struct {
 		Name               string         `db:"column_name"`
 		TableName          string         `db:"table_name"`
@@ -303,10 +307,12 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 		if stripDisplayWidth {
 			col.TypeInDB, _ = StripDisplayWidth(col.TypeInDB) // safe/no-op if already no int display width
 		}
-		if pos := strings.Index(col.TypeInDB, " /*!100301 COMPRESSED"); pos > -1 {
-			// MariaDB includes compression attribute in column type; remove it
-			col.Compression = "COMPRESSED"
-			col.TypeInDB = col.TypeInDB[0:pos]
+		if mariaCompressedColMarker != "" {
+			if pos := strings.Index(col.TypeInDB, mariaCompressedColMarker); pos > -1 {
+				// MariaDB includes compression attribute in column type; remove it
+				col.Compression = "COMPRESSED"
+				col.TypeInDB = col.TypeInDB[0:pos]
+			}
 		}
 		if rawColumn.GenerationExpr.Valid {
 			col.GenerationExpr = rawColumn.GenerationExpr.String

@@ -30,73 +30,98 @@ type Column struct {
 // Definition returns this column's definition clause, for use as part of a DDL
 // statement.
 func (c *Column) Definition(flavor Flavor) string {
-	var compression, charSet, collation, generated, nullability, srid, visibility,
-		autoIncrement, defaultValue, onUpdate, colFormat, comment, check string
+	// At minimum, every column has a name and type. A number of different clauses
+	// can follow those, with order varying a bit by flavor. We allocate a slice
+	// with initial capacity of 6 somewhat arbitrarily: most columns will fit in
+	// that, but we can do more allocations when needed for columns that exceed it
+	clauses := make([]string, 2, 6)
+
+	// Column name
+	clauses[0] = EscapeIdentifier(c.Name)
+
+	// Column data type
 	if c.Compression != "" && flavor.IsMariaDB() {
-		// MariaDB puts compression modifiers in a different place than Percona Server
-		compression = fmt.Sprintf(" /*!100301 %s*/", c.Compression)
+		// MariaDB puts column compression modifier after column type
+		clauses[1] = c.TypeInDB + " " + flavor.compressedColumnOpenComment() + c.Compression + "*/"
+	} else {
+		clauses[1] = c.TypeInDB
 	}
+
+	// Character set and collation
 	if c.CharSet != "" && c.ShowCharSet {
-		charSet = " CHARACTER SET " + c.CharSet
+		clauses = append(clauses, "CHARACTER SET "+c.CharSet)
 	}
 	if c.Collation != "" && c.ShowCollation {
-		collation = " COLLATE " + c.Collation
+		clauses = append(clauses, "COLLATE "+c.Collation)
 	}
+
+	// Generation expression
 	if c.GenerationExpr != "" {
-		genKind := "STORED"
+		var genKind string
 		if c.Virtual {
 			genKind = "VIRTUAL"
+		} else {
+			genKind = "STORED"
 		}
-		generated = fmt.Sprintf(" GENERATED ALWAYS AS (%s) %s", c.GenerationExpr, genKind)
+		clauses = append(clauses, "GENERATED ALWAYS AS ("+c.GenerationExpr+") "+genKind)
 	}
+
+	// Nullability
 	if !c.Nullable {
-		nullability = " NOT NULL"
+		clauses = append(clauses, "NOT NULL")
 	} else if strings.HasPrefix(c.TypeInDB, "timestamp") {
-		// Oddly the timestamp type always displays nullability
-		nullability = " NULL"
+		// Oddly the timestamp type always displays nullability, other types never do
+		clauses = append(clauses, "NULL")
 	}
+
+	// Invisibility for MariaDB (which places this in a different spot than MySQL)
+	if c.Invisible && flavor.IsMariaDB() {
+		clauses = append(clauses, "INVISIBLE")
+	}
+
+	// Auto increment
+	if c.AutoIncrement {
+		clauses = append(clauses, "AUTO_INCREMENT")
+	}
+
+	// SRID in MySQL 8.0+
 	if c.HasSpatialReference && flavor.MinMySQL(8) {
 		// Although MariaDB also attribute syntax for this (REF_SYSTEM_ID), it isn't
 		// exposed in SHOW CREATE TABLE, so here we restrict to MySQL only
-		srid = fmt.Sprintf(" /*!80003 SRID %d */", c.SpatialReferenceID)
-	}
-	if c.Invisible {
-		if flavor.IsMariaDB() {
-			visibility = " INVISIBLE"
-		} else {
-			visibility = " /*!80023 INVISIBLE */"
-		}
-	}
-	if c.AutoIncrement {
-		autoIncrement = " AUTO_INCREMENT"
-	}
-	if c.Default != "" {
-		defaultValue = fmt.Sprintf(" DEFAULT %s", c.Default)
-	}
-	if c.OnUpdate != "" {
-		onUpdate = fmt.Sprintf(" ON UPDATE %s", c.OnUpdate)
-	}
-	if c.Compression != "" && flavor.IsPercona() {
-		colFormat = fmt.Sprintf(" /*!50633 COLUMN_FORMAT %s */", c.Compression)
-	}
-	if c.Comment != "" {
-		comment = fmt.Sprintf(" COMMENT '%s'", EscapeValueForCreateTable(c.Comment))
-	}
-	if c.CheckClause != "" {
-		check = fmt.Sprintf(" CHECK (%s)", c.CheckClause)
+		clauses = append(clauses, fmt.Sprintf("/*!80003 SRID %d */", c.SpatialReferenceID))
 	}
 
-	// Attribute ordering differs slightly between MariaDB and MySQL. Also only
-	// Maria has inline checks, and only MySQL exposes SRID in SHOW CREATE TABLE.
-	clauses := []string{
-		EscapeIdentifier(c.Name), " ", c.TypeInDB, compression, charSet, collation, generated, nullability,
+	// Default value/expression
+	if c.Default != "" {
+		clauses = append(clauses, "DEFAULT "+c.Default)
 	}
-	if flavor.IsMariaDB() {
-		clauses = append(clauses, visibility, autoIncrement, defaultValue, onUpdate, colFormat, comment, check)
-	} else {
-		clauses = append(clauses, autoIncrement, srid, defaultValue, onUpdate, visibility, colFormat, comment)
+
+	// ON UPDATE for TIMESTAMP or DATETIME
+	if c.OnUpdate != "" {
+		clauses = append(clauses, "ON UPDATE "+c.OnUpdate)
 	}
-	return strings.Join(clauses, "")
+
+	// Invisibility for MySQL
+	if c.Invisible && flavor.IsMySQL() {
+		clauses = append(clauses, "/*!80023 INVISIBLE */")
+	}
+
+	// Column compression in Percona Server
+	if c.Compression != "" && flavor.IsPercona() {
+		clauses = append(clauses, flavor.compressedColumnOpenComment()+"COLUMN_FORMAT "+c.Compression+" */")
+	}
+
+	// Column comment
+	if c.Comment != "" {
+		clauses = append(clauses, "COMMENT '"+EscapeValueForCreateTable(c.Comment)+"'")
+	}
+
+	// Inline CHECK constraint (field is only ever set for MariaDB)
+	if c.CheckClause != "" {
+		clauses = append(clauses, "CHECK ("+c.CheckClause+")")
+	}
+
+	return strings.Join(clauses, " ")
 }
 
 // Equals returns true if two columns are identical, false otherwise.
