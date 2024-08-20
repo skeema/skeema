@@ -24,10 +24,15 @@ func hasTimeChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 	for _, col := range table.Columns {
 		var message string
 		if strings.HasPrefix(col.TypeInDB, "timestamp") {
-			message = fmt.Sprintf(
-				"Column %s of %s is using type timestamp. This column type cannot store values beyond January 2038, which is problematic for software with long-term support requirements. It should not be used for storing arbitrary future dates, especially from user input.\nAlso note that timestamps have automatic timezone conversion behavior, between the time_zone session variable and UTC.",
-				col.Name, table.ObjectKey(),
-			)
+			prefix := fmt.Sprintf("Column %s of %s is using type timestamp. ", col.Name, table.ObjectKey())
+			suffix := "timestamps have automatic timezone conversion behavior, between the time_zone session variable and UTC."
+			if opts.flavor.IsMySQL() {
+				message = prefix + "This column type cannot store values beyond January 2038, which is problematic for software with long-term support requirements. It should not be used for storing arbitrary future dates, especially from user input.\nAlso note that " + suffix
+			} else if opts.flavor.MinMariaDB(11, 5) { // MariaDB 11.5+ fixes the Y2K38 problem with timestamp (assuming 64bit platforms)
+				message = prefix + "Note that " + suffix
+			} else { /* opts.flavor.IsMariaDB() && !opts.flavor.MinMariaDB(11, 5) */
+				message = prefix + "Prior to MariaDB 11.5, this column type cannot store values beyond January 2038. It should not be used for storing arbitrary future dates, especially from user input.\nAlso note that " + suffix
+			}
 			if oldTimestampDefaults && !alreadySeenTimestamp && !col.Nullable {
 				when := "MySQL 8"
 				if opts.flavor.IsMariaDB() {
