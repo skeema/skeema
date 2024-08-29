@@ -13,9 +13,10 @@ import (
 )
 
 // On arm64, we must supply an exact patch number in the image tag for Percona
-// Server 8.0. There is no "latest" nor "8.0" tag for arm64. For now we always
-// plug in a specific recent patch release to solve this.
-const latestPercona80Patch = "36"
+// Server 8.0 or 8.4. There is no "latest", "8.0", or "8.4" tag for arm64. For
+// now we always plug in a specific recent patch release to solve this.
+const latestPercona80Patch = "37"
+const latestPercona84Patch = "0"
 
 // LocalDocker is a Workspace created inside of a Docker container on localhost.
 // The schema is dropped when done interacting with the workspace in Cleanup(),
@@ -296,8 +297,7 @@ func DockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
 
 	// Percona 8.1+ on any arch, or 8.0.33+ on arm64: use percona/percona-server.
 	// On arm64 we MUST include a patch value AND also add a "-aarch64" suffix to
-	// the tag, as there is no "latest" nor "8.0" tag for arm64. For now we always
-	// plug in a specific recent patch release in place of 8.0.
+	// the tag, as there is no "latest", "8.0", or "8.4" tag for arm64.
 	// Below 8.0.33, Percona images for arm64 are not available at all.
 	if flavor.IsPercona() {
 		if flavor.MinMySQL(8, 1) || arch == "arm64" {
@@ -309,6 +309,8 @@ func DockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
 			}
 			if strings.HasSuffix(image, ":8.0") {
 				image += "." + latestPercona80Patch + "-aarch64"
+			} else if strings.HasSuffix(image, ":8.4") {
+				image += "." + latestPercona84Patch + "-aarch64"
 			} else if wantLatest {
 				image += ".0-aarch64"
 			} else {
