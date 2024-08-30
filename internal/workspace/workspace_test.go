@@ -187,6 +187,11 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 		}
 	}
 
+	var isARM bool
+	if arch, _ := tengo.DockerEngineArchitecture(); arch == "arm64" {
+		isARM = true
+	}
+
 	// Test error conditions
 	assertOptsError("--workspace=invalid", true)
 	assertOptsError("--workspace=docker --docker-cleanup=invalid", true)
@@ -209,8 +214,12 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 
 	// Test docker with defaults, which should have no cleanup action, and match
 	// flavor of suite's DockerizedInstance
+	expectFlavorString := s.d.Flavor().Family().String()
+	if isARM && s.d.Flavor().IsPercona(8) {
+		expectFlavorString = s.d.Flavor().String()
+	}
 	opts = getOpts("--workspace=docker")
-	if opts.Type != TypeLocalDocker || opts.CleanupAction != CleanupActionNone || opts.Flavor.String() != s.d.Flavor().Family().String() {
+	if opts.Type != TypeLocalDocker || opts.CleanupAction != CleanupActionNone || opts.Flavor.String() != expectFlavorString {
 		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
 	}
 
@@ -226,6 +235,21 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	if opts = getOpts("--workspace=docker --flavor=mysql:5.5"); opts.Flavor.String() != "mysql:5.5" {
 		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
 	}
+
+	// Mess with the instance flavor, to simulate a not-latest Percona Server 8.0:
+	// confirm the specific patch release is copied into the workspace options IF
+	// the test is running on arm64 system
+	realFlavor := s.d.Flavor()
+	s.d.ForceFlavor(tengo.ParseFlavor("percona:8.0.35"))
+	opts = getOpts("--workspace=docker")
+	var expectPatch uint16
+	if isARM {
+		expectPatch = 35
+	}
+	if patch := opts.Flavor.Version[2]; patch != expectPatch {
+		t.Errorf("Expected Flavor option patch release number to be %d, instead found %d", expectPatch, patch)
+	}
+	s.d.ForceFlavor(realFlavor)
 
 	// Mess with the instance and its sql_mode, to simulate docker workspace using
 	// a real instance's nonstandard sql_mode

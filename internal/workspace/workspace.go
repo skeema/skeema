@@ -151,8 +151,18 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 			overrides := "sql_mode=" + url.QueryEscape("'"+instance.SQLMode()+"'")
 			opts.DefaultConnParams = instance.BuildParamString(overrides)
 			opts.NameCaseMode = instance.NameCaseMode()
+			instFlavor := instance.Flavor()
 			if !opts.Flavor.Known() {
-				opts.Flavor = instance.Flavor().Family()
+				opts.Flavor = instFlavor.Family()
+			}
+			// Percona Server 8.0 or 8.4 on ARM: we need a specific patch release, due to
+			// how ARM images are tagged on DockerHub. If the flavor option is missing a
+			// patch number but is otherwise equal to the real instance flavor, copy the
+			// patch release number from the instance.
+			if opts.Flavor.IsPercona(8) && instFlavor.Version[2] > 0 && opts.Flavor == instFlavor.Family() {
+				if arch, _ := tengo.DockerEngineArchitecture(); arch == "arm64" {
+					opts.Flavor = instFlavor
+				}
 			}
 		}
 		opts.ContainerName = "skeema-" + tengo.ContainerNameForImage(opts.Flavor.String())

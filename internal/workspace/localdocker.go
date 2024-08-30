@@ -12,9 +12,13 @@ import (
 	"github.com/skeema/skeema/internal/tengo"
 )
 
-// On arm64, we must supply an exact patch number in the image tag for Percona
-// Server 8.0 or 8.4. There is no "latest", "8.0", or "8.4" tag for arm64. For
-// now we always plug in a specific recent patch release to solve this.
+// On arm64, for Percona Server, we always must supply an exact patch number in
+// the image tag since there is no "latest", "8.0", or "8.4" tag for arm64.
+// Logic in OptionsForDir attempts to obtain the patch release number from the
+// "real" target server when applicable, but that isn't always possible, for
+// example when intentionally overriding a flavor which differs from the real
+// DB server. In these cases we must fall back to using a specific recent patch
+// release.
 const latestPercona80Patch = "37"
 const latestPercona84Patch = "0"
 
