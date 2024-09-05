@@ -5,7 +5,7 @@
 [![downloads](https://img.shields.io/github/downloads/skeema/skeema/total.svg)](https://github.com/skeema/skeema/releases)
 [![latest release](https://img.shields.io/github/release/skeema/skeema.svg)](https://github.com/skeema/skeema/releases)
 
-Skeema is a tool for managing MySQL and MariaDB schema changes in a declarative fashion using pure SQL. The Skeema CLI tool allows you to:
+Skeema is a tool for managing MySQL and MariaDB schema changes in a [declarative](https://www.skeema.io/blog/2019/01/18/declarative/) fashion using pure SQL. The Skeema CLI tool allows you to:
 
 * Export `CREATE TABLE` statements to the filesystem, for tracking in a Git repo
 * Diff changes in the schema repo against live DBs to automatically generate DDL
@@ -17,25 +17,27 @@ Skeema supports a pull-request-based workflow for schema change submission, revi
 
 ## Products and downloads
 
-This repo is the free open source Community edition of the Skeema CLI. The Community edition supports management of **tables** and **routines** (procs/funcs). Builds are provided for Linux and MacOS.
+This repo is the free open source Community edition of the Skeema CLI. The Community edition supports management of [**tables**](https://www.skeema.io/docs/features/tables/) and [**routines**](https://www.skeema.io/docs/features/routines/) (procs/funcs). Builds are provided for Linux and MacOS.
 
-The paid [Premium edition](https://www.skeema.io/download/) of the Skeema CLI adds support for managing **views** and **triggers**, and also includes a native **Windows build**, built-in **SSH tunnel** functionality, and many other improvements.
+The paid [Premium edition](https://www.skeema.io/download/) of the Skeema CLI adds support for managing [**views**](https://www.skeema.io/docs/features/views/), [**triggers**](https://www.skeema.io/docs/features/triggers/), and [**events**](https://www.skeema.io/docs/features/events/). It also includes a native **Windows build**, built-in [**SSH tunnel**](https://www.skeema.io/docs/features/ssh/) functionality, [**seed data**](https://www.skeema.io/docs/features/seeddata/) management, and many other improvements.
 
 For download links and more information, visit [skeema.io](https://www.skeema.io/download/).
 
 ## Documentation
 
-* [Installation](https://www.skeema.io/docs/install/)
-* [Getting started](https://www.skeema.io/docs/examples/): usage examples and screencasts
-* [Requirements](https://www.skeema.io/docs/requirements/): supported database versions, required privileges, supported DB features, and edge cases
-* [Features](https://www.skeema.io/docs/features/): how Skeema interacts with each type of database object, and various feature-specific topics
-* [Configuration guide](https://www.skeema.io/docs/config/): option handling, config file format, and command-line option usage
-* [Command reference](https://www.skeema.io/docs/commands/): usage instructions for each command in the Skeema CLI
-* [Option reference](https://www.skeema.io/docs/options/): detailed information on every Skeema option
-* [Schema change workflow](https://www.skeema.io/docs/workflow/): recommended flow from development to production deployments
-* [Pipelines and automation](https://www.skeema.io/docs/automation/): integrating Skeema into automated workflows
-* [Recipes](https://www.skeema.io/docs/recipes/): using Skeema to achieve common schema management tasks
-* [Frequently asked questions](https://www.skeema.io/docs/faq/)
+Page | Description
+--- | ---
+[Installation](https://www.skeema.io/docs/install/) | How to install the CLI
+[Getting started](https://www.skeema.io/docs/examples/) | Usage examples and screencasts
+[Requirements](https://www.skeema.io/docs/requirements/) | Supported database systems and required database privileges
+[Features](https://www.skeema.io/docs/features/) | How Skeema interacts with each type of database object, and various feature-specific topics
+[Configuration guide](https://www.skeema.io/docs/config/) | Option handling, config file format, and command-line option usage
+[Command reference](https://www.skeema.io/docs/commands/) | Usage instructions for each command in the Skeema CLI
+[Option reference](https://www.skeema.io/docs/options/) | Detailed information on every Skeema option
+[Schema change workflow](https://www.skeema.io/docs/workflow/) | Recommended flow for pull-request-driven schema changes
+[Pipelines and automation](https://www.skeema.io/docs/automation/) | Integrating Skeema into automated workflows
+[Recipes](https://www.skeema.io/docs/recipes/) | Using Skeema to achieve common schema management tasks
+[FAQ](https://www.skeema.io/docs/faq/) | Frequently asked questions about the Skeema CLI
 
 ## Credits
 
