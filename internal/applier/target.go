@@ -120,7 +120,7 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 	if dir.Config.GetBool("first-only") {
 		onlyInstance, err := dir.FirstInstance()
 		if onlyInstance == nil && err == nil {
-			log.Warnf("Skipping %s: directory maps to an empty list of instances", dir)
+			log.Warnf("Skipping %s: directory maps to an empty list of database servers", dir)
 			if dir.Config.Changed("host-wrapper") {
 				log.Warnf("The host-wrapper option controls which hosts this directory maps to, but the executed script returned no hostnames.\n")
 			}
@@ -139,7 +139,7 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 		log.Errorf("Skipping %s: %s\n", dir, err)
 		return nil, 1
 	} else if len(rawInstances) == 0 {
-		log.Warnf("Skipping %s: directory maps to an empty list of instances", dir)
+		log.Warnf("Skipping %s: directory maps to an empty list of database servers", dir)
 		if dir.Config.Changed("host-wrapper") {
 			log.Warnf("The host-wrapper option controls which hosts this directory maps to, but the executed script returned no hostnames.\n")
 		}
@@ -175,7 +175,7 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 		for _, other := range instances[1:] {
 			if compare := other.NameCaseMode(); compare != tengo.NameCaseUnknown && compare != lctn {
 				log.Errorf("Skipping %s: all database servers mapped by the same subdirectory and environment must have the same value for lower_case_table_names.", dir)
-				log.Errorf("Instance %s has lower_case_table_names=%d, but instance %s has lower_case_table_names=%d.", instances[0], lctn, other, compare)
+				log.Errorf("Database server %s has lower_case_table_names=%d, while %s has lower_case_table_names=%d.", instances[0], lctn, other, compare)
 				return nil, len(instances)
 			}
 		}

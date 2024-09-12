@@ -5,12 +5,12 @@ import (
 )
 
 func init() {
-	summary := "Compare a DB instance's schemas to the filesystem"
-	desc := "Compares the schemas on database instance(s) to the corresponding filesystem " +
+	summary := "Compare a DB server's schemas to the filesystem"
+	desc := "Compares the schemas on database server(s) to the corresponding filesystem " +
 		"representation of them. The output is a series of DDL commands that, if run on " +
-		"the instance, would cause the instances' schemas to now match the definitions " +
+		"the DB server, would cause its schemas to now match the definitions " +
 		"from the filesystem.\n\n" +
-		"You may optionally pass an environment name as a CLI arg. This will affect " +
+		"You may optionally pass an environment name as a command-line arg. This will affect " +
 		"which section of .skeema config files is used for processing. For example, " +
 		"running `skeema diff staging` will apply config directives from the " +
 		"[staging] section of config files, as well as any sectionless directives at the " +
@@ -46,7 +46,7 @@ func clonePushOptionsToDiff() {
 	descRewrites := map[string]string{
 		"allow-unsafe":    "Permit generating ALTER or DROP operations that are potentially destructive",
 		"alter-wrapper":   "Output ALTER TABLEs as shell commands rather than just raw DDL; see manual for template vars",
-		"brief":           "Don't output DDL to STDOUT; instead output list of instances with at least one difference",
+		"brief":           "Don't output DDL to STDOUT; instead output list of database servers with at least one difference",
 		"safe-below-size": "Always permit generating destructive operations for tables below this size in bytes",
 	}
 	hiddenRewrites := map[string]bool{

@@ -17,7 +17,7 @@ Skeema supports a pull-request-based workflow for schema change submission, revi
 
 ## Products and downloads
 
-This repo is the free open source Community edition of the Skeema CLI. The Community edition supports management of [**tables**](https://www.skeema.io/docs/features/tables/) and [**routines**](https://www.skeema.io/docs/features/routines/) (procs/funcs). Builds are provided for Linux and MacOS.
+This repo is the free open source Community edition of the Skeema command-line tool. The Community edition supports management of [**tables**](https://www.skeema.io/docs/features/tables/) and [**routines**](https://www.skeema.io/docs/features/routines/) (procs/funcs). Builds are provided for Linux and MacOS.
 
 The paid [Premium edition](https://www.skeema.io/download/) of the Skeema CLI adds support for managing [**views**](https://www.skeema.io/docs/features/views/), [**triggers**](https://www.skeema.io/docs/features/triggers/), and [**events**](https://www.skeema.io/docs/features/events/). It also includes a native **Windows build**, built-in [**SSH tunnel**](https://www.skeema.io/docs/features/ssh/) functionality, [**seed data**](https://www.skeema.io/docs/features/seeddata/) management, and many other improvements.
 
@@ -27,7 +27,7 @@ For download links and more information, visit [skeema.io](https://www.skeema.io
 
 Page | Description
 --- | ---
-[Installation](https://www.skeema.io/docs/install/) | How to install the CLI
+[Installation](https://www.skeema.io/docs/install/) | How to install the Skeema CLI tool
 [Getting started](https://www.skeema.io/docs/examples/) | Usage examples and screencasts
 [Requirements](https://www.skeema.io/docs/requirements/) | Supported database systems and required database privileges
 [Features](https://www.skeema.io/docs/features/) | How Skeema interacts with each type of database object, and various feature-specific topics
@@ -37,7 +37,7 @@ Page | Description
 [Schema change workflow](https://www.skeema.io/docs/workflow/) | Recommended flow for pull-request-driven schema changes
 [Pipelines and automation](https://www.skeema.io/docs/automation/) | Integrating Skeema into automated workflows
 [Recipes](https://www.skeema.io/docs/recipes/) | Using Skeema to achieve common schema management tasks
-[FAQ](https://www.skeema.io/docs/faq/) | Frequently asked questions about the Skeema CLI
+[FAQ](https://www.skeema.io/docs/faq/) | Frequently asked questions about Skeema
 
 ## Credits
 

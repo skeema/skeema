@@ -14,13 +14,13 @@ import (
 )
 
 func init() {
-	summary := "Save a DB instance's schemas to the filesystem"
-	desc := "Creates a filesystem representation of the schemas on a DB instance. " +
-		"For each schema on the instance (or just the single schema specified by " +
+	summary := "Save a DB server's schemas to the filesystem"
+	desc := "Creates a filesystem representation of the schemas on a database server. " +
+		"For each schema on the DB server (or just the single schema specified by " +
 		"--schema), a subdir with a .skeema config file will be created. Each directory " +
 		"will be populated with .sql files containing CREATE statements for every " +
 		"table and routine in the schema.\n\n" +
-		"You may optionally pass an environment name as a CLI arg. This will affect " +
+		"You may optionally pass an environment name as a command-line arg. This will affect " +
 		"which section of .skeema config files the host-related options are written to. " +
 		"For example, running `skeema init staging` will add config directives to the " +
 		"[staging] section of config files. If no environment name is supplied, the " +
@@ -74,7 +74,7 @@ func InitHandler(cfg *mybase.Config) error {
 	if err != nil {
 		return err
 	} else if inst == nil {
-		return NewExitValue(CodeBadConfig, "Command line did not specify which instance to connect to")
+		return NewExitValue(CodeBadConfig, "Command line did not specify which database server to connect to")
 	}
 
 	// Build list of schemas
@@ -87,7 +87,7 @@ func InitHandler(cfg *mybase.Config) error {
 		return NewExitValue(CodeFatalError, "Cannot examine schemas on %s: %s", inst, err)
 	}
 	if onlySchema != "" && len(schemas) == 0 {
-		return NewExitValue(CodeBadConfig, "Schema %s does not exist on instance %s", onlySchema, inst)
+		return NewExitValue(CodeBadConfig, "Schema %s does not exist on database server %s", onlySchema, inst)
 	}
 
 	// Write host option file

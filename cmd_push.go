@@ -15,11 +15,11 @@ import (
 
 func init() {
 	summary := "Alter objects on DBs to reflect the filesystem representation"
-	desc := "Modifies the schemas on database instance(s) to match the corresponding " +
+	desc := "Modifies the schemas on database server(s) to match the corresponding " +
 		"filesystem representation of them. This essentially performs the same diff logic " +
 		"as `skeema diff`, but then actually runs the generated DDL. You should generally " +
 		"run `skeema diff` first to see what changes will be applied.\n\n" +
-		"You may optionally pass an environment name as a CLI arg. This will affect " +
+		"You may optionally pass an environment name as a command-line arg. This will affect " +
 		"which section of .skeema config files is used for processing. For example, " +
 		"running `skeema push staging` will apply config directives from the " +
 		"[staging] section of config files, as well as any sectionless directives at the " +
@@ -62,9 +62,9 @@ func init() {
 	)
 
 	cmd.AddOptions("sharding",
-		mybase.BoolOption("first-only", '1', false, "For dirs mapping to multiple instances or schemas, just run against the first per dir"),
+		mybase.BoolOption("first-only", '1', false, "For dirs mapping to multiple hosts or schemas, only run against the first target per dir"),
 		mybase.BoolOption("brief", 'q', false, "<overridden by diff command>").Hidden(),
-		mybase.StringOption("concurrent-instances", 'c', "1", "Perform operations on this number of instances concurrently"),
+		mybase.StringOption("concurrent-instances", 'c', "1", "Perform operations on this number of database servers concurrently"),
 	)
 
 	workspace.AddCommandOptions(cmd)

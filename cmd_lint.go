@@ -21,11 +21,11 @@ func init() {
 		"generate an error, a warning, or be ignored entirely. Statements that contain " +
 		"invalid SQL, or otherwise return an error from the database, are always flagged " +
 		"as linter errors.\n\n" +
-		"By default, this command also reformats statements to their canonical form, " +
+		"By default, this command also reformats CREATE statements to their canonical form, " +
 		"just like `skeema format`.\n\n" +
-		"This command relies on accessing database instances to test the SQL DDL in a " +
+		"This command relies on accessing a database server to test the SQL DDL in a " +
 		"temporary location. See the --workspace option for more information.\n\n" +
-		"You may optionally pass an environment name as a CLI arg. This will affect " +
+		"You may optionally pass an environment name as a command-line arg. This will affect " +
 		"which section of .skeema config files is used for linter configuration and " +
 		"workspace selection. For example, running `skeema lint staging` will " +
 		"apply config directives from the [staging] section of config files, as well as " +

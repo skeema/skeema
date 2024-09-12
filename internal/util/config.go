@@ -34,7 +34,7 @@ func AddGlobalOptions(cmd *mybase.Command) {
 		mybase.StringOption("user", 'u', "root", "Username to connect to database host"),
 		mybase.StringOption("password", 'p', "$MYSQL_PWD", "Password for database user; omit value to prompt from TTY").ValueOptional(),
 		mybase.StringOption("host-wrapper", 'H', "", "External bin to shell out to for host lookup; see manual for template vars"),
-		mybase.StringOption("connect-options", 'o', "", "Comma-separated session options to set upon connecting to each database instance"),
+		mybase.StringOption("connect-options", 'o', "", "Comma-separated session options to set upon connecting to each database server"),
 		mybase.StringOption("ignore-schema", 0, "", "Ignore schemas that match regex"),
 		mybase.StringOption("ignore-table", 0, "", "Ignore tables that match regex"),
 		mybase.StringOption("ignore-proc", 0, "", "Ignore stored procedures that match regex"),

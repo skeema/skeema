@@ -55,12 +55,12 @@ func AddEnvHandler(cfg *mybase.Config) error {
 	// that checks connectivity.
 	var inst *tengo.Instance
 	if !cfg.OnCLI("host") {
-		return NewExitValue(CodeBadConfig, "`skeema add-environment` requires --host to be supplied on CLI")
+		return NewExitValue(CodeBadConfig, "`skeema add-environment` requires --host to be supplied on command-line")
 	}
 	if instances, err := dir.Instances(); err != nil {
 		return err
 	} else if len(instances) == 0 {
-		return NewExitValue(CodeBadConfig, "Command line did not specify which instance to connect to")
+		return NewExitValue(CodeBadConfig, "Sharding configuration for host (or host-wrapper) yielded an empty list of database servers")
 	} else {
 		inst = instances[0]
 	}

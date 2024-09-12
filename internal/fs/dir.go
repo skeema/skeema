@@ -356,7 +356,7 @@ func (dir *Dir) FirstInstance() (*tengo.Instance, error) {
 	if len(instances) == 1 {
 		return nil, fmt.Errorf("Unable to connect to %s for %s: %s", instances[0], dir, lastErr)
 	}
-	return nil, fmt.Errorf("Unable to connect to any of %d instances for %s; last error %s", len(instances), dir, lastErr)
+	return nil, fmt.Errorf("Unable to connect to any of %d database servers for %s; last error %s", len(instances), dir, lastErr)
 }
 
 // ValidateInstance confirms the supplied instance is (or has been) reachable,
@@ -385,13 +385,13 @@ func (dir *Dir) ValidateInstance(instance *tengo.Instance) error {
 	confFlavor := tengo.ParseFlavor(dir.Config.Get("flavor"))
 	if instFlavor.Known() {
 		if confFlavor != tengo.FlavorUnknown && instFlavor.Family() != confFlavor.Family() && !dir.Config.OnCLI("flavor") {
-			log.Warnf("Instance %s actual flavor %s differs from dir %s configured flavor %s\nIf you have recently upgraded your database server version, consider using `skeema pull` to update your schema definitions.", instance, instFlavor, dir, confFlavor)
+			log.Warnf("Database server %s actual flavor %s differs from dir %s configured flavor %s\nIf you have recently upgraded your database server version, consider using `skeema pull` to update your schema definitions.", instance, instFlavor, dir, confFlavor)
 		}
 		if instFlavor.TooNew() {
-			log.Warnf("Instance %s flavor %s is newer than this version of Skeema. To ensure correct behavior, consider upgrading to a more recent release of Skeema.", instance, instFlavor)
+			log.Warnf("Database server %s flavor %s is newer than this version of Skeema. To ensure correct behavior, consider upgrading to a more recent release of Skeema.", instance, instFlavor)
 		}
 	} else if confFlavor.Known() {
-		log.Debugf("Instance %s flavor cannot be parsed; using dir %s configured flavor %s instead", instance, dir, confFlavor)
+		log.Debugf("Database server %s flavor cannot be parsed; using dir %s configured flavor %s instead", instance, dir, confFlavor)
 		instance.SetFlavor(confFlavor)
 	} else {
 		log.Warnf(`Unable to determine database server vendor/version of %s. To set manually, use the "flavor" option in %s`, instance, filepath.Join(dir.Path, ".skeema"))
