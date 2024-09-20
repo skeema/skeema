@@ -142,6 +142,7 @@ func CreateDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstan
 		"--skip-innodb-adaptive-hash-index",     // AHI not beneficial to DDL-based workload
 		"--loose-innodb-log-writer-threads=off", // log writer threads harm workspace perf (loose- prefix since only in MySQL 8.0.22+)
 		"--loose-query-cache-size=0",            // ensure query cache completely disabled (loose- prefix since no longer in MySQL 8+)
+		"--skip-innodb-doublewrite",             // not needed for an ephemeral DB; perf impact for data dictionary in MySQL 8.0+
 	}
 	if opts.EnableBinlog {
 		serverArgs = append(serverArgs, "--log-bin", "--server-id=1")
