@@ -1,0 +1,9 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Skeema Discussions
+    url: https://github.com/skeema/skeema/discussions
+    about: Please use Discussions as a casual forum for asking questions, initial troubleshooting (if you're not sure the behavior is a bug), sharing ideas informally, etc.
+  - name: Private Technical Support
+    url: https://app.skeema.io/portal/support
+    about: If your company subscribes to Skeema Max or has a separate paid support contract, visit our customer portal to learn about engaging with our expert support.
+

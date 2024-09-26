@@ -18,9 +18,9 @@ If your idea is potentially large or complex, please indicate if your company is
 
 ### Questions
 
-Kindly [search existing issues](https://github.com/skeema/skeema/search?type=issues) and [documentation](https://www.google.com/search?q=documentation+site%3Awww.skeema.io) before opening a new Question issue.
+Please use [Discussions](https://github.com/skeema/skeema/discussions) for questions, instead of filing an Issue. Read more about our discussion board [here](https://github.com/skeema/skeema/discussions/232).
 
-As Skeema is a bootstrapped project, the amount of free support we can offer is limited. As a general guideline, brief high-level questions about Skeema's functionality are fine for GitHub issues. If however you have detailed questions relating to your company's specific workflow, a paid support retainer or consulting engagement is more appropriate. Please [reach out](https://www.skeema.io/contact/) to learn more.
+If you're looking for troubleshooting assistance, kindly [search existing issues](https://github.com/skeema/skeema/search?type=issues) and [documentation](https://www.google.com/search?q=documentation+site%3Awww.skeema.io) first.
 
 ## Pull requests
 
