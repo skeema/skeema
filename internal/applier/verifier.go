@@ -50,8 +50,8 @@ func VerifyDiff(altersInDiff []*tengo.TableDiff, vopts VerifierOptions) error {
 		AllowUnsafe:            true,                         // needed since we're just running against the temp schema
 		AlgorithmClause:        "copy",                       // needed so the DB doesn't ignore attempts to re-order indexes
 		StrictIndexOrder:       true,                         // needed since we want the SHOW CREATE TABLEs to match
-		StrictCheckOrder:       true,                         // ditto (only affects MariaDB)
-		StrictForeignKeyNaming: true,                         // ditto
+		StrictCheckConstraints: true,                         // ditto (strict naming, and on MariaDB strict ordering)
+		StrictForeignKeyNaming: true,                         // ditto (strict naming, and don't conflate RESTRICT vs NO ACTION)
 		StrictColumnDefinition: true,                         // ditto (only affects MySQL 8 edge cases)
 		SkipPreDropAlters:      true,                         // ignore DROP PARTITIONs that were only generated to speed up a DROP TABLE
 		Flavor:                 vopts.Flavor,

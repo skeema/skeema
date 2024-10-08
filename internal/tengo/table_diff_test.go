@@ -954,12 +954,16 @@ func TestAlterCheckConstraints(t *testing.T) {
 		}
 	}
 
-	// Test change in check clause on first check. This should result in 4 clauses:
-	// drop and re-add the first check to modify it, and drop and re-add the second
-	// check but only for ordering (which is typically ignored)
+	// Test change in name of first check. This should result in 4 clauses: drop
+	// and re-add the first check to rename (only emitted with strict modifier),
+	// and drop and re-add the second check but only for ordering (only emitted
+	// if MariaDB AND strict modifier)
+	maria105 := ParseFlavor("mariadb:10.5")
+	strictMySQLMods := StatementModifiers{Flavor: flavor, StrictCheckConstraints: true}
+	strictMariaMods := StatementModifiers{Flavor: maria105, StrictCheckConstraints: true}
 	tableChecks2 := aTableForFlavor(flavor, 1)
 	tableChecks2.Checks = []*Check{
-		{Name: "alivecheck", Clause: "alive = 1", Enforced: true},
+		{Name: "_alivecheck", Clause: "alive != 0", Enforced: true},
 		{Name: "stringythings", Clause: "ssn <> '000000000'", Enforced: true},
 	}
 	tableChecks2.CreateStatement = tableChecks2.GeneratedCreateStatement(flavor)
@@ -967,16 +971,56 @@ func TestAlterCheckConstraints(t *testing.T) {
 	if len(td.alterClauses) != 4 {
 		t.Errorf("Expected 4 alterClauses, instead found %d", len(td.alterClauses))
 	} else {
-		if dcc, ok := td.alterClauses[0].(DropCheck); !ok || dcc.Check != tableChecks.Checks[0] || dcc.reorderOnly {
+		if dcc, ok := td.alterClauses[0].(DropCheck); !ok || dcc.Check != tableChecks.Checks[0] || dcc.reorderOnly || !dcc.renameOnly {
 			t.Errorf("Found unexpected alterClause %+v", td.alterClauses[0])
 		}
-		if acc, ok := td.alterClauses[1].(AddCheck); !ok || acc.Check != tableChecks2.Checks[0] || acc.reorderOnly {
+		if acc, ok := td.alterClauses[1].(AddCheck); !ok || acc.Check != tableChecks2.Checks[0] || acc.reorderOnly || !acc.renameOnly {
 			t.Errorf("Found unexpected alterClause %+v", td.alterClauses[1])
 		}
-		if dcc, ok := td.alterClauses[2].(DropCheck); !ok || dcc.Check != tableChecks.Checks[1] || !dcc.reorderOnly {
+		if dcc, ok := td.alterClauses[2].(DropCheck); !ok || dcc.Check != tableChecks.Checks[1] || !dcc.reorderOnly || dcc.renameOnly {
 			t.Errorf("Found unexpected alterClause %+v", td.alterClauses[2])
 		}
-		if acc, ok := td.alterClauses[3].(AddCheck); !ok || acc.Check != tableChecks2.Checks[1] || !acc.reorderOnly {
+		if acc, ok := td.alterClauses[3].(AddCheck); !ok || acc.Check != tableChecks2.Checks[1] || !acc.reorderOnly || acc.renameOnly {
+			t.Errorf("Found unexpected alterClause %+v", td.alterClauses[3])
+		}
+		for n, alterClause := range td.alterClauses {
+			// Expectations: all blank with regular mods; first two non-blank with strict
+			// MySQL mods; all non-blank with strict MariaDB mods
+			if clause := alterClause.Clause(mods); clause != "" {
+				t.Errorf("Unexpected clause with basic mods at n=%d: expected blank, found %q", n, clause)
+			}
+			expectStrictBlank := n > 1
+			actualStrictBlank := alterClause.Clause(strictMySQLMods) == ""
+			if expectStrictBlank != actualStrictBlank {
+				t.Errorf("Unexpected result from Clause() with strict MySQL modifier at n=%d", n)
+			}
+			if clause := alterClause.Clause(strictMariaMods); clause == "" {
+				t.Errorf("Unexpected blank result from Clause() with strict MariaDB modifier at n=%d", n)
+			}
+		}
+	}
+
+	// Revert first check's name change, but change its check clause instead.
+	// This should result in 4 clauses: drop and re-add the first check to modify
+	// it, and drop and re-add the second check but only for ordering (only emitted
+	// if MariaDB AND strict modifier)
+	tableChecks2.Checks[0].Name = tableChecks.Checks[0].Name
+	tableChecks2.Checks[0].Clause = "alive = 1"
+	tableChecks2.CreateStatement = tableChecks2.GeneratedCreateStatement(flavor)
+	td = NewAlterTable(&tableChecks, &tableChecks2)
+	if len(td.alterClauses) != 4 {
+		t.Errorf("Expected 4 alterClauses, instead found %d", len(td.alterClauses))
+	} else {
+		if dcc, ok := td.alterClauses[0].(DropCheck); !ok || dcc.Check != tableChecks.Checks[0] || dcc.reorderOnly || dcc.renameOnly {
+			t.Errorf("Found unexpected alterClause %+v", td.alterClauses[0])
+		}
+		if acc, ok := td.alterClauses[1].(AddCheck); !ok || acc.Check != tableChecks2.Checks[0] || acc.reorderOnly || acc.renameOnly {
+			t.Errorf("Found unexpected alterClause %+v", td.alterClauses[1])
+		}
+		if dcc, ok := td.alterClauses[2].(DropCheck); !ok || dcc.Check != tableChecks.Checks[1] || !dcc.reorderOnly || dcc.renameOnly {
+			t.Errorf("Found unexpected alterClause %+v", td.alterClauses[2])
+		}
+		if acc, ok := td.alterClauses[3].(AddCheck); !ok || acc.Check != tableChecks2.Checks[1] || !acc.reorderOnly || acc.renameOnly {
 			t.Errorf("Found unexpected alterClause %+v", td.alterClauses[3])
 		}
 		for n, alterClause := range td.alterClauses {
@@ -1005,8 +1049,7 @@ func TestAlterCheckConstraints(t *testing.T) {
 	}
 
 	// Create a table with 5 checks. Reorder one of them and confirm result.
-	flavor = ParseFlavor("mariadb:10.5")
-	tableChecks, tableChecks2 = aTableForFlavor(flavor, 1), aTableForFlavor(flavor, 1)
+	tableChecks, tableChecks2 = aTableForFlavor(maria105, 1), aTableForFlavor(maria105, 1)
 	tableChecks.Checks = []*Check{
 		{Name: "check1", Clause: "ssn <> '111111111'", Enforced: true},
 		{Name: "check2", Clause: "ssn <> '222222222'", Enforced: true},
@@ -1014,7 +1057,7 @@ func TestAlterCheckConstraints(t *testing.T) {
 		{Name: "check4", Clause: "ssn <> '444444444'", Enforced: true},
 		{Name: "check5", Clause: "ssn <> '555555555'", Enforced: true},
 	}
-	tableChecks.CreateStatement = tableChecks.GeneratedCreateStatement(flavor)
+	tableChecks.CreateStatement = tableChecks.GeneratedCreateStatement(maria105)
 	tableChecks2.Checks = []*Check{
 		{Name: "check1", Clause: "ssn <> '111111111'", Enforced: true},
 		{Name: "check2", Clause: "ssn <> '222222222'", Enforced: true},
@@ -1022,14 +1065,13 @@ func TestAlterCheckConstraints(t *testing.T) {
 		{Name: "check3", Clause: "ssn <> '333333333'", Enforced: true},
 		{Name: "check5", Clause: "ssn <> '555555555'", Enforced: true},
 	}
-	tableChecks2.CreateStatement = tableChecks2.GeneratedCreateStatement(flavor)
+	tableChecks2.CreateStatement = tableChecks2.GeneratedCreateStatement(maria105)
 	td = NewAlterTable(&tableChecks, &tableChecks2)
-	modsStrict := StatementModifiers{Flavor: flavor, StrictCheckOrder: true}
 	if len(td.alterClauses) != 4 {
 		t.Errorf("Expected 4 alterClauses, instead found %d", len(td.alterClauses))
 	}
 	for n, alterClause := range td.alterClauses {
-		str, strStrict := alterClause.Clause(mods), alterClause.Clause(modsStrict)
+		str, strStrict := alterClause.Clause(mods), alterClause.Clause(strictMariaMods)
 		if str != "" || strStrict == "" {
 			t.Errorf("Clauses don't match expectations: %q / %q", str, strStrict)
 		}
@@ -1041,6 +1083,32 @@ func TestAlterCheckConstraints(t *testing.T) {
 			if _, ok := alterClause.(AddCheck); !ok {
 				t.Errorf("Unexpected type at clause[%d]: %T", n, alterClause)
 			}
+		}
+	}
+
+	// Confirm an edge case around behavior of Clause when being renamed AND
+	// reordered: output shouldn't ever be blank with strict mods, regardless of
+	// MySQL vs MariaDB. The conditionals in Clause should be organized in a way
+	// that properly handles this.
+	add := AddCheck{
+		Check:       tableChecks.Checks[0],
+		reorderOnly: true,
+		renameOnly:  true,
+	}
+	drop := DropCheck{
+		Check:       tableChecks.Checks[0],
+		reorderOnly: true,
+		renameOnly:  true,
+	}
+	for _, ac := range []TableAlterClause{add, drop} {
+		if clause := ac.Clause(mods); clause != "" {
+			t.Errorf("Expected blank clause with non-strict mods, instead found %q", clause)
+		}
+		if clause := ac.Clause(strictMySQLMods); clause == "" {
+			t.Error("Expected non-blank clause with strict MySQL mods, but it was blank")
+		}
+		if clause := ac.Clause(strictMariaMods); clause == "" {
+			t.Error("Expected non-blank clause with strict MariaDB mods, but it was blank")
 		}
 	}
 }
@@ -1086,7 +1154,7 @@ func (s TengoIntegrationSuite) TestAlterCheckConstraints(t *testing.T) {
 	tableChecks := getTableCopy("grab_bag")
 	tableChecks.Checks = []*Check{
 		{Name: "alivecheck", Clause: "alive != 0", Enforced: true},
-		{Name: "stringythings", Clause: "code != 'ABCD1234' AND name != 'ABCD1234'", Enforced: true},
+		{Name: "stringythings", Clause: "code != 'ABCD1234' AND owner_id != 123", Enforced: true},
 	}
 	tableChecks.CreateStatement = tableChecks.GeneratedCreateStatement(flavor)
 	td := NewAlterTable(tableNoChecks, tableChecks)
@@ -1096,9 +1164,10 @@ func (s TengoIntegrationSuite) TestAlterCheckConstraints(t *testing.T) {
 		t.Fatal("Table is unexpectedly unsupported for diffs now")
 	}
 
-	// Confirm that modifying a check's name or clause = drop and re-add
+	// Confirm that modifying a check's clause = drop and re-add, but changing name
+	// doesn't emit anything with non-strict mods
 	tableChecks2 := getTableCopy("grab_bag")
-	tableChecks2.Checks[0].Clause = "alive = 1"
+	tableChecks2.Checks[0].Clause = strings.ReplaceAll(tableChecks.Checks[0].Clause, "0", "9")
 	tableChecks2.Checks[1].Name = "stringycheck"
 	tableChecks2.CreateStatement = tableChecks2.GeneratedCreateStatement(flavor)
 	td = NewAlterTable(tableChecks, tableChecks2)
@@ -1112,6 +1181,27 @@ func (s TengoIntegrationSuite) TestAlterCheckConstraints(t *testing.T) {
 	}
 	if len(tableChecks.Checks) != 2 {
 		t.Errorf("Expected 2 check constraints, instead found %d", len(tableChecks.Checks))
+	}
+	// Now run an additional diff, which should still have 2 alter clauses relating
+	// to the name difference: both clauses should be blank with non-strict mods;
+	// but with strict mods, running them should actually update the name
+	td = NewAlterTable(tableChecks, tableChecks2)
+	if len(td.alterClauses) != 2 {
+		t.Errorf("Expected 2 alterClauses, instead found %d", len(td.alterClauses))
+	}
+	if stmt, err := td.Statement(StatementModifiers{Flavor: flavor}); stmt != "" || err != nil {
+		t.Errorf("Unexpected return from Statement: %q / %v", stmt, err)
+	}
+	if stmt, err := td.Statement(StatementModifiers{Flavor: flavor, StrictCheckConstraints: true}); stmt == "" || err != nil {
+		t.Errorf("Unexpected return from Statement: %q / %v", stmt, err)
+	} else if _, err := db.Exec(stmt); err != nil {
+		t.Fatalf("Unexpected error executing statement %q: %v", stmt, err)
+	} else {
+		tableChecks = getTableCopy("grab_bag")
+		td = NewAlterTable(tableChecks, tableChecks2)
+		if td != nil && len(td.alterClauses) > 0 {
+			t.Errorf("Expected 0 alterClauses, instead found %d", len(td.alterClauses))
+		}
 	}
 
 	// Confirm functionality related to MySQL's ALTER CHECK clause and the NOT

@@ -77,7 +77,7 @@ type StatementModifiers struct {
 	LockClause             string           // Include a LOCK=[value] clause in generated ALTER TABLE
 	AlgorithmClause        string           // Include an ALGORITHM=[value] clause in generated ALTER TABLE
 	StrictIndexOrder       bool             // If true, maintain index order even in cases where there is no functional difference
-	StrictCheckOrder       bool             // If true, maintain check constraint order even though it never has a functional difference (only affects MariaDB)
+	StrictCheckConstraints bool             // If true, maintain check constraint definition even if differences are cosmetic (name change; relative order of check definitions in MariaDB)
 	StrictForeignKeyNaming bool             // If true, maintain foreign key definition even if differences are cosmetic (name change, RESTRICT vs NO ACTION, etc)
 	StrictColumnDefinition bool             // If true, maintain column properties that are purely cosmetic (only affects MySQL 8)
 	LaxColumnOrder         bool             // If true, don't modify columns if they only differ by position

@@ -351,7 +351,7 @@ func StatementModifiersForDir(dir *fs.Dir) (mods tengo.StatementModifiers, err e
 	mods.LaxComments = dir.Config.GetBool("lax-comments")
 	if dir.Config.GetBool("exact-match") {
 		mods.StrictIndexOrder = true
-		mods.StrictCheckOrder = true // only affects MariaDB
+		mods.StrictCheckConstraints = true
 		mods.StrictForeignKeyNaming = true
 		mods.StrictColumnDefinition = true // only affects MySQL 8
 	}

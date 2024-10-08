@@ -475,7 +475,10 @@ func diffTables(from, to *Table) (clauses []TableAlterClause, supported bool) {
 	// Compare secondary indexes
 	clauses = append(clauses, compareSecondaryIndexes(from, to)...)
 
-	// Compare foreign keys
+	// Compare foreign keys. If only the name of an FK changes, we consider this
+	// difference to be cosmetic, and suppress it at clause generation time unless
+	// requested. (This is important for pt-osc support, since it renames FKs due
+	// to their namespace being schema-wide.)
 	fromForeignKeys := from.foreignKeysByName()
 	toForeignKeys := to.foreignKeysByName()
 	fkChangeCosmeticOnly := func(fk *ForeignKey, others []*ForeignKey) bool {
@@ -517,21 +520,36 @@ func diffTables(from, to *Table) (clauses []TableAlterClause, supported bool) {
 
 	// Compare check constraints. Although the order of check constraints has no
 	// functional impact, ordering changes must nonetheless must be detected, as
-	// MariaDB lists checks in creation order for I_S and SHOW CREATE.
+	// MariaDB lists checks in creation order for I_S and SHOW CREATE. And similar
+	// to FKs, we must detect naming-only changes for OSC tool compatibility.
 	fromChecks := from.checksByName()
 	toChecks := to.checksByName()
+	checkChangeNameOnly := func(cc *Check, others []*Check) bool {
+		for _, other := range others {
+			if cc.Clause == other.Clause && cc.Enforced == other.Enforced {
+				return true
+			}
+		}
+		return false
+	}
 	var fromCheckStillExist []*Check // ordered list of checks from "from" that still exist in "to"
 	for _, fromCheck := range from.Checks {
 		if _, stillExists := toChecks[fromCheck.Name]; stillExists {
 			fromCheckStillExist = append(fromCheckStillExist, fromCheck)
 		} else {
-			clauses = append(clauses, DropCheck{Check: fromCheck})
+			clauses = append(clauses, DropCheck{
+				Check:      fromCheck,
+				renameOnly: checkChangeNameOnly(fromCheck, to.Checks),
+			})
 		}
 	}
 	var reorderChecks bool
 	for n, toCheck := range to.Checks {
 		if fromCheck, existedBefore := fromChecks[toCheck.Name]; !existedBefore {
-			clauses = append(clauses, AddCheck{Check: toCheck})
+			clauses = append(clauses, AddCheck{
+				Check:      toCheck,
+				renameOnly: checkChangeNameOnly(toCheck, from.Checks),
+			})
 			reorderChecks = true
 		} else if fromCheck.Clause != toCheck.Clause {
 			clauses = append(clauses, DropCheck{Check: fromCheck}, AddCheck{Check: toCheck})
