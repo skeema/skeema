@@ -25,12 +25,19 @@ func dupeIndexChecker(table *tengo.Table, createStatement string, _ *tengo.Schem
 			Message:    message,
 		}
 	}
+	var invisibleWord = "INVISIBLE"
+	var supportsInvisible = opts.flavor.MinMariaDB(10, 6) || opts.flavor.MinMySQL(8, 0)
+	if opts.flavor.IsMariaDB() {
+		invisibleWord = "IGNORED"
+	}
 	makeNoteDupeIndex := func(dupeIndexName, betterIndexName string, equivalent bool) Note {
 		var reason string
 		if equivalent {
 			reason = fmt.Sprintf("Indexes %s and %s of %s are functionally identical.\nOne of them should be dropped.", dupeIndexName, betterIndexName, table.ObjectKey())
+		} else if supportsInvisible {
+			reason = fmt.Sprintf("Index %s of %s is redundant to larger index %s.\nIn most cases it is safe to drop index %s, but consider making it %s first.", dupeIndexName, table.ObjectKey(), betterIndexName, dupeIndexName, invisibleWord)
 		} else {
-			reason = fmt.Sprintf("Index %s of %s is redundant to larger index %s.\nConsider dropping index %s.", dupeIndexName, table.ObjectKey(), betterIndexName, dupeIndexName)
+			reason = fmt.Sprintf("Index %s of %s is redundant to larger index %s.\nIn most cases it is safe to drop index %s.", dupeIndexName, table.ObjectKey(), betterIndexName, dupeIndexName)
 		}
 		return makeNote(dupeIndexName, reason+" Redundant indexes waste disk space, and harm write performance.")
 	}
