@@ -2,7 +2,6 @@ package tengo
 
 import (
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 )
@@ -375,8 +374,6 @@ type ModifyColumn struct {
 	InUniqueConstraint bool // true if column is part of a unique index (or PK) in both old and new version of table
 }
 
-var reDisplayWidth = regexp.MustCompile(`(tinyint|smallint|mediumint|int|bigint)\((\d+)\)( unsigned)?( zerofill)?`)
-
 // Clause returns a MODIFY COLUMN clause of an ALTER TABLE statement.
 func (mc ModifyColumn) Clause(mods StatementModifiers) string {
 	var positionClause string
@@ -417,6 +414,48 @@ func (mc ModifyColumn) Clause(mods StatementModifiers) string {
 	}
 
 	return "MODIFY COLUMN " + mc.NewColumn.Definition(mods.Flavor) + positionClause
+}
+
+// splitTypeSize is a helper function used by ModifyColumn.Unsafe(). It
+// separates the column type from its size modifier.
+func splitTypeSize(input string) (typ string, size uint64, ok bool) {
+	before, after, ok := strings.Cut(input, "(")
+	if !ok {
+		return "", 0, false
+	}
+	after, _, ok = strings.Cut(after, ")") // strip modifiers e.g. " unsigned"
+	if !ok {
+		return "", 0, false
+	}
+	size, err := strconv.ParseUint(after, 10, 64)
+	if err != nil {
+		return "", 0, false
+	}
+	return before, size, true
+}
+
+// splitType2Sizes is a helper function used by ModifyColumn.Unsafe(). It
+// separates the column type from its comma-separated size modifiers, for use
+// with types that have 2 such values (e.g. decimal).
+func splitType2Sizes(input string) (typ string, size1, size2 uint64, ok bool) {
+	before, after, ok := strings.Cut(input, "(")
+	if !ok {
+		return "", 0, 0, false
+	}
+	after, _, ok = strings.Cut(after, ")") // strip modifiers e.g. " unsigned"
+	if !ok {
+		return "", 0, 0, false
+	}
+	str1, str2, ok := strings.Cut(after, ",")
+	if !ok {
+		return "", 0, 0, false
+	}
+	size1, err1 := strconv.ParseUint(str1, 10, 64)
+	size2, err2 := strconv.ParseUint(str2, 10, 64)
+	if err1 != nil || err2 != nil {
+		return "", 0, 0, false
+	}
+	return before, size1, size2, true
 }
 
 // Unsafe returns true if this clause is potentially destroys/corrupts existing
@@ -493,17 +532,9 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 	// decimal(a,b) -> decimal(x,y) unsafe if x < a or y < b: reduces range of
 	// values that may be stored in the column
 	if bothSamePrefix("decimal") {
-		re := regexp.MustCompile(`^decimal\((\d+),(\d+)\)`)
-		oldMatches := re.FindStringSubmatch(oldType)
-		newMatches := re.FindStringSubmatch(newType)
-		if oldMatches == nil || newMatches == nil {
-			return true, genericReason
-		}
-		oldPrecision, _ := strconv.Atoi(oldMatches[1])
-		oldScale, _ := strconv.Atoi(oldMatches[2])
-		newPrecision, _ := strconv.Atoi(newMatches[1])
-		newScale, _ := strconv.Atoi(newMatches[2])
-		if newPrecision < oldPrecision || newScale < oldScale {
+		_, oldPrecision, oldScale, oldOK := splitType2Sizes(oldType)
+		_, newPrecision, newScale, newOK := splitType2Sizes(newType)
+		if !oldOK || !newOK || newPrecision < oldPrecision || newScale < oldScale {
 			return true, genericReason
 		}
 		return false, ""
@@ -511,15 +542,9 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 
 	// bit(x) -> bit(y) unsafe if y < x
 	if bothSamePrefix("bit") {
-		re := regexp.MustCompile(`^bit\((\d+)\)`)
-		oldMatches := re.FindStringSubmatch(oldType)
-		newMatches := re.FindStringSubmatch(newType)
-		if oldMatches == nil || newMatches == nil {
-			return true, genericReason
-		}
-		oldSize, _ := strconv.Atoi(oldMatches[1])
-		newSize, _ := strconv.Atoi(newMatches[1])
-		if newSize < oldSize {
+		_, oldSize, oldOK := splitTypeSize(oldType)
+		_, newSize, newOK := splitTypeSize(newType)
+		if !oldOK || !newOK || newSize < oldSize {
 			return true, genericReason
 		}
 		return false, ""
@@ -527,55 +552,36 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 
 	// time, timestamp, datetime: unsafe if decreasing or removing fractional
 	// second precision (which reduces range of allowed values), but always safe
-	// if adding fsp when none was there before.
+	// if adding FSP when none was there before.
 	if bothSamePrefix("time", "timestamp", "datetime") {
 		// Since "time" and "timestamp" both begin with prefix "time", bothSamePrefix
 		// will be tricked and we need to handle that mismatch explicitly
 		if strings.HasPrefix(oldType, "timestamp") != strings.HasPrefix(newType, "timestamp") {
 			return true, genericReason
 		}
-		if !strings.ContainsRune(oldType, '(') {
+		_, oldFSP, oldHasFSP := splitTypeSize(oldType)
+		if !oldHasFSP {
 			return false, ""
-		} else if !strings.ContainsRune(newType, '(') {
-			return true, genericReason
 		}
-		re := regexp.MustCompile(`^[^(]+\((\d+)\)`)
-		oldMatches := re.FindStringSubmatch(oldType)
-		newMatches := re.FindStringSubmatch(newType)
-		if oldMatches == nil || newMatches == nil {
-			return true, genericReason
-		}
-		oldSize, _ := strconv.Atoi(oldMatches[1])
-		newSize, _ := strconv.Atoi(newMatches[1])
-		if newSize < oldSize {
+		_, newFSP, newHasFSP := splitTypeSize(newType)
+		if !newHasFSP || newFSP < oldFSP {
 			return true, genericReason
 		}
 		return false, ""
 	}
 
 	// float or double:
-	// double -> double(x,y) or float -> float(x,y) unsafe
-	// double(x,y) -> double or float(x,y) -> float IS safe (no parens = hardware max used)
-	// double(a,b) -> double(x,y) or float(a,b) -> float(x,y) unsafe if x < a or y < b
+	// double -> double(x,y); or float -> float(x,y) always unsafe
+	// double(x,y) -> double; or float(x,y) -> float IS safe (no parens = hardware max used)
+	// double(a,b) -> double(x,y); or float(a,b) -> float(x,y) unsafe if x < a or y < b
 	// Converting from float to double may be safe (same rules as above), but double to float always unsafe
 	// No extra check for unsigned->signed needed; although float/double support these, they don't affect max values
 	if bothSamePrefix("float", "double") || (strings.HasPrefix(oldType, "float") && strings.HasPrefix(newType, "double")) {
-		if !strings.ContainsRune(newType, '(') { // no parens = max allowed for type
+		_, oldPrecision, oldScale, oldParens := splitType2Sizes(oldType)
+		_, newPrecision, newScale, newParens := splitType2Sizes(newType)
+		if !newParens { // no parens = max allowed for type
 			return false, ""
-		} else if !strings.ContainsRune(oldType, '(') {
-			return true, genericReason
-		}
-		re := regexp.MustCompile(`^(?:float|double)\((\d+),(\d+)\)`)
-		oldMatches := re.FindStringSubmatch(oldType)
-		newMatches := re.FindStringSubmatch(newType)
-		if oldMatches == nil || newMatches == nil {
-			return true, genericReason
-		}
-		oldPrecision, _ := strconv.Atoi(oldMatches[1])
-		oldScale, _ := strconv.Atoi(oldMatches[2])
-		newPrecision, _ := strconv.Atoi(newMatches[1])
-		newScale, _ := strconv.Atoi(newMatches[2])
-		if newPrecision < oldPrecision || newScale < oldScale {
+		} else if !oldParens || newPrecision < oldPrecision || newScale < oldScale {
 			return true, genericReason
 		}
 		return false, ""
@@ -604,7 +610,7 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 
 	// Conversions between string types (char, varchar, *text): unsafe if
 	// new size < old size
-	isStringType := func(typ string) (bool, uint64) {
+	stringTypeSize := func(typ string) (uint64, bool) {
 		textMap := map[string]uint64{
 			"tinytext":   255,
 			"text":       65535,
@@ -612,20 +618,18 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 			"longtext":   4294967295,
 		}
 		if textLen, ok := textMap[typ]; ok {
-			return true, textLen
+			return textLen, true
 		}
-		re := regexp.MustCompile(`^(?:varchar|char)\((\d+)\)`)
-		matches := re.FindStringSubmatch(typ)
-		if matches == nil {
-			return false, 0
+		base, size, ok := splitTypeSize(typ)
+		if ok && (base == "varchar" || base == "char") {
+			return size, true
 		}
-		size, err := strconv.ParseUint(matches[1], 10, 64)
-		return err == nil, size
+		return 0, false
 	}
-	oldString, oldStringSize := isStringType(oldType)
-	newString, newStringSize := isStringType(newType)
-	if oldString && newString {
-		if newStringSize < oldStringSize {
+	oldSize, oldIsString := stringTypeSize(oldType)
+	newSize, newIsString := stringTypeSize(newType)
+	if oldIsString && newIsString {
+		if newSize < oldSize {
 			return true, genericReason
 		}
 		return false, ""
@@ -648,7 +652,7 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 	if isConversionBetween("inet6", "binary(16)", "char(39)", "varchar(39)") { // MariaDB 10.5+ inet6 type
 		return false, ""
 	}
-	if isConversionBetween("inet4", "binary(4)", "char(15)", "varchar(15)") { // MariaDB 10.10+ inet4 type
+	if isConversionBetween("inet4", "binary(4)", "char(15)", "varchar(15)") { // MariaDB 10.10+ inet4 type. (Also see special case below.)
 		return false, ""
 	}
 	if isConversionBetween("uuid", "binary(16)", "char(32)", "varchar(32)", "char(36)", "varchar(36)") { // MariaDB 10.7+ uuid type
@@ -660,13 +664,15 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 		return false, ""
 	}
 
-	// Conversions between variable-length binary types (varbinary, *blob):
-	// unsafe if new size < old size
-	// Note: This logic intentionally does not handle fixed-length binary(x)
-	// conversions. Any changes with binary(x), even to binary(y) with y>x, are
-	// treated as unsafe. The right-zero-padding behavior of binary type means any
-	// size change effectively modifies the stored values if they are big-endian.
-	isVarBinType := func(typ string) (bool, uint64) {
+	// Conversions between binary types (binary, varbinary, *blob, vector):
+	// * unsafe if new size < old size
+	// * unsafe if converting a fixed-length binary col to/from anything other
+	//   than a vector, due to the right-side zero-padding behavior of binary
+	//   having unintended effects. Even converting binary(x) to binary(y) with y>x
+	//   is unsafe because the zero-padding potentially impacts any trailing big-
+	//   endian value. But we permit this for vectors since they have a well-
+	//   defined encoding.
+	binaryTypeSize := func(typ string) (base string, size uint64, isBinary bool) {
 		blobMap := map[string]uint64{
 			"tinyblob":   255,
 			"blob":       65535,
@@ -674,21 +680,26 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 			"longblob":   4294967295,
 		}
 		if blobLen, ok := blobMap[typ]; ok {
-			return true, blobLen
+			return typ, blobLen, true
 		}
-		re := regexp.MustCompile(`^varbinary\((\d+)\)`)
-		matches := re.FindStringSubmatch(typ)
-		if matches == nil {
-			return false, 0
+		base, size, ok := splitTypeSize(typ)
+		if ok {
+			if base == "binary" || base == "varbinary" {
+				return base, size, true
+			} else if base == "vector" {
+				return base, size * 4, true // each vector dimension is a 4-byte float
+			}
 		}
-		size, err := strconv.ParseUint(matches[1], 10, 64)
-		return err == nil, size
+		return "", 0, false
 	}
-	oldVarBin, oldVarBinSize := isVarBinType(oldType)
-	newVarBin, newVarBinSize := isVarBinType(newType)
-	if oldVarBin && newVarBin {
-		if newVarBinSize < oldVarBinSize {
+	oldBase, oldSize, oldIsBinary := binaryTypeSize(oldType)
+	newBase, newSize, newIsBinary := binaryTypeSize(newType)
+	if oldIsBinary && newIsBinary {
+		if newSize < oldSize {
 			return true, genericReason
+		}
+		if (oldBase == "binary" && newBase != "vector") || (newBase == "binary" && oldBase != "vector") {
+			return true, "modification to column " + mc.OldColumn.Name + " may have unintended effects due to zero-padding behavior of binary type"
 		}
 		return false, ""
 	}

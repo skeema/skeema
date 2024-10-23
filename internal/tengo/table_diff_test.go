@@ -699,8 +699,8 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		{"int unsigned", "int"},
 		{"bigint(11)", "bigint(11) unsigned"},
 		{"int(11)", "bigint(20) unsigned"},
-		{"enum('a', 'b', 'c')", "enum('a', 'aa', 'b', 'c'"},
-		{"set('abc', 'def', 'ghi')", "set('abc', 'def')"},
+		{"enum('a','b','c')", "enum('a','aa','b','c'"},
+		{"set('abc','def','ghi')", "set('abc','def')"},
 		{"decimal(10,5)", "decimal(10,4)"},
 		{"decimal(10,5)", "decimal(9,5)"},
 		{"decimal(10,5)", "decimal(9,6)"},
@@ -731,6 +731,8 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		{"tinytext", "char(200)"},
 		{"tinyblob", "longtext"},
 		{"binary(5)", "binary(10)"},
+		{"binary(5)", "varbinary(10)"},
+		{"tinyblob", "binary(4000)"},
 		{"bit(10)", "bit(9)"},
 		{"binary(17)", "inet6"},
 		{"inet6", "varbinary(16)"},
@@ -740,6 +742,10 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		{"inet4", "inet6"}, // unsafe with empty StatementModifiers; see add'l testing later below
 		{"char(31)", "uuid"},
 		{"uuid", "binary(15)"},
+		{"vector(10)", "binary(36)"},
+		{"vector(64)", "tinyblob"},
+		{"tinyblob", "vector(63)"},
+		{"vector(4)", "varchar(4000)"},
 	}
 	for _, types := range expectUnsafe {
 		assertUnsafe(types[0], types[1], true)
@@ -750,8 +756,8 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		{"mediumint(4)", "mediumint(3)"},
 		{"int zerofill", "int"},
 		{"int(10) unsigned", "bigint(20)"},
-		{"enum('a', 'b', 'c')", "enum('a', 'b', 'c', 'd')"},
-		{"set('abc', 'def', 'ghi')", "set('abc', 'def', 'ghi', 'jkl')"},
+		{"enum('a','b','c')", "enum('a','b','c','d')"},
+		{"set('abc','def','ghi')", "set('abc','def','ghi','jkl')"},
 		{"decimal(9,4)", "decimal(10,4)"},
 		{"decimal(9,4)", "decimal(9,5)"},
 		{"decimal(9,4) unsigned", "decimal(9,4)"},
@@ -786,6 +792,9 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		{"varchar(15)", "inet4"},
 		{"uuid", "varchar(32)"},
 		{"binary(16)", "uuid"},
+		{"vector(10)", "binary(40)"},
+		{"vector(63)", "tinyblob"},
+		{"tinyblob", "vector(64)"},
 	}
 	for _, types := range expectSafe {
 		assertUnsafe(types[0], types[1], false)
