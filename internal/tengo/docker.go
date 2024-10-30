@@ -241,6 +241,11 @@ func newDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstance,
 		}
 		return nil, err
 	}
+
+	// Attempt to disable redo logging, if supported by flavor. Error return of
+	// this call is intentionally ignored, since it isn't essential.
+	di.SetRedoLog(false)
+
 	return di, nil
 }
 
@@ -534,6 +539,30 @@ func (di *DockerizedInstance) Exec(cmd []string, stdin io.Reader) (stdoutStr str
 	commandString := "docker exec " + strings.Join(dflags, " ") + " {NAME} " + strings.Join(cmdPlaceholders, " ")
 	s := shellout.New(commandString).WithStdin(stdin).WithVariablesStrict(vars)
 	return s.RunCaptureSeparate()
+}
+
+// SetRedoLog attempts to enable or disable redo logging on the instance. This
+// only works in MySQL 8.0.21+, and otherwise will return an error. Disabling
+// the redo log improves performance, and is generally fine for the ephemeral
+// use-cases that DockerizedInstance is intended for. However, any unexpected
+// server halt/crash will render the container unable to be usable, so this
+// should be avoided for containers that are left running.
+func (di *DockerizedInstance) SetRedoLog(enable bool) error {
+	if !di.Flavor().MinMySQL(8, 0, 21) {
+		return fmt.Errorf("Cannot manipulate redo log for container %s with flavor %s", di.containerName, di.Flavor())
+	}
+	db, err := di.Instance.CachedConnectionPool("", "")
+	if err != nil {
+		return err
+	}
+	var verb string
+	if enable {
+		verb = "ENABLE"
+	} else {
+		verb = "DISABLE"
+	}
+	_, err = db.Exec("ALTER INSTANCE " + verb + " INNODB REDO_LOG")
+	return err
 }
 
 // simplifiedImageName attempts to convert the supplied image:tag string into

@@ -274,6 +274,14 @@ func (ld *LocalDocker) shutdown(args ...interface{}) bool {
 		if err := ld.d.Destroy(); err != nil {
 			log.Warnf("Failed to destroy container %s: %v", ld.d.ContainerName(), err)
 		}
+	} else {
+		// When tengo.GetOrCreateDockerizedInstance returns a DockerizedInstance, it
+		// will automatically have redo logging disabled if the flavor supports that.
+		// However, since the container is being left in the running state, we attempt
+		// to re-enable redo logging so that any future host crash does not completely
+		// break the containerized DB. Error return of this call is intentionally
+		// ignored, since only some flavors support enabling/disabling the redo log.
+		ld.d.SetRedoLog(true)
 	}
 	delete(cstore.containers, ld.d.ContainerName())
 	return true
