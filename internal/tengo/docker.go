@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -82,7 +81,7 @@ type DockerizedInstanceOptions struct {
 
 	// Options that only affect new container creation:
 	DataBindMount       string // Host path to bind-mount as /var/lib/mysql in container
-	DataTmpfs           bool   // Use tmpfs for /var/lib/mysql. Only used if no DataBindMount, runtime.GOOS is Linux, and image is from a top-level repo (e.g. "foo" but not "foo/bar")
+	DataTmpfs           bool   // Use tmpfs for /var/lib/mysql. Only used if no DataBindMount, and image is from a top-level repo (e.g. "foo" but not "foo/bar")
 	EnableBinlog        bool   // Enable or disable binary log in database server
 	LowerCaseTableNames uint8  // lower_case_table_names setting (0, 1, or 2) in database server
 }
@@ -123,9 +122,8 @@ func CreateDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstan
 	}
 	if opts.DataBindMount != "" {
 		dflags = append(dflags, "-v {DATABINDMOUNT}")
-	} else if opts.DataTmpfs && runtime.GOOS == "linux" && !strings.ContainsRune(opts.Image, '/') {
-		// tmpfs can only be used on *native* Linux (not Docker Desktop for Mac/Win).
-		// It can also cause permission issues with some non-Docker-official images,
+	} else if opts.DataTmpfs && !strings.ContainsRune(opts.Image, '/') {
+		// tmpfs can cause permission issues with some non-Docker-official images,
 		// such as percona/percona-server; for this reason we only enable it for
 		// images from the top-level namespace, since these are known to support it.
 		dflags = append(dflags, "--tmpfs /var/lib/mysql")
@@ -136,7 +134,7 @@ func CreateDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstan
 	// instances used only for schema management, we can configure the server in a
 	// way that reduces resource usage and improves performance for this workload
 	serverArgs := []string{
-		"--innodb-log-file-size=16777216",       // use smaller 16MB redo log files, instead of default of 48MB-96MB (varies by flavor)
+		"--innodb-log-file-size=4194304",        // use smaller 4MB redo log files, instead of default of 48MB-96MB (varies by flavor)
 		"--innodb-buffer-pool-size=33554432",    // use smaller 32MB buffer pool, instead of default of 128MB
 		"--performance-schema=0",                // disable performance_schema to reduce memory usage and other overhead
 		"--skip-innodb-adaptive-hash-index",     // AHI not beneficial to DDL-based workload

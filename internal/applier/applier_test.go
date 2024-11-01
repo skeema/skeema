@@ -185,7 +185,6 @@ func (s *ApplierIntegrationSuite) Setup(backend string) error {
 				Image:        backend,
 				RootPassword: "fakepw",
 				DataTmpfs:    (n > 0), // we destroy the 2nd container after this test in Teardown anyway
-
 			})
 			return err
 		})
