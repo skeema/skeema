@@ -382,6 +382,7 @@ func (s *IntegrationSuite) Setup(backend string) (err error) {
 		Image:             backend,
 		RootPassword:      "fakepw",
 		DefaultConnParams: "foreign_key_checks=0&sql_mode=%27NO_ENGINE_SUBSTITUTION%27", // disabling strict mode to allow zero dates in testdata
+		DataTmpfs:         true,
 	})
 	if err != nil {
 		return err
@@ -405,7 +406,7 @@ func (s *IntegrationSuite) Setup(backend string) (err error) {
 }
 
 func (s *IntegrationSuite) Teardown(backend string) error {
-	return s.d.Stop()
+	return tengo.SkeemaTestContainerCleanup(s.d)
 }
 
 func (s *IntegrationSuite) BeforeTest(backend string) error {

@@ -185,7 +185,7 @@ func GetDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstance,
 		return nil, errors.New("GetDockerizedInstance: Name field cannot be empty string")
 	}
 
-	if err := startDockerContainer(opts.Name); err != nil {
+	if err := StartDockerContainer(opts.Name); err != nil {
 		return nil, err
 	}
 	di, err := newDockerizedInstance(opts)
@@ -326,7 +326,7 @@ func GetOrCreateDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedI
 // already running, an error will be returned if it cannot be started. If it is
 // already running, nil will be returned.
 func (di *DockerizedInstance) Start() error {
-	if err := startDockerContainer(di.containerName); err != nil {
+	if err := StartDockerContainer(di.containerName); err != nil {
 		return err
 	}
 	// Randomly-assigned port on host side will have changed
@@ -340,7 +340,11 @@ func (di *DockerizedInstance) Start() error {
 	return nil
 }
 
-func startDockerContainer(name string) error {
+// StartDockerContainer shells out to `docker start` for the supplied container
+// name. If a non-zero exit code is returned, any STDOUT and STDERR output will
+// be captured and included in the returned error's message. If the container is
+// already running, nil is returned.
+func StartDockerContainer(name string) error {
 	vars := map[string]string{
 		"NAME": name,
 	}
@@ -358,8 +362,16 @@ func startDockerContainer(name string) error {
 func (di *DockerizedInstance) Stop() error {
 	di.CloseAll()
 	di.portMap = nil
+	return StopDockerContainer(di.containerName)
+}
+
+// StopDockerContainer shells out to `docker stop` for the supplied container
+// name. If a non-zero exit code is returned, any STDOUT and STDERR output will
+// be captured and included in the returned error's message. If the container
+// was already stopped, nil is returned.
+func StopDockerContainer(name string) error {
 	vars := map[string]string{
-		"NAME": di.containerName,
+		"NAME": name,
 	}
 	s := shellout.New("docker stop {NAME}").WithVariablesStrict(vars)
 	out, err := s.RunCaptureCombined()

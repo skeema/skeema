@@ -115,7 +115,12 @@ func (s ApplierIntegrationSuite) TestTargetsForDirMulti(t *testing.T) {
 	// without --first-only, targets from the invalid host should be skipped and
 	// influence skipCount; with --first-only, the invalid host should be ignored
 	badInst0 := *s.d[0].Instance
-	badInst0.Port += 10
+	for badInst0.Port == s.d[0].Instance.Port || badInst0.Port == s.d[1].Instance.Port {
+		badInst0.Port += 10
+		if badInst0.Port > 32767 { // will fail on CI
+			badInst0.Port -= 9999
+		}
+	}
 	setupHostList(t, &badInst0, s.d[1].Instance)
 	dir = getDir(t, "testdata/multi", "")
 	assertTargetsForDir(dir, 1, 2, 1)
@@ -125,7 +130,12 @@ func (s ApplierIntegrationSuite) TestTargetsForDirMulti(t *testing.T) {
 	// Adjust the port on the second DockerizedInstance and confirm behavior: no
 	// valid targets, and skipCount depends on --first-only
 	badInst1 := *s.d[1].Instance
-	badInst1.Port += 10
+	for badInst1.Port == s.d[0].Instance.Port || badInst1.Port == s.d[1].Instance.Port || badInst1.Port == badInst0.Port {
+		badInst1.Port += 10
+		if badInst1.Port > 32767 { // will fail on CI
+			badInst1.Port -= 9999
+		}
+	}
 	setupHostList(t, &badInst0, &badInst1)
 	dir = getDir(t, "testdata/multi", "")
 	assertTargetsForDir(dir, 1, 0, 2)

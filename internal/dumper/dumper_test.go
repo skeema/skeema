@@ -155,13 +155,14 @@ func (s *IntegrationSuite) Setup(backend string) (err error) {
 		Name:         fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),
 		Image:        backend,
 		RootPassword: "fakepw",
+		DataTmpfs:    true,
 	}
 	s.d, err = tengo.GetOrCreateDockerizedInstance(opts)
 	return err
 }
 
 func (s *IntegrationSuite) Teardown(backend string) error {
-	if err := s.d.Stop(); err != nil {
+	if err := tengo.SkeemaTestContainerCleanup(s.d); err != nil {
 		return err
 	}
 	return os.RemoveAll(s.scratchPath())

@@ -30,6 +30,7 @@ func TestDocker(t *testing.T) {
 		Name:         "tengo-docker-meta-test",
 		Image:        images[0],
 		RootPassword: "",
+		DataTmpfs:    true,
 	}
 	if _, err := GetDockerizedInstance(opts); err == nil {
 		t.Fatal("Expected tengo-docker-meta-test container to not exist, but it does; leftover from a previous crashed run? Please clean up manually!")
@@ -63,6 +64,22 @@ func TestDocker(t *testing.T) {
 	}
 	opts.Image = images[0]
 
+	if di.Flavor().Family() != ParseFlavor(images[0]).Family() {
+		t.Errorf("Expected instance flavor family to be %s, instead found %s", images[0], di.Flavor().Family())
+	}
+	if di.Port() != di.PortMap(3306) {
+		t.Error("Unexpected inconsistency between the Port and PortMap methods")
+	}
+	if _, err := di.SourceSQL("testdata/integration.sql"); err != nil {
+		t.Errorf("Unexpected error from SourceSQL: %s", err)
+	}
+	if _, err := di.SourceSQL("testdata/does-not-exist.sql"); err == nil {
+		t.Error("Expected error attempting to SourceSQL nonexistent file, instead got nil")
+	}
+	if _, err := di.SourceSQL("docker.go"); err == nil {
+		t.Error("Expected error attempting to SourceSQL non-SQL file, instead got nil")
+	}
+
 	// Confirm no errors from redundant start/stop
 	if err := di.Start(); err != nil {
 		t.Errorf("Unexpected error from redundant start: %s", err)
@@ -78,28 +95,6 @@ func TestDocker(t *testing.T) {
 	}
 	if err := di.NukeData(); err == nil {
 		t.Error("Expected error attempting to nuke data in stopped container, instead got nil")
-	}
-
-	// GetOrCreate should yield a Get (since already exists) and should re-start
-	// the container.
-	if di, err = GetOrCreateDockerizedInstance(opts); err != nil {
-		t.Fatalf("Unexpected error from GetOrCreateInstance: %s", err)
-	}
-	if di.Flavor().Family() != ParseFlavor(images[0]).Family() {
-		t.Errorf("Expected instance flavor family to be %s, instead found %s", images[0], di.Flavor().Family())
-	}
-	if di.Port() != di.PortMap(3306) {
-		t.Error("Unexpected inconsistency between the Port and PortMap methods")
-	}
-
-	if _, err := di.SourceSQL("testdata/integration.sql"); err != nil {
-		t.Errorf("Unexpected error from SourceSQL: %s", err)
-	}
-	if _, err := di.SourceSQL("testdata/does-not-exist.sql"); err == nil {
-		t.Error("Expected error attempting to SourceSQL nonexistent file, instead got nil")
-	}
-	if _, err := di.SourceSQL("docker.go"); err == nil {
-		t.Error("Expected error attempting to SourceSQL non-SQL file, instead got nil")
 	}
 
 	if err := di.Destroy(); err != nil {

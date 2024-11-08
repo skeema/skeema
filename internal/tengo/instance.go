@@ -180,6 +180,10 @@ func (instance *Instance) rawConnectionPool(defaultSchema, fullParams string, al
 // its configured User and Password. If a new connection cannot be made, the
 // return value will be false, along with an error expressing the reason.
 func (instance *Instance) CanConnect() (bool, error) {
+	// Important: if this logic ever changes, be sure to un-comment-out the second
+	// half of TengoIntegrationSuite.TestInstanceCanConnect() in instance_test.go.
+	// That logic was commented out since this logic changes so rarely, and the
+	// test setup there is especially disruptive when using tmpfs containers.
 	db, err := instance.ConnectionPool("", "")
 	if db != nil {
 		db.Close() // close immediately to avoid a buildup of sleeping idle conns

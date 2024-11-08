@@ -53,13 +53,14 @@ func (s *SkeemaIntegrationSuite) Setup(backend string) (err error) {
 		Name:         fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),
 		Image:        backend,
 		RootPassword: "fakepw",
+		DataTmpfs:    true,
 	}
 	s.d, err = tengo.GetOrCreateDockerizedInstance(opts)
 	return err
 }
 
 func (s *SkeemaIntegrationSuite) Teardown(backend string) error {
-	if err := s.d.Stop(); err != nil {
+	if err := tengo.SkeemaTestContainerCleanup(s.d); err != nil {
 		return err
 	}
 	if err := os.Chdir(s.repoPath); err != nil {
@@ -489,9 +490,7 @@ func getOptionFile(t *testing.T, basePath string, baseConfig *mybase.Config) *my
 
 // imageForFlavor returns a Docker image name corresponding to a supplied
 // tengo.Flavor, reusing some logic from the workspace subpackage in order
-// to appropriately handle Percona Server image selection on arm64. The exact
-// patch number of the supplied flavor is ignored in favor of selecting the
-// latest patch of that release series.
+// to appropriately handle Percona Server 8+ image selection on arm64.
 // If a corresponding image cannot be selected, the test fails.
 func imageForFlavor(t *testing.T, flavor tengo.Flavor) string {
 	t.Helper()
@@ -499,7 +498,11 @@ func imageForFlavor(t *testing.T, flavor tengo.Flavor) string {
 	if err != nil {
 		t.Fatalf("Unable to determine Docker Engine architecture: %v", err)
 	}
-	image, err := workspace.DockerImageForFlavor(flavor.Family(), arch)
+	// Discard the patch number, unless flavor is Percona 8+ on arm64
+	if !flavor.IsPercona() || !flavor.MinMySQL(8) || arch != "arm64" {
+		flavor = flavor.Family()
+	}
+	image, err := workspace.DockerImageForFlavor(flavor, arch)
 	if err != nil {
 		t.Fatalf("Unable to locate a Docker image corresponding to flavor %s: %v", flavor.Family(), err)
 	}

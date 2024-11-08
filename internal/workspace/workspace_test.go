@@ -286,12 +286,13 @@ func (s *WorkspaceIntegrationSuite) Setup(backend string) (err error) {
 		Name:         fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),
 		Image:        backend,
 		RootPassword: "fakepw",
+		DataTmpfs:    true,
 	})
 	return err
 }
 
 func (s *WorkspaceIntegrationSuite) Teardown(backend string) error {
-	return s.d.Stop()
+	return tengo.SkeemaTestContainerCleanup(s.d)
 }
 
 func (s *WorkspaceIntegrationSuite) BeforeTest(backend string) error {

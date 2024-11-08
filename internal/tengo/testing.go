@@ -147,3 +147,27 @@ func SkeemaTestImages(t *testing.T) []string {
 	}
 	return images
 }
+
+// SkeemaTestContainerCleanup potentially performs cleanup on a container used
+// in integration testing, depending on the value of the SKEEMA_TEST_CLEANUP
+// env variable:
+//   - If SKEEMA_TEST_CLEANUP is set to "stop" (case-insensitive), the supplied
+//     container will be stopped.
+//   - If SKEEMA_TEST_CLEANUP is set to "none" (case-insensitive), no cleanup
+//     action is taken, and the supplied container remains running.
+//   - Otherwise (if SKEEMA_TEST_CLEANUP is not set, or set to any other value),
+//     the supplied container will be removed (destroyed) if it has a name
+//     beginning with "skeema-test-". With any other name prefix, an error is
+//     returned.
+func SkeemaTestContainerCleanup(d *DockerizedInstance) error {
+	action := strings.TrimSpace(os.Getenv("SKEEMA_TEST_CLEANUP"))
+	if strings.EqualFold(action, "none") {
+		return nil
+	} else if strings.EqualFold(action, "stop") {
+		return d.Stop()
+	} else if strings.HasPrefix(d.containerName, "skeema-test-") {
+		return d.Destroy()
+	} else {
+		return fmt.Errorf("refusing to destroy container %q without skeema-test- naming prefix", d.containerName)
+	}
+}

@@ -28,13 +28,14 @@ func (s *TengoIntegrationSuite) Setup(backend string) (err error) {
 		Name:         fmt.Sprintf("skeema-test-%s", ContainerNameForImage(backend)),
 		Image:        backend,
 		RootPassword: "fakepw",
+		DataTmpfs:    true,
 	}
 	s.d, err = GetOrCreateDockerizedInstance(opts)
 	return err
 }
 
 func (s *TengoIntegrationSuite) Teardown(backend string) error {
-	return s.d.Stop()
+	return SkeemaTestContainerCleanup(s.d)
 }
 
 func (s *TengoIntegrationSuite) BeforeTest(backend string) error {

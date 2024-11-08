@@ -184,7 +184,7 @@ func (s *ApplierIntegrationSuite) Setup(backend string) error {
 				Name:         containerName,
 				Image:        backend,
 				RootPassword: "fakepw",
-				DataTmpfs:    (n > 0), // we destroy the 2nd container after this test in Teardown anyway
+				DataTmpfs:    true,
 			})
 			return err
 		})
@@ -195,15 +195,15 @@ func (s *ApplierIntegrationSuite) Setup(backend string) error {
 func (s *ApplierIntegrationSuite) Teardown(backend string) error {
 	var g errgroup.Group
 	for n := range s.d {
-		n := n
-		g.Go(func() error {
-			// Only keep the first container; destroy any additional, since the other
-			// subpackages only use 1 test container
-			if n == 0 {
-				return s.d[n].Stop()
+		var f func() error
+		if n == 0 {
+			f = func() error {
+				return tengo.SkeemaTestContainerCleanup(s.d[0])
 			}
-			return s.d[n].Destroy()
-		})
+		} else {
+			f = s.d[n].Destroy
+		}
+		g.Go(f)
 	}
 	err := g.Wait()
 	util.FlushInstanceCache()
