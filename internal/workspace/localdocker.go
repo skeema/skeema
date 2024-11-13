@@ -12,16 +12,6 @@ import (
 	"github.com/skeema/skeema/internal/tengo"
 )
 
-// On arm64, for Percona Server, we always must supply an exact patch number in
-// the image tag since there is no "latest", "8.0", or "8.4" tag for arm64.
-// Logic in OptionsForDir attempts to obtain the patch release number from the
-// "real" target server when applicable, but that isn't always possible, for
-// example when intentionally overriding a flavor which differs from the real
-// DB server. In these cases we must fall back to using a specific recent patch
-// release.
-const latestPercona80Patch = "37"
-const latestPercona84Patch = "0"
-
 // LocalDocker is a Workspace created inside of a Docker container on localhost.
 // The schema is dropped when done interacting with the workspace in Cleanup(),
 // but the container remains running. The container may optionally be stopped
@@ -298,38 +288,36 @@ func DockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
 
 	// flavor is often supplied with a zero patch value to mean "latest patch" in
 	// terms of Docker images, for example the config "flavor=mysql:8.0" means we
-	// want the latest 8.0.X version. To ensure we can use these values in methods
-	// like tengo.Flavor.MinMySQL() properly, convert 0 to the highest value.
-	// (since flavor is passed by value, this won't affect the caller.)
-	var wantLatest bool
-	if flavor.Version[2] == 0 {
-		flavor.Version[2] = 65535
-		wantLatest = true
-	}
+	// want the latest 8.0.X version. Some logic below depends on having at least
+	// a specific 8.0 patch release, and we don't want to be tripped up by 0 patch
+	// values.
+	wantLatest80 := flavor.IsMySQL(8, 0, 0)
 
-	// Percona 8.1+ on any arch, or 8.0.33+ on arm64: use percona/percona-server.
-	// On arm64 we MUST include a patch value AND also add a "-aarch64" suffix to
-	// the tag, as there is no "latest", "8.0", or "8.4" tag for arm64.
+	// Percona 8.0+: use percona/percona-server, since _/percona is no longer
+	// being updated regularly, and lacks arm64 images entirely.
+	// However, on arm64 we MUST include a patch value AND also add a "-aarch64"
+	// suffix to the tag, as there is no "latest", "8.0", or "8.4" tag for arm64.
 	// Below 8.0.33, Percona images for arm64 are not available at all.
 	if flavor.IsPercona() {
-		if flavor.MinMySQL(8, 1) || arch == "arm64" {
-			image = strings.Replace(image, "percona:", "percona/percona-server:", 1)
-		}
 		if arch == "arm64" {
-			if !flavor.MinMySQL(8, 0, 33) {
+			var v tengo.Version
+			if wantLatest80 { // Percona Server 8.0, no patch specified
+				v = tengo.LatestPercona80Version
+			} else if flavor.IsMySQL(8, 4, 0) { // Percona Server 8.4, no patch specified
+				v = tengo.LatestPercona84Version
+			} else if !flavor.MinMySQL(8, 0, 33) {
 				return "", fmt.Errorf("%s Docker images for %s are not available", arch, image)
+			} else { // specific patch supplied, OR Percona Server 8.1-8.3 innovation releases
+				v = flavor.Version
 			}
-			if strings.HasSuffix(image, ":8.0") {
-				image += "." + latestPercona80Patch + "-aarch64"
-			} else if strings.HasSuffix(image, ":8.4") {
-				image += "." + latestPercona84Patch + "-aarch64"
-			} else if wantLatest {
-				image += ".0-aarch64"
-			} else {
-				image += "-aarch64"
-			}
+			// Note that unlike Flavor.String(), when calling Version.String() the patch
+			// number is always included, even if 0. That's the behavior we need here to
+			// get the appropriate Docker image tag for 8.1-8.3 innovation releases.
+			return "percona/percona-server:" + v.String() + "-aarch64", nil
+		} else if flavor.MinMySQL(8) {
+			return strings.Replace(image, "percona:", "percona/percona-server:", 1), nil
 		}
-		return image, nil
+		return image, nil // MySQL 5.x on amd64 can use _/percona image as-is
 	}
 
 	// Aurora flavors from Skeema Premium: use corresponding MySQL image, but
@@ -349,7 +337,7 @@ func DockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
 
 	// MySQL on arm64: use mysql/mysql-server for 8.0.12-8.0.28.
 	// Below 8.0.12 (incl all 5.x), arm64 MySQL images are not available at all.
-	if arch == "arm64" && flavor.IsMySQL() {
+	if arch == "arm64" && flavor.IsMySQL() && !wantLatest80 {
 		if !flavor.MinMySQL(8, 0, 12) {
 			return "", fmt.Errorf("%s Docker images for %s are not available", arch, image)
 		} else if !flavor.MinMySQL(8, 0, 29) {

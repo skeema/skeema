@@ -130,18 +130,24 @@ func SkeemaTestImages(t *testing.T) []string {
 
 	images := strings.Split(envString, ",")
 	for n, image := range images {
-		// No MySQL 5.x or Percona Server 5.x builds available for arm64; some
-		// Percona Server 8.0+ builds available from alternative location
+		// No MySQL 5.x or Percona Server 5.x builds available for arm64. Some
+		// Percona Server 8.0+ builds available from alternative location, but require
+		// specifying an exact patch release.
 		if arch == "arm64" {
 			if strings.HasPrefix(image, "percona:5") || strings.HasPrefix(image, "mysql:5") {
 				t.Fatalf("SKEEMA_TEST_IMAGES env var includes %s, but this image is not available for %s", image, arch)
-			} else if strings.HasPrefix(image, "percona") {
-				if strings.Count(image, ".") < 2 {
-					t.Fatalf("SKEEMA_TEST_IMAGES env var includes %s, but you MUST specify a specific patch version for Percona Server on %s", image, arch)
-				}
-				images[n] = strings.Replace(image, "percona:", "percona/percona-server:", 1) + "-aarch64"
+			} else if image == "percona:8.0" {
+				images[n] = "percona/percona-server:" + LatestPercona80Version.String() + "-aarch64"
+			} else if image == "percona:8.4" {
+				images[n] = "percona/percona-server:" + LatestPercona84Version.String() + "-aarch64"
+			} else if strings.HasPrefix(image, "percona:8.") && strings.Count(image, ".") < 2 { // 8.1-8.3 innovation releases: always .0 patch
+				images[n] = strings.Replace(image, "percona:", "percona/percona-server:", 1) + ".0-aarch64"
 			}
-		} else if strings.HasPrefix(image, "percona") && ParseFlavor(image).MinMySQL(8, 1) {
+		} else if strings.HasPrefix(image, "percona:8") {
+			// Top-level (Docker Inc maintained) images for Percona Server 8.0 appear to
+			// not be updated frequently anymore, so always use percona/percona-server
+			// now even on Intel/AMD. Tags for 8.x exist for Intel/AMD without having to
+			// force a patch version number.
 			images[n] = strings.Replace(image, "percona:", "percona/percona-server:", 1)
 		}
 	}

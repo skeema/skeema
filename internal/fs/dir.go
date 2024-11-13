@@ -384,11 +384,10 @@ func (dir *Dir) ValidateInstance(instance *tengo.Instance) error {
 	instFlavor := instance.Flavor()
 	confFlavor := tengo.ParseFlavor(dir.Config.Get("flavor"))
 	if instFlavor.Known() {
-		if confFlavor != tengo.FlavorUnknown && instFlavor.Family() != confFlavor.Family() && !dir.Config.OnCLI("flavor") {
-			log.Warnf("Database server %s actual flavor %s differs from dir %s configured flavor %s\nIf you have recently upgraded your database server version, consider using `skeema pull` to update your schema definitions.", instance, instFlavor, dir, confFlavor)
-		}
 		if instFlavor.TooNew() {
 			log.Warnf("Database server %s flavor %s is newer than this version of Skeema. To ensure correct behavior, consider upgrading to a more recent release of Skeema.", instance, instFlavor)
+		} else if confFlavor.Known() && instFlavor.Base() != confFlavor.Base() && !dir.Config.OnCLI("flavor") {
+			log.Warnf("Database server %s actual flavor %s differs from dir %s configured flavor %s\nIf you have recently upgraded your database server version, consider using `skeema pull` to update your schema definitions.", instance, instFlavor, dir, confFlavor)
 		}
 	} else if confFlavor.Known() {
 		log.Debugf("Database server %s flavor cannot be parsed; using dir %s configured flavor %s instead", instance, dir, confFlavor)

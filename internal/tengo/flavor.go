@@ -28,6 +28,14 @@ var (
 	OldestSupportedMariaDBVersion = Version{10, 1}
 )
 
+// Variables representing the latest Percona Server patch releases on DockerHub
+// at the time of this release. These are useful when requesting a Docker image
+// for Percona Server on arm64, as there is no "8.0" or "8.4" tag for arm64.
+var (
+	LatestPercona80Version = Version{8, 0, 39}
+	LatestPercona84Version = Version{8, 4, 2}
+)
+
 // Major returns the major component of the version number.
 func (ver Version) Major() uint16 { return ver[0] }
 
@@ -38,6 +46,8 @@ func (ver Version) Minor() uint16 { return ver[1] }
 // point release number.
 func (ver Version) Patch() uint16 { return ver[2] }
 
+// String returns a major.minor.patch string. The patch is always included,
+// even if 0.
 func (ver Version) String() string {
 	return fmt.Sprintf("%d.%d.%d", ver[0], ver[1], ver[2])
 }
@@ -289,6 +299,12 @@ func SplitVersionedIdentifier(s string) (name string, version Version, label str
 	return
 }
 
+// String returns a string in format "vendor:major.minor.patch" if patch is
+// non-zero, or "vendor:major.minor" if patch is zero. Note that this
+// suppression of 0 patch values differs from Version.String(); this is done
+// intentionally since common convention of Docker image tags is to signify
+// "latest patch of this major.minor series" by omitting the patch.
+// The vendor name is replaced by a variant name if one is set.
 func (fl Flavor) String() string {
 	var base string
 	if fl.Variants != VariantNone {
@@ -304,6 +320,14 @@ func (fl Flavor) String() string {
 
 // Family returns a copy of the receiver with a zeroed-out patch version.
 func (fl Flavor) Family() Flavor {
+	fl.Version[2] = 0
+	return fl
+}
+
+// Base returns a copy of the receiver without any variants, and the patch
+// version replaced by zero.
+func (fl Flavor) Base() Flavor {
+	fl.Variants = VariantNone
 	fl.Version[2] = 0
 	return fl
 }

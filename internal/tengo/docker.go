@@ -122,10 +122,10 @@ func CreateDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstan
 	}
 	if opts.DataBindMount != "" {
 		dflags = append(dflags, "-v {DATABINDMOUNT}")
-	} else if opts.DataTmpfs && !strings.ContainsRune(opts.Image, '/') {
-		// tmpfs can cause permission issues with some non-Docker-official images,
-		// such as percona/percona-server; for this reason we only enable it for
-		// images from the top-level namespace, since these are known to support it.
+	} else if opts.DataTmpfs && (strings.HasPrefix(opts.Image, "mysql:") || strings.HasPrefix(opts.Image, "mariadb:")) {
+		// tmpfs cannot be used with some images, such as Percona Server. For this
+		// reason we only enable tmpfs for mysql and mariadb images from the top-level
+		// (Docker Inc maintained) namespace, since these are known to support it.
 		dflags = append(dflags, "--tmpfs /var/lib/mysql")
 	}
 	flagString := strings.Join(dflags, " ")
@@ -576,11 +576,22 @@ func (di *DockerizedInstance) SetRedoLog(enable bool) error {
 }
 
 // simplifiedImageName attempts to convert the supplied image:tag string into
-// one that can be processed by ParseFlavor. It is primarily designed to convert
-// "mysql/mysql-server:tag" images into "mysql:tag" strings, and likewise for
-// "container-registry.oracle.com/mysql/community-server:tag" images.
+// one that can be processed by ParseFlavor. It is designed to simplify image
+// names that have a non-top-level namespace, e.g. "percona/percona-server",
+// "mysql/mysql-server", "container-registry.oracle.com/mysql/community-server",
+// etc into "percona" or "mysql" accordingly.
 func simplifiedImageName(image string) string {
-	base, tag, hasTag := strings.Cut(image, ":")
+	base, tag, _ := strings.Cut(image, ":")
+	tag, modifier, _ := strings.Cut(tag, "-")
+	if base == "percona/percona-server" && modifier == "aarch64" {
+		// Common special case: Percona Server images on arm always need a patch
+		// release specified, but we can strip it if it's latest
+		if tag == LatestPercona80Version.String() {
+			return "percona:8.0"
+		} else if tag == LatestPercona84Version.String() {
+			return "percona:8.4"
+		}
+	}
 	if base != "mysql" && base != "percona" && base != "mariadb" {
 		if strings.Contains(base, "maria") {
 			base = "mariadb"
@@ -590,14 +601,13 @@ func simplifiedImageName(image string) string {
 			base = "mysql"
 		}
 	}
-	if hasTag {
-		tag, _, _ = strings.Cut(tag, "-") // discard any suffix like "-aarch64"
-		if strings.Count(tag, ".") > 1 && strings.HasSuffix(tag, ".0") {
-			tag = tag[0 : len(tag)-2] // discard any ".0" point release, e.g. "8.1.0" becomes "8.1"
-		}
-		return base + ":" + tag
+	if tag == "" {
+		return base
 	}
-	return base
+	if strings.Count(tag, ".") > 1 && strings.HasSuffix(tag, ".0") {
+		tag = tag[0 : len(tag)-2] // discard any ".0" point release, e.g. "8.1.0" becomes "8.1"
+	}
+	return base + ":" + tag
 }
 
 // ContainerNameForImage returns a usable container name (or portion of a name)

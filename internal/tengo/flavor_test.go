@@ -203,6 +203,22 @@ func TestFlavorFamily(t *testing.T) {
 	}
 }
 
+func TestFlavorBase(t *testing.T) {
+	cases := map[string]string{
+		"mysql:5.7":        "mysql:5.7",
+		"mysql:5.7.22":     "mysql:5.7",
+		"mysql:8":          "mysql:8.0",
+		"mariadb:10.10.10": "mariadb:10.10",
+		"percona:8.0.35":   "mysql:8.0",
+		"aurora:5.7.12":    "mysql:5.7",
+	}
+	for input, expected := range cases {
+		if actual := ParseFlavor(input).Base().String(); actual != expected {
+			t.Errorf("Expected Flavor %q Base() to return %q, instead found %q", input, expected, actual)
+		}
+	}
+}
+
 func TestFlavorHasVariant(t *testing.T) {
 	flavor := Flavor{VendorMySQL, Version{5, 5, 33}, VariantNone}
 	if flavor.HasVariant(VariantPercona) {
