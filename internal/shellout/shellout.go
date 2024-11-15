@@ -16,6 +16,7 @@ type Command struct {
 	command          string
 	printableCommand string
 	workingDir       string
+	env              []string  // if nil, defaults to current process's environment
 	stdin            io.Reader // if nil, defaults to os.Stdin
 	stderr           io.Writer // if nil, defaults to os.Stderr unless RunCaptureCombined is used
 	timeout          time.Duration
@@ -50,6 +51,20 @@ func (c Command) WithStdin(r io.Reader) *Command {
 // WithStderr returns a copy of c which will use w for standard error.
 func (c Command) WithStderr(w io.Writer) *Command {
 	c.stderr = w
+	return &c
+}
+
+// WithEnv returns a copy of c which uses the supplied environment variables,
+// with each entry of the form "key=value". The parent process env variables
+// are still used as the initial baseline, but env can override entries as
+// needed.
+func (c Command) WithEnv(env ...string) *Command {
+	// In case of duplicates, the last entry takes precedence, so this works as-is
+	// to allow overrides
+	if c.env == nil {
+		c.env = os.Environ()
+	}
+	c.env = append(c.env, env...)
 	return &c
 }
 

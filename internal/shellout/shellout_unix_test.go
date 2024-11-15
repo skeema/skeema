@@ -218,3 +218,27 @@ func TestCommandTimeout(t *testing.T) {
 		t.Errorf("Unexpected error from RunCapture(): %v", err)
 	}
 }
+
+func TestCommandEnv(t *testing.T) {
+	assertOutput := func(s *Command, expected string) {
+		t.Helper()
+		if out, err := s.RunCapture(); err != nil {
+			t.Errorf("Unexpected error from RunCapture(): %v", err)
+		} else if actual := strings.TrimSpace(out); actual != expected {
+			t.Errorf("Expected output to be %q, instead found %q", expected, actual)
+		}
+	}
+
+	t.Setenv("SKEEMA_TEST_ENV1", "foo")
+	t.Setenv("SKEEMA_TEST_ENV2", "bar")
+	c := New("echo $SKEEMA_TEST_ENV1 $SKEEMA_TEST_ENV2 $SKEEMA_TEST_ENV3")
+
+	// Confirm behavior with no env overrides
+	assertOutput(c, "foo bar")
+
+	// Now test overriding one env var, and setting another previously-unset one
+	assertOutput(c.WithEnv("SKEEMA_TEST_ENV1=bork", "SKEEMA_TEST_ENV3=blurb"), "bork bar blurb")
+
+	// Confirm repeated overrides work as expected
+	assertOutput(c.WithEnv("SKEEMA_TEST_ENV1=boo").WithEnv("SKEEMA_TEST_ENV1=groo"), "groo bar")
+}

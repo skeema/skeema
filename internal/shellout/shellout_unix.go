@@ -14,13 +14,16 @@ import (
 	"strings"
 )
 
-func (c *Command) cmd() (*exec.Cmd, error) {
+func (c *Command) cmd() (execCmd *exec.Cmd, err error) {
 	if c.timeout > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 		c.cancelFunc = cancel
-		return exec.CommandContext(ctx, "/bin/sh", "-c", c.command), nil
+		execCmd = exec.CommandContext(ctx, "/bin/sh", "-c", c.command)
+	} else {
+		execCmd = exec.Command("/bin/sh", "-c", c.command)
 	}
-	return exec.Command("/bin/sh", "-c", c.command), nil
+	execCmd.Env = c.env
+	return execCmd, nil
 }
 
 // noQuotesNeeded is a regexp for detecting which variable values do not require
