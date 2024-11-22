@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -71,13 +72,19 @@ func RunSuite(suite IntegrationTestSuite, t *testing.T, backends []string) {
 						log.SetOutput(w)
 						outChan := make(chan []byte)
 						defer func() {
+							iface := recover()
 							w.Close()
 							os.Stdout = realOut
 							os.Stderr = realErr
 							log.SetOutput(realLogOutput)
 							testOutput := <-outChan
-							if subt.Failed() || subt.Skipped() {
+							if subt.Failed() || subt.Skipped() || iface != nil {
 								os.Stderr.Write(testOutput)
+							}
+							if iface != nil {
+								os.Stderr.WriteString(fmt.Sprintf("panic: %v [recovered]\n\n", iface))
+								os.Stderr.Write(debug.Stack())
+								subt.Fail()
 							}
 						}()
 						go func() {

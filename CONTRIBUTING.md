@@ -73,5 +73,4 @@ All of these situations can be avoided by having a full discussion on the issue 
 
 * The test suites never remove *images*, nor update their tags. For example, with `SKEEMA_TEST_IMAGES=mysql:8.0`, the *current latest* MySQL 8.0 image is fetched initially, and then continues to be used in the future; in other words, the point release is effectively frozen at whatever was fetched. To force usage of a newer point release, you must use `docker image rm` as needed. This is also useful if you no longer need an image and wish to reclaim disk space on the host.
 
-* For each integration subtest, STDOUT and STDERR output is buffered and suppressed. If the test passes, the output is discarded. If the test fails or is skipped, any test log annotations (e.g. reason for failure/skip) will be displayed first, followed by the full buffered output. Please be aware that some panic scenarios may fail to display the buffered logging appropriately at the current time.
-
+* For each integration subtest, STDOUT and STDERR output is buffered and suppressed. If the subtest passes, the output is discarded. If the subtest fails or is skipped, any test log annotations (e.g. reason for failure/skip) will be displayed first, followed by the full buffered output.
