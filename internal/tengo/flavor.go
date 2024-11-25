@@ -17,7 +17,7 @@ type Version [3]uint16
 // numbers; corresponding logic handles this appropriately.
 var (
 	LatestMySQLVersion   = Version{9, 1}
-	LatestMariaDBVersion = Version{11, 5}
+	LatestMariaDBVersion = Version{11, 6}
 )
 
 // Variables representing the oldest major.minor releases of MySQL and MariaDB
