@@ -292,26 +292,27 @@ func parseConnectOptions(input string) (map[string]string, error) {
 func RealConnectOptions(connectOpts string) (string, error) {
 	// list of lowercased versions of all go-sql-driver/mysql special params
 	ignored := map[string]bool{
-		"allowallfiles":           true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"allowcleartextpasswords": true,
-		"allownativepasswords":    true,
-		"allowoldpasswords":       true,
-		"charset":                 true,
-		"checkconnliveness":       true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"clientfoundrows":         true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"collation":               true,
-		"columnswithalias":        true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"interpolateparams":       true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"loc":                     true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"maxallowedpacket":        true,
-		"multistatements":         true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"parsetime":               true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"readtimeout":             true,
-		"rejectreadonly":          true,
-		"serverpubkey":            true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"timeout":                 true,
-		"tls":                     true,
-		"writetimeout":            true,
+		"allowallfiles":            true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"allowcleartextpasswords":  true,
+		"allowfallbacktoplaintext": true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"allownativepasswords":     true,
+		"allowoldpasswords":        true,
+		"charset":                  true,
+		"checkconnliveness":        true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"clientfoundrows":          true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"collation":                true,
+		"columnswithalias":         true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"interpolateparams":        true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"loc":                      true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"maxallowedpacket":         true,
+		"multistatements":          true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"parsetime":                true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"readtimeout":              true,
+		"rejectreadonly":           true,
+		"serverpubkey":             true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"timeout":                  true,
+		"tls":                      true,
+		"writetimeout":             true,
 	}
 
 	options, err := SplitConnectOptions(connectOpts)

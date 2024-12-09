@@ -1,17 +1,20 @@
 package fs
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/go-sql-driver/mysql"
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/shellout"
@@ -535,15 +538,16 @@ func (dir *Dir) HasSchema() bool {
 func (dir *Dir) InstanceDefaultParams() (string, error) {
 	banned := map[string]bool{
 		// go-sql-driver/mysql special params that should not be overridden
-		"allowallfiles":     true,
-		"checkconnliveness": true,
-		"clientfoundrows":   true,
-		"columnswithalias":  true,
-		"interpolateparams": true, // always enabled explicitly later in this method
-		"loc":               true,
-		"multistatements":   true,
-		"parsetime":         true,
-		"serverpubkey":      true,
+		"allowallfiles":            true,
+		"allowfallbacktoplaintext": true, // set automatically with tls=preferred
+		"checkconnliveness":        true,
+		"clientfoundrows":          true,
+		"columnswithalias":         true,
+		"interpolateparams":        true, // always enabled explicitly later in this method
+		"loc":                      true,
+		"multistatements":          true,
+		"parsetime":                true,
+		"serverpubkey":             true,
 
 		// mysql session options that should not be overridden
 		"autocommit":             true, // always enabled by default in MySQL
@@ -577,6 +581,33 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	} else if testing.Testing() {
 		sslMode = "false"
 	}
+	if sslMode != "false" {
+		// With an older or unknown server version, we need to use a special TLS
+		// config which is compatible with older OpenSSL. For the corresponding
+		// TLS configurations, see init() immediately below this method.
+		// Background: https://github.com/skeema/skeema/issues/239
+		confFlavor := tengo.ParseFlavor(dir.Config.Get("flavor"))
+		if !(confFlavor.MinMySQL(8, 0) || confFlavor.MinMariaDB(10, 2) || confFlavor.IsPercona(5, 7)) {
+			// Before we manipulate sslMode, handle the difference between "preferred"
+			// and "skip-verify" ("required") by setting allowFallbackToPlaintext in DSN
+			// in the former case; this is handled *outside* of the TLS config.
+			if sslMode == "preferred" {
+				v.Set("allowFallbackToPlaintext", "true")
+			}
+			if confFlavor.IsMySQL(5, 7) || confFlavor.IsMariaDB(10, 1) {
+				sslMode = "oldciphers"
+			} else {
+				// Note: this is intentionally what happens if the flavor isn't configured
+				// in the .skeema file. This way, commands `skeema init` and
+				// `skeema add-environment` default to permissive connection since we have
+				// not introspected the server yet. That's necessary since in most cases the
+				// default ssl-mode is "preferred", which attempts TLS if the server supports
+				// it at all. (The driver does NOT have any ability to fallback to plaintext
+				// upon cipher suite mismatch or TLS version mismatch! It just errors.)
+				sslMode = "oldtls"
+			}
+		}
+	}
 	v.Set("tls", sslMode)
 
 	// Set values from connect-options
@@ -595,6 +626,58 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	v.Set("foreign_key_checks", "0")
 	v.Set("default_storage_engine", "'InnoDB'")
 	return v.Encode(), nil
+}
+
+// Register TLS configurations that are compatible with older server versions.
+// These are used in Dir.InstanceDefaultParams, depending on the dir's flavor
+// or lack thereof.
+func init() {
+	// This is a list of pre-TLS1.3 secure cipher suites as of Go 1.23, with
+	// the addition of four RSA-based cipher suites which are normally not part
+	// of the default list in Go 1.22+. Server builds prior to MySQL 8.0 and
+	// MariaDB 10.2 tend to be compiled with old versions of OpenSSL which don't
+	// support elliptic curve cipher suites. Golang 1.22+ by default removes the
+	// non-ellptic curve cipher suites, so with an old server (or unknown flavor)
+	// we need to explicitly add back in the four RSA-based ones that aren't
+	// otherwise marked as disabled elsewhere in crypto/tls.
+	cipherSuites := []uint16{
+		// These 10 are the supportedUpToTLS12 ones returned from tls.CipherSuites()
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+		tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+		tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+		tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+
+		// These 4 are the ones added back with GODEBUG='tlsrsakex=1'
+		tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+
+		// We intentionally do not add 3 additional RSA-based ones that are otherwise
+		// disabled by default in Go for other reasons: TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+		// TLS_RSA_WITH_AES_128_CBC_SHA256, TLS_RSA_WITH_RC4_128_SHA
+	}
+
+	// Configuration that allows connection to MySQL 5.7 and MariaDB 10.1:
+	// these can use TLS 1.2 but need the extra RSA cipher suites
+	mysql.RegisterTLSConfig("oldciphers", &tls.Config{
+		InsecureSkipVerify: true, // permit self-signed cert on server side
+		CipherSuites:       slices.Clone(cipherSuites),
+	})
+
+	// Configuration that allows connection to MySQL 5.5-5.6: these typically
+	// need TLS 1.0, as well as the RSA cipher suites
+	mysql.RegisterTLSConfig("oldtls", &tls.Config{
+		InsecureSkipVerify: true, // permit self-signed cert on server side
+		CipherSuites:       slices.Clone(cipherSuites),
+		MinVersion:         tls.VersionTLS10,
+	})
 }
 
 // Generator returns the version and edition of Skeema used to init or most

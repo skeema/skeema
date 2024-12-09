@@ -658,16 +658,16 @@ func TestDirInstances(t *testing.T) {
 }
 
 func TestDirInstanceDefaultParams(t *testing.T) {
-	getFakeDir := func(connectOptions string) *Dir {
+	getFakeDir := func(flavor, connectOptions string) *Dir {
 		return &Dir{
 			Path:   "/tmp/dummydir",
-			Config: mybase.SimpleConfig(map[string]string{"connect-options": connectOptions, "ssl-mode": "preferred"}),
+			Config: mybase.SimpleConfig(map[string]string{"connect-options": connectOptions, "ssl-mode": "preferred", "flavor": flavor}),
 		}
 	}
 
-	assertDefaultParams := func(connectOptions, expected string) {
+	assertDefaultParams := func(flavor, connectOptions, expected string) {
 		t.Helper()
-		dir := getFakeDir(connectOptions)
+		dir := getFakeDir(flavor, connectOptions)
 		if parsed, err := url.ParseQuery(expected); err != nil {
 			t.Fatalf("Bad expected value \"%s\": %s", expected, err)
 		} else {
@@ -690,7 +690,7 @@ func TestDirInstanceDefaultParams(t *testing.T) {
 		"ok=1,writeTimeout=12ms":                    strings.Replace(baseDefaults, "writeTimeout=5s", "writeTimeout=12ms&ok=1", 1),
 	}
 	for connOpts, expected := range expectParams {
-		assertDefaultParams(connOpts, expected)
+		assertDefaultParams("mysql:8.0", connOpts, expected)
 	}
 
 	expectError := []string{
@@ -699,7 +699,7 @@ func TestDirInstanceDefaultParams(t *testing.T) {
 		"bad_parse",
 	}
 	for _, connOpts := range expectError {
-		dir := getFakeDir(connOpts)
+		dir := getFakeDir("", connOpts)
 		if _, err := dir.InstanceDefaultParams(); err == nil {
 			t.Errorf("Did not get expected error from connect-options=\"%s\"", connOpts)
 		}
@@ -711,9 +711,9 @@ func TestDirInstanceDefaultParams(t *testing.T) {
 		"preferred": baseDefaults,
 		"required":  strings.Replace(baseDefaults, "tls=preferred", "tls=skip-verify", 1),
 	}
-	dir := getFakeDir("")
+	dir := getFakeDir("", "")
 	for sslMode, expected := range expectTLS {
-		dir.Config = mybase.SimpleConfig(map[string]string{"connect-options": "", "ssl-mode": sslMode})
+		dir.Config = mybase.SimpleConfig(map[string]string{"connect-options": "", "ssl-mode": sslMode, "flavor": "mariadb:10.2"})
 		if parsed, err := url.ParseQuery(expected); err != nil {
 			t.Fatalf("Bad expected value %q: %s", expected, err)
 		} else {
@@ -726,14 +726,16 @@ func TestDirInstanceDefaultParams(t *testing.T) {
 			t.Errorf("Expected ssl-mode=%q to yield default params %q, instead found %q", sslMode, expected, actual)
 		}
 	}
-	dir.Config = mybase.SimpleConfig(map[string]string{"connect-options": "", "ssl-mode": "invalid-enum"})
+	dir.Config = mybase.SimpleConfig(map[string]string{"connect-options": "", "ssl-mode": "invalid-enum", "flavor": ""})
 	if _, err := dir.InstanceDefaultParams(); err == nil {
 		t.Error("Expected an error from dir.InstanceDefaultParams() with invalid ssl-mode, but err was nil")
 	}
-	dir.Config = mybase.SimpleConfig(map[string]string{"connect-options": "tls=preferred", "ssl-mode": "required"})
+	dir.Config = mybase.SimpleConfig(map[string]string{"connect-options": "tls=preferred", "ssl-mode": "required", "flavor": ""})
 	if _, err := dir.InstanceDefaultParams(); err == nil {
 		t.Error("Expected an error from dir.InstanceDefaultParams() with tls in connect-options while also setting ssl-mode, but err was nil")
 	}
+
+	// TODO: test TLS value with older flavors
 }
 
 func TestHostDefaultDirName(t *testing.T) {
