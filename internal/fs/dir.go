@@ -535,15 +535,16 @@ func (dir *Dir) HasSchema() bool {
 func (dir *Dir) InstanceDefaultParams() (string, error) {
 	banned := map[string]bool{
 		// go-sql-driver/mysql special params that should not be overridden
-		"allowallfiles":     true,
-		"checkconnliveness": true,
-		"clientfoundrows":   true,
-		"columnswithalias":  true,
-		"interpolateparams": true, // always enabled explicitly later in this method
-		"loc":               true,
-		"multistatements":   true,
-		"parsetime":         true,
-		"serverpubkey":      true,
+		"allowallfiles":            true,
+		"allowfallbacktoplaintext": true, // set automatically with tls=preferred
+		"checkconnliveness":        true,
+		"clientfoundrows":          true,
+		"columnswithalias":         true,
+		"interpolateparams":        true, // always enabled explicitly later in this method
+		"loc":                      true,
+		"multistatements":          true,
+		"parsetime":                true,
+		"serverpubkey":             true,
 
 		// mysql session options that should not be overridden
 		"autocommit":             true, // always enabled by default in MySQL
@@ -576,6 +577,39 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 		}
 	} else if testing.Testing() {
 		sslMode = "false"
+	}
+	if sslMode != "false" {
+		// With an older or unknown server version, we need to use a special TLS
+		// config which is compatible with older OpenSSL. For the corresponding
+		// TLS configs and driver registration, see internal/tengo/tlsconfig.go
+		// Background: https://github.com/skeema/skeema/issues/239
+		// Additional notes:
+		// * Flavors that don't support TLS 1.2 also don't support modern cipher
+		//   suites, so it is sufficient to just check the latter for the superset
+		//   of both groups.
+		// * Even with "preferred" mode, the driver does NOT have any ability to
+		//   fallback to plaintext *upon cipher suite mismatches or TLS version
+		//   mismatches*. In those cases it just hard errors.
+		// * The zero value of flavor intentionally falls into the !SupportsTLS12
+		//   case. This way, commands `skeema init` and `skeema add-environment`
+		//   default to permissive connection since we have not introspected the
+		//   server yet. That's especially important since Skeema's default ssl-mode
+		//   is "preferred" in most situations, which attempts TLS if the server
+		//   is configured to use TLS at all, which MySQL 5.7+ is out-of-the-box.
+		confFlavor := tengo.ParseFlavor(dir.Config.Get("flavor"))
+		if !confFlavor.ModernCipherSuites() {
+			// Before we manipulate sslMode, handle the extra ability of "preferred"
+			// by setting allowFallbackToPlaintext in DSN, since this is handled
+			// *outside* of the TLS config
+			if sslMode == "preferred" {
+				v.Set("allowFallbackToPlaintext", "true")
+			}
+			if !confFlavor.SupportsTLS12() {
+				sslMode = "oldtls"
+			} else {
+				sslMode = "oldciphers"
+			}
+		}
 	}
 	v.Set("tls", sslMode)
 

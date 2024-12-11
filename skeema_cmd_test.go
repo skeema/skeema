@@ -47,6 +47,19 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 		t.Error("Expected user to be persisted to .skeema, but it was not")
 	}
 
+	// Test successful init with --ssl-mode=preferred. (Normally this is the
+	// default, but for integration tests it defaults to ssl-mode=disabled
+	// unless explicitly configured.)
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir tlspreferred -h %s -P %d --ssl-mode=preferred", s.d.Instance.Host, s.d.Instance.Port)
+
+	// Using --ssl-mode=required should only work "out of the box" if the flavor
+	// supports automatic self-signed server certs upon initialization
+	expectedCode := CodeFatalError
+	if flavor := s.d.Flavor(); flavor.MinMySQL(5, 7) || flavor.MinMariaDB(11, 4) {
+		expectedCode = CodeSuccess
+	}
+	s.handleCommand(t, expectedCode, ".", "skeema init --dir tlsrequired -h %s -P %d --ssl-mode=required", s.d.Instance.Host, s.d.Instance.Port)
+
 	// Can't init into a dir with existing option file
 	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
 

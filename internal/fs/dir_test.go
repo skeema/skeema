@@ -661,10 +661,9 @@ func TestDirInstanceDefaultParams(t *testing.T) {
 	getFakeDir := func(connectOptions string) *Dir {
 		return &Dir{
 			Path:   "/tmp/dummydir",
-			Config: mybase.SimpleConfig(map[string]string{"connect-options": connectOptions, "ssl-mode": "preferred"}),
+			Config: mybase.SimpleConfig(map[string]string{"connect-options": connectOptions, "ssl-mode": "preferred", "flavor": "mysql:8.0"}),
 		}
 	}
-
 	assertDefaultParams := func(connectOptions, expected string) {
 		t.Helper()
 		dir := getFakeDir(connectOptions)
@@ -705,15 +704,33 @@ func TestDirInstanceDefaultParams(t *testing.T) {
 		}
 	}
 
-	// Test valid ssl-mode values, along with an invalid one and then an invalid combination with tls in connect-options
+	// Test valid ssl-mode values with mix of flavors.
+	// Map key is "ssl-mode flavor", value is expected params section of DSN
 	expectTLS := map[string]string{
-		"disabled":  strings.Replace(baseDefaults, "tls=preferred", "tls=false", 1),
-		"preferred": baseDefaults,
-		"required":  strings.Replace(baseDefaults, "tls=preferred", "tls=skip-verify", 1),
+		// These flavors support modern cipher suites and TLS 1.2+
+		"disabled mariadb:10.2": strings.Replace(baseDefaults, "tls=preferred", "tls=false", 1),
+		"preferred mysql:8.0":   baseDefaults,
+		"required percona:5.7":  strings.Replace(baseDefaults, "tls=preferred", "tls=skip-verify", 1),
+
+		// These flavors support TLS 1.2+, but not modern cipher suites
+		"disabled mysql:5.6":    strings.Replace(baseDefaults, "tls=preferred", "tls=false", 1),
+		"preferred mysql:5.7":   strings.Replace(baseDefaults, "tls=preferred", "tls=oldciphers&allowFallbackToPlaintext=true", 1),
+		"required mariadb:10.1": strings.Replace(baseDefaults, "tls=preferred", "tls=oldciphers", 1),
+
+		// These flavors do not support TLS 1.2+ nor modern cipher suites
+		"disabled mysql:5.5":    strings.Replace(baseDefaults, "tls=preferred", "tls=false", 1),
+		"preferred percona:5.5": strings.Replace(baseDefaults, "tls=preferred", "tls=oldtls&allowFallbackToPlaintext=true", 1),
+		"required mysql:5.6":    strings.Replace(baseDefaults, "tls=preferred", "tls=oldtls", 1),
+
+		// Unknown flavors should work like oldtls case above
+		"disabled ":  strings.Replace(baseDefaults, "tls=preferred", "tls=false", 1),
+		"preferred ": strings.Replace(baseDefaults, "tls=preferred", "tls=oldtls&allowFallbackToPlaintext=true", 1),
+		"required ":  strings.Replace(baseDefaults, "tls=preferred", "tls=oldtls", 1),
 	}
-	dir := getFakeDir("")
-	for sslMode, expected := range expectTLS {
-		dir.Config = mybase.SimpleConfig(map[string]string{"connect-options": "", "ssl-mode": sslMode})
+	dir := &Dir{Path: "/tmp/dummydir"}
+	for input, expected := range expectTLS {
+		sslMode, flavorString, _ := strings.Cut(input, " ")
+		dir.Config = mybase.SimpleConfig(map[string]string{"connect-options": "", "ssl-mode": sslMode, "flavor": flavorString})
 		if parsed, err := url.ParseQuery(expected); err != nil {
 			t.Fatalf("Bad expected value %q: %s", expected, err)
 		} else {
@@ -723,14 +740,16 @@ func TestDirInstanceDefaultParams(t *testing.T) {
 		if err != nil {
 			t.Errorf("Unexpected error from ssl-mode=%q: %s", sslMode, err)
 		} else if actual != expected {
-			t.Errorf("Expected ssl-mode=%q to yield default params %q, instead found %q", sslMode, expected, actual)
+			t.Errorf("Expected flavor=%s ssl-mode=%q to yield default params %q, instead found %q", flavorString, sslMode, expected, actual)
 		}
 	}
-	dir.Config = mybase.SimpleConfig(map[string]string{"connect-options": "", "ssl-mode": "invalid-enum"})
+
+	// Test invalid TLS-related values
+	dir.Config = mybase.SimpleConfig(map[string]string{"connect-options": "", "ssl-mode": "invalid-enum", "flavor": ""})
 	if _, err := dir.InstanceDefaultParams(); err == nil {
 		t.Error("Expected an error from dir.InstanceDefaultParams() with invalid ssl-mode, but err was nil")
 	}
-	dir.Config = mybase.SimpleConfig(map[string]string{"connect-options": "tls=preferred", "ssl-mode": "required"})
+	dir.Config = mybase.SimpleConfig(map[string]string{"connect-options": "tls=preferred", "ssl-mode": "required", "flavor": ""})
 	if _, err := dir.InstanceDefaultParams(); err == nil {
 		t.Error("Expected an error from dir.InstanceDefaultParams() with tls in connect-options while also setting ssl-mode, but err was nil")
 	}

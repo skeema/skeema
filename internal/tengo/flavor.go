@@ -455,6 +455,31 @@ func (fl Flavor) HasCheckConstraints() bool {
 	return fl.IsMariaDB(10, 2) && fl.Version.Patch() >= 22
 }
 
+// ModernCipherSuites returns true if the flavor is typically compiled with
+// OpenSSL 1.1+ and supports elliptic curve cipher suites compatible with the
+// default set of cipher suites in Go 1.22+. If the flavor is not known, this
+// method returns false, with an intended use-case of permissively allowing a
+// TLS connection to a server whose flavor has not been introspected yet.
+func (fl Flavor) ModernCipherSuites() bool {
+	// Elliptic curve ciphers are usable in:
+	// * MySQL 8.0+, any variant
+	// * Percona Server 5.7 (but not other variants of 5.7)
+	// * MariaDB 10.2+
+	// All other flavors need TLS_RSA_WITH_AES_... ciphers
+	return fl.MinMySQL(8, 0) || fl.MinMariaDB(10, 2) || fl.IsPercona(5, 7)
+}
+
+// SupportsTLS12 returns true if the flavor typically supports TLS 1.2+. If
+// the flavor is not known, this method returns false, with an intended use-
+// case of permissively allowing a TLS connection to a server whose flavor
+// has not been introspected yet.
+func (fl Flavor) SupportsTLS12() bool {
+	// TLS 1.2+ is usable in:
+	// * MySQL 5.7+, any variant
+	// * MariaDB, any version otherwise supported by this package (10.1+)
+	return fl.MinMySQL(5, 7) || fl.Vendor == VendorMariaDB
+}
+
 // Mapping for when to return true for AlwaysShowCollate: MariaDB releases
 // from Nov 2022 onward. See https://jira.mariadb.org/browse/MDEV-29446
 var mariaAlwaysCollate = newPointReleaseMap(

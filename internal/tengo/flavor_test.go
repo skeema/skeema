@@ -585,6 +585,48 @@ func TestFlavorHasCheckConstraints(t *testing.T) {
 	}
 }
 
+func TestFlavorModernCipherSuites(t *testing.T) {
+	cases := map[string]bool{
+		"mysql:5.5":       false,
+		"mysql:5.6.33":    false,
+		"mysql:5.7.44":    false,
+		"percona:5.6":     false,
+		"percona:5.7":     true,
+		"mysql:8.0":       true,
+		"aurora:8.0.32":   true,
+		"mariadb:10.1.30": false,
+		"mariadb:10.2.15": true,
+		"mariadb:10.3":    true,
+		"mariadb:11.0":    true,
+	}
+	for input, expected := range cases {
+		if ParseFlavor(input).ModernCipherSuites() != expected {
+			t.Errorf("Expected %s.ModernCipherSuites() to return %t, but it did not", input, expected)
+		}
+	}
+}
+
+func TestFlavorSupportsTLS12(t *testing.T) {
+	cases := map[string]bool{
+		"mysql:5.5":       false,
+		"mysql:5.6.33":    false,
+		"mysql:5.7.44":    true,
+		"percona:5.6":     false,
+		"percona:5.7":     true,
+		"mysql:8.0":       true,
+		"aurora:5.7.12":   true,
+		"mariadb:10.1.30": true,
+		"mariadb:10.2.15": true,
+		"mariadb:10.3":    true,
+		"mariadb:11.0":    true,
+	}
+	for input, expected := range cases {
+		if ParseFlavor(input).SupportsTLS12() != expected {
+			t.Errorf("Expected %s.SupportsTLS12() to return %t, but it did not", input, expected)
+		}
+	}
+}
+
 func TestFlavorAlwaysShowCollate(t *testing.T) {
 	cases := map[string]bool{
 		"mysql:5.7":       false,
