@@ -323,8 +323,11 @@ func GetOrCreateDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedI
 }
 
 // Start starts the corresponding containerized mysql-server. If it is not
-// already running, an error will be returned if it cannot be started. If it is
-// already running, nil will be returned.
+// already running and cannot be started, an error will be returned. If it is
+// already running, nil will be returned. This method may return prior to the
+// server being ready to accept connections, especially when initializing the
+// server for the first time, or re-initializing in the case of a tmpfs data
+// directory mount. Use TryConnect to wait if needed.
 func (di *DockerizedInstance) Start() error {
 	if err := StartDockerContainer(di.containerName); err != nil {
 		return err
@@ -549,6 +552,21 @@ func (di *DockerizedInstance) Exec(cmd []string, stdin io.Reader) (stdoutStr str
 	commandString := "docker exec " + strings.Join(dflags, " ") + " {NAME} " + strings.Join(cmdPlaceholders, " ")
 	s := shellout.New(commandString).WithStdin(stdin).WithVariablesStrict(vars)
 	return s.RunCaptureSeparate()
+}
+
+// PutFile copies a file or directory from the host to the container by shelling
+// out to `docker cp`. For edge cases involving directories, nonexistent paths,
+// etc refer to https://docs.docker.com/reference/cli/docker/container/cp/.
+func (di *DockerizedInstance) PutFile(src, dest string) error {
+	vars := map[string]string{
+		"SRC":  src,
+		"DEST": di.containerName + ":" + dest,
+	}
+	out, err := shellout.New("docker cp {SRC} {DEST}").WithVariablesStrict(vars).RunCaptureCombined()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, out)
+	}
+	return nil
 }
 
 // SetRedoLog attempts to enable or disable redo logging on the instance. This

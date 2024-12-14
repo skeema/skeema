@@ -184,3 +184,33 @@ func SkeemaTestContainerCleanup(d *DockerizedInstance) error {
 		return fmt.Errorf("refusing to destroy container %q without skeema-test- naming prefix", d.containerName)
 	}
 }
+
+// EnableTLS copies the contents of certsDir to the provided container, adds
+// server configuration to use those certs, and then restarts the database.
+func EnableTLS(dinst *DockerizedInstance, certsDir string) error {
+	if err := dinst.PutFile(certsDir, "/tls"); err != nil {
+		return err
+	}
+
+	commands := []string{
+		"mv /tls/tls.cnf /etc/mysql/conf.d/",
+		"chown root:root /etc/mysql/conf.d/tls.cnf",
+		"chown -R mysql:root /tls",
+		"chmod o-r /tls/*.pem",
+	}
+	for _, command := range commands {
+		toRun := []string{"/bin/sh", "-c", command}
+		_, errStr, err := dinst.Exec(toRun, nil)
+		if err != nil {
+			return fmt.Errorf("%w: %s", err, errStr)
+		}
+	}
+
+	if err := dinst.Stop(); err != nil {
+		return err
+	}
+	if err := dinst.Start(); err != nil {
+		return err
+	}
+	return dinst.TryConnect()
+}

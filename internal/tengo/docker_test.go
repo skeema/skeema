@@ -80,6 +80,19 @@ func TestDocker(t *testing.T) {
 		t.Error("Expected error attempting to SourceSQL non-SQL file, instead got nil")
 	}
 
+	// Test PutFile and simple Exec
+	if err := di.PutFile("testdata/integration.sql", "/integration.sql"); err != nil {
+		t.Errorf("Unexpected error from PutFile: %v", err)
+	} else if outStr, errStr, err := di.Exec([]string{"rm", "/integration.sql"}, nil); err != nil {
+		t.Errorf("Unable to confirm result of PutFile: %s %s %v", outStr, errStr, err)
+	}
+	if err := di.PutFile("testdata/does-not-exist.sql", "/shoulderror.sql"); err == nil {
+		t.Error("Expected error from bad PutFile, but error return was nil")
+	}
+	if _, _, err := di.Exec([]string{"rm", "/shoulderror.sql"}, nil); err == nil {
+		t.Error("Expected error from bad Exec, but error return was nil")
+	}
+
 	// Confirm no errors from redundant start/stop
 	if err := di.Start(); err != nil {
 		t.Errorf("Unexpected error from redundant start: %s", err)
