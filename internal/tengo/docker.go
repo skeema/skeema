@@ -529,6 +529,7 @@ func (di *DockerizedInstance) SourceSQL(filePaths ...string) (string, error) {
 func (di *DockerizedInstance) Exec(cmd []string, stdin io.Reader) (stdoutStr string, stderrStr string, err error) {
 	dflags := []string{
 		"-i",
+		"-u root", // necessary for some images, e.g. Percona Server, which otherwise use "mysql" default user
 	}
 	if di.Password != "" {
 		dflags = append(dflags, "-e {PWDENV}")

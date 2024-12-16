@@ -193,8 +193,8 @@ func EnableTLS(dinst *DockerizedInstance, certsDir string) error {
 	}
 
 	commands := []string{
-		"mv /tls/tls.cnf /etc/mysql/conf.d/",
-		"chown root:root /etc/mysql/conf.d/tls.cnf",
+		"chown root:root /tls/tls.cnf",
+		"mv /tls/tls.cnf /etc/mysql/conf.d/ || mv /tls/tls.cnf /etc/my.cnf.d/", // most images use /etc/mysql/conf.d but others do not
 		"chown -R mysql:root /tls",
 		"chmod o-r /tls/*.pem",
 	}
