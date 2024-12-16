@@ -78,9 +78,9 @@ func AddEnvHandler(cfg *mybase.Config) error {
 	} else {
 		log.Warnf(`Unable to automatically determine database server's vendor/version. To set manually, use the "flavor" option in ` + dir.OptionFile.Path())
 	}
-	for _, persistOpt := range []string{"user", "ignore-schema", "ignore-table", "ignore-proc", "ignore-func", "connect-options"} {
-		if cfg.OnCLI(persistOpt) {
-			dir.OptionFile.SetOptionValue(environment, persistOpt, cfg.Get(persistOpt))
+	for optionName := range cfg.CLI.OptionValues {
+		if persistOptionAlongsideHost(optionName) { // see cmd_init.go
+			dir.OptionFile.SetOptionValue(environment, optionName, cfg.Get(optionName))
 		}
 	}
 

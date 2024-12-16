@@ -162,9 +162,9 @@ func createHostOptionFile(cfg *mybase.Config, hostDir *fs.Dir, inst *tengo.Insta
 	} else {
 		log.Warnf(`Unable to automatically determine database server's vendor/version. To set manually, use the "flavor" option in ` + hostOptionFile.Path())
 	}
-	for _, persistOpt := range []string{"user", "ignore-schema", "ignore-table", "ignore-proc", "ignore-func", "connect-options"} {
-		if cfg.OnCLI(persistOpt) {
-			hostOptionFile.SetOptionValue(environment, persistOpt, cfg.Get(persistOpt))
+	for optionName := range cfg.CLI.OptionValues {
+		if persistOptionAlongsideHost(optionName) {
+			hostOptionFile.SetOptionValue(environment, optionName, cfg.Get(optionName))
 		}
 	}
 
@@ -189,6 +189,35 @@ func createHostOptionFile(cfg *mybase.Config, hostDir *fs.Dir, inst *tengo.Insta
 	}
 	log.Infof("Using host dir %s for %s%s\n", hostDir.Path, inst, suffix)
 	return nil
+}
+
+var persistConnectivityOptionExactMatch = []string{
+	"user",
+	"connect-options",
+}
+
+var persistConnectivityOptionPrefix = []string{
+	"ignore",
+	"ssl",
+}
+
+// persistOptionAlongsideHost returns true if the supplied option name relates
+// to connectivity, and if it was supplied on the CLI it should be persisted to
+// the same .skeema file as the host name. (This excludes host/port/socket which
+// are handled separately, and excludes password since it is not persisted
+// automatically for security reasons.)
+func persistOptionAlongsideHost(optionName string) bool {
+	for _, exactName := range persistConnectivityOptionExactMatch {
+		if optionName == exactName {
+			return true
+		}
+	}
+	for _, prefix := range persistConnectivityOptionPrefix {
+		if strings.HasPrefix(optionName, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func generatorString() string {

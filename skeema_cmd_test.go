@@ -58,7 +58,12 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	if flavor := s.d.Flavor(); flavor.MinMySQL(5, 7) || flavor.MinMariaDB(11, 4) {
 		expectedCode = CodeSuccess
 	}
-	s.handleCommand(t, expectedCode, ".", "skeema init --dir tlsrequired -h %s -P %d --ssl-mode=required", s.d.Instance.Host, s.d.Instance.Port)
+	cfg = s.handleCommand(t, expectedCode, ".", "skeema init --dir tlsrequired -h %s -P %d --ssl-mode=required", s.d.Instance.Host, s.d.Instance.Port)
+	if expectedCode == CodeSuccess {
+		if _, setsOption := getOptionFile(t, "tlsrequired", cfg).OptionValue("ssl-mode"); !setsOption {
+			t.Error("Expected ssl-mode to be persisted to .skeema, but it was not")
+		}
+	}
 
 	// Can't init into a dir with existing option file
 	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
