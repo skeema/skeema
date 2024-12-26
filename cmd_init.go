@@ -20,6 +20,9 @@ func init() {
 		"--schema), a subdir with a .skeema config file will be created. Each directory " +
 		"will be populated with .sql files containing CREATE statements for every " +
 		"table and routine in the schema.\n\n" +
+		"When operating on all schemas on the server, this command automatically skips pre-" +
+		"installed / system schemas (information_schema, performance_schema, mysql, sys, " +
+		"test).\n\n" +
 		"You may optionally pass an environment name as a command-line arg. This will affect " +
 		"which section of .skeema config files the host-related options are written to. " +
 		"For example, running `skeema init staging` will add config directives to the " +
