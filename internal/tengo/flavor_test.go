@@ -614,7 +614,7 @@ func TestFlavorSupportsTLS12(t *testing.T) {
 		"percona:5.6":     false,
 		"percona:5.7":     true,
 		"mysql:8.0":       true,
-		"aurora:5.7.12":   true,
+		"aurora:5.7.44":   true,
 		"mariadb:10.1.30": true,
 		"mariadb:10.2.15": true,
 		"mariadb:10.3":    true,

@@ -47,10 +47,14 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 		t.Error("Expected user to be persisted to .skeema, but it was not")
 	}
 
-	// Test successful init with --ssl-mode=preferred. (Normally this is the
-	// default, but for integration tests it defaults to ssl-mode=disabled
-	// unless explicitly configured.)
+	// Test successful init with --ssl-mode=preferred, which should always work,
+	// regardless of whether the flavor supports TLS out-of-the-box. (Normally
+	// "preferred" is the default if no ssl-mode is supplied, but for integration
+	// tests ssl-mode defaults to "disabled" unless explicitly configured.)
+	// Subsequent commands (which may use a less-permissive TLS config) should
+	// work as well.
 	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir tlspreferred -h %s -P %d --ssl-mode=preferred", s.d.Instance.Host, s.d.Instance.Port)
+	s.handleCommand(t, CodeSuccess, "tlspreferred", "skeema diff")
 
 	// Using --ssl-mode=required should only work "out of the box" if the flavor
 	// supports automatic self-signed server certs upon initialization
@@ -60,9 +64,15 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	}
 	cfg = s.handleCommand(t, expectedCode, ".", "skeema init --dir tlsrequired -h %s -P %d --ssl-mode=required", s.d.Instance.Host, s.d.Instance.Port)
 	if expectedCode == CodeSuccess {
-		if _, setsOption := getOptionFile(t, "tlsrequired", cfg).OptionValue("ssl-mode"); !setsOption {
-			t.Error("Expected ssl-mode to be persisted to .skeema, but it was not")
+		if value, setsOption := getOptionFile(t, "tlsrequired", cfg).OptionValue("ssl-mode"); !setsOption || value != "required" {
+			t.Error("Expected ssl-mode=required to be persisted to .skeema, but it was not")
 		}
+		if _, setsOption := getOptionFile(t, "tlsrequired", cfg).OptionValue("flavor"); !setsOption {
+			t.Error("Expected flavor to be persisted to .skeema, but it was not")
+		}
+		// Now that the flavor is known and persisted, a less-permissive TLS config
+		// may be used for subsequent commands; confirm we can still connect!
+		s.handleCommand(t, CodeSuccess, "tlsrequired", "skeema diff")
 	}
 
 	// Can't init into a dir with existing option file

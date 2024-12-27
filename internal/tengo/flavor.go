@@ -475,9 +475,9 @@ func (fl Flavor) ModernCipherSuites() bool {
 // has not been introspected yet.
 func (fl Flavor) SupportsTLS12() bool {
 	// TLS 1.2+ is usable in:
-	// * MySQL 5.7+, any variant
+	// * MySQL 5.7.28+, any variant (note that a point release of "0" means "latest" i.e. 5.7.44)
 	// * MariaDB, any version otherwise supported by this package (10.1+)
-	return fl.MinMySQL(5, 7) || fl.Vendor == VendorMariaDB
+	return fl.MinMySQL(5, 7, 28) || fl.IsMySQL(5, 7, 0) || fl.Vendor == VendorMariaDB
 }
 
 // Mapping for when to return true for AlwaysShowCollate: MariaDB releases
