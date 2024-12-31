@@ -23,14 +23,17 @@ jobs:
 
       - name: Run go vet
         run: go vet ./...
-          
+
+      - name: Run govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest && govulncheck -show verbose ./...
+
       - name: Run tests
         run: go test -v -p 1 -coverprofile=coverage.out -coverpkg=./... ./...
-      
+
       - name: Report coverage
         env:
           COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: go install github.com/mattn/goveralls && goveralls -v -coverprofile=coverage.out -service=github
+        run: go install github.com/mattn/goveralls@v0.0.12 && goveralls -v -coverprofile=coverage.out -service=github
         continue-on-error: true
 
   release:

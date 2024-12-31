@@ -22,6 +22,12 @@ Please use [Discussions](https://github.com/skeema/skeema/discussions) for quest
 
 If you're looking for troubleshooting assistance, kindly [search existing issues](https://github.com/skeema/skeema/search?type=issues) and [documentation](https://www.google.com/search?q=documentation+site%3Awww.skeema.io) first.
 
+### Security advisories
+
+If you believe you have found a serious security issue, open a [private security advisory](https://github.com/skeema/skeema/security/advisories/new) to discuss. Be sure to describe how the specific vulnerability actually affects Skeema, keeping in mind that Skeema is a command-line developer tool, not a server/daemon. We also run [`govulncheck`](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) in GitHub Actions on every commit, so problems in our dependency tree are generally already found quickly.
+
+If the potential security issue is low severity, or if you are uncertain whether Skeema's call stack is even exposed to it, you may open a [public discussion](https://github.com/skeema/skeema/discussions) instead.
+
 ## Pull requests
 
 ### Bug fix PRs
