@@ -2,9 +2,6 @@ package linter
 
 import (
 	"fmt"
-	"regexp"
-	"strconv"
-	"strings"
 
 	"github.com/skeema/skeema/internal/tengo"
 )
@@ -18,15 +15,8 @@ func init() {
 	})
 }
 
-// Regular expression for parsing out parts of an int type:
-// [1] is the base type
-// [2] is the display width (digits only, no parens)
-// [3] is " unsigned" or ""
-// [4] is " zerofill" or ""
-var reDisplayWidth = regexp.MustCompile(`^(tinyint|smallint|mediumint|int|bigint)\((\d+)\)( unsigned)?( zerofill)?`)
-
 // Default display widths for signed int types
-var signedDefaultWidths = map[string]int{
+var signedDefaultWidths = map[string]uint16{
 	"tinyint":   4,  // unsigned is 3
 	"smallint":  6,  // unsigned is 5
 	"mediumint": 9,  // unsigned is 8
@@ -37,29 +27,29 @@ var signedDefaultWidths = map[string]int{
 func displayWidthChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ *Options) []Note {
 	results := make([]Note, 0)
 	for _, col := range table.Columns {
-		if !strings.Contains(col.TypeInDB, "int(") {
+		if col.Type.Size == 0 || !col.Type.Integer() { // non-int, or no display width due to MySQL 8.0.19+
 			continue
 		}
-		matches := reDisplayWidth.FindStringSubmatch(col.TypeInDB)
-		rawType, displayWidth := matches[1], matches[2]
-		unsigned, zerofill := (matches[3] != ""), (matches[4] != "")
-		if zerofill {
+		if col.Type.Zerofill {
 			continue // non-default display width may be intentional with zerofill
 		}
-		if rawType == "tinyint" && displayWidth == "1" {
+		if col.Type.Base == "tinyint" && col.Type.Size == 1 {
 			continue // allow tinyint(1) since bool is an alias for this
 		}
-		defaultWidthInt := signedDefaultWidths[rawType]
-		if unsigned && rawType != "bigint" {
-			defaultWidthInt--
+		defaultWidth := signedDefaultWidths[col.Type.Base]
+		var suffix string
+		if col.Type.Unsigned {
+			suffix = " unsigned"
+			if col.Type.Base != "bigint" {
+				defaultWidth--
+			}
 		}
-		defaultWidth := strconv.Itoa(defaultWidthInt)
-		if displayWidth != defaultWidth {
+		if col.Type.Size != defaultWidth {
 			message := fmt.Sprintf(
-				"Column %s of %s is using display width %s, but the default for %s%s is %s.\nInteger display widths do not control what range of values may be stored in a column. Typically they have no effect whatsoever. If in doubt, omit the width entirely, or use the default of %s(%s)%s.",
-				col.Name, table.ObjectKey(), displayWidth,
-				rawType, matches[3], defaultWidth,
-				rawType, defaultWidth, matches[3],
+				"Column %s of %s is using display width %d, but the default for %s%s is %d.\nInteger display widths do not control what range of values may be stored in a column. Typically they have no effect whatsoever. If in doubt, omit the width entirely, or use the default of %s(%d)%s.",
+				col.Name, table.ObjectKey(), col.Type.Size,
+				col.Type.Base, suffix, defaultWidth,
+				col.Type.Base, defaultWidth, suffix,
 			)
 			results = append(results, Note{
 				LineOffset: FindColumnLineOffset(col, createStatement),

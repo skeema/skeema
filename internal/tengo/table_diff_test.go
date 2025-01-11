@@ -168,8 +168,8 @@ func TestSchemaDiffAlterTable(t *testing.T) {
 	s1 := aSchema("s1", &t1)
 	s2 := aSchema("s2", &t2)
 	t2.Columns = append(t2.Columns, &Column{
-		Name:     "something",
-		TypeInDB: "smallint(5) unsigned",
+		Name: "something",
+		Type: ParseColumnType("smallint(5) unsigned"),
 	})
 	t2.CreateStatement = t2.GeneratedCreateStatement(FlavorUnknown)
 	alter, clause := getAlter(&s1, &s2)
@@ -465,8 +465,8 @@ func TestTableDiffUnsupportedAlter(t *testing.T) {
 
 	// Test error-handling for when a diff is both unsupported AND unsafe
 	t2.Columns = append(t2.Columns, &Column{
-		Name:     "foo_id",
-		TypeInDB: "bigint(20) unsigned",
+		Name: "foo_id",
+		Type: ParseColumnType("bigint(20) unsigned"),
 	})
 	t2.CreateStatement = t2.GeneratedCreateStatement(FlavorUnknown)
 	td = NewAlterTable(&t2, &t1)
@@ -570,13 +570,13 @@ func TestAlterTableStatementAllowUnsafeMods(t *testing.T) {
 
 	// Changing col type to increase its size is safe
 	t2 = aTable(1)
-	t2.Columns[0].TypeInDB = "int unsigned"
+	t2.Columns[0].Type = ParseColumnType("int unsigned")
 	t2.CreateStatement = t2.GeneratedCreateStatement(FlavorUnknown)
 	assertSafe(&s1, &s2)
 
 	// Changing col type to change to signed is unsafe
 	t2 = aTable(1)
-	t2.Columns[0].TypeInDB = "smallint(5)"
+	t2.Columns[0].Type = ParseColumnType("smallint(5)")
 	t2.CreateStatement = t2.GeneratedCreateStatement(FlavorUnknown)
 	assertUnsafe(&s1, &s2)
 }
@@ -585,8 +585,8 @@ func TestAlterTableStatementOnlineMods(t *testing.T) {
 	from := anotherTable()
 	to := anotherTable()
 	col := &Column{
-		Name:     "something",
-		TypeInDB: "smallint(5) unsigned",
+		Name: "something",
+		Type: ParseColumnType("smallint(5) unsigned"),
 	}
 	to.Columns = append(to.Columns, col)
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
@@ -653,7 +653,7 @@ func TestAlterTableStatementVirtualColValidation(t *testing.T) {
 	// no effect
 	col := &Column{
 		Name:           "full_name",
-		TypeInDB:       "varchar(100)",
+		Type:           ParseColumnType("varchar(100)"),
 		Nullable:       true,
 		CharSet:        "utf8",
 		Collation:      "utf8_general_ci",
@@ -675,7 +675,7 @@ func TestAlterTableStatementVirtualColValidation(t *testing.T) {
 	colCopy := *col
 	from.Columns = append(from.Columns, &colCopy)
 	from.CreateStatement = from.GeneratedCreateStatement(FlavorUnknown)
-	to.Columns[4].TypeInDB = "varchar(20)"
+	to.Columns[4].Type = ParseColumnType("varchar(20)")
 	assertWithValidation(false)
 }
 
@@ -683,8 +683,8 @@ func TestModifyColumnUnsafe(t *testing.T) {
 	assertUnsafeWithMods := func(type1, type2 string, mods StatementModifiers, expected bool) {
 		t.Helper()
 		mc := ModifyColumn{
-			OldColumn: &Column{TypeInDB: type1},
-			NewColumn: &Column{TypeInDB: type2},
+			OldColumn: &Column{Type: ParseColumnType(type1)},
+			NewColumn: &Column{Type: ParseColumnType(type2)},
 		}
 		if actual, _ := mc.Unsafe(mods); actual != expected {
 			t.Errorf("For %s -> %s, expected unsafe=%t, instead found unsafe=%t", type1, type2, expected, actual)
@@ -701,6 +701,8 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		{"int(11)", "bigint(20) unsigned"},
 		{"enum('a','b','c')", "enum('a','aa','b','c'"},
 		{"set('abc','def','ghi')", "set('abc','def')"},
+		{"enum('a','b','c')", "set('a','b','c')"},
+		{"set('a','b','c')", "enum('a','b','c')"},
 		{"decimal(10,5)", "decimal(10,4)"},
 		{"decimal(10,5)", "decimal(9,5)"},
 		{"decimal(10,5)", "decimal(9,6)"},
@@ -804,8 +806,8 @@ func TestModifyColumnUnsafe(t *testing.T) {
 	// changing collation within same character set is safe (as long as col isn't
 	// in a unique index or PK)
 	mc := ModifyColumn{
-		OldColumn: &Column{TypeInDB: "varchar(30)", CharSet: "latin1"},
-		NewColumn: &Column{TypeInDB: "varchar(30)", CharSet: "utf8mb4"},
+		OldColumn: &Column{Type: ParseColumnType("varchar(30)"), CharSet: "latin1"},
+		NewColumn: &Column{Type: ParseColumnType("varchar(30)"), CharSet: "utf8mb4"},
 	}
 	if unsafe, _ := mc.Unsafe(StatementModifiers{}); !unsafe {
 		t.Error("For changing character set, expected unsafe=true, instead found unsafe=false")
@@ -819,8 +821,8 @@ func TestModifyColumnUnsafe(t *testing.T) {
 	// Special case: confirm changing the type of a column is safe for virtual
 	// generated columns but not stored generated columns
 	mc = ModifyColumn{
-		OldColumn: &Column{TypeInDB: "bigint(20)", GenerationExpr: "id * 2", Virtual: true},
-		NewColumn: &Column{TypeInDB: "int(11)", GenerationExpr: "id * 2", Virtual: true},
+		OldColumn: &Column{Type: ParseColumnType("bigint(20)"), GenerationExpr: "id * 2", Virtual: true},
+		NewColumn: &Column{Type: ParseColumnType("int(11)"), GenerationExpr: "id * 2", Virtual: true},
 	}
 	if unsafe, _ := mc.Unsafe(StatementModifiers{}); unsafe {
 		t.Error("Expected virtual column modification to be safe, but Unsafe() returned true")
@@ -831,16 +833,17 @@ func TestModifyColumnUnsafe(t *testing.T) {
 	}
 
 	// Special case: confirm changing SRID, or adding/removing SRID, is unsafe
+	colType := ParseColumnType("geometry")
 	mc = ModifyColumn{
-		OldColumn: &Column{TypeInDB: "geometry", SpatialReferenceID: 0, HasSpatialReference: false},
-		NewColumn: &Column{TypeInDB: "geometry", SpatialReferenceID: 0, HasSpatialReference: true},
+		OldColumn: &Column{Type: colType, SpatialReferenceID: 0, HasSpatialReference: false},
+		NewColumn: &Column{Type: colType, SpatialReferenceID: 0, HasSpatialReference: true},
 	}
 	if unsafe, _ := mc.Unsafe(StatementModifiers{}); !unsafe {
 		t.Error("Expected addition of SRID to be unsafe even for SRID 0, but Unsafe() returned false")
 	}
 	mc = ModifyColumn{
-		OldColumn: &Column{TypeInDB: "geometry", SpatialReferenceID: 0, HasSpatialReference: true},
-		NewColumn: &Column{TypeInDB: "geometry", SpatialReferenceID: 4326, HasSpatialReference: true},
+		OldColumn: &Column{Type: colType, SpatialReferenceID: 0, HasSpatialReference: true},
+		NewColumn: &Column{Type: colType, SpatialReferenceID: 4326, HasSpatialReference: true},
 	}
 	if unsafe, _ := mc.Unsafe(StatementModifiers{}); !unsafe {
 		t.Error("Expected change of SRID to be unsafe, but Unsafe() returned false")

@@ -395,8 +395,8 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 	}
 	tableFromUnit.Columns = append(tableFromUnit.Columns,
 		&Column{
-			Name:     "foo1",
-			TypeInDB: fooType,
+			Name: "foo1",
+			Type: ParseColumnType(fooType),
 		},
 	)
 	tableFromUnit.CreateStatement = tableFromUnit.GeneratedCreateStatement(flavor)
@@ -419,8 +419,8 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 	// Ditto but this time we're changing the partitioning expression
 	tableFromUnitP.Columns = append(tableFromUnitP.Columns,
 		&Column{
-			Name:     "foo2",
-			TypeInDB: fooType,
+			Name: "foo2",
+			Type: ParseColumnType(fooType),
 		},
 	)
 	tableFromUnitP.Partitioning.Expression = strings.Replace(tableFromUnitP.Partitioning.Expression, "customer_", "", 1)
@@ -457,16 +457,16 @@ func unpartitionedTable(flavor Flavor) Table {
 	columns := []*Column{
 		{
 			Name:          "id",
-			TypeInDB:      "int(10) unsigned",
+			Type:          ParseColumnType("int(10) unsigned"),
 			AutoIncrement: true,
 		},
 		{
-			Name:     "customer_id",
-			TypeInDB: "int(10) unsigned",
+			Name: "customer_id",
+			Type: ParseColumnType("int(10) unsigned"),
 		},
 		{
 			Name:      "info",
-			TypeInDB:  "text",
+			Type:      ParseColumnType("text"),
 			Nullable:  true,
 			CharSet:   "latin1",
 			Collation: "latin1_swedish_ci",
@@ -490,7 +490,7 @@ func unpartitionedTable(flavor Flavor) Table {
 	}
 	t.CreateStatement = t.GeneratedCreateStatement(flavor)
 	if flavor.OmitIntDisplayWidth() {
-		stripIntDisplayWidths(&t)
+		stripIntDisplayWidths(&t, flavor)
 	}
 	return t
 }

@@ -106,29 +106,6 @@ func TestNormalizeCreateOptions(t *testing.T) {
 	}
 }
 
-func TestStripDisplayWidth(t *testing.T) {
-	cases := map[string]string{
-		"tinyint(1)":          "tinyint(1)",
-		"tinyint(2)":          "tinyint",
-		"tinyint(1) unsigned": "tinyint unsigned",
-		"YEAR(4)":             "YEAR",
-		"YEAR":                "YEAR",
-		"int(11)":             "int",
-		"int(11) zerofill":    "int(11) zerofill",
-		"int(10) unsigned":    "int unsigned",
-		"bigint(20)":          "bigint",
-		"varchar(30)":         "varchar(30)",
-		"CHAR(99)":            "CHAR(99)",
-		"mediumtext":          "mediumtext",
-	}
-	for input, expected := range cases {
-		expectStripped := (input != expected)
-		if actual, actualStripped := StripDisplayWidth(input); actual != expected || actualStripped != expectStripped {
-			t.Errorf("Expected StripDisplayWidth(%q) to return %q,%t; instead found %q,%t", input, expected, expectStripped, actual, actualStripped)
-		}
-	}
-}
-
 func TestMergeParamStrings(t *testing.T) {
 	assertParamString := func(expected string, input ...string) {
 		t.Helper()

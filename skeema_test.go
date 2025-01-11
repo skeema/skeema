@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -330,7 +329,6 @@ func (s *SkeemaIntegrationSuite) compareDirSQLFiles(t *testing.T, a, b *fs.Dir) 
 	}
 }
 
-var reDisplayWidth = regexp.MustCompile(`(tinyint|smallint|mediumint|int|bigint)\((\d+)\)( unsigned)?( zerofill)?`)
 var repAlwaysCollation = strings.NewReplacer("DEFAULT CHARSET=latin1;", "DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;",
 	"DEFAULT CHARSET=latin1\n", "DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci\n",
 	"DEFAULT CHARSET=utf8mb4;", "DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;")
@@ -354,7 +352,7 @@ func (s *SkeemaIntegrationSuite) compareDirLogicalSchemas(t *testing.T, a, b *fs
 				aText := strings.ReplaceAll(aStmt.Text, "\r\n", "\n")
 				bText := strings.ReplaceAll(bStmt.Text, "\r\n", "\n")
 				if flavor.OmitIntDisplayWidth() {
-					aText = reDisplayWidth.ReplaceAllString(aText, "$1$3$4")
+					aText = tengo.StripDisplayWidthsFromCreate(aText)
 				}
 				if flavor.AlwaysShowCollate() {
 					aText = repAlwaysCollation.Replace(aText)

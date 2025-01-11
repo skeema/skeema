@@ -170,26 +170,6 @@ func NormalizeCreateOptions(createStmt string) string {
 	return createStmt
 }
 
-// StripDisplayWidth examines the supplied column type, and removes its integer
-// display width if it is either an int family type, or a YEAR(4) type. No
-// change is made if the column type isn't one that has a notion of integer
-// display width. Additionally, no change is made to tinyint(1) types, nor
-// types with a zerofill modifier, as per handling in MySQL 8.0.19.
-func StripDisplayWidth(colType string) (strippedType string, didStrip bool) {
-	input := strings.ToLower(colType)
-	if !strings.Contains(input, "int(") && input != "year(4)" {
-		return colType, false
-	} else if input == "tinyint(1)" || strings.HasSuffix(input, "zerofill") {
-		return colType, false
-	}
-	openParen := strings.IndexRune(colType, '(')
-	var modifier string
-	if strings.HasSuffix(input, " unsigned") {
-		modifier = " unsigned"
-	}
-	return colType[0:openParen] + modifier, true
-}
-
 // baseDSN returns a DSN with the database (schema) name and params stripped.
 // Currently only supports MySQL, via go-sql-driver/mysql's DSN format.
 func baseDSN(dsn string) string {

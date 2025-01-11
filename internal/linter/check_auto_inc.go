@@ -53,10 +53,9 @@ func autoIncChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 		return nil
 	}
 
-	colType := col.TypeInDB
-	matches := reDisplayWidth.FindStringSubmatch(col.TypeInDB) // uses regexp from check_display_width.go
-	if matches != nil {                                        // to remove the display width from the type
-		colType = fmt.Sprintf("%s%s", matches[1], matches[3])
+	colType := col.Type.Base
+	if col.Type.Unsigned {
+		colType += " unsigned"
 	}
 
 	// Return a Note if the auto-inc col's type not found in --allow-auto-inc
@@ -70,9 +69,9 @@ func autoIncChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 			"Column %s of %s is an auto_increment column using data type %s, which is not configured to be permitted. The following data types are listed in option allow-auto-inc: %s.",
 			col.Name, table.ObjectKey(), colType, allowedStr,
 		)
-		if !strings.Contains(colType, "unsigned") && strings.Contains(allowedStr, "unsigned") {
+		if !col.Type.Unsigned && strings.Contains(allowedStr, "unsigned") {
 			message += "\nIn general, auto_increment columns should be unsigned, since behavior of auto_increment is undefined with negative numbers."
-		} else if !strings.Contains(colType, "bigint") && strings.Contains(allowedStr, "bigint") {
+		} else if col.Type.Base != "bigint" && strings.Contains(allowedStr, "bigint") {
 			message += "\nIn general, auto_increment columns should use larger int types to avoid risk of integer overflow / exhausting the ID space."
 		}
 		return &Note{

@@ -7,24 +7,24 @@ import (
 
 // Column represents a single column of a table.
 type Column struct {
-	Name                string `json:"name"`
-	TypeInDB            string `json:"type"`
-	Nullable            bool   `json:"nullable,omitempty"`
-	AutoIncrement       bool   `json:"autoIncrement,omitempty"`
-	Default             string `json:"default,omitempty"` // Stored as an expression, i.e. quote-wrapped if string
-	OnUpdate            string `json:"onUpdate,omitempty"`
-	GenerationExpr      string `json:"generationExpression,omitempty"` // Only populated if generated column
-	Virtual             bool   `json:"virtual,omitempty"`
-	CharSet             string `json:"charSet,omitempty"`       // Only populated if textual type
-	Collation           string `json:"collation,omitempty"`     // Only populated if textual type
-	ShowCharSet         bool   `json:"showCharSet,omitempty"`   // Include CHARACTER SET in SHOW CREATE TABLE: always true if different than table default, sometimes true in other cases
-	ShowCollation       bool   `json:"showCollation,omitempty"` // Include COLLATE in SHOW CREATE TABLE: logic differs by flavor
-	Compression         string `json:"compression,omitempty"`   // Only non-empty if using column compression in Percona Server or MariaDB
-	Comment             string `json:"comment,omitempty"`
-	Invisible           bool   `json:"invisible,omitempty"` // True if an invisible column (MariaDB 10.3+, MySQL 8.0.23+)
-	CheckClause         string `json:"check,omitempty"`     // Only non-empty for MariaDB inline check constraint clause
-	SpatialReferenceID  uint32 `json:"srid,omitempty"`      // Can be non-zero only for spatial types in MySQL 8+
-	HasSpatialReference bool   `json:"has_srid,omitempty"`  // True if SRID attribute present; disambiguates SRID 0 vs no SRID
+	Name                string     `json:"name"`
+	Type                ColumnType `json:"type"`
+	Nullable            bool       `json:"nullable,omitempty"`
+	AutoIncrement       bool       `json:"autoIncrement,omitempty"`
+	Default             string     `json:"default,omitempty"` // Stored as an expression, i.e. quote-wrapped if string
+	OnUpdate            string     `json:"onUpdate,omitempty"`
+	GenerationExpr      string     `json:"generationExpression,omitempty"` // Only populated if generated column
+	Virtual             bool       `json:"virtual,omitempty"`
+	CharSet             string     `json:"charSet,omitempty"`       // Only populated if textual type
+	Collation           string     `json:"collation,omitempty"`     // Only populated if textual type
+	ShowCharSet         bool       `json:"showCharSet,omitempty"`   // Include CHARACTER SET in SHOW CREATE TABLE: always true if different than table default, sometimes true in other cases
+	ShowCollation       bool       `json:"showCollation,omitempty"` // Include COLLATE in SHOW CREATE TABLE: logic differs by flavor
+	Compression         string     `json:"compression,omitempty"`   // Only non-empty if using column compression in Percona Server or MariaDB
+	Comment             string     `json:"comment,omitempty"`
+	Invisible           bool       `json:"invisible,omitempty"` // True if an invisible column (MariaDB 10.3+, MySQL 8.0.23+)
+	CheckClause         string     `json:"check,omitempty"`     // Only non-empty for MariaDB inline check constraint clause
+	SpatialReferenceID  uint32     `json:"srid,omitempty"`      // Can be non-zero only for spatial types in MySQL 8+
+	HasSpatialReference bool       `json:"has_srid,omitempty"`  // True if SRID attribute present; disambiguates SRID 0 vs no SRID
 }
 
 // Definition returns this column's definition clause, for use as part of a DDL
@@ -42,9 +42,9 @@ func (c *Column) Definition(flavor Flavor) string {
 	// Column data type
 	if c.Compression != "" && flavor.IsMariaDB() {
 		// MariaDB puts column compression modifier after column type
-		clauses[1] = c.TypeInDB + " " + flavor.compressedColumnOpenComment() + c.Compression + "*/"
+		clauses[1] = c.Type.String() + " " + flavor.compressedColumnOpenComment() + c.Compression + "*/"
 	} else {
-		clauses[1] = c.TypeInDB
+		clauses[1] = c.Type.String()
 	}
 
 	// Character set and collation
@@ -69,7 +69,7 @@ func (c *Column) Definition(flavor Flavor) string {
 	// Nullability
 	if !c.Nullable {
 		clauses = append(clauses, "NOT NULL")
-	} else if strings.HasPrefix(c.TypeInDB, "timestamp") {
+	} else if c.Type.Base == "timestamp" {
 		// Oddly the timestamp type always displays nullability, other types never do
 		clauses = append(clauses, "NULL")
 	}
@@ -160,21 +160,20 @@ func (c *Column) Equivalent(other *Column) bool {
 		return false
 	}
 
-	// Examine column types with and without integer display widths. If they
-	// differ only in *presence/lack* of int display width, this is cosmetic; any
-	// other difference (including *changing* an int display width) is functional.
-	selfStrippedType, selfHadDisplayWidth := StripDisplayWidth(c.TypeInDB)
-	otherStrippedType, otherHadDisplayWidth := StripDisplayWidth(other.TypeInDB)
-	if selfStrippedType != otherStrippedType || (c.TypeInDB != other.TypeInDB && selfHadDisplayWidth && otherHadDisplayWidth) {
+	// Compare column types. This ignores differences in only the *presence/lack*
+	// of int display widths, which is a cosmetic difference that can come up
+	// across flavors. Any other difference (including *changing* an int display
+	// width) is functional.
+	if !c.Type.Equivalent(other.Type) {
 		return false
 	}
-	// If we didn't return early, we know either TypeInDB didn't change at all, or
+	// If we didn't return early, we know either Type didn't change at all, or
 	// it only differs in a cosmetic manner.
 
 	// Make a copy of c, and make all cosmetic-related fields equal to other's, and
 	// then check equality again to determine equivalence.
 	selfCopy := *c
-	selfCopy.TypeInDB = other.TypeInDB
+	selfCopy.Type = other.Type
 	selfCopy.ShowCharSet = other.ShowCharSet
 	selfCopy.ShowCollation = other.ShowCollation
 	if (other.CharSet == "utf8mb3" && c.CharSet == "utf8") || (other.CharSet == "utf8" && c.CharSet == "utf8mb3") {

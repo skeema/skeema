@@ -2,7 +2,6 @@ package tengo
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 )
 
@@ -416,48 +415,6 @@ func (mc ModifyColumn) Clause(mods StatementModifiers) string {
 	return "MODIFY COLUMN " + mc.NewColumn.Definition(mods.Flavor) + positionClause
 }
 
-// splitTypeSize is a helper function used by ModifyColumn.Unsafe(). It
-// separates the column type from its size modifier.
-func splitTypeSize(input string) (typ string, size uint64, ok bool) {
-	before, after, ok := strings.Cut(input, "(")
-	if !ok {
-		return "", 0, false
-	}
-	after, _, ok = strings.Cut(after, ")") // strip modifiers e.g. " unsigned"
-	if !ok {
-		return "", 0, false
-	}
-	size, err := strconv.ParseUint(after, 10, 64)
-	if err != nil {
-		return "", 0, false
-	}
-	return before, size, true
-}
-
-// splitType2Sizes is a helper function used by ModifyColumn.Unsafe(). It
-// separates the column type from its comma-separated size modifiers, for use
-// with types that have 2 such values (e.g. decimal).
-func splitType2Sizes(input string) (typ string, size1, size2 uint64, ok bool) {
-	before, after, ok := strings.Cut(input, "(")
-	if !ok {
-		return "", 0, 0, false
-	}
-	after, _, ok = strings.Cut(after, ")") // strip modifiers e.g. " unsigned"
-	if !ok {
-		return "", 0, 0, false
-	}
-	str1, str2, ok := strings.Cut(after, ",")
-	if !ok {
-		return "", 0, 0, false
-	}
-	size1, err1 := strconv.ParseUint(str1, 10, 64)
-	size2, err2 := strconv.ParseUint(str2, 10, 64)
-	if err1 != nil || err2 != nil {
-		return "", 0, 0, false
-	}
-	return before, size1, size2, true
-}
-
 // Unsafe returns true if this clause is potentially destroys/corrupts existing
 // data, or restricts the range of data that may be stored. (Although the server
 // can also catch the latter case and prevent the ALTER, this only happens if
@@ -494,115 +451,69 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 	if mc.OldColumn.SpatialReferenceID != mc.NewColumn.SpatialReferenceID || mc.OldColumn.HasSpatialReference != mc.NewColumn.HasSpatialReference {
 		return true, genericReason
 	}
-	if strings.EqualFold(mc.OldColumn.TypeInDB, mc.NewColumn.TypeInDB) {
+	oldType := mc.OldColumn.Type
+	newType := mc.NewColumn.Type
+	if oldType.Equivalent(newType) {
 		return false, ""
 	}
-
-	oldType := strings.ToLower(mc.OldColumn.TypeInDB)
-	newType := strings.ToLower(mc.NewColumn.TypeInDB)
 
 	// signed -> unsigned is always unsafe: this means any existing negative values
 	// can no longer be stored
-	// (The opposite is checked later specifically for the integer types)
-	if !strings.Contains(oldType, "unsigned") && strings.Contains(newType, "unsigned") {
+	// (The opposite is checked later specifically for relevant types)
+	if !oldType.Unsigned && newType.Unsigned {
 		return true, genericReason
 	}
 
-	bothSamePrefix := func(prefix ...string) bool {
-		for _, candidate := range prefix {
-			if strings.HasPrefix(oldType, candidate) && strings.HasPrefix(newType, candidate) {
-				return true
+	// Size/attribute changes within the same base type, or special case of
+	// converting float to double:
+	if oldType.Base == newType.Base || (oldType.Base == "float" && newType.Base == "double") {
+		switch oldType.Base {
+		case "decimal":
+			// Unsafe if decreasing the precision or scale. (both are always present
+			// in information_schema for decimal type, unlike float/double.)
+			if newType.Size < oldType.Size || newType.Scale < oldType.Scale {
+				return true, genericReason
 			}
-		}
-		return false
-	}
+			return false, ""
 
-	// For enum and set, adding to end of value list is safe. Any other change is
-	// unsafe: re-numbering an enum or set can affect any queries using numeric
-	// values, and can affect applications that need to maintain matching enum
-	// value lists
-	if bothSamePrefix("enum", "set") {
-		// Ignore the closing paren on oldType when checking prefix
-		if !strings.HasPrefix(newType, oldType[0:len(oldType)-1]) {
-			return true, genericReason
-		}
-		return false, ""
-	}
+		case "bit", "time", "timestamp", "datetime":
+			// For bit, unsafe if decreasing the length. For temporal types, unsafe if
+			// reducing/removing fractional second precision.
+			if newType.Size < oldType.Size {
+				return true, genericReason
+			}
+			return false, ""
 
-	// decimal(a,b) -> decimal(x,y) unsafe if x < a or y < b: reduces range of
-	// values that may be stored in the column
-	if bothSamePrefix("decimal") {
-		_, oldPrecision, oldScale, oldOK := splitType2Sizes(oldType)
-		_, newPrecision, newScale, newOK := splitType2Sizes(newType)
-		if !oldOK || !newOK || newPrecision < oldPrecision || newScale < oldScale {
-			return true, genericReason
-		}
-		return false, ""
-	}
-
-	// bit(x) -> bit(y) unsafe if y < x
-	if bothSamePrefix("bit") {
-		_, oldSize, oldOK := splitTypeSize(oldType)
-		_, newSize, newOK := splitTypeSize(newType)
-		if !oldOK || !newOK || newSize < oldSize {
-			return true, genericReason
-		}
-		return false, ""
-	}
-
-	// time, timestamp, datetime: unsafe if decreasing or removing fractional
-	// second precision (which reduces range of allowed values), but always safe
-	// if adding FSP when none was there before.
-	if bothSamePrefix("time", "timestamp", "datetime") {
-		// Since "time" and "timestamp" both begin with prefix "time", bothSamePrefix
-		// will be tricked and we need to handle that mismatch explicitly
-		if strings.HasPrefix(oldType, "timestamp") != strings.HasPrefix(newType, "timestamp") {
-			return true, genericReason
-		}
-		_, oldFSP, oldHasFSP := splitTypeSize(oldType)
-		if !oldHasFSP {
+		case "float", "double":
+			// Unsafe if decreasing precision or scale. (these may both be omitted in
+			// information_schema, which means hardware maximum is used; so going TO
+			// zero is always safe, and going FROM zero to non-zero is unsafe.)
+			// No extra check for unsigned->signed needed; they don't affect max values.
+			if newType.Size == 0 {
+				return false, ""
+			} else if oldType.Size == 0 || newType.Size < oldType.Size || newType.Scale < oldType.Scale {
+				return true, genericReason
+			}
 			return false, ""
 		}
-		_, newFSP, newHasFSP := splitTypeSize(newType)
-		if !newHasFSP || newFSP < oldFSP {
-			return true, genericReason
-		}
-		return false, ""
-	}
-
-	// float or double:
-	// double -> double(x,y); or float -> float(x,y) always unsafe
-	// double(x,y) -> double; or float(x,y) -> float IS safe (no parens = hardware max used)
-	// double(a,b) -> double(x,y); or float(a,b) -> float(x,y) unsafe if x < a or y < b
-	// Converting from float to double may be safe (same rules as above), but double to float always unsafe
-	// No extra check for unsigned->signed needed; although float/double support these, they don't affect max values
-	if bothSamePrefix("float", "double") || (strings.HasPrefix(oldType, "float") && strings.HasPrefix(newType, "double")) {
-		_, oldPrecision, oldScale, oldParens := splitType2Sizes(oldType)
-		_, newPrecision, newScale, newParens := splitType2Sizes(newType)
-		if !newParens { // no parens = max allowed for type
-			return false, ""
-		} else if !oldParens || newPrecision < oldPrecision || newScale < oldScale {
-			return true, genericReason
-		}
-		return false, ""
 	}
 
 	// ints: unsafe if reducing to a smaller-storage type. Also unsafe if switching
-	// from unsigned to signed and not increasing to a larger storage type.
+	// from unsigned to signed when not also increasing to a larger storage type.
 	intRank := []string{"NOT AN INT", "tinyint", "smallint", "mediumint", "int", "bigint"}
 	var oldRank, newRank int
 	for n := 1; n < len(intRank); n++ {
-		if strings.HasPrefix(oldType, intRank[n]) {
+		if oldType.Base == intRank[n] {
 			oldRank = n
 		}
-		if strings.HasPrefix(newType, intRank[n]) {
+		if newType.Base == intRank[n] {
 			newRank = n
 		}
 	}
 	if oldRank > 0 && newRank > 0 {
 		if oldRank > newRank {
 			return true, genericReason
-		} else if oldRank == newRank && strings.Contains(oldType, "unsigned") && !strings.Contains(newType, "unsigned") {
+		} else if oldRank == newRank && oldType.Unsigned && !newType.Unsigned {
 			return true, genericReason
 		}
 		return false, ""
@@ -610,21 +521,17 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 
 	// Conversions between string types (char, varchar, *text): unsafe if
 	// new size < old size
-	stringTypeSize := func(typ string) (uint64, bool) {
+	stringTypeSize := func(typ ColumnType) (uint64, bool) {
 		textMap := map[string]uint64{
 			"tinytext":   255,
 			"text":       65535,
 			"mediumtext": 16777215,
 			"longtext":   4294967295,
+			"varchar":    uint64(typ.Size),
+			"char":       uint64(typ.Size),
 		}
-		if textLen, ok := textMap[typ]; ok {
-			return textLen, true
-		}
-		base, size, ok := splitTypeSize(typ)
-		if ok && (base == "varchar" || base == "char") {
-			return size, true
-		}
-		return 0, false
+		textLen, ok := textMap[typ.Base]
+		return textLen, ok
 	}
 	oldSize, oldIsString := stringTypeSize(oldType)
 	newSize, newIsString := stringTypeSize(newType)
@@ -635,14 +542,33 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 		return false, ""
 	}
 
+	// For enum and set, adding to end of value list is safe. Any other change is
+	// unsafe: re-numbering an enum or set can affect any queries using numeric
+	// values, and can affect applications that need to maintain matching enum
+	// value lists
+	if strings.HasPrefix(newType.Base, "enum") || strings.HasPrefix(newType.Base, "set") {
+		// Ignore the closing paren on oldType when checking prefix. This comparison
+		// also inherently confirms both types are set or both are enum.
+		if !strings.HasPrefix(newType.Base, strings.TrimSuffix(oldType.Base, ")")) {
+			return true, genericReason
+		}
+		return false, ""
+	}
+
 	// MariaDB introduces some new convenience types, which have safe conversions
 	// between specific binary and textual types. This func returns true if one
 	// side of the conversion has coltype typ and the other side has one of the
 	// coltypes listed in other.
-	isConversionBetween := func(typ string, others ...string) bool {
-		if oldType == typ || newType == typ {
+	isConversionBetween := func(base string, others ...string) bool {
+		var comp string
+		if oldType.Base == base {
+			comp = newType.String()
+		} else if newType.Base == base {
+			comp = oldType.String()
+		}
+		if comp != "" {
 			for _, other := range others {
-				if oldType == other || newType == other {
+				if comp == other {
 					return true
 				}
 			}
@@ -660,7 +586,7 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 	}
 	// Special case: inet4 to inet6 (and not vice versa) is safe in MariaDB 11.3+
 	// but not earlier versions
-	if oldType == "inet4" && newType == "inet6" && mods.Flavor.MinMariaDB(11, 3) {
+	if oldType.Base == "inet4" && newType.Base == "inet6" && mods.Flavor.MinMariaDB(11, 3) {
 		return false, ""
 	}
 
@@ -672,33 +598,26 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 	//   is unsafe because the zero-padding potentially impacts any trailing big-
 	//   endian value. But we permit this for vectors since they have a well-
 	//   defined encoding.
-	binaryTypeSize := func(typ string) (base string, size uint64, isBinary bool) {
-		blobMap := map[string]uint64{
+	binaryTypeSize := func(typ ColumnType) (uint64, bool) {
+		binMap := map[string]uint64{
 			"tinyblob":   255,
 			"blob":       65535,
 			"mediumblob": 16777215,
 			"longblob":   4294967295,
+			"binary":     uint64(typ.Size),
+			"varbinary":  uint64(typ.Size),
+			"vector":     uint64(typ.Size) * 4, // each vector dimension is a 4-byte float
 		}
-		if blobLen, ok := blobMap[typ]; ok {
-			return typ, blobLen, true
-		}
-		base, size, ok := splitTypeSize(typ)
-		if ok {
-			if base == "binary" || base == "varbinary" {
-				return base, size, true
-			} else if base == "vector" {
-				return base, size * 4, true // each vector dimension is a 4-byte float
-			}
-		}
-		return "", 0, false
+		binLen, ok := binMap[typ.Base]
+		return binLen, ok
 	}
-	oldBase, oldSize, oldIsBinary := binaryTypeSize(oldType)
-	newBase, newSize, newIsBinary := binaryTypeSize(newType)
+	oldSize, oldIsBinary := binaryTypeSize(oldType)
+	newSize, newIsBinary := binaryTypeSize(newType)
 	if oldIsBinary && newIsBinary {
 		if newSize < oldSize {
 			return true, genericReason
 		}
-		if (oldBase == "binary" && newBase != "vector") || (newBase == "binary" && oldBase != "vector") {
+		if (oldType.Base == "binary" && newType.Base != "vector") || (newType.Base == "binary" && oldType.Base != "vector") {
 			return true, "modification to column " + mc.OldColumn.Name + " may have unintended effects due to zero-padding behavior of binary type"
 		}
 		return false, ""

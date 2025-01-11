@@ -335,6 +335,7 @@ func TestFixShowCharSets(t *testing.T) {
   ~f~ char(10) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL,
   ~g~ char(10) CHARACTER SET utf8 COLLATE utf8_unicode_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8_unicode_ci`, "~", "`")
+	char10 := ParseColumnType("char(10)")
 	table := &Table{
 		Name:          "many_permutations",
 		Engine:        "InnoDB",
@@ -342,13 +343,13 @@ func TestFixShowCharSets(t *testing.T) {
 		Collation:     "utf8_unicode_ci",
 		ShowCollation: true,
 		Columns: []*Column{
-			{Name: "a", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_unicode_ci", ShowCharSet: false, ShowCollation: true},
-			{Name: "b", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", ShowCharSet: true, ShowCollation: false},
-			{Name: "c", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", ShowCharSet: true, ShowCollation: false},
-			{Name: "d", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_bin", ShowCharSet: true, ShowCollation: true},
-			{Name: "e", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", ShowCharSet: true, ShowCollation: false},
-			{Name: "f", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", ShowCharSet: true, ShowCollation: false},
-			{Name: "g", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_unicode_ci", ShowCharSet: false, ShowCollation: true},
+			{Name: "a", Type: char10, Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_unicode_ci", ShowCharSet: false, ShowCollation: true},
+			{Name: "b", Type: char10, Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", ShowCharSet: true, ShowCollation: false},
+			{Name: "c", Type: char10, Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", ShowCharSet: true, ShowCollation: false},
+			{Name: "d", Type: char10, Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_bin", ShowCharSet: true, ShowCollation: true},
+			{Name: "e", Type: char10, Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", ShowCharSet: true, ShowCollation: false},
+			{Name: "f", Type: char10, Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", ShowCharSet: true, ShowCollation: false},
+			{Name: "g", Type: char10, Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_unicode_ci", ShowCharSet: false, ShowCollation: true},
 		},
 		CreateStatement: stmt,
 	}
@@ -375,13 +376,13 @@ func TestFixShowCharSets(t *testing.T) {
 	table.Collation = "latin1_swedish_ci"
 	table.ShowCollation = false
 	table.Columns = []*Column{
-		{Name: "a", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_bin", ShowCharSet: true, ShowCollation: true},
-		{Name: "b", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", ShowCharSet: false, ShowCollation: false},
-		{Name: "c", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", ShowCharSet: false, ShowCollation: false},
-		{Name: "d", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_bin", ShowCharSet: true, ShowCollation: true},
-		{Name: "e", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", ShowCharSet: true, ShowCollation: false},
-		{Name: "f", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", ShowCharSet: true, ShowCollation: false},
-		{Name: "g", TypeInDB: "char(10)", Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_unicode_ci", ShowCharSet: true, ShowCollation: true},
+		{Name: "a", Type: char10, Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_bin", ShowCharSet: true, ShowCollation: true},
+		{Name: "b", Type: char10, Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", ShowCharSet: false, ShowCollation: false},
+		{Name: "c", Type: char10, Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_swedish_ci", ShowCharSet: false, ShowCollation: false},
+		{Name: "d", Type: char10, Nullable: true, Default: "NULL", CharSet: "latin1", Collation: "latin1_bin", ShowCharSet: true, ShowCollation: true},
+		{Name: "e", Type: char10, Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", ShowCharSet: true, ShowCollation: false},
+		{Name: "f", Type: char10, Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_general_ci", ShowCharSet: true, ShowCollation: false},
+		{Name: "g", Type: char10, Nullable: true, Default: "NULL", CharSet: "utf8", Collation: "utf8_unicode_ci", ShowCharSet: true, ShowCollation: true},
 	}
 
 	// Verify initial setup: generated create should differ from CreateStatement

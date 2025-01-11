@@ -2,7 +2,6 @@ package linter
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/skeema/skeema/internal/tengo"
 )
@@ -23,7 +22,7 @@ func hasTimeChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 	var alreadySeenTimestamp bool
 	for _, col := range table.Columns {
 		var message string
-		if strings.HasPrefix(col.TypeInDB, "timestamp") {
+		if col.Type.Base == "timestamp" {
 			prefix := fmt.Sprintf("Column %s of %s is using type timestamp. ", col.Name, table.ObjectKey())
 			suffix := "timestamps have automatic timezone conversion behavior, between the time_zone session variable and UTC."
 			if opts.flavor.IsMySQL() {
@@ -41,10 +40,10 @@ func hasTimeChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 				message += "\nFinally, the automatic DEFAULT / ON UPDATE timestamp behavior depends on the explicit_defaults_for_timestamp system variable, which will flip from default OFF to default ON if you upgrade to " + when + "."
 			}
 			alreadySeenTimestamp = true
-		} else if strings.Contains(col.TypeInDB, "time") {
+		} else if col.Type.Base == "datetime" || col.Type.Base == "time" {
 			message = fmt.Sprintf(
 				"Column %s of %s is using type %s. Please note this data type does not include timezone information, and does not perform automatic timezone conversions on storage or retrieval.",
-				col.Name, table.ObjectKey(), col.TypeInDB,
+				col.Name, table.ObjectKey(), col.Type.Base,
 			)
 			if onlyWarning {
 				message += " Consider strictly using UTC in all contexts to prevent issues with timezone conversions and daylight savings time transitions."

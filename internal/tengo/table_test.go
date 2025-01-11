@@ -116,7 +116,7 @@ func TestTableAlterAddOrDropColumn(t *testing.T) {
 	// Add a column to an arbitrary position
 	newCol := &Column{
 		Name:     "age",
-		TypeInDB: "int unsigned",
+		Type:     ParseColumnType("int unsigned"),
 		Nullable: true,
 		Default:  "NULL",
 	}
@@ -156,7 +156,7 @@ func TestTableAlterAddOrDropColumn(t *testing.T) {
 	hadColumns := to.Columns
 	anotherCol := &Column{
 		Name:     "net_worth",
-		TypeInDB: "decimal(9,2)",
+		Type:     ParseColumnType("decimal(9,2)"),
 		Nullable: true,
 		Default:  "NULL",
 	}
@@ -181,7 +181,7 @@ func TestTableAlterAddOrDropColumn(t *testing.T) {
 	// Add an additional column to the last position
 	anotherCol = &Column{
 		Name:     "awards_won",
-		TypeInDB: "int unsigned",
+		Type:     ParseColumnType("int unsigned"),
 		Nullable: false,
 		Default:  "'0'",
 	}
@@ -875,7 +875,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	to = aTable(1)
 	newCol := &Column{
 		Name:     "age",
-		TypeInDB: "int unsigned",
+		Type:     ParseColumnType("int unsigned"),
 		Nullable: true,
 		Default:  "NULL",
 	}
@@ -913,7 +913,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 
 	// Start over; just change a column definition without moving anything
 	to = aTable(1)
-	to.Columns[4].TypeInDB = "varchar(10)"
+	to.Columns[4].Type = ParseColumnType("varchar(10)")
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
 	tableAlters, supported = from.Diff(&to)
 	if len(tableAlters) != 1 || !supported {
@@ -932,7 +932,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 
 	// Start over; change one column and move another column
 	to = aTable(1)
-	to.Columns[4].TypeInDB = "char(12)"
+	to.Columns[4].Type = ParseColumnType("char(12)")
 	to.Columns = []*Column{to.Columns[0], to.Columns[6], to.Columns[1], to.Columns[2], to.Columns[3], to.Columns[4], to.Columns[5]}
 	to.CreateStatement = to.GeneratedCreateStatement(FlavorUnknown)
 	tableAlters, supported = from.Diff(&to)
@@ -952,7 +952,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 			if mc.OldColumn.Definition(FlavorUnknown) != mc.NewColumn.Definition(FlavorUnknown) {
 				t.Error("Expected re-ordered column definition to remain unchanged, but it was modified")
 			}
-		} else if mc.NewColumn.TypeInDB != "char(12)" || mc.PositionAfter != nil || mc.PositionFirst {
+		} else if mc.NewColumn.Type.Base != "char" || mc.NewColumn.Type.Size != 12 || mc.PositionAfter != nil || mc.PositionFirst {
 			t.Errorf("Unexpected alter: %s", mc.Clause(StatementModifiers{}))
 		}
 	}
@@ -1047,15 +1047,15 @@ func (s TengoIntegrationSuite) TestTableAlterModifyColumnRandomly(t *testing.T) 
 		for mod := 0; mod < mods; mod++ {
 			n := rand.Intn(len(to.Columns))
 			col := to.Columns[n]
-			switch col.TypeInDB {
+			switch col.Type.String() {
 			case "varchar(45)":
-				col.TypeInDB = "varchar(55)"
+				col.Type = ParseColumnType("varchar(55)")
 			case "char(10)":
-				col.TypeInDB = "char(12)"
+				col.Type = ParseColumnType("char(12)")
 			case "tinyint(1)", "bit(1)":
 				col.Nullable = true
 			case "smallint(5) unsigned":
-				col.TypeInDB = "int(10) unsigned"
+				col.Type = ParseColumnType("int(10) unsigned")
 			}
 		}
 		to.CreateStatement = to.GeneratedCreateStatement(s.d.Flavor())
@@ -1357,7 +1357,7 @@ func TestTableAlterChangeComment(t *testing.T) {
 	}
 	assertChangeCommentLax(&from, &to, false)
 	assertChangeCommentLax(&to, &from, false)
-	to.Columns[0].TypeInDB = "smallint(5)"
+	to.Columns[0].Type = ParseColumnType("smallint(5)")
 	assertChangeCommentLax(&from, &to, true)
 	assertChangeCommentLax(&to, &from, true)
 }
@@ -1403,7 +1403,7 @@ func TestTableAlterUnsupportedTable(t *testing.T) {
 	from, to := unsupportedTable(), unsupportedTable()
 	newCol := &Column{
 		Name:     "age",
-		TypeInDB: "int(10) unsigned",
+		Type:     ParseColumnType("int(10) unsigned"),
 		Nullable: true,
 		Default:  "NULL",
 	}
@@ -1433,10 +1433,11 @@ func BenchmarkColumnModifications(b *testing.B) {
 	// Create two tables: one with 199 cols, other with 200 cols, only differing by
 	// that last extra col
 	tbl1, tbl2 := &Table{Name: "one"}, &Table{Name: "two"}
+	colType := ParseColumnType("int")
 	for n := 1; n <= 200; n++ {
 		col1 := Column{
-			Name:     fmt.Sprintf("col_%d", n),
-			TypeInDB: "int",
+			Name: fmt.Sprintf("col_%d", n),
+			Type: colType,
 		}
 		col2 := col1
 		if n < 200 {

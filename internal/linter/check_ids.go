@@ -25,16 +25,12 @@ func idsChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ *
 		if lowerColName != "id" && !strings.HasSuffix(lowerColName, "_id") {
 			continue
 		}
-
-		// Check for bigint unsigned in a way that ignores display width, without
-		// needing a regex
-		if strings.HasPrefix(col.TypeInDB, "bigint") && strings.HasSuffix(col.TypeInDB, " unsigned") {
+		if col.Type.Base == "bigint" && col.Type.Unsigned {
 			continue
 		}
-
 		message := fmt.Sprintf(
 			"Column %s of %s is using data type %s. If this column is intended to store an integer ID, please use data type bigint unsigned instead.",
-			col.Name, table.ObjectKey(), col.TypeInDB,
+			col.Name, table.ObjectKey(), col.Type,
 		)
 		results = append(results, Note{
 			LineOffset: FindColumnLineOffset(col, createStatement),

@@ -19,7 +19,7 @@ func init() {
 func zeroDateChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, _ *Options) []Note {
 	results := make([]Note, 0)
 	for _, col := range table.Columns {
-		if strings.HasPrefix(col.TypeInDB, "timestamp") || strings.HasPrefix(col.TypeInDB, "date") {
+		if col.Type.Base == "timestamp" || strings.HasPrefix(col.Type.Base, "date") {
 			var summary, subject string
 			if strings.HasPrefix(col.Default, "'0000-00-00") {
 				summary = "Default value is zero date"
@@ -32,7 +32,7 @@ func zeroDateChecker(table *tengo.Table, createStatement string, _ *tengo.Schema
 				// Depending on the flavor and/or use of explicit_defaults_for_timestamp,
 				// timestamp columns must explicitly be declared NULL to permit DEFAULT NULL
 				var recoNullable string
-				if strings.HasPrefix(col.TypeInDB, "timestamp") {
+				if col.Type.Base == "timestamp" {
 					recoNullable = "NULL "
 				}
 				results = append(results, Note{

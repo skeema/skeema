@@ -103,7 +103,7 @@ func TestUnitTableFlavors(t *testing.T) {
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 1 {
 		t.Errorf("MySQL 5.5: Expected 1 diff clause; instead found %d differences, supported=%t", len(clauses), supported)
 	}
-	for _, check := range []string{table.Columns[3].TypeInDB, table.Columns[3].OnUpdate, table.Columns[3].Default} {
+	for _, check := range []string{table.Columns[3].Type.String(), table.Columns[3].OnUpdate, table.Columns[3].Default} {
 		if strings.HasSuffix(check, ")") {
 			t.Error("MySQL 5.5: Expected all traces of fractional timestamp precision to be removed, but still present")
 		}
@@ -241,13 +241,13 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 	}
 	lastUpdateCol := &Column{
 		Name:     "last_update",
-		TypeInDB: "timestamp(2)",
+		Type:     ParseColumnType("timestamp(2)"),
 		Default:  "CURRENT_TIMESTAMP(2)",
 		OnUpdate: "CURRENT_TIMESTAMP(2)",
 	}
 	lastUpdateDef := "`last_update` timestamp(2) NOT NULL DEFAULT CURRENT_TIMESTAMP(2) ON UPDATE CURRENT_TIMESTAMP(2)"
 	if flavor.IsMySQL(5, 5) { // No fractional timestamps in 5.5
-		lastUpdateCol.TypeInDB = "timestamp"
+		lastUpdateCol.Type = ParseColumnType("timestamp")
 		lastUpdateCol.Default = "CURRENT_TIMESTAMP"
 		lastUpdateCol.OnUpdate = "CURRENT_TIMESTAMP"
 		lastUpdateDef = "`last_update` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
@@ -259,9 +259,9 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 	}
 
 	aliveCol := &Column{
-		Name:     "alive",
-		TypeInDB: "tinyint(1) unsigned",
-		Default:  "'1'",
+		Name:    "alive",
+		Type:    ParseColumnType("tinyint(1) unsigned"),
+		Default: "'1'",
 	}
 	aliveDef := "`alive` tinyint(1) unsigned NOT NULL DEFAULT '1'"
 	if flavor.MinMariaDB(10, 2) {
@@ -272,19 +272,19 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 	columns := []*Column{
 		{
 			Name:          "actor_id",
-			TypeInDB:      "smallint(5) unsigned",
+			Type:          ParseColumnType("smallint(5) unsigned"),
 			AutoIncrement: true,
 		},
 		{
 			Name:      "first_name",
-			TypeInDB:  "varchar(45)",
+			Type:      ParseColumnType("varchar(45)"),
 			CharSet:   utf8mb3,
 			Collation: utf8mb3DefaultCollation,
 		},
 		{
 			Name:      "last_name",
 			Nullable:  true,
-			TypeInDB:  "varchar(45)",
+			Type:      ParseColumnType("varchar(45)"),
 			Default:   "NULL",
 			CharSet:   utf8mb3,
 			Collation: utf8mb3DefaultCollation,
@@ -292,15 +292,15 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 		lastUpdateCol,
 		{
 			Name:      "ssn",
-			TypeInDB:  "char(10)",
+			Type:      ParseColumnType("char(10)"),
 			CharSet:   utf8mb3,
 			Collation: utf8mb3DefaultCollation,
 		},
 		aliveCol,
 		{
-			Name:     "alive_bit",
-			TypeInDB: "bit(1)",
-			Default:  "b'1'",
+			Name:    "alive_bit",
+			Type:    ParseColumnType("bit(1)"),
+			Default: "b'1'",
 		},
 	}
 	secondaryIndexes := []*Index{
@@ -361,7 +361,7 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 		CreateStatement:   stmt,
 	}
 	if flavor.OmitIntDisplayWidth() {
-		stripIntDisplayWidths(&table)
+		stripIntDisplayWidths(&table, flavor)
 	}
 	return table
 }
@@ -373,12 +373,12 @@ func anotherTable() Table {
 func anotherTableForFlavor(flavor Flavor) Table {
 	columns := []*Column{
 		{
-			Name:     "actor_id",
-			TypeInDB: "smallint(5) unsigned",
+			Name: "actor_id",
+			Type: ParseColumnType("smallint(5) unsigned"),
 		},
 		{
 			Name:      "film_name",
-			TypeInDB:  "varchar(60)",
+			Type:      ParseColumnType("varchar(60)"),
 			CharSet:   "latin1",
 			Collation: "latin1_swedish_ci",
 		},
@@ -408,7 +408,7 @@ func anotherTableForFlavor(flavor Flavor) Table {
 		CreateStatement:  stmt,
 	}
 	if flavor.OmitIntDisplayWidth() {
-		stripIntDisplayWidths(&table)
+		stripIntDisplayWidths(&table, flavor)
 	}
 	if table.ShowCollation {
 		table.CreateStatement += " COLLATE=latin1_swedish_ci"
@@ -455,23 +455,23 @@ func supportedTable() Table {
 func supportedTableForFlavor(flavor Flavor) Table {
 	columns := []*Column{
 		{
-			Name:     "post_id",
-			TypeInDB: "bigint(20) unsigned",
+			Name: "post_id",
+			Type: ParseColumnType("bigint(20) unsigned"),
 		},
 		{
-			Name:     "user_id",
-			TypeInDB: "bigint(20) unsigned",
+			Name: "user_id",
+			Type: ParseColumnType("bigint(20) unsigned"),
 		},
 		{
 			Name:     "subscribed_at",
-			TypeInDB: "int(10) unsigned",
+			Type:     ParseColumnType("int(10) unsigned"),
 			Default:  "NULL",
 			Nullable: true,
 		},
 		{
 			Name:      "metadata",
 			Nullable:  true,
-			TypeInDB:  "text",
+			Type:      ParseColumnType("text"),
 			CharSet:   "latin1",
 			Collation: "latin1_swedish_ci",
 		},
@@ -500,7 +500,7 @@ func supportedTableForFlavor(flavor Flavor) Table {
 		CreateStatement:  stmt,
 	}
 	if flavor.OmitIntDisplayWidth() {
-		stripIntDisplayWidths(&table)
+		stripIntDisplayWidths(&table, flavor)
 	}
 	if table.ShowCollation {
 		table.CreateStatement += " COLLATE=latin1_swedish_ci"
@@ -511,24 +511,24 @@ func supportedTableForFlavor(flavor Flavor) Table {
 func foreignKeyTable() Table {
 	columns := []*Column{
 		{
-			Name:     "id",
-			TypeInDB: "int(10) unsigned",
+			Name: "id",
+			Type: ParseColumnType("int(10) unsigned"),
 		},
 		{
 			Name:     "customer_id",
-			TypeInDB: "int(10) unsigned",
+			Type:     ParseColumnType("int(10) unsigned"),
 			Default:  "NULL",
 			Nullable: true,
 		},
 		{
 			Name:      "product_line",
-			TypeInDB:  "char(12)",
+			Type:      ParseColumnType("char(12)"),
 			CharSet:   "latin1",
 			Collation: "latin1_swedish_ci",
 		},
 		{
-			Name:     "model",
-			TypeInDB: "int(10) unsigned",
+			Name: "model",
+			Type: ParseColumnType("int(10) unsigned"),
 		},
 	}
 
@@ -603,11 +603,16 @@ func foreignKeyTable() Table {
 	}
 }
 
-func stripIntDisplayWidths(table *Table) {
+func stripIntDisplayWidths(table *Table, flavor Flavor) {
+	origGenCreate := table.GeneratedCreateStatement(flavor)
 	for _, col := range table.Columns {
-		if strippedType, didStrip := StripDisplayWidth(col.TypeInDB); didStrip {
-			table.CreateStatement = strings.Replace(table.CreateStatement, col.TypeInDB, strippedType, 1)
-			col.TypeInDB = strippedType
+		col.Type.StripDisplayWidth()
+	}
+	if newGenCreate := table.GeneratedCreateStatement(flavor); newGenCreate != origGenCreate { // stripped at least one col
+		if table.CreateStatement == origGenCreate { // CreateStatement was normalized properly
+			table.CreateStatement = newGenCreate
+		} else {
+			table.CreateStatement = StripDisplayWidthsFromCreate(table.CreateStatement)
 		}
 	}
 }

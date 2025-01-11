@@ -2,7 +2,6 @@ package linter
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/skeema/skeema/internal/tengo"
@@ -35,11 +34,10 @@ func pkTypeChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, 
 	cols := table.ColumnsByName()
 	for _, part := range table.PrimaryKey.Parts {
 		if col, ok := cols[part.ColumnName]; ok {
-			colType := baseColType(col.TypeInDB)
-			if !opts.IsAllowed("pk-type", colType) {
+			if !opts.IsAllowed("pk-type", col.Type.Base) {
 				message := fmt.Sprintf(
 					"Column %s of %s is using data type %s, which is not configured to be permitted in a primary key. The following data types are listed in option allow-pk-type: %s.",
-					col.Name, table.ObjectKey(), col.TypeInDB, allowedStr,
+					col.Name, table.ObjectKey(), col.Type.Base, allowedStr,
 				)
 				return &Note{
 					LineOffset: FindColumnLineOffset(col, createStatement),
@@ -50,17 +48,4 @@ func pkTypeChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, 
 		}
 	}
 	return nil
-}
-
-var reBaseType = regexp.MustCompile(`^([a-zA-Z]+)`)
-
-// baseColType normalizes the type to remove display width/length
-// and any options like UNSIGNED/ZEROFILL. It is more exhaustive than
-// the check in check_display_width.go.
-func baseColType(colType string) string {
-	matches := reBaseType.FindStringSubmatch(colType)
-	if matches != nil {
-		colType = matches[1]
-	}
-	return colType
 }

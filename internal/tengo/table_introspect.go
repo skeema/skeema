@@ -292,27 +292,31 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 	}
 	columnsByTableName := make(map[string][]*Column)
 	for _, rawColumn := range rawColumns {
+		// MariaDB includes compression attribute in column type; remove it BEFORE
+		// parsing the column type
+		var mariaCompressedColumn bool
+		if mariaCompressedColMarker != "" {
+			rawColumn.Type, _, mariaCompressedColumn = strings.Cut(rawColumn.Type, mariaCompressedColMarker)
+		}
+
 		col := &Column{
 			Name:          rawColumn.Name,
-			TypeInDB:      rawColumn.Type,
+			Type:          ParseColumnType(rawColumn.Type),
 			Nullable:      strings.EqualFold(rawColumn.IsNullable, "YES"),
 			AutoIncrement: strings.Contains(rawColumn.Extra, "auto_increment"),
 			Comment:       rawColumn.Comment,
 			Invisible:     strings.Contains(rawColumn.Extra, "INVISIBLE"),
 		}
+		if mariaCompressedColumn {
+			col.Compression = "COMPRESSED"
+		}
+
 		// If db was upgraded from a pre-8.0.19 version (but still 8.0+) to 8.0.19+,
 		// I_S may still contain int display widths even though SHOW CREATE TABLE
 		// omits them. Strip to avoid incorrectly flagging the table as unsupported
 		// for diffs.
 		if stripDisplayWidth {
-			col.TypeInDB, _ = StripDisplayWidth(col.TypeInDB) // safe/no-op if already no int display width
-		}
-		if mariaCompressedColMarker != "" {
-			if pos := strings.Index(col.TypeInDB, mariaCompressedColMarker); pos > -1 {
-				// MariaDB includes compression attribute in column type; remove it
-				col.Compression = "COMPRESSED"
-				col.TypeInDB = col.TypeInDB[0:pos]
-			}
+			col.Type.StripDisplayWidth() // safe/no-op if already no int display width
 		}
 		if rawColumn.GenerationExpr.Valid {
 			col.GenerationExpr = rawColumn.GenerationExpr.String
@@ -325,7 +329,7 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 			// Recent versions of MySQL do allow default *expressions* for these col
 			// types, but 8.0.13-8.0.22 erroneously omit them from I_S, so we need to
 			// catch this situation and parse from SHOW CREATE later.
-			if !flavor.MinMariaDB(10, 2) && (strings.HasSuffix(col.TypeInDB, "blob") || strings.HasSuffix(col.TypeInDB, "text")) {
+			if !flavor.MinMariaDB(10, 2) && (strings.HasSuffix(col.Type.Base, "blob") || strings.HasSuffix(col.Type.Base, "text")) {
 				allowNullDefault = false
 				if strings.Contains(rawColumn.Extra, "DEFAULT_GENERATED") {
 					col.Default = "(!!!BLOBDEFAULT!!!)"
@@ -857,7 +861,7 @@ func fixDefaultExpression(t *Table, flavor Flavor) {
 		var matcher string
 		if col.Default[0] == '(' {
 			matcher = `.+DEFAULT (\(.+\))`
-		} else if strings.HasPrefix(col.Default, "'0x") && strings.Contains(col.TypeInDB, "binary") {
+		} else if strings.HasPrefix(col.Default, "'0x") && (col.Type.Base == "binary" || col.Type.Base == "varbinary") {
 			matcher = `.+DEFAULT ('(''|[^'])*')`
 		} else {
 			continue

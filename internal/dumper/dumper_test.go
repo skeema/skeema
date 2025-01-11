@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -249,7 +248,7 @@ func (s *IntegrationSuite) reparseScratchDir(t *testing.T) {
 			}
 			var newContents string
 			if s.d.Flavor().OmitIntDisplayWidth() {
-				newContents = stripDisplayWidth(string(contents))
+				newContents = tengo.StripDisplayWidthsFromCreate(string(contents))
 			}
 			if s.d.Flavor().AlwaysShowCollate() {
 				newContents = strings.ReplaceAll(string(contents), "DEFAULT CHARSET=latin1;", "DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;")
@@ -293,7 +292,7 @@ func (s *IntegrationSuite) verifyDumperResult(t *testing.T, subdir string) {
 			actualContents := fs.ReadTestFile(t, filePath)
 			expectContents := fs.ReadTestFile(t, goldenPath)
 			if s.d.Flavor().OmitIntDisplayWidth() {
-				expectContents = stripDisplayWidth(expectContents)
+				expectContents = tengo.StripDisplayWidthsFromCreate(expectContents)
 			}
 			if s.d.Flavor().AlwaysShowCollate() {
 				expectContents = strings.ReplaceAll(expectContents, "DEFAULT CHARSET=latin1;", "DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;")
@@ -316,10 +315,4 @@ func getDir(dirPath string) (*fs.Dir, error) {
 		CLI: &mybase.CommandLine{Command: cmd},
 	}
 	return fs.ParseDir(dirPath, cfg)
-}
-
-var reDisplayWidth = regexp.MustCompile(`(tinyint|smallint|mediumint|int|bigint)\((\d+)\)( unsigned)?( zerofill)?`)
-
-func stripDisplayWidth(input string) string {
-	return reDisplayWidth.ReplaceAllString(input, "$1$3$4")
 }

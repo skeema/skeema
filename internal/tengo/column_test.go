@@ -39,7 +39,7 @@ func TestColumnEquivalent(t *testing.T) {
 	assertEquivalent(true) // both nil
 	a = &Column{
 		Name:     "col",
-		TypeInDB: "bigint(20) unsigned",
+		Type:     ParseColumnType("bigint(20) unsigned"),
 		Default:  "NULL",
 		Nullable: true,
 	}
@@ -51,22 +51,22 @@ func TestColumnEquivalent(t *testing.T) {
 	assertEquivalent(true) // point to different values, but those values are equal
 
 	// Test situations involving display width, and column type changes in general
-	b.TypeInDB = "bigint unsigned"
+	b.Type = ParseColumnType("bigint unsigned")
 	assertEquivalent(true)
-	b.TypeInDB = "int unsigned"
+	b.Type = ParseColumnType("int unsigned")
 	assertEquivalent(false)
-	b.TypeInDB = "bigint(19) unsigned"
+	b.Type = ParseColumnType("bigint(19) unsigned")
 	assertEquivalent(false)
-	b.TypeInDB = "bigint(20)"
+	b.Type = ParseColumnType("bigint(20)")
 	assertEquivalent(false)
-	a.TypeInDB, b.TypeInDB = "bigint(20) unsigned", "bigint unsigned"
+	a.Type, b.Type = ParseColumnType("bigint(20) unsigned"), ParseColumnType("bigint unsigned")
 	assertEquivalent(true)
 	b.Nullable = false
 	b.Default = ""
 	assertEquivalent(false)
 
 	// Ensure timestamp precision is always relevant (not an "int display width")
-	a.TypeInDB, b.TypeInDB = "timestamp(4)", "timestamp"
+	a.Type, b.Type = ParseColumnType("timestamp(4)"), ParseColumnType("timestamp")
 	a.Nullable, b.Nullable = false, false
 	a.Default, b.Default = "", ""
 	assertEquivalent(false)
@@ -74,7 +74,7 @@ func TestColumnEquivalent(t *testing.T) {
 	// Test situations involving forcing show charset/collation
 	a = &Column{
 		Name:      "col",
-		TypeInDB:  "varchar(20)",
+		Type:      ParseColumnType("varchar(20)"),
 		Default:   "NULL",
 		Nullable:  true,
 		CharSet:   "utf8mb4",
@@ -85,9 +85,9 @@ func TestColumnEquivalent(t *testing.T) {
 	assertEquivalent(true)
 	b.ShowCollation = true
 	assertEquivalent(true)
-	b.TypeInDB = "varchar(21)"
+	b.Type = ParseColumnType("varchar(21)")
 	assertEquivalent(false)
-	b.TypeInDB = a.TypeInDB
+	b.Type = a.Type
 	b.Nullable = false
 	b.Default = ""
 	assertEquivalent(false)
