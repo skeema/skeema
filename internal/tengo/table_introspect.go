@@ -28,12 +28,11 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 
 	g, subCtx := errgroup.WithContext(ctx)
 
-	for n := range tables {
-		t := tables[n] // avoid issues with goroutines and loop iterator values
+	for _, t := range tables {
 		g.Go(func() (err error) {
 			t.CreateStatement, err = showCreateTable(subCtx, db, t.Name)
 			if err != nil {
-				err = fmt.Errorf("Error executing SHOW CREATE TABLE for %s.%s: %s", EscapeIdentifier(schema), EscapeIdentifier(t.Name), err)
+				err = fmt.Errorf("Error executing SHOW CREATE TABLE for %s.%s: %w", EscapeIdentifier(schema), EscapeIdentifier(t.Name), err)
 			}
 			return err
 		})

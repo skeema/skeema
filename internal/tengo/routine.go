@@ -47,16 +47,16 @@ func (r *Routine) Def() string {
 // Definition generates and returns a canonical CREATE PROCEDURE or CREATE
 // FUNCTION statement based on the Routine's Go field values.
 func (r *Routine) Definition(flavor Flavor) string {
-	return fmt.Sprintf("%s%s", r.head(flavor), r.Body)
+	return r.head(flavor) + r.Body
 }
 
 // DefinerClause returns the routine's DEFINER, quoted/escaped in a way
 // consistent with SHOW CREATE.
 func (r *Routine) DefinerClause() string {
-	if atPos := strings.LastIndex(r.Definer, "@"); atPos >= 0 {
-		return fmt.Sprintf("DEFINER=%s@%s", EscapeIdentifier(r.Definer[0:atPos]), EscapeIdentifier(r.Definer[atPos+1:]))
+	if user, host, ok := strings.Cut(r.Definer, "@"); ok {
+		return "DEFINER=" + EscapeIdentifier(user) + "@" + EscapeIdentifier(host)
 	}
-	return fmt.Sprintf("DEFINER=%s", r.Definer)
+	return "DEFINER=" + r.Definer
 }
 
 // head returns the portion of a CREATE statement prior to the body.
@@ -67,23 +67,25 @@ func (r *Routine) head(_ Flavor) string {
 		definer = r.DefinerClause() + " "
 	}
 	if r.Type == ObjectTypeFunc {
-		returnClause = fmt.Sprintf(" RETURNS %s", r.ReturnDataType)
+		returnClause = " RETURNS " + r.ReturnDataType
 	}
 
-	clauses := make([]string, 0)
+	clauses := []string{}
 	if r.SQLDataAccess != "CONTAINS SQL" {
-		clauses = append(clauses, fmt.Sprintf("    %s\n", r.SQLDataAccess))
+		clauses = append(clauses, r.SQLDataAccess)
 	}
 	if r.Deterministic {
-		clauses = append(clauses, "    DETERMINISTIC\n")
+		clauses = append(clauses, "DETERMINISTIC")
 	}
 	if r.SecurityType != "DEFINER" {
-		clauses = append(clauses, fmt.Sprintf("    SQL SECURITY %s\n", r.SecurityType))
+		clauses = append(clauses, "SQL SECURITY "+r.SecurityType)
 	}
 	if r.Comment != "" {
-		clauses = append(clauses, fmt.Sprintf("    COMMENT '%s'\n", EscapeValueForCreateTable(r.Comment)))
+		clauses = append(clauses, "COMMENT '"+EscapeValueForCreateTable(r.Comment)+"'")
 	}
-	characteristics = strings.Join(clauses, "")
+	if len(clauses) > 0 {
+		characteristics = "    " + strings.Join(clauses, "\n    ") + "\n"
+	}
 
 	return fmt.Sprintf("CREATE %s%s %s(%s)%s\n%s",
 		definer,
@@ -180,8 +182,9 @@ func (r *Routine) parseCreateStatement(flavor Flavor, schema string) error {
 	// Attempt to replace r.Body with one that doesn't have character conversion problems
 	if header := r.head(flavor); strings.HasPrefix(r.CreateStatement, header) {
 		r.Body = r.CreateStatement[len(header):]
+		return nil
 	}
-	return nil
+	return fmt.Errorf("Failed to parse SHOW CREATE %s %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), r.CreateStatement)
 }
 
 ///// Diff logic ///////////////////////////////////////////////////////////////
@@ -388,24 +391,28 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 	// e.g. user has EXECUTE priv but missing other vital privs. In this case
 	// routine_definition will be NULL.
 	var rawRoutines []struct {
-		Name              string         `db:"routine_name"`
-		Type              string         `db:"routine_type"`
-		Body              sql.NullString `db:"routine_definition"`
-		IsDeterministic   string         `db:"is_deterministic"`
-		SQLDataAccess     string         `db:"sql_data_access"`
-		SecurityType      string         `db:"security_type"`
-		SQLMode           string         `db:"sql_mode"`
-		Comment           string         `db:"routine_comment"`
-		Definer           string         `db:"definer"`
-		DatabaseCollation string         `db:"database_collation"`
+		Name              string `db:"routine_name"`
+		Type              string `db:"routine_type"`
+		IsDeterministic   string `db:"is_deterministic"`
+		SQLDataAccess     string `db:"sql_data_access"`
+		SecurityType      string `db:"security_type"`
+		SQLMode           string `db:"sql_mode"`
+		Comment           string `db:"routine_comment"`
+		Definer           string `db:"definer"`
+		DatabaseCollation string `db:"database_collation"`
 	}
 	// Note on this query: MySQL 8.0 changes information_schema column names to
 	// come back from queries in all caps, so we need to explicitly use AS clauses
-	// in order to get them back as lowercase and have sqlx Select() work
+	// in order to get them back as lowercase and have sqlx Select() work.
+	//
+	// We also exclude querying routine_definition here because the column is
+	// mangled in MySQL e.g. escaping of single quotes, so we must query it
+	// elsewhere separately. (The value is correct in MariaDB, but we still must
+	// obtain the param list and return type elsewhere, so the body is queried at
+	// that time regardless of server flavor.)
 	query := `
 		SELECT SQL_BUFFER_RESULT
 		       r.routine_name AS routine_name, UPPER(r.routine_type) AS routine_type,
-		       r.routine_definition AS routine_definition,
 		       UPPER(r.is_deterministic) AS is_deterministic,
 		       UPPER(r.sql_data_access) AS sql_data_access,
 		       UPPER(r.security_type) AS security_type,
@@ -425,7 +432,6 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 		routines[n] = &Routine{
 			Name:              rawRoutine.Name,
 			Type:              ObjectType(strings.ToLower(rawRoutine.Type)),
-			Body:              rawRoutine.Body.String, // This contains incorrect formatting conversions; overwritten later
 			Definer:           rawRoutine.Definer,
 			DatabaseCollation: rawRoutine.DatabaseCollation,
 			Comment:           rawRoutine.Comment,
@@ -480,8 +486,7 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 	var err error
 	if alreadyObtained < len(routines) {
 		g, subCtx := errgroup.WithContext(ctx)
-		for n := range routines {
-			r := routines[n] // avoid issues with goroutines and loop iterator values
+		for _, r := range routines {
 			if r.CreateStatement == "" {
 				g.Go(func() (err error) {
 					r.CreateStatement, err = showCreateRoutine(subCtx, db, r.Name, r.Type)
@@ -489,7 +494,7 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 						r.CreateStatement = strings.Replace(r.CreateStatement, "\r\n", "\n", -1)
 						err = r.parseCreateStatement(flavor, schema)
 					} else {
-						err = fmt.Errorf("Error executing SHOW CREATE %s for %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), err)
+						err = fmt.Errorf("Error executing SHOW CREATE %s for %s.%s: %w", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), err)
 					}
 					return err
 				})
