@@ -13,7 +13,7 @@ import (
 // This constant is used for determining map capacity for reserved word maps.
 // This is padded slightly; currently MySQL 8.4 has 265 reserved words, vs 250
 // in recent MariaDB releases.
-const countReservedWordsPerFlavor = 270
+const countReservedWordsPerFlavor = 275
 
 var (
 	keywordMutex          sync.Mutex
@@ -441,6 +441,8 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 
 	"manual":      {mySQL84}, // wrong in I_S.keywords.reserved, see bug 114874
 	"tablesample": {mySQL84}, // wrong in I_S.keywords.reserved, see bug 114874
+
+	"library": {{Vendor: VendorMySQL, Version: Version{9, 2}}},
 
 	"current_role":            {mariaDB101},
 	"delete_domain_id":        {mariaDB101}, // actual version unclear from docs, see comment above

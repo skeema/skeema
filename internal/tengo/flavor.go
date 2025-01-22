@@ -12,11 +12,11 @@ import (
 // Version represents a (Major, Minor, Patch) version number tuple.
 type Version [3]uint16
 
-// Variables representing the latest major.minor releases of MySQL and MariaDB
-// at the time of this release. These intentionally exclude patch release
-// numbers; corresponding logic handles this appropriately.
+// Variables representing the latest major.minor releases of MySQL and MariaDB.
+// These intentionally exclude patch release numbers; corresponding logic
+// handles this appropriately.
 var (
-	LatestMySQLVersion   = Version{9, 1}
+	LatestMySQLVersion   = Version{9, 2}
 	LatestMariaDBVersion = Version{11, 6}
 )
 
@@ -29,11 +29,12 @@ var (
 )
 
 // Variables representing the latest Percona Server patch releases on DockerHub
-// at the time of this release. These are useful when requesting a Docker image
-// for Percona Server on arm64, as there is no "8.0" or "8.4" tag for arm64.
+// at present as per https://hub.docker.com/r/percona/percona-server/tags. These
+// are useful when requesting a Docker image for Percona Server on arm64, since
+// there is no "8.0" or "8.4" tag for arm64.
 var (
-	LatestPercona80Version = Version{8, 0, 39}
-	LatestPercona84Version = Version{8, 4, 2}
+	LatestPercona80Version = Version{8, 0, 40}
+	LatestPercona84Version = Version{8, 4, 3}
 )
 
 // Major returns the major component of the version number.
