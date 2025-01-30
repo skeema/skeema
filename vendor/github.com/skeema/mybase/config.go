@@ -3,6 +3,7 @@ package mybase
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -547,6 +548,29 @@ func (cfg *Config) GetRegexp(name string) (*regexp.Regexp, error) {
 		return nil, fmt.Errorf("Invalid regexp for option %s: %s", name, value)
 	}
 	return re, nil
+}
+
+// GetAbsPath returns an option's value as an absolute path to a file. If the
+// option value is already set to an absolute path, it is returned as-is. If
+// the option value is set to a relative path, the result depends on where the
+// option was set. In an option file, a relative path will be interpreted based
+// on the directory containing that option file. In all other cases (command-
+// line, option default value, runtime override), a relative path will be
+// interpreted based on the working directory at the time of GetAbsPath being
+// called.
+func (cfg *Config) GetAbsPath(name string) (string, error) {
+	value := cfg.Get(name)
+	if value == "" || filepath.IsAbs(value) {
+		return value, nil
+	}
+	if f, ok := cfg.Source(name).(*File); ok {
+		return filepath.Join(f.Dir, value), nil
+	}
+	workingDir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(workingDir, value), nil
 }
 
 // unquote takes a string, trims whitespace on both ends, and then examines

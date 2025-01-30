@@ -59,7 +59,7 @@ Additional [contributions](https://github.com/skeema/mybase/graphs/contributors)
 
 ## License
 
-**Copyright 2024 Skeema LLC and the Skeema authors**
+**Copyright 2025 Skeema LLC and the Skeema authors**
 
 ```text
 Licensed under the Apache License, Version 2.0 (the "License");

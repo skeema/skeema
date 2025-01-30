@@ -9,8 +9,6 @@ github.com/go-sql-driver/mysql
 ## explicit; go 1.10
 github.com/jmoiron/sqlx
 github.com/jmoiron/sqlx/reflectx
-# github.com/mattn/goveralls v0.0.12
-## explicit; go 1.13
 # github.com/mitchellh/go-wordwrap v1.0.1
 ## explicit; go 1.14
 github.com/mitchellh/go-wordwrap
@@ -20,23 +18,19 @@ github.com/pmezard/go-difflib/difflib
 # github.com/sirupsen/logrus v1.9.3
 ## explicit; go 1.13
 github.com/sirupsen/logrus
-# github.com/skeema/mybase v1.0.18
-## explicit; go 1.18
+# github.com/skeema/mybase v1.1.0
+## explicit; go 1.22
 github.com/skeema/mybase
-# golang.org/x/mod v0.10.0
-## explicit; go 1.17
-# golang.org/x/sync v0.7.0
+# golang.org/x/sync v0.10.0
 ## explicit; go 1.18
 golang.org/x/sync/errgroup
-# golang.org/x/sys v0.22.0
+# golang.org/x/sys v0.29.0
 ## explicit; go 1.18
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# golang.org/x/term v0.22.0
+# golang.org/x/term v0.28.0
 ## explicit; go 1.18
 golang.org/x/term
-# golang.org/x/tools v0.8.0
-## explicit; go 1.18
 # gopkg.in/yaml.v3 v3.0.1
 ## explicit
