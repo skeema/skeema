@@ -69,13 +69,13 @@ func TestTableClusteredIndexKey(t *testing.T) {
 	}
 }
 
-func TestTableRowFormatClause(t *testing.T) {
-	assertRowFormatClause := func(createOptions, expectRowFormat string) {
+func TestTableRowFormat(t *testing.T) {
+	assertRowFormat := func(createOptions, expectRowFormat string) {
 		t.Helper()
 		table := aTable(1)
 		table.CreateOptions = createOptions
-		if actual := table.RowFormatClause(); actual != expectRowFormat {
-			t.Errorf("Unexpected result from RowFormatClause() with CreateOptions=%s: expected %s, found %s", createOptions, expectRowFormat, actual)
+		if actual := table.RowFormat(); actual != expectRowFormat {
+			t.Errorf("Unexpected result from RowFormat() with CreateOptions=%s: expected %s, found %s", createOptions, expectRowFormat, actual)
 		}
 	}
 	cases := map[string]string{
@@ -89,7 +89,7 @@ func TestTableRowFormatClause(t *testing.T) {
 		"ROW_FORMAT=DYNAMIC KEY_BLOCK_SIZE=8":  "DYNAMIC",
 	}
 	for createOptions, expectRowFormat := range cases {
-		assertRowFormatClause(createOptions, expectRowFormat)
+		assertRowFormat(createOptions, expectRowFormat)
 	}
 }
 

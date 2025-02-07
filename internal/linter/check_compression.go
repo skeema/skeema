@@ -78,7 +78,7 @@ func compressionChecker(table *tengo.Table, createStatement string, _ *tengo.Sch
 //     instead of the correct value of "none" (since these settings prevent
 //     compression options from having any effect).
 func tableCompressionMode(table *tengo.Table) (mode string, clause string) {
-	if table.RowFormatClause() == "COMPRESSED" {
+	if table.RowFormat() == "COMPRESSED" {
 		matches := reKeyBlockSize.FindStringSubmatch(table.CreateOptions)
 		if matches == nil {
 			return "8kb", "ROW_FORMAT=COMPRESSED" // see explanation in function doc above

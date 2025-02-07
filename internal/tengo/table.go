@@ -2,7 +2,6 @@ package tengo
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 )
 
@@ -211,20 +210,19 @@ func (t *Table) ClusteredIndexKey() *Index {
 	return nil
 }
 
-var reTableRowFormatClause = regexp.MustCompile(`ROW_FORMAT=(\w+)`)
-
-// RowFormatClause returns the table's ROW_FORMAT clause, if one was explicitly
-// specified in the table's creation options. If no ROW_FORMAT clause was
-// specified, but a KEY_BLOCK_SIZE is, "COMPRESSED" will be returned since MySQL
-// applies this automatically. If no ROW_FORMAT or KEY_BLOCK_SIZE was specified,
-// a blank string is returned.
+// RowFormat returns the table's ROW_FORMAT, if one was specified in the table's
+// creation options. If no ROW_FORMAT clause was specified, but a KEY_BLOCK_SIZE
+// was, "COMPRESSED" will be returned since MySQL applies this automatically. If
+// no ROW_FORMAT or KEY_BLOCK_SIZE was specified, a blank string is returned.
 // This method does not query an instance to determine if the table's actual
 // ROW_FORMAT differs from what was requested in creation options; nor does it
 // query the default row format if none was specified.
-func (t *Table) RowFormatClause() string {
-	matches := reTableRowFormatClause.FindStringSubmatch(t.CreateOptions)
-	if matches != nil {
-		return matches[1]
+func (t *Table) RowFormat() string {
+	if i := strings.Index(t.CreateOptions, "ROW_FORMAT="); i > -1 {
+		// len("ROW_FORMAT=") is 11; obtain the value after that phrase but before
+		// any space
+		rowFormat, _, _ := strings.Cut(t.CreateOptions[i+11:], " ")
+		return rowFormat
 	}
 	if strings.Contains(t.CreateOptions, "KEY_BLOCK_SIZE") {
 		return "COMPRESSED"

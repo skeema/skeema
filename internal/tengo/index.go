@@ -42,14 +42,14 @@ func (idx *Index) Definition(flavor Flavor) string {
 		}
 		typeAndName = "PRIMARY KEY"
 	} else if idx.Unique {
-		typeAndName = fmt.Sprintf("UNIQUE KEY %s", EscapeIdentifier(idx.Name))
+		typeAndName = "UNIQUE KEY " + EscapeIdentifier(idx.Name)
 	} else if idx.Type != "BTREE" && idx.Type != "" {
-		typeAndName = fmt.Sprintf("%s KEY %s", idx.Type, EscapeIdentifier(idx.Name))
+		typeAndName = idx.Type + " KEY " + EscapeIdentifier(idx.Name)
 	} else {
-		typeAndName = fmt.Sprintf("KEY %s", EscapeIdentifier(idx.Name))
+		typeAndName = "KEY " + EscapeIdentifier(idx.Name)
 	}
 	if idx.Comment != "" {
-		comment = fmt.Sprintf(" COMMENT '%s'", EscapeValueForCreateTable(idx.Comment))
+		comment = " COMMENT '" + EscapeValueForCreateTable(idx.Comment) + "'"
 	}
 	if idx.Invisible {
 		if flavor.IsMariaDB() {
@@ -61,9 +61,9 @@ func (idx *Index) Definition(flavor Flavor) string {
 	if idx.Type == "FULLTEXT" && idx.FullTextParser != "" {
 		// Note the trailing space here is intentional -- it's always present in SHOW
 		// CREATE TABLE for this particular clause
-		parser = fmt.Sprintf(" /*!50100 WITH PARSER `%s` */ ", idx.FullTextParser)
+		parser = " /*!50100 WITH PARSER `" + idx.FullTextParser + "` */ "
 	}
-	return fmt.Sprintf("%s (%s)%s%s%s", typeAndName, strings.Join(parts, ","), comment, invis, parser)
+	return typeAndName + " (" + strings.Join(parts, ",") + ")" + comment + invis + parser
 }
 
 // Equals returns true if two indexes are completely identical, false otherwise.
@@ -156,7 +156,7 @@ func (part *IndexPart) Definition(_ Flavor) string {
 	if part.ColumnName != "" {
 		base = EscapeIdentifier(part.ColumnName)
 	} else {
-		base = fmt.Sprintf("(%s)", part.Expression)
+		base = "(" + part.Expression + ")"
 	}
 	if part.PrefixLength > 0 {
 		prefix = fmt.Sprintf("(%d)", part.PrefixLength)
@@ -164,5 +164,5 @@ func (part *IndexPart) Definition(_ Flavor) string {
 	if part.Descending {
 		collation = " DESC"
 	}
-	return fmt.Sprintf("%s%s%s", base, prefix, collation)
+	return base + prefix + collation
 }

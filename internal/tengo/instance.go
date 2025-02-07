@@ -85,7 +85,7 @@ func NewInstance(driver, dsn string) (*Instance, error) {
 // if using UNIX domain socket)
 func (instance *Instance) String() string {
 	if instance.SocketPath != "" {
-		return fmt.Sprintf("%s:%s", instance.Host, instance.SocketPath)
+		return instance.Host + ":" + instance.SocketPath
 	} else if instance.Port == 0 {
 		return instance.Host
 	} else {
@@ -130,7 +130,7 @@ func (instance *Instance) ConnectionPool(defaultSchema, params string) (*sqlx.DB
 // be returned. See ConnectionPool for usage of the args for this method.
 func (instance *Instance) CachedConnectionPool(defaultSchema, params string) (*sqlx.DB, error) {
 	fullParams := instance.BuildParamString(params)
-	key := fmt.Sprintf("%s?%s", defaultSchema, fullParams)
+	key := defaultSchema + "?" + fullParams
 
 	instance.m.Lock()
 	defer instance.m.Unlock()
@@ -145,7 +145,7 @@ func (instance *Instance) CachedConnectionPool(defaultSchema, params string) (*s
 }
 
 func (instance *Instance) rawConnectionPool(defaultSchema, fullParams string, alreadyLocked bool) (*sqlx.DB, error) {
-	fullDSN := fmt.Sprintf("%s%s?%s", instance.BaseDSN, defaultSchema, fullParams)
+	fullDSN := instance.BaseDSN + defaultSchema + "?" + fullParams
 	db, err := sqlx.Connect(instance.Driver, fullDSN)
 	if err != nil {
 		return nil, err
@@ -590,7 +590,7 @@ func (instance *Instance) introspectionParams() string {
 	// Remove any problematic sql_mode values
 	keepModes := filterSQLMode(instance.sqlMode, IntrospectionBadSQLModes)
 	if len(keepModes) != len(instance.sqlMode) {
-		v.Set("sql_mode", fmt.Sprintf("'%s'", strings.Join(keepModes, ",")))
+		v.Set("sql_mode", "'"+strings.Join(keepModes, ",")+"'")
 	}
 
 	return v.Encode()
@@ -601,7 +601,7 @@ func showCreateTable(ctx context.Context, db *sqlx.DB, table string) (string, er
 		TableName       string `db:"Table"`
 		CreateStatement string `db:"Create Table"`
 	}
-	query := fmt.Sprintf("SHOW CREATE TABLE %s", EscapeIdentifier(table))
+	query := "SHOW CREATE TABLE " + EscapeIdentifier(table)
 	if err := db.GetContext(ctx, &row, query); err != nil {
 		return "", err
 	}
@@ -945,7 +945,7 @@ func (instance *Instance) DropRoutinesInSchema(schema string, opts BulkDropOptio
 	for _, ri := range routineInfo {
 		name, typ := ri.Name, ri.Type
 		g.Go(func() error {
-			_, err := db.Exec(fmt.Sprintf("DROP %s %s", typ, EscapeIdentifier(name)))
+			_, err := db.Exec("DROP " + typ + " " + EscapeIdentifier(name))
 			return err
 		})
 	}

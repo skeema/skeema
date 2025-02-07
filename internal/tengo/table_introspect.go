@@ -351,16 +351,16 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 			// SHOW CREATE TABLE in MySQL. However MySQL I_S data has some issues for
 			// default expressions. The most common one is fixed here, and if additional
 			// mismatches remain, they get corrected by fixDefaultExpression later on.
-			col.Default = fmt.Sprintf("(%s)", strings.ReplaceAll(rawColumn.Default.String, "\\'", "'"))
+			col.Default = "(" + strings.ReplaceAll(rawColumn.Default.String, "\\'", "'") + ")"
 		} else {
-			col.Default = fmt.Sprintf("'%s'", EscapeValueForCreateTable(rawColumn.Default.String))
+			col.Default = "'" + EscapeValueForCreateTable(rawColumn.Default.String) + "'"
 		}
 		if matches := reExtraOnUpdate.FindStringSubmatch(rawColumn.Extra); matches != nil {
 			col.OnUpdate = matches[1]
 			// Some flavors omit fractional precision from ON UPDATE in
 			// information_schema only, despite it being present everywhere else
 			if openParen := strings.IndexByte(rawColumn.Type, '('); openParen > -1 && !strings.Contains(col.OnUpdate, "(") {
-				col.OnUpdate = fmt.Sprintf("%s%s", col.OnUpdate, rawColumn.Type[openParen:])
+				col.OnUpdate = col.OnUpdate + rawColumn.Type[openParen:]
 			}
 		}
 		if rawColumn.Collation.Valid { // only text-based column types have a notion of charset and collation
@@ -447,11 +447,11 @@ func queryIndexesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 		} else {
 			secondaryIndexesByTableName[rawIndex.TableName] = append(secondaryIndexesByTableName[rawIndex.TableName], index)
 		}
-		fullNameStr := fmt.Sprintf("%s.%s.%s", schema, rawIndex.TableName, rawIndex.Name)
+		fullNameStr := schema + "." + rawIndex.TableName + "." + rawIndex.Name
 		indexesByTableAndName[fullNameStr] = index
 	}
 	for _, rawIndex := range rawIndexes {
-		fullIndexNameStr := fmt.Sprintf("%s.%s.%s", schema, rawIndex.TableName, rawIndex.Name)
+		fullIndexNameStr := schema + "." + rawIndex.TableName + "." + rawIndex.Name
 		index, ok := indexesByTableAndName[fullIndexNameStr]
 		if !ok {
 			panic(fmt.Errorf("Cannot find index %s", fullIndexNameStr))
@@ -687,7 +687,7 @@ func fixCreateOptionsOrder(t *Table, flavor Flavor) {
 	template = strings.Replace(template, t.CreateOptions, "!!!CREATEOPTS!!!", 1)
 	template = regexp.QuoteMeta(template)
 	template = strings.Replace(template, "!!!CREATEOPTS!!!", "(.+)", 1)
-	re := regexp.MustCompile(fmt.Sprintf("^%s$", template))
+	re := regexp.MustCompile("^" + template + "$")
 
 	for _, line := range strings.Split(t.CreateStatement, "\n") {
 		if strings.HasPrefix(line, ") ENGINE=") {
@@ -829,7 +829,7 @@ func fixFulltextIndexParsers(t *Table, flavor Flavor) {
 		if idx.Type == "FULLTEXT" {
 			// Obtain properly-formatted index definition without parser clause, and
 			// then build a regex from this which captures the parser name.
-			template := fmt.Sprintf("%s /*!50100 WITH PARSER ", idx.Definition(flavor))
+			template := idx.Definition(flavor) + " /*!50100 WITH PARSER "
 			template = regexp.QuoteMeta(template)
 			template += "`([^`]+)`"
 			re := regexp.MustCompile(template)
@@ -946,7 +946,7 @@ func fixChecks(t *Table, flavor Flavor) {
 		cc.Clause = "!!!CHECKCLAUSE!!!"
 		template := cc.Definition(flavor)
 		template = regexp.QuoteMeta(template)
-		template = fmt.Sprintf("%s,?\n", strings.Replace(template, cc.Clause, "(.+?)", 1))
+		template = strings.Replace(template, cc.Clause, "(.+?)", 1) + ",?\n"
 		re := regexp.MustCompile(template)
 		matches := re.FindStringSubmatch(t.CreateStatement)
 		if matches != nil {
