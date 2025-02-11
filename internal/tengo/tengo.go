@@ -21,6 +21,7 @@ const (
 	ObjectTypeTable    ObjectType = "table"
 	ObjectTypeProc     ObjectType = "procedure"
 	ObjectTypeFunc     ObjectType = "function"
+	ObjectTypeSequence ObjectType = "sequence"
 )
 
 // Caps returns the object type as an uppercase string.
