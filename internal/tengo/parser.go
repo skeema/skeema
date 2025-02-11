@@ -131,6 +131,8 @@ func init() {
 		"function":  processCreateRoutine,
 		"PROCEDURE": processCreateRoutine,
 		"procedure": processCreateRoutine,
+		"SEQUENCE":  processCreateSequence,
+		"sequence":  processCreateSequence,
 		"DEFINER":   processCreateWithDefiner,
 		"definer":   processCreateWithDefiner,
 		"OR":        processCreateOrReplace,
@@ -600,7 +602,7 @@ func processCreateStatement(p *parser, tokens []Token) (*Statement, error) {
 }
 
 func processCreateTable(p *parser, tokens []Token) (*Statement, error) {
-	// Skip past the TABLE token, and ignore the optional IF NOT EXIST
+	// Skip past the TABLE token, and ignore the optional IF NOT EXISTS
 	// clause
 	_, tokens = p.matchNextSequence(tokens[1:], "IF NOT EXISTS")
 
@@ -634,7 +636,7 @@ func processCreateRoutine(p *parser, tokens []Token) (*Statement, error) {
 		return processUntilDelimiter(p, tokens) // cannot parse, unexpected token
 	}
 
-	// Ignore the optional IF NOT EXIST clause
+	// Ignore the optional IF NOT EXISTS clause
 	_, tokens = p.matchNextSequence(tokens, "IF NOT EXISTS")
 
 	// Attempt to parse object name; only set statement and object types if
@@ -646,6 +648,22 @@ func processCreateRoutine(p *parser, tokens []Token) (*Statement, error) {
 	}
 
 	return processStoredProgram(p, tokens)
+}
+
+func processCreateSequence(p *parser, tokens []Token) (*Statement, error) {
+	// Skip past the SEQUENCE token, and ignore the optional IF NOT EXISTS
+	// clause
+	_, tokens = p.matchNextSequence(tokens[1:], "IF NOT EXISTS")
+
+	// Attempt to parse object name; only set statement and object types if
+	// successful
+	tokens = p.parseObjectNameClause(tokens)
+	if p.stmt.ObjectName != "" {
+		p.stmt.Type = StatementTypeCreate
+		p.stmt.ObjectType = ObjectTypeSequence
+	}
+
+	return processUntilDelimiter(p, tokens)
 }
 
 // We currently treat CREATE OR REPLACE identically to CREATE when processing

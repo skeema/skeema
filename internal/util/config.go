@@ -39,6 +39,7 @@ func AddGlobalOptions(cmd *mybase.Command) {
 		mybase.StringOption("ignore-table", 0, "", "Ignore tables that match regex"),
 		mybase.StringOption("ignore-proc", 0, "", "Ignore stored procedures that match regex"),
 		mybase.StringOption("ignore-func", 0, "", "Ignore functions that match regex"),
+		mybase.StringOption("ignore-sequence", 0, "", "Ignore sequences that match regex"),
 		mybase.StringOption("ssl-mode", 0, "", `Specify desired connection security SSL/TLS usage (valid values: "disabled", "preferred", "required")`),
 		mybase.BoolOption("debug", 0, false, "Enable debug logging"),
 		mybase.BoolOption("my-cnf", 0, true, "Parse ~/.my.cnf for configuration"),
@@ -346,9 +347,10 @@ var ignoreOptionToTypes = []struct {
 	optionName string
 	types      []tengo.ObjectType
 }{
-	{"ignore-table", []tengo.ObjectType{tengo.ObjectTypeTable}},
+	{"ignore-table", []tengo.ObjectType{tengo.ObjectTypeTable, tengo.ObjectTypeSequence}},
 	{"ignore-proc", []tengo.ObjectType{tengo.ObjectTypeProc}},
 	{"ignore-func", []tengo.ObjectType{tengo.ObjectTypeFunc}},
+	{"ignore-sequence", []tengo.ObjectType{tengo.ObjectTypeSequence}},
 }
 
 // IgnorePatterns compiles the regexes in the supplied mybase.Config's ignore-*
