@@ -163,7 +163,7 @@ func createHostOptionFile(cfg *mybase.Config, hostDir *fs.Dir, inst *tengo.Insta
 	if flavor := inst.Flavor(); flavor.Known() {
 		hostOptionFile.SetOptionValue(environment, "flavor", flavor.Family().String())
 	} else {
-		log.Warnf(`Unable to automatically determine database server's vendor/version. To set manually, use the "flavor" option in ` + hostOptionFile.Path())
+		log.Warn(`Unable to automatically determine database server's vendor/version. To set manually, use the "flavor" option in ` + hostOptionFile.Path())
 	}
 	for optionName := range cfg.CLI.OptionValues {
 		if persistOptionAlongsideHost(optionName) {
@@ -240,7 +240,7 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *fs.Dir, makeSubdir bool) erro
 	}
 
 	if ignoreSchema, err := parentDir.Config.GetRegexp("ignore-schema"); err != nil {
-		return NewExitValue(CodeBadConfig, err.Error())
+		return WrapExitCode(CodeBadConfig, err)
 	} else if ignoreSchema != nil && ignoreSchema.MatchString(s.Name) {
 		log.Debugf("Skipping schema %s because ignore-schema='%s'", s.Name, ignoreSchema)
 		return nil

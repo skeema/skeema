@@ -97,7 +97,7 @@ func PushHandler(cfg *mybase.Config) error {
 
 	concurrency, err := dir.Config.GetInt("concurrent-instances")
 	if err != nil {
-		return NewExitValue(CodeBadConfig, err.Error())
+		return WrapExitCode(CodeBadConfig, err)
 	} else if concurrency < 1 {
 		return NewExitValue(CodeBadConfig, "concurrent-instances cannot be less than 1")
 	}
@@ -134,9 +134,9 @@ func PushHandler(cfg *mybase.Config) error {
 	if err := g.Wait(); err != nil {
 		return err
 	} else if sum.SkipCount > 0 {
-		return NewExitValue(CodeFatalError, sum.Summary())
+		return sum.Error()
 	} else if sum.UnsupportedCount > 0 {
-		return NewExitValue(CodePartialError, sum.Summary())
+		return WrapExitCode(CodePartialError, sum.Error())
 	} else if dir.Config.GetBool("dry-run") && sum.Differences {
 		return NewExitValue(CodeDifferencesFound, "")
 	}

@@ -61,7 +61,7 @@ func (s IntegrationSuite) TestCheckSchema(t *testing.T) {
 		// don't otherwise annotate failures here; testing of that logic is handled
 		// in TestResultAnnotateStatementErrors() in result_test.go.
 		for _, err := range wsSchema.Failures {
-			t.Errorf(err.Error())
+			t.Error(err.Error())
 		}
 		t.Fatalf("Expected 2 creation failures from %s/*.sql, instead found %d (see above errors)", dir, len(wsSchema.Failures))
 	}

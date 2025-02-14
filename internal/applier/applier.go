@@ -104,10 +104,12 @@ func (r *Result) Merge(other Result) {
 	r.UnsupportedCount += other.UnsupportedCount
 }
 
-// Summary returns a string reflecting the contents of the result.
-func (r Result) Summary() string {
+// Error returns an error with a message indicating the number of problems
+// and/or unsupported features reflected in the result. If there were no
+// problems or unsupported features, the returned value is nil.
+func (r Result) Error() error {
 	if r.SkipCount+r.UnsupportedCount == 0 {
-		return ""
+		return nil
 	}
 	var plural, reason string
 	if r.SkipCount+r.UnsupportedCount > 1 {
@@ -120,7 +122,7 @@ func (r Result) Summary() string {
 	} else {
 		reason = "problems or unsupported feature"
 	}
-	return fmt.Sprintf("Skipped %d operation%s due to %s%s", r.SkipCount+r.UnsupportedCount, plural, reason, plural)
+	return fmt.Errorf("Skipped %d operation%s due to %s%s", r.SkipCount+r.UnsupportedCount, plural, reason, plural)
 }
 
 // ApplyTarget generates the diff for the supplied target, prints the resulting

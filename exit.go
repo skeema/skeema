@@ -40,8 +40,8 @@ type ExitCoder interface {
 // be indicated by a code > 1. A nil *ExitValue always represents success / exit
 // code 0.
 type ExitValue struct {
-	Code    int
-	message string
+	Code int
+	err  error
 }
 
 // Error returns an error string, satisfying the Go builtin error interface.
@@ -49,7 +49,12 @@ func (ev *ExitValue) Error() string {
 	if ev == nil {
 		return ""
 	}
-	return ev.message
+	return ev.err.Error()
+}
+
+// Unwrap returns the wrapped error inside of the ExitValue.
+func (ev *ExitValue) Unwrap() error {
+	return ev.err
 }
 
 // ExitCode returns ev's Code, satisfying the ExitCoder interface.
@@ -63,8 +68,17 @@ func (ev *ExitValue) ExitCode() int {
 // NewExitValue is a constructor for ExitValue.
 func NewExitValue(code int, format string, a ...interface{}) *ExitValue {
 	return &ExitValue{
-		Code:    code,
-		message: fmt.Sprintf(format, a...),
+		Code: code,
+		err:  fmt.Errorf(format, a...),
+	}
+}
+
+// WrapExitCode attaches a numeric exit code to an existing error, returning a
+// new ExitValue which wraps err.
+func WrapExitCode(code int, err error) *ExitValue {
+	return &ExitValue{
+		Code: code,
+		err:  err,
 	}
 }
 
@@ -153,6 +167,6 @@ func panicHandler() {
 			"This situation indicates a bug in Skeema. Use --debug to view full stack trace.",
 			"Please file an issue report at https://github.com/skeema/skeema/issues with any available background information.",
 		}
-		Exit(NewExitValue(CodeFatalError, strings.Join(messages, "\n")))
+		Exit(errors.New(strings.Join(messages, "\n")))
 	}
 }

@@ -210,7 +210,7 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 		mods := statementModifiersForPull(dir.Config, instance)
 		opts, err := workspace.OptionsForDir(dir, instance)
 		if err != nil {
-			return nil, NewExitValue(CodeBadConfig, err.Error())
+			return nil, WrapExitCode(CodeBadConfig, err)
 		}
 		inDiff, err := objectsInDiff(logicalSchema, instSchema, opts, mods)
 		if err != nil {

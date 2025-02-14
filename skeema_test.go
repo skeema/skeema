@@ -138,7 +138,7 @@ func (s *SkeemaIntegrationSuite) handleCommand(t *testing.T, expectedExitCode in
 	util.AddGlobalConfigFiles(cfg)
 	err := util.ProcessSpecialGlobalOptions(cfg)
 	if err != nil {
-		err = NewExitValue(CodeBadConfig, err.Error())
+		err = WrapExitCode(CodeBadConfig, err)
 	} else {
 		util.CloseCachedConnectionPools() // ensure no previous session state bleeds through
 		err = cfg.HandleCommand()

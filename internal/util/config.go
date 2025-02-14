@@ -171,7 +171,7 @@ func NoInteractiveInput() (string, error) {
 // returns the specified string.
 func NewMockPasswordInput(mockPassword string) PasswordInputSource {
 	return PasswordInputSource(func() (string, error) {
-		fmt.Fprintf(os.Stderr, strings.Repeat("*", len(mockPassword)))
+		fmt.Fprint(os.Stderr, strings.Repeat("*", len(mockPassword)))
 		return mockPassword, nil
 	})
 }

@@ -36,6 +36,19 @@ func TestExitValueError(t *testing.T) {
 	}
 }
 
+func TestWrapExitCode(t *testing.T) {
+	err := WrapExitCode(CodeBadConfig, errors.ErrUnsupported)
+	if actual, expected := err.Error(), errors.ErrUnsupported.Error(); actual != expected {
+		t.Errorf("Found message %v, expected %v", actual, expected)
+	}
+	if !errors.Is(err, errors.ErrUnsupported) {
+		t.Error("Return value of WrapExitCode not working as expected")
+	}
+	if ExitCode(err) != CodeBadConfig {
+		t.Errorf("Expected exit code to be %d, instead found %d", CodeBadConfig, ExitCode(err))
+	}
+}
+
 func TestHighestExitCode(t *testing.T) {
 	partialErr := NewExitValue(CodePartialError, "this is code 1")
 	implicitFatalErr := errors.New("This will be converted to CodeFatalError or code 2")

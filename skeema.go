@@ -38,12 +38,12 @@ func main() {
 	var cfg *mybase.Config
 	cfg, err := mybase.ParseCLI(CommandSuite, os.Args)
 	if err != nil {
-		Exit(NewExitValue(CodeBadConfig, err.Error()))
+		Exit(WrapExitCode(CodeBadConfig, err))
 	}
 
 	util.AddGlobalConfigFiles(cfg)
 	if err := util.ProcessSpecialGlobalOptions(cfg); err != nil {
-		Exit(NewExitValue(CodeBadConfig, err.Error()))
+		Exit(WrapExitCode(CodeBadConfig, err))
 	}
 
 	err = cfg.HandleCommand()

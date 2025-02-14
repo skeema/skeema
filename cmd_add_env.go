@@ -76,7 +76,7 @@ func AddEnvHandler(cfg *mybase.Config) error {
 	if flavor := inst.Flavor(); flavor.Known() {
 		dir.OptionFile.SetOptionValue(environment, "flavor", flavor.Family().String())
 	} else {
-		log.Warnf(`Unable to automatically determine database server's vendor/version. To set manually, use the "flavor" option in ` + dir.OptionFile.Path())
+		log.Warn(`Unable to automatically determine database server's vendor/version. To set manually, use the "flavor" option in ` + dir.OptionFile.Path())
 	}
 	for optionName := range cfg.CLI.OptionValues {
 		if persistOptionAlongsideHost(optionName) { // see cmd_init.go

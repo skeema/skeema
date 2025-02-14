@@ -97,13 +97,13 @@ func formatDir(dir *fs.Dir) error {
 		inst, err := dir.FirstInstance()
 		if wsType, _ := dir.Config.GetEnum("workspace", "temp-schema", "docker"); wsType != "docker" || !dir.Config.Changed("flavor") {
 			if err != nil {
-				return NewExitValue(CodeBadConfig, err.Error())
+				return WrapExitCode(CodeBadConfig, err)
 			} else if inst == nil {
 				return NewExitValue(CodeBadConfig, "This command needs either a host (with workspace=temp-schema) or flavor (with workspace=docker), but one is not configured for environment %q", dir.Config.Get("environment"))
 			}
 		}
 		if wsOpts, err = workspace.OptionsForDir(dir, inst); err != nil {
-			return NewExitValue(CodeBadConfig, err.Error())
+			return WrapExitCode(CodeBadConfig, err)
 		}
 
 		// TODO: support multiple logical schemas per dir

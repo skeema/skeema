@@ -44,11 +44,11 @@ func TestResultMerge(t *testing.T) {
 	}
 }
 
-func TestResultSummary(t *testing.T) {
+func TestResultError(t *testing.T) {
 	testCases := []struct {
-		skipCount        int
-		unsupportedCount int
-		expectedSummary  string
+		skipCount           int
+		unsupportedCount    int
+		expectedErrorString string
 	}{
 		{0, 0, ""},
 		{1, 0, "Skipped 1 operation due to problem"},
@@ -63,8 +63,12 @@ func TestResultSummary(t *testing.T) {
 			SkipCount:        tc.skipCount,
 			UnsupportedCount: tc.unsupportedCount,
 		}
-		if actualSummary := r.Summary(); actualSummary != tc.expectedSummary {
-			t.Errorf("Unexpected return from Result.Summary(): expected %q, found %q", tc.expectedSummary, actualSummary)
+		var actualErrorString string
+		if actualError := r.Error(); actualError != nil {
+			actualErrorString = actualError.Error()
+		}
+		if actualErrorString != tc.expectedErrorString {
+			t.Errorf("Unexpected return from Result.Error(): expected %q, found %q", tc.expectedErrorString, actualErrorString)
 		}
 	}
 }
