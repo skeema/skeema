@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -89,7 +90,7 @@ func (instance *Instance) String() string {
 	} else if instance.Port == 0 {
 		return instance.Host
 	} else {
-		return fmt.Sprintf("%s:%d", instance.Host, instance.Port)
+		return instance.Host + ":" + strconv.Itoa(instance.Port)
 	}
 }
 
@@ -107,6 +108,36 @@ func (instance *Instance) BuildParamString(params string) string {
 	for name := range overrides {
 		v.Set(name, overrides.Get(name))
 	}
+
+	// If a readTimeout is being set, make the lock wait timeouts be less than the
+	// readTimeout. This ensures queries/statements will hit lock wait timeouts
+	// *before* hitting the readTimeout, aiding in troubleshooting lock-related
+	// problems and preventing dangling queries after a readTimeout.
+	if v.Has("readTimeout") {
+		if readTimeout, _ := time.ParseDuration(v.Get("readTimeout")); readTimeout > 0 {
+			readTimeoutSec := int(readTimeout / time.Second)
+			if readTimeoutSec < 2 {
+				// Override an overly-low readTimeout, to ensure we can set lock timeouts to
+				// 1 second under the readTimeout and still end up with a positive number
+				v.Set("readTimeout", "2s")
+				v.Set("lock_wait_timeout", "1")
+				v.Set("innodb_lock_wait_timeout", "1")
+			} else {
+				for _, varname := range []string{"lock_wait_timeout", "innodb_lock_wait_timeout"} {
+					if !v.Has(varname) {
+						// Params didn't set this var, and we don't know what value the server is
+						// using yet. Set var to the lesser of (server value, readTimeout-1)
+						v.Set(varname, fmt.Sprintf("LEAST(%d,CONVERT(@@%s,SIGNED))", readTimeoutSec-1, varname))
+					} else if requested, _ := strconv.Atoi(v.Get(varname)); requested >= readTimeoutSec {
+						// Param did set the value, to an int literal equal or above the
+						// readTimeout: override to be below the readTimeout instead
+						v.Set(varname, strconv.Itoa(readTimeoutSec-1))
+					}
+				}
+			}
+		}
+	}
+
 	return v.Encode()
 }
 
@@ -804,7 +835,7 @@ func (opts BulkDropOptions) params() string {
 		values = append(values, "sql_log_bin=0")
 	}
 	if opts.LockWaitTimeout > 0 {
-		values = append(values, fmt.Sprintf("lock_wait_timeout=%d", opts.LockWaitTimeout))
+		values = append(values, "lock_wait_timeout="+strconv.Itoa(opts.LockWaitTimeout))
 	}
 	return strings.Join(values, "&")
 }

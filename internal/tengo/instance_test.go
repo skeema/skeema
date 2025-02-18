@@ -108,8 +108,14 @@ func TestInstanceBuildParamString(t *testing.T) {
 	assertParamString("", "param1=value1", "param1=value1")
 	assertParamString("param1=value1", "param1=value1", "param1=value1")
 	assertParamString("param1=value1", "param1=hello", "param1=hello")
-	assertParamString("param1=value1&readTimeout=5s&interpolateParams=0", "param2=value2", "param1=value1&readTimeout=5s&interpolateParams=0&param2=value2")
-	assertParamString("param1=value1&readTimeout=5s&interpolateParams=0", "param1=value3", "param1=value3&readTimeout=5s&interpolateParams=0")
+	assertParamString("param1=value1&timeout=5s&interpolateParams=0", "param2=value2", "param1=value1&timeout=5s&interpolateParams=0&param2=value2")
+	assertParamString("param1=value1&timeout=5s&interpolateParams=0", "param1=value3", "param1=value3&timeout=5s&interpolateParams=0")
+
+	// Test special interactions between readTimeout, lock_wait_timeout, innodb_lock_wait_timeout
+	assertParamString("lock_wait_timeout=20", "", "lock_wait_timeout=20")
+	assertParamString("lock_wait_timeout=20", "readTimeout=10s", "readTimeout=10s&lock_wait_timeout=9&innodb_lock_wait_timeout=LEAST(9,CONVERT(@@innodb_lock_wait_timeout,SIGNED))")
+	assertParamString("readTimeout=10500ms", "innodb_lock_wait_timeout=7", "readTimeout=10500ms&innodb_lock_wait_timeout=7&lock_wait_timeout=LEAST(9,CONVERT(@@lock_wait_timeout,SIGNED))")
+	assertParamString("readTimeout=2.5s", "readTimeout=1.5s", "readTimeout=2s&lock_wait_timeout=1&innodb_lock_wait_timeout=1")
 }
 
 func TestInstanceIntrospectionParams(t *testing.T) {
