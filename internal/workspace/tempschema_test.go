@@ -182,10 +182,10 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCrossDBFK(t *testing.T) {
 		// cleaned up yet.
 		s.sourceSQL(t, "crossdbfk-setup2.sql")
 		tempSchema := &TempSchema{
-			schemaName:  "_skeema_tmp",
-			concurrency: 5,
-			inst:        s.d.Instance,
-			mdlTimeout:  1,
+			schemaName:    "_skeema_tmp",
+			dropChunkSize: 3,
+			inst:          s.d.Instance,
+			mdlTimeout:    1,
 		}
 		if tempSchema.releaseLock, err = getLock(tempSchema.inst, "skeema._skeema_tmp", opts.LockTimeout); err != nil {
 			t.Fatalf("Unable to lock temporary schema on Dockerized instance: %v", err)

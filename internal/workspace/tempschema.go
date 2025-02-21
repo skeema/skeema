@@ -14,13 +14,13 @@ import (
 // database instance. The schema is cleaned up when done interacting with the
 // workspace.
 type TempSchema struct {
-	schemaName  string
-	keepSchema  bool
-	concurrency int
-	skipBinlog  bool
-	inst        *tengo.Instance
-	releaseLock releaseFunc
-	mdlTimeout  int // metadata lock wait timeout, in seconds; 0 for session default
+	schemaName    string
+	keepSchema    bool
+	dropChunkSize int
+	skipBinlog    bool
+	inst          *tengo.Instance
+	releaseLock   releaseFunc
+	mdlTimeout    int // metadata lock wait timeout, in seconds; 0 for session default
 }
 
 // NewTempSchema creates a temporary schema on the supplied instance and returns
@@ -37,11 +37,23 @@ func NewTempSchema(opts Options) (_ *TempSchema, retErr error) {
 	// common when dealing with named returns and deferred anonymous functions.
 	var err error
 	ts := &TempSchema{
-		schemaName:  opts.SchemaName,
-		keepSchema:  opts.CleanupAction == CleanupActionNone,
-		inst:        opts.Instance,
-		concurrency: opts.Concurrency,
-		skipBinlog:  opts.SkipBinlog,
+		schemaName:    opts.SchemaName,
+		keepSchema:    opts.CleanupAction == CleanupActionNone,
+		inst:          opts.Instance,
+		skipBinlog:    opts.SkipBinlog,
+		dropChunkSize: 1,
+	}
+
+	// During workspace cleanup of tables, drop multiple tables per statement
+	// depending on whether the flavor has DROP TABLE perf optimizations, and
+	// partially depending on how the user has adjusted temp-schema-threads.
+	// (Unlike CREATE TABLE which uses temp-schema-threads literally, we don't
+	// ever run DROP TABLE concurrently, so "threads" is a misnomer here.)
+	if ts.inst.Flavor().MinMySQL(8, 0, 23) && opts.Concurrency >= 3 {
+		ts.dropChunkSize++
+	}
+	if opts.Concurrency >= 6 {
+		ts.dropChunkSize++
 	}
 
 	lockName := fmt.Sprintf("skeema.%s", ts.schemaName)
@@ -100,7 +112,7 @@ func NewTempSchema(opts Options) (_ *TempSchema, retErr error) {
 
 func (ts *TempSchema) bulkDropOptions() tengo.BulkDropOptions {
 	return tengo.BulkDropOptions{
-		MaxConcurrency:  ts.concurrency,
+		ChunkSize:       ts.dropChunkSize,
 		OnlyIfEmpty:     true,
 		SkipBinlog:      ts.skipBinlog,
 		PartitionsFirst: true,

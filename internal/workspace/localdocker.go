@@ -148,9 +148,9 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 		// than attempting to re-use the schema.) Fail if any tables actually have
 		// 1 or more rows.
 		dropOpts := tengo.BulkDropOptions{
-			MaxConcurrency: 10,
-			OnlyIfEmpty:    true,
-			SkipBinlog:     true,
+			ChunkSize:   10,
+			OnlyIfEmpty: true,
+			SkipBinlog:  true,
 		}
 		if err := ld.d.DropSchema(ld.schemaName, dropOpts); err != nil {
 			return nil, fmt.Errorf("Cannot drop existing temporary schema on %s: %s", ld.d.Instance, err)
@@ -230,10 +230,10 @@ func (ld *LocalDocker) Cleanup(schema *tengo.Schema) error {
 	}()
 
 	dropOpts := tengo.BulkDropOptions{
-		MaxConcurrency: 10,
-		OnlyIfEmpty:    true,
-		SkipBinlog:     true,
-		Schema:         schema, // may be nil, not a problem
+		ChunkSize:   10,
+		OnlyIfEmpty: true,
+		SkipBinlog:  false,  // binlog always disabled in our managed containers
+		Schema:      schema, // may be nil, not a problem
 	}
 	if err := ld.d.DropSchema(ld.schemaName, dropOpts); err != nil {
 		return fmt.Errorf("Cannot drop temporary schema on %s: %s", ld.d.Instance, err)

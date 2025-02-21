@@ -187,8 +187,8 @@ func TestSchemaDiffDropPartitionedTable(t *testing.T) {
 	// partitions in table, and then a DROP TABLE for the table.
 	diff := NewSchemaDiff(&s1, &s2)
 	expectStatements := []string{
-		fmt.Sprintf("ALTER TABLE %s DROP PARTITION %s", EscapeIdentifier(table.Name), table.Partitioning.Partitions[0].Name),
-		fmt.Sprintf("ALTER TABLE %s DROP PARTITION %s", EscapeIdentifier(table.Name), table.Partitioning.Partitions[1].Name),
+		fmt.Sprintf("ALTER TABLE %s DROP PARTITION %s", EscapeIdentifier(table.Name), EscapeIdentifier(table.Partitioning.Partitions[0].Name)),
+		fmt.Sprintf("ALTER TABLE %s DROP PARTITION %s", EscapeIdentifier(table.Name), EscapeIdentifier(table.Partitioning.Partitions[1].Name)),
 		fmt.Sprintf("DROP TABLE %s", EscapeIdentifier(table.Name)),
 	}
 	objDiffs := diff.ObjectDiffs()
@@ -354,7 +354,7 @@ func (s TengoIntegrationSuite) TestDropPartitionedTable(t *testing.T) {
 func (s TengoIntegrationSuite) TestBulkDropPartitioned(t *testing.T) {
 	s.SourceTestSQL(t, "partition.sql")
 	opts := BulkDropOptions{
-		MaxConcurrency:  15,
+		ChunkSize:       8,
 		PartitionsFirst: true,
 	}
 	err := s.d.DropTablesInSchema("partitionparty", opts)

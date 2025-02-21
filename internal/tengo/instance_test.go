@@ -603,7 +603,7 @@ func (s TengoIntegrationSuite) TestInstanceDropSchema(t *testing.T) {
 	s.SourceTestSQL(t, "integration-ext.sql", "rows.sql")
 
 	opts := BulkDropOptions{
-		MaxConcurrency:  10,
+		ChunkSize:       6,
 		OnlyIfEmpty:     true,
 		PartitionsFirst: true,
 	}
@@ -640,8 +640,8 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesInSchemaByRef(t *testing.T)
 		t.Fatal("Assertion failure: schema `testing` has no tables to start")
 	}
 	opts := BulkDropOptions{
-		MaxConcurrency: 10,
-		Schema:         schema,
+		ChunkSize: 3,
+		Schema:    schema,
 	}
 	if err := s.d.DropTablesInSchema("testing", opts); err != nil {
 		t.Fatalf("Unexpected error from DropTablesInSchema: %v", err)
@@ -654,39 +654,6 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesInSchemaByRef(t *testing.T)
 	// longer exist!
 	if err := s.d.DropTablesInSchema("testing", opts); err == nil {
 		t.Error("Expected error from DropTablesInSchema, but return was nil")
-	}
-}
-
-func (s TengoIntegrationSuite) TestInstanceDropTablesDeadlock(t *testing.T) {
-	// With the new data dictionary, attempting to drop 2 tables concurrently can
-	// deadlock if the tables have a foreign key constraint between them. This
-	// deadlock did not occur in prior releases.
-	if !s.d.Flavor().MinMySQL(8) {
-		t.Skip("Test only relevant for flavors that have the new data dictionary")
-	}
-
-	s.SourceTestSQL(t, "integration-ext.sql", "rows.sql")
-
-	db, err := s.d.CachedConnectionPool("", "foreign_key_checks=0")
-	if err != nil {
-		t.Fatalf("Unable to connect to DockerizedInstance: %s", err)
-	}
-
-	// Add a FK relation, drop all tables in the schema, and then restore the
-	// test database to its previous state. Without the fix in DropTablesInSchema,
-	// this tends to hit a deadlock within just a few loop iterations.
-	opts := BulkDropOptions{MaxConcurrency: 10}
-	for n := 0; n < 10; n++ {
-		_, err = db.Exec("ALTER TABLE testing.actor_in_film ADD CONSTRAINT actor FOREIGN KEY (actor_id) REFERENCES testing.actor (actor_id)")
-		if err != nil {
-			t.Fatalf("Error running query on DockerizedInstance: %s", err)
-		}
-		if err = s.d.DropTablesInSchema("testing", opts); err != nil {
-			t.Fatalf("Error dropping tables: %s", err)
-		}
-		if err = s.BeforeTest(""); err != nil {
-			t.Fatalf("Error nuking and re-sourcing data: %s", err)
-		}
 	}
 }
 
@@ -740,7 +707,7 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesSkipsViews(t *testing.T) {
 	// will error on a view; and even before that, since we use OnlyIfEmpty, the
 	// SELECT on a view with a bad definer will also error.
 	opts := BulkDropOptions{
-		MaxConcurrency:  10,
+		ChunkSize:       5,
 		OnlyIfEmpty:     true,
 		PartitionsFirst: true,
 	}
@@ -756,7 +723,7 @@ func (s TengoIntegrationSuite) TestInstanceDropRoutinesInSchema(t *testing.T) {
 		t.Fatal("Assertion failure: schema `testing` has no routines to start")
 	}
 	opts := BulkDropOptions{
-		MaxConcurrency: 10,
+		ChunkSize: 3,
 	}
 	if err := s.d.DropRoutinesInSchema("testing", opts); err != nil {
 		t.Fatalf("Unexpected error from DropRoutinesInSchema: %v", err)
@@ -783,8 +750,8 @@ func (s TengoIntegrationSuite) TestInstanceDropRoutinesInSchemaByRef(t *testing.
 		t.Fatal("Assertion failure: schema `testing` has no routines to start")
 	}
 	opts := BulkDropOptions{
-		MaxConcurrency: 10,
-		Schema:         schema,
+		ChunkSize: 3,
+		Schema:    schema,
 	}
 	if err := s.d.DropRoutinesInSchema("testing", opts); err != nil {
 		t.Fatalf("Unexpected error from DropRoutinesInSchema: %v", err)

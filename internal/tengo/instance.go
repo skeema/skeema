@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"maps"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,7 +35,6 @@ type Instance struct {
 	waitTimeout     int
 	lockWaitTimeout int
 	maxUserConns    int
-	bufferPoolSize  int64
 	lowerCaseNames  int
 	sqlMode         []string
 	valid           bool // true if any conn has ever successfully been made yet
@@ -341,7 +342,6 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 		LockWaitTimeout     int
 		MaxUserConns        int
 		MaxConns            int
-		BufferPoolSize      int64
 		LowerCaseTableNames int
 	}
 	query := `
@@ -350,7 +350,6 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 		       @@session.sql_mode AS sqlmode,
 		       @@session.wait_timeout AS waittimeout,
 		       @@session.lock_wait_timeout AS lockwaittimeout,
-		       @@global.innodb_buffer_pool_size AS bufferpoolsize,
 		       @@global.lower_case_table_names as lowercasetablenames,
 		       @@session.max_user_connections AS maxuserconns,
 		       @@global.max_connections AS maxconns`
@@ -365,7 +364,6 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 	instance.sqlMode = strings.Split(result.SQLMode, ",")
 	instance.waitTimeout = result.WaitTimeout
 	instance.lockWaitTimeout = result.LockWaitTimeout
-	instance.bufferPoolSize = result.BufferPoolSize
 	instance.lowerCaseNames = result.LowerCaseTableNames
 	if result.MaxUserConns > 0 {
 		instance.maxUserConns = result.MaxUserConns
@@ -822,7 +820,7 @@ func (instance *Instance) AlterSchema(schema string, opts SchemaCreationOptions)
 // BulkDropOptions controls how objects are dropped in bulk.
 type BulkDropOptions struct {
 	OnlyIfEmpty     bool    // If true, when dropping tables, error if any have rows
-	MaxConcurrency  int     // Max objects to drop at once
+	ChunkSize       int     // Objects to drop per statement
 	SkipBinlog      bool    // If true, use session sql_log_bin=0 (requires superuser)
 	PartitionsFirst bool    // If true, drop RANGE/LIST partitioned tables one partition at a time
 	LockWaitTimeout int     // If greater than 0, limit how long to wait for metadata locks (in seconds)
@@ -840,40 +838,10 @@ func (opts BulkDropOptions) params() string {
 	return strings.Join(values, "&")
 }
 
-// Concurrency returns the concurrency, with a minimum value of 1.
-func (opts BulkDropOptions) Concurrency() int {
-	if opts.MaxConcurrency < 1 {
-		return 1
-	}
-	return opts.MaxConcurrency
-}
-
 // DropTablesInSchema drops all tables in a schema. If opts.OnlyIfEmpty==true,
 // returns an error if any of the tables have any rows.
 func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions) error {
-	// We can normally execute multiple DROP TABLEs concurrently, which improves
-	// performance over a slow network link (WAN / VPN) even though the server
-	// actually runs them serially. However, if the flavor doesn't have optimized
-	// DROP TABLE, each drop is slow with a large-ish buffer pool, and having all
-	// those drops queued up will cause a stall (since no other queries will be
-	// able to run in between them). So in that case, reduce concurrency to 1.
-	concurrency := opts.Concurrency()
-	if instance.bufferPoolSize >= (32*1024*1024*1024) && !instance.Flavor().MinMySQL(8, 0, 23) {
-		concurrency = 1
-	}
-
-	// In MariaDB 10.6+, concurrent DROP TABLE can result in *InnoDB* locking
-	// conflicts if foreign keys are in-use. This causes a stall which isn't
-	// resolved until hitting innodb_lock_wait_timeout, which defaults to 50sec,
-	// longer than our default query timeout. See MDEV-32899 and MDEV-32883. To
-	// resolve this, we use a 3sec innodb_lock_wait_timeout and retry failures
-	// serially.
-	params := opts.params()
-	if concurrency > 1 && instance.Flavor().MinMariaDB(10, 6) {
-		params += "&innodb_lock_wait_timeout=3"
-	}
-
-	db, err := instance.CachedConnectionPool(schema, params)
+	db, err := instance.CachedConnectionPool(schema, opts.params())
 	if err != nil {
 		return fmt.Errorf("Error obtaining connection pool for dropping tables in schema %s: %w", EscapeIdentifier(schema), err)
 	}
@@ -891,51 +859,59 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 	if len(tableMap) == 0 {
 		return nil
 	}
+	names := slices.Collect(maps.Keys(tableMap))
 
 	// If requested, confirm tables are empty
 	if opts.OnlyIfEmpty {
-		names := make([]string, 0, len(tableMap))
-		for tableName := range tableMap {
-			names = append(names, tableName)
-		}
 		if err := confirmTablesEmpty(db, schema, names); err != nil {
 			return err
 		}
 	}
 
-	g, ctx := errgroup.WithContext(context.Background())
-	g.SetLimit(concurrency)
-	retries := make(chan string, len(tableMap))
-	for name, partitions := range tableMap {
-		name, partitions := name, partitions // avoid closure with loop iteration variables
-		g.Go(func() error {
-			if len(partitions) > 1 && opts.PartitionsFirst {
-				if err := dropPartitions(db, name, partitions[0:len(partitions)-1]); err != nil {
-					return err
+	// If requested, for each partitioned table, drop all partitions but 1
+	if opts.PartitionsFirst {
+		for name, partitions := range tableMap {
+			if len(partitions) > 1 {
+				for chunk := range slices.Chunk(partitions[0:len(partitions)-1], opts.ChunkSize) {
+					escapedPartitionNames := make([]string, len(chunk))
+					for n := range chunk {
+						escapedPartitionNames[n] = EscapeIdentifier(chunk[n])
+					}
+					alter := "ALTER TABLE " + EscapeIdentifier(name) + " DROP PARTITION " + strings.Join(escapedPartitionNames, ", ")
+					if _, err := db.Exec(alter); err != nil {
+						return fmt.Errorf("Error dropping partitions via %s: %w", alter, err)
+					}
 				}
 			}
-			_, err := db.ExecContext(ctx, "DROP TABLE "+EscapeIdentifier(name))
-			if IsLockConflictError(err) {
-				// If foreign keys are being used, DROP TABLE can encounter lock wait
-				// timeouts in various situations in MySQL 8.0+ or MariaDB 10.6+, due to
-				// concurrent drops or due to cross-schema FKs. MySQL 8.0+ can also
-				// encounter deadlocks due to concurrent drops.
-				// We retry these failed drops later in a serial manner.
-				retries <- name
-			} else if err != nil {
-				return fmt.Errorf("Error dropping table %s.%s: %w", EscapeIdentifier(schema), EscapeIdentifier(name), err)
-			}
-			return nil
-		})
-	}
-	fatalErr := g.Wait()
-	close(retries)
-	for name := range retries {
-		if _, err := db.Exec("DROP TABLE " + EscapeIdentifier(name)); err != nil {
-			return fmt.Errorf("Error dropping table %s.%s even after retry: %w", EscapeIdentifier(schema), EscapeIdentifier(name), err)
 		}
 	}
-	return fatalErr
+
+	// We don't ever run DROP TABLEs concurrently, as this can deadlock in recent
+	// MySQL and MariaDB if foreign keys are present; and dropping tables too
+	// rapidly can be stall-prone in older MySQL and MariaDB, especially if AHI is
+	// enabled and/or the buffer pool is large. But we do permit dropping multiple
+	// tables per statement to reduce the number of round-trips. If any statements
+	// fail, we retry each table from the chunk individually.
+	retries := []string{}
+	for chunk := range slices.Chunk(names, opts.ChunkSize) {
+		escapedNames := make([]string, len(chunk))
+		for n := range chunk {
+			escapedNames[n] = EscapeIdentifier(chunk[n])
+		}
+		_, err := db.Exec("DROP TABLE " + strings.Join(escapedNames, ", "))
+		if err != nil {
+			// If foreign keys are being used, DROP TABLE can encounter lock wait
+			// timeouts in various situations in some flavors. We retry any error
+			// at the end, without chunking.
+			retries = append(retries, escapedNames...)
+		}
+	}
+	for _, escapedName := range retries {
+		if _, err := db.Exec("DROP TABLE " + escapedName); err != nil {
+			return fmt.Errorf("Error dropping table %s.%s even after retry: %w", EscapeIdentifier(schema), escapedName, err)
+		}
+	}
+	return nil
 }
 
 // DropRoutinesInSchema drops all stored procedures and functions in a schema.
@@ -971,8 +947,20 @@ func (instance *Instance) DropRoutinesInSchema(schema string, opts BulkDropOptio
 		return nil
 	}
 
+	// DROP PROCEDURE and DROP FUNCTION do not allow multiple objects to be
+	// specified at once, so instead we use concurrency here; even if they queue
+	// up serially behind a server mutex, this still potentially improves perf by
+	// avoiding waits for entire round-trips
+	var concurrency int
+	if instance.Host == "127.0.0.1" || instance.Host == "localhost" {
+		concurrency = 2
+	} else if opts.ChunkSize > 5 {
+		concurrency = 10
+	} else {
+		concurrency = opts.ChunkSize * 2
+	}
 	g := new(errgroup.Group)
-	g.SetLimit(opts.Concurrency())
+	g.SetLimit(concurrency)
 	for _, ri := range routineInfo {
 		name, typ := ri.Name, ri.Type
 		g.Go(func() error {
@@ -1052,18 +1040,6 @@ func tablesToPartitions(db *sqlx.DB, schema string, flavor Flavor) (map[string][
 	}
 
 	return partitions, nil
-}
-
-func dropPartitions(db *sqlx.DB, table string, partitions []string) error {
-	for _, partName := range partitions {
-		_, err := db.Exec(fmt.Sprintf("ALTER TABLE %s DROP PARTITION %s",
-			EscapeIdentifier(table),
-			EscapeIdentifier(partName)))
-		if err != nil {
-			return fmt.Errorf("Error dropping partition of table %s: %w", EscapeIdentifier(table), err)
-		}
-	}
-	return nil
 }
 
 // DefaultCharSetAndCollation returns the instance's default character set and

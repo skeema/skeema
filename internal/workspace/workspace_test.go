@@ -136,23 +136,19 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaErrors(t *testing.T) {
 }
 
 // TestExecLogicalSchemaFK confirms that ExecLogicalSchema does not choke on
-// concurrent table creation involving cross-referencing foreign keys. This
-// situation, if not specially handled, is known to cause random deadlock
-// errors with MySQL 8.0's new data dictionary.
+// concurrent table creation involving cross-referencing foreign keys, nor on
+// cleanup (which is sequential, but drops multiple tables in chunks).
 func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaFK(t *testing.T) {
-	if !s.d.Flavor().MinMySQL(8) {
-		t.Skip("Test only relevant for flavors that have the new data dictionary")
-	}
-
 	dir := s.getParsedDir(t, "testdata/manyfk", "")
 	opts, err := OptionsForDir(dir, s.d.Instance)
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
 	}
 	opts.LockTimeout = 100 * time.Millisecond
+	opts.Concurrency = 10
 
 	// Test multiple times, since the problem isn't deterministic
-	for n := 0; n < 3; n++ {
+	for n := 0; n < 5; n++ {
 		wsSchema, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 		if err != nil {
 			t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)

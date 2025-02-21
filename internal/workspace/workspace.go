@@ -125,7 +125,7 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 		CleanupAction: CleanupActionNone,
 		SchemaName:    dir.Config.GetAllowEnvVar("temp-schema"),
 		LockTimeout:   30 * time.Second,
-		Concurrency:   10,
+		Concurrency:   2,
 	}
 	if requestedType == "docker" {
 		opts.Type = TypeLocalDocker

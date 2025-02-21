@@ -872,9 +872,13 @@ func (mp ModifyPartitions) Clause(mods StatementModifiers) string {
 	}
 	var names []string
 	for _, p := range mp.Drop {
-		names = append(names, p.Name)
+		names = append(names, EscapeIdentifier(p.Name))
 	}
-	return fmt.Sprintf("DROP PARTITION %s", strings.Join(names, ", "))
+	// Multiple partitions can be dropped in one DROP PARTITION clause; this is
+	// valid syntax because DROP PARTITION cannot occur alongside other alter
+	// clauses. TODO: TableDiff.SplitConflicts() must handle that if/when
+	// partition list modifications are supported in more cases.
+	return "DROP PARTITION " + strings.Join(names, ", ")
 }
 
 // Unsafe returns true if this clause is potentially destructive of data.
