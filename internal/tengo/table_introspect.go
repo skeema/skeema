@@ -829,7 +829,12 @@ func fixFulltextIndexParsers(t *Table, flavor Flavor) {
 		if idx.Type == "FULLTEXT" {
 			// Obtain properly-formatted index definition without parser clause, and
 			// then build a regex from this which captures the parser name.
-			template := idx.Definition(flavor) + " /*!50100 WITH PARSER "
+			var template string
+			if flavor.MinMariaDB(11, 7) {
+				template = idx.Definition(flavor) + " WITH PARSER "
+			} else {
+				template = idx.Definition(flavor) + " /*!50100 WITH PARSER "
+			}
 			template = regexp.QuoteMeta(template)
 			template += "`([^`]+)`"
 			re := regexp.MustCompile(template)

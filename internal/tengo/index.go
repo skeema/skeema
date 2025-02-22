@@ -59,10 +59,15 @@ func (idx *Index) Definition(flavor Flavor) string {
 		}
 	}
 	if idx.Type == "FULLTEXT" && idx.FullTextParser != "" {
-		// Note the trailing space here is intentional -- it's always present in SHOW
-		// CREATE TABLE for this particular clause
-		parser = " /*!50100 WITH PARSER `" + idx.FullTextParser + "` */ "
+		if flavor.MinMariaDB(11, 7) { // changed in MDEV-35308
+			parser = " WITH PARSER " + EscapeIdentifier(idx.FullTextParser)
+		} else {
+			// Note the trailing space here is intentional -- it's always present in SHOW
+			// CREATE TABLE for this particular clause
+			parser = " /*!50100 WITH PARSER " + EscapeIdentifier(idx.FullTextParser) + " */ "
+		}
 	}
+	// TODO: MariaDB 11.7+ vector options
 	return typeAndName + " (" + strings.Join(parts, ",") + ")" + comment + invis + parser
 }
 

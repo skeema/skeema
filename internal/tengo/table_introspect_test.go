@@ -275,27 +275,29 @@ func TestColumnCompression(t *testing.T) {
 // TestFixFulltextIndexParsers confirms CREATE TABLE parsing for WITH PARSER
 // clauses works properly.
 func TestFixFulltextIndexParsers(t *testing.T) {
-	flavor := ParseFlavor("mysql:5.7")
-	table := anotherTableForFlavor(flavor)
-	if table.SecondaryIndexes[0].Type != "BTREE" || table.SecondaryIndexes[0].FullTextParser != "" {
-		t.Fatal("Test fixture has changed without corresponding update to this test's logic")
-	}
+	for _, flavorString := range []string{"mysql:5.7", "mariadb:11.7"} {
+		flavor := ParseFlavor(flavorString)
+		table := anotherTableForFlavor(flavor)
+		if table.SecondaryIndexes[0].Type != "BTREE" || table.SecondaryIndexes[0].FullTextParser != "" {
+			t.Fatal("Test fixture has changed without corresponding update to this test's logic")
+		}
 
-	// Confirm no parser = no change from fix
-	table.SecondaryIndexes[0].Type = "FULLTEXT"
-	table.CreateStatement = table.GeneratedCreateStatement(flavor)
-	fixFulltextIndexParsers(&table, flavor)
-	if table.SecondaryIndexes[0].FullTextParser != "" {
-		t.Errorf("fixFulltextIndexParsers unexpectedly set parser to %q instead of %q", table.SecondaryIndexes[0].FullTextParser, "")
-	}
+		// Confirm no parser = no change from fix
+		table.SecondaryIndexes[0].Type = "FULLTEXT"
+		table.CreateStatement = table.GeneratedCreateStatement(flavor)
+		fixFulltextIndexParsers(&table, flavor)
+		if table.SecondaryIndexes[0].FullTextParser != "" {
+			t.Errorf("fixFulltextIndexParsers unexpectedly set parser to %q instead of %q", table.SecondaryIndexes[0].FullTextParser, "")
+		}
 
-	// Confirm parser extracted correctly from fix
-	table.SecondaryIndexes[0].FullTextParser = "ngram"
-	table.CreateStatement = table.GeneratedCreateStatement(flavor)
-	table.SecondaryIndexes[0].FullTextParser = ""
-	fixFulltextIndexParsers(&table, flavor)
-	if table.SecondaryIndexes[0].FullTextParser != "ngram" {
-		t.Errorf("fixFulltextIndexParsers unexpectedly set parser to %q instead of %q", table.SecondaryIndexes[0].FullTextParser, "ngram")
+		// Confirm parser extracted correctly from fix
+		table.SecondaryIndexes[0].FullTextParser = "ngram"
+		table.CreateStatement = table.GeneratedCreateStatement(flavor)
+		table.SecondaryIndexes[0].FullTextParser = ""
+		fixFulltextIndexParsers(&table, flavor)
+		if table.SecondaryIndexes[0].FullTextParser != "ngram" {
+			t.Errorf("fixFulltextIndexParsers unexpectedly set parser to %q instead of %q", table.SecondaryIndexes[0].FullTextParser, "ngram")
+		}
 	}
 }
 
