@@ -3,6 +3,7 @@ package tengo
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 )
 
@@ -17,6 +18,7 @@ type Index struct {
 	Comment        string      `json:"comment,omitempty"`
 	Type           string      `json:"type"`
 	FullTextParser string      `json:"parser,omitempty"`
+	Attributes     string      `json:"attributes,omitempty"` // For MariaDB vector indexes; stored as string but compared more intelligently
 }
 
 // IndexPart represents an individual indexed column or expression. Each index
@@ -35,7 +37,7 @@ func (idx *Index) Definition(flavor Flavor) string {
 	for n := range idx.Parts {
 		parts[n] = idx.Parts[n].Definition(flavor)
 	}
-	var typeAndName, comment, invis, parser string
+	var typeAndName, comment, invis, parser, attributes string
 	if idx.PrimaryKey {
 		if !idx.Unique {
 			panic(errors.New("Index is primary key, but isn't marked as unique"))
@@ -59,11 +61,18 @@ func (idx *Index) Definition(flavor Flavor) string {
 		}
 	}
 	if idx.Type == "FULLTEXT" && idx.FullTextParser != "" {
-		// Note the trailing space here is intentional -- it's always present in SHOW
-		// CREATE TABLE for this particular clause
-		parser = " /*!50100 WITH PARSER `" + idx.FullTextParser + "` */ "
+		if flavor.MinMariaDB(11, 7) { // changed in MDEV-35308
+			parser = " WITH PARSER " + EscapeIdentifier(idx.FullTextParser)
+		} else {
+			// Note the trailing space here is intentional -- it's always present in SHOW
+			// CREATE TABLE for this particular clause
+			parser = " /*!50100 WITH PARSER " + EscapeIdentifier(idx.FullTextParser) + " */ "
+		}
 	}
-	return typeAndName + " (" + strings.Join(parts, ",") + ")" + comment + invis + parser
+	if idx.Attributes != "" {
+		attributes = " " + idx.Attributes
+	}
+	return typeAndName + " (" + strings.Join(parts, ",") + ")" + comment + invis + parser + attributes
 }
 
 // Equals returns true if two indexes are completely identical, false otherwise.
@@ -87,6 +96,34 @@ func (idx *Index) sameParts(other *Index) bool {
 	return true
 }
 
+// sameAttributes returns true if two Indexes' Attributes are equivalent,
+// properly accounting for attribute default values and ignoring ordering,
+// quoting, and casing.
+func (idx *Index) sameAttributes(other *Index) bool {
+	if idx.Attributes == other.Attributes { // fast path for non-vectors and default vectors
+		return true
+	}
+	attrStringToMap := func(index *Index) map[string]string {
+		result := make(map[string]string)
+		if index.Type == "VECTOR" {
+			// set defaults for vector attributes if omitted, see defaults of server
+			// vars at https://mariadb.com/kb/en/vector-system-variables/
+			// (This logic still works even if these server vars are overridden due to
+			// how SHOW CREATE TABLE only omits them with default server vars)
+			result["M"] = "6"
+			result["DISTANCE"] = "euclidean"
+		}
+		for _, kv := range splitAttributes(index.Attributes) {
+			k, v, _ := strings.Cut(kv, "=")
+			result[strings.ToUpper(stripAnyQuote(k))] = strings.ToLower(stripAnyQuote(v))
+		}
+		return result
+	}
+	attrs1 := attrStringToMap(idx)
+	attrs2 := attrStringToMap(other)
+	return maps.Equal(attrs1, attrs2)
+}
+
 // Equivalent returns true if two Indexes are functionally equivalent,
 // regardless of whether or not they have the same names, comments, or
 // visibility.
@@ -97,7 +134,7 @@ func (idx *Index) Equivalent(other *Index) bool {
 	if idx.PrimaryKey != other.PrimaryKey || idx.Unique != other.Unique || idx.Type != other.Type || idx.FullTextParser != other.FullTextParser {
 		return false
 	}
-	return idx.sameParts(other)
+	return idx.sameParts(other) && idx.sameAttributes(other)
 }
 
 // RedundantTo returns true if idx is equivalent to, or a strict subset of,
@@ -122,6 +159,8 @@ func (idx *Index) RedundantTo(other *Index) bool {
 		// Since unique indexes are also unique *constraints*, two unique indexes are
 		// non-redundant unless they have identical parts.
 		return idx.sameParts(other)
+	} else if idx.Type == "VECTOR" {
+		return idx.sameParts(other) && idx.sameAttributes(other)
 	} else if idx.Type == "FULLTEXT" && len(idx.Parts) != len(other.Parts) {
 		return false // FT composite indexes don't behave like BTREE in terms of left-right prefixing
 	} else if len(idx.Parts) > len(other.Parts) {

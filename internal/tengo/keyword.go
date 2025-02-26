@@ -11,7 +11,7 @@ import (
 // as well as for solving issues like #175 and #199.
 
 // This constant is used for determining map capacity for reserved word maps.
-// This is padded slightly; currently MySQL 8.4 has 265 reserved words, vs 250
+// This is padded slightly; currently MySQL 8.4 has 265 reserved words, vs 251
 // in recent MariaDB releases.
 const countReservedWordsPerFlavor = 275
 
@@ -461,6 +461,8 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"stats_sample_pages":      {mariaDB101},
 
 	"offset": {{Vendor: VendorMariaDB, Version: Version{10, 6}}},
+
+	"vector": {{Vendor: VendorMariaDB, Version: Version{11, 7}}},
 }
 
 var reservedWordsRemovedInFlavor = map[string][]Flavor{

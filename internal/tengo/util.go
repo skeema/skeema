@@ -118,39 +118,45 @@ func ParseCreatePartitioning(createStmt string) (base, partitionClause string) {
 // information_schema.tables.create_options to the formatting used in SHOW
 // CREATE TABLE.
 func reformatCreateOptions(input string) string {
-	if input == "" {
-		return ""
-	}
-	options := strings.Split(input, " ")
-	result := make([]string, 0, len(options))
-
-	for _, kv := range options {
-		tokens := strings.SplitN(kv, "=", 2)
-		// Option name always all caps in SHOW CREATE TABLE, *except* for backtick-
-		// wrapped option names in MariaDB, which preserve the capitalization supplied
-		// by the user
-		if tokens[0][0] != '`' {
-			tokens[0] = strings.ToUpper(tokens[0])
-		}
-		if len(tokens) == 1 {
-			// Partitioned tables have "partitioned" in this field, but partitioning
-			// information is contained in a different spot in SHOW CREATE TABLE
-			if tokens[0] != "PARTITIONED" {
-				result = append(result, tokens[0])
-			}
-			continue
-		}
-
-		// Double quote wrapper changed to single quotes in SHOW CREATE TABLE
-		if tokens[1][0] == '"' && tokens[1][len(tokens[1])-1] == '"' {
-			tokens[1] = fmt.Sprintf("'%s'", tokens[1][1:len(tokens[1])-1])
-		}
-		result = append(result, fmt.Sprintf("%s=%s", tokens[0], tokens[1]))
-	}
-	return strings.Join(result, " ")
+	return strings.Join(splitAttributes(input), " ")
 }
 
-var normalizeCreateRegexps = []struct {
+// splitAttributes converts a single string of table attributes (from
+// information_schema.tables.create_options) or index attributes (from SHOW
+// CREATE TABLE) into a slice of individual normalized attributes.
+// TODO: currently this strips anything wrapped in /*!...*/ version-gate
+// comments
+func splitAttributes(input string) []string {
+	attributes := []string{}
+	if input == "" {
+		return attributes
+	}
+	tokens := TokenizeString(input)
+	for n := 0; n < len(tokens); n++ {
+		var field string
+		if tokens[n][0] == '`' {
+			field = tokens[n] // user-supplied casing kept as-is for backquote-wrapped attribute names in MariaDB
+		} else {
+			field = strings.ToUpper(tokens[n])
+		}
+		if n < len(tokens)-2 && tokens[n+1] == "=" { // field=value
+			value := tokens[n+2]
+			if value[0] == '"' && value[len(value)-1] == '"' {
+				// value was double-quote-wrapped, convert to single-quote-wrapped
+				attributes = append(attributes, field+"='"+value[1:len(value)-1]+"'")
+			} else {
+				// value as-is
+				attributes = append(attributes, field+"="+value)
+			}
+			n += 2 // skip past "=" and value tokens
+		} else if field != "PARTITIONED" { // field without value; strip PARTITIONED as I_S special-case not in SHOW CREATE
+			attributes = append(attributes, field)
+		}
+	}
+	return attributes
+}
+
+var stripNonInnoRegexps = []struct {
 	re          *regexp.Regexp
 	replacement string
 }{
@@ -159,12 +165,13 @@ var normalizeCreateRegexps = []struct {
 	{re: regexp.MustCompile("`\\) KEY_BLOCK_SIZE=\\d+"), replacement: "`)"},
 }
 
-// NormalizeCreateOptions adjusts the supplied CREATE TABLE statement to remove
+// StripNonInnoAttributes adjusts the supplied CREATE TABLE statement to remove
 // any no-op table options that are persisted in SHOW CREATE TABLE, but not
 // reflected in information_schema and serve no purpose for InnoDB tables.
-// This function is not guaranteed to be safe for non-InnoDB tables.
-func NormalizeCreateOptions(createStmt string) string {
-	for _, entry := range normalizeCreateRegexps {
+// This function is not guaranteed to be safe for non-InnoDB tables. The input
+// string should be formatted like SHOW CREATE TABLE.
+func StripNonInnoAttributes(createStmt string) string {
+	for _, entry := range stripNonInnoRegexps {
 		createStmt = entry.re.ReplaceAllString(createStmt, entry.replacement)
 	}
 	return createStmt

@@ -226,3 +226,69 @@ func TestIndexComparisonNil(t *testing.T) {
 	}
 
 }
+
+func TestVectorIndex(t *testing.T) {
+	indexes := []*Index{
+		{
+			Name:       "simple",
+			Parts:      []IndexPart{{ColumnName: "col"}},
+			Type:       "VECTOR",
+			Attributes: "",
+		},
+		{
+			Name:       "simple2",
+			Parts:      []IndexPart{{ColumnName: "other_col"}},
+			Type:       "VECTOR",
+			Attributes: "",
+		},
+		{
+			Name:       "simple2a",
+			Parts:      []IndexPart{{ColumnName: "other_col"}},
+			Type:       "VECTOR",
+			Attributes: "m=6 `Distance`='EUCLIDEAN'",
+		},
+		{
+			Name:       "attrs1a",
+			Parts:      []IndexPart{{ColumnName: "col"}},
+			Type:       "VECTOR",
+			Attributes: "`distance`=cosine `m`=4",
+		},
+		{
+			Name:       "attrs1b",
+			Parts:      []IndexPart{{ColumnName: "col"}},
+			Type:       "VECTOR",
+			Attributes: "M=4 `Distance`=\"COSINE\"",
+		},
+		{
+			Name:       "attrs2",
+			Parts:      []IndexPart{{ColumnName: "col"}},
+			Type:       "VECTOR",
+			Attributes: "`distance`=cosine `m`=7",
+		},
+		{
+			Name:       "attrs3",
+			Parts:      []IndexPart{{ColumnName: "col"}},
+			Type:       "VECTOR",
+			Attributes: "m=4",
+		},
+		{
+			Name:  "nonvec",
+			Parts: []IndexPart{{ColumnName: "col"}},
+			Type:  "BTREE",
+		},
+	}
+
+	for i := range indexes {
+		for j := range indexes {
+			actualRedundant := indexes[i].RedundantTo(indexes[j])
+			actualEquivalent := indexes[i].Equivalent(indexes[j])
+			expected := (i == j) || (i == 1 && j == 2) || (i == 2 && j == 1) || (i == 3 && j == 4) || (i == 4 && j == 3)
+			if actualRedundant != expected {
+				t.Errorf("Unexpected result from %q RedundantTo %q: returned %t", indexes[i].Name, indexes[j].Name, actualRedundant)
+			}
+			if actualEquivalent != expected {
+				t.Errorf("Unexpected result from %q Equivalent %q: returned %t", indexes[i].Name, indexes[j].Name, actualEquivalent)
+			}
+		}
+	}
+}

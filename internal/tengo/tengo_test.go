@@ -200,6 +200,9 @@ func flavorTestFiles(flavor Flavor) []string {
 	if flavor.MinMariaDB(10, 10) { // uca1400 collations
 		result = append(result, "uca1400.sql")
 	}
+	if flavor.MinMariaDB(11, 7) { // vectors and vector indexes
+		result = append(result, "vector-maria117.sql")
+	}
 
 	return result
 }

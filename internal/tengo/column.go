@@ -74,21 +74,21 @@ func (c *Column) Definition(flavor Flavor) string {
 		clauses = append(clauses, "NULL")
 	}
 
-	// Invisibility for MariaDB (which places this in a different spot than MySQL)
-	if c.Invisible && flavor.IsMariaDB() {
-		clauses = append(clauses, "INVISIBLE")
-	}
-
-	// Auto increment
-	if c.AutoIncrement {
-		clauses = append(clauses, "AUTO_INCREMENT")
-	}
-
 	// SRID in MySQL 8.0+
 	if c.HasSpatialReference && flavor.MinMySQL(8) {
 		// Although MariaDB also attribute syntax for this (REF_SYSTEM_ID), it isn't
 		// exposed in SHOW CREATE TABLE, so here we restrict to MySQL only
 		clauses = append(clauses, fmt.Sprintf("/*!80003 SRID %d */", c.SpatialReferenceID))
+	}
+
+	// Invisibility for MariaDB 10.3-11.6 (which places this in a different spot than MySQL or MariaDB 11.7+)
+	if c.Invisible && flavor.IsMariaDB() && !flavor.MinMariaDB(11, 7) {
+		clauses = append(clauses, "INVISIBLE")
+	}
+
+	// Column compression in Percona Server
+	if c.Compression != "" && flavor.IsPercona() {
+		clauses = append(clauses, flavor.compressedColumnOpenComment()+"COLUMN_FORMAT "+c.Compression+" */")
 	}
 
 	// Default value/expression
@@ -101,14 +101,18 @@ func (c *Column) Definition(flavor Flavor) string {
 		clauses = append(clauses, "ON UPDATE "+c.OnUpdate)
 	}
 
-	// Invisibility for MySQL
-	if c.Invisible && flavor.IsMySQL() {
-		clauses = append(clauses, "/*!80023 INVISIBLE */")
+	// Auto increment
+	if c.AutoIncrement {
+		clauses = append(clauses, "AUTO_INCREMENT")
 	}
 
-	// Column compression in Percona Server
-	if c.Compression != "" && flavor.IsPercona() {
-		clauses = append(clauses, flavor.compressedColumnOpenComment()+"COLUMN_FORMAT "+c.Compression+" */")
+	// Invisibility for MySQL, or MariaDB 11.7+ which moves it to this spot
+	if c.Invisible {
+		if flavor.IsMySQL() {
+			clauses = append(clauses, "/*!80023 INVISIBLE */")
+		} else if flavor.MinMariaDB(11, 7) { // changed in MDEV-35308
+			clauses = append(clauses, "INVISIBLE")
+		}
 	}
 
 	// Column comment

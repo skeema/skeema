@@ -598,6 +598,9 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 	//   is unsafe because the zero-padding potentially impacts any trailing big-
 	//   endian value. But we permit this for vectors since they have a well-
 	//   defined encoding.
+	// * MariaDB prevents conversion from vector to non-vector if the column is
+	//   used in a vector index; no need to catch that here since it is enforced
+	//   by the server
 	binaryTypeSize := func(typ ColumnType) (uint64, bool) {
 		binMap := map[string]uint64{
 			"tinyblob":   255,

@@ -124,9 +124,9 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 		if t.NextAutoIncrement == 0 && t.HasAutoIncrement() {
 			t.NextAutoIncrement = 1
 		}
-		// Remove create options which don't affect InnoDB
+		// Remove column and index attributes which don't affect InnoDB
 		if t.Engine == "InnoDB" {
-			t.CreateStatement = NormalizeCreateOptions(t.CreateStatement)
+			t.CreateStatement = StripNonInnoAttributes(t.CreateStatement)
 		}
 		// Index order is unpredictable with new MySQL 8 data dictionary, so reorder
 		// indexes based on parsing SHOW CREATE TABLE if needed
@@ -172,6 +172,11 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 		// Fix shortcoming in I_S data for check constraints
 		if len(t.Checks) > 0 {
 			fixChecks(t, flavor)
+		}
+		// MariaDB's VECTOR indexes can have M and/or DISTANCE attributes, which
+		// aren't exposed anywhere in I_S
+		if flavor.MinMariaDB(11, 7) && strings.Contains(t.CreateStatement, "VECTOR KEY") {
+			fixVectorIndexes(t, flavor)
 		}
 
 		// Compare what we expect the create DDL to be, to determine if we support
@@ -829,7 +834,12 @@ func fixFulltextIndexParsers(t *Table, flavor Flavor) {
 		if idx.Type == "FULLTEXT" {
 			// Obtain properly-formatted index definition without parser clause, and
 			// then build a regex from this which captures the parser name.
-			template := idx.Definition(flavor) + " /*!50100 WITH PARSER "
+			var template string
+			if flavor.MinMariaDB(11, 7) {
+				template = idx.Definition(flavor) + " WITH PARSER "
+			} else {
+				template = idx.Definition(flavor) + " /*!50100 WITH PARSER "
+			}
 			template = regexp.QuoteMeta(template)
 			template += "`([^`]+)`"
 			re := regexp.MustCompile(template)
@@ -951,6 +961,28 @@ func fixChecks(t *Table, flavor Flavor) {
 		matches := re.FindStringSubmatch(t.CreateStatement)
 		if matches != nil {
 			cc.Clause = matches[1]
+		}
+	}
+}
+
+// fixVectorIndexes examines SHOW CREATE TABLE to obtain the optional M and
+// DISTANCE attributes for MariaDB vector indexes. These attributes are not
+// currently exposed in information_schema.
+func fixVectorIndexes(t *Table, flavor Flavor) {
+	for _, idx := range t.SecondaryIndexes {
+		if idx.Type != "VECTOR" {
+			continue
+		}
+		definition := idx.Definition(flavor)
+		if indexStartPos := strings.Index(t.CreateStatement, definition+" "); indexStartPos > -1 {
+			attribStart := indexStartPos + len(definition) + 1
+			if newlinePos := strings.IndexByte(t.CreateStatement[attribStart:], '\n'); newlinePos > -1 {
+				attribEnd := attribStart + newlinePos
+				if t.CreateStatement[attribEnd-1] == ',' {
+					attribEnd--
+				}
+				idx.Attributes = t.CreateStatement[attribStart:attribEnd]
+			}
 		}
 	}
 }

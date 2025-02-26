@@ -86,7 +86,7 @@ func TestReformatCreateOptions(t *testing.T) {
 	}
 }
 
-func TestNormalizeCreateOptions(t *testing.T) {
+func TestStripNonInnoAttributes(t *testing.T) {
 	input := "CREATE TABLE `problems` (\n" +
 		"  `name` varchar(30) /*!50606 STORAGE MEMORY */ /*!50606 COLUMN_FORMAT DYNAMIC */ DEFAULT NULL,\n" +
 		"  `code` char(20),\n" +
@@ -101,8 +101,8 @@ func TestNormalizeCreateOptions(t *testing.T) {
 		"  KEY `idx1` (`name`) COMMENT 'lol',\n" +
 		"  KEY `idx2` (`num`)\n" +
 		") ENGINE=InnoDB DEFAULT CHARSET=latin1 KEY_BLOCK_SIZE=8;\n"
-	if actual := NormalizeCreateOptions(input); actual != expect {
-		t.Errorf("NormalizeCreateOptions returned unexpected value. Expected:\n%s\nActual:\n%s", expect, actual)
+	if actual := StripNonInnoAttributes(input); actual != expect {
+		t.Errorf("StripNonInnoAttributes returned unexpected value. Expected:\n%s\nActual:\n%s", expect, actual)
 	}
 }
 

@@ -462,3 +462,21 @@ func isSpace(b byte) bool {
 	}
 	return b == '\x85' || b == '\xA0'
 }
+
+// TokenizeString uses Lexer to split the input into a slice of token strings.
+// The input should be SQL, but need not be a complete statement. Whitespace and
+// SQL comments (including version-gate comments) are not included in the
+// return value.
+func TokenizeString(input string) []string {
+	result := []string{}
+	r := strings.NewReader(input)
+	lexer := NewLexer(r, "\000", 1024)
+	for {
+		val, typ, err := lexer.Scan()
+		if err != nil {
+			return result
+		} else if typ != TokenFiller {
+			result = append(result, string(val))
+		}
+	}
+}
