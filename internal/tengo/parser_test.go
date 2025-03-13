@@ -209,16 +209,19 @@ func TestParseStatementInString(t *testing.T) {
 
 func TestStripAnyQuote(t *testing.T) {
 	cases := map[string]string{
-		"":                "",
-		"'":               "'",
-		"''":              "",
-		`"x"`:             "x",
-		"'nope\"":         "'nope\"",
-		"nope''nopen":     "nope''nopen",
-		"'he''s here'":    "he's here",
-		"'she\\'s here'":  "she's here",
-		`"nope''s nope"`:  "nope''s nope",
-		"`nope\\`s nope`": "nope\\`s nope",
+		"":                          "",
+		"'":                         "'",
+		"''":                        "",
+		`"x"`:                       "x",
+		"'nope\"":                   "'nope\"",     // input wrapped in mismatched quoted
+		"nope''nopen":               "nope''nopen", // input not wrapped in quotes
+		"'he''s here'":              "he's here",
+		"'she\\'s here'":            "she's here",
+		`"nope''s nope"`:            "nope''s nope",           // double-quoted string doesn't have special handling for doubled single-quotes
+		`'nope""s nope'`:            `nope""s nope`,           // single-quoted string doesn't have special handling for doubled double-quotes
+		"`nope\\`s ``\\\"\\' nope`": "nope\\`s `\\\"\\' nope", // backtick quotes only support doubling of backticks, no other special escaping
+		`'complex\\'' case'`:        `complex\' case`,
+		`"no mixing\\'' up\'"`:      `no mixing\'' up'`,
 	}
 	for input, expected := range cases {
 		if actual := stripAnyQuote(input); actual != expected {

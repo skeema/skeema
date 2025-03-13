@@ -89,10 +89,10 @@ func (tp *TablePartitioning) partitionBy(flavor Flavor) string {
 	// a keyword (even if not a *reserved* word) or contains special characters.
 	// See https://github.com/skeema/skeema/issues/199
 	if (strings.HasSuffix(tp.Method, "COLUMNS") || strings.HasSuffix(tp.Method, "KEY")) && !flavor.MinMariaDB(10, 2) {
-		expr = strings.Replace(expr, "`", "", -1)
+		expr = strings.ReplaceAll(expr, "`", "")
 	}
 
-	return fmt.Sprintf("%s%s(%s)", method, tp.AlgoClause, expr)
+	return method + tp.AlgoClause + "(" + expr + ")"
 }
 
 // Diff returns a set of differences between this TablePartitioning and another

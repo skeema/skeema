@@ -14,26 +14,18 @@ import (
 // names, column names, etc). It doubles any backticks already present in the
 // input string, and then returns the string wrapped in outer backticks.
 func EscapeIdentifier(input string) string {
-	escaped := strings.Replace(input, "`", "``", -1)
-	return fmt.Sprintf("`%s`", escaped)
+	return "`" + strings.ReplaceAll(input, "`", "``") + "`"
 }
+
+var replacerCreateTableString = strings.NewReplacer(`\`, `\\`, "\000", `\0`, "'", "''", "\n", `\n`, "\r", `\r`)
 
 // EscapeValueForCreateTable returns the supplied value (typically obtained from
 // querying an information_schema table) escaped in the same manner as SHOW
 // CREATE TABLE would display it. Examples include default values, table
-// comments, column comments, index comments.
+// comments, column comments, index comments. This function does not wrap the
+// value in single quotes; the caller should do that as appropriate.
 func EscapeValueForCreateTable(input string) string {
-	replacements := []struct{ old, new string }{
-		{"\\", "\\\\"},
-		{"\000", "\\0"},
-		{"'", "''"},
-		{"\n", "\\n"},
-		{"\r", "\\r"},
-	}
-	for _, operation := range replacements {
-		input = strings.Replace(input, operation.old, operation.new, -1)
-	}
-	return input
+	return replacerCreateTableString.Replace(input)
 }
 
 // SplitHostOptionalPort takes an address string containing a hostname, ipv4

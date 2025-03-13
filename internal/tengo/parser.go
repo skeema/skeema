@@ -750,20 +750,26 @@ func stripBackticks(input string) string {
 		return input
 	}
 	input = input[1 : len(input)-1]
-	return strings.Replace(input, "``", "`", -1)
+	return strings.ReplaceAll(input, "``", "`")
 }
 
+// String replacers for un-quoting/un-escaping strings, stored as globals to
+// avoid unnecessary duplication of effort
+var (
+	replacerSingleQuoted = strings.NewReplacer(`\\`, `\`, `\"`, `"`, `\'`, `'`, `\n`, "\n", `\r`, "\r", `\0`, "\000", `''`, `'`)
+	replacerDoubleQuoted = strings.NewReplacer(`\\`, `\`, `\"`, `"`, `\'`, `'`, `\n`, "\n", `\r`, "\r", `\0`, "\000", `""`, `"`)
+)
+
 func stripAnyQuote(input string) string {
-	if len(input) < 2 || input[0] != input[len(input)-1] {
-		return input
+	if len(input) > 1 && input[0] == input[len(input)-1] {
+		switch input[0] {
+		case '\'':
+			return replacerSingleQuoted.Replace(input[1 : len(input)-1])
+		case '"':
+			return replacerDoubleQuoted.Replace(input[1 : len(input)-1])
+		case '`':
+			return stripBackticks(input)
+		}
 	}
-	if input[0] == '`' {
-		return stripBackticks(input)
-	} else if input[0] != '"' && input[0] != '\'' {
-		return input
-	}
-	quoteStr := input[0:1]
-	input = input[1 : len(input)-1]
-	input = strings.Replace(input, strings.Repeat(quoteStr, 2), quoteStr, -1)
-	return strings.Replace(input, fmt.Sprintf("\\%s", quoteStr), quoteStr, -1)
+	return input
 }

@@ -139,7 +139,7 @@ func objectDiffExpected(t *testing.T, diff tengo.ObjectDiff, ddl *DDLStatement, 
 				if strings.Contains(flavor.String(), ":5.5") {
 					expectedStmt = "ALTER TABLE `rollups` ADD COLUMN `value` bigint(20) DEFAULT NULL"
 				} else if flavor.OmitIntDisplayWidth() {
-					expectedStmt = strings.Replace(expectedStmt, "bigint(20)", "bigint", -1)
+					expectedStmt = strings.ReplaceAll(expectedStmt, "bigint(20)", "bigint")
 				}
 				if ddl.stmt != expectedStmt {
 					t.Errorf("Expected statement:\n%s\nActual statement:\n%s\n", expectedStmt, ddl.stmt)

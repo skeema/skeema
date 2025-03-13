@@ -474,9 +474,9 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 		for _, meta := range rawRoutineMeta {
 			key := ObjectKey{Type: ObjectType(strings.ToLower(meta.Type)), Name: meta.Name}
 			if routine, ok := dict[key]; ok {
-				routine.ParamString = strings.Replace(meta.ParamList, "\r\n", "\n", -1)
+				routine.ParamString = strings.ReplaceAll(meta.ParamList, "\r\n", "\n")
 				routine.ReturnDataType = meta.Returns
-				routine.Body = strings.Replace(meta.Body, "\r\n", "\n", -1)
+				routine.Body = strings.ReplaceAll(meta.Body, "\r\n", "\n")
 				routine.CreateStatement = routine.Definition(flavor)
 				alreadyObtained++
 			}
@@ -491,7 +491,7 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 				g.Go(func() (err error) {
 					r.CreateStatement, err = showCreateRoutine(subCtx, db, r.Name, r.Type)
 					if err == nil {
-						r.CreateStatement = strings.Replace(r.CreateStatement, "\r\n", "\n", -1)
+						r.CreateStatement = strings.ReplaceAll(r.CreateStatement, "\r\n", "\n")
 						err = r.parseCreateStatement(flavor, schema)
 					} else {
 						err = fmt.Errorf("Error executing SHOW CREATE %s for %s.%s: %w", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), err)

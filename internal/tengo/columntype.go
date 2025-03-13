@@ -9,7 +9,9 @@ import (
 
 // ColumnType represents a column data type that has been parsed from a string
 // obtained from information_schema. To construct a ColumnType, use
-// ParseColumnType, and treat its fields as immutable once returned.
+// ParseColumnType, and treat its fields as immutable once returned. Note that
+// ColumnType handles the base type and modifiers, but not charsets and
+// collations.
 type ColumnType struct {
 	Base     string // for enum or set, includes value list
 	Size     uint16 // length, display width, precision, etc depending on Base. 0 to omit.

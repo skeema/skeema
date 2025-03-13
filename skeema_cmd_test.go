@@ -241,7 +241,7 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	fs.WriteTestFile(t, "mydb/analytics/activity.sql", strings.Replace(contents, "DEFAULT", "DEFALUT", 1))
 	s.dbExec(t, "product", "INSERT INTO comments (post_id, user_id) VALUES (555, 777)")
 	contents = fs.ReadTestFile(t, "mydb/product/comments.sql")
-	fs.WriteTestFile(t, "mydb/product/comments.sql", strings.Replace(contents, "`", "", -1))
+	fs.WriteTestFile(t, "mydb/product/comments.sql", strings.ReplaceAll(contents, "`", ""))
 	contents = fs.ReadTestFile(t, "mydb/product/posts.sql")
 	fs.WriteTestFile(t, "mydb/product/posts.sql", fmt.Sprintf("# random comment\n%s", contents))
 	fs.WriteTestFile(t, "mydb/product/noexist.sql", "DELIMITER //\nCREATE TABLE noexist (id int)//\nDELIMITER ;\n")
@@ -253,7 +253,7 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	if !strings.Contains(contents, "# random comment") {
 		t.Error("Expected mydb/product/posts.sql to retain its extraneous comment, but it was removed")
 	}
-	fs.WriteTestFile(t, "mydb/product/posts.sql", strings.Replace(contents, "`", "", -1))
+	fs.WriteTestFile(t, "mydb/product/posts.sql", strings.ReplaceAll(contents, "`", ""))
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --debug")
 	s.verifyFiles(t, cfg, "../golden/init")
 	if !strings.Contains(contents, "# random comment") {
@@ -350,9 +350,9 @@ func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
 			case "posts.sql":
 				contents = strings.ToLower(contents)
 			case "subscriptions.sql":
-				contents = strings.Replace(contents, "`", "", -1)
+				contents = strings.ReplaceAll(contents, "`", "")
 			case "users.sql":
-				contents = strings.Replace(contents, " ", "  ", -1)
+				contents = strings.ReplaceAll(contents, " ", "  ")
 			}
 			fs.WriteTestFile(t, sf.FilePath, contents)
 		}
@@ -421,9 +421,9 @@ func (s SkeemaIntegrationSuite) TestFormatHandler(t *testing.T) {
 			case "posts.sql":
 				contents = strings.ToLower(contents)
 			case "subscriptions.sql":
-				contents = strings.Replace(contents, "`", "", -1)
+				contents = strings.ReplaceAll(contents, "`", "")
 			case "users.sql":
-				contents = strings.Replace(contents, " ", "  ", -1)
+				contents = strings.ReplaceAll(contents, " ", "  ")
 			}
 			fs.WriteTestFile(t, sf.FilePath, contents)
 		}
@@ -861,7 +861,7 @@ func (s SkeemaIntegrationSuite) TestUnsupportedAlter(t *testing.T) {
 
 	// lint should be able to fix formatting problems in unsupported table files
 	contents := fs.ReadTestFile(t, "mydb/product/subscriptions.sql")
-	fs.WriteTestFile(t, "mydb/product/subscriptions.sql", strings.Replace(contents, "`", "", -1))
+	fs.WriteTestFile(t, "mydb/product/subscriptions.sql", strings.ReplaceAll(contents, "`", ""))
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint")
 	s.verifyFiles(t, cfg, "../golden/unsupported")
 
@@ -954,7 +954,7 @@ func (s SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
 	// invalid SQL.
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull --ignore-table=''")
 	contents := fs.ReadTestFile(t, "mydb/analytics/_trending.sql")
-	newContents := strings.Replace(contents, "`", "", -1)
+	newContents := strings.ReplaceAll(contents, "`", "")
 	fs.WriteTestFile(t, "mydb/analytics/_trending.sql", newContents)
 	fs.WriteTestFile(t, "mydb/analytics/_hmm.sql", "CREATE TABLE _hmm uhoh this is not valid;\n")
 	fs.RemoveTestFile(t, "mydb/archives/bar.sql")
@@ -1065,8 +1065,8 @@ func (s SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 		"  KEY `idx2` (`num`)\n" +
 		") ENGINE=InnoDB DEFAULT CHARSET=latin1 KEY_BLOCK_SIZE=8;\n"
 	if s.d.Flavor().OmitIntDisplayWidth() {
-		withClauses = strings.Replace(withClauses, "int(10)", "int", -1)
-		withoutClauses = strings.Replace(withoutClauses, "int(10)", "int", -1)
+		withClauses = strings.ReplaceAll(withClauses, "int(10)", "int")
+		withoutClauses = strings.ReplaceAll(withoutClauses, "int(10)", "int")
 	}
 	assertFileNormalized := func() {
 		t.Helper()
@@ -1423,7 +1423,7 @@ END`
     DETERMINISTIC
 return 'abc''def';
 `
-	normalizedContents = strings.Replace(normalizedContents, "~", "`", -1)
+	normalizedContents = strings.ReplaceAll(normalizedContents, "~", "`")
 	if contents := fs.ReadTestFile(t, "mydb/product/routine2.sql"); contents != normalizedContents {
 		t.Errorf("Unexpected contents after linting; found:\n%s", contents)
 	}

@@ -442,10 +442,10 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 	if mc.OldColumn.Virtual {
 		return false, ""
 	}
-	if mc.OldColumn.CharSet != mc.NewColumn.CharSet {
+	if !charsetsEquivalent(mc.OldColumn.CharSet, mc.NewColumn.CharSet) {
 		return true, genericReason
 	}
-	if mc.OldColumn.Collation != mc.NewColumn.Collation && mc.InUniqueConstraint {
+	if !collationsEquivalent(mc.OldColumn.Collation, mc.NewColumn.Collation) && mc.InUniqueConstraint {
 		return true, "collation change for column " + mc.OldColumn.Name + " affects equality comparisons in unique index"
 	}
 	if mc.OldColumn.SpatialReferenceID != mc.NewColumn.SpatialReferenceID || mc.OldColumn.HasSpatialReference != mc.NewColumn.HasSpatialReference {

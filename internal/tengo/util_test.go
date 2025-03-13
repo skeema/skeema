@@ -9,6 +9,26 @@ import (
 	"testing"
 )
 
+func TestEscapeValueForCreateTable(t *testing.T) {
+	cases := map[string]string{
+		"":                   "",
+		"'":                  "''",
+		`"`:                  `"`,
+		`c:\somewhere\there`: `c:\\somewhere\\there`,
+		"cstring\000":        `cstring\0`,
+		"two\nlines":         `two\nlines`,
+		`goofy\'\'input`:     `goofy\\''\\''input`,
+	}
+	for input, expected := range cases {
+		if actual := EscapeValueForCreateTable(input); actual != expected {
+			t.Errorf("EscapeValueForCreateTable on %s: expected %s, found %s", input, expected, actual)
+		}
+		if roundTrip := stripAnyQuote("'" + EscapeValueForCreateTable(input) + "'"); roundTrip != input {
+			t.Errorf("Expected round-trip logic on %s to return original input, instead found %s", input, roundTrip)
+		}
+	}
+}
+
 func TestSplitHostOptionalPort(t *testing.T) {
 	assertSplit := func(addr, expectHost string, expectPort int, expectErr bool) {
 		host, port, err := SplitHostOptionalPort(addr)

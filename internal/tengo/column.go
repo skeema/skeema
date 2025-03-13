@@ -180,13 +180,29 @@ func (c *Column) Equivalent(other *Column) bool {
 	selfCopy.Type = other.Type
 	selfCopy.ShowCharSet = other.ShowCharSet
 	selfCopy.ShowCollation = other.ShowCollation
-	if (other.CharSet == "utf8mb3" && c.CharSet == "utf8") || (other.CharSet == "utf8" && c.CharSet == "utf8mb3") {
+	if charsetsEquivalent(c.CharSet, other.CharSet) {
 		selfCopy.CharSet = other.CharSet
 	}
-	if strings.HasPrefix(other.Collation, "utf8mb3_") {
-		selfCopy.Collation = strings.Replace(selfCopy.Collation, "utf8_", "utf8mb3_", 1)
-	} else if strings.HasPrefix(other.Collation, "utf8_") {
-		selfCopy.Collation = strings.Replace(selfCopy.Collation, "utf8mb3_", "utf8_", 1)
+	if collationsEquivalent(c.Collation, other.Collation) {
+		selfCopy.Collation = other.Collation
 	}
 	return selfCopy == *other
+}
+
+func charsetsEquivalent(a, b string) bool {
+	// Account for flavor differences in how utf8mb3 is expressed
+	return (a == b) || (a == "utf8mb3" && b == "utf8") || (a == "utf8" && b == "utf8mb3")
+}
+
+func collationsEquivalent(a, b string) bool {
+	if a == b {
+		return true
+	}
+	// Account for flavor differences in how utf8mb3's collations are expressed
+	aCharset, aRest, _ := strings.Cut(a, "_")
+	bCharset, bRest, _ := strings.Cut(b, "_")
+	if aRest != bRest {
+		return false
+	}
+	return (aCharset == "utf8" && bCharset == "utf8mb3") || (aCharset == "utf8mb3" && bCharset == "utf8")
 }

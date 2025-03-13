@@ -100,4 +100,6 @@ func TestColumnEquivalent(t *testing.T) {
 	assertEquivalent(true)
 	a.Collation = "utf8mb3_general_ci"
 	assertEquivalent(true)
+	*a, *b = *b, *a
+	assertEquivalent(true)
 }
