@@ -93,6 +93,49 @@ func TestTableRowFormat(t *testing.T) {
 	}
 }
 
+func TestTableVirtualColumns(t *testing.T) {
+	table := aTable(1)
+	virtualCols := table.VirtualColumns()
+	if len(virtualCols) > 0 {
+		t.Errorf("Expected table to have no virtual columns, instead found %+v", virtualCols)
+	}
+	newCol := &Column{
+		Type:           ParseColumnType("int"),
+		GenerationExpr: "`actor_id` * 2",
+		Virtual:        true,
+	}
+	table.Columns = append(table.Columns, newCol)
+	virtualCols = table.VirtualColumns()
+	if len(virtualCols) != 1 || virtualCols[0] != newCol {
+		t.Errorf("Unexpected return value from VirtualColumns(): found %+v", virtualCols)
+	}
+}
+
+func TestTableIndexesWithColumn(t *testing.T) {
+	table := aTable(1)
+	for n, col := range table.Columns {
+		// Columns 0, 1, 2, 4 are each used in 1 index; other columns are not
+		var expectedCount int
+		if n < 3 || n == 4 {
+			expectedCount++
+		}
+		actualCount := len(table.IndexesWithColumn(col))
+		if expectedCount != actualCount {
+			t.Errorf("Expected column %s to be used in %d indexes, instead found %d", col.Name, expectedCount, actualCount)
+		}
+	}
+
+	// Change SecondaryIndexes[1] to have a functional index part, and confirm
+	// it is still detected as using the column
+	table.SecondaryIndexes[1].Parts[1] = IndexPart{
+		Expression: "LENGTH(" + EscapeIdentifier(table.Columns[1].Name) + ")",
+	}
+	indexes := table.IndexesWithColumn(table.Columns[1])
+	if len(indexes) != 1 || indexes[0].Name != table.SecondaryIndexes[1].Name {
+		t.Errorf("Unexpected result from IndexesWithColumn on a functionally-indexed column: %+v", indexes)
+	}
+}
+
 func TestTableUniqueConstraintsWithColumn(t *testing.T) {
 	table := aTable(1)
 	ucs := table.UniqueConstraintsWithColumn(table.Columns[0])
@@ -106,6 +149,17 @@ func TestTableUniqueConstraintsWithColumn(t *testing.T) {
 	ucs = table.UniqueConstraintsWithColumn(table.Columns[4])
 	if len(ucs) != 1 || ucs[0].Name != "idx_ssn" {
 		t.Errorf("Unexpected return from UniqueConstraintsWithColumn: %v", ucs)
+	}
+}
+
+func TestTableHasFulltextIndex(t *testing.T) {
+	table := aTable(1)
+	if table.HasFulltextIndex() {
+		t.Fatal("Expected HasFulltextIndex() to return false, instead found true")
+	}
+	table.SecondaryIndexes[1].Type = "FULLTEXT"
+	if !table.HasFulltextIndex() {
+		t.Fatal("Expected HasFulltextIndex() to return true, instead found false")
 	}
 }
 

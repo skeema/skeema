@@ -230,17 +230,36 @@ func (t *Table) RowFormat() string {
 	return ""
 }
 
-// UniqueConstraintsWithColumn returns a slice of Indexes which have uniqueness
-// constraints (primary key or unique secondary index) and include col as one
-// of the index parts. If col is not part of any uniqueness constraints, a nil
-// slice is returned.
-func (t *Table) UniqueConstraintsWithColumn(col *Column) []*Index {
-	var result []*Index
+// VirtualColumns returns a slice of virtual generated columns in the table.
+func (t *Table) VirtualColumns() (result []*Column) {
+	for _, col := range t.Columns {
+		if col.Virtual {
+			result = append(result, col)
+		}
+	}
+	return result
+}
+
+// IndexesWithColumn returns a slice of Indexes which include col as one of the
+// index parts, either directly or in an expression.
+func (t *Table) IndexesWithColumn(col *Column) (result []*Index) {
 	if t.PrimaryKey != nil && indexHasColumn(t.PrimaryKey, col) {
 		result = append(result, t.PrimaryKey)
 	}
 	for _, idx := range t.SecondaryIndexes {
-		if idx.Unique && indexHasColumn(idx, col) {
+		if indexHasColumn(idx, col) {
+			result = append(result, idx)
+		}
+	}
+	return result
+}
+
+// UniqueConstraintsWithColumn returns a slice of Indexes which have uniqueness
+// constraints (primary key or unique secondary index) and include col as one
+// of the index parts, either directly or in an expression.
+func (t *Table) UniqueConstraintsWithColumn(col *Column) (result []*Index) {
+	for _, idx := range t.IndexesWithColumn(col) {
+		if idx.Unique {
 			result = append(result, idx)
 		}
 	}
@@ -250,6 +269,19 @@ func (t *Table) UniqueConstraintsWithColumn(col *Column) []*Index {
 func indexHasColumn(idx *Index, col *Column) bool {
 	for _, part := range idx.Parts {
 		if part.ColumnName == col.Name {
+			return true
+		} else if part.Expression != "" && strings.Contains(part.Expression, EscapeIdentifier(col.Name)) {
+			return true
+		}
+	}
+	return false
+}
+
+// HasFulltextIndex returns true if the table contains at least one FULLTEXT
+// index.
+func (t *Table) HasFulltextIndex() bool {
+	for _, idx := range t.SecondaryIndexes {
+		if idx.Type == "FULLTEXT" {
 			return true
 		}
 	}
