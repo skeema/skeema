@@ -1,6 +1,8 @@
 package tengo
 
 import (
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -13,8 +15,8 @@ func TestParseColumnType(t *testing.T) {
 		"int unsigned zerofill":        {Base: "int", Unsigned: true, Zerofill: true},
 		"tinyint(1)":                   {Base: "tinyint", Size: 1},
 		"tinyint(3) unsigned zerofill": {Base: "tinyint", Size: 3, Unsigned: true, Zerofill: true},
-		"enum('a','b','c')":            {Base: "enum('a','b','c')"},
-		"set('abc','def','ghi')":       {Base: "set('abc','def','ghi')"},
+		"enum('a','b','c')":            {Base: "enum", values: "'a','b','c'"},
+		"set('abc','def','gh''s')":     {Base: "set", values: "'abc','def','gh''s'"},
 		"decimal(10,5)":                {Base: "decimal", Size: 10, Scale: 5},
 		"varchar(20)":                  {Base: "varchar", Size: 20},
 		"blob":                         {Base: "blob"},
@@ -53,6 +55,36 @@ func TestParseColumnType(t *testing.T) {
 	}
 }
 
+func TestColumnTypeIntegerRange(t *testing.T) {
+	cases := []struct {
+		input     string
+		expectMin int64
+		expectMax uint64
+		expectOK  bool
+	}{
+		{"tinyint(1)", -128, 127, true},
+		{"tinyint unsigned", 0, 255, true},
+		{"smallint", -32768, 32767, true},
+		{"smallint unsigned", 0, 65535, true},
+		{"mediumint", -8388608, 8388607, true},
+		{"mediumint unsigned", 0, 16777215, true},
+		{"int", -2147483648, 2147483647, true},
+		{"int(4) unsigned", 0, 4294967295, true},
+		{"bigint(8) zerofill", -9223372036854775808, 9223372036854775807, true},
+		{"bigint unsigned", 0, 18446744073709551615, true},
+		{"binary(3)", 0, 0, false},
+		{"enum('hello','world')", 0, 0, false},
+		{"float", 0, 0, false},
+		{"timestamp(5)", 0, 0, false},
+	}
+	for _, tc := range cases {
+		actualMin, actualMax, actualOK := ParseColumnType(tc.input).IntegerRange()
+		if actualMin != tc.expectMin || actualMax != tc.expectMax || actualOK != tc.expectOK {
+			t.Errorf("Unexpected return from ParseColumnType(%q).IntegerRange(): found %d, %d, %t", tc.input, actualMin, actualMax, actualOK)
+		}
+	}
+}
+
 func TestColumnTypeStripDisplayWidth(t *testing.T) {
 	cases := map[string]string{
 		"tinyint(1)":          "tinyint(1)",
@@ -78,6 +110,33 @@ func TestColumnTypeStripDisplayWidth(t *testing.T) {
 		actual := ParseColumnType(input)
 		if didStrip := actual.StripDisplayWidth(); actual.String() != expected || didStrip != expectStripped {
 			t.Errorf("Expected StripDisplayWidth on %q to return %t with new string %q; instead found %t with new string %q", input, expectStripped, expected, didStrip, actual)
+		}
+	}
+}
+
+func TestColumnTypeValues(t *testing.T) {
+	cases := map[string][]string{
+		"enum('a','b','c')":        {"a", "b", "c"},
+		"enum('x')":                {"x"},
+		"set('abc','def','gh''s')": {"abc", "def", "gh's"},
+		"bigint(11)":               nil,
+		"year":                     nil,
+	}
+	for input, expected := range cases {
+		parsed := ParseColumnType(input)
+		actual := parsed.Values()
+		if !slices.Equal(actual, expected) {
+			t.Errorf("ParseColumnType(%q).Values() returned %v, expected %v", input, actual, expected)
+		} else if expected != nil {
+			// Confirm we can round-trip the original quoted/escaped value
+			var escapedValues []string
+			for _, v := range actual {
+				escapedValues = append(escapedValues, "'"+EscapeValueForCreateTable(v)+"'")
+			}
+			roundTrip := parsed.Base + "(" + strings.Join(escapedValues, ",") + ")"
+			if roundTrip != input {
+				t.Errorf("Unable to round-trip regenerate input of %q: got back %q", input, roundTrip)
+			}
 		}
 	}
 }

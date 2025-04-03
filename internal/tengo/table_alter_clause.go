@@ -457,21 +457,16 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 		return false, ""
 	}
 
-	// signed -> unsigned is always unsafe: this means any existing negative values
-	// can no longer be stored
-	// (The opposite is checked later specifically for relevant types)
-	if !oldType.Unsigned && newType.Unsigned {
-		return true, genericReason
-	}
-
-	// Size/attribute changes within the same base type, or special case of
-	// converting float to double:
+	// Size/attribute changes within the same base type, or modifying value list
+	// for enum/set, or special case of converting float to double:
 	if oldType.Base == newType.Base || (oldType.Base == "float" && newType.Base == "double") {
 		switch oldType.Base {
 		case "decimal":
 			// Unsafe if decreasing the precision or scale. (both are always present
 			// in information_schema for decimal type, unlike float/double.)
-			if newType.Size < oldType.Size || newType.Scale < oldType.Scale {
+			// Also unsafe if going from signed to unsigned. MariaDB allows unsigned
+			// here, but it does not affect max value, so opposite direction is OK.
+			if newType.Size < oldType.Size || newType.Scale < oldType.Scale || (newType.Unsigned && !oldType.Unsigned) {
 				return true, genericReason
 			}
 			return false, ""
@@ -484,12 +479,24 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 			}
 			return false, ""
 
+		case "enum", "set":
+			// Adding to end of value list is safe. Any other change is unsafe:
+			// re-numbering an enum or set can affect any queries using numeric values,
+			// and can affect applications that need to maintain matching value lists
+			if !strings.HasPrefix(newType.values, oldType.values) {
+				return true, "modification to column " + mc.OldColumn.Name + "'s " + oldType.Base + " value list may require careful coordination with application-side query changes"
+			}
+			return false, ""
+
 		case "float", "double":
 			// Unsafe if decreasing precision or scale. (these may both be omitted in
 			// information_schema, which means hardware maximum is used; so going TO
 			// zero is always safe, and going FROM zero to non-zero is unsafe.)
-			// No extra check for unsigned->signed needed; they don't affect max values.
-			if newType.Size == 0 {
+			// Also unsafe if going from signed to unsigned. Opposite direction is OK
+			// though since max value is unaffected.
+			if newType.Unsigned && !oldType.Unsigned {
+				return true, genericReason
+			} else if newType.Size == 0 {
 				return false, ""
 			} else if oldType.Size == 0 || newType.Size < oldType.Size || newType.Scale < oldType.Scale {
 				return true, genericReason
@@ -498,61 +505,25 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 		}
 	}
 
-	// ints: unsafe if reducing to a smaller-storage type. Also unsafe if switching
-	// from unsigned to signed when not also increasing to a larger storage type.
-	intRank := []string{"NOT AN INT", "tinyint", "smallint", "mediumint", "int", "bigint"}
-	var oldRank, newRank int
-	for n := 1; n < len(intRank); n++ {
-		if oldType.Base == intRank[n] {
-			oldRank = n
+	// ints: unsafe if the new range of values excludes formerly-permitted values.
+	if oldIntMin, oldIntMax, oldIntOK := oldType.IntegerRange(); oldIntOK {
+		if newIntMin, newIntMax, newIntOK := newType.IntegerRange(); newIntOK {
+			if oldIntMin < newIntMin || oldIntMax > newIntMax {
+				return true, genericReason
+			}
+			return false, ""
 		}
-		if newType.Base == intRank[n] {
-			newRank = n
-		}
-	}
-	if oldRank > 0 && newRank > 0 {
-		if oldRank > newRank {
-			return true, genericReason
-		} else if oldRank == newRank && oldType.Unsigned && !newType.Unsigned {
-			return true, genericReason
-		}
-		return false, ""
 	}
 
 	// Conversions between string types (char, varchar, *text): unsafe if
 	// new size < old size
-	stringTypeSize := func(typ ColumnType) (uint64, bool) {
-		textMap := map[string]uint64{
-			"tinytext":   255,
-			"text":       65535,
-			"mediumtext": 16777215,
-			"longtext":   4294967295,
-			"varchar":    uint64(typ.Size),
-			"char":       uint64(typ.Size),
+	if oldSize, oldIsString := oldType.StringMaxLength(); oldIsString {
+		if newSize, newIsString := newType.StringMaxLength(); newIsString {
+			if newSize < oldSize {
+				return true, genericReason
+			}
+			return false, ""
 		}
-		textLen, ok := textMap[typ.Base]
-		return textLen, ok
-	}
-	oldSize, oldIsString := stringTypeSize(oldType)
-	newSize, newIsString := stringTypeSize(newType)
-	if oldIsString && newIsString {
-		if newSize < oldSize {
-			return true, genericReason
-		}
-		return false, ""
-	}
-
-	// For enum and set, adding to end of value list is safe. Any other change is
-	// unsafe: re-numbering an enum or set can affect any queries using numeric
-	// values, and can affect applications that need to maintain matching enum
-	// value lists
-	if strings.HasPrefix(newType.Base, "enum") || strings.HasPrefix(newType.Base, "set") {
-		// Ignore the closing paren on oldType when checking prefix. This comparison
-		// also inherently confirms both types are set or both are enum.
-		if !strings.HasPrefix(newType.Base, strings.TrimSuffix(oldType.Base, ")")) {
-			return true, genericReason
-		}
-		return false, ""
 	}
 
 	// MariaDB introduces some new convenience types, which have safe conversions
@@ -594,36 +565,22 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 	// * unsafe if new size < old size
 	// * unsafe if converting a fixed-length binary col to/from anything other
 	//   than a vector, due to the right-side zero-padding behavior of binary
-	//   having unintended effects. Even converting binary(x) to binary(y) with y>x
-	//   is unsafe because the zero-padding potentially impacts any trailing big-
-	//   endian value. But we permit this for vectors since they have a well-
+	//   having unintended effects. Even converting binary(x) to binary(y) is
+	//   always unsafe because the zero-padding potentially impacts any trailing
+	//   big-endian value. But we permit this for vectors since they have a well-
 	//   defined encoding.
 	// * MariaDB prevents conversion from vector to non-vector if the column is
 	//   used in a vector index; no need to catch that here since it is enforced
 	//   by the server
-	binaryTypeSize := func(typ ColumnType) (uint64, bool) {
-		binMap := map[string]uint64{
-			"tinyblob":   255,
-			"blob":       65535,
-			"mediumblob": 16777215,
-			"longblob":   4294967295,
-			"binary":     uint64(typ.Size),
-			"varbinary":  uint64(typ.Size),
-			"vector":     uint64(typ.Size) * 4, // each vector dimension is a 4-byte float
+	if oldSize, oldIsBin := oldType.BinaryMaxBytes(); oldIsBin {
+		if newSize, newIsBin := newType.BinaryMaxBytes(); newIsBin {
+			if newSize < oldSize {
+				return true, genericReason
+			} else if (oldType.Base == "binary" && newType.Base != "vector") || (newType.Base == "binary" && oldType.Base != "vector") {
+				return true, "modification to column " + mc.OldColumn.Name + " may have unintended effects due to zero-padding behavior of binary type"
+			}
+			return false, ""
 		}
-		binLen, ok := binMap[typ.Base]
-		return binLen, ok
-	}
-	oldSize, oldIsBinary := binaryTypeSize(oldType)
-	newSize, newIsBinary := binaryTypeSize(newType)
-	if oldIsBinary && newIsBinary {
-		if newSize < oldSize {
-			return true, genericReason
-		}
-		if (oldType.Base == "binary" && newType.Base != "vector") || (newType.Base == "binary" && oldType.Base != "vector") {
-			return true, "modification to column " + mc.OldColumn.Name + " may have unintended effects due to zero-padding behavior of binary type"
-		}
-		return false, ""
 	}
 
 	// All other changes considered unsafe.
