@@ -1,7 +1,6 @@
 package linter
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 
@@ -28,13 +27,13 @@ func engineChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, 
 	if opts.IsAllowed("engine", table.Engine) {
 		return nil
 	}
-	re := regexp.MustCompile(fmt.Sprintf(`(?i)ENGINE\s*=?\s*%s`, table.Engine))
-	message := fmt.Sprintf("Table %s is using storage engine %s, which is not configured to be permitted.", tengo.EscapeIdentifier(table.Name), table.Engine)
+	re := regexp.MustCompile(`(?i)ENGINE\s*=?\s*` + table.Engine)
+	message := table.ObjectKey().String() + " is using storage engine " + table.Engine + ", which is not configured to be permitted."
 	allowedEngines := opts.AllowList("engine")
 	if len(allowedEngines) == 1 {
-		message = fmt.Sprintf("%s Only the %s storage engine is listed in option allow-engine.", message, allowedEngines[0])
+		message += " Only the " + allowedEngines[0] + " storage engine is listed in option allow-engine."
 	} else {
-		message = fmt.Sprintf("%s The following storage engines are listed in option allow-engine: %s.", message, strings.Join(allowedEngines, ", "))
+		message += " The following storage engines are listed in option allow-engine: " + strings.Join(allowedEngines, ", ") + "."
 	}
 	return &Note{
 		LineOffset: FindFirstLineOffset(re, createStatement),

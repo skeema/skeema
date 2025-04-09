@@ -48,9 +48,9 @@ func definerChecker(object tengo.DefKeyer, createStatement string, schema *tengo
 		return nil
 	}
 
-	var typ, name, definer string
+	var definer string
 	if object, ok := object.(*tengo.Routine); ok {
-		typ, name, definer = strings.Title(string(object.Type)), object.Name, object.Definer
+		definer = object.Definer
 	} else {
 		return nil
 	}
@@ -61,8 +61,8 @@ func definerChecker(object tengo.DefKeyer, createStatement string, schema *tengo
 		}
 	}
 	message := fmt.Sprintf(
-		"%s %s is using definer %s, which is not configured to be permitted. The following definers are listed in option allow-definer: %s.",
-		typ, tengo.EscapeIdentifier(name), definer, dc.allowedDefinersString,
+		"%s is using definer %s, which is not configured to be permitted. The following definers are listed in option allow-definer: %s.",
+		object.ObjectKey(), definer, dc.allowedDefinersString,
 	)
 	note := Note{
 		LineOffset: FindFirstLineOffset(reDefinerCheckerOffset, createStatement),

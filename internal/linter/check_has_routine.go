@@ -1,8 +1,6 @@
 package linter
 
 import (
-	"strings"
-
 	"github.com/skeema/skeema/internal/tengo"
 )
 
@@ -16,10 +14,8 @@ func init() {
 }
 
 func hasRoutinesChecker(routine *tengo.Routine, _ string, _ *tengo.Schema, _ *Options) *Note {
-	keyString := routine.ObjectKey().String()
-	noun := strings.ToUpper(keyString[0:1]) + keyString[1:]
 	return &Note{
 		Summary: "Routine present",
-		Message: noun + " found. Some environments restrict use of stored procedures and functions for reasons of scalability or operational complexity.",
+		Message: routine.ObjectKey().String() + " found. Some environments restrict use of stored procedures and functions for reasons of scalability or operational complexity.",
 	}
 }

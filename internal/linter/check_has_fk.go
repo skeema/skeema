@@ -27,8 +27,8 @@ func hasForeignKeysChecker(table *tengo.Table, createStatement string, _ *tengo.
 		plural = "s"
 	}
 	message := fmt.Sprintf(
-		"Table %s has %d foreign key%s. Foreign keys may harm write performance, and can be problematic for online schema change tools. They are also ineffective in sharded environments.",
-		tengo.EscapeIdentifier(table.Name), len(table.ForeignKeys), plural,
+		"%s has %d foreign key%s. Foreign keys may harm write performance, and can be problematic for online schema change tools. They are also ineffective in sharded environments.",
+		table.ObjectKey(), len(table.ForeignKeys), plural,
 	)
 	return &Note{
 		LineOffset: FindFirstLineOffset(reHasFK, createStatement),

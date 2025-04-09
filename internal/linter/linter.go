@@ -4,6 +4,8 @@ package linter
 import (
 	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/tengo"
@@ -36,6 +38,12 @@ func CheckSchema(wsSchema *workspace.Schema, opts *Options) *Result {
 			r := rulesByName[ruleName]
 			output := r.CheckerFunc.CheckObject(object, stmt.Text, wsSchema.Schema, opts)
 			for _, lo := range output {
+				// Capitalize first letter of message -- this helps with checkers that start
+				// their message using ObjectKey.String(), which doesn't capitalize its
+				// return value. So this converts "table `foo`" to "Table `foo`".
+				firstRune, runeLen := utf8.DecodeRuneInString(lo.Message)
+				lo.Message = string(unicode.ToUpper(firstRune)) + lo.Message[runeLen:]
+
 				if opts.StripAnnotationNewlines {
 					lo.Message = strings.ReplaceAll(lo.Message, "\n", " ")
 				}

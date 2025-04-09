@@ -36,7 +36,7 @@ type ObjectKey struct {
 }
 
 func (key ObjectKey) String() string {
-	return fmt.Sprintf("%s %s", key.Type, EscapeIdentifier(key.Name))
+	return string(key.Type) + " " + EscapeIdentifier(key.Name)
 }
 
 // ObjectKey inception as a syntactic sugar hack: this allows keys to be

@@ -70,7 +70,7 @@ func charsetChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 func makeCharsetMessage(table *tengo.Table, column *tengo.Column, opts *Options) string {
 	var subject, charSet, using, allowedList, moreInfo string
 	if column == nil {
-		subject = "Table " + tengo.EscapeIdentifier(table.Name)
+		subject = table.ObjectKey().String()
 		charSet = table.CharSet
 		using = "default character set"
 	} else {

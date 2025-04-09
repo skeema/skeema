@@ -45,7 +45,7 @@ func compressionChecker(table *tengo.Table, createStatement string, _ *tengo.Sch
 	note := &Note{
 		LineOffset: FindLastLineOffset(reAnyCompression, createStatement),
 		Summary:    "Table compression setting not permitted",
-		Message:    makeCompressionMessage(tengo.EscapeIdentifier(table.Name), mode, clause, opts),
+		Message:    makeCompressionMessage(table, mode, clause, opts),
 	}
 
 	// If table is not compressed, but uncompressed tables are not permitted due
@@ -83,7 +83,7 @@ func tableCompressionMode(table *tengo.Table) (mode string, clause string) {
 		if matches == nil {
 			return "8kb", "ROW_FORMAT=COMPRESSED" // see explanation in function doc above
 		}
-		return fmt.Sprintf("%skb", matches[1]), matches[0]
+		return matches[1] + "kb", matches[0]
 	} else if matches := rePageCompression.FindStringSubmatch(table.CreateOptions); matches != nil {
 		value := strings.ToLower(matches[1])
 		if value == "" && matches[2] != "" {
@@ -99,7 +99,7 @@ func tableCompressionMode(table *tengo.Table) (mode string, clause string) {
 // makeCompressionMessage is a helper function to translate allow-compression
 // enum strings into a human-friendly message including the list of
 // corresponding allowed CREATE option clauses.
-func makeCompressionMessage(tableName, mode, clause string, opts *Options) string {
+func makeCompressionMessage(table *tengo.Table, mode, clause string, opts *Options) string {
 	allowed := opts.AllowList("compression")
 	var clauses []string
 	for _, value := range allowed {
@@ -114,9 +114,9 @@ func makeCompressionMessage(tableName, mode, clause string, opts *Options) strin
 			clauses = append(clauses, fmt.Sprintf("KEY_BLOCK_SIZE=%s", matches[1]))
 		} else if value != "none" {
 			if mode == "none" {
-				return fmt.Sprintf("Table %s is not compressed, but option allow-compression is misconfigured to include unknown value %q. Please refer to Skeema's options reference manual to fix the configuration of this linter rule.", tableName, value)
+				return fmt.Sprintf("%s is not compressed, but option allow-compression is misconfigured to include unknown value %q. Please refer to Skeema's options reference manual to fix the configuration of this linter rule.", table.ObjectKey(), value)
 			}
-			return fmt.Sprintf("Table %s is using compression clause %s, but option allow-compression is misconfigured to include unknown value %q. Please refer to Skeema's options reference manual to fix the configuration of this linter rule.", tableName, clause, value)
+			return fmt.Sprintf("%s is using compression clause %s, but option allow-compression is misconfigured to include unknown value %q. Please refer to Skeema's options reference manual to fix the configuration of this linter rule.", table.ObjectKey(), clause, value)
 		}
 	}
 	clausesString := strings.Join(clauses, ", ")
@@ -124,18 +124,18 @@ func makeCompressionMessage(tableName, mode, clause string, opts *Options) strin
 	// Table isn't compressed, but allow-compression *requires* compression
 	if mode == "none" {
 		if len(clauses) == 1 {
-			return fmt.Sprintf("Table %s is not compressed, but option allow-compression is configured to only permit compressed tables. Please use compression clause %s.", tableName, clauses[0])
+			return fmt.Sprintf("%s is not compressed, but option allow-compression is configured to only permit compressed tables. Please use compression clause %s.", table.ObjectKey(), clauses[0])
 		}
-		return fmt.Sprintf("Table %s is not compressed, but option allow-compression is not configured to allow uncompressed tables. Please use one of these compression clauses: %s", tableName, clausesString)
+		return fmt.Sprintf("%s is not compressed, but option allow-compression is not configured to allow uncompressed tables. Please use one of these compression clauses: %s", table.ObjectKey(), clausesString)
 	}
 
 	// Table is compressed, but allow-compression prohibits ANY compression
 	if len(allowed) == 1 && strings.EqualFold(allowed[0], "none") {
-		return fmt.Sprintf("Table %s is using compression clause %s, but option allow-compression is configured to prohibit use of compression.", tableName, clause)
+		return fmt.Sprintf("%s is using compression clause %s, but option allow-compression is configured to prohibit use of compression.", table.ObjectKey(), clause)
 	}
 
 	// Table is compressed, but allow-compression allows some OTHER clause
-	prefix := fmt.Sprintf("Table %s is using compression clause %s, but option allow-compression is not configured to permit this. ", tableName, clause)
+	prefix := fmt.Sprintf("%s is using compression clause %s, but option allow-compression is not configured to permit this. ", table.ObjectKey(), clause)
 	middle := "Please use"
 	if opts.IsAllowed("compression", "none") {
 		middle = "Please either leave the table uncompressed, or use"

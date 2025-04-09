@@ -30,6 +30,6 @@ func pkChecker(table *tengo.Table, _ string, _ *tengo.Schema, _ *Options) *Note 
 	return &Note{
 		LineOffset: 0,
 		Summary:    "No primary key",
-		Message:    "Table " + tengo.EscapeIdentifier(table.Name) + " does not define a PRIMARY KEY." + advice,
+		Message:    table.ObjectKey().String() + " does not define a PRIMARY KEY." + advice,
 	}
 }
