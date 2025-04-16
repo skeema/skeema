@@ -134,13 +134,14 @@ func CreateDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstan
 	// instances used only for schema management, we can configure the server in a
 	// way that reduces resource usage and improves performance for this workload
 	serverArgs := []string{
-		"--innodb-log-file-size=4194304",        // use smaller 4MB redo log files, instead of default of 48MB-96MB (varies by flavor)
-		"--innodb-buffer-pool-size=33554432",    // use smaller 32MB buffer pool, instead of default of 128MB
-		"--performance-schema=0",                // disable performance_schema to reduce memory usage and other overhead
-		"--skip-innodb-adaptive-hash-index",     // AHI not beneficial to DDL-based workload
-		"--loose-innodb-log-writer-threads=off", // log writer threads harm workspace perf (loose- prefix since only in MySQL 8.0.22+)
-		"--loose-query-cache-size=0",            // ensure query cache completely disabled (loose- prefix since no longer in MySQL 8+)
-		"--skip-innodb-doublewrite",             // not needed for an ephemeral DB; perf impact for data dictionary in MySQL 8.0+
+		"--loose-innodb-redo-log-capacity=8388608", // use 8MB total redo log capacity (loose- prefix since only in MySQL 8.0.30+)
+		"--loose-innodb-log-file-size=4194304",     // ditto but for flavors without innodb-redo-log-capacity (loose- prefix since no longer in MySQL 9.3+)
+		"--innodb-buffer-pool-size=33554432",       // use smaller 32MB buffer pool, instead of default of 128MB
+		"--performance-schema=0",                   // disable performance_schema to reduce memory usage and other overhead
+		"--skip-innodb-adaptive-hash-index",        // AHI not beneficial to DDL-based workload
+		"--loose-innodb-log-writer-threads=off",    // log writer threads harm workspace perf (loose- prefix since only in MySQL 8.0.22+)
+		"--loose-query-cache-size=0",               // ensure query cache completely disabled (loose- prefix since no longer in MySQL 8+)
+		"--skip-innodb-doublewrite",                // not needed for an ephemeral DB; perf impact for data dictionary in MySQL 8.0+
 	}
 	if opts.EnableBinlog {
 		serverArgs = append(serverArgs, "--log-bin", "--server-id=1")
