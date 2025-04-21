@@ -821,6 +821,28 @@ func TestModifyColumnUnsafe(t *testing.T) {
 		t.Error("For changing collation but not character set, expected unsafe=false, instead found unsafe=true")
 	}
 
+	// Special case: conversions between char/varchar and text types need to
+	// account for multi-byte charsets properly
+	mc = ModifyColumn{
+		OldColumn: &Column{Type: ParseColumnType("varchar(64)"), CharSet: "utf8mb4"},
+		NewColumn: &Column{Type: ParseColumnType("tinytext"), CharSet: "utf8mb4"},
+	}
+	if unsafe, _ := mc.Unsafe(StatementModifiers{}); !unsafe {
+		t.Error("For converting varchar(64) to tinytext with utf8mb4, expected unsafe=true, instead found unsafe=false")
+	}
+	mc.OldColumn.Type = ParseColumnType("varchar(63)")
+	if unsafe, _ := mc.Unsafe(StatementModifiers{}); unsafe {
+		t.Error("For converting varchar(63) to tinytext with utf8mb4, expected unsafe=false, instead found unsafe=true")
+	}
+	mc.OldColumn, mc.NewColumn = mc.NewColumn, mc.OldColumn
+	if unsafe, _ := mc.Unsafe(StatementModifiers{}); !unsafe {
+		t.Error("For converting tinytext to varchar(63) with utf8mb4, expected unsafe=true, instead found unsafe=false")
+	}
+	mc.NewColumn.Type = ParseColumnType("varchar(64)")
+	if unsafe, _ := mc.Unsafe(StatementModifiers{}); unsafe {
+		t.Error("For converting varchar(64) to tinytext with utf8mb4, expected unsafe=false, instead found unsafe=true")
+	}
+
 	// Special case: confirm changing the type of a column is safe for virtual
 	// generated columns but not stored generated columns
 	mc = ModifyColumn{

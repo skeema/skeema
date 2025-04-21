@@ -517,8 +517,8 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 
 	// Conversions between string types (char, varchar, *text): unsafe if
 	// new size < old size
-	if oldSize, oldIsString := oldType.StringMaxLength(); oldIsString {
-		if newSize, newIsString := newType.StringMaxLength(); newIsString {
+	if oldSize, oldIsString := oldType.StringMaxBytes(mc.OldColumn.CharSet); oldIsString {
+		if newSize, newIsString := newType.StringMaxBytes(mc.NewColumn.CharSet); newIsString {
 			if newSize < oldSize {
 				return true, genericReason
 			}

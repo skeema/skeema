@@ -119,9 +119,10 @@ func (ct ColumnType) hasDisplayWidth() bool {
 	return ct.Size > 0 && (ct.Integer() || ct.Base == "year")
 }
 
-// StringMaxLength returns the maximum number of characters that can be stored
-// in this column type, if it is a string-type. Otherwise 0,false is returned.
-func (ct ColumnType) StringMaxLength() (maxChars uint64, ok bool) {
+// StringMaxBytes returns the maximum number of bytes that can be stored in
+// this column type, if it is a string-type and has the supplied charset.
+// If ct is not a string type, 0,false is returned.
+func (ct ColumnType) StringMaxBytes(charset string) (maxBytes uint64, ok bool) {
 	switch ct.Base {
 	case "tinytext":
 		return 255, true
@@ -131,10 +132,8 @@ func (ct ColumnType) StringMaxLength() (maxChars uint64, ok bool) {
 		return 16777215, true
 	case "longtext":
 		return 4294967295, true
-	case "varchar":
-		return uint64(ct.Size), true
-	case "char":
-		return uint64(ct.Size), true
+	case "varchar", "char":
+		return uint64(ct.Size) * uint64(characterMaxBytes(charset)), true
 	default:
 		return 0, false
 	}
