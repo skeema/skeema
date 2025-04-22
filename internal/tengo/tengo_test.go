@@ -229,19 +229,11 @@ func aTable(nextAutoInc uint64) Table {
 
 func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 	utf8mb3 := "utf8"
-	utf8mb3DefaultCollation := "utf8_general_ci"
+	// MySQL 8.0.29+ and MariaDB 10.6+ report the legacy utf8 charset as utf8mb3.
 	if flavor.MinMySQL(8, 0, 29) || flavor.MinMariaDB(10, 6) {
-		// MySQL 8.0.29+ and MariaDB 10.6+ report the legacy utf8 charset as utf8mb3.
-		// MySQL 8.0.30+ and MariaDB 10.6+ also update collation names accordingly.
-		// MariaDB 11.5+ changes utf8mb3's default collation to utf8mb3_uca1400_ai_ci.
 		utf8mb3 = "utf8mb3"
-		if !flavor.IsMySQL(8, 0, 29) {
-			utf8mb3DefaultCollation = "utf8mb3_general_ci"
-		}
-		if flavor.MinMariaDB(11, 5) {
-			utf8mb3DefaultCollation = "utf8mb3_uca1400_ai_ci"
-		}
 	}
+	utf8mb3DefaultCollation := characterSetsForFlavor(flavor)[utf8mb3].DefaultCollation
 	lastUpdateCol := &Column{
 		Name:     "last_update",
 		Type:     ParseColumnType("timestamp(2)"),

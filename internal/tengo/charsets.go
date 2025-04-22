@@ -2,6 +2,7 @@ package tengo
 
 import (
 	"maps"
+	"strings"
 	"sync"
 )
 
@@ -30,6 +31,30 @@ func characterMaxBytes(charset string) int {
 		return cs.MaxLength
 	}
 	return 1
+}
+
+// DefaultCollationForCharset returns the default collation for the supplied
+// character set, using the flavor of the supplied instance. If the instance's
+// flavor is MariaDB 11.2+, then this function also queries the instance's
+// character_set_collations variable to check for overrides, which may vary by
+// Linux distribution in ways that differ from MariaDB's normal defaults. This
+// function is primarily intended for use in integration tests, and it does not
+// perform any instance-level memoization, nor does it do proper error handling.
+func DefaultCollationForCharset(charset string, instance *Instance) string {
+	if instance.Flavor().MinMariaDB(11, 2) {
+		var rawOverrides string
+		if db, err := instance.CachedConnectionPool("", ""); err == nil {
+			if err := db.QueryRow("SELECT @@character_set_collations").Scan(&rawOverrides); err == nil {
+				for _, override := range strings.Split(rawOverrides, ",") {
+					cs, collation, _ := strings.Cut(override, "=")
+					if strings.TrimSpace(cs) == charset {
+						return strings.TrimSpace(collation)
+					}
+				}
+			}
+		}
+	}
+	return characterSetsForFlavor(instance.Flavor())[charset].DefaultCollation
 }
 
 // CharacterSet represents a known character set in MySQL or MariaDB

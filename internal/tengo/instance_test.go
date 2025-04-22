@@ -787,19 +787,6 @@ func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
 				t.Errorf("Expected post-alter charset to be %s, instead found %s", expectCharSet, schema.CharSet)
 			}
 			if schema.Collation != expectCollation {
-				// MariaDB 11.2+ introduces new server variable character_set_collations,
-				// which can override default collation for each charset
-				if s.d.Flavor().MinMariaDB(11, 2) {
-					var charSetCollations string
-					if db, err := s.d.CachedConnectionPool("", ""); err != nil {
-						t.Fatalf("Unable to obtain connection pool: %v", err)
-					} else if err := db.QueryRow("SELECT @@character_set_collations").Scan(&charSetCollations); err != nil {
-						t.Fatalf("Unexpected error querying @@character_set_collations: %v", err)
-					}
-					if strings.Contains(charSetCollations, schema.Collation) {
-						return
-					}
-				}
 				t.Errorf("Expected post-alter collation to be %s, instead found %s", expectCollation, schema.Collation)
 			}
 		}
@@ -821,21 +808,16 @@ func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
 	}
 
 	// Default collation for utf8mb4 depends on the flavor
-	var defaultCollationMB4 string
-	if s.d.Flavor().MinMySQL(8) {
-		defaultCollationMB4 = "utf8mb4_0900_ai_ci"
-	} else {
-		defaultCollationMB4 = "utf8mb4_general_ci"
-	}
+	defaultCollationMB4 := DefaultCollationForCharset("utf8mb4", s.d.Instance)
 
 	// `testing` has instance-default charset and collation
-	// `testcharset` has utf8mb4 charset with its default collation (utf8mb4_general_ci)
+	// `testcharset` has utf8mb4 charset with its default collation (varies by flavor)
 	// `testcharcoll` has utf8mb4 with utf8mb4_unicode_ci
 
 	// Test no-op conditions
 	assertNoError("testing", "", "", instCharSet, instCollation)
 	assertNoError("testcharset", "utf8mb4", "", "utf8mb4", defaultCollationMB4)
-	assertNoError("testcharset", "", "utf8mb4_general_ci", "utf8mb4", "utf8mb4_general_ci")
+	assertNoError("testcharset", "", defaultCollationMB4, "utf8mb4", defaultCollationMB4)
 	assertNoError("testcharcoll", "utf8mb4", "utf8mb4_unicode_ci", "utf8mb4", "utf8mb4_unicode_ci")
 
 	// Test known error conditions
