@@ -286,38 +286,43 @@ func (ld *LocalDocker) shutdown(args ...interface{}) bool {
 func DockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
 	image := flavor.String()
 
-	// flavor is often supplied with a zero patch value to mean "latest patch" in
-	// terms of Docker images, for example the config "flavor=mysql:8.0" means we
-	// want the latest 8.0.X version. Some logic below depends on having at least
-	// a specific 8.0 patch release, and we don't want to be tripped up by 0 patch
-	// values.
-	wantLatest80 := flavor.IsMySQL(8, 0, 0)
-
-	// Percona 8.0+: use percona/percona-server, since _/percona is no longer
-	// being updated regularly, and lacks arm64 images entirely.
-	// However, on arm64 we MUST include a patch value AND also add a "-aarch64"
-	// suffix to the tag, as there is no "latest", "8.0", or "8.4" tag for arm64.
-	// Below 8.0.33, Percona images for arm64 are not available at all.
 	if flavor.IsPercona() {
-		if arch == "arm64" {
-			var v tengo.Version
-			if wantLatest80 { // Percona Server 8.0, no patch specified
-				v = tengo.LatestPercona80Version
-			} else if flavor.IsMySQL(8, 4, 0) { // Percona Server 8.4, no patch specified
-				v = tengo.LatestPercona84Version
-			} else if !flavor.MinMySQL(8, 0, 33) {
+		// Percona Server 5.x:
+		// on arm64, no images available
+		// on amd64, use top-level percona:5.x images as-is
+		if flavor.IsMySQL(5) {
+			if arch == "arm64" {
 				return "", fmt.Errorf("%s Docker images for %s are not available", arch, image)
-			} else { // specific patch supplied, OR Percona Server 8.1-8.3 innovation releases
-				v = flavor.Version
+			} else {
+				return image, nil
 			}
-			// Note that unlike Flavor.String(), when calling Version.String() the patch
-			// number is always included, even if 0. That's the behavior we need here to
-			// get the appropriate Docker image tag for 8.1-8.3 innovation releases.
-			return "percona/percona-server:" + v.String() + "-aarch64", nil
-		} else if flavor.MinMySQL(8) {
-			return strings.Replace(image, "percona:", "percona/percona-server:", 1), nil
 		}
-		return image, nil // MySQL 5.x on amd64 can use _/percona image as-is
+
+		// In some 8.x cases, arm64 requires special handling due to unusual tagging on
+		// DockerHub:
+		// * 8.0.32 and below: not available on arm64
+		// * 8.0.33-8.0.40:    need -aarch64 suffix
+		// * 8.1, 8.2, 8.3:    need .0-aarch64 suffix
+		// * 8.4.1-8.4.3:      need -aarch64 suffix
+		//
+		// But we must skip this logic for "percona:8.0" and "percona:8.4" (latest
+		// patch of 8.0 or 8.4) since those are represented as patch of 0, which
+		// would otherwise break comparison logic!
+		if arch == "arm64" && image != "percona:8.0" && image != "percona:8.4" && !flavor.MinMySQL(8, 4, 4) {
+			if !flavor.MinMySQL(8, 0, 33) {
+				return "", fmt.Errorf("%s Docker images for %s are not available", arch, image)
+			} else if !flavor.MinMySQL(8, 0, 41) || flavor.IsMySQL(8, 4) {
+				image += "-aarch64"
+			} else if flavor.Version[2] == 0 {
+				// Flavor.String() normally omits 0 patch, need to add it back for 8.1-8.3!
+				image += ".0-aarch64"
+			}
+		}
+
+		// The top-level "percona" images lack arm64 support, and they don't have 8.1+
+		// at all anyway. So for 8.0+ we always use percona/percona-server instead,
+		// even on amd64 just for consistency across archs.
+		return strings.Replace(image, "percona:", "percona/percona-server:", 1), nil
 	}
 
 	// Aurora flavors from Skeema Premium: use corresponding MySQL image, but
@@ -337,15 +342,15 @@ func DockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
 
 	// MySQL on arm64: use mysql/mysql-server for 8.0.12-8.0.28.
 	// Below 8.0.12 (incl all 5.x), arm64 MySQL images are not available at all.
-	if arch == "arm64" && flavor.IsMySQL() && !wantLatest80 {
+	// We special-case "mysql:8.0" to avoid having a 0 patch number break numeric
+	// comparisons.
+	if arch == "arm64" && flavor.IsMySQL() && image != "mysql:8.0" {
 		if !flavor.MinMySQL(8, 0, 12) {
 			return "", fmt.Errorf("%s Docker images for %s are not available", arch, image)
 		} else if !flavor.MinMySQL(8, 0, 29) {
-			return strings.Replace(image, "mysql:", "mysql/mysql-server:", 1), nil
+			image = strings.Replace(image, "mysql:", "mysql/mysql-server:", 1)
 		}
-		return image, nil
 	}
 
-	// All other situations: return image from flavor string as-is
 	return image, nil
 }

@@ -28,15 +28,6 @@ var (
 	OldestSupportedMariaDBVersion = Version{10, 1}
 )
 
-// Variables representing the latest Percona Server patch releases on DockerHub
-// at present as per https://hub.docker.com/r/percona/percona-server/tags. These
-// are useful when requesting a Docker image for Percona Server on arm64, since
-// there is no "8.0" or "8.4" tag for arm64.
-var (
-	LatestPercona80Version = Version{8, 0, 40}
-	LatestPercona84Version = Version{8, 4, 3}
-)
-
 // Major returns the major component of the version number.
 func (ver Version) Major() uint16 { return ver[0] }
 

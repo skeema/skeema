@@ -602,16 +602,7 @@ func (di *DockerizedInstance) SetRedoLog(enable bool) error {
 // etc into "percona" or "mysql" accordingly.
 func simplifiedImageName(image string) string {
 	base, tag, _ := strings.Cut(image, ":")
-	tag, modifier, _ := strings.Cut(tag, "-")
-	if base == "percona/percona-server" && modifier == "aarch64" {
-		// Common special case: Percona Server images on arm always need a patch
-		// release specified, but we can strip it if it's latest
-		if tag == LatestPercona80Version.String() {
-			return "percona:8.0"
-		} else if tag == LatestPercona84Version.String() {
-			return "percona:8.4"
-		}
-	}
+	tag = strings.TrimSuffix(tag, "-aarch64") // present in some Percona Server tags
 	if base != "mysql" && base != "percona" && base != "mariadb" {
 		if strings.Contains(base, "maria") {
 			base = "mariadb"

@@ -153,20 +153,20 @@ func TestDockerCLIMissing(t *testing.T) {
 
 func TestContainerNameForImage(t *testing.T) {
 	testcases := map[string]string{
-		"mysql:5.7":                               "mysql-5.7",
-		"mariadb:11.0":                            "mariadb-11.0",
-		"thirdparty/mysql:8.0":                    "mysql-8.0",
-		"thirdparty/percona:8.0":                  "percona-8.0",
-		"example.com/maria/maria-community:10.11": "mariadb-10.11",
-		"percona/percona-server:8.0":              "percona-8.0",
-		"percona/percona-server:8.1.0-aarch64":    "percona-8.1",
-		"percona/percona-server:" + LatestPercona80Version.String() + "-aarch64": "percona-8.0",
-		"percona/percona-server:8.0.37-aarch64":                                  "percona-8.0.37", // not latest, so patch still used
-		"percona/percona-server:" + LatestPercona84Version.String() + "-aarch64": "percona-8.4",
-		"percona/percona-server:" + LatestPercona84Version.String():              "percona-" + LatestPercona84Version.String(), // not arm64, so patch still used
-		"mysql/mysql-server:8.0":                                                 "mysql-8.0",
-		"container-registry.oracle.com/mysql/community-server:8.1":               "mysql-8.1",
-		"weird-tagless-value/mysql-server":                                       "mysql",
+		"mysql:5.7":                                                "mysql-5.7",
+		"mariadb:11.0":                                             "mariadb-11.0",
+		"thirdparty/mysql:8.0":                                     "mysql-8.0",
+		"thirdparty/percona:8.0":                                   "percona-8.0",
+		"example.com/maria/maria-community:10.11":                  "mariadb-10.11",
+		"percona/percona-server:8.0":                               "percona-8.0",
+		"percona/percona-server:8.1.0-aarch64":                     "percona-8.1",
+		"percona/percona-server:8.0-aarch64":                       "percona-8.0",
+		"percona/percona-server:8.0.37-aarch64":                    "percona-8.0.37",
+		"percona/percona-server:8.4-aarch64":                       "percona-8.4",
+		"percona/percona-server:8.4.3":                             "percona-8.4.3",
+		"mysql/mysql-server:8.0":                                   "mysql-8.0",
+		"container-registry.oracle.com/mysql/community-server:8.1": "mysql-8.1",
+		"weird-tagless-value/mysql-server":                         "mysql",
 	}
 	for input, expected := range testcases {
 		if actual := ContainerNameForImage(input); actual != expected {
