@@ -186,8 +186,8 @@ func TestTableAlterAddOrDropColumn(t *testing.T) {
 	if !ok {
 		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
 	}
-	if ta.Table != &to || ta.Column != newCol {
-		t.Error("Pointers in table alter do not point to expected values")
+	if ta.Column != newCol {
+		t.Error("AddColumn.Column field does not point to expected Column")
 	}
 	if ta.PositionFirst || ta.PositionAfter != to.Columns[colCount-3] || !strings.Contains(ta.Clause(StatementModifiers{}), " AFTER ") {
 		t.Errorf("Expected new column to be after `%s` / first=false, instead found after `%s` / first=%t", to.Columns[colCount-3].Name, ta.PositionAfter.Name, ta.PositionFirst)
@@ -225,8 +225,8 @@ func TestTableAlterAddOrDropColumn(t *testing.T) {
 	if !ok {
 		t.Fatalf("Incorrect type of table alter[0] returned: expected %T, found %T", ta, tableAlters[0])
 	}
-	if ta.Table != &to || ta.Column != anotherCol {
-		t.Error("Pointers in table alter[0] do not point to expected values")
+	if ta.Column != anotherCol {
+		t.Error("AddColumn.Column field does not point to expected value in alter[0]")
 	}
 	if !ta.PositionFirst || ta.PositionAfter != nil || !strings.Contains(ta.Clause(StatementModifiers{}), " FIRST") {
 		t.Errorf("Expected first new column to be after nil / first=true, instead found after %v / first=%t", ta.PositionAfter, ta.PositionFirst)
@@ -249,8 +249,8 @@ func TestTableAlterAddOrDropColumn(t *testing.T) {
 	if !ok {
 		t.Fatalf("Incorrect type of table alter[2] returned: expected %T, found %T", ta, tableAlters[2])
 	}
-	if ta.Table != &to || ta.Column != anotherCol {
-		t.Error("Pointers in table alter[2] do not point to expected values")
+	if ta.Column != anotherCol {
+		t.Error("AddColumn.Column field does not point to expected value in alter[2]")
 	}
 	if ta.PositionFirst || ta.PositionAfter != nil {
 		t.Errorf("Expected new column to be after nil / first=false, instead found after %v / first=%t", ta.PositionAfter, ta.PositionFirst)
@@ -857,7 +857,7 @@ func TestTableAlterModifyColumn(t *testing.T) {
 	if !ok {
 		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
 	}
-	if ta.Table != &to || ta.OldColumn != from.Columns[movedColPos] || ta.NewColumn != movedCol {
+	if ta.OldColumn != from.Columns[movedColPos] || ta.NewColumn != movedCol {
 		t.Error("Pointers in table alter do not point to expected values")
 	}
 	if !ta.PositionFirst || ta.PositionAfter != nil || !strings.Contains(ta.Clause(StatementModifiers{}), " FIRST") {

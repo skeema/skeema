@@ -27,7 +27,6 @@ type Unsafer interface {
 // schema version of the table, but not the left-side ("from") version. It
 // satisfies the TableAlterClause interface.
 type AddColumn struct {
-	Table         *Table
 	Column        *Column
 	PositionFirst bool
 	PositionAfter *Column
@@ -365,7 +364,6 @@ func (rc RenameColumn) Unsafe(_ StatementModifiers) (unsafe bool, reason string)
 // ModifyColumn represents a column that exists in both versions of the table,
 // but with a different definition. It satisfies the TableAlterClause interface.
 type ModifyColumn struct {
-	Table              *Table
 	OldColumn          *Column
 	NewColumn          *Column
 	PositionFirst      bool

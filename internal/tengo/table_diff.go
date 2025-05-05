@@ -772,7 +772,6 @@ func (cc *columnsComparison) columnAdds() []TableAlterClause {
 			continue
 		}
 		add := AddColumn{
-			Table:  cc.toTable,
 			Column: cc.toTable.Columns[toPos],
 		}
 
@@ -808,7 +807,6 @@ func (cc *columnsComparison) columnModifications() []TableAlterClause {
 		for toPos, toCol := range cc.toOrderCommonCols {
 			if fromCol := cc.fromOrderCommonCols[toPos]; !fromCol.Equals(toCol) {
 				clauses = append(clauses, ModifyColumn{
-					Table:              cc.toTable,
 					OldColumn:          fromCol,
 					NewColumn:          toCol,
 					InUniqueConstraint: cc.colInUniqueConstraint(fromCol, toCol),
@@ -840,7 +838,6 @@ func (cc *columnsComparison) columnModifications() []TableAlterClause {
 		fromCol := cc.fromColumnsByName[toCol.Name]
 		if moved := !stayPut[toPos]; moved || !fromCol.Equals(toCol) {
 			modify := ModifyColumn{
-				Table:              cc.toTable,
 				OldColumn:          fromCol,
 				NewColumn:          toCol,
 				PositionFirst:      moved && toPos == 0,

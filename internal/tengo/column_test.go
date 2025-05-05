@@ -18,7 +18,6 @@ func TestColumnEquivalent(t *testing.T) {
 			return
 		}
 		mc := ModifyColumn{
-			Table:     &Table{Name: "test"},
 			OldColumn: a,
 			NewColumn: b,
 		}
