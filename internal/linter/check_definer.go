@@ -2,7 +2,6 @@ package linter
 
 import (
 	"errors"
-	"fmt"
 	"regexp"
 	"strings"
 
@@ -25,45 +24,29 @@ func init() {
 	})
 }
 
-// definerConfig is a custom configuration struct used by definerChecker. The
-// configuration of this rule involves custom logic to set up regular
-// expressions a single time, which is more efficient than re-computing them
-// on each stored object encountered, especially in environments with a large
-// number of them.
-type definerConfig struct {
-	allowedDefinersString string
-	allowedDefinersMatch  []*regexp.Regexp
-	fastAllowAll          bool
-}
-
 var reDefinerCheckerOffset = regexp.MustCompile("(?i)definer")
-var repDefinerQuotes = strings.NewReplacer("'", "", "`", "")
-var repDefinerWildcards = strings.NewReplacer("%", ".*", "_", ".")
 
 func definerChecker(object tengo.DefKeyer, createStatement string, schema *tengo.Schema, opts *Options) []Note {
-	dc := opts.RuleConfig["definer"].(*definerConfig)
-
-	// Performance hack for default settings case
-	if dc.fastAllowAll {
-		return nil
-	}
-
 	var definer string
-	if object, ok := object.(*tengo.Routine); ok {
-		definer = object.Definer
-	} else {
-		return nil
+	if storedObject, ok := object.(tengo.StoredObject); ok {
+		definer = storedObject.DefinerUser()
+	}
+	if definer == "" {
+		return nil // object type has no notion of a DEFINER (e.g. tables), or DEFINER has been stripped (Skeema Premium)
 	}
 
-	for _, re := range dc.allowedDefinersMatch {
-		if re.MatchString(definer) {
-			return nil
+	patterns := opts.RuleConfig["definer"].([]*tengo.UserPattern)
+	var patternStrings []string
+	for _, p := range patterns {
+		if p.Match(definer) {
+			return nil // object's DEFINER is a match for an allowed pattern
 		}
+		patternStrings = append(patternStrings, p.String())
 	}
-	message := fmt.Sprintf(
-		"%s is using definer %s, which is not configured to be permitted. The following definers are listed in option allow-definer: %s.",
-		object.ObjectKey(), definer, dc.allowedDefinersString,
-	)
+
+	objectString := object.ObjectKey().String()
+	allowedString := strings.Join(patternStrings, ", ")
+	message := objectString + " is using definer " + definer + ", which is not configured to be permitted. The following definers are listed in option allow-definer: " + allowedString + "."
 	note := Note{
 		LineOffset: FindFirstLineOffset(reDefinerCheckerOffset, createStatement),
 		Summary:    "Definer not permitted",
@@ -72,30 +55,16 @@ func definerChecker(object tengo.DefKeyer, createStatement string, schema *tengo
 	return []Note{note}
 }
 
-// definerConfiger establishes the configuration of valid definers, in
-// both string and regexp-slice form. The former is for display purposes,
-// while the latter is used for efficient comparison.
+// definerConfiger establishes the configuration of valid definers, as a slice
+// of *tengo.UserPattern, computed a single time for efficiency.
 func definerConfiger(config *mybase.Config) interface{} {
-	// By default, lint-definer=error but allow-definer="%@%", which means we'd
-	// needlessly scan each object against a permissive regex. Instead, short-
-	// circuit the logic entirely in this situation for perf reasons.
-	if !config.Changed("allow-definer") {
-		return &definerConfig{fastAllowAll: true}
-	}
-
 	values := config.GetSlice("allow-definer", ',', true)
 	if len(values) == 0 {
 		return errors.New("Option allow-definer must be non-empty")
 	}
-	dc := &definerConfig{
-		allowedDefinersString: strings.Join(values, ", "),
-		allowedDefinersMatch:  make([]*regexp.Regexp, len(values)),
+	patterns := make([]*tengo.UserPattern, 0, len(values))
+	for _, patternString := range values {
+		patterns = append(patterns, tengo.NewUserPattern(patternString))
 	}
-	for i, definer := range values {
-		definer = repDefinerQuotes.Replace(definer)
-		definer = regexp.QuoteMeta(definer)
-		definer = repDefinerWildcards.Replace(definer)
-		dc.allowedDefinersMatch[i] = regexp.MustCompile(fmt.Sprintf("^%s$", definer))
-	}
-	return dc
+	return patterns
 }

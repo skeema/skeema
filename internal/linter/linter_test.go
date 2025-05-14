@@ -246,8 +246,9 @@ func (s IntegrationSuite) TestCheckSchemaUTF8MB3(t *testing.T) {
 	compareAnnotations(t, expected, result)
 }
 
-// TestCheckSchemaAllowAllDefiner provides additional coverage for the default
-// allow-definer / lint-definer logic's perf shortcut.
+// TestCheckSchemaAllowAllDefiner provides additional coverage for the defaults
+// for lint-definer (error) and allow-definer (%@%, which is permissive of all
+// definers).
 func (s IntegrationSuite) TestCheckSchemaAllowAllDefiner(t *testing.T) {
 	dir := getDir(t, "testdata/routines")
 	opts, err := OptionsForDir(dir)

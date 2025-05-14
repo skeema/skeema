@@ -1361,7 +1361,7 @@ END`
 		t.Fatal("Test setup incorrect")
 	}
 	s.dbExec(t, "product", create)
-	if s.d.Flavor().Vendor == tengo.VendorMariaDB {
+	if s.d.Flavor().IsMariaDB() {
 		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
 		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --ignore-proc=routine1")
 		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --ignore-func=nomatch")
@@ -1379,18 +1379,37 @@ END`
 	s.verifyFiles(t, cfg, "../golden/routines")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
-	// Delete that file and do a pull; file should be back, even with
+	// In flavors with roles, a DEFINER can be a role. In MariaDB specifically,
+	// roles are represented without the @host portion of the name, which required
+	// special handling in Skeema.
+	// Create a role and drop/recreate routine1 to use the role as its DEFINER.
+	// Confirm that the diff shows a difference. No need to test dumping (pull)
+	// here because the logic after this does that already.
+	if s.d.Flavor().MinMySQL(8) || s.d.Flavor().IsMariaDB() {
+		s.dbExec(t, "product", "CREATE ROLE mytestrole")
+		s.dbExec(t, "product", "DROP FUNCTION routine1")
+		create = strings.Replace(create, "root@'%'", "mytestrole", 1)
+		if !strings.Contains(create, "mytestrole") {
+			t.Fatal("Test setup incorrect")
+		}
+		s.dbExec(t, "product", create)
+		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
+	}
+
+	// Delete routine1's file and do a pull; file should be back, even with
 	// --skip-format
 	fs.RemoveTestFile(t, "mydb/product/routine1.sql")
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-format")
-	s.verifyFiles(t, cfg, "../golden/routines")
+	if contents := fs.ReadTestFile(t, "mydb/product/routine1.sql"); !strings.Contains(contents, "FUNCTION `routine1`") {
+		t.Errorf("Unexpected contents in mydb/product/routine1.sql after `skeema pull`:\n%s", contents)
+	}
 
 	// Confirm changing the db's collation counts as a diff for routines if (and
 	// only if) --compare-metadata is used
 	s.dbExec(t, "", "ALTER DATABASE product DEFAULT COLLATE = latin1_general_ci")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
-	if s.d.Flavor().Vendor == tengo.VendorMariaDB {
+	if s.d.Flavor().IsMariaDB() {
 		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --compare-metadata")
 		s.handleCommand(t, CodeSuccess, ".", "skeema push --compare-metadata")
 	} else {

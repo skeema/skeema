@@ -2,7 +2,6 @@ package linter
 
 import (
 	"reflect"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -36,16 +35,13 @@ func TestOptionsForDir(t *testing.T) {
 			}
 		}
 
-		expectedDefinerConfig := &definerConfig{
-			allowedDefinersString: "'root'@'%', procbot@127.0.0.1",
-			allowedDefinersMatch: []*regexp.Regexp{
-				regexp.MustCompile(`^root@.*$`),
-				regexp.MustCompile(`^procbot@127\.0\.0\.1$`),
-			},
+		expectedDefinerConfig := []*tengo.UserPattern{
+			tengo.NewUserPattern("root@%"),
+			tengo.NewUserPattern("procbot@127.0.0.1"),
 		}
-		actualDefinerConfig := opts.RuleConfig["definer"].(*definerConfig)
-		if !reflect.DeepEqual(*expectedDefinerConfig, *actualDefinerConfig) {
-			t.Errorf("definerConfig did not match expectation")
+		actualDefinerConfig := opts.RuleConfig["definer"].([]*tengo.UserPattern)
+		if !reflect.DeepEqual(expectedDefinerConfig, actualDefinerConfig) {
+			t.Error("allow-definer config did not match expectation")
 		}
 
 		// flavor isn't set by OptionsForDir, so it should remain at zero value

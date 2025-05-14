@@ -17,7 +17,7 @@ type Routine struct {
 	Body              string     `json:"body"`                     // Has correct escaping despite I_S mutilating it
 	ParamString       string     `json:"paramString"`              // Formatted as per original CREATE
 	ReturnDataType    string     `json:"returnDataType,omitempty"` // Includes charset/collation when relevant
-	Definer           string     `json:"definer"`
+	Definer           Definer    `json:"definer"`
 	DatabaseCollation string     `json:"dbCollation"` // from creation time
 	Comment           string     `json:"comment,omitempty"`
 	Deterministic     bool       `json:"deterministic,omitempty"`
@@ -44,19 +44,16 @@ func (r *Routine) Def() string {
 	return r.CreateStatement
 }
 
+// DefinerUser returns the routine's DEFINER, implementing the StoredObject
+// interface.
+func (r *Routine) DefinerUser() string {
+	return r.Definer.String()
+}
+
 // Definition generates and returns a canonical CREATE PROCEDURE or CREATE
 // FUNCTION statement based on the Routine's Go field values.
 func (r *Routine) Definition(flavor Flavor) string {
 	return r.head(flavor) + r.Body
-}
-
-// DefinerClause returns the routine's DEFINER, quoted/escaped in a way
-// consistent with SHOW CREATE.
-func (r *Routine) DefinerClause() string {
-	if user, host, ok := strings.Cut(r.Definer, "@"); ok {
-		return "DEFINER=" + EscapeIdentifier(user) + "@" + EscapeIdentifier(host)
-	}
-	return "DEFINER=" + r.Definer
 }
 
 // head returns the portion of a CREATE statement prior to the body.
@@ -64,7 +61,7 @@ func (r *Routine) head(_ Flavor) string {
 	var definer, returnClause, characteristics string
 
 	if r.Definer != "" {
-		definer = r.DefinerClause() + " "
+		definer = r.Definer.Clause() + " "
 	}
 	if r.Type == ObjectTypeFunc {
 		returnClause = " RETURNS " + r.ReturnDataType
@@ -432,7 +429,7 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 		routines[n] = &Routine{
 			Name:              rawRoutine.Name,
 			Type:              ObjectType(strings.ToLower(rawRoutine.Type)),
-			Definer:           rawRoutine.Definer,
+			Definer:           Definer(rawRoutine.Definer),
 			DatabaseCollation: rawRoutine.DatabaseCollation,
 			Comment:           rawRoutine.Comment,
 			Deterministic:     rawRoutine.IsDeterministic == "YES",
