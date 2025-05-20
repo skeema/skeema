@@ -12,18 +12,14 @@ import (
 // Version represents a (Major, Minor, Patch) version number tuple.
 type Version [3]uint16
 
-// Variables representing the latest major.minor releases of MySQL and MariaDB.
-// These intentionally exclude patch release numbers; corresponding logic
-// handles this appropriately.
+// Variables representing the latest major.minor releases of MySQL and MariaDB
+// at the time of this Skeema release, and likewise for the oldest major.minor
+// versions supported by this Skeema release. These intentionally exclude patch
+// release numbers; corresponding logic handles this appropriately.
 var (
 	LatestMySQLVersion   = Version{9, 3}
 	LatestMariaDBVersion = Version{11, 7}
-)
 
-// Variables representing the oldest major.minor releases of MySQL and MariaDB
-// supported by this software. These intentionally exclude patch release
-// numbers; corresponding logic handles this appropriately.
-var (
 	OldestSupportedMySQLVersion   = Version{5, 5}
 	OldestSupportedMariaDBVersion = Version{10, 1}
 )
@@ -132,6 +128,18 @@ func (v Vendor) String() string {
 		return "mariadb"
 	default:
 		return "unknown"
+	}
+}
+
+// Pretty returns a properly-capitalized version of the vendor string.
+func (v Vendor) Pretty() string {
+	switch v {
+	case VendorMySQL:
+		return "MySQL"
+	case VendorMariaDB:
+		return "MariaDB"
+	default:
+		return "Unknown"
 	}
 }
 
@@ -374,39 +382,68 @@ func (fl Flavor) IsAurora(versionParts ...uint16) bool {
 	return fl.HasVariant(VariantAurora) && fl.IsMySQL(versionParts...)
 }
 
-// TooNew returns true if the flavor's major.minor version exceeds the highest-
-// available supported version at the time of this software's release.
-// If the vendor is unknown, this method always returns false.
-func (fl Flavor) TooNew() bool {
-	var comparison Version
+// Known returns true if both the vendor and major version of this flavor were
+// parsed properly.
+func (fl Flavor) Known() bool {
 	switch fl.Vendor {
-	case VendorMySQL:
-		comparison = LatestMySQLVersion
-	case VendorMariaDB:
-		comparison = LatestMariaDBVersion
+	case VendorMySQL, VendorMariaDB:
+		return fl.Version.pack() > 0
 	default:
 		return false
 	}
-
-	// Bump the minor release by 1 so that version comparison works properly
-	// regardless of patch release number. For example, if LatestMariaDBVersion
-	// is {11, 3, 0}, then TooNew should return true for 11.4.X, and false for
-	// 11.3.X.
-	comparison[1]++ // safe since Version is an array (copied by value), *not* a slice (copied by reference)
-	return fl.Version.AtLeast(comparison)
 }
 
-// Known returns true if both the vendor and major version of this flavor were
-// parsed properly, and the version isn't lower than the minimum supported by
-// this package.
-func (fl Flavor) Known() bool {
-	switch fl.Vendor {
-	case VendorMySQL:
-		return fl.Version.AtLeast(OldestSupportedMySQLVersion)
-	case VendorMariaDB:
-		return fl.Version.AtLeast(OldestSupportedMariaDBVersion)
-	default:
-		return false
+type versionThresholds struct {
+	latest              Version // latest major.minor version at the time of this Skeema release
+	deprecatedUpTo      Version // supported but deprecated, up to and including this version
+	oldestSupportedNow  Version // oldest version supported by this Skeema release
+	oldestSupportedEver Version // oldest version ever supported by Skeema v1.x
+}
+
+var vendorSupport = map[Vendor]versionThresholds{
+	VendorMySQL: {
+		latest:              LatestMySQLVersion,
+		deprecatedUpTo:      Version{5, 5},
+		oldestSupportedNow:  OldestSupportedMySQLVersion,
+		oldestSupportedEver: Version{5, 5},
+	},
+	VendorMariaDB: {
+		latest:              LatestMariaDBVersion,
+		deprecatedUpTo:      Version{10, 1},
+		oldestSupportedNow:  OldestSupportedMariaDBVersion,
+		oldestSupportedEver: Version{10, 1},
+	},
+}
+
+// Supported returns a boolean indicating whether the flavor is supported by
+// this version of Skeema, along with a string containing more detailed
+// information (which may be blank, if the flavor is fully supported without
+// any caveats).
+func (fl Flavor) Supported() (supported bool, details string) {
+	if !fl.Known() {
+		return false, "Unable to determine database server vendor/version"
+	}
+
+	// Determine threshold versions for never supported < prev supported but dropped < deprecated < fully supported < too new
+	// For some of these, we add 1 to the threshold minor version to get strict
+	// less-than comparisons and ignore patch numbers
+	supportDetails := vendorSupport[fl.Vendor]
+	deprecatedBelow := Version{supportDetails.deprecatedUpTo[0], supportDetails.deprecatedUpTo[1] + 1}
+	contemporaryBelow := Version{supportDetails.latest[0], supportDetails.latest[1] + 1}
+
+	makeDetails := func(body string) string {
+		return fmt.Sprintf("%s %d.%d is %s", fl.Vendor.Pretty(), fl.Version[0], fl.Version[1], body)
+	}
+	if fl.Version.Below(supportDetails.oldestSupportedEver) {
+		return false, makeDetails("not supported by Skeema.")
+	} else if fl.Version.Below(supportDetails.oldestSupportedNow) {
+		return false, makeDetails("not supported by this release of Skeema. To interact with this database server, downgrade to an older major version series of Skeema.")
+	} else if fl.Version.Below(deprecatedBelow) {
+		return true, makeDetails("deprecated in this release of Skeema. The next major version of Skeema will likely drop support for this database server.")
+	} else if fl.Version.Below(contemporaryBelow) {
+		return true, ""
+	} else {
+		return true, makeDetails("newer than this release of Skeema. To ensure correct behavior, upgrade to a more recent release of Skeema.")
 	}
 }
 

@@ -1,6 +1,7 @@
 package tengo
 
 import (
+	"maps"
 	"strconv"
 	"strings"
 	"testing"
@@ -417,44 +418,71 @@ func TestFlavorIsAurora(t *testing.T) {
 	}
 }
 
-func TestFlavorTooNew(t *testing.T) {
-	// Temporarily override the globals storing the latest version info, so that
-	// this test logic doesn't need to change with each server release series
-	origLatestMySQL, origLatestMariaDB := LatestMySQLVersion, LatestMariaDBVersion
+func TestFlavorSupported(t *testing.T) {
+	// Temporarily override the global tracking vendor/version support details, so
+	// this test logic doesn't need to change with each server release series.
+	origSupport := make(map[Vendor]versionThresholds, 2)
+	maps.Copy(origSupport, vendorSupport)
 	t.Cleanup(func() {
-		LatestMySQLVersion, LatestMariaDBVersion = origLatestMySQL, origLatestMariaDB
+		vendorSupport = origSupport
 	})
-	LatestMySQLVersion = Version{8, 2}
-	LatestMariaDBVersion = Version{11, 2}
+	vendorSupport = map[Vendor]versionThresholds{
+		VendorMySQL: {
+			latest:              Version{8, 2},
+			deprecatedUpTo:      Version{5, 7},
+			oldestSupportedNow:  Version{5, 6},
+			oldestSupportedEver: Version{5, 5},
+		},
+		VendorMariaDB: {
+			latest:              Version{11, 2},
+			deprecatedUpTo:      Version{10, 3},
+			oldestSupportedNow:  Version{10, 2},
+			oldestSupportedEver: Version{10, 1},
+		},
+	}
 
-	cases := map[string]bool{
-		"mysql:5.5":        false,
-		"mysql:8.0":        false,
-		"mysql:8.0.123":    false,
-		"mysql:8.2":        false,
-		"mysql:8.2.0":      false,
-		"mysql:8.2.99":     false,
-		"mysql:8.3":        true,
-		"mysql:8.12":       true,
-		"mysql:10.6":       true,
-		"percona:5.6":      false,
-		"percona:8.2":      false,
-		"percona:8.3":      true,
-		"mariadb:10.1":     false,
-		"mariadb:10.4.22":  false,
-		"mariadb:10.7":     false,
-		"mariadb:11.2.2":   false,
-		"mariadb:11.3":     true,
-		"mariadb:11.3.2":   true,
-		"mariadb:11.12.13": true,
-		"unknown:0.0":      false,
-		"unknown:5.5.20":   false,
-		"mysql:0.0":        false,
-		"mysql:5.1":        false,
+	cases := map[string]struct {
+		supported       bool
+		detailsContains string
+	}{
+		"mysql:5.1":        {false, "not supported"},
+		"mysql:5.5":        {false, "downgrade to an older"},
+		"mysql:5.6.40":     {true, "deprecated"},
+		"mysql:8.0":        {true, ""},
+		"mysql:8.0.123":    {true, ""},
+		"mysql:8.2":        {true, ""},
+		"mysql:8.2.0":      {true, ""},
+		"mysql:8.2.99":     {true, ""},
+		"mysql:8.3":        {true, "newer than"},
+		"mysql:8.12":       {true, "newer than"},
+		"mysql:10.6":       {true, "newer than"},
+		"percona:5.6":      {true, "deprecated"},
+		"percona:8.2":      {true, ""},
+		"percona:8.3":      {true, "newer than"},
+		"mariadb:10.0.18":  {false, "not supported"},
+		"mariadb:10.1":     {false, "downgrade to an older"},
+		"mariadb:10.2":     {true, "deprecated"},
+		"mariadb:10.3.18":  {true, "deprecated"},
+		"mariadb:10.4.22":  {true, ""},
+		"mariadb:10.7":     {true, ""},
+		"mariadb:11.2.2":   {true, ""},
+		"mariadb:11.3":     {true, "newer than"},
+		"mariadb:11.3.2":   {true, "newer than"},
+		"mariadb:11.12.13": {true, "newer than"},
+		"unknown:0.0":      {false, "Unable to determine"},
+		"unknown:5.5.20":   {false, "Unable to determine"},
+		"mysql:0.0":        {false, "Unable to determine"},
 	}
 	for flavor, expected := range cases {
-		if ParseFlavor(flavor).TooNew() != expected {
-			t.Errorf("Expected %s TooNew() to return %t, but it did not", flavor, expected)
+		actualSupported, actualDetails := ParseFlavor(flavor).Supported()
+		if actualSupported != expected.supported {
+			t.Errorf("Expected %s Supported() to return %t, but it did not", flavor, expected.supported)
+		} else if expected.detailsContains == "" {
+			if actualDetails != "" {
+				t.Errorf("Expected %s Supported() to return %t,\"\" but instead got %t,%q", flavor, expected.supported, actualSupported, actualDetails)
+			}
+		} else if !strings.Contains(actualDetails, expected.detailsContains) {
+			t.Errorf("Expected %s Supported() details to include %q, but instead got %q", flavor, expected.detailsContains, actualDetails)
 		}
 	}
 }
@@ -464,13 +492,12 @@ func TestFlavorKnown(t *testing.T) {
 		"mysql:5.5":        true,
 		"mysql:8.0":        true,
 		"mysql:8.0.123":    true,
-		"mysql:5.1.40":     false,
+		"mysql:5.1.40":     true,
 		"percona:5.6":      true,
-		"percona:5.1":      false,
 		"mariadb:10.1":     true,
 		"mariadb:10.4.22":  true,
 		"mariadb:10.7":     true,
-		"mariadb:10.0.20":  false,
+		"mariadb:10.0.20":  true,
 		"unknown:0.0":      false,
 		"unknown:5.5.20":   false,
 		"mysql:8.12":       true,

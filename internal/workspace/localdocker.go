@@ -37,9 +37,11 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	if opts.Flavor == tengo.FlavorUnknown {
 		return nil, errors.New("no flavor supplied")
 	} else if !opts.Flavor.Known() {
-		log.Warnf("Flavor %s is not fully supported, and may not work properly with workspace=docker", opts.Flavor)
-	} else if opts.Flavor.TooNew() {
-		log.Warnf("Flavor %s is newer than this release of Skeema, and may not work properly with workspace=docker", opts.Flavor)
+		log.Warnf("Flavor %s is not recognized, and may not work properly with workspace=docker", opts.Flavor)
+	} else if supported, details := opts.Flavor.Supported(); !supported {
+		return nil, errors.New(details)
+	} else if details != "" {
+		log.Warn("workspace=docker: ", details)
 	}
 
 	// NewLocalDocker names its error return so that a deferred func can check if
