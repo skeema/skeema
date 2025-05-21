@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
@@ -141,8 +142,12 @@ func OptionsForDir(dir *fs.Dir) (*Options, error) {
 				return nil, NewConfigError(dir, "Deprecated option %s has been set to a value that conflicts with newer option %s. Please remove %s from your configuration to resolve this.", oldOptionName, newName, oldOptionName)
 			} else {
 				opts.RuleSeverity[newName] = severity
+				log.Warnf("Option --%s is deprecated and will be removed in Skeema v2.", oldOptionName)
 			}
 		}
+	}
+	if dir.Config.Supplied("lint-display-width") {
+		log.Warn("Option --lint-display-width is deprecated and will be removed in Skeema v2. For more information, visit https://www.skeema.io/blog/skeema-v2-roadmap")
 	}
 
 	// Process supplemental configuration of rules where needed

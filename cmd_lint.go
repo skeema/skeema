@@ -171,6 +171,9 @@ func lintDir(dir *fs.Dir) *linter.Result {
 		// Reformat statements if requested. This must be done prior to checking for
 		// problems. Otherwise, the line offsets in annotations can be wrong.
 		// TODO: support format for multiple logical schemas per dir
+		if !dir.Config.Supplied("format") {
+			log.Warn("Upgrade notice: the --format option, which currently defaults to true in Skeema v1, will change to default to false in Skeema v2. For more information, visit https://www.skeema.io/blog/skeema-v2-roadmap")
+		}
 		if dir.Config.GetBool("format") && n == 0 {
 			dumpOpts := dumper.Options{
 				IncludeAutoInc: true,

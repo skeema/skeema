@@ -206,6 +206,11 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 	// actual functional modifications, NOT just cosmetic/formatting differences.
 	// To make this distinction, we need to actually execute the *.sql files in a
 	// Workspace and run a diff against it.
+	if dir.Config.Supplied("normalize") {
+		log.Warn("Option --normalize is deprecated and will be removed in Skeema v2. Use the equivalent --format option instead, which currently defaults to true, but will default to false in Skeema v2.")
+	} else if !dir.Config.Supplied("format") {
+		log.Warn("Upgrade notice: the --format option, which currently defaults to true in Skeema v1, will change to default to false in Skeema v2. For more information, visit https://www.skeema.io/blog/skeema-v2-roadmap")
+	}
 	if !dir.Config.GetBool("format") || !dir.Config.GetBool("normalize") {
 		mods := statementModifiersForPull(dir.Config, instance)
 		opts, err := workspace.OptionsForDir(dir, instance)
@@ -347,9 +352,14 @@ func findNewSchemas(dir *fs.Dir, instance *tengo.Instance, seenNames []string) e
 	if err != nil {
 		return err
 	}
+	alreadyWarned := dir.Config.Supplied("new-schemas") // no need to warn if option set explicitly
 	for _, name := range schemaNames {
 		// If no existing subdir maps to the schema, we need to create and populate new dir
 		if !subdirHasSchema[name] {
+			if !alreadyWarned {
+				alreadyWarned = true
+				log.Warn("Upgrade notice: the --new-schemas option, which currently defaults to true in Skeema v1, will change to default to false in Skeema v2. For more information, visit https://www.skeema.io/blog/skeema-v2-roadmap")
+			}
 			s, err := instance.Schema(name)
 			if err != nil {
 				return err

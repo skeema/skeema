@@ -161,6 +161,9 @@ func ApplyTarget(t *Target, printer Printer) (Result, error) {
 		// intentionally want to de-partition it.
 		schemaFromDir.StripTablePartitioning(mods.Flavor)
 	}
+	if mods.VirtualColValidation {
+		log.Warn("Option --alter-validate-virtual is deprecated and will be removed in Skeema v2. As an alternative, use alter-algorithm=copy, or alter-wrapper with an external OSC tool.")
+	}
 
 	diff := tengo.NewSchemaDiff(schemaFromInstance, schemaFromDir)
 	plan, err := CreatePlanForTarget(t, diff, mods)
