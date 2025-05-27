@@ -18,8 +18,8 @@ github.com/pmezard/go-difflib/difflib
 # github.com/sirupsen/logrus v1.9.3
 ## explicit; go 1.13
 github.com/sirupsen/logrus
-# github.com/skeema/mybase v1.1.0
-## explicit; go 1.22
+# github.com/skeema/mybase v1.2.0
+## explicit; go 1.23
 github.com/skeema/mybase
 # golang.org/x/sync v0.10.0
 ## explicit; go 1.18

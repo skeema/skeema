@@ -8,7 +8,7 @@ require (
 	github.com/mitchellh/go-wordwrap v1.0.1
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/sirupsen/logrus v1.9.3
-	github.com/skeema/mybase v1.1.0
+	github.com/skeema/mybase v1.2.0
 	golang.org/x/sync v0.10.0
 	golang.org/x/term v0.28.0
 )

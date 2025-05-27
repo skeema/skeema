@@ -18,8 +18,8 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=
 github.com/sirupsen/logrus v1.9.3/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVsIT4qYEQ=
-github.com/skeema/mybase v1.1.0 h1:wMKSYl4dUm5eDyMsvy7IFJBSorZ201Cw6inML9NPWgU=
-github.com/skeema/mybase v1.1.0/go.mod h1:AT3LEUqb9YGOgzLCYQPp5r9elXw/d2cXv+2srZtE6NY=
+github.com/skeema/mybase v1.2.0 h1:d6PlGOkCp6sTl7YYWB8dMkwCDQKsuiCMrnjJ1tkuuTU=
+github.com/skeema/mybase v1.2.0/go.mod h1:odEJj3AeRUrMK4YlVHTaT0bYcoxA5sAXiaZl2MyStA0=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5CcY=
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=

@@ -18,6 +18,15 @@ type OptionValuer interface {
 	OptionValue(optionName string) (value string, ok bool)
 }
 
+// DeprecationWarner is an optional interface upgrade on OptionValuer to
+// provide warnings about usage of deprecated options. This is intended to be
+// implemented only by user-controllable configuration sources, such as File
+// and CLI.
+type DeprecationWarner interface {
+	OptionValuer
+	DeprecationWarnings() []string
+}
+
 // StringMapValues is the most trivial possible implementation of the
 // OptionValuer interface: it just maps option name strings to option value
 // strings.
@@ -323,6 +332,19 @@ func (cfg *Config) FindOption(name string) *Option {
 		return nil
 	}
 	return helper(cfg.CLI.Command.Root())
+}
+
+// DeprecatedOptionUsage returns a slice of deprecation warning strings, with
+// each string corresponding to either a command-line option or config file line
+// which specifies an option that has been marked as deprecated.
+func (cfg *Config) DeprecatedOptionUsage() []string {
+	warnings := cfg.CLI.DeprecationWarnings()
+	for _, src := range cfg.sources {
+		if warner, ok := src.(DeprecationWarner); ok {
+			warnings = append(warnings, warner.DeprecationWarnings()...)
+		}
+	}
+	return warnings
 }
 
 // GetRaw returns an option's value as-is as a string. If the option is not set,

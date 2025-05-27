@@ -30,14 +30,15 @@ const (
 // subcommands, although subcommands may choose to override the exact semantics
 // by providing another conflicting Option of same Name.
 type Option struct {
-	Name         string
-	Shorthand    rune
-	Type         OptionType
-	Default      string
-	Description  string
-	RequireValue bool
-	HiddenOnCLI  bool
-	Group        string // Used in help information
+	Name               string
+	Shorthand          rune
+	Type               OptionType
+	Default            string
+	Description        string
+	RequireValue       bool
+	HiddenOnCLI        bool
+	Group              string // Used in help information
+	deprecationDetails string
 }
 
 // StringOption creates a string-type Option. By default, string options require
@@ -93,6 +94,16 @@ func (opt *Option) ValueRequired() *Option {
 // appear without any value associated.
 func (opt *Option) ValueOptional() *Option {
 	opt.RequireValue = false
+	return opt
+}
+
+// MarkDeprecated sets an Option as being deprecated, optionally with the
+// supplied details text.
+func (opt *Option) MarkDeprecated(details string) *Option {
+	if details == "" {
+		details = "Be sure to remove this option from your configuration before upgrading."
+	}
+	opt.deprecationDetails = details
 	return opt
 }
 
@@ -181,6 +192,13 @@ func (opt *Option) PrintableDefault() string {
 	default:
 		return fmt.Sprintf(`"%s"`, opt.Default)
 	}
+}
+
+// Deprecated returns true if this option has been deprecated. To obtain info
+// on all deprecated options that have been configured, see
+// Config.DeprecatedOptionUsage().
+func (opt *Option) Deprecated() bool {
+	return opt.deprecationDetails != ""
 }
 
 // OptionGroup is a group of related Options, used in generation of usage

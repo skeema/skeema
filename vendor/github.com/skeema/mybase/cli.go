@@ -22,6 +22,20 @@ func (cli *CommandLine) OptionValue(optionName string) (string, bool) {
 	return value, ok
 }
 
+// DeprecationWarnings returns a slice of warning messages for usage of
+// deprecated options on the command-line. This satisfies the DeprecationWarner
+// interface.
+func (cli *CommandLine) DeprecationWarnings() []string {
+	var warnings []string
+	optionMap := cli.Command.Options()
+	for name := range cli.OptionValues {
+		if opt := optionMap[name]; opt.Deprecated() {
+			warnings = append(warnings, "Option --"+name+" is deprecated. "+opt.deprecationDetails)
+		}
+	}
+	return warnings
+}
+
 func (cli *CommandLine) parseLongArg(arg string, args *[]string, longOptionIndex map[string]*Option) error {
 	key, value, hasValue, loose := NormalizeOptionToken(arg)
 	opt, found := longOptionIndex[key]

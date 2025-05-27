@@ -38,6 +38,7 @@ type File struct {
 	contents             string
 	selected             []string
 	ignoredOptionNames   map[string]bool
+	onlyOptionNames      map[string]bool
 }
 
 // NewFile returns a value representing an option file. The arg(s) will be
@@ -62,6 +63,7 @@ func NewFile(paths ...string) *File {
 		sections:           []*Section{defaultSection},
 		sectionIndex:       map[string]*Section{"": defaultSection},
 		ignoredOptionNames: make(map[string]bool),
+		onlyOptionNames:    make(map[string]bool),
 	}
 }
 
@@ -197,7 +199,7 @@ func (f *File) Parse(cfg *Config) error {
 		case lineTypeSectionHeader:
 			section = f.getOrCreateSection(parsedLine.sectionName)
 		case lineTypeKeyOnly, lineTypeKeyValue:
-			if f.ignoredOptionNames[parsedLine.key] {
+			if f.ignoredOptionNames[parsedLine.key] || (len(f.onlyOptionNames) > 0 && !f.onlyOptionNames[parsedLine.key]) {
 				continue
 			}
 			opt := cfg.FindOption(parsedLine.key)
@@ -387,7 +389,45 @@ func (f *File) IgnoreOptions(names ...string) {
 	}
 	for _, name := range names {
 		f.ignoredOptionNames[name] = true
+		delete(f.onlyOptionNames, name)
 	}
+}
+
+// LimitOptions causes the subsequent call to Parse to ignore all options other
+// than the ones that were explicitly specified in calls to LimitOptions. You
+// may call this method multiple times, and the effect is additive.
+// This method does not verify the existence of the supplied option names, but
+// they should exist as valid options, since they will be processed if
+// encountered in the file.
+// Note that if the file is later re-written, ignored options will be stripped
+// from the rewritten version.
+// Panics if the file has already been parsed, as this would indicate a bug.
+func (f *File) LimitOptions(names ...string) {
+	if f.parsed {
+		panic(errors.New("File.IgnoreOptions called on a file that has already been parsed"))
+	}
+	for _, name := range names {
+		f.onlyOptionNames[name] = true
+		delete(f.ignoredOptionNames, name)
+	}
+}
+
+// DeprecationWarnings returns a slice of warning messages for usage of
+// deprecated options in any section of the file. This satisfies the
+// DeprecationWarner interface.
+func (f *File) DeprecationWarnings() []string {
+	if !f.parsed {
+		panic(fmt.Errorf("Call to DeprecationWarnings() on unparsed file %s", f.Path()))
+	}
+	var warnings []string
+	for _, section := range f.sections {
+		for name, opt := range section.opts {
+			if opt.Deprecated() {
+				warnings = append(warnings, f.Path()+": Option "+name+" is deprecated. "+opt.deprecationDetails)
+			}
+		}
+	}
+	return warnings
 }
 
 func (f *File) getOrCreateSection(name string) *Section {
