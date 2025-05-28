@@ -23,18 +23,24 @@ const (
 // AddCommandOptions adds linting-related mybase options to the supplied
 // mybase.Command.
 func AddCommandOptions(cmd *mybase.Command) {
-	cmd.AddOptions("linter rule", mybase.StringOption("warnings", 0, "", "Deprecated method of setting multiple linter options to warning level").Hidden())
-	cmd.AddOptions("linter rule", mybase.StringOption("errors", 0, "", "Deprecated method of setting multiple linter options to error level").Hidden())
 	for _, r := range rulesByName {
 		opt := mybase.StringOption(r.optionName(), 0, string(r.DefaultSeverity), r.optionDescription())
 		if r.hidden() {
 			opt.Hidden()
+		}
+		if r.deprecated() {
+			opt.MarkDeprecated(r.Deprecation)
 		}
 		cmd.AddOptions("linter rule", opt)
 		if r.RelatedOption != nil {
 			cmd.AddOptions("linter rule", r.RelatedOption)
 		}
 	}
+
+	// Prior to Skeema v1.3 (Sept 2019), linter checks were configured using these
+	// two centralized list-style options, which have been deprecated since then
+	cmd.AddOptions("linter rule", mybase.StringOption("warnings", 0, "", "(deprecated and hidden)").Hidden().MarkDeprecated("This option will be removed in Skeema v2."))
+	cmd.AddOptions("linter rule", mybase.StringOption("errors", 0, "", "(deprecated and hidden)").Hidden().MarkDeprecated("This option will be removed in Skeema v2."))
 }
 
 // Options contains parsed settings controlling linter behavior.

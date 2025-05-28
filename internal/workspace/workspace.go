@@ -204,11 +204,11 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 func AddCommandOptions(cmd *mybase.Command) {
 	cmd.AddOptions("workspace",
 		mybase.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema for intermediate operations, created and dropped each run"),
-		mybase.StringOption("temp-schema-binlog", 0, "auto", `Controls whether temp schema DDL operations are replicated (valid values: "on", "off", "auto")`),
+		mybase.StringOption("temp-schema-binlog", 0, "auto", `Controls whether temp schema DDL operations are replicated (valid values: "on", "off", "auto")`).MarkDeprecated("This option will be removed in Skeema v2, with \"auto\" behavior always being used. For more information, visit https://www.skeema.io/blog/skeema-v2-roadmap"),
 		mybase.StringOption("temp-schema-threads", 0, "5", "Max number of concurrent CREATE/DROP with workspace=temp-schema"),
 		mybase.StringOption("workspace", 'w', "temp-schema", `Specifies where to run intermediate operations (valid values: "temp-schema", "docker")`),
 		mybase.StringOption("docker-cleanup", 0, "none", `With --workspace=docker, specifies how to clean up containers (valid values: "none", "stop", "destroy")`),
-		mybase.BoolOption("reuse-temp-schema", 0, false, "Do not drop temp-schema when done").Hidden(), // DEPRECATED -- hidden for this reason
+		mybase.BoolOption("reuse-temp-schema", 0, false, "(deprecated and hidden)").Hidden().MarkDeprecated("This option will be removed in Skeema v2."),
 	)
 }
 

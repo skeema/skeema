@@ -1031,6 +1031,9 @@ func parseOptionFile(dirPath, repoBase string, baseConfig *mybase.Config) (*myba
 	if err := f.Parse(baseConfig); err != nil {
 		return nil, ConfigError{err}
 	}
+	for _, warning := range f.DeprecationWarnings() {
+		log.Warn(warning)
+	}
 	_ = f.UseSection(baseConfig.Get("environment")) // we don't care if the section doesn't exist
 	return f, nil
 }

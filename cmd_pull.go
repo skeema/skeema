@@ -29,7 +29,7 @@ func init() {
 	cmd := mybase.NewCommand("pull", summary, desc, PullHandler)
 	cmd.AddOption(mybase.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in new table files, and update in existing files"))
 	cmd.AddOption(mybase.BoolOption("format", 0, true, "Reformat SQL statements to match canonical SHOW CREATE"))
-	cmd.AddOption(mybase.BoolOption("normalize", 0, true, "(deprecated alias for format)").Hidden())
+	cmd.AddOption(mybase.BoolOption("normalize", 0, true, "(deprecated alias for format)").Hidden().MarkDeprecated("This option will be removed in Skeema v2. Use the equivalent --format option instead, which currently defaults to true, but will default to false in Skeema v2."))
 	cmd.AddOption(mybase.BoolOption("new-schemas", 0, true, "Detect any new schemas and populate new dirs for them"))
 	cmd.AddOption(mybase.BoolOption("update-partitioning", 0, false, "Update PARTITION BY clauses in existing table files"))
 	cmd.AddOption(mybase.BoolOption("strip-partitioning", 0, false, "Omit PARTITION BY clause when writing partitioned tables to filesystem"))
@@ -43,6 +43,9 @@ func PullHandler(cfg *mybase.Config) error {
 	dir, err := fs.ParseDir(".", cfg)
 	if err != nil {
 		return err
+	}
+	if !dir.Config.Supplied("format") && !dir.Config.Supplied("normalize") {
+		log.Warn("Upgrade notice: the --format option, which currently defaults to true in Skeema v1, will change to default to false in Skeema v2. For more information, visit https://www.skeema.io/blog/skeema-v2-roadmap")
 	}
 
 	// pullWalker returns the "worst" (highest) exit code it encounters. We care
@@ -347,9 +350,14 @@ func findNewSchemas(dir *fs.Dir, instance *tengo.Instance, seenNames []string) e
 	if err != nil {
 		return err
 	}
+	alreadyWarned := dir.Config.Supplied("new-schemas") // no need to warn if option set explicitly
 	for _, name := range schemaNames {
 		// If no existing subdir maps to the schema, we need to create and populate new dir
 		if !subdirHasSchema[name] {
+			if !alreadyWarned {
+				alreadyWarned = true
+				log.Warn("Upgrade notice: the --new-schemas option, which currently defaults to true in Skeema v1, will change to default to false in Skeema v2. For more information, visit https://www.skeema.io/blog/skeema-v2-roadmap")
+			}
 			s, err := instance.Schema(name)
 			if err != nil {
 				return err

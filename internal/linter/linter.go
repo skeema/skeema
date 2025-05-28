@@ -128,6 +128,7 @@ type Rule struct {
 	DefaultSeverity Severity
 	RelatedOption   *mybase.Option // for rules that have supplemental options, e.g. list of allowed values
 	ConfigFunc      RuleConfigFunc
+	Deprecation     string // if non-blank, rule is deprecated
 }
 
 // RelatedListOption populates RelatedOption and ConfigFunc by creating a
@@ -169,6 +170,10 @@ func (r *Rule) optionDescription() string {
 
 func (r *Rule) hidden() bool {
 	return (r.Description == "")
+}
+
+func (r *Rule) deprecated() bool {
+	return (r.Deprecation != "")
 }
 
 var rulesByName = map[string]*Rule{}

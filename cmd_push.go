@@ -34,7 +34,7 @@ func init() {
 	cmd.AddOptions("SQL generation",
 		mybase.BoolOption("exact-match", 0, false, "Follow *.sql table definitions exactly, even for differences with no functional impact"),
 		mybase.BoolOption("compare-metadata", 0, false, "For stored programs, detect changes to creation-time sql_mode or DB collation"),
-		mybase.BoolOption("alter-validate-virtual", 0, false, "Apply a WITH VALIDATION clause to ALTER TABLEs affecting virtual columns"),
+		mybase.BoolOption("alter-validate-virtual", 0, false, "Apply a WITH VALIDATION clause to ALTER TABLEs affecting virtual columns").MarkDeprecated("This option will be removed in Skeema v2. As an alternative, use alter-algorithm=copy, or configure alter-wrapper to use an external OSC tool."),
 		mybase.BoolOption("lax-column-order", 0, false, "When comparing tables, don't re-order columns if they only differ by position"),
 		mybase.BoolOption("lax-comments", 0, false, "When comparing tables or routines, don't modify them if they only differ by comment clauses"),
 		mybase.StringOption("alter-lock", 0, "", `Apply a LOCK clause to all ALTER TABLEs (valid values: "none", "shared", "exclusive")`),

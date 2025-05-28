@@ -94,6 +94,13 @@ func AddGlobalConfigFiles(cfg *mybase.Config) {
 
 		cfg.AddSource(f)
 	}
+
+	// Warn on any usage of deprecated options on the command-line or global
+	// option files. (This does not handle any directory-specific option files;
+	// those are handled in the fs package instead.)
+	for _, warning := range cfg.DeprecatedOptionUsage() {
+		log.Warn(warning)
+	}
 }
 
 // ProcessSpecialGlobalOptions performs special handling of global options with
