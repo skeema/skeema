@@ -41,7 +41,7 @@ func AddGlobalOptions(cmd *mybase.Command) {
 		mybase.StringOption("ignore-func", 0, "", "Ignore functions that match regex"),
 		mybase.StringOption("ssl-mode", 0, "", `Specify desired connection security SSL/TLS usage (valid values: "disabled", "preferred", "required")`),
 		mybase.BoolOption("debug", 0, false, "Enable debug logging"),
-		mybase.BoolOption("my-cnf", 0, true, "Parse ~/.my.cnf for configuration"),
+		mybase.BoolOption("my-cnf", 0, true, "Parse ~/.my.cnf for configuration").MarkDeprecated("This option will be removed in Skeema v2, and .my.cnf will always be parsed, with additional safety logic already in place. For more information, visit https://www.skeema.io/blog/skeema-v2-roadmap"),
 	)
 }
 
@@ -75,24 +75,46 @@ func AddGlobalConfigFiles(cfg *mybase.Config) {
 			log.Warnf("Ignoring global option file %s due to read error: %s", f.Path(), err)
 			continue
 		}
-		if strings.HasSuffix(path, ".my.cnf") {
-			f.IgnoreUnknownOptions = true
-			f.IgnoreOptions("host")
+		isMyCnf := strings.HasSuffix(path, ".my.cnf")
+		if isMyCnf {
 			if !cfg.GetBool("my-cnf") {
 				continue
 			}
+			// In the [client] or [mysqld] sections in .my.cnf, only process mysql
+			// options that also exist in Skeema, minus a few that we don't use in
+			// global option files (host, default-character-set, default-collation)
+			f.IgnoreUnknownOptions = true // in Skeema Community, don't break upon encountering Premium-only options
+			f.LimitOptions(
+				"user", "password", "port", "socket", "ssl-mode", // options in all Skeema editions
+				"ssl-ca", "ssl-cert", "ssl-key", "ssl-verify-server-cert", "server-public-key-path", // options only in Skeema Premium
+			)
 		}
 		if err := f.Parse(cfg); err != nil {
 			log.Warnf("Ignoring global option file %s due to parse error: %s", f.Path(), err)
 			continue
 		}
-		if strings.HasSuffix(path, ".my.cnf") {
-			_ = f.UseSection("skeema", "client", "mysql") // safe to ignore error (doesn't matter if section doesn't exist)
-		} else if cfg.CLI.Command.HasArg("environment") { // avoid panic on command without environment arg, such as help command!
-			_ = f.UseSection(cfg.Get("environment")) // safe to ignore error (doesn't matter if section doesn't exist)
+		// Select the appropriate section(s) of the file, intentionally ignoring
+		// errors from these calls (doesn't matter if those sections don't exist)
+		if isMyCnf {
+			f.UseSection("client", "mysql")
+		} else if cfg.CLI.Command.HasArg("environment") {
+			f.UseSection(cfg.Get("environment"))
 		}
-
 		cfg.AddSource(f)
+
+		// Special case: in .my.cnf, we also permit a [skeema] section, which can
+		// contain any Skeema option. This is implemented by adding a separate
+		// mybase.File that points to the same path, but has different configuration.
+		// This is added *after* the earlier .my.cnf source so that it takes
+		// precedence over it, in case of conflicts on a per-option basis.
+		if isMyCnf && f.HasSection("skeema") {
+			f = mybase.NewFile(path)
+			f.Read()
+			f.IgnoreUnknownOptions = true
+			f.Parse(cfg)
+			f.UseSection("skeema")
+			cfg.AddSource(f)
+		}
 	}
 
 	// Warn on any usage of deprecated options on the command-line or global

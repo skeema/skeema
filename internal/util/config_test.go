@@ -49,11 +49,37 @@ func TestAddGlobalConfigFiles(t *testing.T) {
 	}
 
 	// Test --skip-my-cnf to avoid parsing .my.cnf
-	// Expectation: both only the skeema file in etc gets used due to the override option
+	// Expectation: only the skeema file in etc gets used due to the override option
 	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --skip-my-cnf")
 	AddGlobalConfigFiles(cfg)
 	if actualUser := cfg.GetAllowEnvVar("user"); actualUser != "one" {
 		t.Errorf("Expected user in fake-home/.my.cnf to be skipped; instead found %s", actualUser)
+	}
+
+	// Test more edge cases for .my.cnf: [skeema] section should allow any Skeema
+	// option and override things in [client] or [mysql] sections; Premium SSL
+	// options should not cause any problems in Community
+	os.WriteFile("fake-home/.my.cnf", []byte(`
+[skeema]
+user=two
+ssl-verify-server-cert
+[client]
+user=three
+port=123
+[mysql]
+user=four
+port=456
+socket=/var/tmp/my.sock`), 0777)
+	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff")
+	AddGlobalConfigFiles(cfg)
+	if actualUser := cfg.GetAllowEnvVar("user"); actualUser != "two" {
+		t.Errorf("Expected user in [skeema] section of fake-home/.my.cnf to take precedence; instead found %s", actualUser)
+	}
+	if actualPort, _ := cfg.GetInt("port"); actualPort != 123 {
+		t.Errorf("Expected port in [client] section of fake-home/.my.cnf to take precedence over [mysql] section; instead found %d", actualPort)
+	}
+	if actualSocket := cfg.GetAllowEnvVar("socket"); actualSocket != "/var/tmp/my.sock" {
+		t.Errorf("Expected socket in [mysql] section to be used, since not overridden in higher-priority sections; instead found %s", actualSocket)
 	}
 
 	// Introduce an invalid option into fake-etc/skeema. Expectation: the file
