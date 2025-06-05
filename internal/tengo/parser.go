@@ -689,7 +689,7 @@ func processCreateWithDefiner(p *parser, tokens []Token) (*Statement, error) {
 	// Consume the tokens with the definer value. Typical format is user @ host,
 	// but can also be CURRENT_USER with or without parens, or even a role name
 	// (which always omits @ host in MariaDB, and optionally omits it in MySQL).
-	if matched, tokens = p.matchNextSequence(tokens, "CURRENT_USER", "CURRENT_USER ( )"); matched == nil {
+	if matched, tokens = p.matchNextSequence(tokens, "CURRENT_USER", "CURRENT_USER ( )", "CURRENT_ROLE", "CURRENT_ROLE ( )"); matched == nil {
 		if len(tokens) >= 4 && tokens[1].typ == TokenSymbol && tokens[1].val == "@" {
 			tokens = tokens[3:]
 		} else if tokens[0].typ == TokenWord || tokens[0].typ == TokenString || tokens[0].typ == TokenIdent {
