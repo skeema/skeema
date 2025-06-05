@@ -649,7 +649,7 @@ func (instance *Instance) TableSize(schema, table string) (int64, error) {
 		return 0, err
 	}
 	err = db.Get(&result, `
-		SELECT  data_length + index_length + data_free
+		SELECT  data_length + index_length
 		FROM    information_schema.tables
 		WHERE   table_schema = ? and table_name = ?`,
 		schema, table)
