@@ -2,8 +2,8 @@
 ## explicit; go 1.20
 filippo.io/edwards25519
 filippo.io/edwards25519/field
-# github.com/go-sql-driver/mysql v1.9.0
-## explicit; go 1.21
+# github.com/go-sql-driver/mysql v1.9.2
+## explicit; go 1.21.0
 github.com/go-sql-driver/mysql
 # github.com/jmoiron/sqlx v1.3.5
 ## explicit; go 1.10

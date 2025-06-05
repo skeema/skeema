@@ -3,7 +3,7 @@ module github.com/skeema/skeema
 go 1.23
 
 require (
-	github.com/go-sql-driver/mysql v1.9.0
+	github.com/go-sql-driver/mysql v1.9.2
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/mitchellh/go-wordwrap v1.0.1
 	github.com/pmezard/go-difflib v1.0.0
