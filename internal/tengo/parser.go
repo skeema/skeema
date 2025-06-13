@@ -435,33 +435,62 @@ func (p *parser) skipUntilSequence(tokens []Token, wantSequence ...string) (befo
 	}
 }
 
-func (p *parser) parseObjectNameClause(tokens []Token) (leftovers []Token) {
-	// Ensure we have enough tokens
-	tokens = p.nextTokens(tokens, 3)
-	if len(tokens) < 1 {
-		return nil
-	}
-
-	// See if we have a schema name qualifier
-	if len(tokens) >= 3 && tokens[1].typ == TokenSymbol && tokens[1].val[0] == '.' {
-		schemaName, schemaOK := getNameFromToken(tokens[0])
-		objectName, objectOK := getNameFromToken(tokens[2])
-		if schemaOK && objectOK {
-			p.stmt.ObjectQualifier, p.stmt.ObjectName = schemaName, objectName
-			p.stmt.nameClause = p.b.String()[tokens[0].offset : int(tokens[2].offset)+len(tokens[2].val)]
-			return tokens[3:]
+// parseIdentifierClause obtains an identifier which optionally includes
+// qualifiers, e.g. schema.table or schema.table.column. It is returned in
+// both original raw string form (full clause including qualifiers and any
+// backticks around names) as well as a slice of unquoted individual identifiers
+// in order of appearance. If the input cannot be parsed as a valid identifier
+// clause, rawClause is returned as "" and names is nil.
+func (p *parser) parseIdentifierClause(tokens []Token) (rawClause string, names []string, leftovers []Token) {
+	var start uint32
+	for {
+		// Ensure we have enough tokens to obtain a qualifier, a dot, and a name
+		tokens = p.nextTokens(tokens, 3)
+		if len(tokens) < 1 {
+			return "", nil, tokens
 		}
-		return tokens // can't parse
+
+		// If this is the first loop iteration, record the starting offset
+		if start == 0 {
+			start = tokens[0].offset
+		}
+
+		name, ok := getNameFromToken(tokens[0])
+		if !ok {
+			return "", nil, tokens
+		}
+		names = append(names, name)
+
+		// Determine if this is the end of the clause (and not just a qualifier)
+		if len(tokens) < 3 || tokens[1].val != "." {
+			rawClause = p.b.String()[start : int(tokens[0].offset)+len(tokens[0].val)]
+			return rawClause, names, tokens[1:]
+		}
+
+		// It was a qualifier, so skip past it and the subsequent dot, and keep looping
+		tokens = tokens[2:]
+	}
+}
+
+// parseObjectNameClause obtains the name of the primary object referenced in a
+// DDL clause.
+func (p *parser) parseObjectNameClause(tokens []Token) (leftovers []Token, ok bool) {
+	rawClause, names, leftovers := p.parseIdentifierClause(tokens)
+	if len(names) == 1 { // just the object name present
+		p.stmt.ObjectName = names[0]
+		p.stmt.nameClause = rawClause
+		return leftovers, true
+	} else if len(names) == 2 { // schema name qualifier present
+		p.stmt.ObjectQualifier = names[0]
+		p.stmt.ObjectName = names[1]
+		p.stmt.nameClause = rawClause
+		return leftovers, true
 	}
 
-	objectName, objectOK := getNameFromToken(tokens[0])
-	if objectOK {
-		p.stmt.ObjectName = objectName
-		p.stmt.nameClause = p.b.String()[tokens[0].offset : int(tokens[0].offset)+len(tokens[0].val)]
-		return tokens[1:]
-	}
-
-	return tokens // can't parse
+	// In remaining cases, we couldn't parse the name: not an identifier, or not
+	// enough tokens, or too many qualifiers, etc. Don't set the statement
+	// ObjectName in that case; callers
+	return tokens, false
 }
 
 func getNameFromToken(t Token) (name string, ok bool) {
@@ -606,8 +635,8 @@ func processCreateTable(p *parser, tokens []Token) (*Statement, error) {
 
 	// Attempt to parse object name; only set statement and object types if
 	// successful
-	tokens = p.parseObjectNameClause(tokens)
-	if p.stmt.ObjectName != "" {
+	tokens, ok := p.parseObjectNameClause(tokens)
+	if ok {
 		p.stmt.Type = StatementTypeCreate
 		p.stmt.ObjectType = ObjectTypeTable
 	}
@@ -639,8 +668,8 @@ func processCreateRoutine(p *parser, tokens []Token) (*Statement, error) {
 
 	// Attempt to parse object name; only set statement and object types if
 	// successful
-	tokens = p.parseObjectNameClause(tokens)
-	if p.stmt.ObjectName != "" {
+	tokens, ok := p.parseObjectNameClause(tokens)
+	if ok {
 		p.stmt.Type = StatementTypeCreate
 		p.stmt.ObjectType = ObjectType(strings.ToLower(matched[0].val))
 	}
