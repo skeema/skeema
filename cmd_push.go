@@ -64,7 +64,8 @@ func init() {
 	cmd.AddOptions("sharding",
 		mybase.BoolOption("first-only", '1', false, "For dirs mapping to multiple hosts or schemas, only run against the first target per dir"),
 		mybase.BoolOption("brief", 'q', false, "<overridden by diff command>").Hidden(),
-		mybase.StringOption("concurrent-instances", 'c', "1", "Perform operations on this number of database servers concurrently"),
+		mybase.StringOption("concurrent-servers", 'c', "1", "Perform operations on this number of database servers concurrently"),
+		mybase.StringOption("concurrent-instances", 0, "1", "<deprecated alias for concurrent-servers>").Hidden().MarkDeprecated("This option has been renamed to concurrent-servers. The old concurrent-instances option name remains as an alias in Skeema v1, but will be removed in Skeema v2."),
 	)
 
 	workspace.AddCommandOptions(cmd)
@@ -95,12 +96,22 @@ func PushHandler(cfg *mybase.Config) error {
 		return err
 	}
 
-	concurrency, err := dir.Config.GetInt("concurrent-instances")
+	concurrency, err := dir.Config.GetInt("concurrent-servers")
 	if err != nil {
 		return WrapExitCode(CodeBadConfig, err)
-	} else if concurrency < 1 {
+	} else if dir.Config.Supplied("concurrent-instances") { // older alias, now deprecated
+		aliasValue, err := dir.Config.GetInt("concurrent-instances")
+		if err != nil {
+			return WrapExitCode(CodeBadConfig, err)
+		} else if aliasValue != concurrency && dir.Config.Supplied("concurrent-servers") {
+			return NewExitValue(CodeBadConfig, "Option concurrent-instances should not be set when newer alias concurrent-servers is also set to a different value")
+		}
+		concurrency = aliasValue
+	}
+	if concurrency < 1 {
 		return NewExitValue(CodeBadConfig, "concurrent-instances cannot be less than 1")
 	}
+
 	printer := applier.NewPrinter(dir.Config)
 
 	g, ctx := errgroup.WithContext(context.Background())

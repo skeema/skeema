@@ -133,7 +133,7 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	if ld.releaseLock, err = getLock(ld.d.Instance, lockName, opts.LockTimeout); err != nil {
 		return nil, fmt.Errorf("Unable to obtain workspace lock on database container %s: %w\n"+
 			"This may happen when running multiple copies of Skeema concurrently from the same client machine, in which case configuring --temp-schema differently for each copy on the command-line may help.\n"+
-			"It can also happen when operating across many shards with a high value for concurrent-instances. If so, either lower concurrent-instances, or enable skip-verify to resolve this.",
+			"It can also happen when operating across many shards with a high value for concurrent-servers. If so, either lower concurrent-servers, or enable skip-verify to resolve this.",
 			ld.d.Instance, err)
 	}
 	// If this function returns an error, don't continue to hold the lock

@@ -290,7 +290,7 @@ func getBaseConfig(t *testing.T, cliFlags string) *mybase.Config {
 	cmd.AddOption(mybase.StringOption("alter-algorithm", 0, "", `Apply an ALGORITHM clause to all ALTER TABLEs (valid values: "inplace", "copy", "instant", "nocopy")`))
 	cmd.AddOption(mybase.StringOption("ddl-wrapper", 'X', "", "Like --alter-wrapper, but applies to all DDL types (CREATE, DROP, ALTER)"))
 	cmd.AddOption(mybase.StringOption("safe-below-size", 0, "0", "Always permit destructive operations for tables below this size in bytes"))
-	cmd.AddOption(mybase.StringOption("concurrent-instances", 'c', "1", "Perform operations on this number of instances concurrently"))
+	cmd.AddOption(mybase.StringOption("concurrent-servers", 'c', "1", "Perform operations on this number of database servers concurrently"))
 	cmd.AddArg("environment", "production", false)
 	util.AddGlobalOptions(cmd)
 	workspace.AddCommandOptions(cmd)

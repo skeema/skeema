@@ -528,7 +528,9 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 	s.reinitAndVerifyFiles(t, "", "")
 
 	// Test bad option values
+	s.handleCommand(t, CodeBadConfig, ".", "skeema push --concurrent-servers=0")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema push --concurrent-instances=0")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema push --concurrent-servers=2 --concurrent-instances=3")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema push --alter-algorithm=invalid")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema push --alter-lock=invalid")
 	s.handleCommand(t, CodeBadConfig, ".", "skeema push --ignore-table='+'")
