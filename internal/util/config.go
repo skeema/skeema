@@ -331,6 +331,8 @@ func RealConnectOptions(connectOpts string) (string, error) {
 		"clientfoundrows":          true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
 		"collation":                true,
 		"columnswithalias":         true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"compress":                 true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
+		"connectionattributes":     true,
 		"interpolateparams":        true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
 		"loc":                      true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
 		"maxallowedpacket":         true,
@@ -340,6 +342,7 @@ func RealConnectOptions(connectOpts string) (string, error) {
 		"rejectreadonly":           true,
 		"serverpubkey":             true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
 		"timeout":                  true,
+		"timetruncate":             true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
 		"tls":                      true,
 		"writetimeout":             true,
 	}

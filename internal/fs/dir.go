@@ -557,11 +557,13 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 		"checkconnliveness":        true,
 		"clientfoundrows":          true,
 		"columnswithalias":         true,
+		"compress":                 true, // only beneficial in very specific use-cases
 		"interpolateparams":        true, // always enabled explicitly later in this method
 		"loc":                      true,
-		"multistatements":          true,
+		"multistatements":          true, // only beneficial in very specific use-cases
 		"parsetime":                true,
 		"serverpubkey":             true,
+		"timetruncate":             true,
 
 		// mysql session options that should not be overridden
 		"autocommit":             true, // always enabled by default in MySQL
@@ -635,8 +637,12 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 		if banned[strings.ToLower(name)] {
 			return "", ConfigErrorf("connect-options is not allowed to contain %s", name)
 		}
-		if name == "tls" && dir.Config.Supplied("ssl-mode") {
-			return "", ConfigErrorf("connect-options is not allowed to contain %s; use only the newer ssl-mode option instead", name)
+		if name == "tls" {
+			if dir.Config.Supplied("ssl-mode") {
+				return "", ConfigErrorf("When using the ssl-mode option, connect-options should not also set the tls field")
+			} else {
+				log.Warn("Setting the tls option in connect-options is deprecated, and will no longer be allowed in Skeema v2. Use the dedicated ssl-mode option instead.")
+			}
 		}
 		v.Set(name, value)
 	}
