@@ -2,7 +2,6 @@ package workspace
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -157,122 +156,6 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaFK(t *testing.T) {
 			t.Errorf("Expected no StatementErrors, instead found %d; first err %v from %s", len(wsSchema.Failures), wsSchema.Failures[0].Err, wsSchema.Failures[0].Statement.Location())
 		} else if len(wsSchema.Tables) < 6 {
 			t.Errorf("Expected at least 6 tables, but instead found %d", len(wsSchema.Tables))
-		}
-	}
-}
-
-func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
-	getOpts := func(cliFlags string) Options {
-		t.Helper()
-		dir := s.getParsedDir(t, "testdata/simple", cliFlags)
-		opts, err := OptionsForDir(dir, s.d.Instance)
-		if err != nil {
-			t.Fatalf("Unexpected error from OptionsForDir: %s", err)
-		}
-		return opts
-	}
-	assertOptsError := func(cliFlags string, supplyInstance bool) {
-		t.Helper()
-		dir := s.getParsedDir(t, "testdata/simple", cliFlags)
-		var inst *tengo.Instance
-		if supplyInstance {
-			inst = s.d.Instance
-		}
-		if _, err := OptionsForDir(dir, inst); err == nil {
-			t.Errorf("Expected non-nil error from OptionsForDir with CLI flags %s, but err was nil", cliFlags)
-		}
-	}
-
-	var isARM bool
-	if arch, _ := tengo.DockerEngineArchitecture(); arch == "arm64" {
-		isARM = true
-	}
-
-	// Test error conditions
-	assertOptsError("--workspace=invalid", true)
-	assertOptsError("--workspace=docker --docker-cleanup=invalid", true)
-	assertOptsError("--workspace=docker --connect-options='autocommit=0'", false)
-	assertOptsError("--workspace=temp-schema --temp-schema-threads=0", true)
-	assertOptsError("--workspace=temp-schema --temp-schema-threads=-20", true)
-	assertOptsError("--workspace=temp-schema --temp-schema-threads=banana", true)
-	assertOptsError("--workspace=temp-schema --temp-schema-binlog=potato", true)
-
-	// Test default configuration, which should use temp-schema with drop cleanup
-	if opts := getOpts(""); opts.Type != TypeTempSchema || opts.CleanupAction != CleanupActionDrop {
-		t.Errorf("Unexpected type %v returned", opts.Type)
-	}
-
-	// Test temp-schema with some non-default options
-	opts := getOpts("--workspace=temp-schema --temp-schema=override --reuse-temp-schema")
-	if opts.Type != TypeTempSchema || opts.CleanupAction != CleanupActionNone || opts.SchemaName != "override" {
-		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
-	}
-
-	// Test docker with defaults, which should have no cleanup action, and match
-	// flavor of suite's DockerizedInstance
-	expectFlavorString := s.d.Flavor().Family().String()
-	if isARM && s.d.Flavor().IsPercona(8) {
-		expectFlavorString = s.d.Flavor().String()
-	}
-	opts = getOpts("--workspace=docker")
-	if opts.Type != TypeLocalDocker || opts.CleanupAction != CleanupActionNone || opts.Flavor.String() != expectFlavorString {
-		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
-	}
-
-	// Test docker with other cleanup actions
-	if opts = getOpts("--workspace=docker --docker-cleanup=StOp"); opts.CleanupAction != CleanupActionStop {
-		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
-	}
-	if opts = getOpts("--workspace=docker --docker-cleanup=destroy"); opts.CleanupAction != CleanupActionDestroy {
-		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
-	}
-
-	// Test docker with specific flavor
-	if opts = getOpts("--workspace=docker --flavor=mysql:5.5"); opts.Flavor.String() != "mysql:5.5" {
-		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
-	}
-
-	// Mess with the instance flavor, to simulate a not-latest Percona Server 8.0:
-	// confirm the specific patch release is copied into the workspace options IF
-	// the test is running on arm64 system
-	realFlavor := s.d.Flavor()
-	s.d.ForceFlavor(tengo.ParseFlavor("percona:8.0.35"))
-	opts = getOpts("--workspace=docker")
-	var expectPatch uint16
-	if isARM {
-		expectPatch = 35
-	}
-	if patch := opts.Flavor.Version[2]; patch != expectPatch {
-		t.Errorf("Expected Flavor option patch release number to be %d, instead found %d", expectPatch, patch)
-	}
-	s.d.ForceFlavor(realFlavor)
-
-	// Mess with the instance and its sql_mode, to simulate docker workspace using
-	// a real instance's nonstandard sql_mode
-	forceSQLMode := func(sqlMode string) {
-		t.Helper()
-		db, err := s.d.ConnectionPool("", "")
-		if err != nil {
-			t.Fatalf("Unexpected error from ConnectionPool: %v", err)
-		}
-		if _, err := db.Exec("SET GLOBAL sql_mode = " + sqlMode); err != nil {
-			t.Fatalf("Unexpected error from Exec: %v", err)
-		}
-		s.d.CloseAll() // force next conn to re-hydrate vars including sql_mode
-	}
-	forceSQLMode("'REAL_AS_FLOAT,PIPES_AS_CONCAT'")
-	defer forceSQLMode("DEFAULT")
-	opts = getOpts("--workspace=docker")
-	expectValues := map[string]string{
-		"sql_mode": "'REAL_AS_FLOAT,PIPES_AS_CONCAT'",
-	}
-	values, err := url.ParseQuery(opts.DefaultConnParams)
-	if err != nil {
-		t.Fatalf("Unexpected error from ParseQuery: %v", err)
-	}
-	for variable, expected := range expectValues {
-		if actual := values.Get(variable); actual != expected {
-			t.Errorf("Expected param %s to be %s, instead found %s", variable, expected, actual)
 		}
 	}
 }

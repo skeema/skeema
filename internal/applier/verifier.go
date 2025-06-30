@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
 	"github.com/skeema/skeema/internal/workspace"
@@ -109,6 +110,12 @@ func VerifyDiff(altersInDiff []*tengo.TableDiff, vopts VerifierOptions) error {
 	if err != nil {
 		return fmt.Errorf("Diff verification failure: %s", err.Error())
 	}
+
+	var plural string
+	if len(desiredTables) > 1 {
+		plural = "s"
+	}
+	log.Debugf("Workspace performance verifying %d ALTER TABLE%s using %s:\n%s", len(desiredTables), plural, wsSchema.Info, wsSchema.Timers)
 
 	// Compare the "expected" version of each table ("to" side of original diff,
 	// from the filesystem) with the "actual" version (from the workspace after the

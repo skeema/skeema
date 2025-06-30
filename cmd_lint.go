@@ -169,6 +169,7 @@ func lintDir(dir *fs.Dir) *linter.Result {
 			result.Fatal(err)
 			continue
 		}
+		log.Debugf("Workspace performance for %s using %s:\n%s", dir.RelPath(), wsSchema.Info, wsSchema.Timers)
 		result.AnnotateStatementErrors(wsSchema.Failures, opts)
 
 		// Reformat statements if requested. This must be done prior to checking for

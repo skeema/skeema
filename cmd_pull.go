@@ -269,6 +269,7 @@ func objectsInDiff(logicalSchema *fs.LogicalSchema, instSchema *tengo.Schema, op
 	if err != nil {
 		return nil, fmt.Errorf("Error introspecting filesystem version of schema %s: %s", instSchema.Name, err)
 	}
+	log.Debugf("Workspace performance using %s:\n%s", wsSchema.Info, wsSchema.Timers)
 
 	// Run a diff, and create a map to track objects in the diff
 	diff := tengo.NewSchemaDiff(wsSchema.Schema, instSchema)

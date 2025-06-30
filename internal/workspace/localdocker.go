@@ -14,9 +14,10 @@ import (
 
 // LocalDocker is a Workspace created inside of a Docker container on localhost.
 // The schema is dropped when done interacting with the workspace in Cleanup(),
-// but the container remains running. The container may optionally be stopped
-// or destroyed via Shutdown().
+// but the container remains running for re-use in subsequent workspaces. The
+// container may optionally be stopped or destroyed via Shutdown().
 type LocalDocker struct {
+	image             string
 	schemaName        string
 	d                 *tengo.DockerizedInstance
 	releaseLock       releaseFunc
@@ -24,6 +25,8 @@ type LocalDocker struct {
 	defaultConnParams string
 }
 
+// cstore is a mutex-protected mapping of workspace containers created by this
+// process, keyed by container name.
 var cstore struct {
 	containers map[string]*tengo.DockerizedInstance
 	sync.Mutex
@@ -32,6 +35,13 @@ var cstore struct {
 // NewLocalDocker finds or creates a containerized MySQL instance, creates a
 // temporary schema on it, and returns it.
 func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
+	// Note: NewLocalDocker names its error return so that a deferred func can
+	// check if an error occurred, but otherwise intentionally does not use named
+	// return variables, and instead declares new local vars for all other usage.
+	// This is to avoid mistakes with variable shadowing, nil pointer panics, etc
+	// which are common when dealing with named returns and deferred anonymous
+	// functions.
+
 	// Return an error if no flavor was supplied; otherwise log a warning if the
 	// supplied flavor looks problematic
 	if opts.Flavor == tengo.FlavorUnknown {
@@ -40,16 +50,9 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 		log.Warnf("Flavor %s is not recognized, and may not work properly with workspace=docker", opts.Flavor)
 	} else if supported, details := opts.Flavor.Supported(); !supported {
 		return nil, errors.New(details)
-	} else if details != "" {
+	} else if details != "" { // flavor IS supported, but has some warning note e.g. deprecation or too new
 		log.Warn("workspace=docker: ", details)
 	}
-
-	// NewLocalDocker names its error return so that a deferred func can check if
-	// an error occurred, but otherwise intentionally does not use named return
-	// variables, and instead declares new local vars for all other usage. This is
-	// to avoid mistakes with variable shadowing, nil pointer panics, etc which are
-	// common when dealing with named returns and deferred anonymous functions.
-	var err error
 
 	cstore.Lock()
 	defer cstore.Unlock()
@@ -69,12 +72,13 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	if err != nil {
 		return nil, err
 	}
-	image, err := DockerImageForFlavor(opts.Flavor, arch)
+	ld.image, err = DockerImageForFlavor(opts.Flavor, arch)
 	if err != nil {
 		log.Warn(err.Error() + ". Substituting mysql:8.0 instead for workspace purposes, which may cause behavior differences.")
-		image = "mysql:8.0"
+		ld.image = "mysql:8.0"
 
-		// If the original requested flavor was MySQL 5.x, force session-level
+		// If the original requested flavor was MySQL 5.x but we're substituting 8.0
+		// (since there's no 5.x images for ARM), force session-level variable
 		// default_collation_for_utf8mb4=utf8mb4_general_ci so that any usage of
 		// utf8mb4 without an explicit collation clause will behave like it did in
 		// 5.x. The MySQL Manual warns against setting this, but it works successfully
@@ -87,10 +91,10 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 		}
 	}
 	if opts.ContainerName == "" {
-		opts.ContainerName = "skeema-" + tengo.ContainerNameForImage(image)
-	} else if image != opts.Flavor.String() { // attempt to fix user-supplied name if we had to adjust the image
+		opts.ContainerName = "skeema-" + tengo.ContainerNameForImage(ld.image)
+	} else if ld.image != opts.Flavor.String() { // attempt to fix user-supplied name if we had to adjust the image
 		oldName := tengo.ContainerNameForImage(opts.Flavor.String())
-		newName := tengo.ContainerNameForImage(image)
+		newName := tengo.ContainerNameForImage(ld.image)
 		if oldName != newName {
 			opts.ContainerName = strings.Replace(opts.ContainerName, oldName, newName, 1)
 		}
@@ -99,26 +103,25 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	if cstore.containers[opts.ContainerName] != nil {
 		ld.d = cstore.containers[opts.ContainerName]
 	} else {
-		// DefaultConnParams is intentionally not set here; see important comment in
-		// ConnectionPool() for reasoning.
+		// DefaultConnParams is intentionally not set here at the DockerizedInstance
+		// level; see important comment in LocalDocker.ConnectionPool() for reasoning.
 		// DataTmpfs is enabled automatically here if the container is going to be
-		// destroyed at end-of-process anyway, since this improves perf. It only has
-		// an effect on Linux, and is ignored on other OSes.
+		// destroyed at end-of-process anyway, since this improves perf.
 		dopts := tengo.DockerizedInstanceOptions{
 			Name:         opts.ContainerName,
-			Image:        image,
+			Image:        ld.image,
 			RootPassword: opts.RootPassword,
 			DataTmpfs:    (ld.cleanupAction == CleanupActionDestroy),
 		}
 		// If real inst had lower_case_table_names=1, use that in the container as
-		// well. (No need for similar logic with lower_case_table_names=2; this cannot
+		// well. (No need for similar logic with lower_case_table_names=2; that cannot
 		// be used on Linux, and code in ExecLogicalSchema already gets us close
 		// enough to this mode's behavior.)
 		if opts.NameCaseMode == tengo.NameCaseLower {
 			dopts.LowerCaseTableNames = 1
 		}
 
-		log.Infof("Using container %s (image=%s) for workspace operations", opts.ContainerName, image)
+		log.Infof("Using container %s (image=%s) for workspace operations", opts.ContainerName, ld.image)
 		ld.d, err = tengo.GetOrCreateDockerizedInstance(dopts)
 		if ld.d != nil {
 			cstore.containers[opts.ContainerName] = ld.d
@@ -129,14 +132,15 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 		}
 	}
 
-	lockName := fmt.Sprintf("skeema.%s", ld.schemaName)
+	lockName := "skeema." + ld.schemaName
 	if ld.releaseLock, err = getLock(ld.d.Instance, lockName, opts.LockTimeout); err != nil {
 		return nil, fmt.Errorf("Unable to obtain workspace lock on database container %s: %w\n"+
 			"This may happen when running multiple copies of Skeema concurrently from the same client machine, in which case configuring --temp-schema differently for each copy on the command-line may help.\n"+
-			"It can also happen when operating across many shards with a high value for concurrent-servers. If so, either lower concurrent-servers, or enable skip-verify to resolve this.",
+			"It can also happen when operating across many shards with a high value for concurrent-servers. If so, either lower concurrent-servers, or consider the skip-verify option.",
 			ld.d.Instance, err)
 	}
-	// If this function returns an error, don't continue to hold the lock
+	// If this function returns an error, don't continue to hold the lock. (Without
+	// an error, the lock intentionally remains held until Cleanup is called.)
 	defer func() {
 		if retErr != nil {
 			ld.releaseLock()
@@ -152,7 +156,7 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 		dropOpts := tengo.BulkDropOptions{
 			ChunkSize:   10,
 			OnlyIfEmpty: true,
-			SkipBinlog:  true,
+			SkipBinlog:  false, // binlog always disabled in our managed containers
 		}
 		if err := ld.d.DropSchema(ld.schemaName, dropOpts); err != nil {
 			return nil, fmt.Errorf("Cannot drop existing temporary schema on %s: %s", ld.d.Instance, err)
@@ -162,7 +166,7 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	createOpts := tengo.SchemaCreationOptions{
 		DefaultCharSet:   opts.DefaultCharacterSet,
 		DefaultCollation: opts.DefaultCollation,
-		SkipBinlog:       true,
+		SkipBinlog:       false, // binlog always disabled in our managed containers
 	}
 	if _, err := ld.d.CreateSchema(ld.schemaName, createOpts); err != nil {
 		return nil, fmt.Errorf("Cannot create temporary schema on %s: %s", ld.d.Instance, err)
@@ -193,8 +197,7 @@ func (ld *LocalDocker) ConnectionPool(params string) (*sqlx.DB, error) {
 	// In this case, try conn again with all non-portable sql_mode values removed.
 	if tengo.IsSessionVarValueError(err) && strings.Contains(err.Error(), "sql_mode") && strings.Contains(finalParams, "sql_mode") {
 		v, _ := url.ParseQuery(finalParams)
-		sqlMode := v.Get("sql_mode")
-		if len(sqlMode) > 1 {
+		if sqlMode := v.Get("sql_mode"); len(sqlMode) > 1 {
 			sqlMode = sqlMode[1 : len(sqlMode)-1] // strip leading/trailing single-quotes
 			v.Set("sql_mode", "'"+tengo.FilterSQLMode(sqlMode, tengo.NonPortableSQLModes)+"'")
 			finalParams = v.Encode()
@@ -212,6 +215,7 @@ func (ld *LocalDocker) IntrospectSchema() (IntrospectionResult, error) {
 		Schema:  schema,
 		Flavor:  ld.d.Flavor(),
 		SQLMode: ld.d.SQLMode(),
+		Info:    "docker (image=" + ld.image + ")",
 	}
 	return result, err
 }
@@ -300,24 +304,29 @@ func DockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
 			}
 		}
 
-		// In some 8.x cases, arm64 requires special handling due to unusual tagging on
-		// DockerHub:
-		// * 8.0.32 and below: not available on arm64
-		// * 8.0.33-8.0.40:    need -aarch64 suffix
-		// * 8.1, 8.2, 8.3:    need .0-aarch64 suffix
-		// * 8.4.1-8.4.3:      need -aarch64 suffix
-		//
-		// But we must skip this logic for "percona:8.0" and "percona:8.4" (latest
-		// patch of 8.0 or 8.4) since those are represented as patch of 0, which
-		// would otherwise break comparison logic!
-		if arch == "arm64" && image != "percona:8.0" && image != "percona:8.4" && !flavor.MinMySQL(8, 4, 4) {
-			if !flavor.MinMySQL(8, 0, 33) {
-				return "", fmt.Errorf("%s Docker images for %s are not available", arch, image)
-			} else if !flavor.MinMySQL(8, 0, 41) || flavor.IsMySQL(8, 4) {
-				image += "-aarch64"
-			} else if flavor.Version[2] == 0 {
-				// Flavor.String() normally omits 0 patch, need to add it back for 8.1-8.3!
+		// In some Percona 8.x cases, arm64 requires special handling due to unusual
+		// tagging on DockerHub:
+		//   * 8.0.32 and below: not available on arm64
+		//   * 8.0.33-8.0.40:    need -aarch64 suffix
+		//   * 8.1, 8.2, 8.3:    need .0-aarch64 suffix
+		//   * 8.4.1-8.4.3:      need -aarch64 suffix
+		// We must skip this logic for 8.0.0 or 8.4.0 due to how Flavor.String() omits
+		// zero patch in order to emit a string meaning "latest patch of this
+		// major.minor series".
+		if arch == "arm64" && flavor.Version[0] == 8 {
+			switch flavor.Version[1] {
+			case 0: // Percona Server 8.0.x
+				if patch := flavor.Version[2]; patch > 0 && patch <= 32 {
+					return "", fmt.Errorf("%s Docker images for %s are not available", arch, image)
+				} else if patch > 0 && patch <= 40 {
+					image += "-aarch64"
+				}
+			case 1, 2, 3: // Percona Server 8.1-8.3
 				image += ".0-aarch64"
+			case 4: // Percona Server 8.4
+				if patch := flavor.Version[2]; patch > 0 && patch <= 3 {
+					image += "-aarch64"
+				}
 			}
 		}
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/skeema/skeema/internal/tengo"
@@ -131,11 +132,18 @@ func (ts *TempSchema) ConnectionPool(params string) (*sqlx.DB, error) {
 
 // IntrospectSchema introspects and returns the temporary workspace schema.
 func (ts *TempSchema) IntrospectSchema() (IntrospectionResult, error) {
+	info := fmt.Sprintf(
+		"temp-schema %s on %s (latency=%s)",
+		tengo.EscapeIdentifier(ts.schemaName),
+		ts.inst,
+		ts.inst.BaseLatency().Round(time.Millisecond/10),
+	)
 	schema, err := ts.inst.Schema(ts.schemaName)
 	result := IntrospectionResult{
 		Schema:  schema,
 		Flavor:  ts.inst.Flavor(),
 		SQLMode: ts.inst.SQLMode(),
+		Info:    info,
 	}
 	return result, err
 }
