@@ -78,6 +78,7 @@ type IntrospectionResult struct {
 	Schema  *tengo.Schema
 	Flavor  tengo.Flavor
 	SQLMode string
+	Info    string // human-readable text describing workspace config
 }
 
 // Options represent different parameters controlling the workspace that is
@@ -281,6 +282,30 @@ func (se *StatementError) ErrorNumber() uint16 {
 	return 0
 }
 
+// Timers describes execution time for different stages of ExecLogicalSchema's
+// operation.
+type Timers struct {
+	Init       time.Duration // Create or start container (if applicable), create database
+	Populate   time.Duration // Create objects (tables, procs, etc)
+	Introspect time.Duration // Introspect objects
+	Cleanup    time.Duration // Drop tables (separately for breaks in lock time), drop database
+}
+
+func (timers Timers) Total() time.Duration {
+	return timers.Init + timers.Populate + timers.Introspect + timers.Cleanup
+}
+
+func (timers Timers) String() string {
+	return fmt.Sprintf(
+		"Init=%dms Populate=%dms Introspect=%dms Cleanup=%dms -> Total=%s",
+		timers.Init.Milliseconds(),
+		timers.Populate.Milliseconds(),
+		timers.Introspect.Milliseconds(),
+		timers.Cleanup.Milliseconds(),
+		timers.Total().Round(time.Millisecond),
+	)
+}
+
 // Schema captures the result of executing the SQL from an fs.LogicalSchema
 // in a workspace, and then introspecting the resulting schema. It wraps the
 // introspected tengo.Schema, alongside the original fs.LogicalSchema, the
@@ -290,6 +315,8 @@ type Schema struct {
 	LogicalSchema *fs.LogicalSchema
 	Flavor        tengo.Flavor
 	Failures      []*StatementError
+	Info          string // human-readable info on execution environment used for workspace
+	Timers        Timers // performance timing for each stage of workspace execution
 }
 
 // FailedKeys returns a slice of tengo.ObjectKey values corresponding to
@@ -323,6 +350,7 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 		}
 	}
 
+	timerStart := time.Now()
 	ws, err := New(opts)
 	if err != nil {
 		return nil, err
@@ -336,9 +364,14 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 	wsSchema := &Schema{
 		LogicalSchema: logicalSchema,
 		Failures:      []*StatementError{},
+		Timers: Timers{
+			Init: time.Since(timerStart),
+		},
 	}
 	defer func() {
+		timerStart := time.Now()
 		cleanupErr := ws.Cleanup(wsSchema.Schema)
+		wsSchema.Timers.Cleanup = time.Since(timerStart)
 		// We only care about a cleanup error if the original returned error was nil
 		if retErr == nil && cleanupErr != nil {
 			retErr = cleanupErr
@@ -355,6 +388,7 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 	}
 
 	// Run CREATEs in parallel, bounded by opts.Concurrency
+	timerStart = time.Now()
 	creates := make(chan *tengo.Statement, opts.Concurrency)
 	errs := make(chan error, opts.Concurrency)
 	go func() {
@@ -402,10 +436,14 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 			wsSchema.Failures = append(wsSchema.Failures, wrapFailure(statement, err))
 		}
 	}
+	wsSchema.Timers.Populate = time.Since(timerStart)
 
+	timerStart = time.Now()
 	result, err := ws.IntrospectSchema()
 	wsSchema.Schema = result.Schema
 	wsSchema.Flavor = result.Flavor
+	wsSchema.Info = result.Info
+	wsSchema.Timers.Introspect = time.Since(timerStart)
 
 	return wsSchema, err
 }

@@ -17,6 +17,7 @@ import (
 // but the container remains running. The container may optionally be stopped
 // or destroyed via Shutdown().
 type LocalDocker struct {
+	image             string
 	schemaName        string
 	d                 *tengo.DockerizedInstance
 	releaseLock       releaseFunc
@@ -69,10 +70,10 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	if err != nil {
 		return nil, err
 	}
-	image, err := DockerImageForFlavor(opts.Flavor, arch)
+	ld.image, err = DockerImageForFlavor(opts.Flavor, arch)
 	if err != nil {
 		log.Warn(err.Error() + ". Substituting mysql:8.0 instead for workspace purposes, which may cause behavior differences.")
-		image = "mysql:8.0"
+		ld.image = "mysql:8.0"
 
 		// If the original requested flavor was MySQL 5.x, force session-level
 		// default_collation_for_utf8mb4=utf8mb4_general_ci so that any usage of
@@ -87,10 +88,10 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 		}
 	}
 	if opts.ContainerName == "" {
-		opts.ContainerName = "skeema-" + tengo.ContainerNameForImage(image)
-	} else if image != opts.Flavor.String() { // attempt to fix user-supplied name if we had to adjust the image
+		opts.ContainerName = "skeema-" + tengo.ContainerNameForImage(ld.image)
+	} else if ld.image != opts.Flavor.String() { // attempt to fix user-supplied name if we had to adjust the image
 		oldName := tengo.ContainerNameForImage(opts.Flavor.String())
-		newName := tengo.ContainerNameForImage(image)
+		newName := tengo.ContainerNameForImage(ld.image)
 		if oldName != newName {
 			opts.ContainerName = strings.Replace(opts.ContainerName, oldName, newName, 1)
 		}
@@ -106,7 +107,7 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 		// an effect on Linux, and is ignored on other OSes.
 		dopts := tengo.DockerizedInstanceOptions{
 			Name:         opts.ContainerName,
-			Image:        image,
+			Image:        ld.image,
 			RootPassword: opts.RootPassword,
 			DataTmpfs:    (ld.cleanupAction == CleanupActionDestroy),
 		}
@@ -118,7 +119,7 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 			dopts.LowerCaseTableNames = 1
 		}
 
-		log.Infof("Using container %s (image=%s) for workspace operations", opts.ContainerName, image)
+		log.Infof("Using container %s (image=%s) for workspace operations", opts.ContainerName, ld.image)
 		ld.d, err = tengo.GetOrCreateDockerizedInstance(dopts)
 		if ld.d != nil {
 			cstore.containers[opts.ContainerName] = ld.d
@@ -212,6 +213,7 @@ func (ld *LocalDocker) IntrospectSchema() (IntrospectionResult, error) {
 		Schema:  schema,
 		Flavor:  ld.d.Flavor(),
 		SQLMode: ld.d.SQLMode(),
+		Info:    "docker (image=" + ld.image + ")",
 	}
 	return result, err
 }

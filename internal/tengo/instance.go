@@ -32,6 +32,7 @@ type Instance struct {
 	m               *sync.Mutex         // protects unexported fields for concurrent operations
 	flavor          Flavor
 	grants          []string
+	latency         time.Duration // round-trip latency measured in hydrateVars using trivial query
 	waitTimeout     int
 	lockWaitTimeout int
 	maxUserConns    int
@@ -322,6 +323,16 @@ func (instance *Instance) SQLMode() string {
 	return strings.Join(instance.sqlMode, ",")
 }
 
+// BaseLatency returns the round-trip latency that was measured for a trivial
+// query e.g. `SELECT 1`. A return value of 0 indicates an error occurred
+// when communicating with the database.
+func (instance *Instance) BaseLatency() time.Duration {
+	if ok, _ := instance.Valid(); !ok {
+		return 0
+	}
+	return instance.latency
+}
+
 // hydrateVars populates several non-exported Instance fields by querying
 // various global and session variables. Failures are ignored; these variables
 // are designed to help inform behavior but are not strictly mandatory.
@@ -334,41 +345,44 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 			return
 		}
 	}
-	var result struct {
-		VersionComment      string
-		Version             string
-		SQLMode             string
-		WaitTimeout         int
-		LockWaitTimeout     int
-		MaxUserConns        int
-		MaxConns            int
-		LowerCaseTableNames int
+
+	query := `SELECT @@global.version_comment, @@global.version, @@session.sql_mode,
+		@@session.wait_timeout, @@session.lock_wait_timeout,
+		@@session.max_user_connections, @@global.max_connections,
+		@@global.lower_case_table_names`
+	ctx := context.Background()
+
+	// We use a Conn here so that we can measure query time without it including
+	// connection time. The query time is then tracked as the server's baseline
+	// round-trip network latency. Since it's only a single sample, it's not
+	// a fully accurate depiction of the latency, but it provides a rough ballpark
+	// number.
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return
 	}
-	query := `
-		SELECT @@global.version_comment AS versioncomment,
-		       @@global.version AS version,
-		       @@session.sql_mode AS sqlmode,
-		       @@session.wait_timeout AS waittimeout,
-		       @@session.lock_wait_timeout AS lockwaittimeout,
-		       @@global.lower_case_table_names as lowercasetablenames,
-		       @@session.max_user_connections AS maxuserconns,
-		       @@global.max_connections AS maxconns`
-	if err = db.Get(&result, query); err != nil {
+	defer conn.Close()
+	start := time.Now()
+	row := conn.QueryRowContext(ctx, query)
+	instance.latency = time.Since(start)
+	var versionComment, version, sqlMode string
+	var maxUserConns, maxConns int
+	err = row.Scan(&versionComment, &version, &sqlMode,
+		&instance.waitTimeout, &instance.lockWaitTimeout,
+		&maxUserConns, &maxConns,
+		&instance.lowerCaseNames)
+	if err != nil {
 		return
 	}
 	instance.valid = true
-	if instance.flavor == FlavorUnknown {
-		// Only set flavor if it wasn't already forced to some value
-		instance.flavor = IdentifyFlavor(result.Version, result.VersionComment)
+	if instance.flavor == FlavorUnknown { // Only set flavor if it wasn't already forced to some value
+		instance.flavor = IdentifyFlavor(version, versionComment)
 	}
-	instance.sqlMode = strings.Split(result.SQLMode, ",")
-	instance.waitTimeout = result.WaitTimeout
-	instance.lockWaitTimeout = result.LockWaitTimeout
-	instance.lowerCaseNames = result.LowerCaseTableNames
-	if result.MaxUserConns > 0 {
-		instance.maxUserConns = result.MaxUserConns
+	instance.sqlMode = strings.Split(sqlMode, ",")
+	if maxUserConns > 0 {
+		instance.maxUserConns = maxUserConns
 	} else {
-		instance.maxUserConns = result.MaxConns
+		instance.maxUserConns = maxConns
 	}
 }
 
