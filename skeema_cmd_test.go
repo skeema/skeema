@@ -1388,7 +1388,7 @@ END`
 	// Confirm that the diff shows a difference. No need to test dumping (pull)
 	// here because the logic after this does that already.
 	if s.d.Flavor().MinMySQL(8) || s.d.Flavor().IsMariaDB() {
-		s.dbExec(t, "product", "CREATE ROLE mytestrole")
+		s.dbExec(t, "product", "CREATE ROLE IF NOT EXISTS mytestrole")
 		s.dbExec(t, "product", "DROP FUNCTION routine1")
 		create = strings.Replace(create, "root@'%'", "mytestrole", 1)
 		if !strings.Contains(create, "mytestrole") {

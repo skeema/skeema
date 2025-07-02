@@ -81,7 +81,7 @@ type DockerizedInstanceOptions struct {
 
 	// Options that only affect new container creation:
 	DataBindMount       string // Host path to bind-mount as /var/lib/mysql in container
-	DataTmpfs           bool   // Use tmpfs for /var/lib/mysql. Only used if no DataBindMount, and image is from a top-level repo (e.g. "foo" but not "foo/bar")
+	DataTmpfs           bool   // Use tmpfs for /var/lib/mysql. Only used if no DataBindMount.
 	EnableBinlog        bool   // Enable or disable binary log in database server
 	LowerCaseTableNames uint8  // lower_case_table_names setting (0, 1, or 2) in database server
 }
@@ -122,11 +122,15 @@ func CreateDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstan
 	}
 	if opts.DataBindMount != "" {
 		dflags = append(dflags, "-v {DATABINDMOUNT}")
-	} else if opts.DataTmpfs && (strings.HasPrefix(opts.Image, "mysql:") || strings.HasPrefix(opts.Image, "mariadb:")) {
-		// tmpfs cannot be used with some images, such as Percona Server. For this
-		// reason we only enable tmpfs for mysql and mariadb images from the top-level
-		// (Docker Inc maintained) namespace, since these are known to support it.
-		dflags = append(dflags, "--tmpfs /var/lib/mysql")
+	} else if opts.DataTmpfs {
+		// Some images require a specific uid for /var/lib/mysql
+		var uidOption string
+		if strings.HasPrefix(opts.Image, "percona/percona-server:") {
+			uidOption = ":uid=1001"
+		} else if strings.HasPrefix(opts.Image, "percona:") {
+			uidOption = ":uid=999"
+		}
+		dflags = append(dflags, "--tmpfs /var/lib/mysql"+uidOption)
 	}
 	flagString := strings.Join(dflags, " ")
 
