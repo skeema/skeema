@@ -84,13 +84,13 @@ func LintHandler(cfg *mybase.Config) error {
 
 func lintWalker(dir *fs.Dir, maxDepth int) *linter.Result {
 	if dir.ParseError != nil {
-		log.Error(fmt.Sprintf("Skipping directory %s due to error: %s", dir.RelPath(), dir.ParseError))
+		log.Error(fmt.Sprintf("Skipping directory %s due to error: %s", dir.ShortName, dir.ParseError))
 		return linter.BadConfigResult(dir, dir.ParseError)
 	}
 	log.Infof("Linting %s", dir)
 	result := lintDir(dir)
 	for _, err := range result.Exceptions {
-		log.Error(fmt.Sprintf("Skipping directory %s due to error: %s", dir.RelPath(), err))
+		log.Error(fmt.Sprintf("Skipping directory %s due to error: %s", dir.ShortName, err))
 	}
 	for _, annotation := range result.Annotations {
 		annotation.Log()
@@ -169,7 +169,7 @@ func lintDir(dir *fs.Dir) *linter.Result {
 			result.Fatal(err)
 			continue
 		}
-		log.Debugf("Workspace performance for %s using %s:\n%s", dir.RelPath(), wsSchema.Info, wsSchema.Timers)
+		log.Debugf("Workspace performance for %s using %s:\n%s", dir.ShortName, wsSchema.Info, wsSchema.Timers)
 		result.AnnotateStatementErrors(wsSchema.Failures, opts)
 
 		// Reformat statements if requested. This must be done prior to checking for

@@ -112,7 +112,7 @@ func formatDir(dir *fs.Dir) error {
 		if err != nil {
 			return err
 		}
-		log.Debugf("Workspace performance for %s using %s:\n%s", dir.RelPath(), wsSchema.Info, wsSchema.Timers)
+		log.Debugf("Workspace performance for %s using %s:\n%s", dir.ShortName, wsSchema.Info, wsSchema.Timers)
 		for _, stmtErr := range wsSchema.Failures {
 			message := strings.Replace(stmtErr.Err.Error(), "Error executing DDL in workspace: ", "", 1)
 			log.Errorf("%s: %s", stmtErr.Location(), message)

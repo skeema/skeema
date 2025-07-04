@@ -474,28 +474,6 @@ func TestDirBaseName(t *testing.T) {
 	}
 }
 
-func TestDirRelPath(t *testing.T) {
-	dir := getDir(t, mainTestdata+"/golden/init/mydb/product")
-	expected := "testdata/golden/init/mydb/product"
-	if runtime.GOOS == "windows" {
-		expected = strings.ReplaceAll(expected, "/", `\`)
-	}
-	if rel := dir.RelPath(); rel != expected {
-		t.Errorf("Unexpected rel path: %s", rel)
-	}
-	dir = getDir(t, "../..")
-	if rel := dir.RelPath(); rel != "." {
-		t.Errorf("Unexpected rel path: %s", rel)
-	}
-
-	// Force a relative path into dir.Path (shouldn't normally be possible) and
-	// confirm just the basename (bar) is returned
-	dir.Path = "foo/bar"
-	if rel := dir.RelPath(); rel != "bar" {
-		t.Errorf("Unexpected rel path: %s", rel)
-	}
-}
-
 func TestDirSubdirs(t *testing.T) {
 	dir := getDir(t, mainTestdata+"/golden/init/mydb")
 	subs, err := dir.Subdirs()

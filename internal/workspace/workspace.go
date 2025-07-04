@@ -140,7 +140,9 @@ type Timers struct {
 }
 
 func (timers Timers) Total() time.Duration {
-	return timers.Init + timers.Populate + timers.Introspect + timers.Cleanup
+	// Pre-round the individual durations so that the numbers in String() add up
+	ms := timers.Init.Milliseconds() + timers.Populate.Milliseconds() + timers.Introspect.Milliseconds() + timers.Cleanup.Milliseconds()
+	return time.Duration(ms) * time.Millisecond
 }
 
 func (timers Timers) String() string {
@@ -212,14 +214,11 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 	wsSchema := &Schema{
 		LogicalSchema: logicalSchema,
 		Failures:      []*StatementError{},
-		Timers: Timers{
-			Init: time.Since(timerStart),
-		},
 	}
 	defer func() {
-		timerStart := time.Now()
+		cleanupTimerStart := time.Now()
 		cleanupErr := ws.Cleanup(wsSchema.Schema)
-		wsSchema.Timers.Cleanup = time.Since(timerStart)
+		wsSchema.Timers.Cleanup = time.Since(cleanupTimerStart)
 		// We only care about a cleanup error if the original returned error was nil
 		if retErr == nil && cleanupErr != nil {
 			retErr = cleanupErr
@@ -234,6 +233,7 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 	if err != nil {
 		return nil, fmt.Errorf("Cannot connect to workspace: %w", err)
 	}
+	wsSchema.Timers.Init = time.Since(timerStart)
 
 	// Run CREATEs in parallel, bounded by opts.Concurrency
 	timerStart = time.Now()

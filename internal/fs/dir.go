@@ -23,6 +23,7 @@ import (
 // a .skeema config file and/or *.sql files.
 type Dir struct {
 	Path                  string
+	ShortName             string // partial path, typically relative to working dir; useful in logging
 	Config                *mybase.Config
 	OptionFile            *mybase.File
 	SQLFiles              map[string]*SQLFile   // .sql files, keyed by absolute file path, usually with file name lowercased
@@ -31,7 +32,7 @@ type Dir struct {
 	LogicalSchemas        []*LogicalSchema      // for now, always 0 or 1 elements; 2+ in same dir to be supported in future
 	IgnorePatterns        []tengo.ObjectPattern // regexes for matching objects that should be ignored
 	ParseError            error                 // any fatal error found parsing dir's config or contents
-	repoBase              string                // absolute path of containing repo, or topmost-found .skeema file
+	repoBase              string                // absolute path of containing repo or Skeema-related tree; symlink destinations must stay within this prefix
 	retainMapKeyCasing    bool                  // if true, map keys in SQLFiles retain original casing; used only when conflicting filenames found
 }
 
@@ -49,8 +50,9 @@ func ParseDir(dirPath string, globalConfig *mybase.Config) (*Dir, error) {
 		return nil, err
 	}
 	dir := &Dir{
-		Path:   cleaned,
-		Config: globalConfig.Clone(),
+		Path:      cleaned,
+		ShortName: filepath.Base(cleaned),
+		Config:    globalConfig.Clone(),
 	}
 
 	// Apply the parent option files
@@ -74,18 +76,6 @@ func (dir *Dir) String() string {
 // BaseName returns the name of the directory without the rest of its path.
 func (dir *Dir) BaseName() string {
 	return filepath.Base(dir.Path)
-}
-
-// RelPath attempts to return the directory path relative to the dir's repoBase.
-// If this cannot be determined, the BaseName is returned.
-// This method is intended for situations when the dir's location within its
-// repo is more relevant than the dir's absolute path.
-func (dir *Dir) RelPath() string {
-	rel, err := filepath.Rel(dir.repoBase, dir.Path)
-	if dir.repoBase == "" || err != nil {
-		return dir.BaseName()
-	}
-	return rel
 }
 
 // Delete unlinks the directory and all files within.
@@ -132,9 +122,10 @@ func (dir *Dir) Subdirs() ([]*Dir, error) {
 // may be returned even alongside a non-nil error.
 func (dir *Dir) Subdir(name string) (*Dir, error) {
 	sub := &Dir{
-		Path:     filepath.Join(dir.Path, name),
-		Config:   dir.Config.Clone(),
-		repoBase: dir.repoBase,
+		Path:      filepath.Join(dir.Path, name),
+		ShortName: filepath.Join(dir.ShortName, name),
+		Config:    dir.Config.Clone(),
+		repoBase:  dir.repoBase,
 	}
 	sub.parseContents()
 	if sub.ParseError != nil {
@@ -700,7 +691,7 @@ func (dir *Dir) Password(hosts ...string) (string, error) {
 	if len(hosts) == 0 {
 		// No need to check a cache for dir-level prompting, since the previous Config
 		// check will already have managed a previously-prompted password
-		promptArg = "directory " + dir.RelPath()
+		promptArg = "directory " + dir.ShortName
 	} else {
 		user := dir.Config.GetAllowEnvVar("user")
 		for n, host := range hosts {

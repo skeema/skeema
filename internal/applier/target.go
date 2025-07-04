@@ -198,7 +198,7 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 		log.Errorf("Skipping %s: %s\n", dir, err)
 		return nil, len(instances)
 	}
-	log.Debugf("Workspace performance for %s using %s:\n%s", dir.RelPath(), wsSchema.Info, wsSchema.Timers)
+	log.Debugf("Workspace performance for %s using %s:\n%s", dir.ShortName, wsSchema.Info, wsSchema.Timers)
 	if len(wsSchema.Failures) > 0 {
 		for _, stmtErr := range wsSchema.Failures {
 			log.Error(stmtErr.Error())
