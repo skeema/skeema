@@ -154,7 +154,7 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 		// than attempting to re-use the schema.) Fail if any tables actually have
 		// 1 or more rows.
 		dropOpts := tengo.BulkDropOptions{
-			ChunkSize:   10,
+			OneShot:     true,
 			OnlyIfEmpty: true,
 			SkipBinlog:  false, // binlog always disabled in our managed containers
 		}
@@ -220,9 +220,7 @@ func (ld *LocalDocker) IntrospectSchema() (IntrospectionResult, error) {
 	return result, err
 }
 
-// Cleanup drops the temporary schema from the Dockerized instance. If any
-// tables have any rows in the temp schema, the cleanup aborts and an error is
-// returned.
+// Cleanup drops the temporary schema from the Dockerized instance.
 // Cleanup does not handle stopping or destroying the container. If requested,
 // that is handled by Shutdown() instead, so that containers aren't needlessly
 // created and stopped/destroyed multiple times during a program's execution.
@@ -235,9 +233,12 @@ func (ld *LocalDocker) Cleanup(schema *tengo.Schema) error {
 		ld.releaseLock = nil
 	}()
 
+	// LocalDocker can perform cleanup aggressively since it operates on self-
+	// managed containerized databases, which should always be isolated from "real"
+	// production workloads
 	dropOpts := tengo.BulkDropOptions{
-		ChunkSize:   10,
-		OnlyIfEmpty: true,
+		OneShot:     true,   // call DROP DATABASE without first dropping tables
+		OnlyIfEmpty: false,  // NewLocalDocker *never* reuses existing schemas, so we know we created it
 		SkipBinlog:  false,  // binlog always disabled in our managed containers
 		Schema:      schema, // may be nil, not a problem
 	}
@@ -318,12 +319,12 @@ func DockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
 			case 0: // Percona Server 8.0.x
 				if patch := flavor.Version[2]; patch > 0 && patch <= 32 {
 					return "", fmt.Errorf("%s Docker images for %s are not available", arch, image)
-				} else if patch > 0 && patch <= 40 {
+				} else if patch >= 33 && patch <= 40 {
 					image += "-aarch64"
 				}
-			case 1, 2, 3: // Percona Server 8.1-8.3
+			case 1, 2, 3: // Percona Server 8.1-8.3 (Innovation releases, always .0 patch)
 				image += ".0-aarch64"
-			case 4: // Percona Server 8.4
+			case 4: // Percona Server 8.4.x
 				if patch := flavor.Version[2]; patch > 0 && patch <= 3 {
 					image += "-aarch64"
 				}

@@ -532,37 +532,43 @@ func (s TengoIntegrationSuite) TestInstanceShowCreateTable(t *testing.T) {
 
 func (s TengoIntegrationSuite) TestInstanceTableSize(t *testing.T) {
 	s.SourceTestSQL(t, "rows.sql")
+
+	// Test table with at least one row
 	size, err := s.d.TableSize("testing", "has_rows")
-	if err != nil {
-		t.Errorf("Error from TableSize: %s", err)
-	} else if size < 1 {
-		t.Errorf("TableSize returned a non-positive result: %d", size)
+	if err != nil || size < 1 {
+		t.Errorf("Unexpected return from TableSize: %d, %v", size, err)
+	}
+
+	// Test table with no rows: TableSize should return 0 as a special case
+	size, err = s.d.TableSize("testing", "no_rows")
+	if err != nil || size != 0 {
+		t.Errorf("Unexpected return from TableSize: %d, %v", size, err)
 	}
 
 	// Test nonexistent table
 	size, err = s.d.TableSize("testing", "doesnt_exist")
-	if size > 0 || err == nil {
-		t.Errorf("Expected TableSize to return 0 size and non-nil err for missing table, instead size=%d and err=%s", size, err)
+	if err == nil || size != 0 {
+		t.Errorf("Unexpected return from TableSize: %d, %v", size, err)
 	}
 }
 
-func (s TengoIntegrationSuite) TestInstanceTableHasRows(t *testing.T) {
+func (s TengoIntegrationSuite) TestInstanceFindNonEmptyTables(t *testing.T) {
 	s.SourceTestSQL(t, "rows.sql")
-	if hasRows, err := s.d.TableHasRows("testing", "has_rows"); err != nil {
-		t.Errorf("Error from TableHasRows: %s", err)
-	} else if !hasRows {
-		t.Error("Expected TableHasRows to return true for has_rows, instead returned false")
+	if nonEmpties, err := s.d.FindNonEmptyTables("testing", []string{"has_rows", "no_rows"}); err != nil {
+		t.Errorf("Unexpected error from FindNonEmptyTables: %v", err)
+	} else if len(nonEmpties) != 1 || nonEmpties[0] != "has_rows" {
+		t.Errorf("Unexpected result from FindNonEmptyTables: %v", nonEmpties)
 	}
 
-	if hasRows, err := s.d.TableHasRows("testing", "no_rows"); err != nil {
-		t.Errorf("Error from TableHasRows: %s", err)
-	} else if hasRows {
-		t.Error("Expected TableHasRows to return false for no_rows, instead returned true")
+	if nonEmpties, err := s.d.FindNonEmptyTables("testing", []string{"actor", "actor_in_film", "has_rows", "no_rows"}); err != nil {
+		t.Errorf("Unexpected error from FindNonEmptyTables: %v", err)
+	} else if len(nonEmpties) != 1 || nonEmpties[0] != "has_rows" {
+		t.Errorf("Unexpected result from FindNonEmptyTables: %v", nonEmpties)
 	}
 
-	// Test nonexistent table
-	if _, err := s.d.TableHasRows("testing", "doesnt_exist"); err == nil {
-		t.Error("Expected TableHasRows to return error for nonexistent table, but it did not")
+	// Test error condition via nonexistent table
+	if _, err := s.d.FindNonEmptyTables("testing", []string{"actor", "doesnt_exist", "has_rows", "no_rows"}); err == nil {
+		t.Error("Expected error from FindNonEmptyTables, but err was nil")
 	}
 }
 
@@ -607,10 +613,16 @@ func (s TengoIntegrationSuite) TestInstanceDropSchema(t *testing.T) {
 		OnlyIfEmpty:     true,
 		PartitionsFirst: true,
 	}
-	// Dropping a schema with non-empty tables when OnlyIfEmpty==true should fail
+	// Dropping a schema with non-empty tables when OnlyIfEmpty==true should fail,
+	// with and without OneShot
 	if err := s.d.DropSchema("testing", opts); err == nil {
 		t.Error("Expected dropping a schema with tables to fail when OnlyIfEmpty==true, but it did not")
 	}
+	opts.OneShot = true
+	if err := s.d.DropSchema("testing", opts); err == nil {
+		t.Error("Expected dropping a schema with tables to fail when OnlyIfEmpty==true, but it did not")
+	}
+	opts.OneShot = false
 
 	// Dropping a schema without tables when OnlyIfEmpty==true should succeed
 	if err := s.d.DropSchema("testcollate", opts); err != nil {

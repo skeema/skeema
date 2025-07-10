@@ -21,6 +21,7 @@ type TempSchema struct {
 	skipBinlog    bool
 	inst          *tengo.Instance
 	releaseLock   releaseFunc
+	newlyCreated  bool
 	mdlTimeout    int // metadata lock wait timeout, in seconds; 0 for session default
 }
 
@@ -107,6 +108,11 @@ func NewTempSchema(opts Options) (_ *TempSchema, retErr error) {
 		}
 	} else if _, err := ts.inst.CreateSchema(ts.schemaName, createOpts); err != nil {
 		return nil, fmt.Errorf("Cannot create temporary schema on %s: %s", ts.inst, err)
+	} else {
+		// Track that we called CreateSchema successfully, so we can relax some
+		// safety checks at cleanup time (as opposed to re-using an existing DB,
+		// which must perform those checks)
+		ts.newlyCreated = true
 	}
 	return ts, nil
 }
@@ -114,7 +120,7 @@ func NewTempSchema(opts Options) (_ *TempSchema, retErr error) {
 func (ts *TempSchema) bulkDropOptions() tengo.BulkDropOptions {
 	return tengo.BulkDropOptions{
 		ChunkSize:       ts.dropChunkSize,
-		OnlyIfEmpty:     true,
+		OnlyIfEmpty:     !ts.newlyCreated,
 		SkipBinlog:      ts.skipBinlog,
 		PartitionsFirst: true,
 		LockWaitTimeout: ts.mdlTimeout,
@@ -149,9 +155,9 @@ func (ts *TempSchema) IntrospectSchema() (IntrospectionResult, error) {
 }
 
 // Cleanup either drops the temporary schema (if not using reuse-temp-schema)
-// or just drops all tables in the schema (if using reuse-temp-schema). If any
-// tables have any rows in the temp schema, the cleanup aborts and an error is
-// returned.
+// or just drops all tables in the schema (if using reuse-temp-schema). If the
+// underlying database wasn't newly created by NewTempSchema, we confirm that
+// tables have no rows prior to dropping.
 func (ts *TempSchema) Cleanup(schema *tengo.Schema) error {
 	if ts.releaseLock == nil {
 		return errors.New("Cleanup() called multiple times on same TempSchema")

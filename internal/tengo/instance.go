@@ -652,58 +652,85 @@ func showCreateTable(ctx context.Context, db *sqlx.DB, table string) (string, er
 }
 
 // TableSize returns an estimate of the table's size on-disk, based on data in
-// information_schema. If the table or schema does not exist on this instance,
-// the error will be sql.ErrNoRows.
-// Please note that use of innodb_stats_persistent may negatively impact the
-// accuracy. For example, see https://bugs.mysql.com/bug.php?id=75428.
+// information_schema. As a special case, if the table has no rows, the returned
+// value will be 0 even though empty InnoDB tables typically take up 16KB. If
+// the table or schema does not exist on this instance, an error is returned.
+// Use of innodb_stats_persistent negatively impacts the result accuracy; see
+// https://bugs.mysql.com/bug.php?id=75428.
 func (instance *Instance) TableSize(schema, table string) (int64, error) {
 	var result int64
 	db, err := instance.CachedConnectionPool("", instance.introspectionParams())
 	if err != nil {
 		return 0, err
 	}
-	err = db.Get(&result, `
-		SELECT  data_length + index_length
+	query := fmt.Sprintf(`
+		SELECT  (data_length + index_length) *
+		        EXISTS (SELECT 1 FROM %s.%s LIMIT 1)
 		FROM    information_schema.tables
 		WHERE   table_schema = ? and table_name = ?`,
-		schema, table)
+		EscapeIdentifier(schema), EscapeIdentifier(table))
+	err = db.QueryRow(query, schema, table).Scan(&result)
 	return result, err
 }
 
-// TableHasRows returns true if the table has at least one row. If an error
-// occurs in querying, also returns true (along with the error) since a false
-// positive is generally less dangerous in this case than a false negative.
-func (instance *Instance) TableHasRows(schema, table string) (bool, error) {
+// FindNonEmptyTables examines the supplied list of table names, and filters out
+// any that have no rows. The returned slice consists of the names of the
+// supplied tables that had at least one row.
+func (instance *Instance) FindNonEmptyTables(schema string, tables []string) (nonEmptyTables []string, err error) {
 	db, err := instance.CachedConnectionPool("", "")
 	if err != nil {
-		return true, err
+		return nil, err
 	}
-	return tableHasRows(db, schema, table)
+	return findNonEmptyTables(db, schema, tables)
 }
 
-func tableHasRows(db *sqlx.DB, schema, table string) (bool, error) {
-	var result []int
-	query := fmt.Sprintf("SELECT 1 FROM %s.%s LIMIT 1", EscapeIdentifier(schema), EscapeIdentifier(table))
-	if err := db.Select(&result, query); err != nil {
-		return true, fmt.Errorf("Error checking if table %s.%s is empty: %w", EscapeIdentifier(schema), EscapeIdentifier(table), err)
+func findNonEmptyTables(db *sqlx.DB, schema string, tables []string) (nonEmptyTables []string, err error) {
+	if len(tables) == 0 {
+		return
 	}
-	return len(result) != 0, nil
-}
 
-func confirmTablesEmpty(db *sqlx.DB, schema string, tables []string) error {
-	g := new(errgroup.Group)
-	g.SetLimit(15)
-	for n := range tables {
-		name := tables[n] // avoid closure with loop iteration var
-		g.Go(func() error {
-			hasRows, err := tableHasRows(db, schema, name)
-			if err == nil && hasRows {
-				err = fmt.Errorf("table %s has at least one row", EscapeIdentifier(name))
-			}
-			return err
-		})
+	// Query for existence of rows in chunks of up to 4 tables per query, times up
+	// to 4 concurrent goroutines.
+	hasRowsChan := make(chan string)
+	g, ctx := errgroup.WithContext(context.Background())
+	g.SetLimit(4)
+	// Since g.SetLimit is used, g.Go can block, so it must be called from a
+	// separate goroutine. Meanwhile we need the main goroutine to proceed to its
+	// loop of reading from the channel, so that writes to the channel won't block.
+	go func() {
+		for chunk := range slices.Chunk(tables, 4) {
+			g.Go(func() error {
+				var subqueries []string
+				for _, name := range chunk {
+					subqueries = append(subqueries, fmt.Sprintf("(SELECT '%s' FROM %s.%s LIMIT 1)", EscapeValueForCreateTable(name), EscapeIdentifier(schema), EscapeIdentifier(name)))
+				}
+				query := strings.Join(subqueries, "UNION ALL")
+				rows, err := db.QueryContext(ctx, query)
+				if err != nil {
+					return err
+				}
+				defer rows.Close()
+				var name string
+				for rows.Next() {
+					if err := rows.Scan(&name); err != nil {
+						return err
+					} else {
+						hasRowsChan <- name
+					}
+				}
+				return rows.Err()
+			})
+		}
+		g.Wait()
+		close(hasRowsChan)
+	}()
+	for name := range hasRowsChan {
+		nonEmptyTables = append(nonEmptyTables, name)
 	}
-	return g.Wait()
+	if err = g.Wait(); err != nil {
+		return nil, err
+	}
+	return nonEmptyTables, nil
 }
 
 // SchemaCreationOptions specifies schema-level metadata when creating or
@@ -759,20 +786,44 @@ func (instance *Instance) CreateSchema(name string, opts SchemaCreationOptions) 
 
 // DropSchema first drops all tables in the schema, and then drops the database
 // schema itself. If opts.OnlyIfEmpty==true, returns an error if any of the
-// tables have any rows.
+// tables have any rows. If opts.OneShot==true, the initial table drops are
+// skipped; however this can result in locks being held for a long time.
 func (instance *Instance) DropSchema(schema string, opts BulkDropOptions) error {
-	err := instance.DropTablesInSchema(schema, opts)
-	if err != nil {
-		return err
+	if !opts.OneShot {
+		// Drop the tables first. Note that DropTablesInSchema performs table-
+		// emptiness checks for opts.OnlyIfEmpty itself, so no need to do that here.
+		err := instance.DropTablesInSchema(schema, opts)
+		if err != nil {
+			return err
+		}
+	} else if opts.OnlyIfEmpty {
+		// Not dropping the tables first, but still want to confirm they're empty
+		db, err := instance.CachedConnectionPool("", opts.params())
+		if err != nil {
+			return fmt.Errorf("Error obtaining connection pool for checking table emptiness before dropping schema %s: %w", EscapeIdentifier(schema), err)
+		}
+		var tableMap map[string][]string
+		if opts.Schema != nil {
+			tableMap = opts.Schema.tablesToPartitions()
+		} else {
+			tableMap, err = tablesToPartitions(db, schema, instance.Flavor())
+			if err != nil {
+				return err
+			}
+		}
+		names := slices.Collect(maps.Keys(tableMap))
+		if nonEmpty, err := findNonEmptyTables(db, schema, names); err != nil {
+			return err
+		} else if len(nonEmpty) > 0 {
+			return fmt.Errorf("non-empty tables present: %s", strings.Join(nonEmpty, ", "))
+		}
 	}
 
+	// Now proceed to drop the schema
 	db, err := instance.CachedConnectionPool("", opts.params())
 	if err != nil {
-		return fmt.Errorf("Error obtaining connection pool for dropping empty schema %s: %w", EscapeIdentifier(schema), err)
+		return fmt.Errorf("Error obtaining connection pool for dropping schema %s: %w", EscapeIdentifier(schema), err)
 	}
-
-	// Now that the tables have been removed, we can drop the schema without
-	// risking a long lock impacting the DB negatively
 	err = dropSchema(db, schema)
 	if IsLockConflictError(err) {
 		// we do 1 retry upon seeing a metadata locking conflict, consistent with
@@ -835,6 +886,7 @@ func (instance *Instance) AlterSchema(schema string, opts SchemaCreationOptions)
 type BulkDropOptions struct {
 	OnlyIfEmpty     bool    // If true, when dropping tables, error if any have rows
 	ChunkSize       int     // Objects to drop per statement
+	OneShot         bool    // If true, drop everything at once (only affects DropSchema; overrides ChunkSize)
 	SkipBinlog      bool    // If true, use session sql_log_bin=0 (requires superuser)
 	PartitionsFirst bool    // If true, drop RANGE/LIST partitioned tables one partition at a time
 	LockWaitTimeout int     // If greater than 0, limit how long to wait for metadata locks (in seconds)
@@ -877,8 +929,10 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 
 	// If requested, confirm tables are empty
 	if opts.OnlyIfEmpty {
-		if err := confirmTablesEmpty(db, schema, names); err != nil {
+		if nonEmpty, err := findNonEmptyTables(db, schema, names); err != nil {
 			return err
+		} else if len(nonEmpty) > 0 {
+			return fmt.Errorf("non-empty tables present: %s", strings.Join(nonEmpty, ", "))
 		}
 	}
 

@@ -61,7 +61,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDocker(t *testing.T) {
 	if _, err = New(opts); err == nil {
 		t.Fatal("Expected error from already-locked instance, instead err is nil")
 	}
-	if ld.d == s.d {
+	if ld.d.ContainerName() == s.d.ContainerName() {
 		t.Error("Expected LocalDocker to point to different DockerizedInstance than test suite, but they match")
 	}
 	if has, err := ld.d.HasSchema(opts.SchemaName); !has {
@@ -71,6 +71,27 @@ func (s WorkspaceIntegrationSuite) TestLocalDocker(t *testing.T) {
 		t.Errorf("Unexpected result from IntrospectSchema(): %+v / %v", result, err)
 		ws.Cleanup(result.Schema)
 	} else if err := ws.Cleanup(result.Schema); err != nil {
+		t.Errorf("Unexpected error from cleanup: %s", err)
+	}
+
+	// At this point the container still exists and is still running (Cleanup only
+	// removes _skeema_tmp, not the container)
+	// Re-create _skeema_tmp and create a table with 1 row. Then confirm New
+	// returns an error if the schema exists and any table has rows.
+	if _, err := ld.d.SourceSQL("testdata/localdocker1.sql"); err != nil {
+		t.Fatalf("Unexpected SourceSQL error: %s", err)
+	}
+	if _, err := New(opts); err == nil {
+		t.Fatal("Expected New error since a table had rows, but err was nil")
+	}
+
+	// Delete the row and confirm now New works properly
+	if _, err := ld.d.SourceSQL("testdata/localdocker2.sql"); err != nil {
+		t.Fatalf("Unexpected SourceSQL error: %s", err)
+	}
+	if ws, err := New(opts); err != nil {
+		t.Fatalf("Unexpected New error when a table exists but has no rows: %v", err)
+	} else if err := ws.Cleanup(nil); err != nil {
 		t.Errorf("Unexpected error from cleanup: %s", err)
 	}
 }
@@ -133,12 +154,8 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerShutdown(t *testing.T) {
 	if ld, err = NewLocalDocker(opts); err != nil {
 		t.Fatalf("Unexpected NewLocalDocker error: %v", err)
 	}
-	// Cleanup should fail if a table has rows
-	if _, err := ld.d.SourceSQL("testdata/tempschema1.sql"); err != nil {
-		t.Fatalf("Unexpected SourceSQL error: %s", err)
-	}
-	if err := ld.Cleanup(nil); err == nil {
-		t.Error("Expected cleanup error since a table had rows, but err was nil")
+	if err := ld.Cleanup(nil); err != nil {
+		t.Errorf("Unexpected error from cleanup: %s", err)
 	}
 	Shutdown("no-match") // intentionally should have no effect, container name doesn't match supplied prefix
 	if ok, err := ld.d.CanConnect(); !ok {

@@ -47,7 +47,10 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 		t.Errorf("Expected temp schema to have 0 objects after cleanup, instead found %d", objCount)
 	}
 
-	// Cleanup should fail if a table has rows
+	// After above, _skeema_tmp exists but is empty. Calling NewTempSchema should
+	// succeed, but then if we insert rows after that, Cleanup should fail: if the
+	// schema already existed before NewTempSchema, Cleanup performs emptiness
+	// checks before proceeding with drops.
 	if ts, err = NewTempSchema(opts); err != nil {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
 	}
@@ -59,7 +62,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 	// NewTempSchema should fail if schema already exists and a table has rows,
 	// and it should not drop the schema or non-empty table
 	if _, err = NewTempSchema(opts); err == nil {
-		t.Fatalf("Expected NewTempSchema error since a table had rows, but err was nil")
+		t.Fatal("Expected NewTempSchema error since a table had rows, but err was nil")
 	}
 	if schema, err := s.d.Schema("_skeema_tmp"); err != nil {
 		t.Errorf("Unexpected error getting schema _skeema_tmp: %s", err)
@@ -95,7 +98,16 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCleanupDrop(t *testing.T) {
 		t.Fatalf("Schema persisted despite CleanupActionDrop: has=%t err=%s", has, err)
 	}
 
-	// Coverage for failed CleanupActionDrop due to row present
+	// Coverage for failed CleanupActionDrop re-using existing schema and erroring
+	// due to row being inserted after NewTempSchema but before Cleanup
+	opts.CleanupAction = CleanupActionNone
+	if ts, err = NewTempSchema(opts); err != nil {
+		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
+	}
+	if err := ts.Cleanup(nil); err != nil {
+		t.Errorf("Unexpected error from cleanup: %s", err)
+	}
+	opts.CleanupAction = CleanupActionDrop
 	if ts, err = NewTempSchema(opts); err != nil {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
 	}

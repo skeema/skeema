@@ -49,7 +49,8 @@ func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, targe
 	// specified
 	var tableSize int64
 	if needTableSize(diff, target.Dir.Config) {
-		if tableSize, err = getTableSize(target, diff.ObjectKey().Name); err != nil {
+		tableSize, err = target.Instance.TableSize(target.SchemaName, diff.ObjectKey().Name)
+		if err != nil {
 			return nil, err
 		}
 
@@ -161,17 +162,6 @@ func needTableSize(diff tengo.ObjectDiff, config *mybase.Config) bool {
 	}
 
 	return false
-}
-
-// getTableSize returns the size of the table on the instance corresponding to
-// the target. If the table has no rows, this method always returns a size of 0,
-// even though information_schema normally indicates at least 16kb in this case.
-func getTableSize(target *Target, tableName string) (int64, error) {
-	hasRows, err := target.Instance.TableHasRows(target.SchemaName, tableName)
-	if !hasRows || err != nil {
-		return 0, err
-	}
-	return target.Instance.TableSize(target.SchemaName, tableName)
 }
 
 // getWrapper returns the command-line for executing diff as a shell-out, if
