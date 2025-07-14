@@ -10,6 +10,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
+	"golang.org/x/sync/errgroup"
 )
 
 // Workspace represents a "scratch space" for DDL operations and schema
@@ -225,37 +228,70 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 		}
 	}()
 
-	params := "foreign_key_checks=0"
-	if opts.SkipBinlog {
-		params += "&sql_log_bin=0"
+	paramParts := []string{"foreign_key_checks=0"}
+	createChunkSize := max(opts.CreateChunkSize, 1)
+	if createChunkSize > 1 {
+		paramParts = append(paramParts, "multiStatements=true", "compress=true")
 	}
+	if opts.SkipBinlog {
+		paramParts = append(paramParts, "sql_log_bin=0")
+	}
+	params := strings.Join(paramParts, "&")
+
 	db, err := ws.ConnectionPool(params)
 	if err != nil {
 		return nil, fmt.Errorf("Cannot connect to workspace: %w", err)
 	}
 	wsSchema.Timers.Init = time.Since(timerStart)
 
-	// Run CREATEs in parallel, bounded by opts.Concurrency
+	// Run CREATEs in parallel, with max concurrency bounded by opts.CreateThreads
 	timerStart = time.Now()
-	creates := make(chan *tengo.Statement, opts.Concurrency)
-	errs := make(chan error, opts.Concurrency)
-	go func() {
-		for _, stmt := range logicalSchema.Creates {
-			creates <- stmt
-		}
-		close(creates)
-	}()
-	for n := 0; n < len(logicalSchema.Creates) && n < opts.Concurrency; n++ {
-		go func() {
-			for stmt := range creates {
-				_, err := db.Exec(stmt.Body())
-				if err != nil {
-					err = wrapFailure(stmt, err)
-				}
-				errs <- err
-			}
-		}()
+	var creates []*tengo.Statement
+	for _, stmt := range logicalSchema.Creates {
+		creates = append(creates, stmt)
 	}
+	failuresChan := make(chan *StatementError)
+	g, ctx := errgroup.WithContext(context.Background())
+	g.SetLimit(max(opts.CreateThreads, 1)) // ensure SetLimit arg is at least 1
+
+	// Since g.SetLimit was used, g.Go can block, so it must be called from a
+	// separate goroutine. Meanwhile we need the main goroutine to proceed to its
+	// loop of reading from the channel, so that writes to the channel won't block.
+	go func() {
+		// Depending on the requested Options, we may send multiple CREATEs at once
+		// using multiStatements, to mitigate network latency
+		for chunk := range slices.Chunk(creates, createChunkSize) {
+			g.Go(func() error {
+				chunkStrings := make([]string, 0, len(creates))
+				for _, stmt := range chunk {
+					chunkStrings = append(chunkStrings, stmt.Body())
+				}
+				query := strings.Join(chunkStrings, ";") + ";"
+				_, err := db.ExecContext(ctx, query)
+				if err != nil {
+					if len(chunk) == 1 {
+						// Single-statement "chunk": we know which statement returned the error
+						failuresChan <- wrapFailure(chunk[0], err)
+					} else {
+						// Multi-statement chunk: we don't know which statements were successful
+						// and which errored, so re-run them without chunks, ignoring any "already
+						// exists" errors this time
+						for _, stmt := range chunk {
+							_, err := db.ExecContext(ctx, stmt.Body())
+							if err != nil && !tengo.IsObjectAlreadyExistsError(err) {
+								failuresChan <- wrapFailure(stmt, err)
+							}
+						}
+					}
+				}
+				// This code uses an errgroup just for limiting concurrency and
+				// coordination, but not error propagation, so always return nil
+				return nil
+			})
+		}
+		g.Wait()
+		close(failuresChan)
+	}()
 
 	// Examine statement errors. If any deadlocks occurred, retry them
 	// sequentially, since some deadlocks are expected from concurrent CREATEs in
@@ -263,17 +299,13 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 	// Also retry errors from CREATE TABLE...LIKE being run out-of-order (only once
 	// though; nested chains of CREATE TABLE...LIKE are unsupported)
 	sequentialStatements := []*tengo.Statement{}
-	for n := 0; n < len(logicalSchema.Creates); n++ {
-		if err := <-errs; err != nil {
-			stmterr := err.(*StatementError)
-			if tengo.IsLockConflictError(stmterr.Err) || tengo.IsObjectNotFoundError(stmterr.Err) {
-				sequentialStatements = append(sequentialStatements, stmterr.Statement)
-			} else {
-				wsSchema.Failures = append(wsSchema.Failures, stmterr)
-			}
+	for stmtErr := range failuresChan {
+		if tengo.IsLockConflictError(stmtErr.Err) || tengo.IsObjectNotFoundError(stmtErr.Err) {
+			sequentialStatements = append(sequentialStatements, stmtErr.Statement)
+		} else {
+			wsSchema.Failures = append(wsSchema.Failures, stmtErr)
 		}
 	}
-	close(errs)
 
 	// Run ALTERs sequentially, since foreign key manipulations don't play
 	// nice with concurrency.

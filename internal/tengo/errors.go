@@ -28,6 +28,12 @@ const (
 
 	ER_ACCESS_DENIED_ERROR          = 1045
 	ER_SPECIFIC_ACCESS_DENIED_ERROR = 1227
+
+	ER_DB_CREATE_EXISTS     = 1007
+	ER_TABLE_EXISTS_ERROR   = 1050
+	ER_SP_ALREADY_EXISTS    = 1304
+	ER_TRG_ALREADY_EXISTS   = 1359
+	ER_EVENT_ALREADY_EXISTS = 1537
 )
 
 // IsDatabaseError returns true if err came from a database server, typically
@@ -91,4 +97,10 @@ func IsAccessDeniedError(err error) bool {
 // privilege grant.
 func IsAccessPrivilegeError(err error) bool {
 	return IsDatabaseError(err, ER_SPECIFIC_ACCESS_DENIED_ERROR)
+}
+
+// IsObjectAlreadyExistsError returns true if err indicates a CREATE statement
+// failed because an object of the same name and type already exists.
+func IsObjectAlreadyExistsError(err error) bool {
+	return IsDatabaseError(err, ER_DB_CREATE_EXISTS, ER_TABLE_EXISTS_ERROR, ER_SP_ALREADY_EXISTS, ER_TRG_ALREADY_EXISTS, ER_EVENT_ALREADY_EXISTS)
 }

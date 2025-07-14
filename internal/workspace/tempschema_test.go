@@ -17,7 +17,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
 		LockTimeout:         100 * time.Millisecond,
-		Concurrency:         5,
+		CreateThreads:       6,
 	}
 	ts, err := NewTempSchema(opts)
 	if err != nil {
@@ -80,7 +80,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCleanupDrop(t *testing.T) {
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
 		LockTimeout:         100 * time.Millisecond,
-		Concurrency:         5,
+		CreateThreads:       6,
 	}
 	ts, err := NewTempSchema(opts)
 	if err != nil {
@@ -133,6 +133,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCrossDBFK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
 	}
+	opts.CreateChunkSize = 1 // disable CREATE chunking to ensure there isn't an extra retry below
 
 	// If nothing holding locks on parent side, workspace should be fine
 	wsSchema, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts)
@@ -229,7 +230,7 @@ func TestTempSchemaNilInstance(t *testing.T) {
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
 		LockTimeout:         100 * time.Millisecond,
-		Concurrency:         5,
+		CreateThreads:       6,
 	}
 	if _, err := NewTempSchema(opts); err == nil {
 		t.Fatal("Expected non-nil error from NewTempSchema, but return was nil")

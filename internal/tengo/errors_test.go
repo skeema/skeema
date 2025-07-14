@@ -48,6 +48,16 @@ func (s TengoIntegrationSuite) TestDatabaseErrorTypeFunctions(t *testing.T) {
 		t.Errorf("Error of type %T %+v unexpectedly considered not-found error", syntaxErr, syntaxErr)
 	}
 
+	// Test IsObjectAlreadyExistsError by using a name already in integration.sql
+	_, alreadyExistsErr := db.Exec("CREATE TABLE actor (id int)")
+	if alreadyExistsErr == nil {
+		t.Error("Duplicate table definition return nil error unexpectedly")
+	} else if !IsObjectAlreadyExistsError(alreadyExistsErr) {
+		t.Errorf("Error of type %T %+v unexpectedly not considered already-exists error", alreadyExistsErr, alreadyExistsErr)
+	} else if IsObjectAlreadyExistsError(doesntExistErr) {
+		t.Errorf("Error of type %T %+v unexpectedly considered already-exists error", doesntExistErr, doesntExistErr)
+	}
+
 	// Test IsSessionVarNameError and IsSessionVarValueError
 	_, invalidVarNameErr := s.d.ConnectionPool("testing", "invalidvar='hello'")
 	_, globalOnlyVarNameErr := s.d.ConnectionPool("", "concurrent_insert=1")

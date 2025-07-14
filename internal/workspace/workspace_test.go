@@ -144,10 +144,11 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaFK(t *testing.T) {
 		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
 	}
 	opts.LockTimeout = 100 * time.Millisecond
-	opts.Concurrency = 10
+	opts.CreateThreads = 10
 
 	// Test multiple times, since the problem isn't deterministic
-	for n := 0; n < 5; n++ {
+	for n := 0; n < 6; n++ {
+		opts.CreateChunkSize = (n % 3) + 1 // cover cases of no chunking, chunk size 2, and chunk size 3
 		wsSchema, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 		if err != nil {
 			t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
