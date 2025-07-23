@@ -512,6 +512,8 @@ func (di *DockerizedInstance) SourceSQL(filePaths ...string) (string, error) {
 	cmd := []string{"mysql", "-tvvv", "-u", "root", "-h", "127.0.0.1", "--default-character-set", "utf8mb4"}
 	if di.Flavor().MinMariaDB(11, 0) {
 		cmd[0] = "mariadb" // MariaDB 11.0+ images don't include `mysql` symlink
+	} else if di.Flavor().MinMySQL(9, 4) {
+		cmd = append(cmd, "--commands") // otherwise defaults to false in 9.4+, breaking many testdata .sql files
 	}
 	stdoutStr, stderrStr, err := di.Exec(cmd, combinedInput)
 	if err != nil || strings.Contains(stderrStr, "ERROR") {
