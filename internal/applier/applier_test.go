@@ -124,7 +124,8 @@ func (s ApplierIntegrationSuite) TestCreatePlanForTarget(t *testing.T) {
 		"workspace":              "temp-schema",
 		"temp-schema":            "_skeema_tmp",
 		"temp-schema-binlog":     "auto",
-		"temp-schema-threads":    "5",
+		"temp-schema-mode":       "regular",
+		"temp-schema-threads":    "",
 		"reuse-temp-schema":      "false",
 	}
 	dir := &fs.Dir{

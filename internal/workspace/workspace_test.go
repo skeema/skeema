@@ -101,30 +101,34 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaErrors(t *testing.T) {
 	}
 	dir.LogicalSchemas[0].Alters = []*tengo.Statement{}
 
-	// Introduce an intentional syntax error
+	// Introduce an intentional syntax error in a CREATE TABLE
 	key := tengo.ObjectKey{Type: tengo.ObjectTypeTable, Name: "posts"}
 	stmt := dir.LogicalSchemas[0].Creates[key]
 	stmt.Text = strings.Replace(stmt.Text, "PRIMARY KEY", "PIRMRAY YEK", 1)
-	wsSchema, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
-	if err != nil {
-		t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
-	}
-	if len(wsSchema.Tables) < 3 {
-		t.Errorf("Expected at least 3 tables, but instead found %d", len(wsSchema.Tables))
-	}
-	if len(wsSchema.Failures) != 1 {
-		t.Errorf("Expected 1 StatementError, instead found %d", len(wsSchema.Failures))
-	} else if wsSchema.Failures[0].ObjectName != "posts" {
-		t.Errorf("Expected 1 StatementError for table `posts`; instead found it is for table `%s`", wsSchema.Failures[0].ObjectName)
-	} else if !strings.HasPrefix(wsSchema.Failures[0].Error(), stmt.Location()) {
-		t.Error("StatementError did not contain the location of the invalid statement")
-	}
-	err = wsSchema.Failures[0] // compile-time check of satisfying interface
-	if errorText := err.Error(); errorText == "" {
-		t.Error("Unexpectedly found blank error text")
-	}
-	if !tengo.IsSyntaxError(wsSchema.Failures[0].Err) {
-		t.Errorf("Expected StatementError to be a syntax error; instead found %s", wsSchema.Failures[0])
+	for n := range 4 {
+		opts.CreateChunkSize = n + 1
+		opts.DropChunkSize = n + 1
+		wsSchema, err = ExecLogicalSchema(dir.LogicalSchemas[0], opts)
+		if err != nil {
+			t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
+		}
+		if len(wsSchema.Tables) < 3 {
+			t.Errorf("Expected at least 3 tables, but instead found %d", len(wsSchema.Tables))
+		}
+		if len(wsSchema.Failures) != 1 {
+			t.Errorf("Expected 1 StatementError, instead found %d", len(wsSchema.Failures))
+		} else if wsSchema.Failures[0].ObjectName != "posts" {
+			t.Errorf("Expected 1 StatementError for table `posts`; instead found it is for table `%s`", wsSchema.Failures[0].ObjectName)
+		} else if !strings.HasPrefix(wsSchema.Failures[0].Error(), stmt.Location()) {
+			t.Error("StatementError did not contain the location of the invalid statement")
+		}
+		err = wsSchema.Failures[0] // compile-time check of satisfying interface
+		if errorText := err.Error(); errorText == "" {
+			t.Error("Unexpectedly found blank error text")
+		}
+		if !tengo.IsSyntaxError(wsSchema.Failures[0].Err) {
+			t.Errorf("Expected StatementError to be a syntax error; instead found %s", wsSchema.Failures[0])
+		}
 	}
 
 	// Test handling of fatal error
@@ -144,15 +148,15 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaFK(t *testing.T) {
 		t.Fatalf("Unexpected error from OptionsForDir: %s", err)
 	}
 	opts.LockTimeout = 100 * time.Millisecond
-	opts.Concurrency = 10
+	opts.CreateThreads = 10
 
 	// Test multiple times, since the problem isn't deterministic
-	for n := 0; n < 5; n++ {
+	for n := 0; n < 10; n++ {
+		opts.CreateChunkSize = (n % 5) + 1 // cover cases chunk size 1 (no chunking) through 5
 		wsSchema, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 		if err != nil {
-			t.Fatalf("Unexpected error from ExecLogicalSchema: %s", err)
-		}
-		if len(wsSchema.Failures) > 0 {
+			t.Errorf("Unexpected error from ExecLogicalSchema with chunk size %d: %s", opts.CreateChunkSize, err)
+		} else if len(wsSchema.Failures) > 0 {
 			t.Errorf("Expected no StatementErrors, instead found %d; first err %v from %s", len(wsSchema.Failures), wsSchema.Failures[0].Err, wsSchema.Failures[0].Statement.Location())
 		} else if len(wsSchema.Tables) < 6 {
 			t.Errorf("Expected at least 6 tables, but instead found %d", len(wsSchema.Tables))

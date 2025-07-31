@@ -95,6 +95,27 @@ func TestStatementBody(t *testing.T) {
 	}
 }
 
+func TestStatementIdempotentBody(t *testing.T) {
+	cases := map[string]string{
+		"create table ex1 (id int)":                                "create table  IF NOT EXISTS `ex1` (id int)",
+		"create table mydb.ex2 (id int)":                           "create table  IF NOT EXISTS `ex2` (id int)",
+		"Create Table`ex3` (id int)":                               "Create Table IF NOT EXISTS `ex3` (id int)",
+		"CREATE or REPLACE  TaBlE /*lol*/ex4(id int)":              "CREATE or REPLACE  TaBlE /*lol*/ IF NOT EXISTS `ex4`(id int)",
+		"create table  If  Not /* whatever */ ExIsTs ex5 (id int)": "create table  If  Not /* whatever */ ExIsTs ex5 (id int)",
+		"CREATE TABLE IF NOT EXISTS `mydb`.ex6 (id int)":           "CREATE TABLE IF NOT EXISTS `ex6` (id int)",
+		"create table if  not exists   `ex7` (id int)":             "create table if  not exists   `ex7` (id int)",
+		"CREATE /*ok*/ TABLE /*IF NOT\nEXISTS*/ ex8 (id int)":      "CREATE /*ok*/ TABLE /*IF NOT\nEXISTS*/  IF NOT EXISTS `ex8` (id int)",
+	}
+	for input, expected := range cases {
+		stmt := ParseStatementInString(input)
+		if stmt.Type == StatementTypeUnknown {
+			t.Fatalf("Unexpectedly unable to parse statement %q", input)
+		} else if actual := stmt.IdempotentBody(); actual != expected {
+			t.Errorf("Incorrect result for IdempotentBody on input %q:\nExpected: %q\nActual:   %q", input, expected, actual)
+		}
+	}
+}
+
 func TestStatementNormalizeTrailer(t *testing.T) {
 	cases := []struct {
 		text      string

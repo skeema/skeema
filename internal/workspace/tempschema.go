@@ -3,6 +3,7 @@ package workspace
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -43,19 +44,11 @@ func NewTempSchema(opts Options) (_ *TempSchema, retErr error) {
 		keepSchema:    opts.CleanupAction == CleanupActionNone,
 		inst:          opts.Instance,
 		skipBinlog:    opts.SkipBinlog,
-		dropChunkSize: 1,
+		dropChunkSize: opts.DropChunkSize,
 	}
 
-	// During workspace cleanup of tables, drop multiple tables per statement
-	// depending on whether the flavor has DROP TABLE perf optimizations, and
-	// partially depending on how the user has adjusted temp-schema-threads.
-	// (Unlike CREATE TABLE which uses temp-schema-threads literally, we don't
-	// ever run DROP TABLE concurrently, so "threads" is a misnomer here.)
-	if ts.inst.Flavor().MinMySQL(8, 0, 23) && opts.Concurrency >= 3 {
-		ts.dropChunkSize++
-	}
-	if opts.Concurrency >= 6 {
-		ts.dropChunkSize++
+	if opts.CleanupAction == CleanupActionDropOneShot {
+		ts.dropChunkSize = math.MaxInt
 	}
 
 	lockName := fmt.Sprintf("skeema.%s", ts.schemaName)
@@ -120,6 +113,7 @@ func NewTempSchema(opts Options) (_ *TempSchema, retErr error) {
 func (ts *TempSchema) bulkDropOptions() tengo.BulkDropOptions {
 	return tengo.BulkDropOptions{
 		ChunkSize:       ts.dropChunkSize,
+		OneShot:         (ts.dropChunkSize == math.MaxInt),
 		OnlyIfEmpty:     !ts.newlyCreated,
 		SkipBinlog:      ts.skipBinlog,
 		PartitionsFirst: true,

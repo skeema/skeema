@@ -68,14 +68,41 @@ func (stmt *Statement) Schema() string {
 	return stmt.DefaultDatabase
 }
 
-// Body returns the Statement's Text, without any trailing delimiter,
-// whitespace, or qualified schema name.
+// Body returns the Statement's Text stripped of any trailing delimiter,
+// trailing whitespace, or schema qualifier before the object's name.
 func (stmt *Statement) Body() string {
 	body, _ := stmt.SplitTextBody()
 	if stmt.ObjectQualifier == "" || stmt.nameClause == "" {
 		return body
 	}
 	return strings.Replace(body, stmt.nameClause, EscapeIdentifier(stmt.ObjectName), 1)
+}
+
+// IdempotentBody returns the Statement's Text stripped of any trailing
+// delimiter, trailing whitespace, or schema qualifier before the object's
+// name; additionally, if it is a CREATE statement, an IF NOT EXISTS clause
+// will be added if not already present.
+func (stmt *Statement) IdempotentBody() string {
+	if stmt.Type != StatementTypeCreate {
+		return stmt.Body()
+	}
+	body, _ := stmt.SplitTextBody()
+	if stmt.nameClause == "" {
+		return body
+	}
+	if pos := strings.Index(body, stmt.nameClause); pos > -1 {
+		// Add IF NOT EXISTS directly before object name, unless already present. This
+		// also inherently strips any schema name qualifier, if present.
+		tokens := TokenizeString(body[:pos])
+		if !strings.EqualFold(tokens[len(tokens)-1], "exists") {
+			return strings.Replace(body, stmt.nameClause, " IF NOT EXISTS "+EscapeIdentifier(stmt.ObjectName), 1)
+		}
+	}
+	// IF NOT EXISTS was already present, so we may still need to strip schema qualifier
+	if stmt.ObjectQualifier != "" {
+		return strings.Replace(body, stmt.nameClause, EscapeIdentifier(stmt.ObjectName), 1)
+	}
+	return body
 }
 
 // SplitTextBody returns Text with its trailing delimiter and whitespace (if

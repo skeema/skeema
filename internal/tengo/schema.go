@@ -95,7 +95,7 @@ func (s *Schema) Objects() map[ObjectKey]DefKeyer {
 	if s == nil {
 		return nil
 	}
-	dict := make(map[ObjectKey]DefKeyer, len(s.Tables)+len(s.Routines))
+	dict := make(map[ObjectKey]DefKeyer, s.ObjectCount())
 	for _, table := range s.Tables {
 		dict[table.ObjectKey()] = table
 	}
@@ -103,6 +103,12 @@ func (s *Schema) Objects() map[ObjectKey]DefKeyer {
 		dict[routine.ObjectKey()] = routine
 	}
 	return dict
+}
+
+// ObjectCount returns the number of objects in the schema, excluding the schema
+// itself.
+func (s *Schema) ObjectCount() int {
+	return len(s.Tables) + len(s.Routines)
 }
 
 // StripMatches removes objects from s if they match any supplied pattern. The
