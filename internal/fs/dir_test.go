@@ -319,7 +319,7 @@ func TestParseDirRedundantDelimiter(t *testing.T) {
 func TestParseDirCreateUnsupported(t *testing.T) {
 	// This dir contains 2 normal non-ignored tables, 1 normal ignored table,
 	// 2 system-versioned tables (one of which is bitemporal), 1 create...select,
-	// and one gibberish statement.
+	// 1 gibberish statement, and 1 create table with the wrong delimiter.
 	dir, err := ParseDir("testdata/createunsupported", getValidConfig(t))
 	if err != nil {
 		t.Fatalf("Unexpected error from ParseDir: %v", err)
@@ -327,11 +327,11 @@ func TestParseDirCreateUnsupported(t *testing.T) {
 	if len(dir.LogicalSchemas[0].Creates) != 2 { // from the 2 non-ignored tables
 		t.Errorf("Expected 2 CREATES in the logical schema, instead found %d", len(dir.LogicalSchemas[0].Creates))
 	}
-	if len(dir.IgnorePatterns) != 4 { // 3 from the unsupported statements + 1 from ignore-table in .skeema
-		t.Errorf("Expected 4 IgnorePatterns, instead found %d", len(dir.IgnorePatterns))
+	if len(dir.IgnorePatterns) != 5 { // 4 from the unsupported CREATE TABLEs + 1 from ignore-table in .skeema
+		t.Errorf("Expected 5 IgnorePatterns, instead found %d", len(dir.IgnorePatterns))
 	}
-	if len(dir.UnparsedStatements) != 4 { // 3 from the unsupported creates + 1 gibberish statement
-		t.Errorf("Expected 4 UnparsedStatements, instead found %d", len(dir.UnparsedStatements))
+	if len(dir.UnparsedStatements) != 5 { // 4 from the unsupported CREATE TABLEs + 1 gibberish statement
+		t.Errorf("Expected 5 UnparsedStatements, instead found %d", len(dir.UnparsedStatements))
 	}
 }
 

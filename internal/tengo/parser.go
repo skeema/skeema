@@ -649,7 +649,14 @@ func processCreateTable(p *parser, tokens []Token) (*Statement, error) {
 	// * MariaDB system-versioned tables: these use a nonstandard value in
 	//   information_schema.tables.table_type, and Skeema does not yet introspect
 	//   them, causing `skeema pull` to delete their filesystem definition
-	_, tokens, found := p.skipUntilSequence(tokens, "SELECT", "WITH SYSTEM VERSIONING")
+	// * Semicolon used within a table definition despite the DELIMITER being set
+	//   to a nonstandard value: this is typically a typo / user error, and poses
+	//   a risk in situations where multi-statement support is enabled
+	badSequences := []string{"SELECT", "WITH SYSTEM VERSIONING"}
+	if p.lexer.Delimiter() != ";" {
+		badSequences = append(badSequences, ";")
+	}
+	_, tokens, found := p.skipUntilSequence(tokens, badSequences...)
 	if found {
 		p.stmt.Type = StatementTypeCreateUnsupported
 	}
