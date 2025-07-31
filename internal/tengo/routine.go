@@ -528,5 +528,7 @@ func showCreateRoutine(ctx context.Context, db *sqlx.DB, routine string, ot Obje
 	} else {
 		err = fmt.Errorf("Object type %s is not a routine", ot)
 	}
-	return
+	// Trim any trailing semicolon, which may be present in result if routine was
+	// created with multiStatements enabled
+	return strings.TrimSuffix(create, ";"), err
 }
