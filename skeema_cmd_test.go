@@ -1348,7 +1348,7 @@ END`
 	routine1 = strings.Replace(routine1, "a int,\n", "a int,\r\n", 1)
 	routine1 = strings.Replace(routine1, "BEGIN\n", "BEGIN\r\n", 1)
 	fs.WriteTestFile(t, "mydb/product/routine1.sql", routine1)
-	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff --temp-schema-mode=extreme")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	if newContents := fs.ReadTestFile(t, "mydb/product/routine1.sql"); strings.Contains(newContents, "\r\n") {
 		t.Error("Expected UNIX-style line-ends to be restored after `skeema pull`, but they were not")
@@ -1368,7 +1368,7 @@ END`
 		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --ignore-proc=routine1")
 		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --ignore-func=nomatch")
 		s.handleCommand(t, CodeSuccess, ".", "skeema diff --ignore-func=routine1")
-		cfg = s.handleCommand(t, CodeSuccess, ".", "skeema push")
+		cfg = s.handleCommand(t, CodeSuccess, ".", "skeema push --temp-schema-mode=extreme")
 	} else {
 		s.handleCommand(t, CodeFatalError, ".", "skeema diff")
 		s.handleCommand(t, CodeFatalError, ".", "skeema diff --ignore-proc=routine1")
@@ -1376,7 +1376,7 @@ END`
 		s.handleCommand(t, CodeSuccess, ".", "skeema diff --ignore-func=routine1")
 		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
 		s.handleCommand(t, CodeFatalError, ".", "skeema push --safe-below-size=10000")
-		cfg = s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
+		cfg = s.handleCommand(t, CodeSuccess, ".", "skeema push --temp-schema-mode=extreme --allow-unsafe")
 	}
 	s.verifyFiles(t, cfg, "../golden/routines")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
@@ -1401,7 +1401,7 @@ END`
 	// Delete routine1's file and do a pull; file should be back, even with
 	// --skip-format
 	fs.RemoveTestFile(t, "mydb/product/routine1.sql")
-	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-format")
+	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --temp-schema-mode=heavy --skip-format")
 	if contents := fs.ReadTestFile(t, "mydb/product/routine1.sql"); !strings.Contains(contents, "FUNCTION `routine1`") {
 		t.Errorf("Unexpected contents in mydb/product/routine1.sql after `skeema pull`:\n%s", contents)
 	}
@@ -1426,7 +1426,7 @@ END`
 	// using the sql_mode of the server.
 	origContents := "CREATE FUNCTION routine2() returns varchar(30) DETERMINISTIC return 'abc''def';\n"
 	fs.WriteTestFile(t, "mydb/product/routine2.sql", origContents)
-	s.handleCommand(t, CodeSuccess, ".", "skeema push")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --temp-schema-mode=heavy")
 	schema, err := s.d.Schema("product")
 	if err != nil || schema == nil {
 		t.Fatal("Unexpected error obtaining product schema")
@@ -1475,8 +1475,8 @@ END`
 	}
 
 	// diff and lint should both be no-ops
-	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
-	s.handleCommand(t, CodeSuccess, ".", "skeema lint")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff --temp-schema-mode=extreme")
+	s.handleCommand(t, CodeSuccess, ".", "skeema lint --temp-schema-mode=extreme")
 
 	// Drop the *function* routine2 and do a push. This should properly recreate
 	// the dropped func.
@@ -1492,9 +1492,9 @@ END`
 	// Change procedure routine2's characteristics in the db. Do a push, which
 	// should use ALTER PROCEDURE and be safe.
 	s.dbExec(t, "product", "ALTER PROCEDURE routine2 SQL SECURITY INVOKER READS SQL DATA")
-	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
-	s.handleCommand(t, CodeSuccess, ".", "skeema push")
-	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --temp-schema-mode=extreme")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --temp-schema-mode=extreme")
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff --temp-schema-mode=extreme")
 
 	// Repeat the previous test, but this time add a COMMENT. Due to a server bug
 	// in MySQL 8.0+, ALTER ... COMMENT '' does not function properly, so Skeema
@@ -1645,10 +1645,10 @@ func (s SkeemaIntegrationSuite) TestPartitioning(t *testing.T) {
 	// Rewrite activity.sql to be partitioned by range with 2 partitions, and then
 	// test diff behavior with each value of partitioning option
 	fs.WriteTestFile(t, "mydb/analytics/activity.sql", contents2Part)
-	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff --partitioning=remove")
-	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --partitioning=keep")
-	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff") // default is keep
-	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --partitioning=modify")
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff --temp-schema-mode=heavy --partitioning=remove")
+	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --temp-schema-mode=extreme --partitioning=keep")
+	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --temp-schema-mode=extreme") // default is keep
+	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --temp-schema-mode=extreme --partitioning=modify")
 	s.handleCommand(t, CodeBadConfig, "mydb/analytics", "skeema diff --partitioning=invalid")
 
 	// At this point we haven't pushed yet, but pull should leave the file
@@ -1668,9 +1668,9 @@ func (s SkeemaIntegrationSuite) TestPartitioning(t *testing.T) {
 
 	// Push to execute the ALTER to partition by range with 2 partitions.
 	// Confirm no differences with keep, but some differences with remove.
-	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema push") // default is keep
-	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff")
-	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --partitioning=remove")
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema push --temp-schema-mode=heavy") // default is keep
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff --temp-schema-mode=heavy")
+	s.handleCommand(t, CodeDifferencesFound, "mydb/analytics", "skeema diff --temp-schema-mode=heavy --partitioning=remove")
 
 	// pull --update-partitioning --skip-format should keep the file's format
 	// unchanged, but just using --update-partitioning without --skip-format should
@@ -1687,8 +1687,8 @@ func (s SkeemaIntegrationSuite) TestPartitioning(t *testing.T) {
 	// Rewrite activity.sql to now have 3 partitions, still by range. This should
 	// not show differences for keep or modify.
 	fs.WriteTestFile(t, "mydb/analytics/activity.sql", contents3Part)
-	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff --partitioning=keep")
-	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff --partitioning=modify")
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff --temp-schema-mode=extreme --partitioning=keep")
+	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema diff --temp-schema-mode=extreme --partitioning=modify")
 	// Note: didn't push the above change
 
 	// pull (with or without --skip-format) shouldn't touch the file, despite the

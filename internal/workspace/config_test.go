@@ -36,6 +36,7 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	assertOptsError("--workspace=temp-schema --temp-schema-threads=0", true)
 	assertOptsError("--workspace=temp-schema --temp-schema-threads=-20", true)
 	assertOptsError("--workspace=temp-schema --temp-schema-threads=banana", true)
+	assertOptsError("--workspace=temp-schema --temp-schema-mode=purple", true)
 	assertOptsError("--workspace=temp-schema --temp-schema-binlog=potato", true)
 
 	// Test default configuration, which should use temp-schema with drop cleanup
@@ -46,6 +47,29 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	// Test temp-schema with some non-default options
 	opts := getOpts("--workspace=temp-schema --temp-schema=override --reuse-temp-schema")
 	if opts.Type != TypeTempSchema || opts.CleanupAction != CleanupActionNone || opts.SchemaName != "override" {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	} else if opts.CreateThreads != 6 || opts.CreateChunkSize > 3 || opts.DropChunkSize < 2 || opts.DropChunkSize > 4 {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	}
+	if opts := getOpts("--temp-schema-threads=2"); opts.Type != TypeTempSchema || opts.CreateThreads != 2 || opts.CreateChunkSize != 1 || opts.DropChunkSize != 1 {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	}
+	if opts := getOpts("--temp-schema-threads=20"); opts.Type != TypeTempSchema || opts.CreateThreads != 20 || opts.CreateChunkSize != 1 || opts.DropChunkSize > 3 {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	}
+	if opts := getOpts("--temp-schema-mode=serial"); opts.CreateThreads != 1 || opts.CreateChunkSize != 1 || opts.DropChunkSize != 1 {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	}
+	if opts := getOpts("--temp-schema-threads=30 --temp-schema-mode=light"); opts.CreateThreads != 4 || opts.CreateChunkSize != 1 || opts.DropChunkSize > 3 {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	}
+	if opts := getOpts("--temp-schema-mode=heavy"); opts.Type != TypeTempSchema || opts.CreateThreads != 12 || opts.CreateChunkSize < 2 || opts.CreateChunkSize > 4 || opts.DropChunkSize < 3 || opts.DropChunkSize > 5 {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	}
+	if opts := getOpts("--temp-schema-mode=extreme"); opts.CreateThreads != 24 || opts.CreateChunkSize < 4 || opts.CreateChunkSize > 8 || opts.CleanupAction != CleanupActionDropOneShot {
+		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
+	}
+	if opts := getOpts("--temp-schema-mode=extreme --reuse-temp-schema"); opts.CreateThreads != 24 || opts.CreateChunkSize < 4 || opts.CreateChunkSize > 8 || opts.CleanupAction != CleanupActionNone || opts.DropChunkSize < 4 || opts.DropChunkSize > 6 {
 		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
 	}
 

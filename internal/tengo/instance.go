@@ -38,6 +38,7 @@ type Instance struct {
 	maxUserConns    int
 	lowerCaseNames  int
 	sqlMode         []string
+	ahiEnabled      bool // true if innodb_adaptive_hash_index is enabled
 	valid           bool // true if any conn has ever successfully been made yet
 }
 
@@ -191,11 +192,7 @@ func (instance *Instance) rawConnectionPool(defaultSchema, fullParams string, al
 	// the database side either globally or for this user. This does not completely
 	// eliminate max-conn problems, because each Instance can have many separate
 	// connection pools, but it may help.
-	if instance.maxUserConns < 12 {
-		db.SetMaxOpenConns(2)
-	} else {
-		db.SetMaxOpenConns(instance.maxUserConns - 10)
-	}
+	db.SetMaxOpenConns(max(2, instance.maxUserConns-10))
 
 	// Set max conn reuse lifetime to 1 minute, and set max idle time based on
 	// the session wait_timeout or 10s max.
@@ -333,6 +330,16 @@ func (instance *Instance) BaseLatency() time.Duration {
 	return instance.latency
 }
 
+// AdaptiveHashIndexEnabled returns true if the InnoDB adaptive hash index is
+// enabled on the instance. If the instance could not be introspected, false is
+// returned.
+func (instance *Instance) AdaptiveHashIndexEnabled() bool {
+	if ok, _ := instance.Valid(); !ok {
+		return false
+	}
+	return instance.ahiEnabled
+}
+
 // hydrateVars populates several non-exported Instance fields by querying
 // various global and session variables. Failures are ignored; these variables
 // are designed to help inform behavior but are not strictly mandatory.
@@ -349,7 +356,7 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 	query := `SELECT @@global.version_comment, @@global.version, @@session.sql_mode,
 		@@session.wait_timeout, @@session.lock_wait_timeout,
 		@@session.max_user_connections, @@global.max_connections,
-		@@global.lower_case_table_names`
+		@@global.lower_case_table_names, @@global.innodb_adaptive_hash_index`
 	ctx := context.Background()
 
 	// We use a Conn here so that we can measure query time without it including
@@ -370,7 +377,7 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 	err = row.Scan(&versionComment, &version, &sqlMode,
 		&instance.waitTimeout, &instance.lockWaitTimeout,
 		&maxUserConns, &maxConns,
-		&instance.lowerCaseNames)
+		&instance.lowerCaseNames, &instance.ahiEnabled)
 	if err != nil {
 		return
 	}
@@ -940,7 +947,7 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 	if opts.PartitionsFirst {
 		for name, partitions := range tableMap {
 			if len(partitions) > 1 {
-				for chunk := range slices.Chunk(partitions[0:len(partitions)-1], opts.ChunkSize) {
+				for chunk := range slices.Chunk(partitions[0:len(partitions)-1], max(opts.ChunkSize, 1)) {
 					escapedPartitionNames := make([]string, len(chunk))
 					for n := range chunk {
 						escapedPartitionNames[n] = EscapeIdentifier(chunk[n])
@@ -961,7 +968,7 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 	// tables per statement to reduce the number of round-trips. If any statements
 	// fail, we retry each table from the chunk individually.
 	retries := []string{}
-	for chunk := range slices.Chunk(names, opts.ChunkSize) {
+	for chunk := range slices.Chunk(names, max(opts.ChunkSize, 1)) {
 		escapedNames := make([]string, len(chunk))
 		for n := range chunk {
 			escapedNames[n] = EscapeIdentifier(chunk[n])

@@ -204,7 +204,7 @@ func (s *IntegrationSuite) setupDirAndDB(t *testing.T, subdir string) {
 		CleanupAction: workspace.CleanupActionDrop,
 		SchemaName:    "dumper_test",
 		LockTimeout:   30 * time.Second,
-		Concurrency:   5,
+		CreateThreads: 5,
 	}
 	wsSchema, err := workspace.ExecLogicalSchema(s.scratchDir.LogicalSchemas[0], wsOpts)
 	if err != nil {

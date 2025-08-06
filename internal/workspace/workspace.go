@@ -10,6 +10,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
+	"golang.org/x/sync/errgroup"
 )
 
 // Workspace represents a "scratch space" for DDL operations and schema
@@ -188,6 +191,12 @@ func (wsSchema *Schema) FailedKeys() (result []tengo.ObjectKey) {
 // Note that if opts.NameCaseMode > tengo.NameCaseAsIs, logicalSchema may be
 // modified in-place to force some identifiers to lowercase.
 func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema, retErr error) {
+	if opts.CreateThreads <= 1 {
+		opts.CreateThreads = 1
+		opts.CreateChunkSize = 1
+	} else if opts.CreateChunkSize > opts.CreateThreads {
+		opts.CreateChunkSize = opts.CreateThreads
+	}
 	if logicalSchema.CharSet != "" {
 		opts.DefaultCharacterSet = logicalSchema.CharSet
 	}
@@ -225,63 +234,191 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 		}
 	}()
 
+	// Warn if poor performance expected due to combination of instance latency and
+	// object count
+	if opts.Type == TypeTempSchema && opts.CreateThreads <= 6 && int(opts.Instance.BaseLatency())*len(logicalSchema.Creates) > 5*int(time.Second) {
+		log.Warn("With current settings, workspace performance may be poor due to combination of network latency and the number of CREATE statements. Consider tuning workspace options. For more information, visit https://www.skeema.io/docs/features/workspaces/")
+	}
+
+	// If CREATE chunking is requested (sending batches of multiple CREATE TABLEs
+	// in one round-trip), tables must be separated from non-tables, since
+	// multiStatements isn't ever safe with stored programs. Typos in compound
+	// statements could cause parser differentials between client and server: the
+	// client bases statement termination on use of the current DELIMITER string,
+	// whereas the server parses BEGIN...END blocks (which can be nested) to
+	// determine where a compound statement ends. So an accidental early END would
+	// cause subsequent statements to be executed individually under
+	// multiStatements, when the user's intention was for them to be part of a
+	// stored program body as per DELIMITER usage.
+	var creates, chunkableCreates []*tengo.Statement
+	expectedObjectCount := len(logicalSchema.Creates)
+	for key, stmt := range logicalSchema.Creates {
+		if opts.CreateChunkSize > 1 && key.Type == tengo.ObjectTypeTable {
+			chunkableCreates = append(chunkableCreates, stmt)
+		} else {
+			creates = append(creates, stmt)
+		}
+	}
+
+	// Create up to 2 connection pools: if CREATE chunking is enabled, a separate
+	// pool with multiStatements is created. And since each new pool actually
+	// establishes a connection, these are created concurrently. If the "regular"
+	// pool fails, this is fatal; if only the chunking pool fails (which can happen
+	// due to proxies lacking multi-statement support), just disable chunking.
 	params := "foreign_key_checks=0"
 	if opts.SkipBinlog {
 		params += "&sql_log_bin=0"
 	}
-	db, err := ws.ConnectionPool(params)
-	if err != nil {
+	var db, dbChunk *sqlx.DB
+	var errChunk error
+	var connGroup errgroup.Group
+	needRegularPool := (expectedObjectCount > len(chunkableCreates))
+	if needRegularPool {
+		connGroup.Go(func() (err error) {
+			db, err = ws.ConnectionPool(params)
+			return err
+		})
+	}
+	if len(chunkableCreates) > 0 {
+		connGroup.Go(func() (err error) {
+			dbChunk, errChunk = ws.ConnectionPool(params + "&multiStatements=true")
+			if errChunk != nil {
+				// Disable chunking and move everything over to the non-chunked slice
+				opts.CreateChunkSize = 1
+				creates = append(creates, chunkableCreates...)
+				if !needRegularPool {
+					// If we didn't have any non-tables, we would normally skip creation of the
+					// non-chunked connection pool, so try making one now...
+					db, err = ws.ConnectionPool(params)
+					if err != nil {
+						return err // couldn't create a non-multiStatement pool either!
+					}
+				}
+			} else if !needRegularPool {
+				// If we ONLY have tables, and the chunk pool succeeded, we can safely use
+				// that same pool for individual table retries as well
+				db = dbChunk
+			}
+			return nil
+		})
+	}
+	if err := connGroup.Wait(); err != nil {
 		return nil, fmt.Errorf("Cannot connect to workspace: %w", err)
+	}
+	if errChunk != nil { // only log warning if the non-chunked conn succeeded
+		log.Warnf("Unable to improve workspace performance using multi-statement support: %s\nThis might be caused by a proxy server which doesn't support multi-statements. If so, consider reconfiguring Skeema to bypass the proxy in order to improve performance.", errChunk)
+	}
+	if db != nil {
+		db.SetMaxIdleConns(opts.CreateThreads)
+	}
+	if dbChunk != nil {
+		dbChunk.SetMaxIdleConns(opts.CreateThreads)
 	}
 	wsSchema.Timers.Init = time.Since(timerStart)
 
-	// Run CREATEs in parallel, bounded by opts.Concurrency
+	// Note: this logic uses errgroups just for coordination/blocking, as well as
+	// limiting concurrency, but not actually error propagation. Errors are sent
+	// to the main goroutine for collection and retried if appropriate.
+	var metaGroup, execGroup errgroup.Group
+	execGroup.SetLimit(opts.CreateThreads)
+	failuresChan := make(chan *StatementError)
 	timerStart = time.Now()
-	creates := make(chan *tengo.Statement, opts.Concurrency)
-	errs := make(chan error, opts.Concurrency)
-	go func() {
-		for _, stmt := range logicalSchema.Creates {
-			creates <- stmt
+
+	execSingleCreate := func(stmt *tengo.Statement, ifNotExists bool) error {
+		var body string
+		if ifNotExists {
+			body = stmt.IdempotentBody()
+		} else {
+			body = stmt.Body()
 		}
-		close(creates)
-	}()
-	for n := 0; n < len(logicalSchema.Creates) && n < opts.Concurrency; n++ {
-		go func() {
-			for stmt := range creates {
-				_, err := db.Exec(stmt.Body())
-				if err != nil {
-					err = wrapFailure(stmt, err)
-				}
-				errs <- err
-			}
-		}()
+		_, err := db.Exec(body)
+		if err != nil {
+			failuresChan <- wrapFailure(stmt, err)
+		}
+		return nil
 	}
 
-	// Examine statement errors. If any deadlocks occurred, retry them
+	// Non-chunked creates
+	metaGroup.Go(func() error {
+		for _, stmt := range creates {
+			execGroup.Go(func() error {
+				return execSingleCreate(stmt, false)
+			})
+		}
+		return nil
+	})
+
+	// Chunked creates: in addition to execGroup's concurrency limit, we further
+	// limit how many chunked CREATEs can be sent at once, to avoid overwhelming
+	// the server (which could potentially interfere with other workloads)
+	var sem chan struct{}
+	if len(chunkableCreates) > 0 { // implies opts.CreateThreads and opts.CreateChunkSize are both at least 2
+		sem = make(chan struct{}, opts.CreateThreads/opts.CreateChunkSize)
+		metaGroup.Go(func() error {
+			for chunk := range slices.Chunk(chunkableCreates, opts.CreateChunkSize) {
+				execGroup.Go(func() error {
+					if len(chunk) == 1 { // single-statement leftovers: handle like non-chunked case
+						return execSingleCreate(chunk[0], false)
+					}
+					chunkStrings := make([]string, 0, len(chunk))
+					for _, stmt := range chunk {
+						chunkStrings = append(chunkStrings, stmt.Body())
+					}
+					query := strings.Join(chunkStrings, ";") + ";"
+					sem <- struct{}{}
+					_, err := dbChunk.Exec(query)
+					<-sem
+					if err != nil {
+						// We don't know which statement in the chunk errored, so retry them
+						// individually, using IF NOT EXISTS to avoid erroring on ones that
+						// previously succeeded
+						for _, stmt := range chunk {
+							execSingleCreate(stmt, true)
+						}
+					}
+					return nil
+				})
+			}
+			return nil
+		})
+	}
+
+	// Close channels once we're done spawning goroutines (metaGroup) *and* they
+	// have all completed (execGroup). This double-errgroup setup avoids races.
+	go func() {
+		metaGroup.Wait()
+		execGroup.Wait()
+		close(failuresChan)
+		if sem != nil {
+			close(sem)
+		}
+	}()
+
+	// Main goroutine: examine statement errors. If any deadlocks occurred, retry
 	// sequentially, since some deadlocks are expected from concurrent CREATEs in
 	// MySQL 8+ if FKs are present. Ditto with metadata lock wait timeouts.
 	// Also retry errors from CREATE TABLE...LIKE being run out-of-order (only once
 	// though; nested chains of CREATE TABLE...LIKE are unsupported)
-	sequentialStatements := []*tengo.Statement{}
-	for n := 0; n < len(logicalSchema.Creates); n++ {
-		if err := <-errs; err != nil {
-			stmterr := err.(*StatementError)
-			if tengo.IsLockConflictError(stmterr.Err) || tengo.IsObjectNotFoundError(stmterr.Err) {
-				sequentialStatements = append(sequentialStatements, stmterr.Statement)
-			} else {
-				wsSchema.Failures = append(wsSchema.Failures, stmterr)
-			}
+	var sequentialStatements []*tengo.Statement
+	for stmtErr := range failuresChan {
+		if tengo.IsLockConflictError(stmtErr.Err) || tengo.IsObjectNotFoundError(stmtErr.Err) {
+			sequentialStatements = append(sequentialStatements, stmtErr.Statement)
+		} else {
+			wsSchema.Failures = append(wsSchema.Failures, stmtErr)
+			expectedObjectCount--
 		}
 	}
-	close(errs)
 
-	// Run ALTERs sequentially, since foreign key manipulations don't play
-	// nice with concurrency.
+	// Run sequential statements in a single thread. This includes retrying any
+	// CREATEs that failed due to lock conflicts (common with FKs), as well as
+	// any ALTER statements (which also have concurrency issues with FKs).
 	sequentialStatements = append(sequentialStatements, logicalSchema.Alters...)
-
-	for _, statement := range sequentialStatements {
-		if _, err := db.Exec(statement.Body()); err != nil {
-			wsSchema.Failures = append(wsSchema.Failures, wrapFailure(statement, err))
+	for _, stmt := range sequentialStatements {
+		if _, err := db.Exec(stmt.Body()); err != nil {
+			wsSchema.Failures = append(wsSchema.Failures, wrapFailure(stmt, err))
+			if stmt.Type == tengo.StatementTypeCreate {
+				expectedObjectCount--
+			}
 		}
 	}
 	wsSchema.Timers.Populate = time.Since(timerStart)
@@ -292,6 +429,9 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 	wsSchema.Flavor = result.Flavor
 	wsSchema.Info = result.Info
 	wsSchema.Timers.Introspect = time.Since(timerStart)
+	if err == nil && expectedObjectCount != wsSchema.Schema.ObjectCount() {
+		err = fmt.Errorf("Expected workspace to contain %d objects, but instead found %d", expectedObjectCount, wsSchema.Schema.ObjectCount())
+	}
 
 	return wsSchema, err
 }
