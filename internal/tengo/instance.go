@@ -991,16 +991,31 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 
 // DropRoutinesInSchema drops all stored procedures and functions in a schema.
 func (instance *Instance) DropRoutinesInSchema(schema string, opts BulkDropOptions) error {
-	db, err := instance.CachedConnectionPool(schema, opts.params())
+	params := opts.params()
+	chunkSize := max(opts.ChunkSize, 1)
+	if chunkSize > 1 {
+		// DROP PROCEDURE and DROP FUNCTION do not allow multiple objects to be
+		// specified at once, so instead we use multiStatements to send multiple
+		// DDLs per round-trip
+		params += "&multiStatements=true"
+	}
+	db, err := instance.CachedConnectionPool(schema, params)
+	if err != nil && chunkSize > 1 {
+		// Try again without chunking, in case there's a proxy which doesn't support
+		// multiStatements or is configured to forbid it
+		chunkSize = 1
+		db, err = instance.CachedConnectionPool(schema, opts.params())
+	}
 	if err != nil {
 		return err
 	}
 
-	// Obtain names and types directly; faster than going through
-	// instance.Schema(schema) since we don't need other introspection
+	// If schema was provided in opts, obtain routine names from there. Otherwise,
+	// query names and types directly, since this is much faster than going through
+	// instance.Schema() which performs full introspection of the schema.
 	type nameAndType struct {
-		Name string `db:"routine_name"`
-		Type string `db:"routine_type"`
+		Name string
+		Type string
 	}
 	var routineInfo []nameAndType
 	if opts.Schema != nil {
@@ -1014,7 +1029,19 @@ func (instance *Instance) DropRoutinesInSchema(schema string, opts BulkDropOptio
 			SELECT routine_name AS routine_name, UPPER(routine_type) AS routine_type
 			FROM   information_schema.routines
 			WHERE  routine_schema = ?`
-		if err := db.Select(&routineInfo, query, schema); err != nil {
+		rows, err := db.Query(query, schema)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		var name, typ string
+		for rows.Next() {
+			if err := rows.Scan(&name, &typ); err != nil {
+				return err
+			}
+			routineInfo = append(routineInfo, nameAndType{Name: name, Type: typ})
+		}
+		if err := rows.Err(); err != nil {
 			return err
 		}
 	}
@@ -1022,28 +1049,27 @@ func (instance *Instance) DropRoutinesInSchema(schema string, opts BulkDropOptio
 		return nil
 	}
 
-	// DROP PROCEDURE and DROP FUNCTION do not allow multiple objects to be
-	// specified at once, so instead we use concurrency here; even if they queue
-	// up serially behind a server mutex, this still potentially improves perf by
-	// avoiding waits for entire round-trips
-	var concurrency int
-	if instance.Host == "127.0.0.1" || instance.Host == "localhost" {
-		concurrency = 2
-	} else if opts.ChunkSize > 5 {
-		concurrency = 10
-	} else {
-		concurrency = opts.ChunkSize * 2
+	for chunk := range slices.Chunk(routineInfo, chunkSize) {
+		chunkStrings := make([]string, 0, len(chunk))
+		for _, ri := range chunk {
+			chunkStrings = append(chunkStrings, "DROP "+ri.Type+" IF EXISTS "+EscapeIdentifier(ri.Name))
+		}
+		if chunkSize > 1 {
+			query := strings.Join(chunkStrings, ";") + ";"
+			if _, err := db.Exec(query); err != nil {
+				// Try each statement in this chunk again individually, and disable chunking moving forwards
+				chunkSize = 1
+			}
+		}
+		if chunkSize == 1 {
+			for _, query := range chunkStrings {
+				if _, err := db.Exec(query); err != nil {
+					return err
+				}
+			}
+		}
 	}
-	g := new(errgroup.Group)
-	g.SetLimit(concurrency)
-	for _, ri := range routineInfo {
-		name, typ := ri.Name, ri.Type
-		g.Go(func() error {
-			_, err := db.Exec("DROP " + typ + " " + EscapeIdentifier(name))
-			return err
-		})
-	}
-	return g.Wait()
+	return nil
 }
 
 // tablesToPartitions returns a map whose keys are all tables in the schema

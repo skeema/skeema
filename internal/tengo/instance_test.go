@@ -735,7 +735,7 @@ func (s TengoIntegrationSuite) TestInstanceDropRoutinesInSchema(t *testing.T) {
 		t.Fatal("Assertion failure: schema `testing` has no routines to start")
 	}
 	opts := BulkDropOptions{
-		ChunkSize: 3,
+		ChunkSize: 2,
 	}
 	if err := s.d.DropRoutinesInSchema("testing", opts); err != nil {
 		t.Fatalf("Unexpected error from DropRoutinesInSchema: %v", err)
@@ -762,8 +762,7 @@ func (s TengoIntegrationSuite) TestInstanceDropRoutinesInSchemaByRef(t *testing.
 		t.Fatal("Assertion failure: schema `testing` has no routines to start")
 	}
 	opts := BulkDropOptions{
-		ChunkSize: 3,
-		Schema:    schema,
+		Schema: schema,
 	}
 	if err := s.d.DropRoutinesInSchema("testing", opts); err != nil {
 		t.Fatalf("Unexpected error from DropRoutinesInSchema: %v", err)
@@ -772,10 +771,10 @@ func (s TengoIntegrationSuite) TestInstanceDropRoutinesInSchemaByRef(t *testing.
 		t.Errorf("Expected schema `testing` to have no routines after DropRoutinesInSchema, instead found %d", len(schema.Routines))
 	}
 
-	// Repeated call SHOULD error, because the routines in schema.Routines no
-	// longer exist!
-	if err := s.d.DropRoutinesInSchema("testing", opts); err == nil {
-		t.Error("Expected error from DropRoutinesInSchema, but return was nil")
+	// Repeated calls should have no effect, no error despite passing routines in
+	// opts.Schema, because IF EXISTS is used in the queries
+	if err := s.d.DropRoutinesInSchema("testing", opts); err != nil {
+		t.Errorf("Unexpected error from DropRoutinesInSchema: %v", err)
 	}
 }
 
