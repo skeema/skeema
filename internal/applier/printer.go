@@ -1,8 +1,12 @@
 package applier
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/tengo"
@@ -19,6 +23,13 @@ type Printer interface {
 type Finisher interface {
 	Printer
 	Finish(*Target)
+}
+
+// DetailPrinter is an interface for printers that want to display details about
+// the schemas being applied in addition to the statements themselves.
+type DetailPrinter interface {
+	Printer
+	SetDiff(diff *tengo.SchemaDiff)
 }
 
 // standardPrinter displays full output for each statement.
@@ -38,6 +49,12 @@ type instanceDiffPrinter struct {
 	m            sync.Mutex
 }
 
+type jsonDiffPrinter struct {
+	diff  *tengo.SchemaDiff
+	diffs []string
+	m     sync.Mutex
+}
+
 // NewPrinter returns a standard printer (displaying all generated SQL), unless
 // the supplied configuration requests only outputting names of instances that
 // have differences.
@@ -46,6 +63,9 @@ func NewPrinter(cfg *mybase.Config) Printer {
 		return &instanceDiffPrinter{
 			seenInstance: make(map[string]bool),
 		}
+	}
+	if cfg.GetBool("json") {
+		return &jsonDiffPrinter{}
 	}
 	return &standardPrinter{lastStdoutDelimiter: ";"}
 }
@@ -100,5 +120,42 @@ func (idp *instanceDiffPrinter) Print(stmt PlannedStatement) {
 	if !idp.seenInstance[instString] {
 		fmt.Println(instString)
 		idp.seenInstance[instString] = true
+	}
+}
+
+func (jp *jsonDiffPrinter) Print(stmt PlannedStatement) {
+	jp.m.Lock()
+	defer jp.m.Unlock()
+	// cs := stmt.ClientState()
+	jp.diffs = append(jp.diffs, stmt.Statement())
+}
+
+func (jp *jsonDiffPrinter) SetDiff(diff *tengo.SchemaDiff) {
+	jp.m.Lock()
+	defer jp.m.Unlock()
+	jp.diff = diff
+}
+
+func (jp *jsonDiffPrinter) Finish(t *Target) {
+	jp.m.Lock()
+	defer func() {
+		// Reset the state of the jsonDiffPrinter
+		jp.diffs = nil
+		jp.m.Unlock()
+	}()
+
+	e := json.NewEncoder(os.Stdout)
+	e.SetIndent("", "  ")
+	err := e.Encode(
+		&struct {
+			Diff       *tengo.SchemaDiff `json:"diff,omitempty"`
+			Statements []string          `json:"statements,omitempty"`
+		}{
+			jp.diff,
+			jp.diffs,
+		},
+	)
+	if err != nil {
+		log.Fatalf("json diff encoding failed: %v", err)
 	}
 }

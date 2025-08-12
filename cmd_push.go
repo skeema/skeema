@@ -64,6 +64,7 @@ func init() {
 	cmd.AddOptions("sharding",
 		mybase.BoolOption("first-only", '1', false, "For dirs mapping to multiple hosts or schemas, only run against the first target per dir"),
 		mybase.BoolOption("brief", 'q', false, "<overridden by diff command>").Hidden(),
+		mybase.BoolOption("json", 'j', false, "<overridden by diff command>").Hidden(),
 		mybase.StringOption("concurrent-servers", 'c', "1", "Perform operations on this number of database servers concurrently"),
 		mybase.StringOption("concurrent-instances", 0, "1", "<deprecated alias for concurrent-servers>").Hidden().MarkDeprecated("This option has been renamed to concurrent-servers. The old concurrent-instances option name remains as an alias in Skeema v1, but will be removed in Skeema v2."),
 	)
@@ -76,13 +77,17 @@ func init() {
 
 // PushHandler is the handler method for `skeema push`
 func PushHandler(cfg *mybase.Config) error {
+	if cfg.GetBool("brief") && cfg.GetBool("json") {
+		return NewExitValue(CodeBadConfig, "Options --brief and --json are mutually exclusive")
+	}
+
 	// Set up some config overrides relating to --brief output mode:
 	// * --brief only affects `skeema diff` (aka `skeema push --dry-run`)
 	// * --brief automatically uses --skip-verify --skip-lint --allow-unsafe
 	// * --brief omits INFO-level logging, unless --debug was used
 	if !cfg.GetBool("dry-run") {
 		cfg.SetRuntimeOverride("brief", "0")
-	} else if cfg.GetBool("brief") {
+	} else if cfg.GetBool("brief") || cfg.GetBool("json") {
 		cfg.SetRuntimeOverride("verify", "0")
 		cfg.SetRuntimeOverride("lint", "0")
 		cfg.SetRuntimeOverride("allow-unsafe", "1")

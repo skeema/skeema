@@ -48,11 +48,13 @@ func clonePushOptionsToDiff() {
 		"alter-wrapper":   "Output ALTER TABLEs as shell commands rather than just raw DDL; see manual for template vars",
 		"brief":           "Don't output DDL to STDOUT; instead output list of database servers with at least one difference",
 		"safe-below-size": "Always permit generating destructive operations for tables below this size in bytes",
+		"json":            "Output differences in JSON format, suitable for power users to automate against", // https://github.com/skeema/skeema/issues/250
 	}
 	hiddenRewrites := map[string]bool{
 		"brief":              false,
 		"dry-run":            true,
 		"foreign-key-checks": true,
+		"json":               false,
 	}
 
 	diffOptions := diff.Options()

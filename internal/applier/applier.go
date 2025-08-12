@@ -163,6 +163,10 @@ func ApplyTarget(t *Target, printer Printer) (Result, error) {
 	}
 
 	diff := tengo.NewSchemaDiff(schemaFromInstance, schemaFromDir)
+	if schemaPrinter, ok := printer.(DetailPrinter); ok {
+		// If using a DetailPrinter (such as jsonPrinter), we print the details of the diff, not just the statements
+		schemaPrinter.SetDiff(diff)
+	}
 	plan, err := CreatePlanForTarget(t, diff, mods)
 	result.UnsupportedCount = len(plan.Unsupported)
 	result.Differences = (len(plan.DiffKeys) + len(plan.Unsupported)) > 0
