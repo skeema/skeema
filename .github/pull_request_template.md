@@ -1,11 +1,15 @@
 <!--
+
 Thank you for your interest in contributing to Skeema!
 
-If this is your first pull request here, be sure to read the Contributing link
-in the sidebar before proceeding.
+IMPORTANT:
 
-IMPORTANT: you must reference an issue number in your pull request description.
-If there is no corresponding issue or discussion for this pull request yet, open
-one now, and WAIT FOR A RESPONSE FROM A MAINTAINER before you open the pull
-request.
+Read the Contributing link in the sidebar carefully before proceeding.
+
+You must link to an Issue or Discussion in your pull request description, which
+covers the same bug/feature/topic as your pull request.
+
+Before writing any code or opening a pull request, WAIT FOR POSITIVE FEEDBACK
+FROM A MAINTAINER on the original Issue or Discussion.
+
 -->

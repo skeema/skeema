@@ -1,64 +1,62 @@
 # Contributing to Skeema
 
-Thank you for your interest in contributing to Skeema! This document provides guidelines for submitting issues and pull requests on GitHub.
+Thank you for your interest in contributing to Skeema! This document provides guidelines for submitting issues, discussions, and pull requests on GitHub.
 
-## Issues
+## General questions and feedback
 
-### Bug reports
+Please use [Discussions](https://github.com/skeema/skeema/discussions) for general questions. Read more about our discussion board [here](https://github.com/skeema/skeema/discussions/232).
 
-Please provide as much information as possible about reproduction steps, as well as your environment: Skeema version, database version/vendor, and OS/platform for both client and server sides. Be specific, as seemingly minor details (Intel vs ARM, RDS vs Aurora, etc) can make a huge difference in our ability to reproduce your situation. If any general warning messages were logged by Skeema, especially regarding your database server version, definitely note them in your report. Feel free to redact private company information from pastes or screenshots.
+If you're looking for troubleshooting assistance, kindly search [existing issues and discussions](https://github.com/skeema/skeema/search) as well as [documentation](https://www.google.com/search?q=documentation+site%3Awww.skeema.io) first.
 
-Skeema is a completely bootstrapped effort, and our ability to support free Skeema Community edition users is limited. If your company depends on Skeema, please consider subscribing to a paid [Premium](https://www.skeema.io/download/) product to support Skeema's continued development. Bug reports from paying customers are prioritized above all other work.
+## Bug reports
 
-Private technical support (outside of GitHub) is available to [Skeema Max](https://www.skeema.io/download/) subscribers. Please refer to the [Premium edition customer portal](https://app.skeema.io/portal) or [license agreement](https://www.skeema.io/cli/subscription/LICENSE) for more information.
+Please provide as much information as possible about reproduction steps, as well as your environment: Skeema version, database version/vendor, and OS/platform for both client and server sides. Be specific! Even minor details (Intel vs ARM, RDS vs Aurora, etc) can make a huge difference in our ability to reproduce your situation. If any warning messages were logged by Skeema, especially regarding your database server version, definitely note them in your report. Feel free to redact private company information from pastes or screenshots.
 
-### Feature requests
+Skeema is a self-funded effort, and our ability to support free Skeema Community Edition users is limited. If your company depends on Skeema, consider subscribing to a paid [Premium](https://www.skeema.io/download/) product to support Skeema's development. Bug reports from paying customers are prioritized above all other work.
 
-If your idea is potentially large or complex, please indicate if your company is already a Premium subscriber, or if your company would be interested in contributing towards the feature's implementation.
+Private technical support (outside of GitHub) is included with a [Skeema Max](https://www.skeema.io/download/) subscription. Refer to the [Premium edition customer portal](https://app.skeema.io/portal) or [license agreement](https://www.skeema.io/cli/subscription/LICENSE) for more information. Support contracts with various SLAs are also available separately.
 
-### Questions
+## Bug fix PRs
 
-Please use [Discussions](https://github.com/skeema/skeema/discussions) for questions, instead of filing an Issue. Read more about our discussion board [here](https://github.com/skeema/skeema/discussions/232).
+We warmly welcome pull requests which provide fixes for confirmed bugs. In your PR description, be sure to link to the open issue describing the bug. **Before you start coding**, ensure the issue discussion shows the bug has been verified / reproduced by a Skeema maintainer. Comment on the issue to discuss your suggested approach for the fix, and wait for feedback.
 
-If you're looking for troubleshooting assistance, kindly [search existing issues](https://github.com/skeema/skeema/search?type=issues) and [documentation](https://www.google.com/search?q=documentation+site%3Awww.skeema.io) first.
+Bug fix PRs should include test coverage for the bug condition. This will help confirm that your PR fixes the bug, and prevent risk of future regressions.
 
-### Security advisories
+## Feature requests
+
+To suggest a new feature, you can file either an Issue or a Discussion. When describing your proposed feature, be sure to explain your high-level use-case/motivation. This will help to ensure there isn't already an alternative/pre-existing solution for that use-case.
+
+New features should clearly benefit many Skeema users, not just one company. If you need help with something very specific to your company's workflow or specialized requirements, [reach out](https://www.skeema.io/contact/) regarding a paid consulting engagement instead.
+
+## Feature implementation PRs
+
+Prior to starting a feature implementation pull request, there must be an in-depth conversation on an Issue or Discussion, covering the feature and its use-case. The feature request should also have **clear maintainer approval for third-party code submissions**, such as a "help wanted" tag on the issue.
+
+Once that bar is met, discuss your proposed solution and planned implementation from a high-level technical standpoint. Do this on the Issue/Discussion only. **Wait for maintainer feedback** before writing any code or opening a pull request!
+
+Just to set expectations appropriately, please understand the bar for this type of PR is very high. Aside from approved / "help wanted" issues, we do not actively seek third-party feature implementation PRs, and "open source" does not necessarily imply "open submission". The majority of unsolicited feature PRs do not get merged. Since we value backwards compatibility, we may have to maintain your feature/code effectively *forever*, so it is *your* responsibility to make a convincing case for adding your feature and merging your code.
+
+Some PRs are merged but then are substantially rewritten by maintainers. This isn't a reflection on your code quality, but rather it is done for codebase consistency, or to avoid merge conflicts down the line. Sometimes it is necessary for compatibility with our paid products, which use proprietary / closed source patch-sets on top of the Skeema FOSS codebase.
+
+## Security issues
 
 If you believe you have found a serious security issue, open a [private security advisory](https://github.com/skeema/skeema/security/advisories/new) to discuss. Be sure to describe how the specific vulnerability actually affects Skeema, keeping in mind that Skeema is a command-line developer tool, not a server/daemon. We also run [`govulncheck`](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) in GitHub Actions on every commit, so problems in our dependency tree are generally already found quickly.
 
 If the potential security issue is low severity, or if you are uncertain whether Skeema's call stack is even exposed to it, you may open a [public discussion](https://github.com/skeema/skeema/discussions) instead.
 
-## Pull requests
+## Code cleanup / tech debt PRs
 
-### Bug fix PRs
+Some existing parts of the codebase may be messy. This project was started back in 2016, and functionality has grown organically as the product has evolved. This is true in any codebase over time. Code cleanliness is quite subjective, and clean-up PRs tend to involve time-consuming bikeshedding.
 
-In your PR description, be sure to link to an open issue describing a bug. **Before you start coding**, ensure the issue discussion shows the bug has been *verified / reproduced* by a Skeema maintainer. Comment on the issue to discuss your suggested approach for the fix and wait for feedback.
+If you wish to submit this type of PR, regardless of size, be sure to discuss thoroughly on an Issue or Discussion first. Wait for feedback/approval before proceeding.
 
-Bug fix PRs should include test coverage for the bug condition. This will help confirm that your PR fixes the bug, and prevent risk of future regressions.
+## Porting to other database systems
 
-### Enhancements / feature implementation PRs
+Skeema is designed specifically for MySQL, and direct variants/forks of the MySQL codebase, including MariaDB. A huge portion of Skeema's code relates to *very specific behaviors* of various versions of MySQL and MariaDB. Every Skeema release is tested against a wide range of versions of these databases.
 
-Always link to an existing feature request issue, containing a discussion about the feature. Please discuss your use-case, solution, and implementation approach -- and then wait to get feedback **before you start coding**.
+We do not currently have the resources to expand Skeema Community Edition to other databases, even "NewSQL" databases which attempt compatibility with MySQL, unless the effort is substantially funded by a third party. This is a prerequisite in order to offset the ongoing maintenance and testing burden. If you wish to discuss such a funding effort, [contact us privately](https://www.skeema.io/contact/) instead of opening a GitHub issue or pull request.
 
-It is *your* responsibility to make a convincing case for merging your PR. Remember, "yes is forever" in open source: since we strive to ensure backwards compatibility, the code for any merged features must essentially be *maintained* by us in perpetuity.
-
-### Things to avoid in PRs
-
-All of these situations can be avoided by having a full discussion on the issue *before* starting a PR.
-
-**Unsolicited code cleanups and unnecessary refactors:** Some existing parts of the codebase may be messy. This project was started back in 2016, and functionality has grown organically as the product has evolved. This is true in any codebase over time. Code cleanliness is quite subjective, and unsolicited PRs that focus purely on clean-ups tend to involve time-consuming bikeshedding.
-
-**Excessive hand-holding:** You will need to already have some experience with both Golang and MySQL/MariaDB in order to successfully contribute to this project. If you are encountering repeated test suite failures or need help with Go language constructs, a better approach may be to have your company [sponsor the development](https://www.skeema.io/contact/) of your feature request, instead of submitting a pull request.
-
-**Reinventing wheels:** There may already be a pre-existing, idiomatic way of achieving your desired outcome with Skeema. If so, it's unlikely that a second way will be merged.
-
-**Vague, unspecified, or company-specific use-cases:** The use-case motivating your PR should be clearly stated in the linked issue. For new Community Edition features, there must be a general-purpose use-case that potentially benefits many users of Skeema, and not a change exclusively motivated by your company's specialized requirements.
-
-**Library use-cases:** Skeema is a command-line tool, *not a library*. If you're building an internal system for your company requiring library-like usage of Skeema functionality, for official support please [reach out](https://www.skeema.io/contact/) regarding a paid consulting engagement.
-
-**Porting Skeema to other database systems:** Skeema is designed to support MySQL, MariaDB, and direct variants of these two systems. Every Skeema release is tested against a wide range of versions of these databases. A huge portion of Skeema's codebase relates to *very specific behaviors of various versions of MySQL and MariaDB*. We do not currently have the resources to expand Skeema Community Edition to other databases, even "NewSQL" databases which attempt compatibility with MySQL, unless the effort is substantially funded by a third party in order to offset the ongoing maintenance and testing burden. If you wish to discuss this further, [contact us privately](https://www.skeema.io/contact/) instead of opening a GitHub issue or pull request.
-
-### Information about testing, code coverage, and CI
+# Testing, code coverage, and CI
 
 * Skeema uses only standard Go toolchain invocations (`go build`, `go test`, etc), so there's no notion of a makefile or build script.
 
