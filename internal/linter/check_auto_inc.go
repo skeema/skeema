@@ -69,9 +69,7 @@ func autoIncChecker(table *tengo.Table, createStatement string, _ *tengo.Schema,
 			"Column %s of %s is an auto_increment column using data type %s, which is not configured to be permitted. The following data types are listed in option allow-auto-inc: %s.",
 			col.Name, table.ObjectKey(), colType, allowedStr,
 		)
-		if !col.Type.Unsigned && strings.Contains(allowedStr, "unsigned") {
-			message += "\nIn general, auto_increment columns should be unsigned, since behavior of auto_increment is undefined with negative numbers."
-		} else if col.Type.Base != "bigint" && strings.Contains(allowedStr, "bigint") {
+		if col.Type.Base != "bigint" && strings.Contains(allowedStr, "bigint") {
 			message += "\nIn general, auto_increment columns should use larger int types to avoid risk of integer overflow / exhausting the ID space."
 		}
 		return &Note{

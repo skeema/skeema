@@ -212,6 +212,9 @@ func localDockerOptionsForDir(dir *fs.Dir, instance *tengo.Instance) (opts Optio
 		}
 	}
 	opts.ContainerName = "skeema-" + tengo.ContainerNameForImage(opts.Flavor.String())
+	if !dir.Config.Supplied("docker-cleanup") {
+		log.Debug("Upgrade notice: the --docker-cleanup option, which currently defaults to \"none\" in Skeema v1, will change to default to \"stop\" in Skeema v2. For more information, visit https://www.skeema.io/v2-changes")
+	}
 	if cleanup, err := dir.Config.GetEnum("docker-cleanup", "none", "stop", "destroy"); err != nil {
 		return Options{}, err
 	} else if cleanup == "stop" {
@@ -227,7 +230,7 @@ func localDockerOptionsForDir(dir *fs.Dir, instance *tengo.Instance) (opts Optio
 func AddCommandOptions(cmd *mybase.Command) {
 	cmd.AddOptions("workspace",
 		mybase.StringOption("temp-schema", 't', "_skeema_tmp", "Name of temporary schema for intermediate operations, created and dropped each run"),
-		mybase.StringOption("temp-schema-binlog", 0, "auto", `Controls whether temp schema DDL operations are replicated (valid values: "on", "off", "auto")`).MarkDeprecated("This option will be removed in Skeema v2, with \"auto\" behavior always being used. For more information, visit https://www.skeema.io/blog/skeema-v2-roadmap"),
+		mybase.StringOption("temp-schema-binlog", 0, "auto", `Controls whether temp schema DDL operations are replicated (valid values: "on", "off", "auto")`).MarkDeprecated("This option will be removed in Skeema v2, with \"auto\" behavior always being used. For more information, visit https://www.skeema.io/v2-changes"),
 		mybase.StringOption("temp-schema-mode", 0, "regular", `Tunes workspace load with workspace=temp-schema; heavier load makes Skeema faster but may disrupt other workloads on the database (valid values: "serial", "light", "regular", "heavy", "extreme")`),
 		mybase.StringOption("temp-schema-threads", 0, "5", "Deprecated manner of controlling workspace load with workspace=temp-schema").MarkDeprecated("This option will be removed in Skeema v2. Use the new temp-schema-mode enum option instead. See --help or visit https://www.skeema.io/docs/options/#temp-schema-mode"),
 		mybase.StringOption("workspace", 'w', "temp-schema", `Specifies where to run intermediate operations (valid values: "temp-schema", "docker")`),

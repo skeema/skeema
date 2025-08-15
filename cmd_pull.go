@@ -45,7 +45,7 @@ func PullHandler(cfg *mybase.Config) error {
 		return err
 	}
 	if !dir.Config.Supplied("format") && !dir.Config.Supplied("normalize") {
-		log.Warn("Upgrade notice: the --format option, which currently defaults to true in Skeema v1, will change to default to false in Skeema v2. For more information, visit https://www.skeema.io/blog/skeema-v2-roadmap")
+		log.Debug("Upgrade notice: the --format option, which currently defaults to true in Skeema v1, will change to default to false in Skeema v2. For more information, visit https://www.skeema.io/v2-changes")
 	}
 
 	// pullWalker returns the "worst" (highest) exit code it encounters. We care
@@ -357,7 +357,7 @@ func findNewSchemas(dir *fs.Dir, instance *tengo.Instance, seenNames []string) e
 		if !subdirHasSchema[name] {
 			if !alreadyWarned {
 				alreadyWarned = true
-				log.Warn("Upgrade notice: the --new-schemas option, which currently defaults to true in Skeema v1, will change to default to false in Skeema v2. For more information, visit https://www.skeema.io/blog/skeema-v2-roadmap")
+				log.Debug("Upgrade notice: the --new-schemas option, which currently defaults to true in Skeema v1, will change to default to false in Skeema v2. For more information, visit https://www.skeema.io/v2-changes")
 			}
 			s, err := instance.Schema(name)
 			if err != nil {

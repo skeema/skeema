@@ -12,7 +12,7 @@ func init() {
 		Name:            "display-width",
 		Description:     "Only allow default display width for int types",
 		DefaultSeverity: SeverityWarning,
-		Deprecation:     "This option will be removed in Skeema v2. For more information, visit https://www.skeema.io/blog/skeema-v2-roadmap",
+		Deprecation:     "This option will be removed in Skeema v2. For more information, visit https://www.skeema.io/v2-changes",
 	})
 }
 

@@ -41,7 +41,7 @@ func AddGlobalOptions(cmd *mybase.Command) {
 		mybase.StringOption("ignore-func", 0, "", "Ignore functions that match regex"),
 		mybase.StringOption("ssl-mode", 0, "", `Specify desired connection security SSL/TLS usage (valid values: "disabled", "preferred", "required")`),
 		mybase.BoolOption("debug", 0, false, "Enable debug logging"),
-		mybase.BoolOption("my-cnf", 0, true, "Parse ~/.my.cnf for configuration").MarkDeprecated("This option will be removed in Skeema v2, and .my.cnf will always be parsed, with additional safety logic already in place. For more information, visit https://www.skeema.io/blog/skeema-v2-roadmap"),
+		mybase.BoolOption("my-cnf", 0, true, "Parse ~/.my.cnf for configuration").MarkDeprecated("This option will be removed in Skeema v2, and .my.cnf will always be parsed, with additional safety logic already in place. For more information, visit https://www.skeema.io/v2-changes"),
 	)
 }
 
