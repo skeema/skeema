@@ -155,8 +155,8 @@ func tempSchemaOptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, er
 			log.Warn("Ignoring option temp-schema-threads because newer option temp-schema-mode is also set")
 		} else {
 			opts.DropChunkSize = min(1+(createThreads/3), dropChunkBase) // DropChunkSize = 1 to 3
+			opts.CreateChunkSize = 1
 			opts.CreateThreads = createThreads
-			// opts.CreateChunkSize always left at 1 when using temp-schema-threads
 		}
 	}
 
