@@ -51,13 +51,13 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Unexpected error from ConnectionPool: %v", err)
 		}
-		fastResults, err := querySchemaRoutines(context.Background(), db, "testing", s.d.Flavor())
+		fastResults, err := querySchemaRoutines(context.Background(), db, "testing", s.d.Flavor(), s.d.NameCaseMode())
 		if err != nil {
 			t.Fatalf("Unexpected error from querySchemaRoutines: %v", err)
 		}
 		oldFlavor := s.d.Flavor()
 		s.d.ForceFlavor(ParseFlavor("mysql:8.0"))
-		slowResults, err := querySchemaRoutines(context.Background(), db, "testing", s.d.Flavor())
+		slowResults, err := querySchemaRoutines(context.Background(), db, "testing", s.d.Flavor(), s.d.NameCaseMode())
 		s.d.ForceFlavor(oldFlavor)
 		if err != nil {
 			t.Fatalf("Unexpected error from querySchemaRoutines: %v", err)

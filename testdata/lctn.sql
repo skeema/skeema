@@ -35,3 +35,6 @@ CREATE TABLE `Comments` (
   CONSTRAINT `UserFK` FOREIGN KEY (`UserID`) REFERENCES `Users` (`ID`),
   CONSTRAINT `PostFK` FOREIGN KEY (`PostID`) REFERENCES `Posts` (`ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+
+CREATE FUNCTION AmountOwed(Credits float) RETURNS float DETERMINISTIC RETURN IF(Credits < 0.0, Credits * -1.0, 0.0);
+

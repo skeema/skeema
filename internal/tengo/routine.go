@@ -382,7 +382,7 @@ func compareRoutinesByName(fromByName map[string]*Routine, toByName map[string]*
 
 ///// Introspection logic //////////////////////////////////////////////////////
 
-func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) ([]*Routine, error) {
+func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor, lctn NameCaseMode) ([]*Routine, error) {
 	// Obtain the routines in the schema
 	// We completely exclude routines that the user can call, but not examine --
 	// e.g. user has EXECUTE priv but missing other vital privs. In this case
@@ -398,6 +398,16 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 		Definer           string `db:"definer"`
 		DatabaseCollation string `db:"database_collation"`
 	}
+	// MariaDB 10.11+ releases from May 2025 onwards seem to have odd behavior
+	// with mixed-case schema names in information_schema.routines when using
+	// lower_case_table_names=2. In this situation, the schema names come back
+	// only in lower-case now, and WHERE only matches them lower-case. This is
+	// likely an unexpected side-effect of MDEV-14432. As a workaround, we force
+	// a case-insensitive comparison using a COLLATE clause.
+	var lctn2Collation string
+	if lctn == NameCaseInsensitive && flavor.MinMariaDB(10, 11, 13) {
+		lctn2Collation = " COLLATE utf8_general_ci"
+	}
 	// Note on this query: MySQL 8.0 changes information_schema column names to
 	// come back from queries in all caps, so we need to explicitly use AS clauses
 	// in order to get them back as lowercase and have sqlx Select() work.
@@ -407,7 +417,7 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 	// elsewhere separately. (The value is correct in MariaDB, but we still must
 	// obtain the param list and return type elsewhere, so the body is queried at
 	// that time regardless of server flavor.)
-	query := `
+	query := fmt.Sprintf(`
 		SELECT SQL_BUFFER_RESULT
 		       r.routine_name AS routine_name, UPPER(r.routine_type) AS routine_type,
 		       UPPER(r.is_deterministic) AS is_deterministic,
@@ -416,7 +426,8 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 		       r.sql_mode AS sql_mode, r.routine_comment AS routine_comment,
 		       r.definer AS definer, r.database_collation AS database_collation
 		FROM   information_schema.routines r
-		WHERE  r.routine_schema = ? AND routine_definition IS NOT NULL`
+		WHERE  r.routine_schema%s = ? AND routine_definition IS NOT NULL`,
+		lctn2Collation)
 	if err := db.SelectContext(ctx, &rawRoutines, query, schema); err != nil {
 		return nil, fmt.Errorf("Error querying information_schema.routines for schema %s: %s", schema, err)
 	}

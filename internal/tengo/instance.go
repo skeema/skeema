@@ -536,7 +536,7 @@ func (instance *Instance) Schemas(onlyNames ...string) ([]*Schema, error) {
 			return err
 		})
 		g.Go(func() (err error) {
-			schemas[n].Routines, err = querySchemaRoutines(ctx, schemaDB, rawSchema.Name, flavor)
+			schemas[n].Routines, err = querySchemaRoutines(ctx, schemaDB, rawSchema.Name, flavor, instance.NameCaseMode())
 			return err
 		})
 		err = g.Wait()
