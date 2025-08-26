@@ -24,11 +24,15 @@ changelog:
   sort: asc
   filters:
     exclude:
-    - '(?i)^docs:'
-    - '(?i)^help'
-    - '(?i)^internal'
-    - '(?i)^readme:'
-    - '(?i)^goreleaser:'
+    - '^docs:'
+    - '^help'
+    - '^internal'
+    - '^chore:'
+    - '^test'
+    - '^ci:'
+    - '^modules:'
+    - '^dependencies:'
+    - '^version bump'
 nfpms:
   -
     file_name_template: '{{ .ProjectName }}_{{ .Arch }}'
