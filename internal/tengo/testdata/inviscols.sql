@@ -4,9 +4,7 @@
 # NOTE: This test case actually fails on versions before 10.3.18 and 10.4.8
 # due to a MariaDB bug; see MDEV-20210
 
-SET foreign_key_checks=0;
-
-use testing
+use testing;
 
 CREATE TABLE invistest (
 	id int unsigned NOT NULL invisible auto_increment,

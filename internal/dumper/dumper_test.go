@@ -149,37 +149,37 @@ func (s IntegrationSuite) TestDumperNamedSchemas(t *testing.T) {
 	}
 }
 
-func (s *IntegrationSuite) Setup(backend string) (err error) {
+func (s *IntegrationSuite) Setup(t *testing.T, backend string) {
 	opts := tengo.DockerizedInstanceOptions{
 		Name:         fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),
 		Image:        backend,
 		RootPassword: "fakepw",
 		DataTmpfs:    true,
 	}
+	var err error
 	s.d, err = tengo.GetOrCreateDockerizedInstance(opts)
-	return err
+	if err != nil {
+		t.Fatalf("Unable to setup backend %q: %v", backend, err)
+	}
 }
 
-func (s *IntegrationSuite) Teardown(backend string) error {
-	if err := tengo.SkeemaTestContainerCleanup(s.d); err != nil {
-		return err
+func (s *IntegrationSuite) Teardown(t *testing.T) {
+	s.d.Done(t)
+	if err := os.RemoveAll(s.scratchPath()); err != nil {
+		t.Fatalf("Unable to remove scratch dir: %v", err)
 	}
-	return os.RemoveAll(s.scratchPath())
 }
 
-func (s *IntegrationSuite) BeforeTest(backend string) error {
-	if err := s.d.NukeData(); err != nil {
-		return err
-	}
+func (s *IntegrationSuite) BeforeTest(t *testing.T) {
+	s.d.NukeData(t)
 	if _, err := os.Stat(s.scratchPath()); err == nil { // dir exists
 		if err := os.RemoveAll(s.scratchPath()); err != nil {
-			return err
+			t.Fatalf("Unable to remove scratch dir: %v", err)
 		}
 	}
 	if err := os.MkdirAll(s.scratchPath(), 0777); err != nil {
-		return err
+		t.Fatalf("Unable to create scratch dir: %v", err)
 	}
-	return nil
 }
 
 func (s *IntegrationSuite) setupScratchDir(t *testing.T, subdir string) {

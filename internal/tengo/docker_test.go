@@ -70,15 +70,6 @@ func TestDocker(t *testing.T) {
 	if di.Port() != di.PortMap(3306) {
 		t.Error("Unexpected inconsistency between the Port and PortMap methods")
 	}
-	if _, err := di.SourceSQL("testdata/integration.sql"); err != nil {
-		t.Errorf("Unexpected error from SourceSQL: %s", err)
-	}
-	if _, err := di.SourceSQL("testdata/does-not-exist.sql"); err == nil {
-		t.Error("Expected error attempting to SourceSQL nonexistent file, instead got nil")
-	}
-	if _, err := di.SourceSQL("docker.go"); err == nil {
-		t.Error("Expected error attempting to SourceSQL non-SQL file, instead got nil")
-	}
 
 	// Test PutFile and simple Exec
 	if err := di.PutFile("testdata/integration.sql", "/integration.sql"); err != nil {
@@ -103,11 +94,8 @@ func TestDocker(t *testing.T) {
 	if err := di.Stop(); err != nil {
 		t.Errorf("Unexpected error from redundant stop: %s", err)
 	}
-	if _, err := di.SourceSQL("testdata/integration.sql"); err == nil {
+	if _, _, err := di.Exec([]string{"ls"}, nil); err == nil {
 		t.Error("Expected error attempting to exec in stopped container, instead got nil")
-	}
-	if err := di.NukeData(); err == nil {
-		t.Error("Expected error attempting to nuke data in stopped container, instead got nil")
 	}
 
 	if err := di.Destroy(); err != nil {

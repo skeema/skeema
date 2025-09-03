@@ -1,6 +1,6 @@
 # Coverage for vector columns and indexes in MariaDB 11.7
 
-use testing
+use testing;
 
 CREATE TABLE vec1 (
   id int unsigned NOT NULL,

@@ -8,7 +8,7 @@ import (
 func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	// include broad coverage for many flavor-specific features
 	flavor := s.d.Flavor()
-	s.SourceTestSQL(t, flavorTestFiles(flavor)...)
+	s.d.SourceSQL(t, flavorTestFiles(flavor)...)
 
 	// Ensure our unit test fixtures and integration test fixtures match
 	schema := s.GetSchema(t, "testing")

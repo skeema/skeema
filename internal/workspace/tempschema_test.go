@@ -54,7 +54,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 	if ts, err = NewTempSchema(opts); err != nil {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
 	}
-	s.sourceSQL(t, "tempschema1.sql")
+	s.d.SourceSQL(t, "testdata/tempschema1.sql")
 	if err := ts.Cleanup(nil); err == nil {
 		t.Error("Expected cleanup error since a table had rows, but err was nil")
 	}
@@ -111,7 +111,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCleanupDrop(t *testing.T) {
 	if ts, err = NewTempSchema(opts); err != nil {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
 	}
-	s.sourceSQL(t, "tempschema1.sql")
+	s.d.SourceSQL(t, "testdata/tempschema1.sql")
 	if err := ts.Cleanup(nil); err == nil {
 		t.Error("Expected cleanup error since a table had rows, but err was nil")
 	}
@@ -126,7 +126,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCrossDBFK(t *testing.T) {
 		t.Skip("Test only relevant for flavors that extend metadata locks across FK relations")
 	}
 
-	s.sourceSQL(t, "crossdbfk-setup1.sql")
+	s.d.SourceSQL(t, "testdata/crossdbfk-setup1.sql")
 
 	dir := s.getParsedDir(t, "testdata/crossdbfk", "")
 	opts, err := OptionsForDir(dir, s.d.Instance)
@@ -193,7 +193,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCrossDBFK(t *testing.T) {
 	getTempSchema := func() *TempSchema {
 		// This file re-populates _skeema_tmp as if a workspace was set up but not
 		// cleaned up yet.
-		s.sourceSQL(t, "crossdbfk-setup2.sql")
+		s.d.SourceSQL(t, "testdata/crossdbfk-setup2.sql")
 		tempSchema := &TempSchema{
 			schemaName:    "_skeema_tmp",
 			dropChunkSize: 3,

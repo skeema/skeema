@@ -5,9 +5,7 @@
 # to lack of NOT NULL support in generated cols, and lack of 4-byte character
 # support in generation expressions.
 
-SET foreign_key_checks=0;
-
-use testing
+use testing;
 
 CREATE TABLE staff (
 	id int unsigned NOT NULL auto_increment,

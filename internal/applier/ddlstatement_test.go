@@ -1,7 +1,6 @@
 package applier
 
 import (
-	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -13,23 +12,6 @@ import (
 )
 
 func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
-	sourceSQL := func(filename string) {
-		t.Helper()
-		if _, err := s.d[0].SourceSQL(filepath.Join("testdata", filename)); err != nil {
-			t.Fatalf("Unexpected error from SourceSQL on %s: %s", filename, err)
-		}
-	}
-	dbExec := func(schemaName, query string, args ...interface{}) {
-		t.Helper()
-		db, err := s.d[0].CachedConnectionPool(schemaName, "")
-		if err != nil {
-			t.Fatalf("Unable to connect to DockerizedInstance: %s", err)
-		}
-		_, err = db.Exec(query, args...)
-		if err != nil {
-			t.Fatalf("Error running query on DockerizedInstance.\nSchema: %s\nQuery: %s\nError: %s", schemaName, query, err)
-		}
-	}
 	getSchema := func(schemaName string) *tengo.Schema {
 		t.Helper()
 		schema, err := s.d[0].Schema(schemaName)
@@ -42,10 +24,10 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 	// DB setup: init files and then change the DB so that we have some
 	// differences to generate. We first add a default value to domain col
 	// to later test that quoting rules are working properly for shellouts.
-	sourceSQL("setup.sql")
-	dbExec("analytics", "ALTER TABLE pageviews MODIFY COLUMN domain varchar(40) NOT NULL DEFAULT 'skeema.io'")
+	s.d[0].SourceSQL(t, "testdata/setup.sql")
+	s.d[0].ExecSQL(t, "ALTER TABLE analytics.pageviews MODIFY COLUMN domain varchar(40) NOT NULL DEFAULT 'skeema.io'")
 	fsSchema := getSchema("analytics")
-	sourceSQL("ddlstatement.sql")
+	s.d[0].SourceSQL(t, "testdata/ddlstatement.sql")
 	instSchema := getSchema("analytics")
 
 	// Hackily set up test args manually

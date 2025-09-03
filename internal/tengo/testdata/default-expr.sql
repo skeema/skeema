@@ -2,9 +2,7 @@
 # (Similar table for MariaDB is split into a separate file due to lack of 4-byte
 # char support there.)
 
-SET foreign_key_checks=0;
-
-use testing
+use testing;
 
 CREATE TABLE testdefaults (
 	pk varchar(100) NOT NULL,

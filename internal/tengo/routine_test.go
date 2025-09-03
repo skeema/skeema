@@ -71,7 +71,7 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 
 	// Coverage for MariaDB 10.8 IN/OUT/INOUT params in funcs
 	if fl := s.d.Flavor(); fl.MinMariaDB(10, 8) {
-		s.SourceTestSQL(t, "maria108.sql")
+		s.d.SourceSQL(t, "testdata/maria108.sql")
 		schema := s.GetSchema(t, "testing")
 		funcsByName := schema.FunctionsByName()
 		f := funcsByName["maria108func"]

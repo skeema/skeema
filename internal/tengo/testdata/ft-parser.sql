@@ -1,9 +1,7 @@
 # Table with two fulltext indexes, incl one using ngram parser (which is
 # preinstalled in MySQL 5.7+)
 
-SET foreign_key_checks=0;
-
-use testing
+use testing;
 
 CREATE TABLE ftparser (
 	id int unsigned not null auto_increment,

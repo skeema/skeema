@@ -1,8 +1,6 @@
 # Advanced index features present in MySQL 8+
 
-SET foreign_key_checks=0;
-
-use testing
+use testing;
 
 CREATE TABLE my8idx (
 	a int NOT NULL,

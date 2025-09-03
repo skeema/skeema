@@ -35,12 +35,8 @@ func (s SkeemaIntegrationSuite) TestFlavorForcedTLS(t *testing.T) {
 			t.Errorf("Unable to destroy test instance with TLS enabled: %v", err)
 		}
 	}()
-	if err := tengo.EnableTLS(dinst, s.testdata("tls")); err != nil {
-		t.Fatalf("Unable to enable TLS in container: %v", err)
-	}
-	if _, err := dinst.SourceSQL("../setup.sql"); err != nil {
-		t.Fatalf("Unable to source setup.sql: %v", err)
-	}
+	dinst.EnableTLS(t, s.testdata("tls"))
+	dinst.SourceSQL(t, "../setup.sql")
 
 	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir tlsreq -h %s -P %d --ssl-mode=required", dinst.Instance.Host, dinst.Instance.Port)
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")

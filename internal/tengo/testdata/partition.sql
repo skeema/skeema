@@ -1,6 +1,5 @@
-SET foreign_key_checks=0;
 CREATE DATABASE partitionparty DEFAULT CHARSET=latin1;
-use partitionparty
+use partitionparty;
 
 CREATE TABLE prange (
 	id int unsigned NOT NULL AUTO_INCREMENT,

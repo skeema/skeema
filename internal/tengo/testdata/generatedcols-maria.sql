@@ -7,9 +7,7 @@
 # Also this package doesn't support MariaDB 10.1's alternative syntax for
 # generated columns, so it is excluded from related tests.
 
-SET foreign_key_checks=0;
-
-use testing
+use testing;
 
 CREATE TABLE staff (
 	id int unsigned NOT NULL auto_increment,

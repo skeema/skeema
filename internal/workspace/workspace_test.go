@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -243,32 +242,25 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaLarge(t *testing.T) {
 	}
 }
 
-func (s *WorkspaceIntegrationSuite) Setup(backend string) (err error) {
+func (s *WorkspaceIntegrationSuite) Setup(t *testing.T, backend string) {
+	var err error
 	s.d, err = tengo.GetOrCreateDockerizedInstance(tengo.DockerizedInstanceOptions{
 		Name:         fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),
 		Image:        backend,
 		RootPassword: "fakepw",
 		DataTmpfs:    true,
 	})
-	return err
-}
-
-func (s *WorkspaceIntegrationSuite) Teardown(backend string) error {
-	return tengo.SkeemaTestContainerCleanup(s.d)
-}
-
-func (s *WorkspaceIntegrationSuite) BeforeTest(backend string) error {
-	return s.d.NukeData()
-}
-
-// sourceSQL wraps tengo.DockerizedInstance.SourceSQL. If an error occurs, it is
-// fatal to the test. filePath should be a relative path based from testdata/.
-func (s *WorkspaceIntegrationSuite) sourceSQL(t *testing.T, filePath string) {
-	t.Helper()
-	filePath = filepath.Join("testdata", filePath)
-	if _, err := s.d.SourceSQL(filePath); err != nil {
-		t.Fatalf("Unable to source %s: %s", filePath, err)
+	if err != nil {
+		t.Fatalf("Unable to setup backend %q: %v", backend, err)
 	}
+}
+
+func (s *WorkspaceIntegrationSuite) Teardown(t *testing.T) {
+	s.d.Done(t)
+}
+
+func (s *WorkspaceIntegrationSuite) BeforeTest(t *testing.T) {
+	s.d.NukeData(t)
 }
 
 func (s *WorkspaceIntegrationSuite) getParsedDir(t *testing.T, dirPath, cliFlags string) *fs.Dir {

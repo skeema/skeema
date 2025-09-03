@@ -40,11 +40,12 @@ type SkeemaIntegrationSuite struct {
 	repoPath string
 }
 
-func (s *SkeemaIntegrationSuite) Setup(backend string) (err error) {
+func (s *SkeemaIntegrationSuite) Setup(t *testing.T, backend string) {
 	// Remember working directory, which should be the base dir for the repo
+	var err error
 	s.repoPath, err = os.Getwd()
 	if err != nil {
-		return err
+		t.Fatal(err)
 	}
 
 	// Spin up a Dockerized database server
@@ -55,49 +56,42 @@ func (s *SkeemaIntegrationSuite) Setup(backend string) (err error) {
 		DataTmpfs:    true,
 	}
 	s.d, err = tengo.GetOrCreateDockerizedInstance(opts)
-	return err
+	if err != nil {
+		t.Fatalf("Unable to setup backend %q: %v", backend, err)
+	}
 }
 
-func (s *SkeemaIntegrationSuite) Teardown(backend string) error {
-	if err := tengo.SkeemaTestContainerCleanup(s.d); err != nil {
-		return err
-	}
+func (s *SkeemaIntegrationSuite) Teardown(t *testing.T) {
+	s.d.Done(t)
 	if err := os.Chdir(s.repoPath); err != nil {
-		return err
+		t.Fatalf("Unable to chdir to repo path: %v", err)
 	}
 	if err := os.RemoveAll(s.scratchPath()); err != nil {
-		return err
+		t.Fatalf("Unable to remove scratch dir: %v", err)
 	}
 	util.FlushInstanceCache()
-	return nil
 }
 
-func (s *SkeemaIntegrationSuite) BeforeTest(backend string) error {
+func (s *SkeemaIntegrationSuite) BeforeTest(t *testing.T) {
 	// Clear data and re-source setup data
-	if err := s.d.NukeData(); err != nil {
-		return err
-	}
-	if _, err := s.d.SourceSQL(s.testdata("setup.sql")); err != nil {
-		return err
-	}
+	s.d.NukeData(t)
+	s.d.SourceSQL(t, s.testdata("setup.sql"))
 
 	// Create or recreate scratch dir
 	if _, err := os.Stat(s.scratchPath()); err == nil { // dir exists
 		if err := os.Chdir(s.repoPath); err != nil {
-			return err
+			t.Fatalf("Unable to chdir to repo path: %v", err)
 		}
 		if err := os.RemoveAll(s.scratchPath()); err != nil {
-			return err
+			t.Fatalf("Unable to remove scratch dir: %v", err)
 		}
 	}
 	if err := os.MkdirAll(s.scratchPath(), 0777); err != nil {
-		return err
+		t.Fatalf("Unable to create scratch dir: %v", err)
 	}
 	if err := os.Chdir(s.scratchPath()); err != nil {
-		return err
+		t.Fatalf("Unable to chdir to repo path: %v", err)
 	}
-
-	return nil
 }
 
 // testdata returns the absolute path of the testdata dir, or a file or dir
@@ -140,7 +134,6 @@ func (s *SkeemaIntegrationSuite) handleCommand(t *testing.T, expectedExitCode in
 	if err != nil {
 		err = WrapExitCode(CodeBadConfig, err)
 	} else {
-		util.CloseCachedConnectionPools() // ensure no previous session state bleeds through
 		err = cfg.HandleCommand()
 	}
 
@@ -428,51 +421,6 @@ func (s *SkeemaIntegrationSuite) objectExists(schemaName string, objectType teng
 	columns := table.ColumnsByName()
 	_, exists = columns[columnName]
 	return exists, phrase, nil
-}
-
-// sourceSQL wraps tengo.DockerizedInstance.SourceSQL. If an error occurs, it is
-// fatal to the test. filePath should be a relative path based from testdata/.
-func (s *SkeemaIntegrationSuite) sourceSQL(t *testing.T, filePath string) {
-	t.Helper()
-	filePath = filepath.Join("..", filePath)
-	if _, err := s.d.SourceSQL(filePath); err != nil {
-		t.Fatalf("Unable to source %s: %s", filePath, err)
-	}
-}
-
-// cleanData wraps tengo.DockerizedInstance.NukeData. If an error occurs, it is
-// fatal to the test. To automatically source one or more *.sql files after
-// nuking the data, supply relative file paths as args.
-func (s *SkeemaIntegrationSuite) cleanData(t *testing.T, sourceAfter ...string) {
-	t.Helper()
-	if err := s.d.NukeData(); err != nil {
-		t.Fatalf("Unable to clear database state: %s", err)
-	}
-	for _, filePath := range sourceAfter {
-		s.sourceSQL(t, filePath)
-	}
-}
-
-// dbExec runs the specified SQL DML or DDL in the specified schema. If
-// something goes wrong, it is fatal to the current test.
-func (s *SkeemaIntegrationSuite) dbExec(t *testing.T, schemaName, query string, args ...interface{}) {
-	t.Helper()
-	s.dbExecWithParams(t, schemaName, "", query, args...)
-}
-
-// dbExecWithOptions run the specified SQL DML or DDL in the specified schema,
-// using the supplied URI-encoded session variables. If something goes wrong,
-// it is fatal to the current test.
-func (s *SkeemaIntegrationSuite) dbExecWithParams(t *testing.T, schemaName, params, query string, args ...interface{}) {
-	t.Helper()
-	db, err := s.d.CachedConnectionPool(schemaName, params)
-	if err != nil {
-		t.Fatalf("Unable to connect to DockerizedInstance: %s", err)
-	}
-	_, err = db.Exec(query, args...)
-	if err != nil {
-		t.Fatalf("Error running query on DockerizedInstance.\nSchema: %s\nQuery: %s\nError: %s", schemaName, query, err)
-	}
 }
 
 // getOptionFile returns a mybase.File representing the .skeema file in the

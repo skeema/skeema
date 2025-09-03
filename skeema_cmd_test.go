@@ -84,7 +84,7 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	// Test successful init for a single schema. Source a SQL file first that,
 	// among other things, changes the default charset and collation for the
 	// schema in question.
-	s.sourceSQL(t, "push1.sql")
+	s.d.SourceSQL(t, "../push1.sql")
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema init --dir combined -h %s -P %d --schema product ", s.d.Instance.Host, s.d.Instance.Port)
 	dir, err := fs.ParseDir("combined", cfg)
 	if err != nil {
@@ -217,7 +217,7 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	// In product db, alter one table and drop one table;
 	// In analytics db, add one table and alter the schema's charset and collation;
 	// Create a new db and put one table in it
-	s.sourceSQL(t, "pull1.sql")
+	s.d.SourceSQL(t, "../pull1.sql")
 	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	s.verifyFiles(t, cfg, "../golden/pull1")
 
@@ -225,7 +225,8 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	// behaviors: delete dir for new schema, restore charset/collation in .skeema,
 	// etc. Also edit the host .skeema file to remove flavor, to test logic that
 	// adds/updates flavor on pull.
-	s.cleanData(t, "setup.sql")
+	s.d.NukeData(t)
+	s.d.SourceSQL(t, "../setup.sql")
 	fs.WriteTestFile(t, "mydb/.skeema", strings.Replace(fs.ReadTestFile(t, "mydb/.skeema"), "flavor", "#flavor", 1))
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	s.verifyFiles(t, cfg, "../golden/init")
@@ -239,7 +240,7 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	// leaving a file with lingering commands. Generator string should be updated.
 	contents := fs.ReadTestFile(t, "mydb/analytics/activity.sql")
 	fs.WriteTestFile(t, "mydb/analytics/activity.sql", strings.Replace(contents, "DEFAULT", "DEFALUT", 1))
-	s.dbExec(t, "product", "INSERT INTO comments (post_id, user_id) VALUES (555, 777)")
+	s.d.ExecSQL(t, "INSERT INTO product.comments (post_id, user_id) VALUES (555, 777)")
 	contents = fs.ReadTestFile(t, "mydb/product/comments.sql")
 	fs.WriteTestFile(t, "mydb/product/comments.sql", strings.ReplaceAll(contents, "`", ""))
 	contents = fs.ReadTestFile(t, "mydb/product/posts.sql")
@@ -262,7 +263,7 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 
 	// Test behavior with --skip-new-schemas: new schema should not have a dir in
 	// fs, but changes to existing schemas should still be made
-	s.sourceSQL(t, "pull1.sql")
+	s.d.SourceSQL(t, "../pull1.sql")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-new-schemas")
 	if _, err := os.Stat("mydb/archives"); !os.IsNotExist(err) {
 		t.Errorf("Expected os.Stat to return IsNotExist error for mydb/archives; instead err=%v", err)
@@ -281,7 +282,8 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 
 	// Start over; Bad option file in a non-leaf dir should yield CodeBadConfig
 	// and no files should be updated
-	s.cleanData(t, "setup.sql")
+	s.d.NukeData(t)
+	s.d.SourceSQL(t, "../setup.sql")
 	s.reinitAndVerifyFiles(t, "", "")
 	origMydbConfig := fs.ReadTestFile(t, "mydb/.skeema")
 	fs.WriteTestFile(t, "mydb/.skeema", origMydbConfig+"\nbad config here")
@@ -475,23 +477,23 @@ func (s SkeemaIntegrationSuite) TestDiffHandler(t *testing.T) {
 	}
 
 	// Confirm simple diff that adds a column
-	s.dbExec(t, "analytics", "ALTER TABLE pageviews DROP COLUMN domain")
+	s.d.ExecSQL(t, "ALTER TABLE analytics.pageviews DROP COLUMN domain")
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
 
 	// Confirm behavior of lax-column-order
-	s.dbExec(t, "product", "ALTER TABLE posts MODIFY COLUMN `body` text FIRST")
+	s.d.ExecSQL(t, "ALTER TABLE product.posts MODIFY COLUMN `body` text FIRST")
 	s.handleCommand(t, CodeDifferencesFound, "mydb/product", "skeema diff")
 	s.handleCommand(t, CodeSuccess, "mydb/product", "skeema diff --lax-column-order")
 
 	// Undo the previous change, and then confirm behavior of lax-comments
 	s.handleCommand(t, CodeSuccess, "mydb/product", "skeema push")
 	s.handleCommand(t, CodeSuccess, "mydb/product", "skeema diff") // just confirming push had the intended effect
-	s.dbExec(t, "product", "ALTER TABLE posts COMMENT 'hello world table comment', MODIFY COLUMN `body` text COMMENT 'hello world column comment'")
+	s.d.ExecSQL(t, "ALTER TABLE product.posts COMMENT 'hello world table comment', MODIFY COLUMN `body` text COMMENT 'hello world column comment'")
 	s.handleCommand(t, CodeDifferencesFound, "mydb/product", "skeema diff")
 	s.handleCommand(t, CodeSuccess, "mydb/product", "skeema diff --lax-comments")
 
 	// Test combination of lax-comments with lax-column-order
-	s.dbExec(t, "product", "ALTER TABLE posts COMMENT 'hello world table comment', MODIFY COLUMN `body` text COMMENT 'hello world column comment' FIRST")
+	s.d.ExecSQL(t, "ALTER TABLE product.posts COMMENT 'hello world table comment', MODIFY COLUMN `body` text COMMENT 'hello world column comment' FIRST")
 	s.handleCommand(t, CodeDifferencesFound, "mydb/product", "skeema diff --lax-comments")
 	s.handleCommand(t, CodeDifferencesFound, "mydb/product", "skeema diff --lax-column-order")
 	s.handleCommand(t, CodeSuccess, "mydb/product", "skeema diff --lax-comments --lax-column-order")
@@ -523,7 +525,7 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 	// Verify clean-slate operation: wipe the DB; push; wipe the files; re-init
 	// the files; verify the files match. The push inherently verifies creation of
 	// schemas and tables.
-	s.cleanData(t)
+	s.d.NukeData(t)
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
 	s.reinitAndVerifyFiles(t, "", "")
 
@@ -539,7 +541,7 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 	// Make some changes on the db side, mix of safe and unsafe changes to
 	// multiple schemas. Remember, subsequent pushes will effectively be UN-DOING
 	// what push1.sql did, since we updated the db but not the filesystem.
-	s.sourceSQL(t, "push1.sql")
+	s.d.SourceSQL(t, "../push1.sql")
 
 	// push from base dir, without any args, should succeed for schemas with safe
 	// changes (analytics) but not for schemas with 1 or more unsafe changes
@@ -577,7 +579,7 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 	}
 	s.handleCommand(t, CodeFatalError, "mydb/analytics", "skeema push --safe-below-size=1")
 	s.assertTableExists(t, "analytics", "rollups", "")
-	s.dbExec(t, "analytics", "DELETE FROM rollups")
+	s.d.ExecSQL(t, "DELETE FROM analytics.rollups")
 	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema push --safe-below-size=1")
 	s.assertTableMissing(t, "analytics", "rollups", "")
 
@@ -621,7 +623,7 @@ func (s SkeemaIntegrationSuite) TestPushHandler(t *testing.T) {
 	// try pushing and confirm no changes are made in product schema (due to
 	// lint failure), but bonus change proceeds (since the PK-less table there was
 	// not modified in this diff)
-	s.dbExec(t, "bonus", "ALTER TABLE placeholder DROP PRIMARY KEY")
+	s.d.ExecSQL(t, "ALTER TABLE bonus.placeholder DROP PRIMARY KEY")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	fs.WriteTestFile(t, "mydb/bonus/table2.sql", "CREATE TABLE table2 (name varchar(20) NOT NULL, newcol int, PRIMARY KEY (name))")
 	contents = fs.ReadTestFile(t, "mydb/product/users.sql")
@@ -700,7 +702,7 @@ func (s SkeemaIntegrationSuite) TestIndexOrdering(t *testing.T) {
 }
 
 func (s SkeemaIntegrationSuite) TestForeignKeys(t *testing.T) {
-	s.sourceSQL(t, "foreignkey.sql")
+	s.d.SourceSQL(t, "../foreignkey.sql")
 	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
 
 	// Renaming an FK should not be considered a difference by default
@@ -750,8 +752,8 @@ func (s SkeemaIntegrationSuite) TestForeignKeys(t *testing.T) {
 	// a scenario where we're adding an FK that needs a new index on the "parent"
 	// (referenced) table, where the parent table name is alphabetically after
 	// the child table
-	s.dbExec(t, "product", "ALTER TABLE posts DROP FOREIGN KEY usridfk")
-	s.dbExec(t, "product", "ALTER TABLE users DROP KEY idname")
+	s.d.ExecSQL(t, "ALTER TABLE product.posts DROP FOREIGN KEY usridfk")
+	s.d.ExecSQL(t, "ALTER TABLE product.users DROP KEY idname")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
 
 	// Test handling of unsafe operations combined with FK operations:
@@ -780,16 +782,13 @@ func (s SkeemaIntegrationSuite) TestForeignKeys(t *testing.T) {
 	// series. Since we generally run tests on the latest/last release of a series,
 	// a workaround is applied specifically only for 11.1.6 and 11.5.2 here.
 	if s.d.Flavor().IsMariaDB(11, 1, 6) || s.d.Flavor().IsMariaDB(11, 5, 2) {
-		db, err := s.d.CachedConnectionPool("", "")
-		if err == nil {
-			db.Exec("SET GLOBAL innodb_alter_copy_bulk=OFF")
-		}
+		s.d.ExecSQL(t, "SET GLOBAL innodb_alter_copy_bulk=OFF")
 	}
 
 	// Test adding an FK where the existing data does not meet the constraint:
 	// should fail if foreign_key_checks=1, succeed if foreign_key_checks=0
-	s.dbExec(t, "product", "ALTER TABLE posts DROP FOREIGN KEY usridfk")
-	s.dbExec(t, "product", "INSERT INTO posts (user_id, byline) VALUES (1234, 'someone')")
+	s.d.ExecSQL(t, "ALTER TABLE product.posts DROP FOREIGN KEY usridfk")
+	s.d.ExecSQL(t, "INSERT INTO product.posts (user_id, byline) VALUES (1234, 'someone')")
 	fs.WriteTestFile(t, "mydb/product/posts.sql", contents1)
 	s.handleCommand(t, CodeFatalError, ".", "skeema push --foreign-key-checks")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
@@ -797,7 +796,7 @@ func (s SkeemaIntegrationSuite) TestForeignKeys(t *testing.T) {
 
 func (s SkeemaIntegrationSuite) TestAutoInc(t *testing.T) {
 	// Insert 2 rows into product.users, so that next auto-inc value is now 3
-	s.dbExec(t, "product", "INSERT INTO users (name) VALUES (?), (?)", "foo", "bar")
+	s.d.ExecSQL(t, "INSERT INTO product.users (name) VALUES ('foo'), ('bar')")
 
 	// Normal init omits auto-inc values. diff views this as no differences.
 	s.reinitAndVerifyFiles(t, "", "")
@@ -815,13 +814,13 @@ func (s SkeemaIntegrationSuite) TestAutoInc(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
 	// Inserting another row should still be ignored by diffs
-	s.dbExec(t, "product", "INSERT INTO users (name) VALUES (?)", "something")
+	s.d.ExecSQL(t, "INSERT INTO product.users (name) VALUES ('something')")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
 	// However, if table's next auto-inc is LOWER than sqlfile's, this is a
 	// difference.
-	s.dbExec(t, "product", "DELETE FROM users WHERE id > 1")
-	s.dbExec(t, "product", "ALTER TABLE users AUTO_INCREMENT=2")
+	s.d.ExecSQL(t, "DELETE FROM product.users WHERE id > 1")
+	s.d.ExecSQL(t, "ALTER TABLE product.users AUTO_INCREMENT=2")
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
@@ -831,7 +830,7 @@ func (s SkeemaIntegrationSuite) TestAutoInc(t *testing.T) {
 
 	// now that the file has a next auto-inc value, subsequent pull operations
 	// should update the value, even without --include-auto-inc
-	s.dbExec(t, "product", "INSERT INTO users (name) VALUES (?)", "something")
+	s.d.ExecSQL(t, "INSERT INTO product.users (name) VALUES ('something')")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	if !strings.Contains(fs.ReadTestFile(t, "mydb/product/users.sql"), "AUTO_INCREMENT=4") {
 		t.Error("Expected mydb/product/users.sql to contain AUTO_INCREMENT=4 after pull, but it did not")
@@ -840,22 +839,24 @@ func (s SkeemaIntegrationSuite) TestAutoInc(t *testing.T) {
 }
 
 func (s SkeemaIntegrationSuite) TestUnsupportedAlter(t *testing.T) {
-	s.sourceSQL(t, "unsupported1.sql")
+	s.d.SourceSQL(t, "../unsupported1.sql")
 
 	// init should work fine with an unsupported table
 	s.reinitAndVerifyFiles(t, "", "../golden/unsupported")
 
 	// Back to clean slate for db and files
-	s.cleanData(t, "setup.sql")
+	s.d.NukeData(t)
+	s.d.SourceSQL(t, "../setup.sql")
 	s.reinitAndVerifyFiles(t, "", "../golden/init")
 
 	// apply change to db directly, and confirm pull still works
-	s.sourceSQL(t, "unsupported1.sql")
+	s.d.SourceSQL(t, "../unsupported1.sql")
 	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull --debug --update-partitioning")
 	s.verifyFiles(t, cfg, "../golden/unsupported")
 
 	// back to clean slate for db only
-	s.cleanData(t, "setup.sql")
+	s.d.NukeData(t)
+	s.d.SourceSQL(t, "../setup.sql")
 
 	// lint should be able to fix formatting problems in unsupported table files
 	contents := fs.ReadTestFile(t, "mydb/product/subscriptions.sql")
@@ -869,7 +870,7 @@ func (s SkeemaIntegrationSuite) TestUnsupportedAlter(t *testing.T) {
 	s.handleCommand(t, CodePartialError, ".", "skeema push")
 
 	// diff/push still ok if *creating* unsupported table
-	s.dbExec(t, "product", "DROP TABLE subscriptions")
+	s.d.ExecSQL(t, "DROP TABLE product.subscriptions")
 	s.assertTableMissing(t, "product", "subscriptions", "")
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
@@ -893,7 +894,7 @@ func (s SkeemaIntegrationSuite) TestUnsupportedAlter(t *testing.T) {
 	// Coverage for extra non-InnoDB warning text -- just ensuring no panic, and
 	// no need for allow-unsafe (since diff is not supported, due to USING BTREE
 	// clause on an index for a MyISAM table)
-	s.dbExec(t, "product", "ALTER TABLE users ENGINE=MyISAM")
+	s.d.ExecSQL(t, "ALTER TABLE product.users ENGINE=MyISAM")
 	contents = fs.ReadTestFile(t, "mydb/product/users.sql")
 	contents = strings.ReplaceAll(contents, "credits", "funds")
 	contents = strings.ReplaceAll(contents, "UNIQUE KEY `name` (`name`)", "UNIQUE KEY `name2` (`name`) USING BTREE")
@@ -904,7 +905,7 @@ func (s SkeemaIntegrationSuite) TestUnsupportedAlter(t *testing.T) {
 	// Make the USING BTREE alter directly so that the table is unsupported, and
 	// then delete the users.sql file on the fs side. Confirm diff/push still ok
 	// for *dropping* unsupported table.
-	s.dbExec(t, "product", "ALTER TABLE users DROP KEY name, ADD UNIQUE KEY `name2` (`name`) USING BTREE")
+	s.d.ExecSQL(t, "ALTER TABLE product.users DROP KEY name, ADD UNIQUE KEY `name2` (`name`) USING BTREE")
 	if err := os.Remove("mydb/product/users.sql"); err != nil {
 		t.Fatalf("Unexpected error removing a file: %s", err)
 	}
@@ -915,7 +916,7 @@ func (s SkeemaIntegrationSuite) TestUnsupportedAlter(t *testing.T) {
 }
 
 func (s SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
-	s.sourceSQL(t, "ignore1.sql")
+	s.d.SourceSQL(t, "../ignore1.sql")
 
 	// init: valid regexes should work properly and persist to option files
 	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d --ignore-schema='^archives$' --ignore-table='^_'", s.d.Instance.Host, s.d.Instance.Port)
@@ -1020,13 +1021,13 @@ func (s SkeemaIntegrationSuite) TestDirEdgeCases(t *testing.T) {
 
 	// Dirs with no *.sql files, but have a schema defined in .skeema, should
 	// be interpreted as a logical schema without any objects
-	s.dbExec(t, "", "CREATE DATABASE otherdb")
+	s.d.ExecSQL(t, "CREATE DATABASE otherdb")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 	if contents := fs.ReadTestFile(t, "mydb/otherdb/.skeema"); contents == "" {
 		t.Error("Unexpectedly found no contents in mydb/otherdb/.skeema")
 	}
-	s.dbExec(t, "otherdb", "CREATE TABLE othertable (id int)")
+	s.d.ExecSQL(t, "CREATE TABLE otherdb.othertable (id int)")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	if contents := fs.ReadTestFile(t, "mydb/otherdb/othertable.sql"); contents == "" {
 		t.Error("Unexpectedly found no contents in mydb/otherdb/othertable.sql")
@@ -1075,7 +1076,7 @@ func (s SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
 
 	// pull strips the clauses from new table
-	s.dbExec(t, "product", withClauses)
+	s.d.ExecSQL(t, "USE product; "+withClauses)
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	assertFileNormalized()
 
@@ -1090,12 +1091,10 @@ func (s SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 	assertFileNormalized()
 
 	// diff views the clauses as no-ops if present in file but not db, or vice versa
-	s.dbExec(t, "product", "DROP TABLE `problems`")
-	s.dbExec(t, "product", withoutClauses)
+	s.d.ExecSQL(t, "USE product; DROP TABLE problems; "+withoutClauses)
 	fs.WriteTestFile(t, "mydb/product/problems.sql", withClauses)
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
-	s.dbExec(t, "product", "DROP TABLE `problems`")
-	s.dbExec(t, "product", withClauses)
+	s.d.ExecSQL(t, "USE product; DROP TABLE problems; "+withClauses)
 	fs.WriteTestFile(t, "mydb/product/problems.sql", withoutClauses)
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
@@ -1112,9 +1111,7 @@ func (s SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 	newFileContents := strings.Replace(withoutClauses, "  KEY `idx1`", "  newcol int COLUMN_FORMAT FIXED,\n  KEY `idx1`", 1)
 	fs.WriteTestFile(t, "mydb/product/problems.sql", newFileContents)
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
-	s.dbExec(t, "product", "DROP TABLE `problems`")
-	s.dbExec(t, "product", withoutClauses)
-	s.dbExec(t, "product", "ALTER TABLE `problems` DROP KEY `idx2`")
+	s.d.ExecSQL(t, "USE product; DROP TABLE problems; "+withoutClauses+"; ALTER TABLE problems DROP KEY idx2")
 	fs.WriteTestFile(t, "mydb/product/problems.sql", withClauses)
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
 }
@@ -1167,8 +1164,8 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 
 	// pull should still reflect changes properly, if made to the first sharded
 	// product schema or to the unsharded analytics schema
-	s.dbExec(t, "product", "ALTER TABLE comments ADD COLUMN `approved` tinyint(1) NOT NULL")
-	s.dbExec(t, "analytics", "ALTER TABLE activity ADD COLUMN `rolled_up` tinyint(1) NOT NULL")
+	s.d.ExecSQL(t, "ALTER TABLE product.comments ADD COLUMN `approved` tinyint(1) NOT NULL")
+	s.d.ExecSQL(t, "ALTER TABLE analytics.activity ADD COLUMN `rolled_up` tinyint(1) NOT NULL")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull --ignore-schema=4$")
 	sfContents := fs.ReadTestFile(t, "mydb/product/comments.sql")
 	if !strings.Contains(sfContents, "`approved` tinyint(1)") {
@@ -1195,7 +1192,7 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 	}
 	contents = strings.Replace(contents, "schema=product,product2,product3,product4", shelloutSchema, 1)
 	fs.WriteTestFile(t, "mydb/product/.skeema", contents)
-	s.dbExec(t, "", "DROP DATABASE product")
+	s.d.ExecSQL(t, "DROP DATABASE product")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --ignore-schema=4$")
 	s.assertTableExists(t, "product1", "posts", "")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff --ignore-schema=4$")
@@ -1222,7 +1219,7 @@ func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 
 	// Since analytics is the first alphabetically, it is now the prototype
 	// as far as pull is concerned
-	s.dbExec(t, "analytics", "CREATE TABLE `foo` (id int)")
+	s.d.ExecSQL(t, "CREATE TABLE analytics.foo (id int)")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	fs.ReadTestFile(t, "mydb/product/foo.sql")                   // just confirming it exists
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff") // since 3 schemas missing foo
@@ -1326,7 +1323,7 @@ BEGIN
 	return a * b;
 END`
 	create := origCreate
-	s.dbExec(t, "product", create)
+	s.d.ExecSQL(t, "USE product; "+create)
 
 	// Confirm init works properly with one function present
 	s.reinitAndVerifyFiles(t, "", "../golden/routines")
@@ -1353,12 +1350,12 @@ END`
 	// Modify the db representation of the routine. In MySQL/Percona, diff/push
 	// should work, but only with --allow-unsafe (and not with --safe-below-size).
 	// In MariaDB, --allow-unsafe is not required due to CREATE OR REPLACE support.
-	s.dbExec(t, "product", "DROP FUNCTION routine1")
+	s.d.ExecSQL(t, "DROP FUNCTION product.routine1")
 	create = strings.Replace(create, "a * b", "b * a", 1)
 	if create == origCreate {
 		t.Fatal("Test setup incorrect")
 	}
-	s.dbExec(t, "product", create)
+	s.d.ExecSQL(t, "USE product; "+create)
 	if s.d.Flavor().IsMariaDB() {
 		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
 		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --ignore-proc=routine1")
@@ -1384,13 +1381,12 @@ END`
 	// Confirm that the diff shows a difference. No need to test dumping (pull)
 	// here because the logic after this does that already.
 	if s.d.Flavor().MinMySQL(8) || s.d.Flavor().IsMariaDB() {
-		s.dbExec(t, "product", "CREATE ROLE IF NOT EXISTS mytestrole")
-		s.dbExec(t, "product", "DROP FUNCTION routine1")
+		s.d.ExecSQL(t, "CREATE ROLE IF NOT EXISTS mytestrole; DROP FUNCTION product.routine1")
 		create = strings.Replace(create, "root@'%'", "mytestrole", 1)
 		if !strings.Contains(create, "mytestrole") {
 			t.Fatal("Test setup incorrect")
 		}
-		s.dbExec(t, "product", create)
+		s.d.ExecSQL(t, "USE product; "+create)
 		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
 	}
 
@@ -1402,21 +1398,20 @@ END`
 		t.Errorf("Unexpected contents in mydb/product/routine1.sql after `skeema pull`:\n%s", contents)
 	}
 
-	// Confirm changing the db's collation counts as a diff for routines if (and
+	// Confirm using a different sql_mode counts as a diff for routines if (and
 	// only if) --compare-metadata is used
-	s.dbExec(t, "", "ALTER DATABASE product DEFAULT COLLATE = latin1_general_ci")
-	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
-	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
+	s.handleCommand(t, CodeSuccess, ".", `skeema diff --connect-options="sql_mode=STRICT_ALL_TABLES"`)
 	if s.d.Flavor().IsMariaDB() {
-		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --compare-metadata")
-		s.handleCommand(t, CodeSuccess, ".", "skeema push --compare-metadata")
+		s.handleCommand(t, CodeDifferencesFound, ".", `skeema diff --connect-options="sql_mode=STRICT_ALL_TABLES" --compare-metadata`)
+		s.handleCommand(t, CodeSuccess, ".", `skeema push --connect-options="sql_mode=STRICT_ALL_TABLES" --compare-metadata`)
 	} else {
-		s.handleCommand(t, CodeFatalError, ".", "skeema diff --compare-metadata")
-		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --compare-metadata --allow-unsafe")
-		s.handleCommand(t, CodeSuccess, ".", "skeema push --compare-metadata --allow-unsafe")
+		s.handleCommand(t, CodeFatalError, ".", `skeema diff --connect-options="sql_mode=STRICT_ALL_TABLES" --compare-metadata`)
+		s.handleCommand(t, CodeDifferencesFound, ".", `skeema diff --connect-options="sql_mode=STRICT_ALL_TABLES" --compare-metadata --allow-unsafe`)
+		s.handleCommand(t, CodeSuccess, ".", `skeema push --connect-options="sql_mode=STRICT_ALL_TABLES" --compare-metadata --allow-unsafe`)
 	}
-	s.handleCommand(t, CodeSuccess, ".", "skeema diff --compare-metadata")
-	s.d.CloseAll() // avoid mysql bug where ALTER DATABASE doesn't affect existing sessions
+	s.handleCommand(t, CodeSuccess, ".", `skeema diff --connect-options="sql_mode=STRICT_ALL_TABLES" --compare-metadata`)
+	s.handleCommand(t, CodeSuccess, ".", `skeema push --compare-metadata --allow-unsafe`) // undo the previous push change
+	s.handleCommand(t, CodeSuccess, ".", `skeema diff --compare-metadata`)
 
 	// Add a file creating another routine. Push it and confirm the routine is
 	// using the sql_mode of the server.
@@ -1434,26 +1429,22 @@ END`
 		t.Errorf("Expected routine2 to have sql_mode %s, instead found %s", serverSQLMode, r2.SQLMode)
 	}
 
-	// Lint that new file; confirm new formatting matches expectation.
-	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint")
-	normalizedContents := `CREATE DEFINER=~root~@~%~ FUNCTION ~routine2~() RETURNS varchar(30) CHARSET latin1 COLLATE latin1_general_ci
-    DETERMINISTIC
-return 'abc''def';
-`
-	normalizedContents = strings.ReplaceAll(normalizedContents, "~", "`")
-	if contents := fs.ReadTestFile(t, "mydb/product/routine2.sql"); contents != normalizedContents {
-		t.Errorf("Unexpected contents after linting; found:\n%s", contents)
+	// Format the dir; confirm the new file has been rewritten
+	s.handleCommand(t, CodeDifferencesFound, "mydb/product", "skeema format")
+	if contents := fs.ReadTestFile(t, "mydb/product/routine2.sql"); contents == origContents {
+		t.Error("Expected routine2.sql contents to change from `skeema format`, but they did not")
 	}
 
 	// Restore old formatting and test pull, with and without --format
 	fs.WriteTestFile(t, "mydb/product/routine2.sql", origContents)
-	s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-format")
+	s.handleCommand(t, CodeSuccess, "mydb/product", "skeema pull --skip-format")
 	if contents := fs.ReadTestFile(t, "mydb/product/routine2.sql"); contents != origContents {
 		t.Errorf("Expected contents unchanged from pull with --skip-format; instead found:\n%s", contents)
 	}
-	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
-	if contents := fs.ReadTestFile(t, "mydb/product/routine2.sql"); contents != normalizedContents {
-		t.Errorf("Expected contents to be normalized from pull with --format; instead found:\n%s", contents)
+	s.handleCommand(t, CodeSuccess, "mydb/product", "skeema pull")
+	normalizedContents := fs.ReadTestFile(t, "mydb/product/routine2.sql")
+	if normalizedContents == origContents {
+		t.Error("Expected contents to be normalized from pull with --format, but they were unchanged")
 	}
 
 	// Add a *procedure* called routine2. pull should place this in same file as
@@ -1463,7 +1454,7 @@ BEGIN
 	SELECT a;
 	SELECT b;
 END`
-	s.dbExec(t, "product", r2dupe)
+	s.d.ExecSQL(t, "USE product; "+r2dupe)
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	normalizedContents += "DELIMITER //\nCREATE DEFINER=`root`@`%` PROCEDURE `routine2`(a int, b int)\nBEGIN\n\tSELECT a;\n\tSELECT b;\nEND//\nDELIMITER ;\n"
 	if contents := fs.ReadTestFile(t, "mydb/product/routine2.sql"); contents != normalizedContents {
@@ -1476,7 +1467,7 @@ END`
 
 	// Drop the *function* routine2 and do a push. This should properly recreate
 	// the dropped func.
-	s.dbExec(t, "product", "DROP FUNCTION routine2")
+	s.d.ExecSQL(t, "DROP FUNCTION product.routine2")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
 	for _, otype := range []tengo.ObjectType{tengo.ObjectTypeFunc, tengo.ObjectTypeProc} {
 		exists, phrase, err := s.objectExists("product", otype, "routine2", "")
@@ -1487,7 +1478,7 @@ END`
 
 	// Change procedure routine2's characteristics in the db. Do a push, which
 	// should use ALTER PROCEDURE and be safe.
-	s.dbExec(t, "product", "ALTER PROCEDURE routine2 SQL SECURITY INVOKER READS SQL DATA")
+	s.d.ExecSQL(t, "ALTER PROCEDURE product.routine2 SQL SECURITY INVOKER READS SQL DATA")
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --temp-schema-mode=extreme")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --temp-schema-mode=extreme")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff --temp-schema-mode=extreme")
@@ -1498,7 +1489,7 @@ END`
 	// MySQL 8.0+.
 	// Also confirm that --lax-comments does not suppress these diffs, since other
 	// characteristics besides the comment are also being changed.
-	s.dbExec(t, "product", "ALTER PROCEDURE routine2 SQL SECURITY INVOKER READS SQL DATA COMMENT 'whatever'")
+	s.d.ExecSQL(t, "ALTER PROCEDURE product.routine2 SQL SECURITY INVOKER READS SQL DATA COMMENT 'whatever'")
 	if s.d.Flavor().MinMySQL(8) {
 		s.handleCommand(t, CodeFatalError, ".", "skeema diff --lax-comments")
 		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe --lax-comments")
@@ -1511,7 +1502,7 @@ END`
 
 	// Repeat the previous test, this time ONLY adding a comment, and confirm that
 	// use of --lax-comments suppresses the diff entirely.
-	s.dbExec(t, "product", "ALTER PROCEDURE routine2 COMMENT 'whatever'")
+	s.d.ExecSQL(t, "ALTER PROCEDURE product.routine2 COMMENT 'whatever'")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff --lax-comments")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --lax-comments")
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
@@ -1534,7 +1525,7 @@ func (s SkeemaIntegrationSuite) TestTempSchemaBinlog(t *testing.T) {
 		Image:        imageForFlavor(t, s.d.Flavor()),
 		RootPassword: s.d.Password,
 		EnableBinlog: true,
-		DataTmpfs:    true, // since we destroy the container after this test anyway
+		DataTmpfs:    true,
 	}
 	dinst, err := tengo.GetOrCreateDockerizedInstance(opts)
 	if err != nil {
@@ -1545,9 +1536,7 @@ func (s SkeemaIntegrationSuite) TestTempSchemaBinlog(t *testing.T) {
 			t.Errorf("Unable to destroy test instance with log-bin enabled: %v", err)
 		}
 	}()
-	if _, err := dinst.SourceSQL("../setup.sql"); err != nil {
-		t.Fatalf("Unable to source setup.sql: %v", err)
-	}
+	dinst.SourceSQL(t, "../setup.sql")
 
 	getLogPos := func() string {
 		t.Helper()
@@ -1771,7 +1760,7 @@ func (s SkeemaIntegrationSuite) TestPartitioning(t *testing.T) {
 // commands.
 func (s SkeemaIntegrationSuite) TestStripPartitioning(t *testing.T) {
 	// Partition a table in the db directly
-	s.dbExec(t, "analytics", "ALTER TABLE activity PARTITION BY RANGE (ts) (PARTITION p0 VALUES LESS THAN (1571678000), PARTITION pN VALUES LESS THAN MAXVALUE)")
+	s.d.ExecSQL(t, "ALTER TABLE analytics.activity PARTITION BY RANGE (ts) (PARTITION p0 VALUES LESS THAN (1571678000), PARTITION pN VALUES LESS THAN MAXVALUE)")
 
 	assertPartitioned := func() {
 		t.Helper()
@@ -1825,7 +1814,7 @@ func (s SkeemaIntegrationSuite) TestStripPartitioning(t *testing.T) {
 // internal/tengo covers introspection accuracy of these situations, but not
 // the full end-to-end logic used in internal/applier's diff verification.
 func (s SkeemaIntegrationSuite) TestCharsetCollate(t *testing.T) {
-	s.sourceSQL(t, "charset-collate.sql")
+	s.d.SourceSQL(t, "../charset-collate.sql")
 	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir product -h %s -P %d --schema product ", s.d.Instance.Host, s.d.Instance.Port)
 
 	// Slightly adjust the four many_permutations tables in the sql file

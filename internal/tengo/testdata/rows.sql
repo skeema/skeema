@@ -1,6 +1,4 @@
-SET foreign_key_checks=0;
-
-use testing
+use testing;
 
 CREATE TABLE has_rows (
 	id int unsigned NOT NULL AUTO_INCREMENT,

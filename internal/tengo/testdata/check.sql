@@ -4,9 +4,7 @@
 # This file is only used in MySQL 8+; MariaDB testing is a separate file due to
 # some syntactical differences.
 
-SET foreign_key_checks=0;
-
-use testing
+use testing;
 
 CREATE TABLE `has_checks1` (
 	`id` int unsigned NOT NULL auto_increment,

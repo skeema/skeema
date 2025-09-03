@@ -10,7 +10,7 @@ import (
 // HasTable(), and Table(). It does not explicitly validate the introspection
 // logic though; that's handled in TestInstanceSchemaIntrospection.
 func (s TengoIntegrationSuite) TestSchemaTables(t *testing.T) {
-	s.SourceTestSQL(t, "integration-ext.sql")
+	s.d.SourceSQL(t, "testdata/integration-ext.sql")
 	schema := s.GetSchema(t, "testing")
 
 	// Currently at least 7 tables in testing schema from testdata/integration.sql
@@ -55,7 +55,7 @@ func (s TengoIntegrationSuite) TestSchemaTables(t *testing.T) {
 func (s TengoIntegrationSuite) TestSchemaJSON(t *testing.T) {
 	// include broad coverage for many flavor-specific features
 	flavor := s.d.Flavor()
-	s.SourceTestSQL(t, flavorTestFiles(flavor)...)
+	s.d.SourceSQL(t, flavorTestFiles(flavor)...)
 
 	for _, schemaName := range []string{"testing", "testcharcoll", "partitionparty"} {
 		schema := s.GetSchema(t, schemaName)
@@ -81,7 +81,7 @@ func (s TengoIntegrationSuite) TestSchemaJSON(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestSchemaStripMatches(t *testing.T) {
-	s.SourceTestSQL(t, "integration-ext.sql")
+	s.d.SourceSQL(t, "testdata/integration-ext.sql")
 	schema := s.GetSchema(t, "testing")
 
 	origTableCount, origRoutineCount := len(schema.Tables), len(schema.Routines)
@@ -121,7 +121,7 @@ func (s TengoIntegrationSuite) TestSchemaStripMatches(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestSchemaStripTablePartitioning(t *testing.T) {
-	s.SourceTestSQL(t, "partition.sql")
+	s.d.SourceSQL(t, "testdata/partition.sql")
 
 	// testing.followed_posts uses sub-partitioning and is unsupported for diffs.
 	// After stripping partitioning, it should now be supported for diffs.

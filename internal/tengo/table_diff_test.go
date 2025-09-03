@@ -892,29 +892,15 @@ func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
 		t.Skipf("InnoDB page compression not supported in flavor %s", flavor)
 	}
 
-	sqlPath := "pagecompression.sql"
+	sqlPath := "testdata/pagecompression.sql"
 	if flavor.IsMariaDB() {
-		sqlPath = "pagecompression-maria.sql"
+		sqlPath = "testdata/pagecompression-maria.sql"
 	}
-	s.SourceTestSQL(t, sqlPath)
+	s.d.SourceSQL(t, sqlPath)
 	schema := s.GetSchema(t, "testing")
 	uncompTable := getTable(t, schema, "actor_in_film")
 	if uncompTable.CreateOptions != "" {
 		t.Fatal("Fixture table has changed without test logic being updated")
-	}
-
-	runAlter := func(clause TableAlterClause) {
-		t.Helper()
-		db, err := s.d.CachedConnectionPool("testing", "")
-		if err != nil {
-			t.Fatalf("Unable to connect to DockerizedInstance: %s", err)
-		}
-		tableName := uncompTable.Name
-		query := fmt.Sprintf("ALTER TABLE %s %s", EscapeIdentifier(tableName), clause.Clause(StatementModifiers{}))
-		if _, err := db.Exec(query); err != nil {
-			t.Fatalf("Unexpected error from query %q: %v", query, err)
-		}
-		schema = s.GetSchema(t, "testing") // re-introspect to reflect changes from the DDL
 	}
 
 	compTable := getTable(t, schema, "actor_in_film_comp")
@@ -928,7 +914,8 @@ func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
 	if len(clauses) != 1 || !supported {
 		t.Fatalf("Unexpected return from diff: %d clauses, supported=%t", len(clauses), supported)
 	}
-	runAlter(clauses[0])
+	s.d.ExecSQL(t, "ALTER TABLE `testing`."+EscapeIdentifier(uncompTable.Name)+" "+clauses[0].Clause(StatementModifiers{}))
+	schema = s.GetSchema(t, "testing") // re-introspect to reflect changes from the DDL
 	refetchedTable := getTable(t, schema, "actor_in_film")
 	// Just comparing string length because the *order* of create options may
 	// randomly differ from what was specified in DDL
@@ -941,7 +928,8 @@ func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
 	if len(clauses) != 1 || !supported {
 		t.Fatalf("Unexpected return from diff: %d clauses, supported=%t", len(clauses), supported)
 	}
-	runAlter(clauses[0])
+	s.d.ExecSQL(t, "ALTER TABLE `testing`."+EscapeIdentifier(uncompTable.Name)+" "+clauses[0].Clause(StatementModifiers{}))
+	schema = s.GetSchema(t, "testing") // re-introspect to reflect changes from the DDL
 	refetchedTable = getTable(t, schema, "actor_in_film")
 	if refetchedTable.CreateOptions != "" {
 		t.Fatalf("Expected refetched table to have create options \"\", instead found %q", refetchedTable.CreateOptions)
@@ -1159,10 +1147,6 @@ func (s TengoIntegrationSuite) TestAlterCheckConstraints(t *testing.T) {
 		t.Skipf("Check constraints not supported in flavor %s", flavor)
 	}
 
-	db, err := s.d.ConnectionPool("testing", "")
-	if err != nil {
-		t.Fatalf("Unable to establish connection pool: %v", err)
-	}
 	execAlter := func(td *TableDiff) {
 		t.Helper()
 		if td == nil {
@@ -1173,9 +1157,8 @@ func (s TengoIntegrationSuite) TestAlterCheckConstraints(t *testing.T) {
 		stmt, err := td.Statement(StatementModifiers{Flavor: flavor})
 		if err != nil {
 			t.Fatalf("Unexpected error from Statement: %v", err)
-		} else if _, err := db.Exec(stmt); err != nil {
-			t.Fatalf("Unexpected error executing statement %q: %v", stmt, err)
 		}
+		s.d.ExecSQL(t, "USE testing; "+stmt)
 	}
 	getTableCopy := func(tableName string) *Table {
 		t.Helper()
@@ -1231,9 +1214,8 @@ func (s TengoIntegrationSuite) TestAlterCheckConstraints(t *testing.T) {
 	}
 	if stmt, err := td.Statement(StatementModifiers{Flavor: flavor, StrictCheckConstraints: true}); stmt == "" || err != nil {
 		t.Errorf("Unexpected return from Statement: %q / %v", stmt, err)
-	} else if _, err := db.Exec(stmt); err != nil {
-		t.Fatalf("Unexpected error executing statement %q: %v", stmt, err)
 	} else {
+		s.d.ExecSQL(t, "USE testing; "+stmt)
 		tableChecks = getTableCopy("grab_bag")
 		td = NewAlterTable(tableChecks, tableChecks2)
 		if td != nil && len(td.alterClauses) > 0 {

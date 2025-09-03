@@ -1,9 +1,7 @@
 # Coverage for two new features in MariaDB 10.8: DESC index parts, and functions
 # with IN / OUT / INOUT param qualifiers
 
-SET foreign_key_checks=0;
-
-use testing
+use testing;
 
 CREATE TABLE maria108idx (
     a int NOT NULL,

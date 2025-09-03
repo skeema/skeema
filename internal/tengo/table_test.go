@@ -2,6 +2,7 @@ package tengo
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 	"testing"
 )
@@ -1060,23 +1061,8 @@ func TestTableAlterNoModify(t *testing.T) {
 
 // TestTableAlterModifyColumnRandomly performs 20 iterations of semi-random
 // modifications to a table's columns ordering and types, and then confirms
-// that running the ALTER actually has the expected effect. It is commented out
-// because this is overkill for routine testing, but the code can be useful
-// when changing deep parts of the diff logic, especially the column reordering
-// algorithm.
-/*
+// that running the ALTER actually has the expected effect.
 func (s TengoIntegrationSuite) TestTableAlterModifyColumnRandomly(t *testing.T) {
-	exec := func(query string) {
-		t.Helper()
-		db, err := s.d.Connect("testing", "")
-		if err != nil {
-			t.Fatalf("Unable to connect to DockerizedInstance: %s", err)
-		}
-		_, err = db.Exec(query)
-		if err != nil {
-			t.Fatalf("Error running query on DockerizedInstance.\nQuery: %s\nError: %s", query, err)
-		}
-	}
 	assertCreate := func(table *Table) {
 		t.Helper()
 		createStatement, err := s.d.ShowCreateTable("testing", table.Name)
@@ -1114,8 +1100,7 @@ func (s TengoIntegrationSuite) TestTableAlterModifyColumnRandomly(t *testing.T) 
 		}
 		to.CreateStatement = to.GeneratedCreateStatement(s.d.Flavor())
 
-		exec(fmt.Sprintf("DROP TABLE IF EXISTS %s", from.Name))
-		exec(from.CreateStatement)
+		s.d.ExecSQL(t, "USE testing; DROP TABLE IF EXISTS "+from.Name+"; "+from.CreateStatement)
 		alter := NewAlterTable(&from, &to)
 		if alter == nil {
 			assertCreate(&to) // assert correct without any change
@@ -1134,12 +1119,11 @@ func (s TengoIntegrationSuite) TestTableAlterModifyColumnRandomly(t *testing.T) 
 				}
 				seen[mc.NewColumn.Name] = true
 			}
-			exec(stmt)
+			s.d.ExecSQL(t, "USE testing; "+stmt)
 			assertCreate(&to)
 		}
 	}
 }
-*/
 
 func TestTableAlterChangeStorageEngine(t *testing.T) {
 	getTableWithEngine := func(engine string) Table {

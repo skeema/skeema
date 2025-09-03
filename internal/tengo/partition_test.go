@@ -250,7 +250,7 @@ func TestPartitioningDataDirectory(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestPartitionedIntrospection(t *testing.T) {
-	s.SourceTestSQL(t, "partition.sql")
+	s.d.SourceSQL(t, "testdata/partition.sql")
 	schema := s.GetSchema(t, "partitionparty")
 	flavor := s.d.Flavor()
 
@@ -297,7 +297,7 @@ func (s TengoIntegrationSuite) TestPartitionedIntrospection(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestDropPartitionedTable(t *testing.T) {
-	s.SourceTestSQL(t, "partition.sql")
+	s.d.SourceSQL(t, "testdata/partition.sql")
 
 	// Setup: build a "to" schema which removes 2 tables in the "from" schema:
 	// one partitioned using RANGE COLUMNS and one partitioned using LINEAR KEY
@@ -324,10 +324,6 @@ func (s TengoIntegrationSuite) TestDropPartitionedTable(t *testing.T) {
 
 	// Execute the statements to confirm they are syntactically valid and in the
 	// correct order (e.g. ALTERs to drop partitions come before DROP TABLE)
-	db, err := s.d.CachedConnectionPool("partitionparty", "")
-	if err != nil {
-		t.Fatalf("Unable to connect to db: %v", err)
-	}
 	mods := StatementModifiers{
 		AllowUnsafe:     true,     // permit the DROPs
 		LockClause:      "SHARED", // confirming this is removed for DROP PARTITION
@@ -336,10 +332,9 @@ func (s TengoIntegrationSuite) TestDropPartitionedTable(t *testing.T) {
 	for _, od := range objDiffs {
 		stmt, err := od.Statement(mods)
 		if err != nil {
-			t.Errorf("Unexpected error from Statement: %v", err)
-		} else if _, err := db.Exec(stmt); err != nil {
-			t.Fatalf("Unexpected error running statement %q: %v", stmt, err)
+			t.Fatalf("Unexpected error from Statement: %v", err)
 		}
+		s.d.ExecSQL(t, "USE partitionparty; "+stmt)
 	}
 
 	// Confirm the statements had the intended effect
@@ -352,7 +347,7 @@ func (s TengoIntegrationSuite) TestDropPartitionedTable(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestBulkDropPartitioned(t *testing.T) {
-	s.SourceTestSQL(t, "partition.sql")
+	s.d.SourceSQL(t, "testdata/partition.sql")
 	opts := BulkDropOptions{
 		ChunkSize:       8,
 		PartitionsFirst: true,
@@ -364,21 +359,10 @@ func (s TengoIntegrationSuite) TestBulkDropPartitioned(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
-	s.SourceTestSQL(t, "partition.sql")
+	s.d.SourceSQL(t, "testdata/partition.sql")
 	flavor := s.d.Flavor()
 	mods := StatementModifiers{AllowUnsafe: true, Flavor: flavor}
 	schema := s.GetSchema(t, "partitionparty")
-	db, err := s.d.CachedConnectionPool("partitionparty", "")
-	if err != nil {
-		t.Fatalf("Unable to connect to DockerizedInstance: %v", err)
-	}
-	execStmt := func(stmt string) {
-		t.Helper()
-		if _, err := db.Exec(stmt); err != nil {
-			t.Fatalf("Unexpected error executing statement %q: %v", stmt, err)
-		}
-		schema = s.GetSchema(t, "partitionparty") // re-introspect to reflect changes from DDL
-	}
 
 	tableFromDB := getTable(t, schema, "prange")
 	tableFromUnit := unpartitionedTable(flavor)
@@ -401,7 +385,8 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 	)
 	tableFromUnit.CreateStatement = tableFromUnit.GeneratedCreateStatement(flavor)
 	stmt, _ := NewAlterTable(tableFromDB, &tableFromUnit).Statement(mods)
-	execStmt(stmt)
+	s.d.ExecSQL(t, "USE partitionparty; "+stmt)
+	schema = s.GetSchema(t, "partitionparty") // re-introspect to reflect changes from DDL
 	tableFromDB = getTable(t, schema, "prange")
 	if tableFromDB.Partitioning != nil || len(tableFromDB.Columns) != len(tableFromUnit.Columns) {
 		t.Fatalf("Statement %q did not have the intended effect", stmt)
@@ -410,7 +395,8 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 	// Now confirm combining PARTITION BY with other clauses works properly,
 	// again because the syntax is unusual (no comma before partitioning clause)
 	stmt, _ = NewAlterTable(tableFromDB, &tableFromUnitP).Statement(mods)
-	execStmt(stmt)
+	s.d.ExecSQL(t, "USE partitionparty; "+stmt)
+	schema = s.GetSchema(t, "partitionparty") // re-introspect to reflect changes from DDL
 	tableFromDB = getTable(t, schema, "prange")
 	if tableFromDB.CreateStatement != tableFromUnitP.CreateStatement {
 		t.Fatalf("Statement %q did not have the intended effect", stmt)
@@ -426,7 +412,8 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 	tableFromUnitP.Partitioning.Expression = strings.Replace(tableFromUnitP.Partitioning.Expression, "customer_", "", 1)
 	tableFromUnitP.CreateStatement = tableFromUnitP.GeneratedCreateStatement(flavor)
 	stmt, _ = NewAlterTable(tableFromDB, &tableFromUnitP).Statement(mods)
-	execStmt(stmt)
+	s.d.ExecSQL(t, "USE partitionparty; "+stmt)
+	schema = s.GetSchema(t, "partitionparty") // re-introspect to reflect changes from DDL
 	tableFromDB = getTable(t, schema, "prange")
 	if tableFromDB.CreateStatement != tableFromUnitP.CreateStatement {
 		t.Fatalf("Statement %q did not have the intended effect", stmt)

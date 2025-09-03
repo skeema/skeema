@@ -3,7 +3,6 @@ package tengo
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -23,39 +22,27 @@ type TengoIntegrationSuite struct {
 	d *DockerizedInstance
 }
 
-func (s *TengoIntegrationSuite) Setup(backend string) (err error) {
+func (s *TengoIntegrationSuite) Setup(t *testing.T, backend string) {
 	opts := DockerizedInstanceOptions{
 		Name:         fmt.Sprintf("skeema-test-%s", ContainerNameForImage(backend)),
 		Image:        backend,
 		RootPassword: "fakepw",
 		DataTmpfs:    true,
 	}
+	var err error
 	s.d, err = GetOrCreateDockerizedInstance(opts)
-	return err
+	if err != nil {
+		t.Fatalf("Unable to setup backend %q: %v", backend, err)
+	}
 }
 
-func (s *TengoIntegrationSuite) Teardown(backend string) error {
-	return SkeemaTestContainerCleanup(s.d)
+func (s *TengoIntegrationSuite) Teardown(t *testing.T) {
+	s.d.Done(t)
 }
 
-func (s *TengoIntegrationSuite) BeforeTest(backend string) error {
-	if err := s.d.NukeData(); err != nil {
-		return err
-	}
-	_, err := s.d.SourceSQL("testdata/integration.sql")
-	return err
-}
-
-// SourceTestSQL executes the supplied sql file(s), which should be supplied
-// relative to the testdata subdir. If any errors occur, the test fails.
-func (s *TengoIntegrationSuite) SourceTestSQL(t *testing.T, files ...string) {
-	t.Helper()
-	for n := range files {
-		files[n] = filepath.Join("testdata", files[n])
-	}
-	if _, err := s.d.SourceSQL(files...); err != nil {
-		t.Fatal(err.Error())
-	}
+func (s *TengoIntegrationSuite) BeforeTest(t *testing.T) {
+	s.d.NukeData(t)
+	s.d.SourceSQL(t, "testdata/integration.sql")
 }
 
 func (s *TengoIntegrationSuite) GetSchema(t *testing.T, schemaName string) *Schema {
@@ -204,6 +191,9 @@ func flavorTestFiles(flavor Flavor) []string {
 		result = append(result, "vector-maria117.sql")
 	}
 
+	for n := range result {
+		result[n] = "testdata/" + result[n]
+	}
 	return result
 }
 

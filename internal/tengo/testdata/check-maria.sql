@@ -1,8 +1,6 @@
 # Tables using MariaDB's check constraints
 
-SET foreign_key_checks=0;
-
-use testing
+use testing;
 
 CREATE TABLE `has_checks1` (
 	`id` int unsigned NOT NULL auto_increment,

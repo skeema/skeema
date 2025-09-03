@@ -1,7 +1,6 @@
-SET foreign_key_checks=0;
 CREATE DATABASE testing;
 
-use testing
+use testing;
 
 # Keep this in sync with tengo_test.go's aTable()
 CREATE TABLE actor (

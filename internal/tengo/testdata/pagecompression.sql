@@ -1,6 +1,6 @@
 # Table using InnoDB transparent page compression (MySQL 5.7+)
 # Keep in sync with integration.sql's actor_in_film
-use testing
+use testing;
 CREATE TABLE actor_in_film_comp (
 	actor_id smallint(5) unsigned NOT NULL,
 	film_name varchar(60) NOT NULL,

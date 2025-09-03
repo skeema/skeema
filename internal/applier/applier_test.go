@@ -3,7 +3,6 @@ package applier
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/skeema/mybase"
@@ -84,12 +83,6 @@ type ApplierIntegrationSuite struct {
 }
 
 func (s ApplierIntegrationSuite) TestCreatePlanForTarget(t *testing.T) {
-	sourceSQL := func(filename string) {
-		t.Helper()
-		if _, err := s.d[0].SourceSQL(filepath.Join("testdata", filename)); err != nil {
-			t.Fatalf("Unexpected error from SourceSQL on %s: %s", filename, err)
-		}
-	}
 	getSchema := func(schemaName string) *tengo.Schema {
 		t.Helper()
 		schema, err := s.d[0].Schema(schemaName)
@@ -101,9 +94,9 @@ func (s ApplierIntegrationSuite) TestCreatePlanForTarget(t *testing.T) {
 
 	// Use the schema as-is from setup.sql for the "from" side of the diff;
 	// make a few modifications to the DB and then use that for the "to" side
-	sourceSQL("setup.sql")
+	s.d[0].SourceSQL(t, "testdata/setup.sql")
 	instSchema := getSchema("product")
-	sourceSQL("plan.sql")
+	s.d[0].SourceSQL(t, "testdata/plan.sql")
 	fsSchema := getSchema("product")
 
 	// Hackily set up test args manually
@@ -174,7 +167,7 @@ func (s ApplierIntegrationSuite) TestCreatePlanForTarget(t *testing.T) {
 	}
 }
 
-func (s *ApplierIntegrationSuite) Setup(backend string) error {
+func (s *ApplierIntegrationSuite) Setup(t *testing.T, backend string) {
 	var g errgroup.Group
 	s.d = make([]*tengo.DockerizedInstance, 2)
 	for n := range s.d {
@@ -194,16 +187,19 @@ func (s *ApplierIntegrationSuite) Setup(backend string) error {
 			return err
 		})
 	}
-	return g.Wait()
+	if err := g.Wait(); err != nil {
+		t.Fatalf("Unable to setup backend %q: %v", backend, err)
+	}
 }
 
-func (s *ApplierIntegrationSuite) Teardown(backend string) error {
+func (s *ApplierIntegrationSuite) Teardown(t *testing.T) {
 	var g errgroup.Group
 	for n := range s.d {
 		var f func() error
 		if n == 0 {
 			f = func() error {
-				return tengo.SkeemaTestContainerCleanup(s.d[0])
+				s.d[0].Done(t)
+				return nil
 			}
 		} else {
 			f = s.d[n].Destroy
@@ -212,16 +208,19 @@ func (s *ApplierIntegrationSuite) Teardown(backend string) error {
 	}
 	err := g.Wait()
 	util.FlushInstanceCache()
-	return err
+	if err != nil {
+		t.Fatalf("Teardown: %v", err)
+	}
 }
 
-func (s *ApplierIntegrationSuite) BeforeTest(backend string) error {
+func (s *ApplierIntegrationSuite) BeforeTest(t *testing.T) {
 	var g errgroup.Group
 	for n := range s.d {
 		n := n
 		g.Go(func() error {
-			return s.d[n].NukeData()
+			s.d[n].NukeData(t)
+			return nil
 		})
 	}
-	return g.Wait()
+	g.Wait()
 }

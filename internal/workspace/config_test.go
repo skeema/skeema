@@ -96,19 +96,13 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 
 	// Mess with the instance and its sql_mode, to simulate docker workspace using
 	// a real instance's nonstandard sql_mode
-	forceSQLMode := func(sqlMode string) {
-		t.Helper()
-		db, err := s.d.ConnectionPool("", "")
-		if err != nil {
-			t.Fatalf("Unexpected error from ConnectionPool: %v", err)
-		}
-		if _, err := db.Exec("SET GLOBAL sql_mode = " + sqlMode); err != nil {
-			t.Fatalf("Unexpected error from Exec: %v", err)
-		}
-		s.d.CloseAll() // force next conn to re-hydrate vars including sql_mode
-	}
-	forceSQLMode("'REAL_AS_FLOAT,PIPES_AS_CONCAT'")
-	defer forceSQLMode("DEFAULT")
+	s.d.ExecSQL(t, "SET GLOBAL sql_mode = 'REAL_AS_FLOAT,PIPES_AS_CONCAT'")
+	s.d.Instance.CloseAll() // close cached connection pools to force next conn to re-hydrate vars including sql_mode
+	defer func() {
+		s.d.ExecSQL(t, "SET GLOBAL sql_mode = DEFAULT")
+		s.d.Instance.CloseAll()
+	}()
+
 	opts = getOpts("--workspace=docker")
 	expectValues := map[string]string{
 		"sql_mode": "'REAL_AS_FLOAT,PIPES_AS_CONCAT'",

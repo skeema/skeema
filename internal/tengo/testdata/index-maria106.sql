@@ -1,8 +1,6 @@
 # Coverage for ignored (invisible) indexes in MariaDB 10.6
 
-SET foreign_key_checks=0;
-
-use testing
+use testing;
 
 CREATE TABLE maria106idx (
 	a int NOT NULL,

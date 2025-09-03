@@ -2,7 +2,6 @@ package tengo
 
 import (
 	"database/sql"
-	"fmt"
 	"net/url"
 	"reflect"
 	"strings"
@@ -363,21 +362,11 @@ func (s TengoIntegrationSuite) TestInstanceGrantChecks(t *testing.T) {
 	if s.d.Flavor().MinMariaDB(11, 0) {
 		morePrivs = ", SUPER"
 	}
-	db, err := s.d.CachedConnectionPool("", "")
-	if err != nil {
-		t.Fatalf("Unable to establish connection pool: %v", err)
-	}
-	dbExec := func(query string) {
-		t.Helper()
-		if _, err := db.Exec(query); err != nil {
-			t.Fatalf("Error running query on DockerizedInstance.\nQuery: %s\nError: %s", query, err)
-		}
-	}
 	t.Cleanup(func() {
-		dbExec("DROP USER 'notroot'@'%'")
+		s.d.ExecSQL(t, "DROP USER 'notroot'@'%'")
 	})
-	dbExec(fmt.Sprintf("CREATE USER 'notroot'@'%%' IDENTIFIED BY '%s'", s.d.Password))
-	dbExec(fmt.Sprintf("GRANT SELECT, CREATE, DROP, ALTER, INDEX, CREATE ROUTINE, ALTER ROUTINE%s ON *.* TO 'notroot'@'%%'", morePrivs))
+	s.d.ExecSQL(t, "CREATE USER 'notroot'@'%' IDENTIFIED BY '"+s.d.Password+"'")
+	s.d.ExecSQL(t, "GRANT SELECT, CREATE, DROP, ALTER, INDEX, CREATE ROUTINE, ALTER ROUTINE"+morePrivs+" ON *.* TO 'notroot'@'%'")
 	unprivDSN := strings.Replace(s.d.BaseDSN, s.d.User, "notroot", 1)
 	unprivInst, _ := NewInstance("mysql", unprivDSN)
 	if ok, err := unprivInst.Valid(); !ok {
@@ -439,7 +428,7 @@ func TestInstanceGrantChecksRegexes(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestInstanceSchemas(t *testing.T) {
-	s.SourceTestSQL(t, "integration-ext.sql")
+	s.d.SourceSQL(t, "testdata/integration-ext.sql")
 
 	assertSame := func(s1, s2 *Schema) {
 		t.Helper()
@@ -531,7 +520,7 @@ func (s TengoIntegrationSuite) TestInstanceShowCreateTable(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestInstanceTableSize(t *testing.T) {
-	s.SourceTestSQL(t, "rows.sql")
+	s.d.SourceSQL(t, "testdata/rows.sql")
 
 	// Test table with at least one row
 	size, err := s.d.TableSize("testing", "has_rows")
@@ -553,7 +542,7 @@ func (s TengoIntegrationSuite) TestInstanceTableSize(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestInstanceFindNonEmptyTables(t *testing.T) {
-	s.SourceTestSQL(t, "rows.sql")
+	s.d.SourceSQL(t, "testdata/rows.sql")
 	if nonEmpties, err := s.d.FindNonEmptyTables("testing", []string{"has_rows", "no_rows"}); err != nil {
 		t.Errorf("Unexpected error from FindNonEmptyTables: %v", err)
 	} else if len(nonEmpties) != 1 || nonEmpties[0] != "has_rows" {
@@ -606,7 +595,7 @@ func (s TengoIntegrationSuite) TestInstanceCreateSchema(t *testing.T) {
 }
 
 func (s TengoIntegrationSuite) TestInstanceDropSchema(t *testing.T) {
-	s.SourceTestSQL(t, "integration-ext.sql", "rows.sql")
+	s.d.SourceSQL(t, "testdata/integration-ext.sql", "testdata/rows.sql")
 
 	opts := BulkDropOptions{
 		ChunkSize:       6,
@@ -677,7 +666,7 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesInSchemaByRef(t *testing.T)
 func (s TengoIntegrationSuite) TestInstanceDropTablesSkipsViews(t *testing.T) {
 	// Create two views, including one with an invalid DEFINER, which intentionally
 	// prevents queries on the view from working.
-	s.SourceTestSQL(t, "views.sql")
+	s.d.SourceSQL(t, "testdata/views.sql")
 
 	// Confirm I_S assumptions present in logic similar to tablesToPartitions:
 	// no views there except in MySQL 8 / PS 8; if views are there, they have
@@ -779,7 +768,7 @@ func (s TengoIntegrationSuite) TestInstanceDropRoutinesInSchemaByRef(t *testing.
 }
 
 func (s TengoIntegrationSuite) TestInstanceAlterSchema(t *testing.T) {
-	s.SourceTestSQL(t, "integration-ext.sql")
+	s.d.SourceSQL(t, "testdata/integration-ext.sql")
 
 	assertNoError := func(schemaName, newCharSet, newCollation, expectCharSet, expectCollation string) {
 		t.Helper()

@@ -51,7 +51,7 @@ func (s SkeemaIntegrationSuite) TestLowerCaseTableNames1(t *testing.T) {
 	// mixed-case-named database and fill it with objects with mixed-case names.
 	// Run `skeema init` from this db, so that we have a skeema dir that maintains
 	// the mixed-case names. Afterwards, `skeema diff` should show no differences.
-	s.sourceSQL(t, "lctn.sql")
+	s.d.SourceSQL(t, "../lctn.sql")
 	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb --schema NameCase -h %s -P %d lctn0", s.d.Instance.Host, s.d.Instance.Port)
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff lctn0")
 
@@ -139,7 +139,7 @@ func (s SkeemaIntegrationSuite) TestLowerCaseTableNames1(t *testing.T) {
 	// into the FS, and confirm a diff is clean. Then try operations on the LCTN=1
 	// instance, which should error due to the "duplicate" definition in the
 	// situation of a case-insensitive server.
-	s.dbExec(t, "NameCase", "CREATE TABLE `users` (`ID` int) ENGINE=InnoDB")
+	s.d.ExecSQL(t, "CREATE TABLE `NameCase`.`users` (`ID` int) ENGINE=InnoDB")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull lctn0")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff lctn0")
 	s.handleCommand(t, CodeFatalError, ".", "skeema diff lctn1")
@@ -192,7 +192,7 @@ func (s SkeemaIntegrationSuite) TestLowerCaseTableNames2(t *testing.T) {
 	// mixed-case-named database and fill it with objects with mixed-case names.
 	// Run `skeema init` from this db, so that we have a skeema dir that maintains
 	// the mixed-case names. Afterwards, `skeema diff` should show no differences.
-	s.sourceSQL(t, "lctn.sql")
+	s.d.SourceSQL(t, "../lctn.sql")
 	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb --schema NameCase -h %s -P %d lctn0", s.d.Instance.Host, s.d.Instance.Port)
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff lctn0")
 
@@ -279,7 +279,7 @@ func (s SkeemaIntegrationSuite) TestLowerCaseTableNames2(t *testing.T) {
 	// into the FS, and confirm a diff is clean. Then try operations on the LCTN=2
 	// instance, which should error due to the "duplicate" definition in the
 	// situation of a case-insensitive server.
-	s.dbExec(t, "NameCase", "CREATE TABLE `users` (`ID` int) ENGINE=InnoDB")
+	s.d.ExecSQL(t, "CREATE TABLE `NameCase`.`users` (`ID` int) ENGINE=InnoDB")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull lctn0")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff lctn0")
 	s.handleCommand(t, CodeFatalError, ".", "skeema diff lctn2")

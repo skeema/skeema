@@ -1,8 +1,6 @@
 # Table using Percona Server's column compression
 
-SET foreign_key_checks=0;
-
-use testing
+use testing;
 
 CREATE TABLE colcompr(
 	id int unsigned NOT NULL,

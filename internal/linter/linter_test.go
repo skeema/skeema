@@ -377,7 +377,8 @@ func TestRegisterRuleDuplicate(t *testing.T) {
 	}
 }
 
-func (s *IntegrationSuite) Setup(backend string) (err error) {
+func (s *IntegrationSuite) Setup(t *testing.T, backend string) {
+	var err error
 	s.d, err = tengo.GetOrCreateDockerizedInstance(tengo.DockerizedInstanceOptions{
 		Name:              fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),
 		Image:             backend,
@@ -386,32 +387,24 @@ func (s *IntegrationSuite) Setup(backend string) (err error) {
 		DataTmpfs:         true,
 	})
 	if err != nil {
-		return err
+		t.Fatalf("Unable to setup backend %q: %v", backend, err)
 	}
 
-	// By default, MySQL 8.4.0 requires FKs to have an exact unique index on the
+	// By default, MySQL 8.4+ requires FKs to have an exact unique index on the
 	// parent table side, which would break the test tables for lint-fk-parent.
-	// It isn't clear yet if this default will remain in 8.4.1+; see MySQL bug
-	// https://bugs.mysql.com/bug.php?id=114838 for more info. For now we just
-	// attempt to disable the undocumented variable (which controls this new
-	// behavior) globally in the containerized test DB, but intentionally ignore
-	// errors in case this variable is removed.
+	// TODO: this variable will eventually be removed; test logic needs to
+	// account for this
 	if s.d.Flavor().MinMySQL(8, 4) {
-		db, err := s.d.ConnectionPool("", "")
-		if err == nil {
-			_, _ = db.Exec("SET GLOBAL restrict_fk_on_non_standard_key = OFF")
-		}
+		s.d.ExecSQL(t, "SET GLOBAL restrict_fk_on_non_standard_key = OFF")
 	}
-
-	return nil
 }
 
-func (s *IntegrationSuite) Teardown(backend string) error {
-	return tengo.SkeemaTestContainerCleanup(s.d)
+func (s *IntegrationSuite) Teardown(t *testing.T) {
+	s.d.Done(t)
 }
 
-func (s *IntegrationSuite) BeforeTest(backend string) error {
-	return s.d.NukeData()
+func (s *IntegrationSuite) BeforeTest(t *testing.T) {
+	s.d.NukeData(t)
 }
 
 // getDir parses and returns an *fs.Dir

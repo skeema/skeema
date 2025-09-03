@@ -2,9 +2,11 @@ package tengo
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"runtime/debug"
 	"strings"
@@ -22,15 +24,15 @@ import (
 // suite struct should have any number of test methods of form
 // TestFoo(t *testing.T), which will be executed automatically by RunSuite.
 type IntegrationTestSuite interface {
-	Setup(backend string) error
-	Teardown(backend string) error
-	BeforeTest(backend string) error
+	Setup(t *testing.T, backend string)
+	Teardown(t *testing.T)
+	BeforeTest(t *testing.T)
 }
 
 // RunSuite runs all test methods in the supplied suite once per backend. It
-// calls suite.Setup(backend) once per backend, then iterates through all Test
-// methods in suite. For each test method, suite.BeforeTest will be run,
-// followed by the test itself. Finally, suite.Teardown(backend) will be run.
+// calls suite.Setup(t, backend) once per backend, then iterates through all
+// Test methods in suite. For each test method, suite.BeforeTest will be run,
+// followed by the test itself. Finally, suite.Teardown(t) will be run.
 // Backends are just strings, and may contain docker image names or any other
 // string representation that the test suite understands.
 func RunSuite(suite IntegrationTestSuite, t *testing.T, backends []string) {
@@ -48,9 +50,7 @@ func RunSuite(suite IntegrationTestSuite, t *testing.T, backends []string) {
 	}
 
 	for _, backend := range backends {
-		if err := suite.Setup(backend); err != nil {
-			t.Fatalf("RunSuite %s: Setup(%s) failed: %s", suiteName, backend, err)
-		}
+		suite.Setup(t, backend)
 
 		// Run test methods
 		for n := 0; n < suiteType.NumMethod(); n++ {
@@ -58,10 +58,8 @@ func RunSuite(suite IntegrationTestSuite, t *testing.T, backends []string) {
 			if strings.HasPrefix(method.Name, "Test") {
 				subtestName := fmt.Sprintf("%s.%s:%s", suiteName, method.Name, backend)
 				subtest := func(subt *testing.T) {
-					if err := suite.BeforeTest(backend); err != nil {
-						suite.Teardown(backend)
-						t.Fatalf("RunSuite %s: BeforeTest(%s) failed: %s", suiteName, backend, err)
-					}
+					suite.BeforeTest(subt)
+
 					// Capture output and only display if test fails or is skipped. Note that
 					// this approach does not permit concurrent subtest execution.
 					realOut, realErr := os.Stdout, os.Stderr
@@ -104,9 +102,7 @@ func RunSuite(suite IntegrationTestSuite, t *testing.T, backends []string) {
 			}
 		}
 
-		if err := suite.Teardown(backend); err != nil {
-			t.Fatalf("RunSuite %s: Teardown(%s) failed: %s", suiteName, backend, err)
-		}
+		suite.Teardown(t)
 	}
 }
 
@@ -150,35 +146,52 @@ func SkeemaTestImages(t *testing.T) []string {
 	return images
 }
 
-// SkeemaTestContainerCleanup potentially performs cleanup on a container used
-// in integration testing, depending on the value of the SKEEMA_TEST_CLEANUP
-// env variable:
-//   - If SKEEMA_TEST_CLEANUP is set to "stop" (case-insensitive), the supplied
-//     container will be stopped.
+// Done potentially performs cleanup on a container used in integration testing,
+// depending on the value of the SKEEMA_TEST_CLEANUP env variable:
+//   - If SKEEMA_TEST_CLEANUP is set to "stop" (case-insensitive), the container
+//     will be stopped.
 //   - If SKEEMA_TEST_CLEANUP is set to "none" (case-insensitive), no cleanup
-//     action is taken, and the supplied container remains running.
+//     action is taken, and the container remains running.
 //   - Otherwise (if SKEEMA_TEST_CLEANUP is not set, or set to any other value),
-//     the supplied container will be removed (destroyed) if it has a name
-//     beginning with "skeema-test-". With any other name prefix, an error is
-//     returned.
-func SkeemaTestContainerCleanup(d *DockerizedInstance) error {
+//     the container will be removed (destroyed) if it has a name beginning with
+//     "skeema-test-". With any other name prefix, no cleanup action is taken.
+func (di *DockerizedInstance) Done(t *testing.T) {
 	action := strings.TrimSpace(os.Getenv("SKEEMA_TEST_CLEANUP"))
-	if strings.EqualFold(action, "none") {
-		return nil
-	} else if strings.EqualFold(action, "stop") {
-		return d.Stop()
-	} else if strings.HasPrefix(d.containerName, "skeema-test-") {
-		return d.Destroy()
-	} else {
-		return fmt.Errorf("refusing to destroy container %q without skeema-test- naming prefix", d.containerName)
+	var err error
+	if strings.EqualFold(action, "stop") {
+		err = di.Stop()
+	} else if !strings.EqualFold(action, "none") && strings.HasPrefix(di.containerName, "skeema-test-") {
+		err = di.Destroy()
+	}
+	if err != nil {
+		t.Fatalf("Unable to clean up test container %s: %v", di, err)
 	}
 }
 
-// EnableTLS copies the contents of certsDir to the provided container, adds
-// server configuration to use those certs, and then restarts the database.
-func EnableTLS(dinst *DockerizedInstance, certsDir string) error {
-	if err := dinst.PutFile(certsDir, "/tls"); err != nil {
-		return err
+// NukeData drops all non-system schemas and tables in the containerized
+// mysql-server, making it useful as a per-test cleanup method in
+// implementations of IntegrationTestSuite.BeforeTest. This method should
+// never be used on a "real" production database!
+func (di *DockerizedInstance) NukeData(t *testing.T) {
+	t.Helper()
+	schemas, err := di.Instance.SchemaNames()
+	if err != nil {
+		t.Fatalf("Unable to query schema names on %s: %v", di, err)
+	}
+	for _, schema := range schemas {
+		err = di.Instance.DropSchema(schema, BulkDropOptions{OneShot: true})
+		if err != nil {
+			t.Fatalf("Unable to drop schema %s on %s: %v", schema, di, err)
+		}
+	}
+}
+
+// EnableTLS copies the contents of certsDir to the container, adds server
+// configuration to use those certs, and then restarts the database.
+func (di *DockerizedInstance) EnableTLS(t *testing.T, certsDir string) {
+	t.Helper()
+	if err := di.PutFile(certsDir, "/tls"); err != nil {
+		t.Fatalf("EnableTLS on %s: %v", di, err)
 	}
 
 	commands := []string{
@@ -189,17 +202,113 @@ func EnableTLS(dinst *DockerizedInstance, certsDir string) error {
 	}
 	for _, command := range commands {
 		toRun := []string{"/bin/sh", "-c", command}
-		_, errStr, err := dinst.Exec(toRun, nil)
+		_, errStr, err := di.Exec(toRun, nil)
 		if err != nil {
-			return fmt.Errorf("%w: %s", err, errStr)
+			t.Fatalf("EnableTLS on %s: %v %s", di, err, errStr)
 		}
 	}
 
-	if err := dinst.Stop(); err != nil {
+	if err := di.Stop(); err != nil {
+		t.Fatalf("EnableTLS on %s: %v", di, err)
+	}
+	if err := di.Start(); err != nil {
+		t.Fatalf("EnableTLS on %s: %v", di, err)
+	}
+	if err := di.TryConnect(); err != nil {
+		t.Fatalf("EnableTLS on %s: %v", di, err)
+	}
+}
+
+var sqlFileCache = map[string][]*Statement{}
+
+// SourceSQL executes the SQL statements in the specified file(s) on the
+// receiver. SQL statements are executed sequentially, in the same session.
+// The session may be reused by subsequent invocations of SourceSQL or ExecSQL,
+// so avoid making assumptions about the default database or session variables.
+// Whenever possible, avoid mutating session variables. The session will
+// default to using foreign_key_checks=0.
+//
+// SQL files should contain USE commands as needed, which are processed server-
+// side. DELIMITER commands are handled appropriately, but no other client
+// commands are supported.
+//
+// Contents of SQL files are cached, so modifications during runtime may have
+// no effect.
+//
+// If any statement returns an error, it is fatal to the test.
+func (di *DockerizedInstance) SourceSQL(t *testing.T, filePaths ...string) {
+	t.Helper()
+	var statements []*Statement
+	for _, fp := range filePaths {
+		cleaned, _ := filepath.Abs(filepath.Clean(fp))
+		fpStatements, ok := sqlFileCache[cleaned]
+		if !ok {
+			var err error
+			fpStatements, err = ParseStatementsInFile(cleaned)
+			if err != nil {
+				t.Fatalf("SourceSQL on %s: %v", di, err)
+			}
+			sqlFileCache[cleaned] = fpStatements
+		}
+		statements = append(statements, fpStatements...)
+	}
+	if err := execStatements(di.Instance, statements); err != nil {
+		t.Fatalf("SourceSQL on %s: %v", di, err)
+	}
+}
+
+// ExecSQL executes the SQL statements in the supplied string on the receiver.
+// The string should consist of one or more valid SQL statements, which are
+// executed sequentially in the same session. The session may be reused by
+// subsequent invocations of ExecSQL or SourceSQL, so avoid making assumptions
+// about the default database or session variables. Whenever possible, avoid
+// mutating session variables. The session will default to using
+// foreign_key_checks=0.
+//
+// The input should contain USE commands and/or schema name qualifiers as
+// needed. USE is processed server-side. DELIMITER commands are handled
+// appropriately, and are only needed if input contains a compound
+// statement followed by other statements. No other client commands are
+// supported.
+//
+// If any statement returns an error, it is fatal to the test.
+func (di *DockerizedInstance) ExecSQL(t *testing.T, input string) {
+	t.Helper()
+	statements, err := ParseStatementsInString(input)
+	if err == nil {
+		err = execStatements(di.Instance, statements)
+	}
+	if err != nil {
+		t.Fatalf("ExecSQL on %s: %v", di, err)
+	}
+}
+
+func execStatements(inst *Instance, statements []*Statement) error {
+	// note: this pool intentionally sets foreign_key_checks to OFF with odd
+	// capitalization to greatly reduce the chances of this connection pool being
+	// reused by other code paths, since caching is by DSN. This largely prevents
+	// hard-to-diagnose test failures caused by session state changes in .sql
+	// files. It's a hack, but this function is intended for use only in
+	// integration tests anyway.
+	db, err := inst.CachedConnectionPool("", "foreign_key_checks=OfF")
+	if err != nil {
 		return err
 	}
-	if err := dinst.Start(); err != nil {
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
 		return err
 	}
-	return dinst.TryConnect()
+	defer conn.Close()
+	for _, stmt := range statements {
+		// Skip whitespace, comments, and DELIMITER commands
+		if stmt.Type == StatementTypeNoop || (stmt.Type == StatementTypeCommand && len(stmt.Text) >= 9 && strings.EqualFold(stmt.Text[0:9], "DELIMITER")) {
+			continue
+		}
+		body, _ := stmt.SplitTextBody() // discard trailing delimiter and whitespace
+		if _, err := conn.ExecContext(ctx, body); err != nil {
+			return fmt.Errorf("Error executing statement from %s on %s: %v", stmt.Location(), inst, err)
+		}
+	}
+	return nil
 }

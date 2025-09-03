@@ -1,10 +1,7 @@
 # Test edge cases of column default expressions in MariaDB 10.2+. Same as the
 # MySQL file except no 4-byte chars used in expressions.
 
-
-SET foreign_key_checks=0;
-
-use testing
+use testing;
 
 CREATE TABLE testdefaults (
 	pk varchar(100) NOT NULL,
