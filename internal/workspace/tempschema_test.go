@@ -147,12 +147,12 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCrossDBFK(t *testing.T) {
 	// background. Since DDL requires EXCLUSIVE MDL, DDL will be blocked until this
 	// query completes, although this function will return immediately.
 	holdMDL := func(tableName string, seconds int) {
-		db, err := s.d.ConnectionPool("parent_side", "")
+		db, err := s.d.CachedConnectionPool("", "")
 		if err != nil {
 			panic(fmt.Errorf("Unexpected error from ConnectionPool: %v", err))
 		}
 		var x struct{}
-		query := fmt.Sprintf("SELECT %s.*, SLEEP(?) FROM %s LIMIT 1", tengo.EscapeIdentifier(tableName), tengo.EscapeIdentifier(tableName))
+		query := fmt.Sprintf("SELECT %s.*, SLEEP(?) FROM `parent_side`.%s LIMIT 1", tengo.EscapeIdentifier(tableName), tengo.EscapeIdentifier(tableName))
 		go db.Select(&x, query, seconds)
 	}
 

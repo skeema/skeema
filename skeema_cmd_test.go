@@ -12,9 +12,16 @@ import (
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
+	"github.com/skeema/skeema/internal/util"
 )
 
 func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
+	// This test creates a lot of connection pools with unusual params, which won't
+	// be reused by other tests. At the end, close all cached pools to avoid
+	// keeping all those sleeping conns around, which may get too close to the test
+	// instance's max connections limit (151 out of the box)
+	t.Cleanup(util.CloseCachedConnectionPools)
+
 	s.handleCommand(t, CodeBadConfig, ".", "skeema init") // no host
 
 	// Invalid environment name
@@ -1135,7 +1142,7 @@ func (s SkeemaIntegrationSuite) TestReuseTempSchema(t *testing.T) {
 func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
 
-	// Make product dir now map to 3 schemas: product, product2, product3
+	// Reconfigure product dir so that it now maps to 4 schemas
 	contents := fs.ReadTestFile(t, "mydb/product/.skeema")
 	contents = strings.Replace(contents, "schema=product", "schema=product,product2,product3,product4", 1)
 	fs.WriteTestFile(t, "mydb/product/.skeema", contents)

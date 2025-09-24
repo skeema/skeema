@@ -2,12 +2,10 @@ package tengo
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
-	"golang.org/x/sync/errgroup"
 )
 
 // Routine represents a stored procedure or function.
@@ -140,48 +138,6 @@ func (r *Routine) equalsIgnoringCharacteristics(other *Routine) bool {
 // DropStatement returns a SQL statement that, if run, would drop this routine.
 func (r *Routine) DropStatement() string {
 	return fmt.Sprintf("DROP %s %s", r.Type.Caps(), EscapeIdentifier(r.Name))
-}
-
-// parseCreateStatement populates Body, ParamString, and ReturnDataType by
-// parsing CreateStatement. It is used during introspection of routines in
-// situations where the mysql.proc table is unavailable or does not exist.
-func (r *Routine) parseCreateStatement(flavor Flavor, schema string) error {
-	// Find matching parens around arg list
-	argStart := strings.IndexRune(r.CreateStatement, '(')
-	var argEnd int
-	nestCount := 1
-	for pos, r := range r.CreateStatement {
-		if nestCount == 0 {
-			argEnd = pos
-			break
-		} else if pos <= argStart {
-			continue
-		} else if r == '(' {
-			nestCount++
-		} else if r == ')' {
-			nestCount--
-		}
-	}
-	if argStart <= 0 || argEnd <= 0 {
-		return fmt.Errorf("Failed to parse SHOW CREATE %s %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), r.CreateStatement)
-	}
-	r.ParamString = r.CreateStatement[argStart+1 : argEnd-1]
-
-	if r.Type == ObjectTypeFunc {
-		retStart := argEnd + len(" RETURNS ")
-		retEnd := retStart + strings.IndexRune(r.CreateStatement[retStart:], '\n')
-		if retEnd <= 0 {
-			return fmt.Errorf("Failed to parse SHOW CREATE %s %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), r.CreateStatement)
-		}
-		r.ReturnDataType = r.CreateStatement[retStart:retEnd]
-	}
-
-	// Attempt to replace r.Body with one that doesn't have character conversion problems
-	if header := r.head(flavor); strings.HasPrefix(r.CreateStatement, header) {
-		r.Body = r.CreateStatement[len(header):]
-		return nil
-	}
-	return fmt.Errorf("Failed to parse SHOW CREATE %s %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), r.CreateStatement)
 }
 
 ///// Diff logic ///////////////////////////////////////////////////////////////
@@ -382,7 +338,14 @@ func compareRoutinesByName(fromByName map[string]*Routine, toByName map[string]*
 
 ///// Introspection logic //////////////////////////////////////////////////////
 
-func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor, lctn NameCaseMode) ([]*Routine, error) {
+func init() {
+	primaryIntrospectorTasks = append(primaryIntrospectorTasks, introspectRoutines)
+}
+
+func introspectRoutines(ctx context.Context, insp *introspector) error {
+	schema := insp.schema.Name
+	flavor := insp.instance.Flavor()
+
 	// Obtain the routines in the schema
 	// We completely exclude routines that the user can call, but not examine --
 	// e.g. user has EXECUTE priv but missing other vital privs. In this case
@@ -405,7 +368,7 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 	// likely an unexpected side-effect of MDEV-14432. As a workaround, we force
 	// a case-insensitive comparison using a COLLATE clause.
 	var lctn2Collation string
-	if lctn == NameCaseInsensitive && flavor.MinMariaDB(10, 11, 13) {
+	if insp.instance.NameCaseMode() == NameCaseInsensitive && flavor.MinMariaDB(10, 11, 13) {
 		lctn2Collation = " COLLATE utf8_general_ci"
 	}
 	// Note on this query: MySQL 8.0 changes information_schema column names to
@@ -428,11 +391,11 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 		FROM   information_schema.routines r
 		WHERE  r.routine_schema%s = ? AND routine_definition IS NOT NULL`,
 		lctn2Collation)
-	if err := db.SelectContext(ctx, &rawRoutines, query, schema); err != nil {
-		return nil, fmt.Errorf("Error querying information_schema.routines for schema %s: %s", schema, err)
+	if err := insp.db.SelectContext(ctx, &rawRoutines, query, schema); err != nil {
+		return fmt.Errorf("Error querying information_schema.routines for schema %s: %s", schema, err)
 	}
 	if len(rawRoutines) == 0 {
-		return []*Routine{}, nil
+		return nil
 	}
 	routines := make([]*Routine, len(rawRoutines))
 	dict := make(map[ObjectKey]*Routine, len(rawRoutines))
@@ -449,9 +412,9 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 			SQLMode:           rawRoutine.SQLMode,
 		}
 		if routines[n].Type != ObjectTypeProc && routines[n].Type != ObjectTypeFunc {
-			return nil, fmt.Errorf("Unsupported routine type %s found in %s.%s", rawRoutine.Type, schema, rawRoutine.Name)
+			return fmt.Errorf("Unsupported routine type %s found in %s.%s", rawRoutine.Type, schema, rawRoutine.Name)
 		}
-		key := ObjectKey{Type: routines[n].Type, Name: routines[n].Name}
+		key := routines[n].ObjectKey()
 		dict[key] = routines[n]
 	}
 
@@ -478,68 +441,79 @@ func querySchemaRoutines(ctx context.Context, db *sqlx.DB, schema string, flavor
 			FROM   mysql.proc
 			WHERE  db = ?`
 		// Errors here are non-fatal. No need to even check; slice will be empty which is fine
-		db.SelectContext(ctx, &rawRoutineMeta, query, schema)
+		insp.db.SelectContext(ctx, &rawRoutineMeta, query, schema)
 		for _, meta := range rawRoutineMeta {
 			key := ObjectKey{Type: ObjectType(strings.ToLower(meta.Type)), Name: meta.Name}
 			if routine, ok := dict[key]; ok {
 				routine.ParamString = strings.ReplaceAll(meta.ParamList, "\r\n", "\n")
 				routine.ReturnDataType = meta.Returns
-				routine.Body = strings.ReplaceAll(meta.Body, "\r\n", "\n")
+				routine.Body = strings.TrimSuffix(strings.ReplaceAll(meta.Body, "\r\n", "\n"), ";")
 				routine.CreateStatement = routine.Definition(flavor)
 				alreadyObtained++
 			}
 		}
 	}
 
-	var err error
+	insp.schema.Routines = routines
+
+	// Unless mysql.proc was available, run subtasks for obtaining and processing
+	// SHOW CREATE statements
 	if alreadyObtained < len(routines) {
-		g, subCtx := errgroup.WithContext(ctx)
 		for _, r := range routines {
 			if r.CreateStatement == "" {
-				g.Go(func() (err error) {
-					r.CreateStatement, err = showCreateRoutine(subCtx, db, r.Name, r.Type)
-					if err == nil {
-						r.CreateStatement = strings.ReplaceAll(r.CreateStatement, "\r\n", "\n")
-						err = r.parseCreateStatement(flavor, schema)
-					} else {
-						err = fmt.Errorf("Error executing SHOW CREATE %s for %s.%s: %w", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), err)
-					}
-					return err
-				})
+				insp.Go(ctx, r.introspectShowCreate)
 			}
 		}
-		err = g.Wait()
 	}
 
-	return routines, err
+	return nil
 }
 
-func showCreateRoutine(ctx context.Context, db *sqlx.DB, routine string, ot ObjectType) (create string, err error) {
-	query := fmt.Sprintf("SHOW CREATE %s %s", ot.Caps(), EscapeIdentifier(routine))
-	if ot == ObjectTypeProc {
-		var createRows []struct {
-			CreateStatement sql.NullString `db:"Create Procedure"`
-		}
-		err = db.SelectContext(ctx, &createRows, query)
-		if (err == nil && len(createRows) != 1) || IsObjectNotFoundError(err) {
-			err = sql.ErrNoRows
-		} else if err == nil {
-			create = createRows[0].CreateStatement.String
-		}
-	} else if ot == ObjectTypeFunc {
-		var createRows []struct {
-			CreateStatement sql.NullString `db:"Create Function"`
-		}
-		err = db.SelectContext(ctx, &createRows, query)
-		if (err == nil && len(createRows) != 1) || IsObjectNotFoundError(err) {
-			err = sql.ErrNoRows
-		} else if err == nil {
-			create = createRows[0].CreateStatement.String
-		}
-	} else {
-		err = fmt.Errorf("Object type %s is not a routine", ot)
+func (r *Routine) introspectShowCreate(ctx context.Context, insp *introspector) (err error) {
+	schema := insp.schema.Name
+	r.CreateStatement, err = showCreateRoutine(ctx, insp.db, schema, r.Type, r.Name)
+	if err != nil {
+		return fmt.Errorf("Error executing SHOW CREATE %s for %s.%s: %w", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), err)
 	}
-	// Trim any trailing semicolon, which may be present in result if routine was
-	// created with multiStatements enabled
-	return strings.TrimSuffix(create, ";"), err
+
+	// Find matching parens around arg list
+	argStart := strings.IndexRune(r.CreateStatement, '(')
+	var argEnd int
+	nestCount := 1
+	for pos, r := range r.CreateStatement {
+		if nestCount == 0 {
+			argEnd = pos
+			break
+		} else if pos <= argStart {
+			continue
+		} else if r == '(' {
+			nestCount++
+		} else if r == ')' {
+			nestCount--
+		}
+	}
+	if argStart <= 0 || argEnd <= 0 {
+		return fmt.Errorf("Failed to parse args in SHOW CREATE %s %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), r.CreateStatement)
+	}
+	r.ParamString = r.CreateStatement[argStart+1 : argEnd-1]
+
+	if r.Type == ObjectTypeFunc {
+		retStart := argEnd + len(" RETURNS ")
+		retEnd := retStart + strings.IndexRune(r.CreateStatement[retStart:], '\n')
+		if retEnd <= 0 {
+			return fmt.Errorf("Failed to parse return data type in SHOW CREATE %s %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), r.CreateStatement)
+		}
+		r.ReturnDataType = r.CreateStatement[retStart:retEnd]
+	}
+
+	// Attempt to replace r.Body with one that doesn't have character conversion problems
+	if header := r.head(insp.instance.Flavor()); strings.HasPrefix(r.CreateStatement, header) {
+		r.Body = r.CreateStatement[len(header):]
+		return nil
+	}
+	return fmt.Errorf("Failed to parse body in SHOW CREATE %s %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), r.CreateStatement)
+}
+
+func showCreateRoutine(ctx context.Context, db *sqlx.DB, schema string, typ ObjectType, routine string) (string, error) {
+	return showCreateObject(ctx, db, schema, typ, routine)
 }

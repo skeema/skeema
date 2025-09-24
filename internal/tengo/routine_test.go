@@ -2,7 +2,6 @@ package tengo
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 	"testing"
@@ -10,10 +9,6 @@ import (
 
 func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 	schema := s.GetSchema(t, "testing")
-	db, err := s.d.CachedConnectionPool("testing", "")
-	if err != nil {
-		t.Fatalf("Unexpected error from Connect: %s", err)
-	}
 	sqlMode := s.d.SQLMode()
 
 	procsByName := schema.ProceduresByName()
@@ -44,27 +39,26 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 		t.Errorf("Expected to find 4-byte char \U0001F4A9 in func2.Body, but did not. Body contents:\n%s", func2.Body)
 	}
 
+	db, err := s.d.CachedConnectionPool("", "")
+	if err != nil {
+		t.Fatalf("Unexpected error from CachedConnectionPool: %v", err)
+	}
+
 	// If this flavor supports using mysql.proc to bulk-fetch routines, confirm
 	// the result is identical to using the individual SHOW CREATE queries
 	if !s.d.Flavor().MinMySQL(8) {
-		db, err := s.d.ConnectionPool("testing", "")
-		if err != nil {
-			t.Fatalf("Unexpected error from ConnectionPool: %v", err)
+		insp := &introspector{
+			instance: s.d.Instance,
+			db:       db,
+			schema:   schema,
 		}
-		fastResults, err := querySchemaRoutines(context.Background(), db, "testing", s.d.Flavor(), s.d.NameCaseMode())
-		if err != nil {
-			t.Fatalf("Unexpected error from querySchemaRoutines: %v", err)
-		}
-		oldFlavor := s.d.Flavor()
-		s.d.ForceFlavor(ParseFlavor("mysql:8.0"))
-		slowResults, err := querySchemaRoutines(context.Background(), db, "testing", s.d.Flavor(), s.d.NameCaseMode())
-		s.d.ForceFlavor(oldFlavor)
-		if err != nil {
-			t.Fatalf("Unexpected error from querySchemaRoutines: %v", err)
-		}
-		for n, r := range fastResults {
-			if !r.Equals(slowResults[n]) {
-				t.Errorf("Routine[%d] mismatch\nFast path value: %+v\nSlow path value: %+v\n", n, r, slowResults[n])
+		ctx := context.Background()
+		for _, r := range schema.Routines {
+			rCopy := *r
+			if err := r.introspectShowCreate(ctx, insp); err != nil {
+				t.Fatalf("Unexpected error from introspectShowCreate: %v", err)
+			} else if !rCopy.Equals(r) {
+				t.Errorf("Unexpected mutation to %s after introspectShowCreate:\nOriginal: %+v\nAfter: %+v", r.ObjectKey(), rCopy, *r)
 			}
 		}
 	}
@@ -91,14 +85,14 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 	if actualFunc1.Equals(r) || !r.Equals(r) {
 		t.Error("Equals not behaving as expected")
 	}
-	if _, err = showCreateRoutine(context.Background(), db, actualProc1.Name, ObjectTypeFunc); err != sql.ErrNoRows {
-		t.Errorf("Unexpected error return from showCreateRoutine: expected sql.ErrNoRows, found %s", err)
+	if _, err = showCreateRoutine(context.Background(), db, "testing", ObjectTypeFunc, actualProc1.Name); err == nil {
+		t.Error("Expected error return from showCreateRoutine, but err was nil")
 	}
-	if _, err = showCreateRoutine(context.Background(), db, actualFunc1.Name, ObjectTypeProc); err != sql.ErrNoRows {
-		t.Errorf("Unexpected error return from showCreateRoutine: expected sql.ErrNoRows, found %s", err)
+	if _, err = showCreateRoutine(context.Background(), db, "testing", ObjectTypeProc, actualFunc1.Name); err == nil {
+		t.Error("Expected error return from showCreateRoutine, but err was nil")
 	}
-	if _, err = showCreateRoutine(context.Background(), db, actualFunc1.Name, ObjectTypeTable); err == nil {
-		t.Error("Expected non-nil error return from showCreateRoutine with invalid type, instead found nil")
+	if _, err = showCreateRoutine(context.Background(), db, "testing", ObjectTypeTable, actualFunc1.Name); err == nil {
+		t.Error("Expected error return from showCreateRoutine, but err was nil")
 	}
 }
 

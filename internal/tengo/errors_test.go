@@ -11,7 +11,7 @@ func (s TengoIntegrationSuite) TestIsDatabaseError(t *testing.T) {
 	if IsDatabaseError(err1) {
 		t.Errorf("IsDatabaseError unexpectedly returned true for non-database error type=%T", err1)
 	}
-	_, err2 := s.d.CachedConnectionPool("doesnt_exist", "")
+	_, err2 := s.d.ConnectionPool("doesnt_exist", "")
 	if !IsDatabaseError(err2) {
 		t.Errorf("IsDatabaseError unexpectedly returned false for error of type=%T", err2)
 	}
@@ -23,17 +23,17 @@ func (s TengoIntegrationSuite) TestDatabaseErrorTypeFunctions(t *testing.T) {
 	if IsSyntaxError(err) {
 		t.Errorf("IsSyntaxError unexpectedly returned true for non-database error type=%T", err)
 	}
-	db, err := s.d.ConnectionPool("testing", "")
+	db, err := s.d.CachedConnectionPool("", "")
 	if err != nil {
 		t.Fatalf("Unable to get connection")
 	}
-	_, syntaxErr := db.Exec("ALTER TAABBEL actor ENGINE=InnoDB")
+	_, syntaxErr := db.Exec("ALTER TAABBEL testing.actor ENGINE=InnoDB")
 	if syntaxErr == nil {
 		t.Error("Bad syntax still returned nil error unexpectedly")
 	} else if !IsSyntaxError(syntaxErr) {
 		t.Errorf("Error of type %T %+v unexpectedly not considered syntax error", syntaxErr, syntaxErr)
 	}
-	_, doesntExistErr := db.Exec("ALTER TABLE doesnt_exist ENGINE=InnoDB")
+	_, doesntExistErr := db.Exec("ALTER TABLE testing.doesnt_exist ENGINE=InnoDB")
 	if doesntExistErr == nil {
 		t.Error("Bad alter still returned nil error unexpectedly")
 	} else if IsSyntaxError(doesntExistErr) {
@@ -49,11 +49,11 @@ func (s TengoIntegrationSuite) TestDatabaseErrorTypeFunctions(t *testing.T) {
 	}
 
 	// Test IsSessionVarNameError and IsSessionVarValueError
-	_, invalidVarNameErr := s.d.ConnectionPool("testing", "invalidvar='hello'")
+	_, invalidVarNameErr := s.d.ConnectionPool("", "invalidvar='hello'")
 	_, globalOnlyVarNameErr := s.d.ConnectionPool("", "concurrent_insert=1")
 	_, readOnlyVarNameErr := s.d.ConnectionPool("", "version_comment='hello'")
-	_, invalidVarValueErr := s.d.ConnectionPool("testing", "sql_mode='superduperdb'")
-	_, invalidVarValTypeErr := s.d.ConnectionPool("testing", "wait_timeout='hello'")
+	_, invalidVarValueErr := s.d.ConnectionPool("", "sql_mode='superduperdb'")
+	_, invalidVarValTypeErr := s.d.ConnectionPool("", "wait_timeout='hello'")
 	if !IsSessionVarNameError(invalidVarNameErr) {
 		t.Errorf("Incorrect behavior of IsSessionVarNameError: expected true for %T %+v, but false was returned", invalidVarNameErr, invalidVarNameErr)
 	}

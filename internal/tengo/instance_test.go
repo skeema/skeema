@@ -151,13 +151,11 @@ func TestInstanceIntrospectionParams(t *testing.T) {
 	assertParams("mysql:8.0", "NO_FIELD_OPTIONS,NO_BACKSLASH_ESCAPES,NO_KEY_OPTIONS,NO_TABLE_OPTIONS", "sql_quote_show_create=1&collation=binary&information_schema_stats_expiry=0&sql_mode=%27NO_BACKSLASH_ESCAPES%27")
 }
 
-func (s TengoIntegrationSuite) TestInstanceConnect(t *testing.T) {
+func (s TengoIntegrationSuite) TestInstanceCachedConnectionPool(t *testing.T) {
 	// Connecting to invalid schema should return an error
-	db, err := s.d.CachedConnectionPool("does-not-exist", "")
-	if err == nil {
-		t.Error("err is unexpectedly nil")
-	} else if db != nil {
-		t.Error("db is unexpectedly non-nil")
+	db, err := s.d.CachedConnectionPool("doesnotexist", "")
+	if err == nil || db != nil {
+		t.Error("unexpected return values from CachedConnectionPool")
 	}
 
 	// Connecting without specifying a default schema should be successful
@@ -190,6 +188,23 @@ func (s TengoIntegrationSuite) TestInstanceConnect(t *testing.T) {
 		t.Errorf("Unexpected connection error: %s", err)
 	} else if db4 == db || db4 == db3 {
 		t.Error("Expected different DB pool to be returned from Connect with different params; instead was same")
+	}
+
+	// Check cache directly, and close two of these pools which won't be reused by
+	// other tests
+	key3 := "information_schema?" + s.d.BuildParamString("")
+	if dbByKey3, ok := s.d.Instance.connectionPool[key3]; ok && db3 == dbByKey3 {
+		delete(s.d.Instance.connectionPool, key3)
+		db3.Close()
+	} else {
+		t.Errorf("db3 not found in cache with expected key %q", key3)
+	}
+	key4 := "information_schema?" + s.d.BuildParamString("foreign_key_checks=0&wait_timeout=20")
+	if dbByKey4, ok := s.d.Instance.connectionPool[key4]; ok && db4 == dbByKey4 {
+		delete(s.d.Instance.connectionPool, key4)
+		db4.Close()
+	} else {
+		t.Errorf("db4 not found in cache with expected key %q", key3)
 	}
 }
 
@@ -351,8 +366,10 @@ func (s TengoIntegrationSuite) TestInstanceGrantChecks(t *testing.T) {
 	if !s.d.CanSkipBinlog() {
 		t.Fatal("Expected all Dockerized instances to be able to skip binlogs, but CanSkipBinlogs returned false")
 	}
-	if _, err := s.d.CachedConnectionPool("", "sql_log_bin=0"); err != nil {
+	if db, err := s.d.ConnectionPool("", "sql_log_bin=0"); err != nil {
 		t.Errorf("Error connecting with sql_log_bin=0: %v", err)
+	} else {
+		db.Close()
 	}
 
 	// Now create a less-privileged user, and confirm behavior. Note that for
@@ -736,11 +753,6 @@ func (s TengoIntegrationSuite) TestInstanceDropRoutinesInSchema(t *testing.T) {
 	// Repeated calls should have no effect, no error.
 	if err := s.d.DropRoutinesInSchema("testing", opts); err != nil {
 		t.Errorf("Unexpected error from DropRoutinesInSchema: %v", err)
-	}
-
-	// Calling on a nonexistent schema name should return an error.
-	if err := s.d.DropRoutinesInSchema("doesntexist", opts); err == nil {
-		t.Error("Expected error from DropRoutinesInSchema on nonexistent schema; instead err was nil")
 	}
 }
 

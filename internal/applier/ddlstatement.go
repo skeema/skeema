@@ -201,22 +201,17 @@ func getWrapper(config *mybase.Config, diff tengo.ObjectDiff, tableSize int64, m
 // getConnectParams returns the necessary connection params (session variables)
 // for the supplied diff and config.
 func getConnectParams(diff tengo.ObjectDiff, config *mybase.Config) string {
-	// Use unlimited query timeout for ALTER TABLE or DROP TABLE, since these
-	// operations can be slow on large tables.
+	// Use unlimited query timeout for all DDL statements, since ALTER TABLE or
+	// DROP TABLE can be slow on large tables. (Even though all other DDL is fast,
+	// skipping timeouts there too ensures we can re-use connection pools.)
 	// For ALTER TABLE, if requested, also use foreign_key_checks=1 if adding
 	// new foreign key constraints.
-	if td, ok := diff.(*tengo.TableDiff); ok && td.Type == tengo.DiffTypeAlter {
-		if config.GetBool("foreign-key-checks") {
-			_, addFKs := td.SplitAddForeignKeys()
-			if addFKs != nil {
-				return "readTimeout=0&foreign_key_checks=1"
-			}
+	if diff.DiffType() == tengo.DiffTypeAlter && diff.ObjectKey().Type == tengo.ObjectTypeTable && config.GetBool("foreign-key-checks") {
+		if _, addFKs := diff.(*tengo.TableDiff).SplitAddForeignKeys(); addFKs != nil {
+			return "readTimeout=0&foreign_key_checks=1"
 		}
-		return "readTimeout=0"
-	} else if ok && td.Type == tengo.DiffTypeDrop {
-		return "readTimeout=0"
 	}
-	return ""
+	return "readTimeout=0"
 }
 
 // Execute runs the DDL statement, either by running a SQL query against a DB,

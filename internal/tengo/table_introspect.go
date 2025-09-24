@@ -8,8 +8,12 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
-	"golang.org/x/sync/errgroup"
 )
+
+func init() {
+	primaryIntrospectorTasks = append(primaryIntrospectorTasks, introspectTables)
+	primaryIntrospectorFixups = append(primaryIntrospectorFixups, fixupTables)
+}
 
 /*
 	Important note on information_schema queries in this file: MySQL 8.0 changes
@@ -18,116 +22,108 @@ import (
 	have sqlx Select() work.
 */
 
-var reExtraOnUpdate = regexp.MustCompile(`(?i)\bon update (current_timestamp(?:\(\d*\))?)`)
-
-func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) ([]*Table, error) {
-	tables, havePartitions, err := queryTablesInSchema(ctx, db, schema, flavor)
-	if err != nil {
-		return nil, err
+func introspectTables(ctx context.Context, insp *introspector) error {
+	flavor := insp.instance.Flavor()
+	var rawTables []struct {
+		Name           string         `db:"table_name"`
+		Type           string         `db:"table_type"`
+		Engine         sql.NullString `db:"engine"`
+		TableCollation sql.NullString `db:"table_collation"`
+		CreateOptions  sql.NullString `db:"create_options"`
+		Comment        string         `db:"table_comment"`
 	}
-
-	g, subCtx := errgroup.WithContext(ctx)
-
-	for _, t := range tables {
-		g.Go(func() (err error) {
-			t.CreateStatement, err = showCreateTable(subCtx, db, t.Name)
-			if err != nil {
-				err = fmt.Errorf("Error executing SHOW CREATE TABLE for %s.%s: %w", EscapeIdentifier(schema), EscapeIdentifier(t.Name), err)
-			}
-			return err
-		})
+	query := `
+		SELECT SQL_BUFFER_RESULT
+		       table_name AS table_name, table_type AS table_type,
+		       engine AS engine, table_collation AS table_collation,
+		       create_options AS create_options, table_comment AS table_comment
+		FROM   information_schema.tables
+		WHERE  table_schema = ?`
+	if err := insp.db.SelectContext(ctx, &rawTables, query, insp.schema.Name); err != nil {
+		return fmt.Errorf("Error querying information_schema.tables for schema %s: %w", insp.schema.Name, err)
 	}
-
-	var columnsByTableName map[string][]*Column
-	g.Go(func() (err error) {
-		columnsByTableName, err = queryColumnsInSchema(subCtx, db, schema, flavor)
-		return err
-	})
-
-	var primaryKeyByTableName map[string]*Index
-	var secondaryIndexesByTableName map[string][]*Index
-	g.Go(func() (err error) {
-		primaryKeyByTableName, secondaryIndexesByTableName, err = queryIndexesInSchema(subCtx, db, schema, flavor)
-		return err
-	})
-
-	var foreignKeysByTableName map[string][]*ForeignKey
-	g.Go(func() (err error) {
-		foreignKeysByTableName, err = queryForeignKeysInSchema(subCtx, db, schema, flavor)
-		return err
-	})
-
-	var checksByTableName map[string][]*Check
-	if flavor.HasCheckConstraints() {
-		g.Go(func() (err error) {
-			checksByTableName, err = queryChecksInSchema(subCtx, db, schema, flavor)
-			return err
-		})
-	}
-
-	var partitioningByTableName map[string]*TablePartitioning
-	if havePartitions {
-		g.Go(func() (err error) {
-			partitioningByTableName, err = queryPartitionsInSchema(subCtx, db, schema, flavor)
-			return err
-		})
-	}
-
-	// Await all of the async queries
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-
-	// Assemble all the data, fix edge cases, and determine if SHOW CREATE TABLE
-	// matches expectation
-	for _, t := range tables {
-		t.Columns = columnsByTableName[t.Name]
-		for _, col := range t.Columns {
-			// Set ShowCharSet and ShowCollation for each column as appropriate. This
-			// isn't handled by queryColumnsInSchema because it requires the full table.
-			if col.Collation != "" {
-				// Column-level CHARACTER SET shown whenever the *collation* differs from
-				// table's default
-				col.ShowCharSet = (col.Collation != t.Collation)
-				if flavor.AlwaysShowCollate() {
-					// Since Nov 2022, MariaDB always shows a COLLATE clause if showing charset
-					col.ShowCollation = col.ShowCharSet
-				} else {
-					// Other flavors show a COLLATE clause whenever the collation isn't the
-					// default one for the charset.
-					col.ShowCollation = !collationIsDefault(col.Collation, col.CharSet, flavor)
-				}
-				// Note: MySQL 8 has additional edge cases for both ShowCharSet and
-				// ShowCollation, both of which are handled later in fixShowCharSets
-			}
+	tables := make([]*Table, 0, len(rawTables))
+	var havePartitions bool
+	haveAltType := make(map[string]bool, 4)
+	for _, rawTable := range rawTables {
+		if rawTable.Type != "BASE TABLE" {
+			haveAltType[rawTable.Type] = true
+			continue
 		}
 
-		t.PrimaryKey = primaryKeyByTableName[t.Name]
-		t.SecondaryIndexes = secondaryIndexesByTableName[t.Name]
-		t.ForeignKeys = foreignKeysByTableName[t.Name]
-		t.Checks = checksByTableName[t.Name]
-
-		if p, ok := partitioningByTableName[t.Name]; ok {
-			for _, part := range p.Partitions {
-				part.Engine = t.Engine
+		// Note that we no longer set Table.NextAutoIncrement here. information_schema
+		// potentially has bad data, e.g. a table without an auto-inc col can still
+		// have a non-NULL tables.auto_increment if the original CREATE specified one.
+		// Instead the value is parsed from SHOW CREATE TABLE.
+		table := &Table{
+			Name:      rawTable.Name,
+			Engine:    rawTable.Engine.String,
+			Collation: rawTable.TableCollation.String,
+			Comment:   rawTable.Comment,
+		}
+		if underscore := strings.IndexByte(table.Collation, '_'); underscore > 0 {
+			table.CharSet = table.Collation[0:underscore]
+			if flavor.AlwaysShowCollate() {
+				table.ShowCollation = true
+			} else if !collationIsDefault(table.Collation, table.CharSet, flavor) {
+				table.ShowCollation = true
+			} else if table.CharSet == "utf8mb4" && flavor.MinMySQL(8) {
+				table.ShowCollation = true
 			}
-			t.Partitioning = p
+		} else {
+			table.CharSet = "undefined"
+		}
+		if rawTable.CreateOptions.Valid && rawTable.CreateOptions.String != "" {
+			if strings.Contains(strings.ToUpper(rawTable.CreateOptions.String), "PARTITIONED") {
+				havePartitions = true
+			}
+			table.CreateOptions = reformatCreateOptions(rawTable.CreateOptions.String)
+		}
+		tables = append(tables, table)
+	}
+
+	insp.schema.Tables = tables
+
+	subtasks := make([]introspectorTask, 0, len(haveAltType)+len(tables)+5)
+	for ttype := range haveAltType {
+		if task, ok := altTableTypeTasks[ttype]; ok {
+			subtasks = append(subtasks, task)
+		}
+	}
+	for _, t := range tables {
+		subtasks = append(subtasks, t.introspectShowCreate)
+	}
+	if len(tables) > 0 {
+		subtasks = append(subtasks,
+			introspectColumns,
+			introspectIndexes,
+			introspectForeignKeys,
+		)
+		if flavor.HasCheckConstraints() {
+			subtasks = append(subtasks, introspectChecks)
+		}
+		if havePartitions {
+			subtasks = append(subtasks, introspectPartitioning)
+		}
+	}
+	for _, task := range subtasks {
+		insp.Go(ctx, task)
+	}
+	return nil
+}
+
+// fixupTables cleans up edge cases in information_schema where data must be
+// obtained from SHOW CREATE TABLE instead.
+func fixupTables(schema *Schema, flavor Flavor) {
+	for _, t := range schema.Tables {
+		if t.Partitioning != nil {
 			fixPartitioningEdgeCases(t, flavor)
 		}
 
-		// Obtain TABLESPACE clause from SHOW CREATE TABLE, if present
-		t.Tablespace = ParseCreateTablespace(t.CreateStatement)
-
-		// Obtain next AUTO_INCREMENT value from SHOW CREATE TABLE, which avoids
-		// potential problems with information_schema discrepancies
-		_, t.NextAutoIncrement = ParseCreateAutoInc(t.CreateStatement)
 		if t.NextAutoIncrement == 0 && t.HasAutoIncrement() {
 			t.NextAutoIncrement = 1
 		}
-		// Remove column and index attributes which don't affect InnoDB
-		if t.Engine == "InnoDB" {
-			t.CreateStatement = StripNonInnoAttributes(t.CreateStatement)
-		}
+
 		// Index order is unpredictable with new MySQL 8 data dictionary, so reorder
 		// indexes based on parsing SHOW CREATE TABLE if needed
 		if flavor.MinMySQL(8) && len(t.SecondaryIndexes) > 1 {
@@ -186,68 +182,37 @@ func querySchemaTables(ctx context.Context, db *sqlx.DB, schema string, flavor F
 			t.UnsupportedDDL = true
 		}
 	}
-	return tables, nil
 }
 
-func queryTablesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) ([]*Table, bool, error) {
-	var rawTables []struct {
-		Name           string         `db:"table_name"`
-		Type           string         `db:"table_type"`
-		Engine         sql.NullString `db:"engine"`
-		TableCollation sql.NullString `db:"table_collation"`
-		CreateOptions  sql.NullString `db:"create_options"`
-		Comment        string         `db:"table_comment"`
+func (t *Table) introspectShowCreate(ctx context.Context, insp *introspector) (err error) {
+	t.CreateStatement, err = showCreateTable(ctx, insp.db, insp.schema.Name, t.Name)
+	if err != nil {
+		return fmt.Errorf("Error executing SHOW CREATE TABLE for %s.%s: %w", EscapeIdentifier(insp.schema.Name), EscapeIdentifier(t.Name), err)
 	}
-	query := `
-		SELECT SQL_BUFFER_RESULT
-		       table_name AS table_name, table_type AS table_type,
-		       engine AS engine, table_collation AS table_collation,
-		       create_options AS create_options, table_comment AS table_comment
-		FROM   information_schema.tables
-		WHERE  table_schema = ?
-		AND    table_type = 'BASE TABLE'`
-	if err := db.SelectContext(ctx, &rawTables, query, schema); err != nil {
-		return nil, false, fmt.Errorf("Error querying information_schema.tables for schema %s: %s", schema, err)
+
+	// Obtain TABLESPACE clause from SHOW CREATE TABLE, if present
+	t.Tablespace = ParseCreateTablespace(t.CreateStatement)
+
+	// Obtain next AUTO_INCREMENT value from SHOW CREATE TABLE, which avoids
+	// potential problems with information_schema discrepancies
+	_, t.NextAutoIncrement = ParseCreateAutoInc(t.CreateStatement)
+
+	// Remove column and index attributes which don't affect InnoDB
+	if t.Engine == "InnoDB" {
+		t.CreateStatement = StripNonInnoAttributes(t.CreateStatement)
 	}
-	if len(rawTables) == 0 {
-		return []*Table{}, false, nil
-	}
-	tables := make([]*Table, len(rawTables))
-	var havePartitions bool
-	for n, rawTable := range rawTables {
-		// Note that we no longer set Table.NextAutoIncrement here. information_schema
-		// potentially has bad data, e.g. a table without an auto-inc col can still
-		// have a non-NULL tables.auto_increment if the original CREATE specified one.
-		// Instead the value is parsed from SHOW CREATE TABLE in querySchemaTables().
-		tables[n] = &Table{
-			Name:      rawTable.Name,
-			Engine:    rawTable.Engine.String,
-			Collation: rawTable.TableCollation.String,
-			Comment:   rawTable.Comment,
-		}
-		if underscore := strings.IndexByte(tables[n].Collation, '_'); underscore > 0 {
-			tables[n].CharSet = tables[n].Collation[0:underscore]
-			if flavor.AlwaysShowCollate() {
-				tables[n].ShowCollation = true
-			} else if !collationIsDefault(tables[n].Collation, tables[n].CharSet, flavor) {
-				tables[n].ShowCollation = true
-			} else if tables[n].CharSet == "utf8mb4" && flavor.MinMySQL(8) {
-				tables[n].ShowCollation = true
-			}
-		} else {
-			tables[n].CharSet = "undefined"
-		}
-		if rawTable.CreateOptions.Valid && rawTable.CreateOptions.String != "" {
-			if strings.Contains(strings.ToUpper(rawTable.CreateOptions.String), "PARTITIONED") {
-				havePartitions = true
-			}
-			tables[n].CreateOptions = reformatCreateOptions(rawTable.CreateOptions.String)
-		}
-	}
-	return tables, havePartitions, nil
+
+	return nil
 }
 
-func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) (map[string][]*Column, error) {
+func showCreateTable(ctx context.Context, db *sqlx.DB, schema, table string) (string, error) {
+	return showCreateObject(ctx, db, schema, ObjectTypeTable, table)
+}
+
+var reExtraOnUpdate = regexp.MustCompile(`(?i)\bon update (current_timestamp(?:\(\d*\))?)`)
+
+func introspectColumns(ctx context.Context, insp *introspector) error {
+	flavor := insp.instance.Flavor()
 	stripDisplayWidth := flavor.OmitIntDisplayWidth()
 	var mariaCompressedColMarker string
 	if flavor.MinMariaDB(10, 3) {
@@ -291,8 +256,8 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 	// TABLE there's currently no point to querying them
 
 	query = fmt.Sprintf(query, genExpr, srid)
-	if err := db.SelectContext(ctx, &rawColumns, query, schema); err != nil {
-		return nil, fmt.Errorf("Error querying information_schema.columns for schema %s: %s", schema, err)
+	if err := insp.db.SelectContext(ctx, &rawColumns, query, insp.schema.Name); err != nil {
+		return fmt.Errorf("Error querying information_schema.columns for schema %s: %s", insp.schema.Name, err)
 	}
 	columnsByTableName := make(map[string][]*Column)
 	for _, rawColumn := range rawColumns {
@@ -384,10 +349,35 @@ func queryColumnsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 		}
 		columnsByTableName[rawColumn.TableName] = append(columnsByTableName[rawColumn.TableName], col)
 	}
-	return columnsByTableName, nil
+
+	// Place the columns into the tables in insp.schema
+	for _, t := range insp.schema.Tables {
+		t.Columns = columnsByTableName[t.Name]
+		for _, col := range t.Columns {
+			// Set ShowCharSet and ShowCollation for each column as appropriate. This
+			// isn't handled by queryColumnsInSchema because it requires the full table.
+			if col.Collation != "" {
+				// Column-level CHARACTER SET shown whenever the *collation* differs from
+				// table's default
+				col.ShowCharSet = (col.Collation != t.Collation)
+				if flavor.AlwaysShowCollate() {
+					// Since Nov 2022, MariaDB always shows a COLLATE clause if showing charset
+					col.ShowCollation = col.ShowCharSet
+				} else {
+					// Other flavors show a COLLATE clause whenever the collation isn't the
+					// default one for the charset.
+					col.ShowCollation = !collationIsDefault(col.Collation, col.CharSet, flavor)
+				}
+				// Note: MySQL 8 has additional edge cases for both ShowCharSet and
+				// ShowCollation, both of which are handled later in fixShowCharSets
+			}
+		}
+	}
+	return nil
 }
 
-func queryIndexesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) (map[string]*Index, map[string][]*Index, error) {
+func introspectIndexes(ctx context.Context, insp *introspector) error {
+	flavor := insp.instance.Flavor()
 	var rawIndexes []struct {
 		Name       string         `db:"index_name"`
 		TableName  string         `db:"table_name"`
@@ -422,8 +412,8 @@ func queryIndexesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 		visSelect = "IF(ignored = 'YES', 'NO', 'YES')"
 	}
 	query = fmt.Sprintf(query, exprSelect, visSelect)
-	if err := db.SelectContext(ctx, &rawIndexes, query, schema); err != nil {
-		return nil, nil, fmt.Errorf("Error querying information_schema.statistics for schema %s: %s", schema, err)
+	if err := insp.db.SelectContext(ctx, &rawIndexes, query, insp.schema.Name); err != nil {
+		return fmt.Errorf("Error querying information_schema.statistics for schema %s: %s", insp.schema.Name, err)
 	}
 
 	primaryKeyByTableName := make(map[string]*Index)
@@ -452,11 +442,11 @@ func queryIndexesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 		} else {
 			secondaryIndexesByTableName[rawIndex.TableName] = append(secondaryIndexesByTableName[rawIndex.TableName], index)
 		}
-		fullNameStr := schema + "." + rawIndex.TableName + "." + rawIndex.Name
+		fullNameStr := rawIndex.TableName + "." + rawIndex.Name
 		indexesByTableAndName[fullNameStr] = index
 	}
 	for _, rawIndex := range rawIndexes {
-		fullIndexNameStr := schema + "." + rawIndex.TableName + "." + rawIndex.Name
+		fullIndexNameStr := rawIndex.TableName + "." + rawIndex.Name
 		index, ok := indexesByTableAndName[fullIndexNameStr]
 		if !ok {
 			panic(fmt.Errorf("Cannot find index %s", fullIndexNameStr))
@@ -472,10 +462,15 @@ func queryIndexesInSchema(ctx context.Context, db *sqlx.DB, schema string, flavo
 			part.PrefixLength = uint16(rawIndex.SubPart.Int64)
 		}
 	}
-	return primaryKeyByTableName, secondaryIndexesByTableName, nil
+
+	for _, t := range insp.schema.Tables {
+		t.PrimaryKey = primaryKeyByTableName[t.Name]
+		t.SecondaryIndexes = secondaryIndexesByTableName[t.Name]
+	}
+	return nil
 }
 
-func queryForeignKeysInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) (map[string][]*ForeignKey, error) {
+func introspectForeignKeys(ctx context.Context, insp *introspector) error {
 	var rawForeignKeys []struct {
 		Name                 string `db:"constraint_name"`
 		TableName            string `db:"table_name"`
@@ -500,8 +495,8 @@ func queryForeignKeysInSchema(ctx context.Context, db *sqlx.DB, schema string, f
 		                                 kcu.referenced_column_name IS NOT NULL
 		WHERE    rc.constraint_schema = ?
 		ORDER BY BINARY rc.constraint_name, kcu.ordinal_position`
-	if err := db.SelectContext(ctx, &rawForeignKeys, query, schema, schema); err != nil {
-		return nil, fmt.Errorf("Error querying foreign key constraints for schema %s: %s", schema, err)
+	if err := insp.db.SelectContext(ctx, &rawForeignKeys, query, insp.schema.Name, insp.schema.Name); err != nil {
+		return fmt.Errorf("Error querying foreign key constraints for schema %s: %s", insp.schema.Name, err)
 	}
 	foreignKeysByTableName := make(map[string][]*ForeignKey)
 	foreignKeysByName := make(map[string]*ForeignKey)
@@ -523,10 +518,14 @@ func queryForeignKeysInSchema(ctx context.Context, db *sqlx.DB, schema string, f
 			foreignKeysByTableName[rawForeignKey.TableName] = append(foreignKeysByTableName[rawForeignKey.TableName], foreignKey)
 		}
 	}
-	return foreignKeysByTableName, nil
+
+	for _, t := range insp.schema.Tables {
+		t.ForeignKeys = foreignKeysByTableName[t.Name]
+	}
+	return nil
 }
 
-func queryChecksInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) (map[string][]*Check, error) {
+func introspectChecks(ctx context.Context, insp *introspector) error {
 	checksByTableName := make(map[string][]*Check)
 	var rawChecks []struct {
 		Name      string `db:"constraint_name"`
@@ -547,7 +546,7 @@ func queryChecksInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor
 	// broken double-escaping logic. Instead we parse bodies from SHOW CREATE
 	// TABLE separately in a fixup function.
 	var query string
-	if flavor.IsMariaDB() {
+	if insp.instance.Flavor().IsMariaDB() {
 		query = `
 			SELECT   SQL_BUFFER_RESULT
 			         constraint_name AS constraint_name, check_clause AS check_clause,
@@ -563,8 +562,8 @@ func queryChecksInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor
 			WHERE    table_schema = ? AND constraint_type = 'CHECK'
 			ORDER BY table_name, constraint_name`
 	}
-	if err := db.SelectContext(ctx, &rawChecks, query, schema); err != nil {
-		return nil, fmt.Errorf("Error querying check constraints for schema %s: %s", schema, err)
+	if err := insp.db.SelectContext(ctx, &rawChecks, query, insp.schema.Name); err != nil {
+		return fmt.Errorf("Error querying check constraints for schema %s: %s", insp.schema.Name, err)
 	}
 	for _, rawCheck := range rawChecks {
 		check := &Check{
@@ -574,10 +573,14 @@ func queryChecksInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor
 		}
 		checksByTableName[rawCheck.TableName] = append(checksByTableName[rawCheck.TableName], check)
 	}
-	return checksByTableName, nil
+
+	for _, t := range insp.schema.Tables {
+		t.Checks = checksByTableName[t.Name]
+	}
+	return nil
 }
 
-func queryPartitionsInSchema(ctx context.Context, db *sqlx.DB, schema string, flavor Flavor) (map[string]*TablePartitioning, error) {
+func introspectPartitioning(ctx context.Context, insp *introspector) error {
 	var rawPartitioning []struct {
 		TableName     string         `db:"table_name"`
 		PartitionName string         `db:"partition_name"`
@@ -604,8 +607,8 @@ func queryPartitionsInSchema(ctx context.Context, db *sqlx.DB, schema string, fl
 		AND      p.partition_name IS NOT NULL
 		ORDER BY p.table_name, p.partition_ordinal_position,
 		         p.subpartition_ordinal_position`
-	if err := db.SelectContext(ctx, &rawPartitioning, query, schema); err != nil {
-		return nil, fmt.Errorf("Error querying information_schema.partitions for schema %s: %s", schema, err)
+	if err := insp.db.SelectContext(ctx, &rawPartitioning, query, insp.schema.Name); err != nil {
+		return fmt.Errorf("Error querying information_schema.partitions for schema %s: %s", insp.schema.Name, err)
 	}
 
 	partitioningByTableName := make(map[string]*TablePartitioning)
@@ -628,7 +631,16 @@ func queryPartitionsInSchema(ctx context.Context, db *sqlx.DB, schema string, fl
 			Comment: rawPart.Comment,
 		})
 	}
-	return partitioningByTableName, nil
+
+	for _, t := range insp.schema.Tables {
+		if p, ok := partitioningByTableName[t.Name]; ok {
+			for _, part := range p.Partitions {
+				part.Engine = t.Engine
+			}
+			t.Partitioning = p
+		}
+	}
+	return nil
 }
 
 var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE |FULLTEXT |SPATIAL )?KEY `((?:[^`]|``)+)` (?:USING \\w+ )?\\([`(]")

@@ -286,6 +286,7 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 				// Disable chunking and move everything over to the non-chunked slice
 				opts.CreateChunkSize = 1
 				creates = append(creates, chunkableCreates...)
+				chunkableCreates = []*tengo.Statement{}
 				if !needRegularPool {
 					// If we didn't have any non-tables, we would normally skip creation of the
 					// non-chunked connection pool, so try making one now...

@@ -245,62 +245,64 @@ func (s *SkeemaIntegrationSuite) compareDirs(t *testing.T, a, b *fs.Dir) {
 // random port number of the Docker container).
 func (s *SkeemaIntegrationSuite) compareDirOptionFiles(t *testing.T, a, b *fs.Dir) {
 	t.Helper()
-	if (a.OptionFile == nil && b.OptionFile != nil) || (a.OptionFile != nil && b.OptionFile == nil) {
-		t.Errorf("Presence of option files does not match between %s and %s", a, b)
+	if a.OptionFile == nil || b.OptionFile == nil {
+		if a.OptionFile != b.OptionFile { // only one is nil
+			t.Errorf("Presence of option files does not match between %s and %s", a, b)
+		}
+		return
 	}
-	if a.OptionFile != nil {
-		// Force port number of a to equal port number in b, since b will use whatever
-		// dynamic port was allocated to the Dockerized database instance
-		aSectionsWithPort := a.OptionFile.SectionsWithOption("port")
-		bSectionsWithPort := b.OptionFile.SectionsWithOption("port")
-		if !reflect.DeepEqual(aSectionsWithPort, bSectionsWithPort) {
-			t.Errorf("Sections with port option do not match between %s and %s", a.OptionFile.Path(), b.OptionFile.Path())
-		} else {
-			for _, section := range bSectionsWithPort {
-				b.OptionFile.UseSection(section)
-				forcedValue, _ := b.OptionFile.OptionValue("port")
-				a.OptionFile.SetOptionValue(section, "port", forcedValue)
-			}
+
+	// Force port number of a to equal port number in b, since b will use whatever
+	// dynamic port was allocated to the Dockerized database instance
+	aSectionsWithPort := a.OptionFile.SectionsWithOption("port")
+	bSectionsWithPort := b.OptionFile.SectionsWithOption("port")
+	if !reflect.DeepEqual(aSectionsWithPort, bSectionsWithPort) {
+		t.Errorf("Sections with port option do not match between %s and %s", a.OptionFile.Path(), b.OptionFile.Path())
+	} else {
+		for _, section := range bSectionsWithPort {
+			b.OptionFile.UseSection(section)
+			forcedValue, _ := b.OptionFile.OptionValue("port")
+			a.OptionFile.SetOptionValue(section, "port", forcedValue)
 		}
-		// Force flavor of a to match the DockerizedInstance's flavor
-		for _, section := range a.OptionFile.SectionsWithOption("flavor") {
-			a.OptionFile.SetOptionValue(section, "flavor", s.d.Flavor().Family().String())
+	}
+	// Force flavor of a to match the DockerizedInstance's flavor
+	for _, section := range a.OptionFile.SectionsWithOption("flavor") {
+		a.OptionFile.SetOptionValue(section, "flavor", s.d.Flavor().Family().String())
+	}
+	// If b sets a generator, force generator of a to be correct value for current
+	// version/edition
+	for _, section := range b.OptionFile.SectionsWithOption("generator") {
+		a.OptionFile.SetOptionValue(section, "generator", generatorString())
+	}
+	// Force charset/collation to match the DockerizedInstance's defaults, where requested
+	if sectionsWithSchema := a.OptionFile.SectionsWithOption("schema"); len(sectionsWithSchema) > 0 {
+		instDefCharSet, instDefCollation, err := s.d.DefaultCharSetAndCollation()
+		if err != nil {
+			t.Fatalf("Unexpected error querying Dockerized instance's default charset/collation: %v", err)
 		}
-		// If b sets a generator, force generator of a to be correct value for current
-		// version/edition
-		for _, section := range b.OptionFile.SectionsWithOption("generator") {
-			a.OptionFile.SetOptionValue(section, "generator", generatorString())
-		}
-		// Force charset/collation to match the DockerizedInstance's defaults, where requested
-		if sectionsWithSchema := a.OptionFile.SectionsWithOption("schema"); len(sectionsWithSchema) > 0 {
-			instDefCharSet, instDefCollation, err := s.d.DefaultCharSetAndCollation()
-			if err != nil {
-				t.Fatalf("Unexpected error querying Dockerized instance's default charset/collation: %v", err)
-			}
-			for _, section := range sectionsWithSchema {
-				a.OptionFile.UseSection(section)
-				if fileCharSet, ok := a.OptionFile.OptionValue("default-character-set"); ok && fileCharSet[0] == '{' {
-					a.OptionFile.SetOptionValue(section, "default-character-set", instDefCharSet)
-					a.OptionFile.SetOptionValue(section, "default-collation", instDefCollation)
-				} else if fileCharSet == "utf8" {
-					// MySQL 8.0.29 uses "utf8mb3" but keeps collations as-is; MySQL 8.0.30+
-					// and MariaDB 10.6+ use "utf8mb3" and also changes collation names to match
-					if flavor := s.d.Flavor(); flavor.MinMySQL(8, 0, 29) || flavor.MinMariaDB(10, 6) {
-						a.OptionFile.SetOptionValue(section, "default-character-set", "utf8mb3")
-						if !flavor.IsMySQL(8, 0, 29) {
-							collation, _ := a.OptionFile.OptionValue("default-collation")
-							a.OptionFile.SetOptionValue(section, "default-collation", strings.Replace(collation, "utf8_", "utf8mb3_", 1))
-						}
+		for _, section := range sectionsWithSchema {
+			a.OptionFile.UseSection(section)
+			if fileCharSet, ok := a.OptionFile.OptionValue("default-character-set"); ok && fileCharSet[0] == '{' {
+				a.OptionFile.SetOptionValue(section, "default-character-set", instDefCharSet)
+				a.OptionFile.SetOptionValue(section, "default-collation", instDefCollation)
+			} else if fileCharSet == "utf8" {
+				// MySQL 8.0.29 uses "utf8mb3" but keeps collations as-is; MySQL 8.0.30+
+				// and MariaDB 10.6+ use "utf8mb3" and also changes collation names to match
+				if flavor := s.d.Flavor(); flavor.MinMySQL(8, 0, 29) || flavor.MinMariaDB(10, 6) {
+					a.OptionFile.SetOptionValue(section, "default-character-set", "utf8mb3")
+					if !flavor.IsMySQL(8, 0, 29) {
+						collation, _ := a.OptionFile.OptionValue("default-collation")
+						a.OptionFile.SetOptionValue(section, "default-collation", strings.Replace(collation, "utf8_", "utf8mb3_", 1))
 					}
 				}
 			}
 		}
+	}
 
-		if !a.OptionFile.SameContents(b.OptionFile) {
-			t.Errorf("File contents do not match between %s and %s", a.OptionFile.Path(), b.OptionFile.Path())
-			fmt.Printf("Expected:\n%s\n", fs.ReadTestFile(t, a.OptionFile.Path()))
-			fmt.Printf("Actual:\n%s\n", fs.ReadTestFile(t, b.OptionFile.Path()))
-		}
+	if !a.OptionFile.SameContents(b.OptionFile) {
+		t.Errorf("File contents do not match between %s and %s", a.OptionFile.Path(), b.OptionFile.Path())
+		fmt.Printf("Expected:\n%s\n", fs.ReadTestFile(t, a.OptionFile.Path()))
+		fmt.Printf("Actual:\n%s\n", fs.ReadTestFile(t, b.OptionFile.Path()))
 	}
 }
 

@@ -267,7 +267,7 @@ func (s TengoIntegrationSuite) TestPartitionedIntrospection(t *testing.T) {
 
 	// Ensure that instance.go's tablesToPartitions() returns the same result as
 	// Schema.tablesToPartitions() on the introspected schema.
-	db, err := s.d.CachedConnectionPool("partitionparty", "")
+	db, err := s.d.CachedConnectionPool("", "")
 	if err != nil {
 		t.Fatalf("Unable to connect to db: %v", err)
 	}

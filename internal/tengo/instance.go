@@ -178,6 +178,10 @@ func (instance *Instance) CachedConnectionPool(defaultSchema, params string) (*s
 	return db, err
 }
 
+func (instance *Instance) maxConnsPerPool() int {
+	return max(2, instance.maxUserConns-10)
+}
+
 func (instance *Instance) rawConnectionPool(defaultSchema, fullParams string, alreadyLocked bool) (*sqlx.DB, error) {
 	fullDSN := instance.BaseDSN + defaultSchema + "?" + fullParams
 	db, err := sqlx.Connect(instance.Driver, fullDSN)
@@ -192,7 +196,7 @@ func (instance *Instance) rawConnectionPool(defaultSchema, fullParams string, al
 	// the database side either globally or for this user. This does not completely
 	// eliminate max-conn problems, because each Instance can have many separate
 	// connection pools, but it may help.
-	db.SetMaxOpenConns(max(2, instance.maxUserConns-10))
+	db.SetMaxOpenConns(instance.maxConnsPerPool())
 
 	// Set max conn reuse lifetime to 1 minute, and set max idle time based on
 	// the session wait_timeout or 10s max.
@@ -214,9 +218,19 @@ func (instance *Instance) CanConnect() (bool, error) {
 	// half of TengoIntegrationSuite.TestInstanceCanConnect() in instance_test.go.
 	// That logic was commented out since this logic changes so rarely, and the
 	// test setup there is especially disruptive when using tmpfs containers.
+	if !instance.valid {
+		// We haven't ever successfully connected yet, so we can safely call Valid()
+		// without getting a false-positive from a previous cached conn pool; and if
+		// successful, we can then re-use this newly cached pool for other code paths
+		return instance.Valid()
+	}
+
+	// Use a new connection pool and intentionally avoid the pool cache
 	db, err := instance.ConnectionPool("", "")
 	if db != nil {
-		db.Close() // close immediately to avoid a buildup of sleeping idle conns
+		// close immediately since we bypassed cache and therefore the pool can't be
+		// reused elsewhere
+		db.Close()
 	}
 	return err == nil, err
 }
@@ -463,89 +477,8 @@ func (instance *Instance) SchemaNames() ([]string, error) {
 // more schema names as args to filter the result to just those schemas.
 // Note that the ordering of the resulting slice is not guaranteed.
 func (instance *Instance) Schemas(onlyNames ...string) ([]*Schema, error) {
-	db, err := instance.CachedConnectionPool("", "")
-	if err != nil {
-		return nil, err
-	}
-	var rawSchemas []struct {
-		Name      string `db:"schema_name"`
-		CharSet   string `db:"default_character_set_name"`
-		Collation string `db:"default_collation_name"`
-	}
-
-	var args []interface{}
-	var query string
-
-	// Note on these queries: MySQL 8.0 changes information_schema column names to
-	// come back from queries in all caps, so we need to explicitly use AS clauses
-	// in order to get them back as lowercase and have sqlx Select() work
-	if len(onlyNames) == 0 {
-		query = `
-			SELECT schema_name AS schema_name, default_character_set_name AS default_character_set_name,
-			       default_collation_name AS default_collation_name
-			FROM   information_schema.schemata
-			WHERE  schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'test', 'sys')`
-	} else {
-		// If instance is using lower_case_table_names=2, apply an explicit collation
-		// to ensure the schema name comes back with its original lettercasing. See
-		// https://dev.mysql.com/doc/refman/8.0/en/charset-collation-information-schema.html
-		var lctn2Collation string
-		if instance.NameCaseMode() == NameCaseInsensitive {
-			lctn2Collation = " COLLATE utf8_general_ci"
-		}
-		query = fmt.Sprintf(`
-			SELECT schema_name AS schema_name, default_character_set_name AS default_character_set_name,
-			       default_collation_name AS default_collation_name
-			FROM   information_schema.schemata
-			WHERE  schema_name%s IN (?)`, lctn2Collation)
-		query, args, err = sqlx.In(query, onlyNames)
-	}
-	if err := db.Select(&rawSchemas, query, args...); err != nil {
-		return nil, err
-	}
-
-	schemas := make([]*Schema, len(rawSchemas))
-	for n, rawSchema := range rawSchemas {
-		schemas[n] = &Schema{
-			Name:      rawSchema.Name,
-			CharSet:   rawSchema.CharSet,
-			Collation: rawSchema.Collation,
-		}
-		// Create a non-cached connection pool with this schema as the default
-		// database. The instance.querySchemaX calls below can establish a lot of
-		// connections, so we will explicitly close the pool afterwards, to avoid
-		// keeping a very large number of conns open. (Although idle conns eventually
-		// get closed automatically, this may take too long.)
-		flavor := instance.Flavor()
-		schemaDB, err := instance.ConnectionPool(rawSchema.Name, instance.introspectionParams())
-		if err != nil {
-			return nil, err
-		}
-		if instance.maxUserConns >= 30 {
-			// Limit concurrency to 20, unless limit is already lower than this due to
-			// having a low maxUserConns (see logic in Instance.rawConnectionPool)
-			schemaDB.SetMaxOpenConns(20)
-
-			// Also increase max idle conns above the Golang default of 2, to ensure
-			// concurrent introspection queries reuse conns more effectively.
-			schemaDB.SetMaxIdleConns(20)
-		}
-		g, ctx := errgroup.WithContext(context.Background())
-		g.Go(func() (err error) {
-			schemas[n].Tables, err = querySchemaTables(ctx, schemaDB, rawSchema.Name, flavor)
-			return err
-		})
-		g.Go(func() (err error) {
-			schemas[n].Routines, err = querySchemaRoutines(ctx, schemaDB, rawSchema.Name, flavor, instance.NameCaseMode())
-			return err
-		})
-		err = g.Wait()
-		schemaDB.Close()
-		if err != nil {
-			return nil, err
-		}
-	}
-	return schemas, nil
+	opts := IntrospectionOptions{SchemaNames: onlyNames}
+	return IntrospectSchemas(context.Background(), instance, opts)
 }
 
 // SchemasByName returns a map of schema name string to *Schema.  If
@@ -599,16 +532,6 @@ func (instance *Instance) HasSchema(name string) (bool, error) {
 	}
 }
 
-// ShowCreateTable returns a string with a CREATE TABLE statement, representing
-// how the instance views the specified table as having been created.
-func (instance *Instance) ShowCreateTable(schema, table string) (string, error) {
-	db, err := instance.CachedConnectionPool(schema, instance.introspectionParams())
-	if err != nil {
-		return "", err
-	}
-	return showCreateTable(context.Background(), db, table)
-}
-
 // introspectionParams returns a params string which ensures safe session
 // variables for use with SHOW CREATE as well as queries on information_schema
 func (instance *Instance) introspectionParams() string {
@@ -646,16 +569,14 @@ func (instance *Instance) introspectionParams() string {
 	return v.Encode()
 }
 
-func showCreateTable(ctx context.Context, db *sqlx.DB, table string) (string, error) {
-	var row struct {
-		TableName       string `db:"Table"`
-		CreateStatement string `db:"Create Table"`
-	}
-	query := "SHOW CREATE TABLE " + EscapeIdentifier(table)
-	if err := db.GetContext(ctx, &row, query); err != nil {
+// ShowCreateTable returns a string with a CREATE TABLE statement, representing
+// how the instance views the specified table as having been created.
+func (instance *Instance) ShowCreateTable(schema, table string) (string, error) {
+	db, err := instance.CachedConnectionPool("", instance.introspectionParams())
+	if err != nil {
 		return "", err
 	}
-	return row.CreateStatement, nil
+	return showCreateTable(context.Background(), db, schema, table)
 }
 
 // TableSize returns an estimate of the table's size on-disk, based on data in
@@ -837,21 +758,7 @@ func (instance *Instance) DropSchema(schema string, opts BulkDropOptions) error 
 		// logic in DropTablesInSchema
 		err = dropSchema(db, schema)
 	}
-	if err != nil {
-		return err
-	}
-
-	// Close any connection pools for that database name
-	prefix := schema + "?"
-	instance.m.Lock()
-	defer instance.m.Unlock()
-	for key, connPool := range instance.connectionPool {
-		if strings.HasPrefix(key, prefix) {
-			connPool.Close()
-			delete(instance.connectionPool, key)
-		}
-	}
-	return nil
+	return err
 }
 
 // dropSchema executes a DROP DATABASE on the supplied database name. This isn't
@@ -914,7 +821,7 @@ func (opts BulkDropOptions) params() string {
 // DropTablesInSchema drops all tables in a schema. If opts.OnlyIfEmpty==true,
 // returns an error if any of the tables have any rows.
 func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions) error {
-	db, err := instance.CachedConnectionPool(schema, opts.params())
+	db, err := instance.CachedConnectionPool("", opts.params())
 	if err != nil {
 		return fmt.Errorf("Error obtaining connection pool for dropping tables in schema %s: %w", EscapeIdentifier(schema), err)
 	}
@@ -952,7 +859,7 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 					for n := range chunk {
 						escapedPartitionNames[n] = EscapeIdentifier(chunk[n])
 					}
-					alter := "ALTER TABLE " + EscapeIdentifier(name) + " DROP PARTITION " + strings.Join(escapedPartitionNames, ", ")
+					alter := "ALTER TABLE " + EscapeIdentifier(schema) + "." + EscapeIdentifier(name) + " DROP PARTITION " + strings.Join(escapedPartitionNames, ", ")
 					if _, err := db.Exec(alter); err != nil {
 						return fmt.Errorf("Error dropping partitions via %s: %w", alter, err)
 					}
@@ -971,7 +878,7 @@ func (instance *Instance) DropTablesInSchema(schema string, opts BulkDropOptions
 	for chunk := range slices.Chunk(names, max(opts.ChunkSize, 1)) {
 		escapedNames := make([]string, len(chunk))
 		for n := range chunk {
-			escapedNames[n] = EscapeIdentifier(chunk[n])
+			escapedNames[n] = EscapeIdentifier(schema) + "." + EscapeIdentifier(chunk[n])
 		}
 		_, err := db.Exec("DROP TABLE " + strings.Join(escapedNames, ", "))
 		if err != nil {
@@ -999,12 +906,12 @@ func (instance *Instance) DropRoutinesInSchema(schema string, opts BulkDropOptio
 		// DDLs per round-trip
 		params += "&multiStatements=true"
 	}
-	db, err := instance.CachedConnectionPool(schema, params)
+	db, err := instance.CachedConnectionPool("", params)
 	if err != nil && chunkSize > 1 {
 		// Try again without chunking, in case there's a proxy which doesn't support
 		// multiStatements or is configured to forbid it
 		chunkSize = 1
-		db, err = instance.CachedConnectionPool(schema, opts.params())
+		db, err = instance.CachedConnectionPool("", opts.params())
 	}
 	if err != nil {
 		return err
@@ -1052,7 +959,7 @@ func (instance *Instance) DropRoutinesInSchema(schema string, opts BulkDropOptio
 	for chunk := range slices.Chunk(routineInfo, chunkSize) {
 		chunkStrings := make([]string, 0, len(chunk))
 		for _, ri := range chunk {
-			chunkStrings = append(chunkStrings, "DROP "+ri.Type+" IF EXISTS "+EscapeIdentifier(ri.Name))
+			chunkStrings = append(chunkStrings, "DROP "+ri.Type+" IF EXISTS "+EscapeIdentifier(schema)+"."+EscapeIdentifier(ri.Name))
 		}
 		if chunkSize > 1 {
 			query := strings.Join(chunkStrings, ";") + ";"
