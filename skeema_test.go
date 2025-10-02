@@ -79,9 +79,6 @@ func (s *SkeemaIntegrationSuite) BeforeTest(t *testing.T) {
 
 	// Create or recreate scratch dir
 	if _, err := os.Stat(s.scratchPath()); err == nil { // dir exists
-		if err := os.Chdir(s.repoPath); err != nil {
-			t.Fatalf("Unable to chdir to repo path: %v", err)
-		}
 		if err := os.RemoveAll(s.scratchPath()); err != nil {
 			t.Fatalf("Unable to remove scratch dir: %v", err)
 		}
@@ -89,9 +86,7 @@ func (s *SkeemaIntegrationSuite) BeforeTest(t *testing.T) {
 	if err := os.MkdirAll(s.scratchPath(), 0777); err != nil {
 		t.Fatalf("Unable to create scratch dir: %v", err)
 	}
-	if err := os.Chdir(s.scratchPath()); err != nil {
-		t.Fatalf("Unable to chdir to repo path: %v", err)
-	}
+	t.Chdir(s.scratchPath())
 }
 
 // testdata returns the absolute path of the testdata dir, or a file or dir

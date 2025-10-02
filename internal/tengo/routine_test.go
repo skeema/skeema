@@ -1,7 +1,6 @@
 package tengo
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -52,10 +51,9 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 			db:       db,
 			schema:   schema,
 		}
-		ctx := context.Background()
 		for _, r := range schema.Routines {
 			rCopy := *r
-			if err := r.introspectShowCreate(ctx, insp); err != nil {
+			if err := r.introspectShowCreate(t.Context(), insp); err != nil {
 				t.Fatalf("Unexpected error from introspectShowCreate: %v", err)
 			} else if !rCopy.Equals(r) {
 				t.Errorf("Unexpected mutation to %s after introspectShowCreate:\nOriginal: %+v\nAfter: %+v", r.ObjectKey(), rCopy, *r)
@@ -85,13 +83,13 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 	if actualFunc1.Equals(r) || !r.Equals(r) {
 		t.Error("Equals not behaving as expected")
 	}
-	if _, err = showCreateRoutine(context.Background(), db, "testing", ObjectTypeFunc, actualProc1.Name); err == nil {
+	if _, err = showCreateRoutine(t.Context(), db, "testing", ObjectTypeFunc, actualProc1.Name); err == nil {
 		t.Error("Expected error return from showCreateRoutine, but err was nil")
 	}
-	if _, err = showCreateRoutine(context.Background(), db, "testing", ObjectTypeProc, actualFunc1.Name); err == nil {
+	if _, err = showCreateRoutine(t.Context(), db, "testing", ObjectTypeProc, actualFunc1.Name); err == nil {
 		t.Error("Expected error return from showCreateRoutine, but err was nil")
 	}
-	if _, err = showCreateRoutine(context.Background(), db, "testing", ObjectTypeTable, actualFunc1.Name); err == nil {
+	if _, err = showCreateRoutine(t.Context(), db, "testing", ObjectTypeTable, actualFunc1.Name); err == nil {
 		t.Error("Expected error return from showCreateRoutine, but err was nil")
 	}
 }

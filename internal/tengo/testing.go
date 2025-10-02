@@ -53,7 +53,7 @@ func RunSuite(suite IntegrationTestSuite, t *testing.T, backends []string) {
 		suite.Setup(t, backend)
 
 		// Run test methods
-		for n := 0; n < suiteType.NumMethod(); n++ {
+		for n := range suiteType.NumMethod() {
 			method := suiteType.Method(n)
 			if strings.HasPrefix(method.Name, "Test") {
 				subtestName := fmt.Sprintf("%s.%s:%s", suiteName, method.Name, backend)
