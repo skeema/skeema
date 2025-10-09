@@ -1,8 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"os"
+	"runtime/debug"
 	"strings"
 
 	"github.com/skeema/mybase"
@@ -25,7 +25,7 @@ var edition = "community"
 
 // CommandSuite is the root command. It is global so that subcommands can be
 // added to it via init() functions in each subcommand's source file.
-var CommandSuite = mybase.NewCommandSuite("skeema", extendedVersionString(), rootDesc)
+var CommandSuite = mybase.NewCommandSuite("skeema", buildInfo(), rootDesc)
 
 func main() {
 	defer panicHandler() // see exit.go
@@ -52,17 +52,21 @@ func main() {
 }
 
 func versionString() string {
-	// For beta or rc versions, put the edition *before* the beta/rc tag, since
-	// logic in internal/fs/dir.go's GeneratorString expects this ordering
-	if parts := strings.SplitN(version, "-", 2); len(parts) > 1 {
-		return fmt.Sprintf("%s-%s-%s", parts[0], edition, parts[1])
+	// Put the edition *before* any optional dev/beta/rc labels, since logic in
+	// fs.Dir.Generator expects the edition to come before other labels
+	if base, labels, hasLabels := strings.Cut(version, "-"); hasLabels {
+		return base + "-" + edition + "-" + labels
 	}
-	return fmt.Sprintf("%s-%s", version, edition)
+	return version + "-" + edition
 }
 
-func extendedVersionString() string {
+func buildInfo() string {
+	// If built from source without GoReleaser, attempt to obtain more details from
+	// main module's build info, available when compiled with Go module support
 	if commit == "unknown" {
-		return fmt.Sprintf("%s (snapshot build from source)", versionString())
+		if info, ok := debug.ReadBuildInfo(); ok {
+			return strings.TrimPrefix(info.Main.Version, "v") + ", " + edition + " edition, built from source"
+		}
 	}
-	return fmt.Sprintf("%s, commit %s, released %s", versionString(), commit, date)
+	return versionString() + ", commit " + commit + ", released " + date
 }

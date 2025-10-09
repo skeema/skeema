@@ -653,8 +653,7 @@ func (dir *Dir) Generator() (major, minor, patch int, edition string) {
 	if base != "skeema" {
 		return 0, 0, 0, ""
 	}
-	labelParts := strings.SplitN(label, "-", 2)
-	edition = labelParts[0]
+	edition, _, _ = strings.Cut(label, "-")
 	return int(version.Major()), int(version.Minor()), int(version.Patch()), edition
 }
 
