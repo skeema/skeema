@@ -223,10 +223,6 @@ func persistOptionAlongsideHost(optionName string) bool {
 	return false
 }
 
-func generatorString() string {
-	return "skeema:" + versionString()
-}
-
 // PopulateSchemaDir writes out *.sql files for all tables in the specified
 // schema. If makeSubdir==true, a subdir with name matching the schema name
 // will be created, and a .skeema option file will be created. Otherwise, the

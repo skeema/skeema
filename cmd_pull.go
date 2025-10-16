@@ -44,6 +44,9 @@ func PullHandler(cfg *mybase.Config) error {
 	if err != nil {
 		return err
 	}
+	if err := dir.CheckGenerator(generatorString()); err != nil {
+		return err
+	}
 	if !dir.Config.Supplied("format") && !dir.Config.Supplied("normalize") {
 		log.Debug("Upgrade notice: the --format option, which currently defaults to true in Skeema v1, will change to default to false in Skeema v2. For more information, visit https://www.skeema.io/v2-changes")
 	}
@@ -316,7 +319,7 @@ func updateFlavor(dir *fs.Dir, instance *tengo.Instance) {
 }
 
 func updateGenerator(dir *fs.Dir) {
-	currentGenerator := generatorString() // see cmd_init.go
+	currentGenerator := generatorString()
 	if dir.Config.Get("generator") == currentGenerator {
 		return
 	}

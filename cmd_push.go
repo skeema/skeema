@@ -95,6 +95,9 @@ func PushHandler(cfg *mybase.Config) error {
 	if err != nil {
 		return err
 	}
+	if err := dir.CheckGenerator(generatorString()); err != nil {
+		return err
+	}
 
 	concurrency, err := dir.Config.GetInt("concurrent-servers")
 	if err != nil {

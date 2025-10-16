@@ -645,16 +645,50 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	return v.Encode(), nil
 }
 
+func parseGeneratorString(generator string) (program, edition string, version tengo.Version) {
+	program, version, label := tengo.SplitVersionedIdentifier(generator)
+	edition, _, _ = strings.Cut(label, "-")
+	return program, edition, version
+}
+
 // Generator returns the version and edition of Skeema used to init or most
 // most recently pull this dir's contents. If this cannot be determined, all
 // results will be zero values.
 func (dir *Dir) Generator() (major, minor, patch int, edition string) {
-	base, version, label := tengo.SplitVersionedIdentifier(dir.Config.Get("generator"))
-	if base != "skeema" {
+	program, edition, version := parseGeneratorString(dir.Config.Get("generator"))
+	if program != "skeema" {
 		return 0, 0, 0, ""
 	}
-	edition, _, _ = strings.Cut(label, "-")
 	return int(version.Major()), int(version.Minor()), int(version.Patch()), edition
+}
+
+// CheckGenerator compares the generator value configured for this directory
+// (if any) to the supplied generator string for this binary. If the directory
+// generator has a higher major-version or higher edition, an error is returned.
+// Otherwise, if the directory generator is a higher minor-version, a warning is
+// logged but the error return is nil.
+// If the directory generator string is set but indicates a non-Skeema program
+// was used, a warning is logged, but no version comparisons are made.
+// Differences only in patch-version are ignored at this time.
+func (dir *Dir) CheckGenerator(currentGenerator string) error {
+	dirGenerator := dir.Config.Get("generator")
+	if dirGenerator == "" || currentGenerator == "" {
+		return nil
+	}
+	dirProgram, dirEdition, dirVersion := parseGeneratorString(dirGenerator)
+	binProgram, binEdition, binVersion := parseGeneratorString(currentGenerator)
+	if dirProgram != binProgram {
+		log.Warnf("Directory %s was generated using `%s`, not `%s`", dir.ShortName, dirProgram, binProgram)
+		return nil
+	}
+	if dirMajor, binMajor := dirVersion.Major(), binVersion.Major(); dirMajor > binMajor {
+		return fmt.Errorf("Directory %s was generated using Skeema v%d, but you are running Skeema v%d. In order to interact with this directory, you must download a newer version of Skeema.", dir.ShortName, dirMajor, binMajor)
+	} else if dirEdition != "community" && binEdition == "community" {
+		log.Warnf("Directory %s was generated using an enhanced paid edition of Skeema, but you are currently running Skeema Community Edition.", dir.ShortName)
+	} else if dirMajor == binMajor && dirVersion.Minor() > binVersion.Minor() {
+		log.Warnf("Directory %s was generated using Skeema v%s, but you are running an older version, Skeema v%s.", dir.ShortName, dirVersion, binVersion)
+	}
+	return nil
 }
 
 // Package-level user@host interactive password cache, used by Dir.Password()

@@ -41,6 +41,9 @@ func FormatHandler(cfg *mybase.Config) error {
 	if err != nil {
 		return err
 	}
+	if err := dir.CheckGenerator(generatorString()); err != nil {
+		return err
+	}
 
 	// formatWalker returns the "worst" (highest) exit code it encounters. We care
 	// about the exit code, but not the error message, since any error will already

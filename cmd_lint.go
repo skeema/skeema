@@ -52,6 +52,9 @@ func LintHandler(cfg *mybase.Config) error {
 	if err != nil {
 		return err
 	}
+	if err := dir.CheckGenerator(generatorString()); err != nil {
+		return err
+	}
 	if !dir.Config.Supplied("format") {
 		log.Debug("Upgrade notice: the --format option, which currently defaults to true in Skeema v1, will change to default to false in Skeema v2. For more information, visit https://www.skeema.io/v2-changes")
 	}

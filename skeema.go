@@ -60,6 +60,10 @@ func versionString() string {
 	return version + "-" + edition
 }
 
+func generatorString() string {
+	return "skeema:" + versionString()
+}
+
 func buildInfo() string {
 	// If built from source without GoReleaser, attempt to obtain more details from
 	// main module's build info, available when compiled with Go module support

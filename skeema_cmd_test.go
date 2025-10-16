@@ -1858,3 +1858,31 @@ func (s SkeemaIntegrationSuite) TestCharsetCollate(t *testing.T) {
 	// Diff should report differences found but not fatal error
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --skip-lint")
 }
+
+// TestGeneratorChecks confirms that commands fail with a fatal error when a
+// directory used a newer major version of Skeema, but not in other scenarios
+// where only a warning is logged (at most).
+func (s SkeemaIntegrationSuite) TestGeneratorChecks(t *testing.T) {
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
+
+	assertExitCodeWithGenerator := func(expectedExitCode int, generator string) {
+		t.Helper()
+		for _, cmd := range []string{"pull", "lint", "format", "diff"} {
+			// Rather than hacking up the .skeema file to replace the generator, we
+			// simply set a command-line value (which overrides the actual .skeema file
+			// value) to achieve the same result. But ordinarily, it doesn't ever make
+			// sense for users to specify --generator on the command-line like this.
+			s.handleCommand(t, expectedExitCode, ".", "skeema %s --generator %s", cmd, generator)
+		}
+	}
+
+	thisGenerator := generatorString()
+	program, version, label := tengo.SplitVersionedIdentifier(thisGenerator)
+	assertExitCodeWithGenerator(CodeSuccess, thisGenerator)
+	assertExitCodeWithGenerator(CodeFatalError, fmt.Sprintf("%s:%d.%d.%d-%s", program, version[0]+1, version[1], version[2], label))
+	assertExitCodeWithGenerator(CodeFatalError, fmt.Sprintf("%s:%d.%d.%d-max", program, version[0]+1, version[1], version[2]))
+	assertExitCodeWithGenerator(CodeSuccess, fmt.Sprintf("%s:%d.%d.%d-max", program, version[0], version[1]+1, version[2]))
+	assertExitCodeWithGenerator(CodeSuccess, fmt.Sprintf("%s:%d.%d.%d-%s", program, version[0], version[1]+1, version[2], label))
+	assertExitCodeWithGenerator(CodeSuccess, fmt.Sprintf("%s:%d.%d.%d-%s", program, version[0], version[1], version[2]+5, label))
+	assertExitCodeWithGenerator(CodeSuccess, fmt.Sprintf("otherprogram:%d.%d.%d", version[0]+1, version[1], version[2]))
+}
