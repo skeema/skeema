@@ -435,14 +435,13 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"system":       {mySQL80},
 	"window":       {mySQL80}, // see comment above re: MariaDB
 
-	"parallel": {{Vendor: VendorMySQL, Version: Version{8, 2}}}, // wrong in I_S.keywords.reserved, see bug 114874
+	"parallel":    {{Vendor: VendorMySQL, Version: Version{8, 2}}}, // wrong in I_S.keywords.reserved, see bug 114874
+	"qualify":     {{Vendor: VendorMySQL, Version: Version{8, 3}}}, // wrong in I_S.keywords.reserved, see bug 114874
+	"manual":      {mySQL84},                                       // wrong in I_S.keywords.reserved, see bug 114874
+	"tablesample": {mySQL84},                                       // wrong in I_S.keywords.reserved, see bug 114874
 
-	"qualify": {{Vendor: VendorMySQL, Version: Version{8, 3}}}, // wrong in I_S.keywords.reserved, see bug 114874
-
-	"manual":      {mySQL84}, // wrong in I_S.keywords.reserved, see bug 114874
-	"tablesample": {mySQL84}, // wrong in I_S.keywords.reserved, see bug 114874
-
-	"library": {{Vendor: VendorMySQL, Version: Version{9, 2}}},
+	"library":  {{Vendor: VendorMySQL, Version: Version{9, 2}}},
+	"external": {{Vendor: VendorMySQL, Version: Version{9, 4}}}, // wrong in I_S.keywords.reserved, see bug 114874
 
 	"current_role":            {mariaDB101},
 	"delete_domain_id":        {mariaDB101}, // actual version unclear from docs, see comment above
