@@ -189,7 +189,10 @@ func (instance *Instance) rawConnectionPool(defaultSchema, fullParams string, al
 		return nil, err
 	}
 	if !instance.valid {
-		instance.hydrateVars(db, !alreadyLocked)
+		err = instance.hydrateVars(db, !alreadyLocked)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Set max concurrent connections, ensuring it is less than any limit set on
@@ -355,15 +358,13 @@ func (instance *Instance) AdaptiveHashIndexEnabled() bool {
 }
 
 // hydrateVars populates several non-exported Instance fields by querying
-// various global and session variables. Failures are ignored; these variables
-// are designed to help inform behavior but are not strictly mandatory.
-func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
-	var err error
+// various global and session variables.
+func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) (err error) {
 	if lock {
 		instance.m.Lock()
 		defer instance.m.Unlock()
 		if instance.valid {
-			return
+			return nil
 		}
 	}
 
@@ -380,7 +381,7 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 	// number.
 	conn, err := db.Conn(ctx)
 	if err != nil {
-		return
+		return err
 	}
 	defer conn.Close()
 	start := time.Now()
@@ -393,7 +394,7 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 		&maxUserConns, &maxConns,
 		&instance.lowerCaseNames, &instance.ahiEnabled)
 	if err != nil {
-		return
+		return err
 	}
 	instance.valid = true
 	if instance.flavor == FlavorUnknown { // Only set flavor if it wasn't already forced to some value
@@ -405,6 +406,7 @@ func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) {
 	} else {
 		instance.maxUserConns = maxConns
 	}
+	return nil
 }
 
 // Regular expression defining privileges that allow use of setting session
