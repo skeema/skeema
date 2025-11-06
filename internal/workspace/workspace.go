@@ -395,24 +395,34 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 		}
 	}()
 
-	// Main goroutine: examine statement errors. If any deadlocks occurred, retry
-	// sequentially, since some deadlocks are expected from concurrent CREATEs in
-	// MySQL 8+ if FKs are present. Ditto with metadata lock wait timeouts.
-	// Also retry errors from CREATE TABLE...LIKE being run out-of-order (only once
-	// though; nested chains of CREATE TABLE...LIKE are unsupported)
-	var sequentialStatements []*tengo.Statement
+	// Main goroutine: move failed CREATEs from channel into a slice. This will
+	// loop until failuresChan is closed from the logic directly above.
+	var createErrors []*StatementError
 	for stmtErr := range failuresChan {
-		if tengo.IsLockConflictError(stmtErr.Err) || tengo.IsObjectNotFoundError(stmtErr.Err) {
-			sequentialStatements = append(sequentialStatements, stmtErr.Statement)
-		} else {
-			wsSchema.Failures = append(wsSchema.Failures, stmtErr)
-			expectedObjectCount--
-		}
+		createErrors = append(createErrors, stmtErr)
 	}
 
-	// Run sequential statements in a single thread. This includes retrying any
-	// CREATEs that failed due to lock conflicts (common with FKs), as well as
-	// any ALTER statements (which also have concurrency issues with FKs).
+	// At this point we know all concurrenct execution has completed. It is now
+	// safe to examine the failed CREATEs, and sequentially retry any that were
+	// caused by deadlocks or metadata lock wait timeouts, which are common with
+	// concurrent creation when FKs are present. We also retry errors from CREATE
+	// TABLE...LIKE being run out-of-order (only once though; nested chains of
+	// CREATE TABLE...LIKE are intentionally not handled.)
+	for _, stmtErr := range createErrors {
+		if tengo.IsLockConflictError(stmtErr.Err) || tengo.IsObjectNotFoundError(stmtErr.Err) {
+			if _, err := db.Exec(stmtErr.Statement.Body()); err == nil {
+				continue // retry was successful, don't append to Failures or decrement expectedObjectCount
+			} else {
+				stmtErr = wrapFailure(stmtErr.Statement, err)
+			}
+		}
+		wsSchema.Failures = append(wsSchema.Failures, stmtErr)
+		expectedObjectCount--
+	}
+
+	// Run additional sequential statements without concurrency.
+	// This includes any ALTER statements, which have concurrency issues with FKs.
+	var sequentialStatements []*tengo.Statement
 	sequentialStatements = append(sequentialStatements, logicalSchema.Alters...)
 	for _, stmt := range sequentialStatements {
 		if _, err := db.Exec(stmt.Body()); err != nil {
