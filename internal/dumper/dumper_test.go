@@ -25,22 +25,54 @@ func TestMain(m *testing.M) {
 }
 
 func TestIntegration(t *testing.T) {
-	images := tengo.SkeemaTestImages(t)
-	suite := &IntegrationSuite{}
-	tengo.RunSuite(suite, t, images)
+	for _, image := range tengo.SkeemaTestImages(t) {
+		opts := tengo.DockerizedInstanceOptions{
+			Name:         fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(image)),
+			Image:        image,
+			RootPassword: "fakepw",
+			DataTmpfs:    true,
+		}
+		di, err := tengo.GetOrCreateDockerizedInstance(opts)
+		if err != nil {
+			t.Fatalf("Unable to setup Dockerized instance with image %q: %v", image, err)
+		}
+
+		suite := &DumperIntegrationSuite{
+			d: di,
+			// Other fields get populated in each test. TODO: refactor those to local vars in each subtest method
+		}
+		tengo.RunSuite(t, suite, tengo.SkeemaSuiteOptions(image))
+
+		di.Done(t)
+		if err := os.RemoveAll(suite.scratchPath()); err != nil {
+			t.Fatalf("Unable to remove scratch dir: %v", err)
+		}
+	}
 }
 
-type IntegrationSuite struct {
+type DumperIntegrationSuite struct {
 	d               *tengo.DockerizedInstance
 	schema          *tengo.Schema
 	scratchDir      *fs.Dir
 	statementErrors []*workspace.StatementError
 }
 
+func (s *DumperIntegrationSuite) BeforeTest(t *testing.T) {
+	s.d.NukeData(t)
+	if _, err := os.Stat(s.scratchPath()); err == nil { // dir exists
+		if err := os.RemoveAll(s.scratchPath()); err != nil {
+			t.Fatalf("Unable to remove scratch dir: %v", err)
+		}
+	}
+	if err := os.MkdirAll(s.scratchPath(), 0777); err != nil {
+		t.Fatalf("Unable to create scratch dir: %v", err)
+	}
+}
+
 // TestDumperFormat tests simple reformatting, where the filesystem and schema
 // match aside from formatting differences and statement errors. This is similar
 // to the usage pattern of `skeema format` or `skeema lint --format`.
-func (s IntegrationSuite) TestDumperFormat(t *testing.T) {
+func (s DumperIntegrationSuite) TestDumperFormat(t *testing.T) {
 	s.setupDirAndDB(t, "basic")
 	opts := Options{
 		IncludeAutoInc: true,
@@ -73,7 +105,7 @@ func (s IntegrationSuite) TestDumperFormat(t *testing.T) {
 // TestDumperPull tests a use-case closer to `skeema pull`, where in addition
 // to files being reformatted, there are also objects that only exist in the
 // filesystem or only exist in the database.
-func (s IntegrationSuite) TestDumperPull(t *testing.T) {
+func (s DumperIntegrationSuite) TestDumperPull(t *testing.T) {
 	s.setupDirAndDB(t, "basic")
 	opts := Options{
 		IncludeAutoInc: true,
@@ -116,7 +148,7 @@ func (s IntegrationSuite) TestDumperPull(t *testing.T) {
 // TestDumperNamedSchemas confirms errors are returned when attempting to
 // format a dir containing either 'USE' commands or prefixed (dbname.objectname)
 // CREATE statements.
-func (s IntegrationSuite) TestDumperNamedSchemas(t *testing.T) {
+func (s DumperIntegrationSuite) TestDumperNamedSchemas(t *testing.T) {
 	s.setupDirAndDB(t, "basic")
 	var err error
 
@@ -149,40 +181,7 @@ func (s IntegrationSuite) TestDumperNamedSchemas(t *testing.T) {
 	}
 }
 
-func (s *IntegrationSuite) Setup(t *testing.T, backend string) {
-	opts := tengo.DockerizedInstanceOptions{
-		Name:         fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),
-		Image:        backend,
-		RootPassword: "fakepw",
-		DataTmpfs:    true,
-	}
-	var err error
-	s.d, err = tengo.GetOrCreateDockerizedInstance(opts)
-	if err != nil {
-		t.Fatalf("Unable to setup backend %q: %v", backend, err)
-	}
-}
-
-func (s *IntegrationSuite) Teardown(t *testing.T) {
-	s.d.Done(t)
-	if err := os.RemoveAll(s.scratchPath()); err != nil {
-		t.Fatalf("Unable to remove scratch dir: %v", err)
-	}
-}
-
-func (s *IntegrationSuite) BeforeTest(t *testing.T) {
-	s.d.NukeData(t)
-	if _, err := os.Stat(s.scratchPath()); err == nil { // dir exists
-		if err := os.RemoveAll(s.scratchPath()); err != nil {
-			t.Fatalf("Unable to remove scratch dir: %v", err)
-		}
-	}
-	if err := os.MkdirAll(s.scratchPath(), 0777); err != nil {
-		t.Fatalf("Unable to create scratch dir: %v", err)
-	}
-}
-
-func (s *IntegrationSuite) setupScratchDir(t *testing.T, subdir string) {
+func (s *DumperIntegrationSuite) setupScratchDir(t *testing.T, subdir string) {
 	t.Helper()
 	shellout := shellout.New("cp *.sql " + s.scratchPath()).WithWorkingDir(s.testdata(subdir, "input"))
 	if err := shellout.Run(); err != nil {
@@ -193,7 +192,7 @@ func (s *IntegrationSuite) setupScratchDir(t *testing.T, subdir string) {
 	s.reparseScratchDir(t)
 }
 
-func (s *IntegrationSuite) setupDirAndDB(t *testing.T, subdir string) {
+func (s *DumperIntegrationSuite) setupDirAndDB(t *testing.T, subdir string) {
 	t.Helper()
 
 	s.setupScratchDir(t, subdir)
@@ -215,7 +214,7 @@ func (s *IntegrationSuite) setupDirAndDB(t *testing.T, subdir string) {
 
 // testdata returns the absolute path of the testdata dir, or a file or dir
 // based from it
-func (s *IntegrationSuite) testdata(joins ...string) string {
+func (s *DumperIntegrationSuite) testdata(joins ...string) string {
 	parts := append([]string{"testdata"}, joins...)
 	result := filepath.Join(parts...)
 	if cleaned, err := filepath.Abs(filepath.Clean(result)); err == nil {
@@ -226,13 +225,13 @@ func (s *IntegrationSuite) testdata(joins ...string) string {
 
 // scratchPath returns the scratch directory for tests to write temporary files
 // to.
-func (s *IntegrationSuite) scratchPath() string {
+func (s *DumperIntegrationSuite) scratchPath() string {
 	return s.testdata(".scratch")
 }
 
 // reparseScratchDir updates the logical schema stored in the test suite, to
 // reflect any changes made in the filesystem.
-func (s *IntegrationSuite) reparseScratchDir(t *testing.T) {
+func (s *DumperIntegrationSuite) reparseScratchDir(t *testing.T) {
 	t.Helper()
 	dir, err := getDir(s.scratchPath())
 	if err != nil {
@@ -270,7 +269,7 @@ func (s *IntegrationSuite) reparseScratchDir(t *testing.T) {
 
 // verifyDumperResult confirms that the SQL files in the scratch directory match
 // those in the golden directory.
-func (s *IntegrationSuite) verifyDumperResult(t *testing.T, subdir string) {
+func (s *DumperIntegrationSuite) verifyDumperResult(t *testing.T, subdir string) {
 	t.Helper()
 
 	s.reparseScratchDir(t)

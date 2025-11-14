@@ -30,46 +30,45 @@ func TestMain(m *testing.M) {
 }
 
 func TestIntegration(t *testing.T) {
-	images := tengo.SkeemaTestImages(t)
-	suite := &SkeemaIntegrationSuite{}
-	tengo.RunSuite(suite, t, images)
+	repoPath, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(repoPath); err != nil {
+			t.Fatalf("Unable to chdir to repo path: %v", err)
+		}
+	})
+
+	for _, image := range tengo.SkeemaTestImages(t) {
+		opts := tengo.DockerizedInstanceOptions{
+			Name:         fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(image)),
+			Image:        image,
+			RootPassword: "fakepw",
+			DataTmpfs:    true,
+		}
+		di, err := tengo.GetOrCreateDockerizedInstance(opts)
+		if err != nil {
+			t.Fatalf("Unable to setup Dockerized instance with image %q: %v", image, err)
+		}
+
+		suite := &SkeemaIntegrationSuite{
+			d:        di,
+			repoPath: repoPath,
+		}
+		tengo.RunSuite(t, suite, tengo.SkeemaSuiteOptions(image))
+
+		di.Done(t)
+		util.FlushInstanceCache()
+		if err := os.RemoveAll(suite.scratchPath()); err != nil {
+			t.Fatalf("Unable to remove scratch dir: %v", err)
+		}
+	}
 }
 
 type SkeemaIntegrationSuite struct {
 	d        *tengo.DockerizedInstance
 	repoPath string
-}
-
-func (s *SkeemaIntegrationSuite) Setup(t *testing.T, backend string) {
-	// Remember working directory, which should be the base dir for the repo
-	var err error
-	s.repoPath, err = os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Spin up a Dockerized database server
-	opts := tengo.DockerizedInstanceOptions{
-		Name:         fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),
-		Image:        backend,
-		RootPassword: "fakepw",
-		DataTmpfs:    true,
-	}
-	s.d, err = tengo.GetOrCreateDockerizedInstance(opts)
-	if err != nil {
-		t.Fatalf("Unable to setup backend %q: %v", backend, err)
-	}
-}
-
-func (s *SkeemaIntegrationSuite) Teardown(t *testing.T) {
-	s.d.Done(t)
-	if err := os.Chdir(s.repoPath); err != nil {
-		t.Fatalf("Unable to chdir to repo path: %v", err)
-	}
-	if err := os.RemoveAll(s.scratchPath()); err != nil {
-		t.Fatalf("Unable to remove scratch dir: %v", err)
-	}
-	util.FlushInstanceCache()
 }
 
 func (s *SkeemaIntegrationSuite) BeforeTest(t *testing.T) {

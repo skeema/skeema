@@ -25,13 +25,49 @@ func TestMain(m *testing.M) {
 }
 
 func TestIntegration(t *testing.T) {
-	images := tengo.SkeemaTestImages(t)
-	suite := &WorkspaceIntegrationSuite{}
-	tengo.RunSuite(suite, t, images)
+	for _, image := range tengo.SkeemaTestImages(t) {
+		opts := tengo.DockerizedInstanceOptions{
+			Name:         fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(image)),
+			Image:        image,
+			RootPassword: "fakepw",
+			DataTmpfs:    true,
+		}
+		di, err := tengo.GetOrCreateDockerizedInstance(opts)
+		if err != nil {
+			t.Fatalf("Unable to setup Dockerized instance with image %q: %v", image, err)
+		}
+
+		suite := &WorkspaceIntegrationSuite{
+			d: di,
+		}
+		tengo.RunSuite(t, suite, tengo.SkeemaSuiteOptions(image))
+
+		di.Done(t)
+	}
 }
 
 type WorkspaceIntegrationSuite struct {
 	d *tengo.DockerizedInstance
+}
+
+func (s *WorkspaceIntegrationSuite) BeforeTest(t *testing.T) {
+	s.d.NukeData(t)
+}
+
+func (s *WorkspaceIntegrationSuite) getParsedDir(t *testing.T, dirPath, cliFlags string) *fs.Dir {
+	t.Helper()
+	cmd := mybase.NewCommand("workspacetest", "", "", nil)
+	util.AddGlobalOptions(cmd)
+	AddCommandOptions(cmd)
+	cmd.AddArg("environment", "production", false)
+	commandLine := fmt.Sprintf("workspacetest --host=%s --port=%d --password=fakepw %s", s.d.Instance.Host, s.d.Instance.Port, cliFlags)
+	cfg := mybase.ParseFakeCLI(t, cmd, commandLine)
+
+	dir, err := fs.ParseDir(dirPath, cfg)
+	if err != nil {
+		t.Fatalf("Unexpectedly cannot parse working dir: %s", err)
+	}
+	return dir
 }
 
 func (s WorkspaceIntegrationSuite) TestExecLogicalSchema(t *testing.T) {
@@ -240,41 +276,4 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaLarge(t *testing.T) {
 	} else if expectCount, actualCount := len(dir.LogicalSchemas[0].Creates)-typos, wsSchema.Schema.ObjectCount(); expectCount != actualCount {
 		t.Errorf("Expected to find %d objects in schema, instead found %d", expectCount, actualCount)
 	}
-}
-
-func (s *WorkspaceIntegrationSuite) Setup(t *testing.T, backend string) {
-	var err error
-	s.d, err = tengo.GetOrCreateDockerizedInstance(tengo.DockerizedInstanceOptions{
-		Name:         fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),
-		Image:        backend,
-		RootPassword: "fakepw",
-		DataTmpfs:    true,
-	})
-	if err != nil {
-		t.Fatalf("Unable to setup backend %q: %v", backend, err)
-	}
-}
-
-func (s *WorkspaceIntegrationSuite) Teardown(t *testing.T) {
-	s.d.Done(t)
-}
-
-func (s *WorkspaceIntegrationSuite) BeforeTest(t *testing.T) {
-	s.d.NukeData(t)
-}
-
-func (s *WorkspaceIntegrationSuite) getParsedDir(t *testing.T, dirPath, cliFlags string) *fs.Dir {
-	t.Helper()
-	cmd := mybase.NewCommand("workspacetest", "", "", nil)
-	util.AddGlobalOptions(cmd)
-	AddCommandOptions(cmd)
-	cmd.AddArg("environment", "production", false)
-	commandLine := fmt.Sprintf("workspacetest --host=%s --port=%d --password=fakepw %s", s.d.Instance.Host, s.d.Instance.Port, cliFlags)
-	cfg := mybase.ParseFakeCLI(t, cmd, commandLine)
-
-	dir, err := fs.ParseDir(dirPath, cfg)
-	if err != nil {
-		t.Fatalf("Unexpectedly cannot parse working dir: %s", err)
-	}
-	return dir
 }

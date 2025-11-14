@@ -23,22 +23,48 @@ func TestMain(m *testing.M) {
 }
 
 func TestIntegration(t *testing.T) {
-	images := tengo.SkeemaTestImages(t)
-	suite := &IntegrationSuite{}
-	tengo.RunSuite(suite, t, images)
+	for _, image := range tengo.SkeemaTestImages(t) {
+		opts := tengo.DockerizedInstanceOptions{
+			Name:              fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(image)),
+			Image:             image,
+			RootPassword:      "fakepw",
+			DefaultConnParams: "foreign_key_checks=0&sql_mode=%27NO_ENGINE_SUBSTITUTION%27", // disabling strict mode to allow zero dates in testdata
+			DataTmpfs:         true,
+		}
+		di, err := tengo.GetOrCreateDockerizedInstance(opts)
+		if err != nil {
+			t.Fatalf("Unable to setup Dockerized instance with image %q: %v", image, err)
+		}
+		// By default, MySQL 8.4+ requires FKs to have an exact unique index on the
+		// parent table side, which would break the test tables for lint-fk-parent.
+		// TODO: this variable will eventually be removed; test logic needs to
+		// account for this
+		if di.Flavor().MinMySQL(8, 4) {
+			di.ExecSQL(t, "SET GLOBAL restrict_fk_on_non_standard_key = OFF")
+		}
+
+		suite := &LinterIntegrationSuite{
+			d: di,
+		}
+		tengo.RunSuite(t, suite, tengo.SkeemaSuiteOptions(image))
+
+		di.Done(t)
+	}
 }
 
-type IntegrationSuite struct {
-	d             *tengo.DockerizedInstance
-	schema        *tengo.Schema
-	logicalSchema *fs.LogicalSchema
+type LinterIntegrationSuite struct {
+	d *tengo.DockerizedInstance
+}
+
+func (s *LinterIntegrationSuite) BeforeTest(t *testing.T) {
+	s.d.NukeData(t)
 }
 
 // TestCheckSchema runs all non-hidden checkers against the dir
 // ./testdata/validcfg, wherein the CREATE statements have special inline
 // comments indicating which annotations are expected to be found on a given
 // given line. See expectedAnnotations() for more information.
-func (s IntegrationSuite) TestCheckSchema(t *testing.T) {
+func (s LinterIntegrationSuite) TestCheckSchema(t *testing.T) {
 	dir := getDir(t, "testdata/validcfg")
 	// Set all non-hidden rules to warning level
 	forceRulesWarning(dir.Config)
@@ -78,7 +104,7 @@ func (s IntegrationSuite) TestCheckSchema(t *testing.T) {
 // The hidden checkers are tested separately because they are overly broad,
 // and would generate too many annotations on the table definitions used
 // by TestCheckSchema.
-func (s IntegrationSuite) TestCheckSchemaHidden(t *testing.T) {
+func (s LinterIntegrationSuite) TestCheckSchemaHidden(t *testing.T) {
 	dir := getDir(t, "testdata/hidden")
 	// Set specific hidden rules to warning level
 	forceOnlyRulesWarning(dir.Config, "nullable", "ids")
@@ -106,7 +132,7 @@ func (s IntegrationSuite) TestCheckSchemaHidden(t *testing.T) {
 
 // TestCheckSchemaCompression provides additional coverage for code paths and
 // helper functions in check_compression.go.
-func (s IntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
+func (s LinterIntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 	dir := getDir(t, "testdata/validcfg")
 
 	// Ignore all linters except for the compression one
@@ -219,7 +245,7 @@ func (s IntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 
 // TestCheckSchemaUTF8MB3 provides additional coverage for using utf8mb3 on
 // allow-charset as an alias for utf8.
-func (s IntegrationSuite) TestCheckSchemaUTF8MB3(t *testing.T) {
+func (s LinterIntegrationSuite) TestCheckSchemaUTF8MB3(t *testing.T) {
 	dir := getDir(t, "testdata/utf8mb3")
 
 	// Ignore all linters except for lint-charset
@@ -249,7 +275,7 @@ func (s IntegrationSuite) TestCheckSchemaUTF8MB3(t *testing.T) {
 // TestCheckSchemaAllowAllDefiner provides additional coverage for the defaults
 // for lint-definer (error) and allow-definer (%@%, which is permissive of all
 // definers).
-func (s IntegrationSuite) TestCheckSchemaAllowAllDefiner(t *testing.T) {
+func (s LinterIntegrationSuite) TestCheckSchemaAllowAllDefiner(t *testing.T) {
 	dir := getDir(t, "testdata/routines")
 	opts, err := OptionsForDir(dir)
 	if err != nil {
@@ -278,7 +304,7 @@ func (s IntegrationSuite) TestCheckSchemaAllowAllDefiner(t *testing.T) {
 // TestCheckSchemaStripAnnotationNewlines ensures that if the
 // StripAnnotationNewlines option is enabled, linter annotation messages do not
 // ever contain internal newlines.
-func (s IntegrationSuite) TestCheckSchemaStripAnnotationNewlines(t *testing.T) {
+func (s LinterIntegrationSuite) TestCheckSchemaStripAnnotationNewlines(t *testing.T) {
 	// Confirm that lint-dupe-index normally contains newlines
 	dir := getDir(t, "testdata/validcfg")
 	forceOnlyRulesWarning(dir.Config, "dupe-index")
@@ -320,7 +346,7 @@ func (s IntegrationSuite) TestCheckSchemaStripAnnotationNewlines(t *testing.T) {
 
 // TestCheckSchemaSpatialIndexSRID confirms that the dupe-index checker will
 // flag SPATIAL indexes in MySQL 8 if their column lacks an SRID.
-func (s IntegrationSuite) TestCheckSchemaSpatialIndexSRID(t *testing.T) {
+func (s LinterIntegrationSuite) TestCheckSchemaSpatialIndexSRID(t *testing.T) {
 	if !s.d.Flavor().MinMySQL(8) {
 		t.Skip("Test only relevant for MySQL 8.0+")
 	}
@@ -375,36 +401,6 @@ func TestRegisterRuleDuplicate(t *testing.T) {
 	if !didPanic {
 		t.Errorf("Expected duplicate call to RegisterRule to panic, but it did not")
 	}
-}
-
-func (s *IntegrationSuite) Setup(t *testing.T, backend string) {
-	var err error
-	s.d, err = tengo.GetOrCreateDockerizedInstance(tengo.DockerizedInstanceOptions{
-		Name:              fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend)),
-		Image:             backend,
-		RootPassword:      "fakepw",
-		DefaultConnParams: "foreign_key_checks=0&sql_mode=%27NO_ENGINE_SUBSTITUTION%27", // disabling strict mode to allow zero dates in testdata
-		DataTmpfs:         true,
-	})
-	if err != nil {
-		t.Fatalf("Unable to setup backend %q: %v", backend, err)
-	}
-
-	// By default, MySQL 8.4+ requires FKs to have an exact unique index on the
-	// parent table side, which would break the test tables for lint-fk-parent.
-	// TODO: this variable will eventually be removed; test logic needs to
-	// account for this
-	if s.d.Flavor().MinMySQL(8, 4) {
-		s.d.ExecSQL(t, "SET GLOBAL restrict_fk_on_non_standard_key = OFF")
-	}
-}
-
-func (s *IntegrationSuite) Teardown(t *testing.T) {
-	s.d.Done(t)
-}
-
-func (s *IntegrationSuite) BeforeTest(t *testing.T) {
-	s.d.NukeData(t)
 }
 
 // getDir parses and returns an *fs.Dir
@@ -498,7 +494,7 @@ func compareAnnotations(t *testing.T, expected []*Annotation, actualResult *Resu
 // that aren't enabled by default.
 // Hidden rules are excluded because they may be overly broad / affect too many
 // "normal" tables when enabled. Such rules must be tested separately (outside
-// of IntegrationSuite.TestCheckSchema for example).
+// of LinterIntegrationSuite.TestCheckSchema for example).
 // This must be called *prior* to OptionsForDir or any other logic that converts
 // a mybase.Config into a linter.Options. Otherwise, supplemental options via
 // Rule.RelatedOption may not be configured properly.

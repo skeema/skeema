@@ -73,13 +73,68 @@ func TestResultError(t *testing.T) {
 }
 
 func TestIntegration(t *testing.T) {
-	images := tengo.SkeemaTestImages(t)
-	suite := &ApplierIntegrationSuite{}
-	tengo.RunSuite(suite, t, images)
+	for _, image := range tengo.SkeemaTestImages(t) {
+		var setupGroup errgroup.Group
+		instances := make([]*tengo.DockerizedInstance, 2)
+		for n := range instances {
+			setupGroup.Go(func() (err error) {
+				var suffix string
+				if n > 0 {
+					suffix = fmt.Sprintf("-%d", n+1)
+				}
+				containerName := "skeema-test-" + tengo.ContainerNameForImage(image) + suffix
+				instances[n], err = tengo.GetOrCreateDockerizedInstance(tengo.DockerizedInstanceOptions{
+					Name:         containerName,
+					Image:        image,
+					RootPassword: "fakepw",
+					DataTmpfs:    true,
+				})
+				return err
+			})
+		}
+		if err := setupGroup.Wait(); err != nil {
+			t.Fatalf("Unable to setup Dockerized instances with image %q: %v", image, err)
+		}
+
+		suite := &ApplierIntegrationSuite{
+			d: instances,
+		}
+		tengo.RunSuite(t, suite, tengo.SkeemaSuiteOptions(image))
+
+		var cleanupGroup errgroup.Group
+		for n, d := range instances {
+			// The first instance is potentially maintained for use in other package
+			// tests, while the other instance(s) are always removed
+			if n == 0 {
+				cleanupGroup.Go(func() error {
+					d.Done(t)
+					return nil
+				})
+			} else {
+				cleanupGroup.Go(d.Destroy)
+			}
+		}
+		err := cleanupGroup.Wait()
+		util.FlushInstanceCache()
+		if err != nil {
+			t.Fatalf("Unable to cleanup Dockerized instances with image %q: %v", image, err)
+		}
+	}
 }
 
 type ApplierIntegrationSuite struct {
 	d []*tengo.DockerizedInstance
+}
+
+func (s *ApplierIntegrationSuite) BeforeTest(t *testing.T) {
+	var g errgroup.Group
+	for _, inst := range s.d {
+		g.Go(func() error {
+			inst.NukeData(t)
+			return nil
+		})
+	}
+	g.Wait()
 }
 
 func (s ApplierIntegrationSuite) TestCreatePlanForTarget(t *testing.T) {
@@ -165,62 +220,4 @@ func (s ApplierIntegrationSuite) TestCreatePlanForTarget(t *testing.T) {
 	} else if unsafe := plan.Unsafe[0]; unsafe.Key != expectedUnsafeKey || unsafe.Statement == "" || unsafe.Reason == "" {
 		t.Errorf("Unexpected values in plan.Unsafe[0]: %+v", plan.Unsafe[0])
 	}
-}
-
-func (s *ApplierIntegrationSuite) Setup(t *testing.T, backend string) {
-	var g errgroup.Group
-	s.d = make([]*tengo.DockerizedInstance, 2)
-	for n := range s.d {
-		n := n
-		g.Go(func() error {
-			var err error
-			containerName := fmt.Sprintf("skeema-test-%s", tengo.ContainerNameForImage(backend))
-			if n > 0 {
-				containerName = fmt.Sprintf("%s-%d", containerName, n+1)
-			}
-			s.d[n], err = tengo.GetOrCreateDockerizedInstance(tengo.DockerizedInstanceOptions{
-				Name:         containerName,
-				Image:        backend,
-				RootPassword: "fakepw",
-				DataTmpfs:    true,
-			})
-			return err
-		})
-	}
-	if err := g.Wait(); err != nil {
-		t.Fatalf("Unable to setup backend %q: %v", backend, err)
-	}
-}
-
-func (s *ApplierIntegrationSuite) Teardown(t *testing.T) {
-	var g errgroup.Group
-	for n := range s.d {
-		var f func() error
-		if n == 0 {
-			f = func() error {
-				s.d[0].Done(t)
-				return nil
-			}
-		} else {
-			f = s.d[n].Destroy
-		}
-		g.Go(f)
-	}
-	err := g.Wait()
-	util.FlushInstanceCache()
-	if err != nil {
-		t.Fatalf("Teardown: %v", err)
-	}
-}
-
-func (s *ApplierIntegrationSuite) BeforeTest(t *testing.T) {
-	var g errgroup.Group
-	for n := range s.d {
-		n := n
-		g.Go(func() error {
-			s.d[n].NukeData(t)
-			return nil
-		})
-	}
-	g.Wait()
 }

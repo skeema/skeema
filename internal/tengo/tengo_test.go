@@ -13,31 +13,29 @@ func TestMain(m *testing.M) {
 }
 
 func TestIntegration(t *testing.T) {
-	images := SkeemaTestImages(t)
-	suite := &TengoIntegrationSuite{}
-	RunSuite(suite, t, images)
+	for _, image := range SkeemaTestImages(t) {
+		opts := DockerizedInstanceOptions{
+			Name:         fmt.Sprintf("skeema-test-%s", ContainerNameForImage(image)),
+			Image:        image,
+			RootPassword: "fakepw",
+			DataTmpfs:    true,
+		}
+		di, err := GetOrCreateDockerizedInstance(opts)
+		if err != nil {
+			t.Fatalf("Unable to setup Dockerized instance with image %q: %v", image, err)
+		}
+
+		suite := &TengoIntegrationSuite{
+			d: di,
+		}
+		RunSuite(t, suite, SkeemaSuiteOptions(image))
+
+		di.Done(t)
+	}
 }
 
 type TengoIntegrationSuite struct {
 	d *DockerizedInstance
-}
-
-func (s *TengoIntegrationSuite) Setup(t *testing.T, backend string) {
-	opts := DockerizedInstanceOptions{
-		Name:         fmt.Sprintf("skeema-test-%s", ContainerNameForImage(backend)),
-		Image:        backend,
-		RootPassword: "fakepw",
-		DataTmpfs:    true,
-	}
-	var err error
-	s.d, err = GetOrCreateDockerizedInstance(opts)
-	if err != nil {
-		t.Fatalf("Unable to setup backend %q: %v", backend, err)
-	}
-}
-
-func (s *TengoIntegrationSuite) Teardown(t *testing.T) {
-	s.d.Done(t)
 }
 
 func (s *TengoIntegrationSuite) BeforeTest(t *testing.T) {

@@ -102,7 +102,7 @@ func TestBadConfigResult(t *testing.T) {
 	}
 }
 
-func (s IntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
+func (s LinterIntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
 	dir := getDir(t, "testdata/validcfg")
 	forceRulesWarning(dir.Config) // regardless of .skeema config, set everything to warning
 	opts, err := OptionsForDir(dir)
@@ -152,7 +152,7 @@ func (s IntegrationSuite) TestResultAnnotateStatementErrors(t *testing.T) {
 	}
 }
 
-func (s IntegrationSuite) TestResultAnnotateMixedSchemaNames(t *testing.T) {
+func (s LinterIntegrationSuite) TestResultAnnotateMixedSchemaNames(t *testing.T) {
 	// Test on 3 dirs where we don't expect any annotations to be added:
 	// a dir that contains no named schemas in *.sql; a dir that contains no
 	// .skeema file; and a dir that has .skeema but without defining a schema name

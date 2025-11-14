@@ -15,28 +15,32 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// This file contains public functions and structs designed to make integration
-// testing easier. These functions are used in Tengo's own tests, but may also
-// be useful to other packages and applications using Tengo as a library.
+// This file contains public functions and structs designed to make Docker-based
+// integration testing easier.
 
-// IntegrationTestSuite is the interface for a suite of test methods. In
-// addition to implementing the 3 methods of the interface, an integration test
-// suite struct should have any number of test methods of form
-// TestFoo(t *testing.T), which will be executed automatically by RunSuite.
-type IntegrationTestSuite interface {
-	Setup(t *testing.T, backend string)
-	Teardown(t *testing.T)
+// BeforeTester is an optional interface implemented by a suite of test methods.
+type BeforeTester interface {
 	BeforeTest(t *testing.T)
 }
 
-// RunSuite runs all test methods in the supplied suite once per backend. It
-// calls suite.Setup(t, backend) once per backend, then iterates through all
-// Test methods in suite. For each test method, suite.BeforeTest will be run,
-// followed by the test itself. Finally, suite.Teardown(t) will be run.
-// Backends are just strings, and may contain docker image names or any other
-// string representation that the test suite understands.
-func RunSuite(suite IntegrationTestSuite, t *testing.T, backends []string) {
-	var suiteName string
+// RunSuiteOptions controls optional behaviors of RunSuite.
+type RunSuiteOptions struct {
+	// Suffix appends a string to the name of each subtest, e.g. to differentiate
+	// between runs using different database flavors.
+	Suffix string
+
+	// BufferOutput controls whether STDOUT, STDERR, and logging output are
+	// captured into a buffer, which is only displayed if a test fails or is
+	// skipped. If enabled, parallel tests must not be used.
+	BufferOutput bool
+}
+
+// RunSuite runs all TestFoo(t *testing.T) methods in the supplied suite as
+// subtests. If the suite implements BeforeTester, the BeforeTest method is run
+// at the start of each subtest. Panics are caught and cause the panicking
+// subtest to fail, but without preventing subsequent subtests from running.
+func RunSuite(t *testing.T, suite any, opts RunSuiteOptions) {
+	var suiteName, suffix string
 	suiteType := reflect.TypeOf(suite)
 	suiteVal := reflect.ValueOf(suite)
 	if suiteVal.Kind() == reflect.Ptr {
@@ -44,65 +48,72 @@ func RunSuite(suite IntegrationTestSuite, t *testing.T, backends []string) {
 	} else {
 		suiteName = suiteType.Name()
 	}
-
-	if len(backends) == 0 {
-		t.Skipf("Skipping integration test suite %s: No backends supplied", suiteName)
+	if opts.Suffix != "" {
+		suffix = ":" + opts.Suffix
 	}
+	beforeTester, hasBeforeTest := suite.(BeforeTester)
 
-	for _, backend := range backends {
-		suite.Setup(t, backend)
-
-		// Run test methods
-		for n := range suiteType.NumMethod() {
-			method := suiteType.Method(n)
-			if strings.HasPrefix(method.Name, "Test") {
-				subtestName := fmt.Sprintf("%s.%s:%s", suiteName, method.Name, backend)
-				subtest := func(subt *testing.T) {
-					suite.BeforeTest(subt)
-
-					// Capture output and only display if test fails or is skipped. Note that
-					// this approach does not permit concurrent subtest execution.
-					realOut, realErr := os.Stdout, os.Stderr
-					realLogOutput := log.StandardLogger().Out
-					if r, w, err := os.Pipe(); err == nil {
-						os.Stdout = w
-						os.Stderr = w
-						log.SetOutput(w)
-						outChan := make(chan []byte)
-						defer func() {
-							iface := recover()
-							w.Close()
-							os.Stdout = realOut
-							os.Stderr = realErr
-							log.SetOutput(realLogOutput)
-							testOutput := <-outChan
-							if subt.Failed() || subt.Skipped() || iface != nil {
-								os.Stderr.Write(testOutput)
-							}
-							if iface != nil {
-								os.Stderr.WriteString(fmt.Sprintf("panic: %v [recovered]\n\n", iface))
-								os.Stderr.Write(debug.Stack())
-								subt.Fail()
-							}
-						}()
-						go func() {
-							var b bytes.Buffer
-							_, err := io.Copy(&b, r) // prevent pipe from filling up
-							if err == nil {
-								outChan <- b.Bytes()
-							} else {
-								outChan <- fmt.Appendf(nil, "Unable to buffer test output: %v", err)
-							}
-							close(outChan)
-						}()
+	for n := range suiteType.NumMethod() {
+		method := suiteType.Method(n)
+		if strings.HasPrefix(method.Name, "Test") {
+			t.Run(suiteName+"."+method.Name+suffix, func(subt *testing.T) {
+				defer func() {
+					if r := recover(); r != nil {
+						os.Stderr.WriteString(fmt.Sprintf("panic: %v [recovered]\n\n", r))
+						os.Stderr.Write(debug.Stack())
+						subt.Fail()
 					}
-					method.Func.Call([]reflect.Value{reflect.ValueOf(suite), reflect.ValueOf(subt)})
+				}()
+				if opts.BufferOutput {
+					bufferTestOutput(subt)
 				}
-				t.Run(subtestName, subtest)
-			}
+				if hasBeforeTest {
+					beforeTester.BeforeTest(subt)
+				}
+				method.Func.Call([]reflect.Value{reflect.ValueOf(suite), reflect.ValueOf(subt)})
+			})
 		}
+	}
+}
 
-		suite.Teardown(t)
+func bufferTestOutput(t *testing.T) {
+	t.Helper()
+	realOut, realErr := os.Stdout, os.Stderr
+	realLogOutput := log.StandardLogger().Out
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Unexpected error from os.Pipe: %v", err)
+	}
+	os.Stdout = w
+	os.Stderr = w
+	log.SetOutput(w)
+	var b bytes.Buffer
+	done := make(chan struct{})
+	go func() {
+		io.Copy(&b, r) // prevent pipe from filling up
+		r.Close()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		w.Close() // EOF makes the io.Copy call in the goroutine above return
+		<-done    // block until that goroutine completes
+		os.Stdout = realOut
+		os.Stderr = realErr
+		log.SetOutput(realLogOutput)
+		if t.Failed() || t.Skipped() {
+			os.Stderr.Write(b.Bytes())
+		}
+	})
+}
+
+// SkeemaSuiteOptions returns RunSuiteOptions that are based on the supplied
+// image name (as subtest naming suffix) and SKEEMA_TEST_VERBOSE env variable
+// (disables output buffering if set, showing output of passing tests as well).
+func SkeemaSuiteOptions(image string) RunSuiteOptions {
+	verboseEnv := strings.ToLower(os.Getenv("SKEEMA_TEST_VERBOSE"))
+	return RunSuiteOptions{
+		Suffix:       image,
+		BufferOutput: (verboseEnv == "" || verboseEnv == "0" || verboseEnv == "false"),
 	}
 }
 
@@ -170,8 +181,8 @@ func (di *DockerizedInstance) Done(t *testing.T) {
 
 // NukeData drops all non-system schemas and tables in the containerized
 // mysql-server, making it useful as a per-test cleanup method in
-// implementations of IntegrationTestSuite.BeforeTest. This method should
-// never be used on a "real" production database!
+// implementations of BeforeTest. This method should never be used on a "real"
+// production database!
 func (di *DockerizedInstance) NukeData(t *testing.T) {
 	t.Helper()
 	schemas, err := di.Instance.SchemaNames()
