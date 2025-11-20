@@ -13,7 +13,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/tengo"
-	terminal "golang.org/x/term"
+	"golang.org/x/term"
 )
 
 // AddGlobalOptions adds Skeema global options to the supplied mybase.Command.
@@ -186,7 +186,7 @@ type PasswordInputSource func() (string, error)
 // STDIN is a terminal.
 func InteractivePasswordInput() (string, error) {
 	stdin := int(os.Stdin.Fd())
-	bytePassword, err := terminal.ReadPassword(stdin)
+	bytePassword, err := term.ReadPassword(stdin)
 	return string(bytePassword), err
 }
 

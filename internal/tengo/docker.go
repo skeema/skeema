@@ -14,7 +14,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/skeema/skeema/internal/shellout"
-	terminal "golang.org/x/term"
+	"golang.org/x/term"
 )
 
 var dockerEngineArch string
@@ -453,7 +453,7 @@ func (di *DockerizedInstance) Exec(cmd []string, stdin io.Reader) (stdoutStr str
 	if di.Password != "" {
 		dflags = append(dflags, "-e {PWDENV}")
 	}
-	if fd := int(os.Stdin.Fd()); stdin == nil && terminal.IsTerminal(fd) {
+	if stdin == nil && term.IsTerminal(int(os.Stdin.Fd())) {
 		dflags = append(dflags, "-t")
 	}
 	vars := map[string]string{
