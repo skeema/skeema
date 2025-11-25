@@ -18,7 +18,7 @@ type Version [3]uint16
 // release numbers; corresponding logic handles this appropriately.
 var (
 	LatestMySQLVersion   = Version{9, 5}
-	LatestMariaDBVersion = Version{12, 0}
+	LatestMariaDBVersion = Version{12, 1}
 
 	OldestSupportedMySQLVersion   = Version{5, 5}
 	OldestSupportedMariaDBVersion = Version{10, 1}
