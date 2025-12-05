@@ -51,10 +51,7 @@ func TestIntegration(t *testing.T) {
 }
 
 type DumperIntegrationSuite struct {
-	d               *tengo.DockerizedInstance
-	schema          *tengo.Schema
-	scratchDir      *fs.Dir
-	statementErrors []*workspace.StatementError
+	d *tengo.DockerizedInstance
 }
 
 func (s *DumperIntegrationSuite) BeforeTest(t *testing.T) {
@@ -73,16 +70,17 @@ func (s *DumperIntegrationSuite) BeforeTest(t *testing.T) {
 // match aside from formatting differences and statement errors. This is similar
 // to the usage pattern of `skeema format` or `skeema lint --format`.
 func (s DumperIntegrationSuite) TestDumperFormat(t *testing.T) {
-	s.setupDirAndDB(t, "basic")
+	scratchDir, schema, statementErrors := s.setupDirAndDB(t, "basic")
+	if len(statementErrors) != 1 {
+		t.Fatalf("Expected one StatementError from test setup; found %d", len(statementErrors))
+	}
+
 	opts := Options{
 		IncludeAutoInc: true,
 		CountOnly:      true,
 	}
-	if len(s.statementErrors) != 1 {
-		t.Fatalf("Expected one StatementError from test setup; found %d", len(s.statementErrors))
-	}
-	opts.IgnoreKeys([]tengo.ObjectKey{s.statementErrors[0].ObjectKey()})
-	count, err := DumpSchema(s.schema, s.scratchDir, opts)
+	opts.IgnoreKeys([]tengo.ObjectKey{statementErrors[0].ObjectKey()})
+	count, err := DumpSchema(schema, scratchDir, opts)
 	expected := 4 // multi.sql, posts.sql, routine.sql, users.sql
 	if count != expected || err != nil {
 		t.Errorf("Expected DumpSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
@@ -91,11 +89,11 @@ func (s DumperIntegrationSuite) TestDumperFormat(t *testing.T) {
 	// Since above run enabled opts.CountOnly, repeated run with it disabled
 	// should return the same count, and another run after that should return 0 count
 	opts.CountOnly = false
-	count, err = DumpSchema(s.schema, s.scratchDir, opts)
+	count, err = DumpSchema(schema, scratchDir, opts)
 	if count != expected || err != nil {
 		t.Errorf("Expected DumpSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
 	}
-	count, err = DumpSchema(s.schema, s.scratchDir, opts)
+	count, err = DumpSchema(schema, scratchDir, opts)
 	if expected = 0; count != expected || err != nil {
 		t.Errorf("Expected DumpSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
 	}
@@ -106,15 +104,16 @@ func (s DumperIntegrationSuite) TestDumperFormat(t *testing.T) {
 // to files being reformatted, there are also objects that only exist in the
 // filesystem or only exist in the database.
 func (s DumperIntegrationSuite) TestDumperPull(t *testing.T) {
-	s.setupDirAndDB(t, "basic")
+	_, schema, statementErrors := s.setupDirAndDB(t, "basic")
+	if len(statementErrors) != 1 {
+		t.Fatalf("Expected one StatementError from test setup; found %d", len(statementErrors))
+	}
+
 	opts := Options{
 		IncludeAutoInc: true,
 		CountOnly:      true,
 	}
-	if len(s.statementErrors) != 1 {
-		t.Fatalf("Expected one StatementError from test setup; found %d", len(s.statementErrors))
-	}
-	opts.IgnoreKeys([]tengo.ObjectKey{s.statementErrors[0].ObjectKey()})
+	opts.IgnoreKeys([]tengo.ObjectKey{statementErrors[0].ObjectKey()})
 
 	// In the fs, rename users table and its file. Expectation is that
 	// DumpSchema will undo this action.
@@ -122,9 +121,9 @@ func (s DumperIntegrationSuite) TestDumperPull(t *testing.T) {
 	contents = strings.Replace(contents, "create table users", "CREATE table widgets", 1)
 	fs.WriteTestFile(t, s.testdata(".scratch", "widgets.sql"), contents)
 	fs.RemoveTestFile(t, s.testdata(".scratch", "users.sql"))
-	s.reparseScratchDir(t)
+	scratchDir := s.parseScratchDir(t)
 
-	count, err := DumpSchema(s.schema, s.scratchDir, opts)
+	count, err := DumpSchema(schema, scratchDir, opts)
 	expected := 5 // no reformat needed for fine.sql or invalid.sql, but do for other 4 files, + 1 extra from above manipulations
 	if count != expected || err != nil {
 		t.Errorf("Expected DumpSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
@@ -133,12 +132,12 @@ func (s DumperIntegrationSuite) TestDumperPull(t *testing.T) {
 	// Since above run enabled opts.CountOnly, repeated run with it disabled
 	// should return the same count, and another run after that should return 0 count
 	opts.CountOnly = false
-	count, err = DumpSchema(s.schema, s.scratchDir, opts)
+	count, err = DumpSchema(schema, scratchDir, opts)
 	if count != expected || err != nil {
 		t.Errorf("Expected DumpSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
 	}
-	s.reparseScratchDir(t)
-	count, err = DumpSchema(s.schema, s.scratchDir, opts)
+	scratchDir = s.parseScratchDir(t)
+	count, err = DumpSchema(schema, scratchDir, opts)
 	if expected = 0; count != expected || err != nil {
 		t.Errorf("Expected DumpSchema() to return (%d, nil); instead found (%d, %v)", expected, count, err)
 	}
@@ -149,8 +148,7 @@ func (s DumperIntegrationSuite) TestDumperPull(t *testing.T) {
 // format a dir containing either 'USE' commands or prefixed (dbname.objectname)
 // CREATE statements.
 func (s DumperIntegrationSuite) TestDumperNamedSchemas(t *testing.T) {
-	s.setupDirAndDB(t, "basic")
-	var err error
+	_, schema, _ := s.setupDirAndDB(t, "basic")
 
 	// In the fs, add a dbname prefix before routine1
 	contents := fs.ReadTestFile(t, s.testdata(".scratch", "routine.sql"))
@@ -159,10 +157,9 @@ func (s DumperIntegrationSuite) TestDumperNamedSchemas(t *testing.T) {
 		t.Fatal("Unexpected problem with test setup; has testdata/input/routine.sql changed without updating this test?")
 	}
 	fs.WriteTestFile(t, s.testdata(".scratch", "routine.sql"), newContents)
-	if s.scratchDir, err = getDir(s.scratchPath()); err != nil {
+	if scratchDir, err := getDir(s.scratchPath()); err != nil {
 		t.Fatalf("Unexpected error from getDir: %+v", err)
-	}
-	if _, err := DumpSchema(s.schema, s.scratchDir, Options{}); err == nil {
+	} else if _, err := DumpSchema(schema, scratchDir, Options{}); err == nil {
 		t.Error("Expected error from DumpSchema on dir containing dbname-prefixed CREATE, but err was nil")
 	}
 
@@ -173,30 +170,24 @@ func (s DumperIntegrationSuite) TestDumperNamedSchemas(t *testing.T) {
 		t.Fatal("Unexpected problem with test setup; has testdata/input/multi.sql changed without updating this test?")
 	}
 	fs.WriteTestFile(t, s.testdata(".scratch", "multi.sql"), newContents)
-	if s.scratchDir, err = getDir(s.scratchPath()); err != nil {
+	if scratchDir, err := getDir(s.scratchPath()); err != nil {
 		t.Fatalf("Unexpected error from getDir: %+v", err)
-	}
-	if _, err := DumpSchema(s.schema, s.scratchDir, Options{}); err == nil {
-		t.Error("Expected error from DumpSchema on dir containing dbname-prefixed CREATE, but err was nil")
+	} else if _, err := DumpSchema(schema, scratchDir, Options{}); err == nil {
+		t.Error("Expected error from DumpSchema on dir containing other-schema USE statement, but err was nil")
 	}
 }
 
-func (s *DumperIntegrationSuite) setupScratchDir(t *testing.T, subdir string) {
-	t.Helper()
-	shellout := shellout.New("cp *.sql " + s.scratchPath()).WithWorkingDir(s.testdata(subdir, "input"))
-	if err := shellout.Run(); err != nil {
+func (s *DumperIntegrationSuite) setupScratchDir(t *testing.T, subdir string) *fs.Dir {
+	inputPath := s.testdata(subdir, "input")
+	cmd := shellout.New("cp *.sql " + s.scratchPath())
+	if err := cmd.WithWorkingDir(inputPath).Run(); err != nil {
 		t.Fatalf("Unexpected error from shellout: %v", err)
 	}
-
-	// Read the input files; make flavor-specific adjustments if needed
-	s.reparseScratchDir(t)
+	return s.parseScratchDir(t)
 }
 
-func (s *DumperIntegrationSuite) setupDirAndDB(t *testing.T, subdir string) {
-	t.Helper()
-
-	s.setupScratchDir(t, subdir)
-
+func (s *DumperIntegrationSuite) setupDirAndDB(t *testing.T, subdir string) (*fs.Dir, *tengo.Schema, []*workspace.StatementError) {
+	scratchDir := s.setupScratchDir(t, subdir)
 	wsOpts := workspace.Options{
 		Type:          workspace.TypeTempSchema,
 		Instance:      s.d.Instance,
@@ -205,11 +196,11 @@ func (s *DumperIntegrationSuite) setupDirAndDB(t *testing.T, subdir string) {
 		LockTimeout:   30 * time.Second,
 		CreateThreads: 5,
 	}
-	wsSchema, err := workspace.ExecLogicalSchema(s.scratchDir.LogicalSchemas[0], wsOpts)
+	wsSchema, err := workspace.ExecLogicalSchema(scratchDir.LogicalSchemas[0], wsOpts)
 	if err != nil {
 		t.Fatalf("Unexpected error from ExecLogicalSchema: %v", err)
 	}
-	s.schema, s.statementErrors = wsSchema.Schema, wsSchema.Failures
+	return scratchDir, wsSchema.Schema, wsSchema.Failures
 }
 
 // testdata returns the absolute path of the testdata dir, or a file or dir
@@ -229,10 +220,10 @@ func (s *DumperIntegrationSuite) scratchPath() string {
 	return s.testdata(".scratch")
 }
 
-// reparseScratchDir updates the logical schema stored in the test suite, to
-// reflect any changes made in the filesystem.
-func (s *DumperIntegrationSuite) reparseScratchDir(t *testing.T) {
-	t.Helper()
+// parseScratchDir parses the contents of the test's scratch directory, after
+// first making some flavor-related adjustments automatically if necessary for
+// uniformity.
+func (s *DumperIntegrationSuite) parseScratchDir(t *testing.T) *fs.Dir {
 	dir, err := getDir(s.scratchPath())
 	if err != nil {
 		t.Fatalf("Unexpected error from getDir: %v", err)
@@ -264,7 +255,7 @@ func (s *DumperIntegrationSuite) reparseScratchDir(t *testing.T) {
 			t.Fatalf("Unexpected error from getDir: %v", err)
 		}
 	}
-	s.scratchDir = dir
+	return dir
 }
 
 // verifyDumperResult confirms that the SQL files in the scratch directory match
@@ -272,17 +263,17 @@ func (s *DumperIntegrationSuite) reparseScratchDir(t *testing.T) {
 func (s *DumperIntegrationSuite) verifyDumperResult(t *testing.T, subdir string) {
 	t.Helper()
 
-	s.reparseScratchDir(t)
+	scratchDir := s.parseScratchDir(t)
 	goldenDir, err := getDir(s.testdata(subdir, "golden"))
 	if err != nil {
 		t.Fatalf("Unable to obtain golden dir: %v", err)
 	}
 
 	// Compare *.sql files
-	if len(s.scratchDir.SQLFiles) != len(goldenDir.SQLFiles) {
-		t.Errorf("Differing count of *.sql files between %s and %s", s.scratchDir, goldenDir)
+	if len(scratchDir.SQLFiles) != len(goldenDir.SQLFiles) {
+		t.Errorf("Differing count of *.sql files between %s and %s", scratchDir, goldenDir)
 	} else {
-		for filePath := range s.scratchDir.SQLFiles {
+		for filePath := range scratchDir.SQLFiles {
 			goldenPath := filepath.Join(goldenDir.Path, filepath.Base(filePath))
 			if goldenDir.SQLFiles[goldenPath] == nil {
 				t.Errorf("Unexpected file at path %s", filePath)
@@ -298,7 +289,7 @@ func (s *DumperIntegrationSuite) verifyDumperResult(t *testing.T, subdir string)
 				expectContents = strings.ReplaceAll(expectContents, "DEFAULT CHARSET=latin1\n", "DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci\n")
 			}
 			if actualContents != expectContents {
-				t.Errorf("Mismatch for contents of %s:\n%s:\n%s\n\n%s:\n%s\n", filePath, s.scratchDir, actualContents, goldenDir, expectContents)
+				t.Errorf("Mismatch for contents of %s:\n%s:\n%s\n\n%s:\n%s\n", filePath, scratchDir, actualContents, goldenDir, expectContents)
 			}
 		}
 	}
