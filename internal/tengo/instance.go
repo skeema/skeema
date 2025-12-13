@@ -524,7 +524,7 @@ func (instance *Instance) HasSchema(name string) (bool, error) {
 		SELECT 1
 		FROM   information_schema.schemata
 		WHERE  schema_name = ?`
-	err = db.Get(&exists, query, name)
+	err = db.QueryRow(query, name).Scan(&exists)
 	if err == nil {
 		return true, nil
 	} else if err == sql.ErrNoRows {

@@ -151,9 +151,14 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCrossDBFK(t *testing.T) {
 		if err != nil {
 			panic(fmt.Errorf("Unexpected error from ConnectionPool: %v", err))
 		}
-		var x struct{}
-		query := fmt.Sprintf("SELECT %s.*, SLEEP(?) FROM `parent_side`.%s LIMIT 1", tengo.EscapeIdentifier(tableName), tengo.EscapeIdentifier(tableName))
-		go db.Select(&x, query, seconds)
+		go func() {
+			var x, y int
+			query := fmt.Sprintf("SELECT id, SLEEP(?) FROM `parent_side`.%s LIMIT 1", tengo.EscapeIdentifier(tableName))
+			err := db.QueryRow(query, seconds).Scan(&x, &y)
+			if err != nil {
+				panic(err)
+			}
+		}()
 	}
 
 	// Note: ordinarily, TempSchema uses a 5-second lock_wait_timeout, with one
