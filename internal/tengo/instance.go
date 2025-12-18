@@ -453,25 +453,54 @@ func (instance *Instance) hydrateGrants() {
 	}
 	instance.m.Lock()
 	defer instance.m.Unlock()
-	db.Select(&instance.grants, "SHOW GRANTS")
+	if instance.grants != nil {
+		// If the Lock call above blocked, and meanwhile another goroutine already
+		// populated the grants, no need to query redundantly now
+		return
+	}
+	var allGrants []string
+	rows, err := db.Query("SHOW GRANTS")
+	if err != nil {
+		// Errors are not surfaced here; instead we simply don't hydrate the grants
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var grantValue string
+		if err := rows.Scan(&grantValue); err != nil {
+			return
+		}
+		allGrants = append(allGrants, grantValue)
+	}
+	if rows.Err() == nil {
+		instance.grants = allGrants
+	}
 }
 
 // SchemaNames returns a slice of all schema name strings on the instance
 // visible to the user. System schemas are excluded.
-func (instance *Instance) SchemaNames() ([]string, error) {
+func (instance *Instance) SchemaNames() (result []string, err error) {
 	db, err := instance.CachedConnectionPool("", "")
 	if err != nil {
 		return nil, err
 	}
-	var result []string
 	query := `
 		SELECT schema_name
 		FROM   information_schema.schemata
 		WHERE  schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'test', 'sys')`
-	if err := db.Select(&result, query); err != nil {
+	rows, err := db.Query(query)
+	if err != nil {
 		return nil, err
 	}
-	return result, nil
+	defer rows.Close()
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		result = append(result, s)
+	}
+	return result, rows.Err()
 }
 
 // Schemas returns a slice of schemas on the instance visible to the user. If
@@ -524,7 +553,7 @@ func (instance *Instance) HasSchema(name string) (bool, error) {
 		SELECT 1
 		FROM   information_schema.schemata
 		WHERE  schema_name = ?`
-	err = db.Get(&exists, query, name)
+	err = db.QueryRow(query, name).Scan(&exists)
 	if err == nil {
 		return true, nil
 	} else if err == sql.ErrNoRows {
@@ -989,63 +1018,68 @@ func (instance *Instance) DropRoutinesInSchema(schema string, opts BulkDropOptio
 func tablesToPartitions(db *sqlx.DB, schema string, flavor Flavor) (map[string][]string, error) {
 	// information_schema.partitions contains all tables (not just partitioned)
 	// and excludes views (which we don't want here anyway) in non-MySQL8+ flavors
-	var rawNames []struct {
-		TableName     string         `db:"table_name"`
-		PartitionName sql.NullString `db:"partition_name"`
-		Method        sql.NullString `db:"partition_method"`
-		SubMethod     sql.NullString `db:"subpartition_method"`
-		Position      sql.NullInt64  `db:"partition_ordinal_position"`
-		DataLength    int64          `db:"data_length"`
-	}
-	// Explicit AS clauses needed for compatibility with MySQL 8 data dictionary,
-	// otherwise results come back with uppercase col names, breaking Select
 	query := `
 		SELECT   SQL_BUFFER_RESULT
-		         p.table_name AS table_name, p.partition_name AS partition_name,
-		         p.partition_method AS partition_method,
-		         p.subpartition_method AS subpartition_method,
-		         p.partition_ordinal_position AS partition_ordinal_position,
-		         p.data_length AS data_length
-		FROM     information_schema.partitions p
-		WHERE    p.table_schema = ?
-		ORDER BY p.table_name, p.partition_ordinal_position`
-	if err := db.Select(&rawNames, query, schema); err != nil {
+		         table_name, partition_name, partition_method, subpartition_method,
+		         partition_ordinal_position, data_length
+		FROM     information_schema.partitions
+		WHERE    table_schema = ?
+		ORDER BY table_name, partition_ordinal_position`
+	rows, err := db.Query(query, schema)
+	if err != nil {
 		return nil, fmt.Errorf("Error querying information_schema.partitions: %w", err)
 	}
+	defer rows.Close()
 
 	var checkViews bool
 	partitions := make(map[string][]string)
-	for _, rn := range rawNames {
-		if !rn.Position.Valid || rn.Position.Int64 == 1 {
-			partitions[rn.TableName] = nil
+	for rows.Next() {
+		var tableName string
+		var partitionName, method, subMethod sql.NullString
+		var position sql.NullInt64
+		var dataLength int64
+		err := rows.Scan(&tableName, &partitionName, &method, &subMethod, &position, &dataLength)
+		if err != nil {
+			return nil, fmt.Errorf("Error querying information_schema.partitions: %w", err)
 		}
-		if rn.Method.Valid && !rn.SubMethod.Valid &&
-			(strings.HasPrefix(rn.Method.String, "RANGE") || strings.HasPrefix(rn.Method.String, "LIST")) {
-			partitions[rn.TableName] = append(partitions[rn.TableName], rn.PartitionName.String)
+		if !position.Valid || position.Int64 == 1 {
+			partitions[tableName] = nil
+		}
+		if method.Valid && !subMethod.Valid &&
+			(strings.HasPrefix(method.String, "RANGE") || strings.HasPrefix(method.String, "LIST")) {
+			partitions[tableName] = append(partitions[tableName], partitionName.String)
 		}
 		// In MySQL 8, views are present here with a data_length of 0. Although InnoDB
 		// tables likely always have nonzero data_length, non-InnoDB tables do show up
 		// here with data_length of 0, so this alone isn't sufficient to identify
 		// specific views. However, if all rows have nonzero data_length, we know
 		// there are no views and can skip the query.
-		if rn.DataLength == 0 {
+		if dataLength == 0 {
 			checkViews = true
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("Error querying information_schema.partitions: %w", err)
 	}
 
 	// MySQL 8's new data dictionary actually includes views in
 	// information_schema.partitions, so remove them explicitly.
 	if checkViews && flavor.MinMySQL(8) {
-		var viewNames []string
-		query := `
-				SELECT table_name
-				FROM   information_schema.views
-				WHERE  table_schema = ?`
-		if err := db.Select(&viewNames, query, schema); err != nil {
+		query := `SELECT table_name FROM information_schema.views WHERE table_schema = ?`
+		rows, err := db.Query(query, schema)
+		if err != nil {
 			return nil, fmt.Errorf("Error querying information_schema.views: %w", err)
 		}
-		for _, name := range viewNames {
-			delete(partitions, name)
+		defer rows.Close()
+		for rows.Next() {
+			var viewName string
+			if err := rows.Scan(&viewName); err != nil {
+				return nil, fmt.Errorf("Error querying information_schema.views: %w", err)
+			}
+			delete(partitions, viewName)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("Error querying information_schema.views: %w", err)
 		}
 	}
 
@@ -1078,44 +1112,71 @@ type ServerProcess struct {
 // primarily intended for debugging and test output at this time, and may be
 // disruptive on live production database servers, especially on MySQL 8.0+.
 func (instance *Instance) ProcessList() (plist []ServerProcess, err error) {
-	var db *sqlx.DB
-	db, err = instance.CachedConnectionPool("", "")
+	db, err := instance.CachedConnectionPool("", "")
 	if err != nil {
-		return
+		return nil, err
 	}
 	var query string
 	if instance.Flavor().IsMariaDB() {
-		query = "SELECT Id, User, db, Command, Time, time_ms, State, Info FROM information_schema.processlist"
+		query = "SELECT id, user, db, command, time_ms, state, info FROM information_schema.processlist"
 	} else {
-		// TODO this should use a different approach on recent MySQL releases
+		// This is deprecated and lock-heavy; however, the modern alternative requires
+		// performance_schema, which we disable in ephemeral containers
 		query = "SHOW PROCESSLIST"
 	}
-	var raw []struct {
-		ID        int64          `db:"Id"`
-		User      string         `db:"User"`
-		Schema    sql.NullString `db:"db"`
-		Command   string         `db:"Command"`
-		TimeInt   int64          `db:"Time"`
-		TimeFloat float64        `db:"time_ms"`
-		State     sql.NullString `db:"State"`
-		Info      sql.NullString `db:"Info"`
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
 	}
-	err = db.Select(&raw, query)
-	for _, p := range raw {
-		sp := ServerProcess{
-			ID:      p.ID,
-			User:    p.User,
-			Schema:  p.Schema.String,
-			Command: p.Command,
-			Time:    p.TimeFloat / 1000.0,
-			State:   p.State.String,
-			Info:    p.Info.String,
+	defer rows.Close()
+
+	var dests []any
+	var sp ServerProcess
+	var schema, state, info sql.NullString
+	var timeSec int64
+	var timeMsec float64
+	if colNames, err := rows.Columns(); err != nil {
+		return nil, err
+	} else {
+		dests = make([]any, len(colNames))
+		for n, colName := range colNames {
+			switch strings.ToLower(colName) {
+			case "id":
+				dests[n] = &sp.ID
+			case "user":
+				dests[n] = &sp.User
+			case "db":
+				dests[n] = &schema
+			case "command":
+				dests[n] = &sp.Command
+			case "time":
+				dests[n] = &timeSec
+			case "time_ms":
+				dests[n] = &timeMsec
+			case "state":
+				dests[n] = &state
+			case "info":
+				dests[n] = &info
+			default: // ignore any other cols by scanning into RawBytes
+				var d sql.RawBytes
+				dests[n] = &d
+			}
 		}
-		// Only MariaDB provides fractional time
-		if p.TimeInt >= 1 && sp.Time < 1.0 {
-			sp.Time = float64(p.TimeInt)
+	}
+	for rows.Next() {
+		sp = ServerProcess{}
+		if err := rows.Scan(dests...); err != nil {
+			return nil, err
+		}
+		sp.Schema = schema.String
+		sp.State = state.String
+		sp.Info = info.String
+		if timeMsec > 0.0 { // Only in MariaDB
+			sp.Time = timeMsec / 1000.0
+		} else {
+			sp.Time = float64(timeSec)
 		}
 		plist = append(plist, sp)
 	}
-	return
+	return plist, rows.Err()
 }

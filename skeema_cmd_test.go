@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"io"
 	"os"
@@ -1551,21 +1552,42 @@ func (s SkeemaIntegrationSuite) TestTempSchemaBinlog(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Unable to establish connection: %v", err)
 		}
-		var masterStatus []struct {
-			File     string `db:"File"`
-			Position string `db:"Position"`
-		}
 		noun := "MASTER"
 		if s.d.Flavor().MinMySQL(8, 4) {
 			noun = "BINARY LOG"
 		}
-		if err := db.Select(&masterStatus, "SHOW "+noun+" STATUS"); err != nil {
+		// This only returns 1 row, but we can't use QueryRow here since that does
+		// not expose column name information
+		rows, err := db.Query("SHOW " + noun + " STATUS")
+		if err != nil {
 			t.Fatalf("Error running SHOW %s STATUS: %v", noun, err)
 		}
-		if len(masterStatus) != 1 {
-			t.Fatalf("Wrong row count from SHOW %s STATUS: expected 1, found %d", noun, len(masterStatus))
+		defer rows.Close()
+		var file, position string
+		var dests []any
+		colNames, err := rows.Columns()
+		if err != nil {
+			t.Fatalf("Error running SHOW %s STATUS: %v", noun, err)
 		}
-		return fmt.Sprintf("%s %s", masterStatus[0].File, masterStatus[0].Position)
+		// Determine which columns are relevant; all others scan into rawbytes (we
+		// don't need them, but there's no syntax to skip them...)
+		dests = make([]any, len(colNames))
+		for n, colName := range colNames {
+			if colName == "File" {
+				dests[n] = &file
+			} else if colName == "Position" {
+				dests[n] = &position
+			} else {
+				var d sql.RawBytes
+				dests[n] = &d
+			}
+		}
+		for rows.Next() {
+			if err := rows.Scan(dests...); err != nil {
+				t.Fatalf("Error running SHOW %s STATUS: %v", noun, err)
+			}
+		}
+		return file + " " + position
 	}
 	assertLogged := func(oldPos string) string {
 		t.Helper()

@@ -15,39 +15,31 @@ func init() {
 	primaryIntrospectorFixups = append(primaryIntrospectorFixups, fixupTables)
 }
 
-/*
-	Important note on information_schema queries in this file: MySQL 8.0 changes
-	information_schema column names to come back from queries in all caps, so we
-	need to explicitly use AS clauses in order to get them back as lowercase and
-	have sqlx Select() work.
-*/
-
 func introspectTables(ctx context.Context, insp *introspector) error {
 	flavor := insp.instance.Flavor()
-	var rawTables []struct {
-		Name           string         `db:"table_name"`
-		Type           string         `db:"table_type"`
-		Engine         sql.NullString `db:"engine"`
-		TableCollation sql.NullString `db:"table_collation"`
-		CreateOptions  sql.NullString `db:"create_options"`
-		Comment        string         `db:"table_comment"`
-	}
 	query := `
 		SELECT SQL_BUFFER_RESULT
-		       table_name AS table_name, table_type AS table_type,
-		       engine AS engine, table_collation AS table_collation,
-		       create_options AS create_options, table_comment AS table_comment
+		       table_name, table_type, table_comment,
+		       engine, table_collation, create_options
 		FROM   information_schema.tables
 		WHERE  table_schema = ?`
-	if err := insp.db.SelectContext(ctx, &rawTables, query, insp.schema.Name); err != nil {
+	rows, err := insp.db.QueryContext(ctx, query, insp.schema.Name)
+	if err != nil {
 		return fmt.Errorf("Error querying information_schema.tables for schema %s: %w", insp.schema.Name, err)
 	}
-	tables := make([]*Table, 0, len(rawTables))
+	defer rows.Close()
+
+	var tables []*Table
 	var havePartitions bool
 	haveAltType := make(map[string]bool, 4)
-	for _, rawTable := range rawTables {
-		if rawTable.Type != "BASE TABLE" {
-			haveAltType[rawTable.Type] = true
+	for rows.Next() {
+		var name, typ, comment string
+		var engine, collation, createOpts sql.NullString
+		if err := rows.Scan(&name, &typ, &comment, &engine, &collation, &createOpts); err != nil {
+			return fmt.Errorf("Error querying information_schema.tables for schema %s: %w", insp.schema.Name, err)
+		}
+		if typ != "BASE TABLE" {
+			haveAltType[typ] = true
 			continue
 		}
 
@@ -56,30 +48,29 @@ func introspectTables(ctx context.Context, insp *introspector) error {
 		// have a non-NULL tables.auto_increment if the original CREATE specified one.
 		// Instead the value is parsed from SHOW CREATE TABLE.
 		table := &Table{
-			Name:      rawTable.Name,
-			Engine:    rawTable.Engine.String,
-			Collation: rawTable.TableCollation.String,
-			Comment:   rawTable.Comment,
+			Name:      name,
+			Engine:    engine.String,
+			Collation: collation.String,
+			Comment:   comment,
 		}
-		if underscore := strings.IndexByte(table.Collation, '_'); underscore > 0 {
-			table.CharSet = table.Collation[0:underscore]
-			if flavor.AlwaysShowCollate() {
-				table.ShowCollation = true
-			} else if !collationIsDefault(table.Collation, table.CharSet, flavor) {
-				table.ShowCollation = true
-			} else if table.CharSet == "utf8mb4" && flavor.MinMySQL(8) {
-				table.ShowCollation = true
-			}
-		} else {
-			table.CharSet = "undefined"
+		table.CharSet, _, _ = strings.Cut(table.Collation, "_")
+		if flavor.AlwaysShowCollate() {
+			table.ShowCollation = true
+		} else if !collationIsDefault(table.Collation, table.CharSet, flavor) {
+			table.ShowCollation = true
+		} else if table.CharSet == "utf8mb4" && flavor.MinMySQL(8) {
+			table.ShowCollation = true
 		}
-		if rawTable.CreateOptions.Valid && rawTable.CreateOptions.String != "" {
-			if strings.Contains(strings.ToUpper(rawTable.CreateOptions.String), "PARTITIONED") {
+		if createOpts.Valid && createOpts.String != "" {
+			if strings.Contains(strings.ToUpper(createOpts.String), "PARTITIONED") {
 				havePartitions = true
 			}
-			table.CreateOptions = reformatCreateOptions(rawTable.CreateOptions.String)
+			table.CreateOptions = reformatCreateOptions(createOpts.String)
 		}
 		tables = append(tables, table)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("Error querying information_schema.tables for schema %s: %w", insp.schema.Name, err)
 	}
 
 	insp.schema.Tables = tables
@@ -218,29 +209,11 @@ func introspectColumns(ctx context.Context, insp *introspector) error {
 	if flavor.MinMariaDB(10, 3) {
 		mariaCompressedColMarker = " " + flavor.compressedColumnOpenComment() + "COMPRESSED"
 	}
-	var rawColumns []struct {
-		Name               string         `db:"column_name"`
-		TableName          string         `db:"table_name"`
-		Type               string         `db:"column_type"`
-		IsNullable         string         `db:"is_nullable"`
-		Default            sql.NullString `db:"column_default"`
-		Extra              string         `db:"extra"`
-		GenerationExpr     sql.NullString `db:"generation_expression"`
-		Comment            string         `db:"column_comment"`
-		CharSet            sql.NullString `db:"character_set_name"`
-		Collation          sql.NullString `db:"collation_name"`
-		SpatialReferenceID sql.NullInt64  `db:"srs_id"`
-	}
 	query := `
 		SELECT   SQL_BUFFER_RESULT
-		         table_name AS table_name, column_name AS column_name,
-		         column_type AS column_type, is_nullable AS is_nullable,
-		         column_default AS column_default, extra AS extra,
-		         %s AS generation_expression,
-		         column_comment AS column_comment,
-		         character_set_name AS character_set_name,
-		         collation_name AS collation_name,
-		         %s AS srs_id
+		         column_name, table_name, column_type, is_nullable, extra,
+		         column_comment, column_default, %s AS generation_expression,
+		         character_set_name, collation_name, %s AS srs_id
 		FROM     information_schema.columns
 		WHERE    table_schema = ?
 		ORDER BY table_name, ordinal_position`
@@ -256,25 +229,35 @@ func introspectColumns(ctx context.Context, insp *introspector) error {
 	// TABLE there's currently no point to querying them
 
 	query = fmt.Sprintf(query, genExpr, srid)
-	if err := insp.db.SelectContext(ctx, &rawColumns, query, insp.schema.Name); err != nil {
-		return fmt.Errorf("Error querying information_schema.columns for schema %s: %s", insp.schema.Name, err)
+	rows, err := insp.db.QueryContext(ctx, query, insp.schema.Name)
+	if err != nil {
+		return fmt.Errorf("Error querying information_schema.columns for schema %s: %w", insp.schema.Name, err)
 	}
+	defer rows.Close()
 	columnsByTableName := make(map[string][]*Column)
-	for _, rawColumn := range rawColumns {
+	for rows.Next() {
+		var colName, tableName, typ, nullable, extra, comment string
+		var colDefault, generated, charSet, collation sql.NullString
+		var srid sql.NullInt64
+		err := rows.Scan(&colName, &tableName, &typ, &nullable, &extra, &comment, &colDefault, &generated, &charSet, &collation, &srid)
+		if err != nil {
+			return fmt.Errorf("Error querying information_schema.columns for schema %s: %w", insp.schema.Name, err)
+		}
+
 		// MariaDB includes compression attribute in column type; remove it BEFORE
 		// parsing the column type
 		var mariaCompressedColumn bool
 		if mariaCompressedColMarker != "" {
-			rawColumn.Type, _, mariaCompressedColumn = strings.Cut(rawColumn.Type, mariaCompressedColMarker)
+			typ, _, mariaCompressedColumn = strings.Cut(typ, mariaCompressedColMarker)
 		}
 
 		col := &Column{
-			Name:          rawColumn.Name,
-			Type:          ParseColumnType(rawColumn.Type),
-			Nullable:      strings.EqualFold(rawColumn.IsNullable, "YES"),
-			AutoIncrement: strings.Contains(rawColumn.Extra, "auto_increment"),
-			Comment:       rawColumn.Comment,
-			Invisible:     strings.Contains(rawColumn.Extra, "INVISIBLE"),
+			Name:          colName,
+			Type:          ParseColumnType(typ),
+			Nullable:      strings.EqualFold(nullable, "YES"),
+			AutoIncrement: strings.Contains(extra, "auto_increment"),
+			Comment:       comment,
+			Invisible:     strings.Contains(extra, "INVISIBLE"),
 		}
 		if mariaCompressedColumn {
 			col.Compression = "COMPRESSED"
@@ -287,11 +270,11 @@ func introspectColumns(ctx context.Context, insp *introspector) error {
 		if stripDisplayWidth {
 			col.Type.StripDisplayWidth() // safe/no-op if already no int display width
 		}
-		if rawColumn.GenerationExpr.Valid {
-			col.GenerationExpr = rawColumn.GenerationExpr.String
-			col.Virtual = strings.Contains(rawColumn.Extra, "VIRTUAL GENERATED")
+		if generated.Valid {
+			col.GenerationExpr = generated.String
+			col.Virtual = strings.Contains(extra, "VIRTUAL GENERATED")
 		}
-		if !rawColumn.Default.Valid {
+		if !colDefault.Valid {
 			allowNullDefault := col.Nullable && !col.AutoIncrement && col.GenerationExpr == ""
 			// Only MariaDB 10.2+ allows blob/text default literals, including explicit
 			// DEFAULT NULL clause.
@@ -300,7 +283,7 @@ func introspectColumns(ctx context.Context, insp *introspector) error {
 			// catch this situation and parse from SHOW CREATE later.
 			if !flavor.MinMariaDB(10, 2) && (strings.HasSuffix(col.Type.Base, "blob") || strings.HasSuffix(col.Type.Base, "text")) {
 				allowNullDefault = false
-				if strings.Contains(rawColumn.Extra, "DEFAULT_GENERATED") {
+				if strings.Contains(extra, "DEFAULT_GENERATED") {
 					col.Default = "(!!!BLOBDEFAULT!!!)"
 				}
 			}
@@ -310,44 +293,44 @@ func introspectColumns(ctx context.Context, insp *introspector) error {
 		} else if flavor.MinMariaDB(10, 2) {
 			if !col.AutoIncrement && col.GenerationExpr == "" {
 				// MariaDB 10.2+ exposes defaults as expressions / quote-wrapped strings
-				col.Default = rawColumn.Default.String
+				col.Default = colDefault.String
 			}
-		} else if strings.HasPrefix(rawColumn.Default.String, "CURRENT_TIMESTAMP") && (strings.HasPrefix(rawColumn.Type, "timestamp") || strings.HasPrefix(rawColumn.Type, "datetime")) {
-			col.Default = rawColumn.Default.String
-		} else if strings.HasPrefix(rawColumn.Type, "bit") && strings.HasPrefix(rawColumn.Default.String, "b'") {
-			col.Default = rawColumn.Default.String
-		} else if strings.Contains(rawColumn.Extra, "DEFAULT_GENERATED") {
+		} else if strings.HasPrefix(colDefault.String, "CURRENT_TIMESTAMP") && (strings.HasPrefix(typ, "timestamp") || strings.HasPrefix(typ, "datetime")) {
+			col.Default = colDefault.String
+		} else if strings.HasPrefix(typ, "bit") && strings.HasPrefix(colDefault.String, "b'") {
+			col.Default = colDefault.String
+		} else if strings.Contains(extra, "DEFAULT_GENERATED") {
 			// MySQL 8.0.13+ supports default expressions, which are paren-wrapped in
 			// SHOW CREATE TABLE in MySQL. However MySQL I_S data has some issues for
 			// default expressions. The most common one is fixed here, and if additional
 			// mismatches remain, they get corrected by fixDefaultExpression later on.
-			col.Default = "(" + strings.ReplaceAll(rawColumn.Default.String, "\\'", "'") + ")"
+			col.Default = "(" + strings.ReplaceAll(colDefault.String, "\\'", "'") + ")"
 		} else {
-			col.Default = "'" + EscapeValueForCreateTable(rawColumn.Default.String) + "'"
+			col.Default = "'" + EscapeValueForCreateTable(colDefault.String) + "'"
 		}
-		if matches := reExtraOnUpdate.FindStringSubmatch(rawColumn.Extra); matches != nil {
+		if matches := reExtraOnUpdate.FindStringSubmatch(extra); matches != nil {
 			col.OnUpdate = matches[1]
 			// Some flavors omit fractional precision from ON UPDATE in
 			// information_schema only, despite it being present everywhere else
-			if openParen := strings.IndexByte(rawColumn.Type, '('); openParen > -1 && !strings.Contains(col.OnUpdate, "(") {
-				col.OnUpdate = col.OnUpdate + rawColumn.Type[openParen:]
+			if openParen := strings.IndexByte(typ, '('); openParen > -1 && !strings.Contains(col.OnUpdate, "(") {
+				col.OnUpdate = col.OnUpdate + typ[openParen:]
 			}
 		}
-		if rawColumn.Collation.Valid { // only text-based column types have a notion of charset and collation
-			col.CharSet = rawColumn.CharSet.String
-			col.Collation = rawColumn.Collation.String
+		if collation.Valid { // only text-based column types have a notion of charset and collation
+			col.CharSet = charSet.String
+			col.Collation = collation.String
 			// note: fields ShowCharSet and ShowCollation are set by caller, since these
 			// require comparing things to the table's defaults, and we don't have the
 			// full table here
 		}
-		if rawColumn.SpatialReferenceID.Valid { // Spatial columns in MySQL 8+ can have optional SRID
+		if srid.Valid { // Spatial columns in MySQL 8+ can have optional SRID
 			col.HasSpatialReference = true
-			col.SpatialReferenceID = uint32(rawColumn.SpatialReferenceID.Int64)
+			col.SpatialReferenceID = uint32(srid.Int64)
 		}
-		if columnsByTableName[rawColumn.TableName] == nil {
-			columnsByTableName[rawColumn.TableName] = make([]*Column, 0)
-		}
-		columnsByTableName[rawColumn.TableName] = append(columnsByTableName[rawColumn.TableName], col)
+		columnsByTableName[tableName] = append(columnsByTableName[tableName], col)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("Error querying information_schema.columns for schema %s: %w", insp.schema.Name, err)
 	}
 
 	// Place the columns into the tables in insp.schema

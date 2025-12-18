@@ -346,21 +346,6 @@ func introspectRoutines(ctx context.Context, insp *introspector) error {
 	schema := insp.schema.Name
 	flavor := insp.instance.Flavor()
 
-	// Obtain the routines in the schema
-	// We completely exclude routines that the user can call, but not examine --
-	// e.g. user has EXECUTE priv but missing other vital privs. In this case
-	// routine_definition will be NULL.
-	var rawRoutines []struct {
-		Name              string `db:"routine_name"`
-		Type              string `db:"routine_type"`
-		IsDeterministic   string `db:"is_deterministic"`
-		SQLDataAccess     string `db:"sql_data_access"`
-		SecurityType      string `db:"security_type"`
-		SQLMode           string `db:"sql_mode"`
-		Comment           string `db:"routine_comment"`
-		Definer           string `db:"definer"`
-		DatabaseCollation string `db:"database_collation"`
-	}
 	// MariaDB 10.11+ releases from May 2025 onwards seem to have odd behavior
 	// with mixed-case schema names in information_schema.routines when using
 	// lower_case_table_names=2. In this situation, the schema names come back
@@ -371,51 +356,59 @@ func introspectRoutines(ctx context.Context, insp *introspector) error {
 	if insp.instance.NameCaseMode() == NameCaseInsensitive && flavor.MinMariaDB(10, 11, 13) {
 		lctn2Collation = " COLLATE utf8_general_ci"
 	}
-	// Note on this query: MySQL 8.0 changes information_schema column names to
-	// come back from queries in all caps, so we need to explicitly use AS clauses
-	// in order to get them back as lowercase and have sqlx Select() work.
-	//
-	// We also exclude querying routine_definition here because the column is
-	// mangled in MySQL e.g. escaping of single quotes, so we must query it
-	// elsewhere separately. (The value is correct in MariaDB, but we still must
-	// obtain the param list and return type elsewhere, so the body is queried at
-	// that time regardless of server flavor.)
-	query := fmt.Sprintf(`
+
+	// When querying routines from information_schema, we exclude routines that the
+	// user can call, but not examine -- e.g. user has EXECUTE priv but missing
+	// other vital privs. In this case, routine_definition will be NULL.
+	// In all situations though, we don't actually obtain routine_definition here.
+	// The value is mangled in MySQL e.g. escaping of single quotes, so we must
+	// query it elsewhere separately. The value is correct in MariaDB, but we still
+	// must obtain the param list and return type elsewhere, so the body is queried
+	// at that time.
+	query := `
 		SELECT SQL_BUFFER_RESULT
-		       r.routine_name AS routine_name, UPPER(r.routine_type) AS routine_type,
-		       UPPER(r.is_deterministic) AS is_deterministic,
-		       UPPER(r.sql_data_access) AS sql_data_access,
-		       UPPER(r.security_type) AS security_type,
-		       r.sql_mode AS sql_mode, r.routine_comment AS routine_comment,
-		       r.definer AS definer, r.database_collation AS database_collation
-		FROM   information_schema.routines r
-		WHERE  r.routine_schema%s = ? AND routine_definition IS NOT NULL`,
-		lctn2Collation)
-	if err := insp.db.SelectContext(ctx, &rawRoutines, query, schema); err != nil {
-		return fmt.Errorf("Error querying information_schema.routines for schema %s: %s", schema, err)
+		       routine_name, routine_type, definer, database_collation,
+		       routine_comment, UPPER(is_deterministic), UPPER(sql_data_access),
+		       UPPER(security_type), sql_mode
+		FROM   information_schema.routines
+		WHERE  routine_schema` + lctn2Collation + ` = ? AND
+		       routine_definition IS NOT NULL`
+	rows, err := insp.db.QueryContext(ctx, query, schema)
+	if err != nil {
+		return fmt.Errorf("Error querying information_schema.routines for schema %s: %v", schema, err)
 	}
-	if len(rawRoutines) == 0 {
+	defer rows.Close()
+	var routines []*Routine
+	dict := make(map[ObjectKey]*Routine)
+	for rows.Next() {
+		var name, rtype, definer, collation, comment, deterministic, sqlData, sec, sqlMode string
+		err := rows.Scan(&name, &rtype, &definer, &collation, &comment, &deterministic, &sqlData, &sec, &sqlMode)
+		if err != nil {
+			return fmt.Errorf("Error querying information_schema.routines for schema %s: %v", schema, err)
+		}
+		r := &Routine{
+			Name:              name,
+			Type:              ObjectType(strings.ToLower(rtype)),
+			Definer:           Definer(definer),
+			DatabaseCollation: collation,
+			Comment:           comment,
+			Deterministic:     deterministic == "YES",
+			SQLDataAccess:     sqlData,
+			SecurityType:      sec,
+			SQLMode:           sqlMode,
+		}
+		if r.Type != ObjectTypeProc && r.Type != ObjectTypeFunc {
+			return fmt.Errorf("Unsupported routine type %s found in %s.%s", r.Type, schema, r.Name)
+		}
+		routines = append(routines, r)
+		dict[r.ObjectKey()] = r
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("Error querying information_schema.routines for schema %s: %v", schema, err)
+	}
+
+	if len(routines) == 0 {
 		return nil
-	}
-	routines := make([]*Routine, len(rawRoutines))
-	dict := make(map[ObjectKey]*Routine, len(rawRoutines))
-	for n, rawRoutine := range rawRoutines {
-		routines[n] = &Routine{
-			Name:              rawRoutine.Name,
-			Type:              ObjectType(strings.ToLower(rawRoutine.Type)),
-			Definer:           Definer(rawRoutine.Definer),
-			DatabaseCollation: rawRoutine.DatabaseCollation,
-			Comment:           rawRoutine.Comment,
-			Deterministic:     rawRoutine.IsDeterministic == "YES",
-			SQLDataAccess:     rawRoutine.SQLDataAccess,
-			SecurityType:      rawRoutine.SecurityType,
-			SQLMode:           rawRoutine.SQLMode,
-		}
-		if routines[n].Type != ObjectTypeProc && routines[n].Type != ObjectTypeFunc {
-			return fmt.Errorf("Unsupported routine type %s found in %s.%s", rawRoutine.Type, schema, rawRoutine.Name)
-		}
-		key := routines[n].ObjectKey()
-		dict[key] = routines[n]
 	}
 
 	// Obtain param string, return type string, and full create statement:
@@ -425,32 +418,31 @@ func introspectRoutines(ctx context.Context, insp *introspector) error {
 	// In flavors without the new data dictionary, we first try querying mysql.proc
 	// to bulk-fetch sufficient info to rebuild the CREATE without needing to run
 	// a SHOW CREATE per routine.
-	// If mysql.proc doesn't exist or that query fails, we then run a SHOW CREATE
-	// per routine, using multiple goroutines for performance reasons.
+	// If mysql.proc doesn't exist or that query errors in any way, we then run a
+	// SHOW CREATE per routine, using multiple goroutines for performance reasons.
 	var alreadyObtained int
 	if !flavor.MinMySQL(8) {
-		var rawRoutineMeta []struct {
-			Name      string `db:"name"`
-			Type      string `db:"type"`
-			Body      string `db:"body"`
-			ParamList string `db:"param_list"`
-			Returns   string `db:"returns"`
-		}
 		query := `
 			SELECT name, type, body, param_list, returns
 			FROM   mysql.proc
 			WHERE  db = ?`
-		// Errors here are non-fatal. No need to even check; slice will be empty which is fine
-		insp.db.SelectContext(ctx, &rawRoutineMeta, query, schema)
-		for _, meta := range rawRoutineMeta {
-			key := ObjectKey{Type: ObjectType(strings.ToLower(meta.Type)), Name: meta.Name}
-			if routine, ok := dict[key]; ok {
-				routine.ParamString = strings.ReplaceAll(meta.ParamList, "\r\n", "\n")
-				routine.ReturnDataType = meta.Returns
-				routine.Body = strings.TrimSuffix(strings.ReplaceAll(meta.Body, "\r\n", "\n"), ";")
-				routine.CreateStatement = routine.Definition(flavor)
-				alreadyObtained++
+		if rows, err := insp.db.QueryContext(ctx, query, schema); err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var name, rtype, body, params, returns string
+				if err := rows.Scan(&name, &rtype, &body, &params, &returns); err != nil {
+					break // See comment above re: error handling
+				}
+				key := ObjectKey{Type: ObjectType(strings.ToLower(rtype)), Name: name}
+				if routine, ok := dict[key]; ok {
+					routine.ParamString = strings.ReplaceAll(params, "\r\n", "\n")
+					routine.ReturnDataType = returns
+					routine.Body = strings.TrimSuffix(strings.ReplaceAll(body, "\r\n", "\n"), ";")
+					routine.CreateStatement = routine.Definition(flavor)
+					alreadyObtained++
+				}
 			}
+			// No need to check rows.Err(); see comment above re: error handling
 		}
 	}
 

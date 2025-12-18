@@ -688,36 +688,40 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesSkipsViews(t *testing.T) {
 	// Confirm I_S assumptions present in logic similar to tablesToPartitions:
 	// no views there except in MySQL 8 / PS 8; if views are there, they have
 	// data_length 0.
-	// Explicit AS clauses needed for compatibility with MySQL 8 data dictionary,
-	// otherwise results come back with uppercase col names, breaking Select
-	var partitions []struct {
-		TableName  string `db:"table_name"`
-		DataLength int64  `db:"data_length"`
-	}
-	query := `
-		SELECT   p.table_name AS table_name,
-		         p.data_length AS data_length
-		FROM     information_schema.partitions p
-		WHERE    p.table_schema = 'testing' AND
-		         p.table_name LIKE 'view%'`
 	db, err := s.d.CachedConnectionPool("", "")
 	if err != nil {
 		t.Fatalf("Unexpected error obtaining connection pool: %v", err)
 	}
-	if err := db.Select(&partitions, query); err != nil {
+	query := `
+		SELECT   table_name, data_length
+		FROM     information_schema.partitions
+		WHERE    table_schema = 'testing' AND table_name LIKE 'view%'`
+	rows, err := db.Query(query)
+	if err != nil {
 		t.Fatalf("Unexpected error querying information_schema.partitions: %v", err)
 	}
-	if flavor := s.d.Flavor(); flavor.MinMySQL(8) {
-		if len(partitions) != 2 {
-			t.Fatalf("Expected flavor %s to have 2 views present in information_schema.partitions; instead found %d", flavor, len(partitions))
+	defer rows.Close()
+	var found int
+	for rows.Next() {
+		found++
+		var name string
+		var length int64
+		if err := rows.Scan(&name, &length); err != nil {
+			t.Fatalf("Unexpected error querying information_schema.partitions: %v", err)
 		}
-		for _, part := range partitions {
-			if part.DataLength != 0 {
-				t.Fatalf("Expected view %s to have data_length of 0, instead found %d", part.TableName, part.DataLength)
-			}
+		if length != 0 {
+			t.Fatalf("Expected view %s to have data_length of 0, instead found %d", name, length)
 		}
-	} else if len(partitions) != 0 {
-		t.Fatalf("Expected flavor %s to have no views present in information_schema.partitions; instead found %d", flavor, len(partitions))
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("Unable to iterate over result set: %v", err)
+	}
+	var expected int
+	if s.d.Flavor().MinMySQL(8) {
+		expected = 2
+	}
+	if found != expected {
+		t.Fatalf("Expected flavor %s to have %d views present in information_schema.partitions, instead found %d", s.d.Flavor(), expected, found)
 	}
 
 	// Now drop all tables in testing, and confirm this does not return an error.
