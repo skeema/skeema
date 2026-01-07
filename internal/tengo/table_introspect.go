@@ -115,9 +115,10 @@ func fixupTables(schema *Schema, flavor Flavor) {
 			t.NextAutoIncrement = 1
 		}
 
-		// Index order is unpredictable with new MySQL 8 data dictionary, so reorder
-		// indexes based on parsing SHOW CREATE TABLE if needed
-		if flavor.MinMySQL(8) && len(t.SecondaryIndexes) > 1 {
+		// If multiple secondary indexes are present, parse their relative ordering
+		// from SHOW CREATE TABLE, since this isn't exposed in information_schema in
+		// generic/non-engine-specific way
+		if len(t.SecondaryIndexes) > 1 {
 			fixIndexOrder(t)
 		}
 		// Foreign keys order is unpredictable in MySQL before 5.6, so reorder
@@ -360,32 +361,17 @@ func introspectColumns(ctx context.Context, insp *introspector) error {
 }
 
 func introspectIndexes(ctx context.Context, insp *introspector) error {
-	flavor := insp.instance.Flavor()
-	var rawIndexes []struct {
-		Name       string         `db:"index_name"`
-		TableName  string         `db:"table_name"`
-		NonUnique  uint8          `db:"non_unique"`
-		SeqInIndex uint8          `db:"seq_in_index"`
-		ColumnName sql.NullString `db:"column_name"`
-		SubPart    sql.NullInt64  `db:"sub_part"`
-		Comment    sql.NullString `db:"index_comment"`
-		Type       string         `db:"index_type"`
-		Collation  sql.NullString `db:"collation"`
-		Expression sql.NullString `db:"expression"`
-		Visible    string         `db:"is_visible"`
-	}
 	query := `
 		SELECT   SQL_BUFFER_RESULT
-		         index_name AS index_name, table_name AS table_name,
-		         non_unique AS non_unique, seq_in_index AS seq_in_index,
-		         column_name AS column_name, sub_part AS sub_part,
-		         index_comment AS index_comment, index_type AS index_type,
-		         collation AS collation, %s AS expression, %s AS is_visible
+		         index_name, table_name, index_type, %s AS is_visible, index_comment,
+		         non_unique, seq_in_index, sub_part, column_name, collation,
+		         %s AS expression
 		FROM     information_schema.statistics
-		WHERE    table_schema = ?`
-	exprSelect, visSelect := "NULL", "'YES'"
-	if flavor.MinMySQL(8) {
-		// Index expressions added in 8.0.13
+		WHERE    table_schema = ?
+		ORDER BY table_name, index_name, seq_in_index`
+	visSelect, exprSelect := "'YES'", "NULL"
+	if flavor := insp.instance.Flavor(); flavor.MinMySQL(8) {
+		// Index expressions in MySQL 8.0.13+; not present in MariaDB
 		if flavor.MinMySQL(8, 0, 13) {
 			exprSelect = "expression"
 		}
@@ -394,56 +380,62 @@ func introspectIndexes(ctx context.Context, insp *introspector) error {
 		// MariaDB I_S uses the inverse: YES for ignored (invisible), NO for visible
 		visSelect = "IF(ignored = 'YES', 'NO', 'YES')"
 	}
-	query = fmt.Sprintf(query, exprSelect, visSelect)
-	if err := insp.db.SelectContext(ctx, &rawIndexes, query, insp.schema.Name); err != nil {
-		return fmt.Errorf("Error querying information_schema.statistics for schema %s: %s", insp.schema.Name, err)
+	query = fmt.Sprintf(query, visSelect, exprSelect)
+	rows, err := insp.db.QueryContext(ctx, query, insp.schema.Name)
+	if err != nil {
+		return fmt.Errorf("Error querying information_schema.statistics for schema %s: %v", insp.schema.Name, err)
 	}
+	defer rows.Close()
 
 	primaryKeyByTableName := make(map[string]*Index)
 	secondaryIndexesByTableName := make(map[string][]*Index)
+	indexesByTableAndName := make(map[string]*Index) // used for stitching together multi-part indexes
+	for rows.Next() {
+		var idxName, tableName, idxType, visible, comment string
+		var nonUnique, seq uint8
+		var subPart sql.NullInt64
+		var colName, direction, expr sql.NullString
+		err := rows.Scan(&idxName, &tableName, &idxType, &visible, &comment, &nonUnique, &seq, &subPart, &colName, &direction, &expr)
+		if err != nil {
+			return fmt.Errorf("Error querying information_schema.statistics for schema %s: %v", insp.schema.Name, err)
+		}
 
-	// Since multi-column indexes have multiple rows in the result set, we do two
-	// passes over the result: one to figure out which indexes exist, and one to
-	// stitch together the col info. We cannot use an ORDER BY on this query, since
-	// only the unsorted result matches the same order of secondary indexes as the
-	// CREATE TABLE statement.
-	indexesByTableAndName := make(map[string]*Index)
-	for _, rawIndex := range rawIndexes {
-		if rawIndex.SeqInIndex > 1 {
+		part := IndexPart{
+			ColumnName: colName.String,
+			Expression: expr.String,
+			Descending: (direction.String == "D"),
+		}
+		if idxType != "SPATIAL" { // Sub-part value only used for non-SPATIAL indexes
+			part.PrefixLength = uint16(subPart.Int64)
+		}
+
+		// Multi-part indexes have 1 row per part. If this isn't the first part, look
+		// up pointer to the existing Index and add the part.
+		key := tableName + "." + idxName
+		if seq > 1 {
+			index := indexesByTableAndName[key]
+			index.Parts = append(index.Parts, part)
 			continue
 		}
+
 		index := &Index{
-			Name:      rawIndex.Name,
-			Unique:    rawIndex.NonUnique == 0,
-			Comment:   rawIndex.Comment.String,
-			Type:      rawIndex.Type,
-			Invisible: (rawIndex.Visible == "NO"),
+			Name:      idxName,
+			Unique:    nonUnique == 0,
+			Comment:   comment,
+			Type:      idxType,
+			Invisible: (visible == "NO"),
+			Parts:     []IndexPart{part},
 		}
-		if strings.EqualFold(index.Name, "PRIMARY") {
+		if strings.EqualFold(idxName, "PRIMARY") {
 			index.PrimaryKey = true
-			primaryKeyByTableName[rawIndex.TableName] = index
+			primaryKeyByTableName[tableName] = index
 		} else {
-			secondaryIndexesByTableName[rawIndex.TableName] = append(secondaryIndexesByTableName[rawIndex.TableName], index)
+			secondaryIndexesByTableName[tableName] = append(secondaryIndexesByTableName[tableName], index)
 		}
-		fullNameStr := rawIndex.TableName + "." + rawIndex.Name
-		indexesByTableAndName[fullNameStr] = index
+		indexesByTableAndName[key] = index
 	}
-	for _, rawIndex := range rawIndexes {
-		fullIndexNameStr := rawIndex.TableName + "." + rawIndex.Name
-		index, ok := indexesByTableAndName[fullIndexNameStr]
-		if !ok {
-			panic(fmt.Errorf("Cannot find index %s", fullIndexNameStr))
-		}
-		for len(index.Parts) < int(rawIndex.SeqInIndex) {
-			index.Parts = append(index.Parts, IndexPart{})
-		}
-		part := &index.Parts[rawIndex.SeqInIndex-1]
-		part.ColumnName = rawIndex.ColumnName.String
-		part.Expression = rawIndex.Expression.String
-		part.Descending = (rawIndex.Collation.String == "D")
-		if rawIndex.Type != "SPATIAL" { // Sub-part value only used for non-SPATIAL indexes
-			part.PrefixLength = uint16(rawIndex.SubPart.Int64)
-		}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("Error querying information_schema.statistics for schema %s: %v", insp.schema.Name, err)
 	}
 
 	for _, t := range insp.schema.Tables {
@@ -454,69 +446,63 @@ func introspectIndexes(ctx context.Context, insp *introspector) error {
 }
 
 func introspectForeignKeys(ctx context.Context, insp *introspector) error {
-	var rawForeignKeys []struct {
-		Name                 string `db:"constraint_name"`
-		TableName            string `db:"table_name"`
-		ColumnName           string `db:"column_name"`
-		UpdateRule           string `db:"update_rule"`
-		DeleteRule           string `db:"delete_rule"`
-		ReferencedTableName  string `db:"referenced_table_name"`
-		ReferencedSchemaName string `db:"referenced_schema"`
-		ReferencedColumnName string `db:"referenced_column_name"`
-	}
 	query := `
 		SELECT   SQL_BUFFER_RESULT
-		         rc.constraint_name AS constraint_name, rc.table_name AS table_name,
-		         kcu.column_name AS column_name,
-		         rc.update_rule AS update_rule, rc.delete_rule AS delete_rule,
-		         rc.referenced_table_name AS referenced_table_name,
-		         IF(rc.constraint_schema=rc.unique_constraint_schema, '', rc.unique_constraint_schema) AS referenced_schema,
-		         kcu.referenced_column_name AS referenced_column_name
+		         rc.constraint_name, rc.table_name, kcu.column_name, rc.update_rule,
+		         rc.delete_rule, rc.referenced_table_name, kcu.referenced_column_name,
+		         rc.unique_constraint_schema AS referenced_schema
 		FROM     information_schema.referential_constraints rc
-		JOIN     information_schema.key_column_usage kcu ON kcu.constraint_name = rc.constraint_name AND
-		                                 kcu.table_schema = ? AND
-		                                 kcu.referenced_column_name IS NOT NULL
+		JOIN     information_schema.key_column_usage kcu ON
+		         kcu.constraint_name = rc.constraint_name AND
+		         kcu.table_schema = ? AND kcu.referenced_column_name IS NOT NULL
 		WHERE    rc.constraint_schema = ?
 		ORDER BY BINARY rc.constraint_name, kcu.ordinal_position`
-	if err := insp.db.SelectContext(ctx, &rawForeignKeys, query, insp.schema.Name, insp.schema.Name); err != nil {
-		return fmt.Errorf("Error querying foreign key constraints for schema %s: %s", insp.schema.Name, err)
+	rows, err := insp.db.QueryContext(ctx, query, insp.schema.Name, insp.schema.Name)
+	if err != nil {
+		return fmt.Errorf("Error querying foreign key constraints for schema %s: %v", insp.schema.Name, err)
 	}
+	defer rows.Close()
 	foreignKeysByTableName := make(map[string][]*ForeignKey)
 	foreignKeysByName := make(map[string]*ForeignKey)
-	for _, rawForeignKey := range rawForeignKeys {
-		if fk, already := foreignKeysByName[rawForeignKey.Name]; already {
-			fk.ColumnNames = append(fk.ColumnNames, rawForeignKey.ColumnName)
-			fk.ReferencedColumnNames = append(fk.ReferencedColumnNames, rawForeignKey.ReferencedColumnName)
-		} else {
-			foreignKey := &ForeignKey{
-				Name:                  rawForeignKey.Name,
-				ReferencedSchemaName:  rawForeignKey.ReferencedSchemaName,
-				ReferencedTableName:   rawForeignKey.ReferencedTableName,
-				UpdateRule:            rawForeignKey.UpdateRule,
-				DeleteRule:            rawForeignKey.DeleteRule,
-				ColumnNames:           []string{rawForeignKey.ColumnName},
-				ReferencedColumnNames: []string{rawForeignKey.ReferencedColumnName},
-			}
-			foreignKeysByName[rawForeignKey.Name] = foreignKey
-			foreignKeysByTableName[rawForeignKey.TableName] = append(foreignKeysByTableName[rawForeignKey.TableName], foreignKey)
+	for rows.Next() {
+		var fkName, childTable, childCol, updateRule, deleteRule, parentTable, parentCol, parentSchema string
+		err := rows.Scan(&fkName, &childTable, &childCol, &updateRule, &deleteRule, &parentTable, &parentCol, &parentSchema)
+		if err != nil {
+			return fmt.Errorf("Error querying foreign key constraints for schema %s: %v", insp.schema.Name, err)
 		}
+		if fk, already := foreignKeysByName[fkName]; already { // multi-col FK, already processed first col
+			fk.ColumnNames = append(fk.ColumnNames, childCol)
+			fk.ReferencedColumnNames = append(fk.ReferencedColumnNames, parentCol)
+			continue
+		}
+		foreignKey := &ForeignKey{
+			Name:                  fkName,
+			ReferencedTableName:   parentTable,
+			UpdateRule:            updateRule,
+			DeleteRule:            deleteRule,
+			ColumnNames:           []string{childCol},
+			ReferencedColumnNames: []string{parentCol},
+		}
+		if parentSchema != insp.schema.Name &&
+			(insp.instance.NameCaseMode() == NameCaseAsIs || !strings.EqualFold(parentSchema, insp.schema.Name)) {
+			// Only store the parent schema name for cross-schema FKs
+			foreignKey.ReferencedSchemaName = parentSchema
+		}
+		foreignKeysByName[fkName] = foreignKey
+		foreignKeysByTableName[childTable] = append(foreignKeysByTableName[childTable], foreignKey)
 	}
-
-	for _, t := range insp.schema.Tables {
-		t.ForeignKeys = foreignKeysByTableName[t.Name]
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("Error querying foreign key constraints for schema %s: %v", insp.schema.Name, err)
+	}
+	if len(foreignKeysByTableName) > 0 {
+		for _, t := range insp.schema.Tables {
+			t.ForeignKeys = foreignKeysByTableName[t.Name]
+		}
 	}
 	return nil
 }
 
 func introspectChecks(ctx context.Context, insp *introspector) error {
-	checksByTableName := make(map[string][]*Check)
-	var rawChecks []struct {
-		Name      string `db:"constraint_name"`
-		Clause    string `db:"check_clause"`
-		TableName string `db:"table_name"`
-		Enforced  string `db:"enforced"`
-	}
-
 	// With MariaDB, information_schema.check_constraints has what we need. But
 	// nothing in I_S reveals differences between inline-column checks and regular
 	// checks, so that is handled separately by parsing SHOW CREATE TABLE later in
@@ -532,119 +518,132 @@ func introspectChecks(ctx context.Context, insp *introspector) error {
 	if insp.instance.Flavor().IsMariaDB() {
 		query = `
 			SELECT   SQL_BUFFER_RESULT
-			         constraint_name AS constraint_name, check_clause AS check_clause,
-			         table_name AS table_name, 'YES' AS enforced
+			         constraint_name, check_clause, table_name, 'YES' AS enforced
 			FROM     information_schema.check_constraints
 			WHERE    constraint_schema = ?`
 	} else {
 		query = `
 			SELECT   SQL_BUFFER_RESULT
-			         constraint_name AS constraint_name, '' AS check_clause,
-			         table_name AS table_name, enforced AS enforced
+			         constraint_name, '' AS check_clause, table_name, enforced
 			FROM     information_schema.table_constraints
 			WHERE    table_schema = ? AND constraint_type = 'CHECK'
 			ORDER BY table_name, constraint_name`
 	}
-	if err := insp.db.SelectContext(ctx, &rawChecks, query, insp.schema.Name); err != nil {
-		return fmt.Errorf("Error querying check constraints for schema %s: %s", insp.schema.Name, err)
+	rows, err := insp.db.QueryContext(ctx, query, insp.schema.Name)
+	if err != nil {
+		return fmt.Errorf("Error querying CHECK constraints for schema %s: %s", insp.schema.Name, err)
 	}
-	for _, rawCheck := range rawChecks {
-		check := &Check{
-			Name:     rawCheck.Name,
-			Clause:   rawCheck.Clause,
-			Enforced: !strings.EqualFold(rawCheck.Enforced, "NO"),
+	defer rows.Close()
+	checksByTableName := make(map[string][]*Check)
+	for rows.Next() {
+		var checkName, clause, tableName, enforced string
+		err := rows.Scan(&checkName, &clause, &tableName, &enforced)
+		if err != nil {
+			return fmt.Errorf("Error querying CHECK constraints for schema %s: %v", insp.schema.Name, err)
 		}
-		checksByTableName[rawCheck.TableName] = append(checksByTableName[rawCheck.TableName], check)
+		checksByTableName[tableName] = append(checksByTableName[tableName], &Check{
+			Name:     checkName,
+			Clause:   clause,
+			Enforced: !strings.EqualFold(enforced, "NO"),
+		})
 	}
-
-	for _, t := range insp.schema.Tables {
-		t.Checks = checksByTableName[t.Name]
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("Error querying CHECK constraints for schema %s: %v", insp.schema.Name, err)
+	}
+	if len(checksByTableName) > 0 {
+		for _, t := range insp.schema.Tables {
+			t.Checks = checksByTableName[t.Name]
+		}
 	}
 	return nil
 }
 
 func introspectPartitioning(ctx context.Context, insp *introspector) error {
-	var rawPartitioning []struct {
-		TableName     string         `db:"table_name"`
-		PartitionName string         `db:"partition_name"`
-		SubName       sql.NullString `db:"subpartition_name"`
-		Method        string         `db:"partition_method"`
-		SubMethod     sql.NullString `db:"subpartition_method"`
-		Expression    sql.NullString `db:"partition_expression"`
-		SubExpression sql.NullString `db:"subpartition_expression"`
-		Values        sql.NullString `db:"partition_description"`
-		Comment       string         `db:"partition_comment"`
-	}
 	query := `
 		SELECT   SQL_BUFFER_RESULT
-		         p.table_name AS table_name, p.partition_name AS partition_name,
-		         p.subpartition_name AS subpartition_name,
-		         p.partition_method AS partition_method,
-		         p.subpartition_method AS subpartition_method,
-		         p.partition_expression AS partition_expression,
-		         p.subpartition_expression AS subpartition_expression,
-		         p.partition_description AS partition_description,
-		         p.partition_comment AS partition_comment
-		FROM     information_schema.partitions p
-		WHERE    p.table_schema = ?
-		AND      p.partition_name IS NOT NULL
-		ORDER BY p.table_name, p.partition_ordinal_position,
-		         p.subpartition_ordinal_position`
-	if err := insp.db.SelectContext(ctx, &rawPartitioning, query, insp.schema.Name); err != nil {
-		return fmt.Errorf("Error querying information_schema.partitions for schema %s: %s", insp.schema.Name, err)
+		         table_name, partition_name, partition_method, partition_comment,
+		         partition_expression, partition_description,
+		         subpartition_name, subpartition_method, subpartition_expression
+		FROM     information_schema.partitions
+		WHERE    table_schema = ? AND partition_name IS NOT NULL
+		ORDER BY table_name, partition_ordinal_position, subpartition_ordinal_position`
+	rows, err := insp.db.QueryContext(ctx, query, insp.schema.Name)
+	if err != nil {
+		return fmt.Errorf("Error querying information_schema.partitions for schema %s: %v", insp.schema.Name, err)
 	}
-
+	defer rows.Close()
 	partitioningByTableName := make(map[string]*TablePartitioning)
-	for _, rawPart := range rawPartitioning {
-		p, ok := partitioningByTableName[rawPart.TableName]
+	for rows.Next() {
+		var tableName, partitionName, method, comment string
+		var expression, values, subName, subMethod, subExpression sql.NullString
+		err := rows.Scan(&tableName, &partitionName, &method, &comment, &expression, &values, &subName, &subMethod, &subExpression)
+		if err != nil {
+			return fmt.Errorf("Error querying information_schema.partitions for schema %s: %v", insp.schema.Name, err)
+		}
+		p, ok := partitioningByTableName[tableName]
 		if !ok {
 			p = &TablePartitioning{
-				Method:        rawPart.Method,
-				SubMethod:     rawPart.SubMethod.String,
-				Expression:    rawPart.Expression.String,
-				SubExpression: rawPart.SubExpression.String,
-				Partitions:    make([]*Partition, 0),
+				Method:        method,
+				SubMethod:     subMethod.String,
+				Expression:    expression.String,
+				SubExpression: subExpression.String,
 			}
-			partitioningByTableName[rawPart.TableName] = p
+			partitioningByTableName[tableName] = p
 		}
 		p.Partitions = append(p.Partitions, &Partition{
-			Name:    rawPart.PartitionName,
-			SubName: rawPart.SubName.String,
-			Values:  rawPart.Values.String,
-			Comment: rawPart.Comment,
+			Name:    partitionName,
+			SubName: subName.String,
+			Values:  values.String,
+			Comment: comment,
 		})
 	}
-
-	for _, t := range insp.schema.Tables {
-		if p, ok := partitioningByTableName[t.Name]; ok {
-			for _, part := range p.Partitions {
-				part.Engine = t.Engine
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("Error querying information_schema.partitions for schema %s: %v", insp.schema.Name, err)
+	}
+	if len(partitioningByTableName) > 0 {
+		for _, t := range insp.schema.Tables {
+			if p, ok := partitioningByTableName[t.Name]; ok {
+				for _, part := range p.Partitions {
+					part.Engine = t.Engine
+				}
+				t.Partitioning = p
 			}
-			t.Partitioning = p
 		}
 	}
 	return nil
 }
 
-var reIndexLine = regexp.MustCompile("^\\s+(?:UNIQUE |FULLTEXT |SPATIAL )?KEY `((?:[^`]|``)+)` (?:USING \\w+ )?\\([`(]")
-
-// MySQL 8.0 uses a different index order in SHOW CREATE TABLE than in
-// information_schema. This function fixes the struct to match SHOW CREATE
-// TABLE's ordering.
+// The display order of secondary indexes in SHOW CREATE TABLE is not reflected
+// in any non-storage-engine-specific information_schema tables. This function
+// adjusts the order in the Table.SecondaryIndexes field to match the ordering
+// from SHOW CREATE TABLE.
 func fixIndexOrder(t *Table) {
 	byName := t.SecondaryIndexesByName()
 	t.SecondaryIndexes = make([]*Index, len(byName))
 	var cur int
 	for _, line := range strings.Split(t.CreateStatement, "\n") {
-		matches := reIndexLine.FindStringSubmatch(line)
-		if matches == nil {
+		if !strings.Contains(line, " KEY `") {
 			continue
 		}
-		t.SecondaryIndexes[cur] = byName[matches[1]]
-		cur++
+		tokens := TokenizeStringN(line, 3)
+		if len(tokens) < 3 {
+			continue
+		}
+		var indexName string
+		if tokens[0] == "KEY" {
+			indexName = stripBackticks(tokens[1])
+		} else if tokens[0] != "PRIMARY" && tokens[1] == "KEY" { // tokens[0] is e.g. "UNIQUE", "FULLTEXT", "SPATIAL"
+			indexName = stripBackticks(tokens[2])
+		}
+		if indexName != "" {
+			if idx, ok := byName[indexName]; ok {
+				t.SecondaryIndexes[cur] = idx
+				cur++
+			}
+		}
 	}
-	if cur != len(t.SecondaryIndexes) {
-		panic(fmt.Errorf("Failed to parse indexes of %s for reordering: only matched %d of %d secondary indexes", t.Name, cur, len(t.SecondaryIndexes)))
+	if cur != len(byName) {
+		panic(fmt.Errorf("Failed to parse indexes of %s for reordering: only matched %d of %d secondary indexes", t.Name, cur, len(byName)))
 	}
 }
 

@@ -468,6 +468,14 @@ func isSpace(b byte) bool {
 // SQL comments (including version-gate comments) are not included in the
 // return value.
 func TokenizeString(input string) []string {
+	return TokenizeStringN(input, -1)
+}
+
+// TokenizeStringN behaves like TokenizeString, but returns a maximum of n
+// tokens. Any further tokens are ignored and omitted from the result set.
+// This improves performance relative to TokenizeString for use-cases where
+// only the first few tokens need to be examined.
+func TokenizeStringN(input string, n int) []string {
 	result := []string{}
 	r := strings.NewReader(input)
 	lexer := NewLexer(r, "\000", 1024)
@@ -477,6 +485,9 @@ func TokenizeString(input string) []string {
 			return result
 		} else if typ != TokenFiller {
 			result = append(result, string(val))
+			if n > 0 && len(result) >= n {
+				return result
+			}
 		}
 	}
 }

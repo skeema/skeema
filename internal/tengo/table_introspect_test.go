@@ -80,7 +80,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	if aTableFromDB.UnsupportedDDL {
 		t.Error("Cannot test various order-fixups because testing.grab_bag is unexpectedly not supported for diff")
 	} else {
-		// Test index order correction, even if no test image is using new data dict
+		// Test index order correction in isolation
 		aTableFromDB.SecondaryIndexes[0], aTableFromDB.SecondaryIndexes[1], aTableFromDB.SecondaryIndexes[2] = aTableFromDB.SecondaryIndexes[2], aTableFromDB.SecondaryIndexes[0], aTableFromDB.SecondaryIndexes[1]
 		fixIndexOrder(aTableFromDB)
 		if aTableFromDB.GeneratedCreateStatement(flavor) != aTableFromDB.CreateStatement {
