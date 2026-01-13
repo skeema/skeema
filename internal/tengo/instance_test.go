@@ -6,8 +6,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/jmoiron/sqlx"
 )
 
 func TestNewInstance(t *testing.T) {
@@ -22,7 +20,7 @@ func TestNewInstance(t *testing.T) {
 	assertError("mysql", "username:password@tcp(some.host:1234) i like zebras")
 
 	assertInstance := func(dsn string, expectedInstance Instance) {
-		expectedInstance.connectionPool = make(map[string]*sqlx.DB)
+		expectedInstance.connectionPool = make(map[string]*sql.DB)
 		instance, err := NewInstance("mysql", dsn)
 		if err != nil {
 			t.Fatalf("Unexpectedly received error %s from NewInstance(\"mysql\", \"%s\")", err, dsn)

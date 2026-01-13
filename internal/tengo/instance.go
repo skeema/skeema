@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/jmoiron/sqlx"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -28,8 +27,8 @@ type Instance struct {
 	Port            int
 	SocketPath      string
 	defaultParams   map[string]string
-	connectionPool  map[string]*sqlx.DB // key is in format "schema?params"
-	m               *sync.Mutex         // protects unexported fields for concurrent operations
+	connectionPool  map[string]*sql.DB // key is in format "schema?params"
+	m               *sync.Mutex        // protects unexported fields for concurrent operations
 	flavor          Flavor
 	grants          []string
 	latency         time.Duration // round-trip latency measured in hydrateVars using trivial query
@@ -66,7 +65,7 @@ func NewInstance(driver, dsn string) (*Instance, error) {
 		User:           parsedConfig.User,
 		Password:       parsedConfig.Passwd,
 		defaultParams:  params,
-		connectionPool: make(map[string]*sqlx.DB),
+		connectionPool: make(map[string]*sql.DB),
 		flavor:         FlavorUnknown,
 		m:              new(sync.Mutex),
 	}
@@ -144,7 +143,7 @@ func (instance *Instance) BuildParamString(params string) string {
 	return v.Encode()
 }
 
-// ConnectionPool returns a new sqlx.DB for this instance's host/port/user/pass
+// ConnectionPool returns a new sql.DB for this instance's host/port/user/pass
 // with the supplied default schema and params string. A connection attempt is
 // made, and an error will be returned if connection fails.
 // defaultSchema may be "" if it is not relevant.
@@ -153,7 +152,7 @@ func (instance *Instance) BuildParamString(params string) string {
 // instance.defaultParams, with params supplied here taking precedence.
 // The connection pool's max size, max conn lifetime, and max idle time are all
 // tuned automatically to intelligent defaults based on auto-discovered limits.
-func (instance *Instance) ConnectionPool(defaultSchema, params string) (*sqlx.DB, error) {
+func (instance *Instance) ConnectionPool(defaultSchema, params string) (*sql.DB, error) {
 	fullParams := instance.BuildParamString(params)
 	return instance.rawConnectionPool(defaultSchema, fullParams, false)
 }
@@ -162,7 +161,7 @@ func (instance *Instance) ConnectionPool(defaultSchema, params string) (*sqlx.DB
 // connection pools for reuse. When multiple requests are made for the same
 // combination of defaultSchema and params, a pre-existing connection pool will
 // be returned. See ConnectionPool for usage of the args for this method.
-func (instance *Instance) CachedConnectionPool(defaultSchema, params string) (*sqlx.DB, error) {
+func (instance *Instance) CachedConnectionPool(defaultSchema, params string) (*sql.DB, error) {
 	fullParams := instance.BuildParamString(params)
 	key := defaultSchema + "?" + fullParams
 
@@ -182,10 +181,13 @@ func (instance *Instance) maxConnsPerPool() int {
 	return max(2, instance.maxUserConns-10)
 }
 
-func (instance *Instance) rawConnectionPool(defaultSchema, fullParams string, alreadyLocked bool) (*sqlx.DB, error) {
+func (instance *Instance) rawConnectionPool(defaultSchema, fullParams string, alreadyLocked bool) (*sql.DB, error) {
 	fullDSN := instance.BaseDSN + defaultSchema + "?" + fullParams
-	db, err := sqlx.Connect(instance.Driver, fullDSN)
+	db, err := sql.Open(instance.Driver, fullDSN)
 	if err != nil {
+		return nil, err
+	} else if err := db.Ping(); err != nil {
+		db.Close()
 		return nil, err
 	}
 	if !instance.valid {
@@ -210,7 +212,7 @@ func (instance *Instance) rawConnectionPool(defaultSchema, fullParams string, al
 		db.SetConnMaxIdleTime(10 * time.Second)
 	}
 
-	return db.Unsafe(), nil
+	return db, nil
 }
 
 // CanConnect returns true if the Instance can currently be connected to, using
@@ -359,7 +361,7 @@ func (instance *Instance) AdaptiveHashIndexEnabled() bool {
 
 // hydrateVars populates several non-exported Instance fields by querying
 // various global and session variables.
-func (instance *Instance) hydrateVars(db *sqlx.DB, lock bool) (err error) {
+func (instance *Instance) hydrateVars(db *sql.DB, lock bool) (err error) {
 	if lock {
 		instance.m.Lock()
 		defer instance.m.Unlock()
@@ -643,7 +645,7 @@ func (instance *Instance) FindNonEmptyTables(schema string, tables []string) (no
 	return findNonEmptyTables(db, schema, tables)
 }
 
-func findNonEmptyTables(db *sqlx.DB, schema string, tables []string) (nonEmptyTables []string, err error) {
+func findNonEmptyTables(db *sql.DB, schema string, tables []string) (nonEmptyTables []string, err error) {
 	if len(tables) == 0 {
 		return
 	}
@@ -795,7 +797,7 @@ func (instance *Instance) DropSchema(schema string, opts BulkDropOptions) error 
 // dropSchema executes a DROP DATABASE on the supplied database name. This isn't
 // exported directly because it is unsafe to drop things in this manner in
 // production, as it holds locks for a long time if many tables are present.
-func dropSchema(db *sqlx.DB, schema string) error {
+func dropSchema(db *sql.DB, schema string) error {
 	_, err := db.Exec("DROP DATABASE " + EscapeIdentifier(schema))
 	if err != nil {
 		return fmt.Errorf("Error dropping database %s: %w", EscapeIdentifier(schema), err)
@@ -1015,7 +1017,7 @@ func (instance *Instance) DropRoutinesInSchema(schema string, opts BulkDropOptio
 // partitioned in a way that doesn't support DROP PARTITION) or a slice of
 // partition names (if using RANGE or LIST partitioning). Views are excluded
 // from the result.
-func tablesToPartitions(db *sqlx.DB, schema string, flavor Flavor) (map[string][]string, error) {
+func tablesToPartitions(db *sql.DB, schema string, flavor Flavor) (map[string][]string, error) {
 	// information_schema.partitions contains all tables (not just partitioned)
 	// and excludes views (which we don't want here anyway) in non-MySQL8+ flavors
 	query := `

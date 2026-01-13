@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-
-	"github.com/jmoiron/sqlx"
 )
 
 func init() {
@@ -197,7 +195,7 @@ func (t *Table) introspectShowCreate(ctx context.Context, insp *introspector) (e
 	return nil
 }
 
-func showCreateTable(ctx context.Context, db *sqlx.DB, schema, table string) (string, error) {
+func showCreateTable(ctx context.Context, db *sql.DB, schema, table string) (string, error) {
 	return showCreateObject(ctx, db, schema, ObjectTypeTable, table)
 }
 

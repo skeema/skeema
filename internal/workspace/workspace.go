@@ -8,6 +8,7 @@ package workspace
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"slices"
@@ -16,7 +17,6 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
@@ -26,10 +26,10 @@ import (
 // Workspace represents a "scratch space" for DDL operations and schema
 // introspection.
 type Workspace interface {
-	// ConnectionPool returns a *sqlx.DB representing a connection pool for
+	// ConnectionPool returns a *sql.DB representing a connection pool for
 	// interacting with the workspace. The pool should already be using the
 	// correct default database for interacting with the workspace schema.
-	ConnectionPool(params string) (*sqlx.DB, error)
+	ConnectionPool(params string) (*sql.DB, error)
 
 	// IntrospectSchema returns a struct containing the current state of the
 	// workspace schema, along with other metadata about the workspace's
@@ -269,7 +269,7 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 	if opts.SkipBinlog {
 		params += "&sql_log_bin=0"
 	}
-	var db, dbChunk *sqlx.DB
+	var db, dbChunk *sql.DB
 	var errChunk error
 	var connGroup errgroup.Group
 	needRegularPool := (expectedObjectCount > len(chunkableCreates))

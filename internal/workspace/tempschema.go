@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"math"
@@ -8,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/skeema/skeema/internal/tengo"
 )
 
@@ -121,9 +121,9 @@ func (ts *TempSchema) bulkDropOptions() tengo.BulkDropOptions {
 	}
 }
 
-// ConnectionPool returns a connection pool (*sqlx.DB) to the temporary
+// ConnectionPool returns a connection pool (*sql.DB) to the temporary
 // workspace schema, using the supplied connection params (which may be blank).
-func (ts *TempSchema) ConnectionPool(params string) (*sqlx.DB, error) {
+func (ts *TempSchema) ConnectionPool(params string) (*sql.DB, error) {
 	if ts.mdlTimeout > 0 && !strings.Contains(params, "lock_wait_timeout") {
 		params = tengo.MergeParamStrings(params, fmt.Sprintf("lock_wait_timeout=%d", ts.mdlTimeout))
 	}

@@ -5,10 +5,6 @@ filippo.io/edwards25519/field
 # github.com/go-sql-driver/mysql v1.9.3
 ## explicit; go 1.21.0
 github.com/go-sql-driver/mysql
-# github.com/jmoiron/sqlx v1.3.5
-## explicit; go 1.10
-github.com/jmoiron/sqlx
-github.com/jmoiron/sqlx/reflectx
 # github.com/mitchellh/go-wordwrap v1.0.1
 ## explicit; go 1.14
 github.com/mitchellh/go-wordwrap

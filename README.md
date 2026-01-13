@@ -49,7 +49,7 @@ Support for partitioned tables generously sponsored by [Etsy](https://www.etsy.c
 
 ## License
 
-**Source code copyright 2025 Skeema LLC and the Skeema authors**
+**Source code copyright 2026 Skeema LLC and the Skeema authors**
 
 ```text
 Licensed under the Apache License, Version 2.0 (the "License");

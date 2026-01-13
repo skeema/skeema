@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jmoiron/sqlx"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -20,7 +19,7 @@ type introspector struct {
 
 	// pre-obtained connection pool to instance, using instance.introspectionParams
 	// but no default database; also limits concurrency via SetMaxOpenConns
-	db *sqlx.DB
+	db *sql.DB
 
 	// schema being populated; introspector tasks directly mutate this value's fields
 	schema *Schema
@@ -177,7 +176,7 @@ func IntrospectSchemas(ctx context.Context, instance *Instance, opts Introspecti
 	return schemas, err
 }
 
-func showCreateObject(ctx context.Context, db *sqlx.DB, schema string, typ ObjectType, name string) (string, error) {
+func showCreateObject(ctx context.Context, db *sql.DB, schema string, typ ObjectType, name string) (string, error) {
 	var createStatement sql.NullString
 	query := "SHOW CREATE " + typ.Caps() + " " + EscapeIdentifier(schema) + "." + EscapeIdentifier(name)
 	rows, err := db.QueryContext(ctx, query)

@@ -2,10 +2,9 @@ package tengo
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
-
-	"github.com/jmoiron/sqlx"
 )
 
 // Routine represents a stored procedure or function.
@@ -506,6 +505,6 @@ func (r *Routine) introspectShowCreate(ctx context.Context, insp *introspector) 
 	return fmt.Errorf("Failed to parse body in SHOW CREATE %s %s.%s: %s", r.Type.Caps(), EscapeIdentifier(schema), EscapeIdentifier(r.Name), r.CreateStatement)
 }
 
-func showCreateRoutine(ctx context.Context, db *sqlx.DB, schema string, typ ObjectType, routine string) (string, error) {
+func showCreateRoutine(ctx context.Context, db *sql.DB, schema string, typ ObjectType, routine string) (string, error) {
 	return showCreateObject(ctx, db, schema, typ, routine)
 }

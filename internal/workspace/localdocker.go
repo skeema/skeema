@@ -1,13 +1,13 @@
 package workspace
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/url"
 	"strings"
 	"sync"
 
-	"github.com/jmoiron/sqlx"
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/tengo"
 )
@@ -174,9 +174,9 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	return ld, nil
 }
 
-// ConnectionPool returns a connection pool (*sqlx.DB) to the temporary
+// ConnectionPool returns a connection pool (*sql.DB) to the temporary
 // workspace schema, using the supplied connection params (which may be blank).
-func (ld *LocalDocker) ConnectionPool(params string) (*sqlx.DB, error) {
+func (ld *LocalDocker) ConnectionPool(params string) (*sql.DB, error) {
 	// User-configurable default connection params are stored in the LocalDocker
 	// value, NOT in the tengo.DockerizedInstance. This permits re-use of the same
 	// DockerizedInstance in multiple LocalDocker workspaces, even if the
