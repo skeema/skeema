@@ -4,6 +4,11 @@ builds:
     binary: skeema
     env:
       - CGO_ENABLED=0
+    mod_timestamp: "{{.CommitTimestamp}}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.CommitDate}}
     targets:
       - linux_amd64
       - linux_arm64
