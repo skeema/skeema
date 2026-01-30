@@ -442,6 +442,7 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 
 	"library":  {{Vendor: VendorMySQL, Version: Version{9, 2}}},
 	"external": {{Vendor: VendorMySQL, Version: Version{9, 4}}}, // wrong in I_S.keywords.reserved, see bug 114874
+	"sets":     {{Vendor: VendorMySQL, Version: Version{9, 6}}}, // wrong in I_S.keywords.reserved, see bug 114874
 
 	"current_role":            {mariaDB101},
 	"delete_domain_id":        {mariaDB101}, // actual version unclear from docs, see comment above
