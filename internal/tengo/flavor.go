@@ -271,15 +271,21 @@ func IdentifyFlavor(versionString, versionComment string) (flavor Flavor) {
 	}
 
 	// If the vendor is still unknown after the above checks, it may be because
-	// various distribution methods adjust one or both of those strings. Fall
-	// back to sane defaults for known major versions.
-	// This logic will need to change whenever MySQL 10+ or MariaDB 12+ exists.
-	if flavor.Vendor == VendorUnknown {
-		if flavor.Version[0] == 10 || flavor.Version[0] == 11 {
-			flavor.Vendor = VendorMariaDB
-		} else if flavor.Version[0] == 5 || flavor.Version[0] == 8 || flavor.Version[0] == 9 {
-			flavor.Vendor = VendorMySQL
-		}
+	// various distribution methods adjust one or both of those strings. Assume
+	// MySQL if the major version begins with 5, 8, or 9. We cannot make any other
+	// assumptions yet since MySQL 10+ is expected to exist in July 2026 (based on
+	// current versioning practices), and that starts to overlap with version
+	// numbering for MariaDB.
+	//
+	// This may be problematic for distributions / package managers that manipulate
+	// @@global.version and @@global.version_comment; for example, Ubuntu and
+	// Homebrew lack "mysql" strings in both. This logic may be improved once we
+	// see that MySQL continues its current versioning practices; e.g. if 10.0-10.6
+	// are Innovation releases then we can make assumptions based on whether the
+	// patch version number is very low (indicating MySQL) or not (indicating
+	// MariaDB).
+	if flavor.Vendor == VendorUnknown && (flavor.Version[0] == 5 || flavor.Version[0] == 8 || flavor.Version[0] == 9) {
+		flavor.Vendor = VendorMySQL
 	}
 
 	return flavor

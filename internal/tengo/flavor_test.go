@@ -30,6 +30,7 @@ func TestParseVersion(t *testing.T) {
 		"10.1.34-MariaDB-1~jessie":             {10, 1, 34},
 		"10.2.16-MariaDB-10.2.16+maria~jessie": {10, 2, 16},
 		"10.3.7-MariaDB-1:10.3.7+maria~jessie": {10, 3, 7},
+		"10.11.14-MariaDB-0ubuntu0.24.04.1":    {10, 11, 14},
 		"invalid":                              {0, 0, 0},
 		"5":                                    {5, 0, 0},
 		"5.6.invalid":                          {5, 6, 0},
@@ -156,11 +157,11 @@ func TestIdentifyFlavor(t *testing.T) {
 		{"8.0.16", "MySQL Community Server - GPL", "mysql:8.0.16"},
 		{"5.7.23-23", "Percona Server (GPL), Release 23, Revision 500fcf5", "percona:5.7.23"},
 		{"10.1.34-MariaDB-1~bionic", "mariadb.org binary distribution", "mariadb:10.1.34"},
-		{"10.1.40-MariaDB-0ubuntu0.18.04.1", "Ubuntu 18.04", "mariadb:10.1.40"},
+		{"10.11.14-MariaDB-0ubuntu0.24.04.1", "Ubuntu 24.04", "mariadb:10.11.14"},
 		{"10.2.15-MariaDB-log", "MariaDB Server", "mariadb:10.2.15"},
 		{"10.3.8-MariaDB-log", "Source distribution", "mariadb:10.3.8"},
 		{"10.3.16-MariaDB", "Homebrew", "mariadb:10.3.16"},
-		{"10.3.8-0ubuntu0.18.04.1", "(Ubuntu)", "mariadb:10.3.8"}, // due to major version 10 --> MariaDB
+		{"10.3.8-0ubuntu0.18.04.1", "(Ubuntu)", "unknown:10.3.8"}, // due to major version 10 --> ambiguous after July 2026
 		{"5.7.26", "Homebrew", "mysql:5.7.26"},                    // due to major version 5 --> MySQL
 		{"8.0.13", "Homebrew", "mysql:8.0.13"},                    // due to major version 8 --> MySQL
 		{"webscalesql", "webscalesql", "unknown:0.0"},
