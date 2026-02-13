@@ -370,7 +370,14 @@ func (instance *Instance) hydrateVars(db *sql.DB, lock bool) (err error) {
 		}
 	}
 
-	query := `SELECT @@global.version_comment, @@global.version, @@session.sql_mode,
+	// Note on version_comment: normally this can be used to detect MySQL vs
+	// MariaDB, but some packages override it, with Ubuntu and Homebrew being two
+	// major known examples. By appending a version-gated comment we can know for
+	// sure, since MariaDB doesn't execute comments gated to MySQL 5.7-9.9:
+	// https://mariadb.com/docs/server/reference/sql-statements/comment-syntax
+	// This will be especially important once MySQL 10.x is out in mid 2026!
+	query := `SELECT CONCAT(@@global.version_comment /*!50701 ,' mysql' */ /*M! ,' mariadb' */),
+		@@global.version, @@session.sql_mode,
 		@@session.wait_timeout, @@session.lock_wait_timeout,
 		@@session.max_user_connections, @@global.max_connections,
 		@@global.lower_case_table_names, @@global.innodb_adaptive_hash_index`

@@ -250,41 +250,26 @@ func ParseFlavor(s string) Flavor {
 }
 
 // IdentifyFlavor returns a Flavor value based on inputs obtained from server
-// vars @@global.version and @@global.version_comment. It accounts for how some
-// distributions and/or cloud platforms manipulate those values.
+// vars @@global.version and @@global.version_comment, with additional context
+// appended by using version-gated comments; see logic in Instance.hydrateVars.
 // This method can detect VariantPercona (and will include it in the return
 // value appropriately), but not VariantAurora.
 func IdentifyFlavor(versionString, versionComment string) (flavor Flavor) {
 	flavor.Version, _ = ParseVersion(versionString)
-	versionString = strings.ToLower(versionString)
-	versionComment = strings.ToLower(versionComment)
-	if strings.Contains(versionComment, "percona") || strings.Contains(versionString, "percona") {
+
+	versionComment = strings.ToLower(versionComment) + strings.ToLower(versionString)
+	if strings.Contains(versionComment, "percona") {
 		flavor.Vendor = VendorMySQL
 		flavor.Variants = VariantPercona
-	} else {
-		for _, attempt := range []Vendor{VendorMariaDB, VendorMySQL} {
-			if vs := attempt.String(); strings.Contains(versionComment, vs) || strings.Contains(versionString, vs) {
-				flavor.Vendor = attempt
-				break
-			}
-		}
-	}
-
-	// If the vendor is still unknown after the above checks, it may be because
-	// various distribution methods adjust one or both of those strings. Assume
-	// MySQL if the major version begins with 5, 8, or 9. We cannot make any other
-	// assumptions yet since MySQL 10+ is expected to exist in July 2026 (based on
-	// current versioning practices), and that starts to overlap with version
-	// numbering for MariaDB.
-	//
-	// This may be problematic for distributions / package managers that manipulate
-	// @@global.version and @@global.version_comment; for example, Ubuntu and
-	// Homebrew lack "mysql" strings in both. This logic may be improved once we
-	// see that MySQL continues its current versioning practices; e.g. if 10.0-10.6
-	// are Innovation releases then we can make assumptions based on whether the
-	// patch version number is very low (indicating MySQL) or not (indicating
-	// MariaDB).
-	if flavor.Vendor == VendorUnknown && (flavor.Version[0] == 5 || flavor.Version[0] == 8 || flavor.Version[0] == 9) {
+	} else if strings.Contains(versionComment, "maria") {
+		flavor.Vendor = VendorMariaDB
+	} else if strings.Contains(versionComment, "mysql") {
+		flavor.Vendor = VendorMySQL
+	} else if flavor.Version[0] == 5 || flavor.Version[0] == 8 || flavor.Version[0] == 9 {
+		// Assume MySQL if the major version begins with 5, 8, or 9. We cannot make any
+		// other assumptions though since MySQL 10+ is expected to exist in July 2026
+		// (based on current versioning practices), and that starts to overlap with
+		// version numbering for MariaDB.
 		flavor.Vendor = VendorMySQL
 	}
 
