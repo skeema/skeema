@@ -317,15 +317,21 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 	}
 	wsSchema.Timers.Init = time.Since(timerStart)
 
-	// Note: this logic uses errgroups just for coordination/blocking, as well as
-	// limiting concurrency, but not actually error propagation. Errors are sent
-	// to the main goroutine for collection and retried if appropriate.
-	var metaGroup, execGroup errgroup.Group
+	// metaGroup coordinates spawning of two top-level goroutines: one for handling
+	// chunked CREATEs, and one for handling non-chunked CREATEs
+	var metaGroup sync.WaitGroup
+
+	// execGroup coordinates execution/completion of statements in the workspace.
+	// It uses an errgroup instead of a WaitGroup for purpose of limiting
+	// concurrency, but not error propagation. Errors are sent to the main
+	// goroutine for collection, so they can be retried if appropriate.
+	var execGroup errgroup.Group
 	execGroup.SetLimit(opts.CreateThreads)
+
 	failuresChan := make(chan *StatementError)
 	timerStart = time.Now()
 
-	execSingleCreate := func(stmt *tengo.Statement, ifNotExists bool) error {
+	execSingleCreate := func(stmt *tengo.Statement, ifNotExists bool) {
 		var body string
 		if ifNotExists {
 			body = stmt.IdempotentBody()
@@ -336,17 +342,16 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 		if err != nil {
 			failuresChan <- wrapFailure(stmt, err)
 		}
-		return nil
 	}
 
 	// Non-chunked creates
-	metaGroup.Go(func() error {
+	metaGroup.Go(func() {
 		for _, stmt := range creates {
 			execGroup.Go(func() error {
-				return execSingleCreate(stmt, false)
+				execSingleCreate(stmt, false)
+				return nil
 			})
 		}
-		return nil
 	})
 
 	// Chunked creates: in addition to execGroup's concurrency limit, we further
@@ -355,11 +360,12 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 	var sem chan struct{}
 	if len(chunkableCreates) > 0 { // implies opts.CreateThreads and opts.CreateChunkSize are both at least 2
 		sem = make(chan struct{}, opts.CreateThreads/opts.CreateChunkSize)
-		metaGroup.Go(func() error {
+		metaGroup.Go(func() {
 			for chunk := range slices.Chunk(chunkableCreates, opts.CreateChunkSize) {
 				execGroup.Go(func() error {
 					if len(chunk) == 1 { // single-statement leftovers: handle like non-chunked case
-						return execSingleCreate(chunk[0], false)
+						execSingleCreate(chunk[0], false)
+						return nil
 					}
 					chunkStrings := make([]string, 0, len(chunk))
 					for _, stmt := range chunk {
@@ -380,12 +386,11 @@ func ExecLogicalSchema(logicalSchema *fs.LogicalSchema, opts Options) (_ *Schema
 					return nil
 				})
 			}
-			return nil
 		})
 	}
 
 	// Close channels once we're done spawning goroutines (metaGroup) *and* they
-	// have all completed (execGroup). This double-errgroup setup avoids races.
+	// have all completed (execGroup). This double-group setup avoids races.
 	go func() {
 		metaGroup.Wait()
 		execGroup.Wait()

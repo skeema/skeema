@@ -3,6 +3,7 @@ package applier
 import (
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/skeema/mybase"
@@ -127,14 +128,13 @@ type ApplierIntegrationSuite struct {
 }
 
 func (s *ApplierIntegrationSuite) BeforeTest(t *testing.T) {
-	var g errgroup.Group
+	var wg sync.WaitGroup
 	for _, inst := range s.d {
-		g.Go(func() error {
+		wg.Go(func() {
 			inst.NukeData(t)
-			return nil
 		})
 	}
-	g.Wait()
+	wg.Wait()
 }
 
 func (s ApplierIntegrationSuite) TestCreatePlanForTarget(t *testing.T) {
