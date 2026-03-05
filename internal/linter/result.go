@@ -215,7 +215,7 @@ func (r *Result) AnnotateMixedSchemaNames(dir *fs.Dir, opts *Options) {
 }
 
 // Debug logs a debug message, with args formatted like fmt.Printf.
-func (r *Result) Debug(format string, a ...interface{}) {
+func (r *Result) Debug(format string, a ...any) {
 	r.DebugLogs = append(r.DebugLogs, fmt.Sprintf(format, a...))
 }
 

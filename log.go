@@ -1,7 +1,6 @@
 // This file uses ANSI color codes, which do not work on Windows.
 
 //go:build !windows
-// +build !windows
 
 package main
 
@@ -76,7 +75,7 @@ func (f *customFormatter) Format(entry *log.Entry) ([]byte, error) {
 		message := util.WrapStringWithPadding(entry.Message, f.width, "                            ")
 		fmt.Fprintf(b, "%s %s%s\n", entry.Time.Format("2006-01-02 15:04:05"), levelText, message)
 	} else {
-		for _, message := range strings.Split(strings.TrimSpace(entry.Message), "\n") {
+		for message := range strings.SplitSeq(strings.TrimSpace(entry.Message), "\n") {
 			fmt.Fprintf(b, "%s %s%s\n", entry.Time.Format("2006-01-02 15:04:05"), levelText, message)
 		}
 	}

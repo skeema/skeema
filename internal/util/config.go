@@ -225,7 +225,7 @@ func init() {
 // like those to fmt.Printf(). The prompt will be written to STDERR, unless
 // STDERR is a non-terminal and STDOUT is a terminal, in which case STDOUT is
 // used.
-func PromptPassword(promptArgs ...interface{}) (string, error) {
+func PromptPassword(promptArgs ...any) (string, error) {
 	if len(promptArgs) == 0 {
 		promptArgs = append(promptArgs, "Enter password: ")
 	}

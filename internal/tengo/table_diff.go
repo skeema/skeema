@@ -3,6 +3,7 @@ package tengo
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -482,12 +483,7 @@ func diffTables(from, to *Table) (clauses []TableAlterClause, supported bool) {
 	fromForeignKeys := from.foreignKeysByName()
 	toForeignKeys := to.foreignKeysByName()
 	fkChangeCosmeticOnly := func(fk *ForeignKey, others []*ForeignKey) bool {
-		for _, other := range others {
-			if fk.Equivalent(other) {
-				return true
-			}
-		}
-		return false
+		return slices.ContainsFunc(others, fk.Equivalent)
 	}
 	for _, toFk := range toForeignKeys {
 		if _, existedBefore := fromForeignKeys[toFk.Name]; !existedBefore {

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -210,10 +211,8 @@ var persistConnectivityOptionPrefix = []string{
 // are handled separately, and excludes password since it is not persisted
 // automatically for security reasons.)
 func persistOptionAlongsideHost(optionName string) bool {
-	for _, exactName := range persistConnectivityOptionExactMatch {
-		if optionName == exactName {
-			return true
-		}
+	if slices.Contains(persistConnectivityOptionExactMatch, optionName) {
+		return true
 	}
 	for _, prefix := range persistConnectivityOptionPrefix {
 		if strings.HasPrefix(optionName, prefix) {

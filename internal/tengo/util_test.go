@@ -187,7 +187,7 @@ func TestLongestIncreasingSubsequence(t *testing.T) {
 	}
 	for inputStr, expectedStr := range cases {
 		var input []int
-		for _, inp := range strings.Split(inputStr, " ") {
+		for inp := range strings.SplitSeq(inputStr, " ") {
 			if inp != "" {
 				i, _ := strconv.Atoi(inp)
 				input = append(input, i)

@@ -57,7 +57,7 @@ func definerChecker(object tengo.DefKeyer, createStatement string, schema *tengo
 
 // definerConfiger establishes the configuration of valid definers, as a slice
 // of *tengo.UserPattern, computed a single time for efficiency.
-func definerConfiger(config *mybase.Config) interface{} {
+func definerConfiger(config *mybase.Config) any {
 	values := config.GetSlice("allow-definer", ',', true)
 	if len(values) == 0 {
 		return errors.New("Option allow-definer must be non-empty")

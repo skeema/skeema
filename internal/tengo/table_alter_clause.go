@@ -2,6 +2,7 @@ package tengo
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -536,10 +537,8 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 			comp = oldType.String()
 		}
 		if comp != "" {
-			for _, other := range others {
-				if comp == other {
-					return true
-				}
+			if slices.Contains(others, comp) {
+				return true
 			}
 		}
 		return false
@@ -670,7 +669,7 @@ func (cco ChangeCreateOptions) Clause(_ StatementModifiers) string {
 
 	splitOpts := func(full string) map[string]string {
 		result := make(map[string]string)
-		for _, kv := range strings.Split(full, " ") {
+		for kv := range strings.SplitSeq(full, " ") {
 			tokens := strings.Split(kv, "=")
 			if len(tokens) == 2 {
 				result[tokens[0]] = tokens[1]

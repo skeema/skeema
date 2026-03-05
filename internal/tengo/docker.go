@@ -551,7 +551,7 @@ type filteredLogger struct {
 	logger *log.Logger
 }
 
-func (fl filteredLogger) Print(v ...interface{}) {
+func (fl filteredLogger) Print(v ...any) {
 	for _, arg := range v {
 		if err, ok := arg.(error); ok {
 			if msg := err.Error(); strings.Contains(msg, "EOF") || strings.Contains(msg, "unexpected read") {

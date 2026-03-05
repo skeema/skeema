@@ -46,7 +46,7 @@ func AddCommandOptions(cmd *mybase.Command) {
 // Options contains parsed settings controlling linter behavior.
 type Options struct {
 	RuleSeverity            map[string]Severity
-	RuleConfig              map[string]interface{}
+	RuleConfig              map[string]any
 	StripAnnotationNewlines bool                     // if true, remove newlines inside annotation messages
 	flavor                  tengo.Flavor             // actual workspace flavor; set automatically by CheckSchema
 	onlyKeys                map[tengo.ObjectKey]bool // if map is non-nil, only format objects with true values
@@ -111,7 +111,7 @@ func (opts *Options) shouldIgnore(keyer tengo.ObjectKeyer) bool {
 func OptionsForDir(dir *fs.Dir) (*Options, error) {
 	opts := &Options{
 		RuleSeverity: make(map[string]Severity),
-		RuleConfig:   make(map[string]interface{}),
+		RuleConfig:   make(map[string]any),
 	}
 
 	// Populate opts.RuleSeverity from individual rule options
@@ -194,7 +194,7 @@ func (ce ConfigError) ExitCode() int {
 
 // NewConfigError creates a config error referring to the specified directory
 // and message.
-func NewConfigError(dir *fs.Dir, format string, a ...interface{}) ConfigError {
+func NewConfigError(dir *fs.Dir, format string, a ...any) ConfigError {
 	return ConfigError{
 		Dir: dir,
 		err: fmt.Errorf(format, a...),

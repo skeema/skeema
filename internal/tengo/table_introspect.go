@@ -619,7 +619,7 @@ func fixIndexOrder(t *Table) {
 	byName := t.SecondaryIndexesByName()
 	t.SecondaryIndexes = make([]*Index, len(byName))
 	var cur int
-	for _, line := range strings.Split(t.CreateStatement, "\n") {
+	for line := range strings.SplitSeq(t.CreateStatement, "\n") {
 		if !strings.Contains(line, " KEY `") {
 			continue
 		}
@@ -653,7 +653,7 @@ func fixForeignKeyOrder(t *Table) {
 	byName := t.foreignKeysByName()
 	t.ForeignKeys = make([]*ForeignKey, len(byName))
 	var cur int
-	for _, line := range strings.Split(t.CreateStatement, "\n") {
+	for line := range strings.SplitSeq(t.CreateStatement, "\n") {
 		matches := reForeignKeyLine.FindStringSubmatch(line)
 		if matches == nil {
 			continue
@@ -675,7 +675,7 @@ func fixCreateOptionsOrder(t *Table, flavor Flavor) {
 	// regexp that pulls out the create options from the actual create string
 	genCreate := t.GeneratedCreateStatement(flavor)
 	var template string
-	for _, line := range strings.Split(genCreate, "\n") {
+	for line := range strings.SplitSeq(genCreate, "\n") {
 		if strings.HasPrefix(line, ") ENGINE=") {
 			template = line
 			break
@@ -686,7 +686,7 @@ func fixCreateOptionsOrder(t *Table, flavor Flavor) {
 	template = strings.Replace(template, "!!!CREATEOPTS!!!", "(.+)", 1)
 	re := regexp.MustCompile("^" + template + "$")
 
-	for _, line := range strings.Split(t.CreateStatement, "\n") {
+	for line := range strings.SplitSeq(t.CreateStatement, "\n") {
 		if strings.HasPrefix(line, ") ENGINE=") {
 			matches := re.FindStringSubmatch(line)
 			if matches != nil {
@@ -810,7 +810,7 @@ var rePerconaColCompressionLine = regexp.MustCompile("^\\s+`((?:[^`]|``)+)` .* /
 // column compression feature, which isn't reflected in information_schema.
 func fixPerconaColCompression(t *Table) {
 	colsByName := t.ColumnsByName()
-	for _, line := range strings.Split(t.CreateStatement, "\n") {
+	for line := range strings.SplitSeq(t.CreateStatement, "\n") {
 		matches := rePerconaColCompressionLine.FindStringSubmatch(line)
 		if matches == nil {
 			continue

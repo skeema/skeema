@@ -251,7 +251,7 @@ func (ld *LocalDocker) Cleanup(schema *tengo.Schema) error {
 // shutdown handles shutdown logic for a specific LocalDocker instance. A single
 // string arg may optionally be supplied as a container name prefix: if the
 // container name does not begin with the prefix, no shutdown occurs.
-func (ld *LocalDocker) shutdown(args ...interface{}) bool {
+func (ld *LocalDocker) shutdown(args ...any) bool {
 	if len(args) > 0 {
 		if prefix, ok := args[0].(string); !ok || !strings.HasPrefix(ld.d.ContainerName(), prefix) {
 			return false

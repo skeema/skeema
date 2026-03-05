@@ -202,7 +202,7 @@ func ParseVariant(s string) (variant Variant) {
 	// The following loop makes no assumptions about the number of variants; it
 	// loops until it hits one that yields an empty string, by virtue of the
 	// logic in Variant.String().
-	for n := 0; n < 32; n++ {
+	for n := range 32 {
 		v := Variant(1 << n)
 		vstr := v.String()
 		if vstr == "" { // no more variants defined

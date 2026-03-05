@@ -441,7 +441,7 @@ func expectedAnnotations(logicalSchema *fs.LogicalSchema, flavor tengo.Flavor) (
 			if matches == nil {
 				continue
 			}
-			for _, ruleName := range strings.Split(matches[1], ",") {
+			for ruleName := range strings.SplitSeq(matches[1], ",") {
 				ruleName := strings.TrimSpace(ruleName)
 				if ruleName == "display-width" && flavor.OmitIntDisplayWidth() {
 					// Special case: don't expect any display-width annotations in

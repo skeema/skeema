@@ -213,10 +213,7 @@ func (lex *Lexer) Scan() (data []byte, typ TokenType, err error) {
 	// It's unlikely we will need more data than p in legitimate SQL cases, but
 	// handle very long tokens anyway. We'll try to read more data when we don't
 	// have enough for one rune or the delimiter string, whichever is longer.
-	minBytes := 4
-	if len(lex.delimBytes) > minBytes {
-		minBytes = len(lex.delimBytes)
-	}
+	minBytes := max(len(lex.delimBytes), 4)
 
 	var r rune
 	n := size // skip past the first rune, which we already examined

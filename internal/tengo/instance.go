@@ -447,12 +447,7 @@ func (instance *Instance) checkGrantsRegexp(re *regexp.Regexp) bool {
 	if instance.grants == nil {
 		instance.hydrateGrants()
 	}
-	for _, grant := range instance.grants {
-		if re.MatchString(grant) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(instance.grants, re.MatchString)
 }
 
 func (instance *Instance) hydrateGrants() {

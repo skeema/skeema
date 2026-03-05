@@ -2,6 +2,7 @@ package tengo
 
 import (
 	"errors"
+	"slices"
 
 	"github.com/go-sql-driver/mysql"
 )
@@ -40,10 +41,8 @@ func IsDatabaseError(err error, specificErrors ...uint16) bool {
 		if len(specificErrors) == 0 { // caller is just checking if err is ANY db error
 			return true
 		}
-		for _, num := range specificErrors {
-			if merr.Number == num {
-				return true
-			}
+		if slices.Contains(specificErrors, merr.Number) {
+			return true
 		}
 	}
 	return false

@@ -1129,7 +1129,7 @@ func (s SkeemaIntegrationSuite) TestReuseTempSchema(t *testing.T) {
 
 	// Ensure that re-using temp schema works as expected, and does not confuse
 	// subsequent commands
-	for n := 0; n < 2; n++ {
+	for range 2 {
 		// Need --skip-format in order for pull to use temp schema
 		cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-format --reuse-temp-schema --temp-schema=verytemp")
 		s.assertTableExists(t, "verytemp", "", "")

@@ -66,7 +66,7 @@ func (ev *ExitValue) ExitCode() int {
 }
 
 // NewExitValue is a constructor for ExitValue.
-func NewExitValue(code int, format string, a ...interface{}) *ExitValue {
+func NewExitValue(code int, format string, a ...any) *ExitValue {
 	return &ExitValue{
 		Code: code,
 		err:  fmt.Errorf(format, a...),

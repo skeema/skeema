@@ -106,7 +106,7 @@ func (s *SkeemaIntegrationSuite) scratchPath() string {
 // pwd can specify a relative path (based off of testdata/.scratch) to
 // execute the command from the designated subdirectory. Afterwards, the pwd
 // will be restored to testdata/.scratch regardless.
-func (s *SkeemaIntegrationSuite) handleCommand(t *testing.T, expectedExitCode int, pwd, commandLine string, a ...interface{}) *mybase.Config {
+func (s *SkeemaIntegrationSuite) handleCommand(t *testing.T, expectedExitCode int, pwd, commandLine string, a ...any) *mybase.Config {
 	t.Helper()
 
 	path := filepath.Join(s.scratchPath(), pwd)

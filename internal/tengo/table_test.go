@@ -522,7 +522,7 @@ func TestTableAlterAddIndexOrder(t *testing.T) {
 	to := aTable(1)
 
 	// Add 10 secondary indexes, and ensure their order is preserved
-	for n := 0; n < 10; n++ {
+	for n := range 10 {
 		to.SecondaryIndexes = append(to.SecondaryIndexes, &Index{
 			Name:  fmt.Sprintf("newidx_%d", n),
 			Parts: []IndexPart{{ColumnName: to.Columns[0].Name}},
@@ -534,7 +534,7 @@ func TestTableAlterAddIndexOrder(t *testing.T) {
 	if len(tableAlters) != 10 || !supported {
 		t.Fatalf("Incorrect number of table alters: expected 10, found %d, supported=%t", len(tableAlters), supported)
 	}
-	for n := 0; n < 10; n++ {
+	for n := range 10 {
 		ta, ok := tableAlters[n].(AddIndex)
 		if !ok {
 			t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
@@ -636,7 +636,7 @@ func TestTableAlterIndexReorder(t *testing.T) {
 	loose8 := StatementModifiers{Flavor: mysql8}
 	strict8 := StatementModifiers{Flavor: mysql8, StrictIndexOrder: true}
 
-	assertClauses := func(from, to *Table, mods StatementModifiers, format string, a ...interface{}) {
+	assertClauses := func(from, to *Table, mods StatementModifiers, format string, a ...any) {
 		t.Helper()
 		td := NewAlterTable(from, to)
 		var clauses string
@@ -1075,16 +1075,16 @@ func (s TengoIntegrationSuite) TestTableAlterModifyColumnRandomly(t *testing.T) 
 	}
 
 	from := aTableForFlavor(s.d.Flavor(), 1)
-	for n := 0; n < 20; n++ {
+	for range 20 {
 		to := aTableForFlavor(s.d.Flavor(), 1)
 		swaps := rand.Intn(len(to.Columns) + 1)
-		for swap := 0; swap < swaps; swap++ {
+		for range swaps {
 			a := rand.Intn(len(to.Columns))
 			b := rand.Intn(len(to.Columns))
 			to.Columns[a], to.Columns[b] = to.Columns[b], to.Columns[a]
 		}
 		mods := rand.Intn(3)
-		for mod := 0; mod < mods; mod++ {
+		for range mods {
 			n := rand.Intn(len(to.Columns))
 			col := to.Columns[n]
 			switch col.Type.String() {
@@ -1309,10 +1309,10 @@ func TestTableAlterChangeCreateOptions(t *testing.T) {
 		// Order of result isn't predictable, so convert to maps and compare
 		indexedClause := make(map[string]bool)
 		indexedExpected := make(map[string]bool)
-		for _, token := range strings.Split(ta.Clause(StatementModifiers{}), " ") {
+		for token := range strings.SplitSeq(ta.Clause(StatementModifiers{}), " ") {
 			indexedClause[token] = true
 		}
-		for _, token := range strings.Split(expected, " ") {
+		for token := range strings.SplitSeq(expected, " ") {
 			indexedExpected[token] = true
 		}
 

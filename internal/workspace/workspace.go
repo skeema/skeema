@@ -70,7 +70,7 @@ func New(opts Options) (Workspace, error) {
 // cleaned up. It should return true if cleanup occurred (meaning that the
 // ShutdownFunc should be de-registered from future calls to Shutdown()), or
 // false otherwise.
-type ShutdownFunc func(...interface{}) bool
+type ShutdownFunc func(...any) bool
 
 var shutdownFuncs []ShutdownFunc
 var shutdownFuncMutex sync.Mutex
@@ -81,7 +81,7 @@ var shutdownFuncMutex sync.Mutex
 // for each workspace invocation.
 // It is recommended that programs importing this package call Shutdown as a
 // deferred function in main().
-func Shutdown(args ...interface{}) {
+func Shutdown(args ...any) {
 	shutdownFuncMutex.Lock()
 	defer shutdownFuncMutex.Unlock()
 	retainedFuncs := make([]ShutdownFunc, 0, len(shutdownFuncs))

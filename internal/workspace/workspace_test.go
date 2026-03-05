@@ -189,7 +189,7 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaFK(t *testing.T) {
 	opts.CreateThreads = 10
 
 	// Test multiple times, since the problem isn't deterministic
-	for n := 0; n < 10; n++ {
+	for n := range 10 {
 		opts.CreateChunkSize = (n % 5) + 1 // cover cases chunk size 1 (no chunking) through 5
 		wsSchema, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts)
 		if err != nil {

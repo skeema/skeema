@@ -45,7 +45,7 @@ func DefaultCollationForCharset(charset string, instance *Instance) string {
 		var rawOverrides string
 		if db, err := instance.CachedConnectionPool("", ""); err == nil {
 			if err := db.QueryRow("SELECT @@character_set_collations").Scan(&rawOverrides); err == nil {
-				for _, override := range strings.Split(rawOverrides, ",") {
+				for override := range strings.SplitSeq(rawOverrides, ",") {
 					cs, collation, _ := strings.Cut(override, "=")
 					if strings.TrimSpace(cs) == charset {
 						return strings.TrimSpace(collation)

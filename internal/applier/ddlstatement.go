@@ -148,10 +148,8 @@ func needTableSize(diff tengo.ObjectDiff, config *mybase.Config) bool {
 	}
 
 	// If safe-below-size or alter-wrapper-min-size options in use, size is needed
-	for _, opt := range []string{"safe-below-size", "alter-wrapper-min-size"} {
-		if config.Changed(opt) {
-			return true
-		}
+	if config.Changed("safe-below-size") || config.Changed("alter-wrapper-min-size") {
+		return true
 	}
 
 	// If any wrapper option uses the {SIZE} variable placeholder, size is needed

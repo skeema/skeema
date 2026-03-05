@@ -240,7 +240,7 @@ func parseVersionArgSlice(s string) (args []uint16) {
 	if s == "" {
 		return
 	}
-	for _, verStr := range strings.Split(s, ".") {
+	for verStr := range strings.SplitSeq(s, ".") {
 		part, _ := strconv.ParseUint(verStr, 10, 16)
 		args = append(args, uint16(part))
 	}

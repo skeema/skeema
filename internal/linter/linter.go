@@ -117,7 +117,7 @@ func (rc RoutineChecker) CheckObject(object tengo.DefKeyer, createStatement stri
 // RuleConfigFunc is a function that performs supplemental configuration for
 // a Rule. The function can return any arbitrary value. If the return value
 // isn't an error or an untyped nil, it will be indexed in Config.
-type RuleConfigFunc func(*mybase.Config) interface{}
+type RuleConfigFunc func(*mybase.Config) any
 
 // Rule combines an ObjectChecker with a string name and corresponding
 // option-related handling.
@@ -144,7 +144,7 @@ func (r *Rule) RelatedListOption(name, defaultValue, description string, require
 		panic("Cannot call RelatedListOption on a rule that already has a RelatedOption or ConfigFunc")
 	}
 	r.RelatedOption = mybase.StringOption(name, 0, defaultValue, description)
-	fn := func(config *mybase.Config) interface{} {
+	fn := func(config *mybase.Config) any {
 		values := config.GetSlice(name, ',', true)
 		if required && len(values) == 0 {
 			return fmt.Errorf(

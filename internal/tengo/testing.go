@@ -43,7 +43,7 @@ func RunSuite(t *testing.T, suite any, opts RunSuiteOptions) {
 	var suiteName, suffix string
 	suiteType := reflect.TypeOf(suite)
 	suiteVal := reflect.ValueOf(suite)
-	if suiteVal.Kind() == reflect.Ptr {
+	if suiteVal.Kind() == reflect.Pointer {
 		suiteName = suiteVal.Elem().Type().Name()
 	} else {
 		suiteName = suiteType.Name()
