@@ -671,29 +671,24 @@ func fixCreateOptionsOrder(t *Table, flavor Flavor) {
 		return
 	}
 
-	// Use the generated (but incorrectly-ordered) create statement to build a
-	// regexp that pulls out the create options from the actual create string
-	genCreate := t.GeneratedCreateStatement(flavor)
-	var template string
-	for line := range strings.SplitSeq(genCreate, "\n") {
-		if strings.HasPrefix(line, ") ENGINE=") {
-			template = line
-			break
-		}
+	// In SHOW CREATE TABLE, options start right after the default charset clause.
+	// After options, typically it's end-of-string, but could instead be a COMMENT
+	// clause, or a newline before a PARTITION BY clause.
+	charSetClause := t.defaultCharSetClause(flavor)
+	start := strings.Index(t.CreateStatement, charSetClause) + len(charSetClause) + 1
+	end := len(t.CreateStatement)
+	if t.Comment != "" {
+		end = strings.Index(t.CreateStatement[start:], " COMMENT='") + start
+	} else if t.Partitioning != nil {
+		end = strings.IndexRune(t.CreateStatement[start:], '\n') + start
 	}
-	template = strings.Replace(template, t.CreateOptions, "!!!CREATEOPTS!!!", 1)
-	template = regexp.QuoteMeta(template)
-	template = strings.Replace(template, "!!!CREATEOPTS!!!", "(.+)", 1)
-	re := regexp.MustCompile("^" + template + "$")
 
-	for line := range strings.SplitSeq(t.CreateStatement, "\n") {
-		if strings.HasPrefix(line, ") ENGINE=") {
-			matches := re.FindStringSubmatch(line)
-			if matches != nil {
-				t.CreateOptions = matches[1]
-				return
-			}
-		}
+	// Above calls to strings.Index should always return correct results with SHOW
+	// CREATE TABLE behavior from all known MySQL 8+ versions, but validate anyway
+	// just for robustness. If this somehow fails, we just leave CreateOptions
+	// as-is, potentially resulting in the table being unsupported for diffs.
+	if start > len(charSetClause) && start < end {
+		t.CreateOptions = t.CreateStatement[start:end]
 	}
 }
 
@@ -916,21 +911,15 @@ func fixChecks(t *Table, flavor Flavor) {
 	// definition: in this case I_S shows them having a name equal to the column
 	// name, but cannot be manipulated using this name directly, nor does this
 	// prevent explicitly-named checks from also having that same name.
-	// MariaDB also truncates the check clause at 64 bytes in I_S, so we must
-	// parse longer checks from SHOW CREATE TABLE.
+	// Some old versions of MariaDB also truncate the check clause at 64 bytes in
+	// I_S (see MDEV-24139, affects various older dot releases of 10.2-10.5), so
+	// we must parse longer checks from SHOW CREATE TABLE.
 	if flavor.IsMariaDB() {
 		colsByName := t.ColumnsByName()
 		var keep []*Check
 		for _, cc := range t.Checks {
 			if len(cc.Clause) == 64 {
-				// This regex is designed to match regular checks as well as inline-column
-				template := fmt.Sprintf(`%s[^\n]+CHECK \((%s[^\n]*)\),?\n`,
-					regexp.QuoteMeta(EscapeIdentifier(cc.Name)),
-					regexp.QuoteMeta(cc.Clause))
-				re := regexp.MustCompile(template)
-				if matches := re.FindStringSubmatch(t.CreateStatement); matches != nil {
-					cc.Clause = matches[1]
-				}
+				cc.fixFromShowCreate(t, flavor)
 			}
 			if col, ok := colsByName[cc.Name]; ok && !strings.Contains(t.CreateStatement, cc.Definition(flavor)) {
 				col.CheckClause = cc.Clause
@@ -945,15 +934,7 @@ func fixChecks(t *Table, flavor Flavor) {
 	// Meanwhile, MySQL butchers the escaping of special characters in check
 	// clauses I_S, so we parse them from SHOW CREATE TABLE instead
 	for _, cc := range t.Checks {
-		cc.Clause = "!!!CHECKCLAUSE!!!"
-		template := cc.Definition(flavor)
-		template = regexp.QuoteMeta(template)
-		template = strings.Replace(template, cc.Clause, "(.+?)", 1) + ",?\n"
-		re := regexp.MustCompile(template)
-		matches := re.FindStringSubmatch(t.CreateStatement)
-		if matches != nil {
-			cc.Clause = matches[1]
-		}
+		cc.fixFromShowCreate(t, flavor)
 	}
 }
 

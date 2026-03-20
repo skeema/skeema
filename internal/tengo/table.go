@@ -83,16 +83,6 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 	if t.NextAutoIncrement > 1 {
 		autoIncClause = fmt.Sprintf(" AUTO_INCREMENT=%d", t.NextAutoIncrement)
 	}
-	charSet := t.CharSet
-	// MySQL 8.0.24+ uses "utf8mb3" for table default charset in SHOW CREATE TABLE,
-	// but still "utf8" for cols there, and "utf8" everywhere in I_S
-	if charSet == "utf8" && flavor.MinMySQL(8, 0, 24) {
-		charSet = "utf8mb3"
-	}
-	var collate string
-	if t.ShowCollation {
-		collate = " COLLATE=" + t.Collation
-	}
 	var createOptions string
 	if t.CreateOptions != "" {
 		createOptions = " " + t.CreateOptions
@@ -101,19 +91,32 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 	if t.Comment != "" {
 		comment = fmt.Sprintf(" COMMENT='%s'", EscapeValueForCreateTable(t.Comment))
 	}
-	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n)%s ENGINE=%s%s DEFAULT CHARSET=%s%s%s%s%s",
+	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n)%s ENGINE=%s%s %s%s%s%s",
 		EscapeIdentifier(t.Name),
 		strings.Join(defs, ",\n  "),
 		tablespaceClause,
 		t.Engine,
 		autoIncClause,
-		charSet,
-		collate,
+		t.defaultCharSetClause(flavor),
 		createOptions,
 		comment,
 		t.Partitioning.Definition(flavor),
 	)
 	return result
+}
+
+func (t *Table) defaultCharSetClause(flavor Flavor) string {
+	charSet := t.CharSet
+	// MySQL 8.0.24+ uses "utf8mb3" for table default charset in SHOW CREATE TABLE,
+	// even though other locations didn't adjust this until 8.0.29
+	if charSet == "utf8" && flavor.MinMySQL(8, 0, 24) {
+		charSet = "utf8mb3"
+	}
+	var collate string
+	if t.ShowCollation {
+		collate = " COLLATE=" + t.Collation
+	}
+	return "DEFAULT CHARSET=" + charSet + collate
 }
 
 // UnpartitionedCreateStatement returns the table's CREATE statement without

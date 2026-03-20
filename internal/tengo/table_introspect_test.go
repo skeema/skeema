@@ -100,6 +100,17 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		if aTableFromDB.GeneratedCreateStatement(flavor) != aTableFromDB.CreateStatement {
 			t.Error("fixCreateOptionsOrder did not behave as expected")
 		}
+
+		// Repeat previous create options ordering test, but this time without a COMMENT clause
+		aTableFromDB.CreateOptions = "ROW_FORMAT=COMPACT DELAY_KEY_WRITE=1 CHECKSUM=1"
+		aTableFromDB.Comment = ""
+		aTableFromDB.CreateStatement = strings.Replace(aTableFromDB.CreateStatement, " COMMENT='hello'", "", 1)
+		fixCreateOptionsOrder(aTableFromDB, flavor)
+		if aTableFromDB.GeneratedCreateStatement(flavor) != aTableFromDB.CreateStatement {
+			t.Error("fixCreateOptionsOrder did not behave as expected")
+		}
+		aTableFromDB.Comment = "hello"
+		aTableFromDB.CreateStatement += " COMMENT='hello'"
 	}
 
 	// Test introspection of default expressions, if flavor supports them
