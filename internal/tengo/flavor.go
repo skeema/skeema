@@ -394,13 +394,13 @@ type versionThresholds struct {
 var vendorSupport = map[Vendor]versionThresholds{
 	VendorMySQL: {
 		latest:              LatestMySQLVersion,
-		deprecatedUpTo:      Version{5, 5},
+		deprecatedUpTo:      Version{5, 7},
 		oldestSupportedNow:  OldestSupportedMySQLVersion,
 		oldestSupportedEver: Version{5, 5},
 	},
 	VendorMariaDB: {
 		latest:              LatestMariaDBVersion,
-		deprecatedUpTo:      Version{10, 1},
+		deprecatedUpTo:      Version{10, 3},
 		oldestSupportedNow:  OldestSupportedMariaDBVersion,
 		oldestSupportedEver: Version{10, 1},
 	},
