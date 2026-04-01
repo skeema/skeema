@@ -2,9 +2,11 @@ package main
 
 import (
 	"os"
+	"runtime"
 	"runtime/debug"
 	"strings"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/skeema/mybase"
 	"github.com/skeema/skeema/internal/util"
 	"github.com/skeema/skeema/internal/workspace"
@@ -44,6 +46,13 @@ func main() {
 	util.AddGlobalConfigFiles(cfg)
 	if err := util.ProcessSpecialGlobalOptions(cfg); err != nil {
 		Exit(WrapExitCode(CodeBadConfig, err))
+	}
+
+	// Intel Mac builds are now deprecated, since Apple is dropping OS support
+	// starting with macOS 27
+	// TODOv2: remove this conditional after adjusting .goreleaser.yml
+	if runtime.GOOS == "darwin" && runtime.GOARCH == "amd64" {
+		log.Warn("Intel Mac support is now deprecated. Binaries for older Macs with Intel CPUs will not be provided for Skeema v2. For more information, visit https://www.skeema.io/v2-download-updates")
 	}
 
 	err = cfg.HandleCommand()
