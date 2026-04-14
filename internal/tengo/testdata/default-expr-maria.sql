@@ -1,5 +1,5 @@
-# Test edge cases of column default expressions in MariaDB 10.2+. Same as the
-# MySQL file except no 4-byte chars used in expressions.
+# Test edge cases of column default expressions in MariaDB. Same as the MySQL
+# file except no 4-byte chars used in expressions.
 
 use testing;
 

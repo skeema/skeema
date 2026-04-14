@@ -1,6 +1,4 @@
-# Table using InnoDB transparent page compression with MariaDB formatting.
-# Although this feature is supported in MariaDB 10.1, the syntax may differ,
-# so only 10.2+ is tested.
+# Table using InnoDB transparent page compression with MariaDB syntax.
 # Keep in sync with integration.sql's actor_in_film
 use testing;
 CREATE TABLE actor_in_film_comp (

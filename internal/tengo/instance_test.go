@@ -140,6 +140,7 @@ func TestInstanceIntrospectionParams(t *testing.T) {
 			t.Errorf("Expected param map %v, instead found %v", parsedExpected, parsedResult)
 		}
 	}
+	// TODOv2: MySQL 5.x will be dropped, remove the 5.7 test cases below
 	assertParams("mysql:5.7", "", "sql_quote_show_create=1&collation=binary")
 	assertParams("mysql:8.0", "", "sql_quote_show_create=1&information_schema_stats_expiry=0&collation=binary")
 	assertParams("mysql:5.7", "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1&collation=binary")
@@ -299,6 +300,7 @@ func (s TengoIntegrationSuite) TestInstanceLockWaitTimeout(t *testing.T) {
 	var expected int
 	// lock_wait_timeout defaults to a ridiculous 1 year in MySQL. MariaDB lowered
 	// it to a slightly-less-ridiculous 1 day in MariaDB 10.2.
+	// TODOv2: MariaDB below 10.4 will be dropped, so replace with IsMariaDB()
 	if s.d.Flavor().MinMariaDB(10, 2) {
 		expected = 86400
 	} else {
@@ -345,7 +347,7 @@ func (s TengoIntegrationSuite) TestInstanceSetFlavor(t *testing.T) {
 	}
 
 	// Confirm that SetFlavor does not work once flavor hydrated
-	if err := s.d.SetFlavor(ParseFlavor("mariadb:10.2")); err == nil {
+	if err := s.d.SetFlavor(ParseFlavor("mariadb:11.8")); err == nil {
 		t.Error("Expected SetFlavor to return an error, but it was nil")
 	}
 
@@ -715,6 +717,7 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesSkipsViews(t *testing.T) {
 		t.Fatalf("Unable to iterate over result set: %v", err)
 	}
 	var expected int
+	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 	if s.d.Flavor().MinMySQL(8) {
 		expected = 2
 	}

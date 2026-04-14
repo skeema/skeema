@@ -90,7 +90,7 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	}
 
 	// Test docker with specific flavor
-	if opts = getOpts("--workspace=docker --flavor=mysql:5.5"); opts.Flavor.String() != "mysql:5.5" {
+	if opts = getOpts("--workspace=docker --flavor=mysql:8.4"); opts.Flavor.String() != "mysql:8.4" {
 		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
 	}
 

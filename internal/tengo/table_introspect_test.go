@@ -114,6 +114,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Test introspection of default expressions, if flavor supports them
+	// TODOv2: MariaDB below 10.4 will be dropped, so replace with IsMariaDB()
 	if flavor.MinMariaDB(10, 2) || flavor.MinMySQL(8, 0, 13) {
 		table := getTable(t, schema, "testdefaults")
 		// Ensure 3-byte chars in default expression are introspected properly
@@ -130,7 +131,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Test introspection of generated columns, if flavor supports them
-	if flavor.GeneratedColumns() {
+	if flavor.GeneratedColumns() { // TODOv2: this will always be true in supported v2 flavors, remove if statement
 		table := getTable(t, schema, "staff")
 		// Ensure 3-byte chars in generation expression are introspected properly
 		if !strings.Contains(table.CreateStatement, "\u20AC") {
@@ -145,7 +146,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 			t.Errorf("Expected generation expression to contain 4-byte char \U0001F4A9, but it did not. CREATE statement:\n%s", table.CreateStatement)
 		}
 
-		// Test generation expression fix, even if test image isn't MySQL 5.7+
+		// Test generation expression fix, even if test image isn't MySQL
 		for _, col := range table.Columns {
 			if col.GenerationExpr != "" {
 				col.GenerationExpr = "length(_latin1\\'fixme\\')"
@@ -158,7 +159,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Test advanced index functionality in MySQL 8+
-	if flavor.MinMySQL(8) {
+	if flavor.MinMySQL(8) { // TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 		table := getTable(t, schema, "my8idx")
 		if !strings.Contains(table.CreateStatement, "\u20AC") {
 			t.Errorf("Expected functional index expression to contain 3-byte char \u20AC, but it did not. CREATE statement:\n%s", table.CreateStatement)
@@ -185,6 +186,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Test invisible column support in flavors supporting it
+	// TODOv2: MariaDB below 10.4 will be dropped, so replace with IsMariaDB()
 	if flavor.MinMariaDB(10, 3) || flavor.MinMySQL(8, 0, 23) {
 		table := getTable(t, schema, "invistest")
 		for n, col := range table.Columns {
@@ -197,6 +199,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// Include coverage for fulltext parsers if MySQL 5.7+. (Although these are
 	// supported in other flavors too, no alternative parsers ship with them.)
+	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 	if flavor.MinMySQL(5, 7) {
 		table := getTable(t, schema, "ftparser")
 		indexes := table.SecondaryIndexesByName()
@@ -212,6 +215,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Coverage for column compression
+	// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, can simplify conditions
 	if flavor.IsPercona() && flavor.MinMySQL(5, 6, 33) {
 		table := getTable(t, schema, "colcompr")
 		if table.Columns[1].Compression != "COMPRESSED" {
@@ -274,7 +278,7 @@ func TestColumnCompression(t *testing.T) {
 	}
 
 	// Now indirectly test Column.Definition() for MariaDB
-	flavor = ParseFlavor("mariadb:10.3")
+	flavor = ParseFlavor("mariadb:10.11.8") // intentionally a point release which doesn't use M! style comment in this spot
 	table = supportedTableForFlavor(flavor)
 	table.CreateStatement = strings.Replace(table.CreateStatement, "`metadata` text", "`metadata` text /*!100301 COMPRESSED*/", 1)
 	table.Columns[3].Compression = "COMPRESSED"
@@ -286,7 +290,7 @@ func TestColumnCompression(t *testing.T) {
 // TestFixFulltextIndexParsers confirms CREATE TABLE parsing for WITH PARSER
 // clauses works properly.
 func TestFixFulltextIndexParsers(t *testing.T) {
-	for _, flavorString := range []string{"mysql:5.7", "mariadb:11.7"} {
+	for _, flavorString := range []string{"mysql:8.4", "mariadb:11.7"} {
 		flavor := ParseFlavor(flavorString)
 		table := anotherTableForFlavor(flavor)
 		if table.SecondaryIndexes[0].Type != "BTREE" || table.SecondaryIndexes[0].FullTextParser != "" {

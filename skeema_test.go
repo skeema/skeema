@@ -178,6 +178,7 @@ func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, d
 	// CURRENT_TIMESTAMP does not take an arg for specifying sub-second precision
 	// In MySQL 8.0+, partitions are formatted differently; the default character
 	// set is now utf8mb4; the default collation for utf8mb4 has also changed.
+	// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB 10.1-10.3, adjust this
 	if s.d.Flavor().MinMariaDB(10, 2) {
 		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mariadb102", 1)
 	} else if s.d.Flavor().IsMySQL(5, 5) {
@@ -431,20 +432,17 @@ func getOptionFile(t *testing.T, basePath string, baseConfig *mybase.Config) *my
 }
 
 // imageForFlavor returns a Docker image name corresponding to a supplied
-// tengo.Flavor, reusing some logic from the workspace subpackage in order
-// to appropriately handle Percona Server 8+ image selection on arm64.
-// If a corresponding image cannot be selected, the test fails.
+// tengo.Flavor, wrapping logic from the workspace subpackage in order
+// to fatal the test if an appropriate image cannot be returned.
+// The patch number of the supplied flavor is always ignored, since tests are
+// typically run on images specified as "vendor:major.minor".
 func imageForFlavor(t *testing.T, flavor tengo.Flavor) string {
 	t.Helper()
 	arch, err := tengo.DockerEngineArchitecture()
 	if err != nil {
 		t.Fatalf("Unable to determine Docker Engine architecture: %v", err)
 	}
-	// Discard the patch number, unless flavor is Percona 8+ on arm64
-	if !flavor.IsPercona() || !flavor.MinMySQL(8) || arch != "arm64" {
-		flavor = flavor.Family()
-	}
-	image, err := workspace.DockerImageForFlavor(flavor, arch)
+	image, err := workspace.DockerImageForFlavor(flavor.Family(), arch)
 	if err != nil {
 		t.Fatalf("Unable to locate a Docker image corresponding to flavor %s: %v", flavor.Family(), err)
 	}

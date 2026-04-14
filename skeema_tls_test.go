@@ -16,6 +16,7 @@ import (
 func (s SkeemaIntegrationSuite) TestFlavorForcedTLS(t *testing.T) {
 	// For flavors *with* out-of-the-box support, TLS connection already tested by
 	// SkeemaIntegrationSuite.InitHandler, so no need to repeat it
+	// TODOv2: MySQL 5.x will be dropped, adjust conditional and comments above
 	if flavor := s.d.Flavor(); flavor.MinMySQL(5, 7) || flavor.MinMariaDB(11, 4) {
 		t.Skipf("Flavor %s already includes TLS support out-of-the-box", flavor)
 	}

@@ -46,6 +46,7 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 		"connect-options":        "",
 		"environment":            "production",
 	}
+	// TODOv2: MySQL 5.5 support will be dropped
 	if flavor.IsMySQL(5, 5) {
 		delete(configMap, "alter-algorithm")
 		delete(configMap, "alter-lock")
@@ -78,6 +79,7 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 	}
 
 	mods := tengo.StatementModifiers{AllowUnsafe: true}
+	// TODOv2: MySQL 5.5 support will be dropped
 	if !flavor.IsMySQL(5, 5) {
 		mods.LockClause, mods.AlgorithmClause = "none", "inplace"
 	}

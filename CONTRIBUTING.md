@@ -67,9 +67,9 @@ We do not currently have the resources to expand Skeema Community Edition to oth
 * Code coverage is tracked via Coveralls, which will automatically comment on PRs with the coverage delta. Each PR should maintain or improve the current coverage percentage, unless there's a compelling reason otherwise.
 
 * Tests can be run locally as well, no need to wait for CI. By default, `go test` will run Skeema's unit tests, but not integration tests. The integration tests require Docker, and you can use the `SKEEMA_TEST_IMAGES` env var to control which DBMS flavors/versions are tested against. Some examples of local test invocations:
-  * Run unit tests, and integration tests against MySQL 5.7, for the package in the current directory: `SKEEMA_TEST_IMAGES=mysql:5.7 go test -v`
-  * Run unit tests, and integration tests against Percona Server 5.7 and 8.0, for current dir and its subdirs: `SKEEMA_TEST_IMAGES=percona:5.7,percona:8.0 go test -v -p 1 ./...`
-  * Re-run a specific failing integration test, in this example just `SkeemaIntegrationSuite.TestPullHandler` on mariadb 10.2: `SKEEMA_TEST_IMAGES=mariadb:10.2 go test -v -run Integ/Pull`
+  * Run unit tests, and integration tests against MySQL 8.4, for the package in the current directory: `SKEEMA_TEST_IMAGES=mysql:8.4 go test -v`
+  * Run unit tests, and integration tests against Percona Server 8.0 and 8.4, for current dir and its subdirs: `SKEEMA_TEST_IMAGES=percona:8.0,percona:8.4 go test -v -p 1 ./...`
+  * Re-run a specific failing integration test, in this example just `SkeemaIntegrationSuite.TestPullHandler` on MariaDB 11.8: `SKEEMA_TEST_IMAGES=mariadb:11.8 go test -v -run Integ/Pull`
 
 * The first time you run integration tests against a given flavor/version, it may be a bit slow, since the corresponding image will be fetched from DockerHub automatically.
 

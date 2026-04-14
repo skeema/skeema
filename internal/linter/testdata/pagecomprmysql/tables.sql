@@ -1,4 +1,4 @@
-# Tables testing behavior of InnoDB page compression clauses in MySQL 5.7+
+# Tables testing behavior of InnoDB page compression clauses in MySQL
 CREATE TABLE page_comp_zlib (
 	actor_id smallint(5) unsigned NOT NULL,
 	film_name varchar(60) NOT NULL,

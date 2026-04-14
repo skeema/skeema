@@ -1,11 +1,12 @@
 # Table using SRID attributes and spatial indexes
 #
 # Version-gated comments ensure that we use the proper SRID attribute syntax
-# for the flavor: MySQL 8.0+ uses "SRID %d", while MariaDB 10.1+ uses
-# "REF_SYSTEM_ID=%d"
+# for the flavor: MySQL uses "SRID %d", while MariaDB uses "REF_SYSTEM_ID=%d"
 #
 # Similarly we only create spatial indexes on flavors supporting them in
 # InnoDB: MySQL 5.7+ or MariaDB 10.2+.
+# // TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, so
+# the version gate comments around indexes can be removed / de-duplicated
 
 use testing;
 CREATE TABLE has_geo (

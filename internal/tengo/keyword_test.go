@@ -6,33 +6,33 @@ import (
 )
 
 func TestReservedWordMap(t *testing.T) {
-	words57 := ReservedWordMap(ParseFlavor("mysql:5.7"))
 	words80 := ReservedWordMap(ParseFlavor("mysql:8.0"))
-	words80p := ReservedWordMap(ParseFlavor("percona:8.0"))
+	words84 := ReservedWordMap(ParseFlavor("mysql:8.4"))
+	words84p := ReservedWordMap(ParseFlavor("percona:8.4"))
 
-	// Confirm the maps are different; 8.0 map should be larger than 5.7 map
-	if len(words80) <= len(words57) {
-		t.Errorf("Expected the MySQL 8.0 reserved word map (%d entries) to be larger than the 5.7 one (%d entries), but it is not", len(words80), len(words57))
+	// Confirm the maps are different; 8.4 map should be larger than 8.0 map
+	if len(words84) <= len(words80) {
+		t.Errorf("Expected the MySQL 8.4 reserved word map (%d entries) to be larger than the 8.0 one (%d entries), but it is not", len(words84), len(words80))
 	}
 
-	// Percona 8.0 map should be at least the same size as the stock 8.0 map
-	if len(words80p) < len(words80) {
-		t.Errorf("Expected the Percona Server 8.0 reserved word map (%d entries) to be at least as large as the 8.0 one (%d entries), but it is not", len(words80p), len(words80))
+	// Percona 8.4 map should be at least the same size as the stock 8.4 map
+	if len(words84p) < len(words84) {
+		t.Errorf("Expected the Percona Server 8.4 reserved word map (%d entries) to be at least as large as the 8.4 one (%d entries), but it is not", len(words84p), len(words84))
 	}
 
 	// Confirm that two identical calls return a reference to the same underlying
 	// map, whereas two different flavor values do not
-	prevLen80p := len(words80p)
-	words80dupe1 := ReservedWordMap(ParseFlavor("mysql:8.0"))
-	words80["FAKE FOR TEST"] = true
-	words80dupe2 := ReservedWordMap(ParseFlavor("mysql:8.0"))
-	if len(words80) != len(words80dupe1) || len(words80) != len(words80dupe2) {
-		t.Errorf("Expected maps for identical flavor value to reference the same data, but they did not: counts %d, %d, %d", len(words80), len(words80dupe1), len(words80dupe2))
+	prevLen84p := len(words84p)
+	words84dupe1 := ReservedWordMap(ParseFlavor("mysql:8.4"))
+	words84["FAKE FOR TEST"] = true
+	words84dupe2 := ReservedWordMap(ParseFlavor("mysql:8.4"))
+	if len(words84) != len(words84dupe1) || len(words84) != len(words84dupe2) {
+		t.Errorf("Expected maps for identical flavor value to reference the same data, but they did not: counts %d, %d, %d", len(words84), len(words84dupe1), len(words84dupe2))
 	}
-	if len(words80p) != prevLen80p {
+	if len(words84p) != prevLen84p {
 		t.Error("Expected maps for different flavor values to be distinct, but they are not")
 	}
-	delete(words80, "FAKE FOR TEST")
+	delete(words84, "FAKE FOR TEST")
 
 	// Other tests in this file properly cover the underlying contents of the maps,
 	// so that is not duplicated here.
@@ -70,27 +70,21 @@ func TestIsReservedWord(t *testing.T) {
 		flavor   string
 		reserved bool
 	}{
-		{"add", "mysql:5.5", true},
-		{"add", "mariadb:10.2", true},
+		{"add", "mysql:8.0", true},
+		{"add", "mariadb:10.4", true},
 		{"add", "", true},
-		{"generated", "mysql:5.6", false},
-		{"generated", "mysql:5.7", true},
-		{"GENerated", "percona:5.7", true},
+		{"GENerated", "percona:8.0", true},
 		{"GENERATED", "mysql:8.0", true},
-		{"generated", "mariadb:10.1", false},
 		{"generated", "mariadb:10.10", false},
 		{"asdf", "mysql:8.0", false},
 		{"ASDF", "mariadb:10.11", false},
 		{"offset", "percona:8.0", false},
 		{"offset", "mariadb:10.5", false},
 		{"offset", "mariadb:10.6", true},
-		{"master_bind", "mysql:5.5", false},
-		{"master_bind", "mysql:5.6", true},
 		{"master_bind", "mysql:8.3", true},
 		{"master_bind", "mysql:8.4", false},
-		{"master_bind", "mysql:8.8", false},
+		{"master_bind", "mysql:9.3", false},
 		{"master_bind", "mariadb:11.3", false},
-		{"master_ssl_verify_server_cert", "mysql:5.5", true},
 		{"master_ssl_verify_server_cert", "mysql:8.0.37", true},
 		{"master_ssl_verify_server_cert", "mysql:8.3", true},
 		{"master_ssl_verify_server_cert", "mysql:8.4", false},
@@ -142,7 +136,6 @@ func TestIsUnreservedWord(t *testing.T) {
 		{"add", "mysql:8.4", false},
 		{"add", "mariadb:11.3", false},
 		{"add", "", false},
-		{"row_number", "mysql:5.7", false},
 		{"row_number", "mysql:8.0", false},
 		{"row_number", "mariadb:10.6", false},
 		{"row_number", "mariadb:10.7", false},

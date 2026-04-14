@@ -45,6 +45,7 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 
 	// If this flavor supports using mysql.proc to bulk-fetch routines, confirm
 	// the result is identical to using the individual SHOW CREATE queries
+	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 	if !s.d.Flavor().MinMySQL(8) {
 		insp := &introspector{
 			instance: s.d.Instance,
@@ -165,13 +166,13 @@ func TestSchemaDiffRoutines(t *testing.T) {
 	if rd.DiffType() != DiffTypeAlter {
 		t.Fatalf("Incorrect type of diff returned: expected %s, found %s", DiffTypeAlter, rd.DiffType())
 	}
-	mods := StatementModifiers{Flavor: ParseFlavor("mysql:5.7")}
+	mods := StatementModifiers{Flavor: ParseFlavor("mysql:8.4")}
 	if stmt, err := rd.Statement(mods); err != nil || stmt != "ALTER PROCEDURE `"+s1r2.Name+"` SQL SECURITY DEFINER COMMENT 'a comment'" {
 		t.Errorf("Unexpected return from Statement: %s, %v", stmt, err)
 	}
 
 	// Test modification of a non-characteristic field, which is handled by a drop
-	// and re-add in MySQL/Percona, and OR REPLACE in MariaDB.
+	// and re-add in MySQL, vs OR REPLACE in MariaDB.
 	// Since this is a creation-time metadata change, also test statement modifier
 	// affecting whether or not those changes are suppressed.
 	s1r2 = aProc("utf8mb4_general_ci", "")
@@ -193,7 +194,7 @@ func TestSchemaDiffRoutines(t *testing.T) {
 	if rd.To != &s1r2 || rd.ObjectKey().Name != s1r2.Name {
 		t.Error("Pointer in diff does not point to expected value")
 	}
-	mods = StatementModifiers{Flavor: ParseFlavor("mysql:5.7")}
+	mods = StatementModifiers{Flavor: ParseFlavor("mysql:8.4")}
 	for _, od := range sd.ObjectDiffs() {
 		stmt, err := od.Statement(mods)
 		if stmt != "" || err != nil {
@@ -213,7 +214,7 @@ func TestSchemaDiffRoutines(t *testing.T) {
 			t.Errorf("Unexpected return from Statement: %s / %v", stmt, err)
 		}
 	}
-	mods.Flavor = ParseFlavor("mariadb:10.1")
+	mods.Flavor = ParseFlavor("mariadb:11.8")
 	mods.AllowUnsafe = false
 	for n, od := range sd.ObjectDiffs() {
 		stmt, err := od.Statement(mods)

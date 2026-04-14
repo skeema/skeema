@@ -236,6 +236,7 @@ var IntrospectionBadSQLModes = sqlModeFilter{
 
 // NonPortableSQLModes indicates which sql_mode values are not available in all
 // flavors.
+// TODOv2: update comments once MySQL 5.x and MariaDB < 10.4 are dropped
 var NonPortableSQLModes = sqlModeFilter{
 	"NO_AUTO_CREATE_USER": true, // Not present in MySQL 8.0+
 	"NO_FIELD_OPTIONS":    true, // Not present in MySQL 8.0+

@@ -42,6 +42,7 @@ func (fk *ForeignKey) Definition(flavor Flavor) string {
 	// MySQL 8 omits NO ACTION clauses, but includes RESTRICT clauses. In all other
 	// flavors the opposite is true. (Even though NO ACTION and RESTRICT are
 	// completely equivalent...)
+	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 	var hiddenRule, deleteRule, updateRule string
 	if flavor.MinMySQL(8) {
 		hiddenRule = "NO ACTION"

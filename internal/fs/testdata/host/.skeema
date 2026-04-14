@@ -3,4 +3,4 @@ generator=skeema:1.5.0-community
 [production]
 host=127.0.0.1
 port=3306
-flavor=mysql:5.7
+flavor=mysql:8.4

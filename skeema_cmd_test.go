@@ -67,6 +67,7 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	// Using --ssl-mode=required should only work "out of the box" if the flavor
 	// supports automatic self-signed server certs upon initialization
 	expectedCode := CodeFatalError
+	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 	if flavor := s.d.Flavor(); flavor.MinMySQL(5, 7) || flavor.MinMariaDB(11, 4) {
 		expectedCode = CodeSuccess
 	}
@@ -696,6 +697,7 @@ func (s SkeemaIntegrationSuite) TestIndexOrdering(t *testing.T) {
 	// Edit posts.sql to put the new indexes first again, and ensure
 	// push --exact-match actually reorders them.
 	fs.WriteTestFile(t, "mydb/product/posts.sql", contentsIndexesFirst)
+	// TODOv2: MySQL 5.5 will be dropped
 	if s.d.Flavor().IsMySQL(5, 5) {
 		s.handleCommand(t, CodeSuccess, "", "skeema push --exact-match")
 	} else {
@@ -770,7 +772,7 @@ func (s SkeemaIntegrationSuite) TestForeignKeys(t *testing.T) {
 	// ALTER for same table (due to splitting of drop FK + add FK into separate
 	// ALTERs) that both ALTERs are skipped.
 	contents3 := strings.Replace(oldContents, "`body` text,\n", "", 1)
-	contents3 = strings.Replace(contents3, "`body` text DEFAULT NULL,\n", "", 1) // MariaDB 10.2+
+	contents3 = strings.Replace(contents3, "`body` text DEFAULT NULL,\n", "", 1) // MariaDB SHOW CREATE includes DEFAULT NULL
 	if strings.Contains(contents3, "`body`") || !strings.Contains(contents3, "`user_fk`") {
 		t.Fatal("Failed to update contents as expected")
 	}
@@ -1053,6 +1055,7 @@ func (s SkeemaIntegrationSuite) TestDirEdgeCases(t *testing.T) {
 func (s SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 	// MariaDB does not consider STORAGE or COLUMN_FORMAT clauses as valid SQL.
 	// Ditto for MySQL 5.5.
+	// TODOv2: MySQL 5.5 will be dropped
 	if s.d.Flavor().IsMariaDB() {
 		t.Skip("Test not relevant for MariaDB-based image", s.d.Flavor())
 	} else if s.d.Flavor().IsMySQL(5, 5) {
@@ -1305,9 +1308,9 @@ func (s SkeemaIntegrationSuite) TestFlavorConfig(t *testing.T) {
 	inst.ForceFlavor(realFlavor)
 	var newFlavor tengo.Flavor
 	if realFlavor.IsMariaDB() {
-		newFlavor = tengo.ParseFlavor("mysql:5.7")
+		newFlavor = tengo.ParseFlavor("mysql:8.4")
 	} else {
-		newFlavor = tengo.ParseFlavor("mariadb:10.3")
+		newFlavor = tengo.ParseFlavor("mariadb:11.8")
 	}
 	contents = fs.ReadTestFile(t, "mydb/.skeema")
 	if !strings.Contains(contents, realFlavor.Family().String()) {
@@ -1388,6 +1391,7 @@ END`
 	// Create a role and drop/recreate routine1 to use the role as its DEFINER.
 	// Confirm that the diff shows a difference. No need to test dumping (pull)
 	// here because the logic after this does that already.
+	// TODOv2: MySQL 5.x will be dropped, so this if statement will always be true
 	if s.d.Flavor().MinMySQL(8) || s.d.Flavor().IsMariaDB() {
 		s.d.ExecSQL(t, "CREATE ROLE IF NOT EXISTS mytestrole; DROP FUNCTION product.routine1")
 		create = strings.Replace(create, "root@'%'", "mytestrole", 1)
@@ -1498,6 +1502,7 @@ END`
 	// Also confirm that --lax-comments does not suppress these diffs, since other
 	// characteristics besides the comment are also being changed.
 	s.d.ExecSQL(t, "ALTER PROCEDURE product.routine2 SQL SECURITY INVOKER READS SQL DATA COMMENT 'whatever'")
+	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 	if s.d.Flavor().MinMySQL(8) {
 		s.handleCommand(t, CodeFatalError, ".", "skeema diff --lax-comments")
 		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe --lax-comments")

@@ -151,6 +151,7 @@ func (mi ModifyIndex) Clause(mods StatementModifiers) string {
 	// case the latter has been split into a separate AlterIndex.
 	if mi.FromIndex.Name != mi.ToIndex.Name {
 		// RENAME KEY can only be used in MySQL 5.7+ or MariaDB 10.5+
+		// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 		if mods.Flavor.MinMySQL(5, 7) || mods.Flavor.MinMariaDB(10, 5) {
 			return "RENAME KEY " + EscapeIdentifier(mi.FromIndex.Name) + " TO " + EscapeIdentifier(mi.ToIndex.Name)
 		}
@@ -195,6 +196,7 @@ func (ai AlterIndex) Clause(mods StatementModifiers) string {
 	base := "ALTER INDEX " + EscapeIdentifier(ai.Name)
 
 	// Syntax differs between MySQL and MariaDB
+	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 	if mods.Flavor.MinMySQL(8) {
 		if ai.Invisible {
 			return base + " INVISIBLE"

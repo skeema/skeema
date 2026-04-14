@@ -68,6 +68,9 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	}
 
 	// Determine image and container name
+	// TODOv2: Once MySQL 5.x support is dropped, this logic can be simplified a
+	// bit, but must still partially remain to account for lack of ARM with low
+	// point releases of MySQL 8.0 and especially Percona Server 8.0.
 	arch, err := tengo.DockerEngineArchitecture()
 	if err != nil {
 		return nil, err
@@ -297,6 +300,7 @@ func DockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
 		// Percona Server 5.x:
 		// on arm64, no images available
 		// on amd64, use top-level percona:5.x images as-is
+		// TODOv2: no longer will be necessary
 		if flavor.IsMySQL(5) {
 			if arch == "arm64" {
 				return "", fmt.Errorf("%s Docker images for %s are not available", arch, image)
@@ -342,6 +346,7 @@ func DockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
 	// low patch versions.
 	// This chunk intentionally doesn't return early! It is designed to fall
 	// through to the regular MySQL logic below it.
+	// TODOv2: MySQL 5.x will be dropped, simplify this logic
 	if flavor.IsAurora() {
 		if strings.HasPrefix(image, "aurora:5.6.") {
 			image = "mysql:5.6"

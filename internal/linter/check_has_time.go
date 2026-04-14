@@ -18,6 +18,7 @@ func init() {
 func hasTimeChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts *Options) []Note {
 	results := make([]Note, 0)
 	onlyWarning := (opts.RuleSeverity["has-time"] == SeverityWarning)
+	// TODOv2: MySQL 5.x will be dropped, adjust conditional logic accordingly
 	oldTimestampDefaults := !opts.flavor.MinMySQL(8) && !opts.flavor.MinMariaDB(10, 10)
 	var alreadySeenTimestamp bool
 	for _, col := range table.Columns {

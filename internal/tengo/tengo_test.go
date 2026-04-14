@@ -75,6 +75,9 @@ func TestObjectKeyString(t *testing.T) {
 func TestUnitTableFlavors(t *testing.T) {
 	orig := aTable(1)
 
+	// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, rework ALL
+	// test cases in this function!
+
 	table := aTableForFlavor(ParseFlavor("mysql:5.7"), 1)
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 0 {
 		t.Errorf("MySQL 5.7: Expected no diff; instead found %d differences, supported=%t", len(clauses), supported)
@@ -131,10 +134,12 @@ func flavorTestFiles(flavor Flavor) []string {
 
 	if flavor.MinMySQL(8, 0, 13) {
 		result = append(result, "default-expr.sql")
-	} else if flavor.MinMariaDB(10, 2) {
+	} else if flavor.MinMariaDB(10, 2) { // TODOv2: MariaDB below 10.4 will be dropped, so replace with IsMariaDB()
 		result = append(result, "default-expr-maria.sql") // No support for 4-byte chars in the expressions
 	}
 
+	// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, so all
+	// remaining flavors will support generated columns
 	if flavor.GeneratedColumns() {
 		if flavor.IsMariaDB() {
 			result = append(result, "generatedcols-maria.sql") // no support for NOT NULL generated cols or 4-byte chars in generation expressions
@@ -143,28 +148,33 @@ func flavorTestFiles(flavor Flavor) []string {
 		}
 	}
 
-	if flavor.MinMySQL(8) {
+	if flavor.MinMySQL(8) { // TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 		result = append(result, "index-mysql8.sql") // functional indexes, descending indexes, invisible indexes
 	} else if flavor.MinMariaDB(10, 6) {
 		result = append(result, "index-maria106.sql") // ignored indexes
 	}
 
+	// TODOv2: MariaDB below 10.4 will be dropped, so replace with IsMariaDB()
 	if flavor.MinMariaDB(10, 3) || flavor.MinMySQL(8, 0, 23) {
 		result = append(result, "inviscols.sql")
 	}
 
+	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL() and also adjust
+	// comments in the .sql files accordingly
 	if flavor.MinMySQL(5, 7) {
 		// other flavors may support FT parsers but don't ship with any alternatives;
 		// other flavors do not support TABLESPACE clauses in InnoDB tables
 		result = append(result, "ft-parser.sql", "inno-tablespace.sql")
 	}
 
+	// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, can simplify conditions
 	if flavor.IsPercona() && flavor.MinMySQL(5, 6, 33) {
 		result = append(result, "colcompression-percona.sql")
 	} else if flavor.MinMariaDB(10, 3) {
 		result = append(result, "colcompression-maria.sql")
 	}
 
+	// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, can simplify conditions
 	if flavor.MinMySQL(5, 7) {
 		result = append(result, "pagecompression.sql")
 	} else if flavor.MinMariaDB(10, 2) {
@@ -229,6 +239,7 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 		OnUpdate: "CURRENT_TIMESTAMP(2)",
 	}
 	lastUpdateDef := "`last_update` timestamp(2) NOT NULL DEFAULT CURRENT_TIMESTAMP(2) ON UPDATE CURRENT_TIMESTAMP(2)"
+	// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, can simplify next two conditions
 	if flavor.IsMySQL(5, 5) { // No fractional timestamps in 5.5
 		lastUpdateCol.Type = ParseColumnType("timestamp")
 		lastUpdateCol.Default = "CURRENT_TIMESTAMP"
@@ -247,6 +258,7 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 		Default: "'1'",
 	}
 	aliveDef := "`alive` tinyint(1) unsigned NOT NULL DEFAULT '1'"
+	// TODOv2: MariaDB below 10.4 will be dropped, so replace with IsMariaDB()
 	if flavor.MinMariaDB(10, 2) {
 		aliveCol.Default = "1"
 		aliveDef = "`alive` tinyint(1) unsigned NOT NULL DEFAULT 1"
@@ -466,6 +478,7 @@ func supportedTableForFlavor(flavor Flavor) Table {
   ~metadata~ text,
   PRIMARY KEY (~post_id~,~user_id~)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1`, "~", "`", -1)
+	// TODOv2: MariaDB below 10.4 will be dropped, so replace with IsMariaDB()
 	if flavor.MinMariaDB(10, 2) { // allow explicit DEFAULT NULL for blob/text
 		columns[3].Default = "NULL"
 		stmt = strings.Replace(stmt, " text", " text DEFAULT NULL", 1)

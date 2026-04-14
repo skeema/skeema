@@ -589,6 +589,8 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 		sslMode = "false"
 	}
 	if sslMode != "false" {
+		// TODOv2: after dropping MySQL 5.x and Maria 10.1, all supported flavors will
+		// support modern TLS settings, so this logic can be removed
 		// With an older or unknown server version, we need to use a special TLS
 		// config which is compatible with older OpenSSL. For the corresponding
 		// TLS configs and driver registration, see internal/tengo/tlsconfig.go

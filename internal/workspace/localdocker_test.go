@@ -219,6 +219,8 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerConnParams(t *testing.T) {
 // in MySQL 8.0. This test confirms the behavior. It is separate from
 // WorkspaceIntegrationSuite because it is independent of the normal test image
 // logic from the SKEEMA_TEST_IMAGES env var.
+// TODOv2: MySQL 5.x will be dropped, so remove this test as well as the
+// testdata/utf8mb4/ directory
 func TestLocalDockerArm64MySQL5(t *testing.T) {
 	// Despite this test being independent of the normal integration test suite,
 	// we should still skip it if Docker-based testing is not requested
@@ -267,6 +269,8 @@ func TestLocalDockerArm64MySQL5(t *testing.T) {
 	}
 }
 
+// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, so adjust
+// test cases below
 func TestDockerImageForFlavor(t *testing.T) {
 	testcases := []struct {
 		flavor      string

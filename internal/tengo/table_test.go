@@ -738,6 +738,7 @@ func TestTableAlterIndexReorder(t *testing.T) {
 
 	// RENAME KEY related tests need additional statement modifiers, since rename
 	// syntax is only in MySQL 5.7+ and MariaDB 10.5+.
+	// TODOv2: MySQL 5.x will be dropped, revise test cases here accordingly
 	mysql56 := Flavor{VendorMySQL, Version{5, 6}, VariantNone}
 	mysql57 := Flavor{VendorMySQL, Version{5, 7}, VariantNone}
 	maria104 := Flavor{VendorMariaDB, Version{10, 4}, VariantNone}

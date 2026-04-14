@@ -127,6 +127,7 @@ func characterSetsForFlavor(flavor Flavor) map[string]CharacterSet {
 	}
 
 	result := maps.Clone(knownCharSets)
+	// TODOv2: MySQL 5.x will be dropped, update logic accordingly
 	if flavor.IsMySQL(5, 5) {
 		delete(result, "utf16le")
 	}

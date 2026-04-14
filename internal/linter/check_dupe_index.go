@@ -26,6 +26,7 @@ func dupeIndexChecker(table *tengo.Table, createStatement string, _ *tengo.Schem
 		}
 	}
 	var invisibleWord = "INVISIBLE"
+	// TODOv2: MySQL 5.x will be dropped, so replace second clause with IsMySQL()
 	var supportsInvisible = opts.flavor.MinMariaDB(10, 6) || opts.flavor.MinMySQL(8, 0)
 	if opts.flavor.IsMariaDB() {
 		invisibleWord = "IGNORED"
@@ -58,6 +59,7 @@ func dupeIndexChecker(table *tengo.Table, createStatement string, _ *tengo.Schem
 			}
 		}
 		// MySQL 8.0+ query optimizer ignores SPATIAL indexes on cols lacking an SRID
+		// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 		if idx.Type == "SPATIAL" && opts.flavor.MinMySQL(8) {
 			if colsByName == nil { // populate lazily
 				colsByName = table.ColumnsByName()

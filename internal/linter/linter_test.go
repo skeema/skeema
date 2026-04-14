@@ -171,8 +171,8 @@ func (s LinterIntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 		expectedWarningCount int
 	}{
 		{[]string{"8kb"}, s.d.Flavor(), innoTableCount - 1},
-		{[]string{"page", "8kb"}, tengo.ParseFlavor("mysql:5.7"), innoTableCount - 1},
-		{[]string{"page"}, tengo.ParseFlavor("mariadb:10.3"), innoTableCount},
+		{[]string{"page", "8kb"}, tengo.ParseFlavor("mysql:8.4"), innoTableCount - 1},
+		{[]string{"page"}, tengo.ParseFlavor("mariadb:11.8"), innoTableCount},
 		{[]string{"none"}, s.d.Flavor(), 2},
 		{[]string{"none", "4kb"}, s.d.Flavor(), 2},
 		{[]string{"none", "4kb", "page"}, s.d.Flavor(), 2},
@@ -194,6 +194,8 @@ func (s LinterIntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 	// If the Dockerized test instance's Flavor supports page compression, verify
 	// that the regexp used by tableCompressionMode() works properly.
 	// Store a mapping of table name -> expected 2nd return value of tableCompressionMode().
+	// TODOv2: All supported non-Aurora flavors will support page compression, but
+	// this will still need the MySQL-vs-Maria conditional
 	var tableExpectedClause map[string]string
 	if s.d.Flavor().MinMySQL(5, 7) {
 		dir = getDir(t, "testdata/pagecomprmysql")
@@ -347,6 +349,7 @@ func (s LinterIntegrationSuite) TestCheckSchemaStripAnnotationNewlines(t *testin
 // TestCheckSchemaSpatialIndexSRID confirms that the dupe-index checker will
 // flag SPATIAL indexes in MySQL 8 if their column lacks an SRID.
 func (s LinterIntegrationSuite) TestCheckSchemaSpatialIndexSRID(t *testing.T) {
+	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 	if !s.d.Flavor().MinMySQL(8) {
 		t.Skip("Test only relevant for MySQL 8.0+")
 	}

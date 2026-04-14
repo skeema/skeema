@@ -56,7 +56,7 @@ func introspectTables(ctx context.Context, insp *introspector) error {
 			table.ShowCollation = true
 		} else if !collationIsDefault(table.Collation, table.CharSet, flavor) {
 			table.ShowCollation = true
-		} else if table.CharSet == "utf8mb4" && flavor.MinMySQL(8) {
+		} else if table.CharSet == "utf8mb4" && flavor.MinMySQL(8) { // TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 			table.ShowCollation = true
 		}
 		if createOpts.Valid && createOpts.String != "" {
@@ -127,6 +127,7 @@ func fixupTables(schema *Schema, flavor Flavor) {
 		// Create options order is unpredictable with the new MySQL 8 data dictionary
 		// Also need to fix some charset/collation edge cases in SHOW CREATE TABLE
 		// behavior in MySQL 8
+		// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 		if flavor.MinMySQL(8) {
 			fixCreateOptionsOrder(t, flavor)
 			fixShowCharSets(t)
@@ -135,6 +136,7 @@ func fixupTables(schema *Schema, flavor Flavor) {
 		// TABLE to properly obtain any 4-byte chars. Additionally in 8.0 the I_S
 		// representation has incorrect escaping and potentially different charset
 		// in string literal introducers.
+		// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 		if flavor.MinMySQL(5, 7) {
 			fixGenerationExpr(t, flavor)
 		}
@@ -142,6 +144,7 @@ func fixupTables(schema *Schema, flavor Flavor) {
 		// TABLE. (Although it also has new I_S tables, their name differs pre-8.0
 		// vs post-8.0, and cols that aren't using a COMPRESSION_DICTIONARY are not
 		// even present there.)
+		// TODOv2: MySQL 5.x will be dropped, so remove the middle condition
 		if flavor.IsPercona() && flavor.MinMySQL(5, 6, 33) && strings.Contains(t.CreateStatement, "COLUMN_FORMAT COMPRESSED") {
 			fixPerconaColCompression(t)
 		}
@@ -151,6 +154,7 @@ func fixupTables(schema *Schema, flavor Flavor) {
 		}
 		// Fix problems with I_S data for default expressions as well as functional
 		// indexes in MySQL 8+
+		// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 		if flavor.MinMySQL(8) {
 			fixDefaultExpression(t, flavor)
 			fixIndexExpression(t, flavor)
@@ -205,7 +209,7 @@ func introspectColumns(ctx context.Context, insp *introspector) error {
 	flavor := insp.instance.Flavor()
 	stripDisplayWidth := flavor.OmitIntDisplayWidth()
 	var mariaCompressedColMarker string
-	if flavor.MinMariaDB(10, 3) {
+	if flavor.MinMariaDB(10, 3) { // TODOv2: MariaDB below 10.4 will be dropped, so replace with IsMariaDB()
 		mariaCompressedColMarker = " " + flavor.compressedColumnOpenComment() + "COMPRESSED"
 	}
 	query := `
@@ -217,9 +221,10 @@ func introspectColumns(ctx context.Context, insp *introspector) error {
 		WHERE    table_schema = ?
 		ORDER BY table_name, ordinal_position`
 	genExpr, srid := "NULL", "NULL"
-	if flavor.GeneratedColumns() {
+	if flavor.GeneratedColumns() { // TODOv2: all flavors will support this, refactor it out
 		genExpr = "generation_expression"
 	}
+	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 	if flavor.MinMySQL(8) {
 		srid = "srs_id"
 	}
@@ -280,6 +285,7 @@ func introspectColumns(ctx context.Context, insp *introspector) error {
 			// Recent versions of MySQL do allow default *expressions* for these col
 			// types, but 8.0.13-8.0.22 erroneously omit them from I_S, so we need to
 			// catch this situation and parse from SHOW CREATE later.
+			// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, so rework this and fix comment above
 			if !flavor.MinMariaDB(10, 2) && (strings.HasSuffix(col.Type.Base, "blob") || strings.HasSuffix(col.Type.Base, "text")) {
 				allowNullDefault = false
 				if strings.Contains(extra, "DEFAULT_GENERATED") {
@@ -289,7 +295,7 @@ func introspectColumns(ctx context.Context, insp *introspector) error {
 			if allowNullDefault {
 				col.Default = "NULL"
 			}
-		} else if flavor.MinMariaDB(10, 2) {
+		} else if flavor.MinMariaDB(10, 2) { // TODOv2: MariaDB below 10.4 will be dropped, so replace with IsMariaDB() and fix comment below
 			if !col.AutoIncrement && col.GenerationExpr == "" {
 				// MariaDB 10.2+ exposes defaults as expressions / quote-wrapped strings
 				col.Default = colDefault.String
@@ -368,6 +374,7 @@ func introspectIndexes(ctx context.Context, insp *introspector) error {
 		WHERE    table_schema = ?
 		ORDER BY table_name, index_name, seq_in_index`
 	visSelect, exprSelect := "'YES'", "NULL"
+	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 	if flavor := insp.instance.Flavor(); flavor.MinMySQL(8) {
 		// Index expressions in MySQL 8.0.13+; not present in MariaDB
 		if flavor.MinMySQL(8, 0, 13) {
@@ -647,8 +654,8 @@ func fixIndexOrder(t *Table) {
 
 var reForeignKeyLine = regexp.MustCompile("^\\s+CONSTRAINT `((?:[^`]|``)+)` FOREIGN KEY")
 
-// MySQL 5.5 doesn't alphabetize foreign keys; this function fixes the struct
-// to match SHOW CREATE TABLE's order
+// Some flavors simply alphabetize foreign keys, but others do not. For ones
+// that don't, this function fixes the struct to match SHOW CREATE TABLE's order
 func fixForeignKeyOrder(t *Table) {
 	byName := t.foreignKeysByName()
 	t.ForeignKeys = make([]*ForeignKey, len(byName))
@@ -723,12 +730,11 @@ func fixShowCharSets(t *Table) {
 	}
 }
 
-// MySQL 5.7+ supports generated columns, but mangles them in I_S in various
-// ways:
+// MySQL supports generated columns, but mangles them in I_S in various ways:
 //   - 4-byte characters are not returned properly in I_S since it uses utf8mb3
-//   - MySQL 8 incorrectly mangles escaping of single quotes in the I_S value
-//   - MySQL 8 potentially uses different charsets introducers for string literals
-//     in I_S vs SHOW CREATE
+//   - Escaping of single quotes is mangled in the I_S value
+//   - Charset introducers for string literals potentially differ between I_S
+//     and SHOW CREATE
 //
 // This method modifies each generated Column.GenerationExpr to match SHOW
 // CREATE's version.
@@ -786,6 +792,7 @@ func fixPartitioningEdgeCases(t *Table, flavor Flavor) {
 		strings.Contains(t.CreateStatement, " DATA DIRECTORY = ") {
 		for _, p := range t.Partitioning.Partitions {
 			name := p.Name
+			// TODOv2: MariaDB below 10.4 will be dropped, replace with IsMariaDB
 			if flavor.MinMariaDB(10, 2) {
 				name = EscapeIdentifier(name)
 			}

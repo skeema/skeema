@@ -448,6 +448,8 @@ func (fl Flavor) Supported() (supported bool, details string) {
 // GeneratedColumns returns true if the flavor supports generated columns
 // using MySQL's native syntax. (Although MariaDB 10.1 has support for generated
 // columns, its syntax is borrowed from other DBMS, so false is returned.)
+// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, can remove
+// this method and adjust any callsites to assume always available
 func (fl Flavor) GeneratedColumns() bool {
 	return fl.MinMySQL(5, 7) || fl.MinMariaDB(10, 2)
 }
@@ -456,6 +458,7 @@ func (fl Flavor) GeneratedColumns() bool {
 // lexicographically in SHOW CREATE TABLE.
 func (fl Flavor) SortedForeignKeys() bool {
 	// MySQL sorts lexicographically in 5.6 through 8.0.18; MariaDB always does
+	// TODOv2: MySQL 5.x will be dropped, adjust accordingly
 	return !fl.IsMySQL(5, 5) && !fl.MinMySQL(8, 0, 19)
 }
 
@@ -468,6 +471,7 @@ func (fl Flavor) OmitIntDisplayWidth() bool {
 
 // HasCheckConstraints returns true if the flavor supports check constraints
 // and exposes them in information_schema.
+// TODOv2: MariaDB below 10.4 will be dropped, simplify logic accordingly
 func (fl Flavor) HasCheckConstraints() bool {
 	if fl.MinMySQL(8, 0, 16) || fl.MinMariaDB(10, 3, 10) {
 		return true
@@ -480,6 +484,8 @@ func (fl Flavor) HasCheckConstraints() bool {
 // default set of cipher suites in Go 1.22+. If the flavor is not known, this
 // method returns false, with an intended use-case of permissively allowing a
 // TLS connection to a server whose flavor has not been introspected yet.
+// TODOv2: MySQL 5.x and MariaDB 10.1 will be dropped, can remove this method
+// and adjust any callsites to assume always available
 func (fl Flavor) ModernCipherSuites() bool {
 	// Elliptic curve ciphers are usable in:
 	// * MySQL 8.0+, any variant
@@ -493,6 +499,8 @@ func (fl Flavor) ModernCipherSuites() bool {
 // the flavor is not known, this method returns false, with an intended use-
 // case of permissively allowing a TLS connection to a server whose flavor
 // has not been introspected yet.
+// TODOv2: MySQL 5.x will be dropped, can remove this method and adjust any
+// callsites to assume always available
 func (fl Flavor) SupportsTLS12() bool {
 	// TLS 1.2+ is usable in:
 	// * MySQL 5.7.28+, any variant (note that a point release of "0" means "latest" i.e. 5.7.44)
@@ -502,6 +510,7 @@ func (fl Flavor) SupportsTLS12() bool {
 
 // Mapping for when to return true for AlwaysShowCollate: MariaDB releases
 // from Nov 2022 onward. See https://jira.mariadb.org/browse/MDEV-29446
+// TODOv2: MariaDB 10.3 will be dropped, remove that entry
 var mariaAlwaysCollate = newPointReleaseMap(
 	Version{10, 3, 37}, // MariaDB 10.3:  10.3.37+
 	Version{10, 4, 27}, // MariaDB 10.4:  10.4.27+

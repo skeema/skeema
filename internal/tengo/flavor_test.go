@@ -7,6 +7,11 @@ import (
 	"testing"
 )
 
+// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, and many of
+// the test cases in this file should be revised to use modern versions (AFTER
+// removing the capability functions that are no longer needed, which will also
+// entail removing some of these test functions entirely)
+
 func TestParseVendor(t *testing.T) {
 	cases := map[string]Vendor{
 		"mysql":    VendorMySQL,
@@ -513,6 +518,7 @@ func TestFlavorKnown(t *testing.T) {
 	}
 }
 
+// TODOv2: remove this test, all Skeema v2 supported flavors have generated columns
 func TestFlavorGeneratedColumns(t *testing.T) {
 	type testcase struct {
 		receiver string
@@ -613,6 +619,7 @@ func TestFlavorHasCheckConstraints(t *testing.T) {
 	}
 }
 
+// TODOv2: remove this test, all Skeema v2 supported flavors will support modern cipher suites
 func TestFlavorModernCipherSuites(t *testing.T) {
 	cases := map[string]bool{
 		"mysql:5.5":       false,
@@ -634,6 +641,7 @@ func TestFlavorModernCipherSuites(t *testing.T) {
 	}
 }
 
+// TODOv2: remove this test, all Skeema v2 supported flavors will support TLS 1.2
 func TestFlavorSupportsTLS12(t *testing.T) {
 	cases := map[string]bool{
 		"mysql:5.5":       false,

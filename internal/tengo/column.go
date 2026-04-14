@@ -21,7 +21,7 @@ type Column struct {
 	ShowCollation       bool       `json:"showCollation,omitempty"` // Include COLLATE in SHOW CREATE TABLE: logic differs by flavor
 	Compression         string     `json:"compression,omitempty"`   // Only non-empty if using column compression in Percona Server or MariaDB
 	Comment             string     `json:"comment,omitempty"`
-	Invisible           bool       `json:"invisible,omitempty"` // True if an invisible column (MariaDB 10.3+, MySQL 8.0.23+)
+	Invisible           bool       `json:"invisible,omitempty"` // True if an invisible column
 	CheckClause         string     `json:"check,omitempty"`     // Only non-empty for MariaDB inline check constraint clause
 	SpatialReferenceID  uint32     `json:"srid,omitempty"`      // Can be non-zero only for spatial types in MySQL 8+
 	HasSpatialReference bool       `json:"has_srid,omitempty"`  // True if SRID attribute present; disambiguates SRID 0 vs no SRID
@@ -75,13 +75,14 @@ func (c *Column) Definition(flavor Flavor) string {
 	}
 
 	// SRID in MySQL 8.0+
+	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 	if c.HasSpatialReference && flavor.MinMySQL(8) {
 		// Although MariaDB also attribute syntax for this (REF_SYSTEM_ID), it isn't
 		// exposed in SHOW CREATE TABLE, so here we restrict to MySQL only
 		clauses = append(clauses, fmt.Sprintf("/*!80003 SRID %d */", c.SpatialReferenceID))
 	}
 
-	// Invisibility for MariaDB 10.3-11.6 (which places this in a different spot than MySQL or MariaDB 11.7+)
+	// Invisibility for MariaDB 11.6 and below (which places this in a different spot than MySQL or MariaDB 11.7+)
 	if c.Invisible && flavor.IsMariaDB() && !flavor.MinMariaDB(11, 7) {
 		clauses = append(clauses, "INVISIBLE")
 	}

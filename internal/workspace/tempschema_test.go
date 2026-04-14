@@ -122,6 +122,7 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCleanupDrop(t *testing.T) {
 // keys and metadata locking. This is necessary because MySQL 8.0 extends
 // metadata locks across both sides of an FK, which can be problematic with DDL.
 func (s WorkspaceIntegrationSuite) TestTempSchemaCrossDBFK(t *testing.T) {
+	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 	if !s.d.Flavor().MinMySQL(8) {
 		t.Skip("Test only relevant for flavors that extend metadata locks across FK relations")
 	}

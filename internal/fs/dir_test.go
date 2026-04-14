@@ -639,7 +639,7 @@ func TestDirInstanceDefaultParams(t *testing.T) {
 	getFakeDir := func(connectOptions string) *Dir {
 		return &Dir{
 			Path:   "/tmp/dummydir",
-			Config: mybase.SimpleConfig(map[string]string{"connect-options": connectOptions, "ssl-mode": "preferred", "flavor": "mysql:8.0"}),
+			Config: mybase.SimpleConfig(map[string]string{"connect-options": connectOptions, "ssl-mode": "preferred", "flavor": "mysql:8.4"}),
 		}
 	}
 	assertDefaultParams := func(connectOptions, expected string) {
@@ -684,6 +684,7 @@ func TestDirInstanceDefaultParams(t *testing.T) {
 
 	// Test valid ssl-mode values with mix of flavors.
 	// Map key is "ssl-mode flavor", value is expected params section of DSN
+	// TODOv2: old flavors with TLS limitations are being dropped, so this test logic should be modified
 	expectTLS := map[string]string{
 		// These flavors support modern cipher suites and TLS 1.2+
 		"disabled mariadb:10.2": strings.Replace(baseDefaults, "tls=preferred", "tls=false", 1),

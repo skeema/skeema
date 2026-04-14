@@ -59,8 +59,9 @@ func buildReservedWordMap(vendor Vendor, version Version) map[string]bool {
 	rwm := make(map[string]bool, countReservedWordsPerFlavor)
 	wantAllForVendor := (version == Version{})
 
-	// Add all words that are reserved in both MySQL 5.5 and MariaDB 10.1, which
-	// are the oldest flavors that this package supports.
+	// Add all words that are reserved in the oldest supported-by-Skeema versions
+	// of both MySQL and MariaDB. (In flavor.go, see OldestSupportedMySQLVersion
+	// and OldestSupportedMariaDBVersion to reference what those versions are.)
 	for _, word := range commonReservedWords {
 		rwm[word] = true
 	}
@@ -128,6 +129,8 @@ func IsUnreservedWord(word string, flavor Flavor) bool {
 // These reserved words are present in both MySQL 5.5 and MariaDB 10.1, which
 // are the oldest flavors this package supports. This list should not ever
 // change, unless it is found to contain mistakes.
+// TODOv2: rework this list and logic to account for dropping MySQL 5.x and
+// MariaDB 10.1-10.3 in Skeema v2.
 var commonReservedWords = []string{
 	"accessible",
 	"add",

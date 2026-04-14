@@ -577,6 +577,7 @@ func (instance *Instance) introspectionParams() string {
 
 	// In MySQL 8, ensure we get up-to-date values for table sizes as well as next
 	// auto_increment value
+	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 	if flavor.MinMySQL(8) {
 		v.Set("information_schema_stats_expiry", "0")
 	}
@@ -591,6 +592,8 @@ func (instance *Instance) introspectionParams() string {
 	//   collation; we must reparse from SHOW CREATE TABLE
 	// * In MariaDB, SHOW CREATE TABLE does not return 4-byte chars correctly
 	//   regardless of collation
+	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL() after verifying
+	// that the MariaDB bug in last bullet still applies
 	if flavor.MinMySQL(5, 7) {
 		v.Set("collation", "binary")
 	}
@@ -1068,6 +1071,7 @@ func tablesToPartitions(db *sql.DB, schema string, flavor Flavor) (map[string][]
 
 	// MySQL 8's new data dictionary actually includes views in
 	// information_schema.partitions, so remove them explicitly.
+	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 	if checkViews && flavor.MinMySQL(8) {
 		query := `SELECT table_name FROM information_schema.views WHERE table_schema = ?`
 		rows, err := db.Query(query, schema)

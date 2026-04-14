@@ -145,6 +145,8 @@ func TestTableAlterPartitioningOther(t *testing.T) {
 }
 
 func TestTableUnpartitionedCreateStatement(t *testing.T) {
+	// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, re-evaluate
+	// whether multiple flavors still need to be tested here at all
 	var flavors []Flavor
 	for _, s := range []string{"mysql:5.5", "mysql:5.6", "mysql:8.0", "mariadb:10.2"} {
 		flavors = append(flavors, ParseFlavor(s))
@@ -424,6 +426,8 @@ func (s TengoIntegrationSuite) TestAlterPartitioning(t *testing.T) {
 func partitionedTable(flavor Flavor) Table {
 	t := unpartitionedTable(flavor)
 	expression := "customer_id"
+	// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, so this
+	// conditional will always be true
 	if flavor.MinMySQL(8) || flavor.MinMariaDB(10, 2) {
 		expression = EscapeIdentifier(expression)
 	}
@@ -459,6 +463,7 @@ func unpartitionedTable(flavor Flavor) Table {
 			Collation: "latin1_swedish_ci",
 		},
 	}
+	// TODOv2: MariaDB below 10.4 will be dropped, so replace with IsMariaDB()
 	if flavor.MinMariaDB(10, 2) { // only Maria 10.2+ allows blob default literals
 		columns[2].Default = "NULL"
 	}

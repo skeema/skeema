@@ -1,4 +1,4 @@
-# Tables testing behavior of InnoDB page compression clauses in MariaDB 10.2+
+# Tables testing behavior of InnoDB page compression clauses in MariaDB
 CREATE TABLE page_comp_1 (
 	actor_id smallint(5) unsigned NOT NULL,
 	film_name varchar(60) NOT NULL,

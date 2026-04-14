@@ -128,7 +128,7 @@ func TestDockerCLIMissing(t *testing.T) {
 
 	opts := DockerizedInstanceOptions{
 		Name:  "tengo-docker-failure-test",
-		Image: "mysql:5.7",
+		Image: "mysql:8.4",
 	}
 	if _, err := GetDockerizedInstance(opts); err == nil {
 		t.Error("Expected GetDockerizedInstance to return an error, but err was nil")
@@ -141,7 +141,7 @@ func TestDockerCLIMissing(t *testing.T) {
 
 func TestContainerNameForImage(t *testing.T) {
 	testcases := map[string]string{
-		"mysql:5.7":                                                "mysql-5.7",
+		"mysql:8.4":                                                "mysql-8.4",
 		"mariadb:11.0":                                             "mariadb-11.0",
 		"thirdparty/mysql:8.0":                                     "mysql-8.0",
 		"thirdparty/percona:8.0":                                   "percona-8.0",

@@ -1,11 +1,9 @@
 # Tables using generated columns -- split into a separate file due to only
 # being tested/supported in recent versions.
 
-# This file is only used in MariaDB 10.2+; it's separated from the MySQL test
-# due to MariaDB not supporting NOT NULL in generated cols, and not supporting
-# 4-byte characters in generation expressions.
-# Also this package doesn't support MariaDB 10.1's alternative syntax for
-# generated columns, so it is excluded from related tests.
+# This file is only used in MariaDB; it's separated from the MySQL test due to
+# MariaDB not supporting NOT NULL in generated cols, and not supporting 4-byte
+# characters in generation expressions.
 
 use testing;
 

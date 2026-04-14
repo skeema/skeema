@@ -6,6 +6,9 @@ import (
 	"github.com/go-sql-driver/mysql"
 )
 
+// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, so this
+// file and its logic can be removed entirely, and callsites can be refactored.
+
 // NewTLSConfig returns a TLS configuration which accounts for the supplied
 // server name and flavor.
 //
