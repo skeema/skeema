@@ -17,7 +17,7 @@ type Version [3]uint16
 // versions supported by this Skeema release. These intentionally exclude patch
 // release numbers; corresponding logic handles this appropriately.
 var (
-	LatestMySQLVersion   = Version{9, 6}
+	LatestMySQLVersion   = Version{9, 7}
 	LatestMariaDBVersion = Version{12, 2}
 
 	OldestSupportedMySQLVersion   = Version{5, 5}

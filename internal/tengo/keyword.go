@@ -445,7 +445,12 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 
 	"library":  {{Vendor: VendorMySQL, Version: Version{9, 2}}},
 	"external": {{Vendor: VendorMySQL, Version: Version{9, 4}}}, // wrong in I_S.keywords.reserved, see bug 114874
-	"sets":     {{Vendor: VendorMySQL, Version: Version{9, 6}}}, // wrong in I_S.keywords.reserved, see bug 114874
+
+	// This one was reserved only in 9.6.0, and was retroactively considered a bug
+	// as per https://bugs.mysql.com/bug.php?id=119904. Since 9.6 was a rolling
+	// "innovation" release, and those aren't generally used in production, it
+	// doesn't make sense to track it as a normal reserved-then-unreserved word:
+	// "sets":     {{Vendor: VendorMySQL, Version: Version{9, 6}}}, // wrong in I_S.keywords.reserved, see bug 114874
 
 	"current_role":            {mariaDB101},
 	"delete_domain_id":        {mariaDB101}, // actual version unclear from docs, see comment above
