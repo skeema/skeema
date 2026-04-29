@@ -96,7 +96,7 @@ socket=/var/tmp/my.sock`), 0777)
 	}
 }
 
-func TestPasswordOption(t *testing.T) {
+func TestInteractivePasswordCLI(t *testing.T) {
 	assertPassword := func(cfg *mybase.Config, expected string) {
 		t.Helper()
 		if actual := cfg.GetAllowEnvVar("password"); actual != expected {
@@ -106,63 +106,18 @@ func TestPasswordOption(t *testing.T) {
 
 	cmdSuite := mybase.NewCommandSuite("skeematest", "", "")
 	AddGlobalOptions(cmdSuite)
-	cmdSuite.AddSubCommand(mybase.NewCommand("diff", "", "", nil))
-
-	// No MYSQL_PWD env, no password option set on CLI: blank/no password expected
+	cmd := mybase.NewCommand("diff", "", "", nil)
+	cmd.AddArg("environment", "production", false)
+	cmdSuite.AddSubCommand(cmd)
 	os.Unsetenv("MYSQL_PWD")
-	cfg := mybase.ParseFakeCLI(t, cmdSuite, "skeema diff")
-	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
-		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %s", err)
-	}
-	assertPassword(cfg, "")
 
-	// Password set in env but to a blank string: should be same as specifying
-	// nothing at all
-	os.Setenv("MYSQL_PWD", "")
-	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff")
-	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
-		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %s", err)
-	}
-	assertPassword(cfg, "")
-
-	// Password set in env only, to a non-blank string
-	os.Setenv("MYSQL_PWD", "helloworld")
-	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff")
-	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
-		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %s", err)
-	}
-	assertPassword(cfg, "helloworld")
-
-	// Password set on CLI and in env: CLI should win out
-	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --password=heyearth")
-	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
-		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %s", err)
-	}
-	assertPassword(cfg, "heyearth")
-
-	// Password set in file and env: file should win out
-	fakeFileSource := mybase.SimpleSource(map[string]string{
-		"password": "howdyplanet",
-	})
-	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff", fakeFileSource)
-	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
-		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %s", err)
-	}
-	assertPassword(cfg, "howdyplanet")
-
-	// ProcessSpecialGlobalOptions should error with valueless password, since
-	// logic in init() forces test behavior to be same as if STDIN isn't a TTY.
-	// Test bare "password" (no =) on both CLI and config file.
-	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --password")
+	// ProcessSpecialGlobalOptions should error with bare --password (no =value),
+	// since default init() logic makes tests behave as if STDIN is never a TTY.
+	cfg := mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --password")
 	if err := ProcessSpecialGlobalOptions(cfg); err == nil {
 		t.Error("Expected ProcessSpecialGlobalOptions to return an error for non-TTY STDIN, but it did not")
 	}
-	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --password", fakeFileSource)
-	if err := ProcessSpecialGlobalOptions(cfg); err == nil {
-		t.Error("Expected ProcessSpecialGlobalOptions to return an error for non-TTY STDIN, but it did not")
-	}
-	fakeFileSource["password"] = ""
-	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff", fakeFileSource)
+	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --password wrong-space")
 	if err := ProcessSpecialGlobalOptions(cfg); err == nil {
 		t.Error("Expected ProcessSpecialGlobalOptions to return an error for non-TTY STDIN, but it did not")
 	}
@@ -178,64 +133,34 @@ func TestPasswordOption(t *testing.T) {
 		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %v", err)
 	}
 	assertPassword(cfg, "")
-	fakeFileSource["password"] = "''"
-	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff", fakeFileSource)
-	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
-		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %v", err)
-	}
-	assertPassword(cfg, "")
 
-	// Verify password input behavior using mock input source, using both bare
-	// --password as well as bare "password" line in config file
+	// Verify password input behavior using mock input source
 	defer func() {
 		PasswordPromptInput = PasswordInputSource(NoInteractiveInput)
 	}()
 	PasswordPromptInput = NewMockPasswordInput("mock-password-cli")
-	fakeFileSource["password"] = ""
 	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --password")
 	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
 		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %v", err)
 	}
 	assertPassword(cfg, "mock-password-cli")
-	PasswordPromptInput = NewMockPasswordInput("mock-password-file")
-	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff", fakeFileSource)
-	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
-		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %v", err)
-	}
-	assertPassword(cfg, "mock-password-file")
 
 	// Ensure edge case input behavior: if the user enters input beginning with a $
 	// it should not perform env var replacement. If the user enters input
-	// containing a single-quote, it should be unquoted by GetAllowEnvVar.
+	// containing a single-quote, it should be handled right by GetAllowEnvVar.
 	t.Setenv("SUPER_SECRET_ENV_VAR", "uh oh")
 	PasswordPromptInput = NewMockPasswordInput("$SUPER_SECRET_ENV_VAR")
-	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff", fakeFileSource)
+	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff -p")
 	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
 		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %v", err)
 	}
 	assertPassword(cfg, "$SUPER_SECRET_ENV_VAR")
 	PasswordPromptInput = NewMockPasswordInput("lol'lol'lol")
-	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff", fakeFileSource)
+	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --password")
 	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
 		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %v", err)
 	}
 	assertPassword(cfg, "lol'lol'lol")
-
-	// Verify password behavior using alternative env vars in option file, both
-	// set and unset
-	t.Setenv("SOME_RANDO_ENV_VAR", "rando-env-pw")
-	fakeFileSource["password"] = "$SOME_RANDO_ENV_VAR"
-	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff", fakeFileSource)
-	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
-		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %v", err)
-	}
-	assertPassword(cfg, "rando-env-pw")
-	fakeFileSource["password"] = "$SOME_OTHER_ENV_VAR_NOT_SET"
-	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff", fakeFileSource)
-	if err := ProcessSpecialGlobalOptions(cfg); err != nil {
-		t.Errorf("Unexpected error from ProcessSpecialGlobalOptions: %v", err)
-	}
-	assertPassword(cfg, "")
 }
 
 func TestSplitConnectOptions(t *testing.T) {

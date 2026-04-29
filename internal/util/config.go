@@ -147,27 +147,28 @@ func ProcessSpecialGlobalOptions(cfg *mybase.Config) error {
 	// GetRaw, since GetRaw doesn't remove the quotes like Get does. This allows us
 	// to differentiate between "prompt on STDIN" and "intentionally no/blank
 	// password" situations.)
-	// Note this only handles --password on CLI and "password" lines in global
-	// option files. For per-dir .skeema file handling, use fs package's
-	// Dir.Password() method.
-	if cfg.GetRaw("password") == "" {
+	// This only handles --password on CLI: we want to prompt immediately, to make
+	// it more obvious if a user mistakenly put a space between the option and a
+	// value. For option files (global or per-dir .skeema files), password handling
+	// is performed lazily by calls to Dir.Password() in the fs package.
+	if cfg.OnCLI("password") && cfg.GetRaw("password") == "" {
 		val, err := PromptPassword()
 		if err != nil {
-			var more string
-			if cfg.OnCLI("password") && len(cfg.CLI.ArgValues) > 0 {
-				more = "If you are trying to supply a password value directly on the command-line, you must omit the space between the " +
+			var hint string
+			if len(cfg.CLI.ArgValues) > 0 {
+				hint = "If you are trying to supply a password value directly on the command-line, you must omit the space between the " +
 					"option flag and the value. For example, to use a password of \"asdf\", use either --password=asdf or -pasdf without " +
-					"any space before the value. This matches the password-handling behavior of the standard `mysql` client."
+					"any space before the value. This mimics the password-handling behavior of the official `mysql` client."
 			} else {
-				more = "Interactive password prompting requires an input terminal. To supply a password non-interactively, configure the " +
+				hint = "Interactive password prompting requires an input terminal. To supply a password non-interactively, configure the " +
 					"password value in a global option file, or supply it directly on the command-line, or set the $MYSQL_PWD environment variable."
 			}
-			return fmt.Errorf("%w\n%s For more information, see https://www.skeema.io/docs/options/#password", err, more)
+			return fmt.Errorf("%w.\n%s For more information, see https://www.skeema.io/docs/options/#password", err, hint)
 		}
-		// We single-quote-wrap the value (escaping any internal single-quotes) to
-		// prevent a redundant pw prompt on an empty string, and also to prevent
-		// input of the form $SOME_ENV_VAR from performing env var substitution.
-		val = fmt.Sprintf("'%s'", strings.ReplaceAll(val, "'", "\\'"))
+		// We quote-wrap the value to ensure it gets handled as a static value by
+		// Dir.Password(), avoiding redundant prompting if input is blank, or dynamic
+		// interpretation of input that looks like an $ENV_VAR or `shellout`
+		val = "'" + strings.ReplaceAll(val, "'", "\\'") + "'"
 		cfg.SetRuntimeOverride("password", val)
 	}
 

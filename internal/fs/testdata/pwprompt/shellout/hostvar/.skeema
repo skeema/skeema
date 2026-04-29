@@ -1,0 +1,1 @@
+password=`echo pw-for-{HOST}`

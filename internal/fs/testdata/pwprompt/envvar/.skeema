@@ -1,0 +1,3 @@
+host=77.66.55.44
+password=$SOME_RANDO_ENV_VAR
+

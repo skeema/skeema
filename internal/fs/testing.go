@@ -58,3 +58,9 @@ func RemoveTestDirectory(t *testing.T, path string) {
 		t.Fatalf("Unable to remove dir: %s", err)
 	}
 }
+
+// ClearPackagePasswordCache drops the package-level cache of interactive
+// passwords and shellouts. It is intended for use only by tests.
+func ClearPackagePasswordCache(t *testing.T) {
+	dynamicPasswordCache = make(map[string]string)
+}

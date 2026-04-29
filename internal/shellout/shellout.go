@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -295,4 +296,28 @@ func (c *Command) RunCaptureSplit() ([]string, error) {
 		}
 	}
 	return result, err
+}
+
+var (
+	cachedShellouts = make(map[string]string)
+	cacheMutex      sync.Mutex
+)
+
+// RunCaptureOnce behaves like RunCapture, unless an identical command-line has
+// already been run previously to completion without error, in which case it
+// returns the output of the initial invocation without re-running it.
+func (c *Command) RunCaptureOnce() (string, error) {
+	cacheMutex.Lock()
+	output, ok := cachedShellouts[c.command]
+	cacheMutex.Unlock()
+	if ok {
+		return output, nil
+	}
+	output, err := c.RunCapture()
+	if err == nil {
+		cacheMutex.Lock()
+		cachedShellouts[c.command] = output
+		cacheMutex.Unlock()
+	}
+	return output, err
 }

@@ -2,7 +2,6 @@ package fs
 
 import (
 	"errors"
-	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -791,83 +790,120 @@ func TestAncestorPaths(t *testing.T) {
 func TestDirPassword(t *testing.T) {
 	defer func() {
 		util.PasswordPromptInput = util.PasswordInputSource(util.NoInteractiveInput)
-		cachedInteractivePasswords = make(map[string]string)
+		ClearPackagePasswordCache(t)
 	}()
 
-	// If a parent dir .skeema file has a bare "password" line, pw should be
-	// prompted there, but not redundantly for its subdirs, since it gets cached
-	// in the dir's config as a runtime override, at dir parsing time (e.g. getDir)
-	util.PasswordPromptInput = util.NewMockPasswordInput("basedir")
-	dir := getDir(t, "testdata/pwprompt/basedir")
-	util.PasswordPromptInput = util.PasswordInputSource(util.NoInteractiveInput)
-	if pw, err := dir.Password(); pw != "basedir" || err != nil {
-		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
+	getUserHostPairs := func(dir *Dir) []string {
+		hosts, err := dir.Hostnames()
+		if len(hosts) == 0 || err != nil {
+			t.Fatalf("Bad host configuration for dir %s", dir)
+		}
+		user := dir.Config.GetAllowEnvVar("user") // TODO use a new method here
+		userHostPairs := make([]string, len(hosts))
+		for n := range hosts {
+			userHostPairs[n] = user + "@" + hosts[n]
+		}
+		return userHostPairs
 	}
-	util.PasswordPromptInput = util.NewMockPasswordInput("different value to ensure not re-prompted")
-	subdirs, err := dir.Subdirs()
-	if err != nil {
-		t.Fatalf("Unexpected error from Subdirs: %v", err)
-	}
-	for _, subdir := range subdirs {
-		if pw, err := subdir.Password(); pw != "basedir" || err != nil {
-			t.Errorf("Unexpected return values from subdir.Password(): %q, %v", pw, err)
+	assertPassword := func(dir *Dir, expected string) {
+		t.Helper()
+		actual, err := dir.Password(getUserHostPairs(dir)...)
+		if err != nil {
+			t.Errorf("Unexpected error from Password() for dir %s: %v", dir, err)
+		} else if actual != expected {
+			t.Errorf("For dir %s, expected password to be %q, instead found %q", dir, expected, actual)
 		}
 	}
+	assertPasswordError := func(dir *Dir) {
+		t.Helper()
+		if _, err := dir.Password(getUserHostPairs(dir)...); err == nil {
+			t.Errorf("Expected error from Password() for dir %s, but err was nil", dir)
+		}
+	}
+
+	os.Unsetenv("MYSQL_PWD")
+	util.PasswordPromptInput = util.PasswordInputSource(util.NoInteractiveInput)
+
+	// No MYSQL_PWD env, no password option set on CLI: blank/no password expected
+	dir := getDir(t, "testdata/pwprompt/leafdir") // sets host but nothing else
+	assertPassword(dir, "")
+
+	// Password set in env but to a blank string: should be same as specifying
+	// nothing at all
+	os.Setenv("MYSQL_PWD", "")
+	dir = getDir(t, "testdata/pwprompt/leafdir")
+	assertPassword(dir, "")
+
+	// Password set in env only, to a non-blank string
+	os.Setenv("MYSQL_PWD", "helloworld")
+	dir = getDir(t, "testdata/pwprompt/leafdir")
+	assertPassword(dir, "helloworld")
+
+	// Password set on CLI and in env: CLI should win out
+	dir = getDirWithCLI(t, "testdata/pwprompt/leafdir", "--password=heyearth")
+	assertPassword(dir, "heyearth")
+
+	// Password set in file and env: file should win out
+	dir = getDir(t, "testdata/pwprompt/static")
+	assertPassword(dir, "howdyplanet")
+
+	// Setting password to an empty string explicitly should not trigger TTY prompt
+	dir = getDir(t, "testdata/pwprompt/noprompt/a")
+	assertPassword(dir, "")
+	dir = getDir(t, "testdata/pwprompt/noprompt/b")
+	assertPassword(dir, "")
+
+	// Interactive password request via file should fail without a TTY
+	dir = getDir(t, "testdata/pwprompt/basedir/a")
+	assertPasswordError(dir)
+
+	// Verify password input behavior using mock input source, using bare
+	// "password" line in config file
+	util.PasswordPromptInput = util.NewMockPasswordInput("mock-password-file")
+	dir = getDir(t, "testdata/pwprompt/basedir/a")
+	assertPassword(dir, "mock-password-file")
+
+	// Verify password behavior using alternative env vars in option file, both
+	// unset and set
+	dir = getDir(t, "testdata/pwprompt/envvar")
+	assertPassword(dir, "")
+	t.Setenv("SOME_RANDO_ENV_VAR", "rando-env-pw")
+	dir = getDir(t, "testdata/pwprompt/envvar")
+	assertPassword(dir, "rando-env-pw")
+
+	// If a parent dir .skeema file has a bare "password" line, pw should be
+	// prompted for first subdir but not second, due to cache
+	util.PasswordPromptInput = util.NewMockPasswordInput("just-once")
+	ClearPackagePasswordCache(t)
+	dir = getDir(t, "testdata/pwprompt/basedir/a")
+	assertPassword(dir, "just-once")
+	util.PasswordPromptInput = util.NewMockPasswordInput("different value to ensure not re-prompted")
+	assertPassword(dir, "just-once")
+	dir = getDir(t, "testdata/pwprompt/basedir/b")
+	assertPassword(dir, "just-once")
 
 	// Same situation as above, but verify that a blank interactive password won't
-	// re-prompt redundantly for subdirs
+	// re-prompt redundantly
 	util.PasswordPromptInput = util.NewMockPasswordInput("")
-	dir = getDir(t, "testdata/pwprompt/basedir")
+	ClearPackagePasswordCache(t)
+	dir = getDir(t, "testdata/pwprompt/basedir/a")
+	assertPassword(dir, "")
 	util.PasswordPromptInput = util.NewMockPasswordInput("different value to ensure not re-prompted")
-	if pw, err := dir.Password(); pw != "" || err != nil {
-		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
-	}
-	subdirs, err = dir.Subdirs()
-	if err != nil {
-		t.Fatalf("Unexpected error from Subdirs: %v", err)
-	}
-	for _, subdir := range subdirs {
-		if pw, err := subdir.Password(); pw != "" || err != nil {
-			t.Errorf("Unexpected return values from subdir.Password(): %q, %v", pw, err)
-		}
-	}
+	assertPassword(dir, "")
+	dir = getDir(t, "testdata/pwprompt/basedir/b")
+	assertPassword(dir, "")
 
 	// If parent dir doesn't have bare "password" but both subdirs do, they should
-	// each prompt password separately
-	util.PasswordPromptInput = util.NewMockPasswordInput("basedir")
-	dir = getDir(t, "testdata/pwprompt/leafdir")
-	if pw, err := dir.Password(); pw != "" || err != nil {
-		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
-	}
-	var counter int
-	util.PasswordPromptInput = func() (string, error) {
-		val := fmt.Sprintf("leaf-%d", counter)
-		counter++
-		return val, nil
-	}
-	subdirs, err = dir.Subdirs()
-	if err != nil {
-		t.Fatalf("Unexpected error from Subdirs: %v", err)
-	}
-	for n, subdir := range subdirs {
-		if pw, err := subdir.Password(); pw != fmt.Sprintf("leaf-%d", n) || err != nil {
-			t.Errorf("Unexpected return values from subdir.Password(): %q, %v", pw, err)
-		}
-	}
+	// each prompt password separately if they differ in host or user
+	util.PasswordPromptInput = util.NewMockPasswordInput("leaf-a")
+	dir = getDir(t, "testdata/pwprompt/leafdir/a")
+	assertPassword(dir, "leaf-a")
+	util.PasswordPromptInput = util.NewMockPasswordInput("leaf-b")
+	assertPassword(dir, "leaf-a")
+	dir = getDir(t, "testdata/pwprompt/leafdir/b")
+	assertPassword(dir, "leaf-b")
 
-	// If an equals sign is present, but no value or an empty string, this means
-	// empty password (not prompt) for compat with MySQL client behavior
-	util.PasswordPromptInput = util.NewMockPasswordInput("this should not show up")
-	dir = getDir(t, "testdata/pwprompt/noprompt/a")
-	if pw, err := dir.Password(); pw != "" || err != nil {
-		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
-	}
-	dir = getDir(t, "testdata/pwprompt/noprompt/b")
-	if pw, err := dir.Password(); pw != "" || err != nil {
-		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
-	}
-
-	// Now test prompting with hostnames:
+	// Now test prompting with multiple host caching:
 	// The first dir here contains 3 hosts, but a prompt should only occur once.
 	// Set the mock input to return a value once, followed by errors on subsequent
 	// calls.
@@ -876,31 +912,43 @@ func TestDirPassword(t *testing.T) {
 		return "success", nil
 	}
 	dir = getDir(t, "testdata/pwprompt/hosts/a")
-	if pw, err := dir.Password(dir.Config.GetSlice("host", ',', true)...); pw != "success" || err != nil {
-		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
-	}
+	assertPassword(dir, "success")
 
 	// The second dir has only one host, but it's one that also existed in first
 	// dir, so its pw should be cached since it also has same username.
 	dir = getDir(t, "testdata/pwprompt/hosts/b")
-	if pw, err := dir.Password(dir.Config.GetSlice("host", ',', true)...); pw != "success" || err != nil {
-		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
-	}
+	assertPassword(dir, "success")
 
 	// The third dir has a single host that also appeared in first dir, but a
 	// different user name, so pw prompt should error instead of using cache!
 	dir = getDir(t, "testdata/pwprompt/hosts/c")
-	if pw, err := dir.Password(dir.Config.GetSlice("host", ',', true)...); pw != "" || err == nil {
-		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
-	}
+	assertPasswordError(dir)
 
 	// The fourth dir has a single host that did not appear previously, altho
 	// same user name as first two dirs. PW prompt should error instead of using
 	// cache.
 	dir = getDir(t, "testdata/pwprompt/hosts/d")
-	if pw, err := dir.Password(dir.Config.GetSlice("host", ',', true)...); pw != "" || err == nil {
-		t.Errorf("Unexpected return values from dir.Password(): %q, %v", pw, err)
-	}
+	assertPasswordError(dir)
+
+	// Test simple shellouts without any variables; confirm caching
+	dir = getDir(t, "testdata/pwprompt/shellout/good")
+	t.Run("good-shellout", func(t *testing.T) {
+		// the dir's shellout appends to a file in working dir to test caching, so
+		// run this in a subtest in a different dir
+		t.Chdir(t.TempDir())
+		assertPassword(dir, "oneline")
+		assertPassword(dir, "oneline") // confirm repeated calls don't append additional lines to file
+	})
+	dir = getDir(t, "testdata/pwprompt/shellout/bad1")
+	assertPasswordError(dir)
+	dir = getDir(t, "testdata/pwprompt/shellout/bad2")
+	assertPasswordError(dir)
+
+	// Test shellouts that vary based on {HOST} variable
+	dir = getDir(t, "testdata/pwprompt/shellout/hostvar/a")
+	assertPassword(dir, "pw-for-db-a")
+	dir = getDir(t, "testdata/pwprompt/shellout/hostvar/b")
+	assertPassword(dir, "pw-for-db-b")
 }
 
 func getValidConfigWithCLI(t *testing.T, cliOptions string) *mybase.Config {

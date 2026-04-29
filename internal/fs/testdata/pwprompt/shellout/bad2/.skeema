@@ -1,0 +1,2 @@
+host=badshellout2
+password=`echo {BADVARIABLE}`

@@ -41,7 +41,7 @@ func SplitHostOptionalPort(hostaddr string) (string, int, error) {
 	}
 
 	// ipv6 without port, or ipv4 or hostname without port
-	if (hostaddr[0] == '[' && hostaddr[len(hostaddr)-1] == ']') || len(strings.Split(hostaddr, ":")) == 1 {
+	if !strings.ContainsRune(hostaddr, ':') || (hostaddr[0] == '[' && hostaddr[len(hostaddr)-1] == ']') {
 		return hostaddr, 0, nil
 	}
 
@@ -59,7 +59,7 @@ func SplitHostOptionalPort(hostaddr string) (string, int, error) {
 	// ipv6 with port: add the brackets back in -- net.SplitHostPort removes them,
 	// but we still need them to form a valid DSN later
 	if hostaddr[0] == '[' && host[0] != '[' {
-		host = fmt.Sprintf("[%s]", host)
+		host = "[" + host + "]"
 	}
 
 	return host, port, nil

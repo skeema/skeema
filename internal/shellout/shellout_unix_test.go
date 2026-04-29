@@ -112,6 +112,13 @@ func TestRunCaptureSplit(t *testing.T) {
 	}
 }
 
+func TestRunCaptureOnce(t *testing.T) {
+	out1, _ := New(`echo $RANDOM`).RunCaptureOnce()
+	if out2, _ := New(`echo $RANDOM`).RunCaptureOnce(); out2 != out1 {
+		t.Errorf("Unexpectedly received different output from two calls to RunCaptureOnce: %q vs %q", out1, out2)
+	}
+}
+
 func TestWithVariables(t *testing.T) {
 	variables := map[string]string{
 		"HOST":     "ahost",

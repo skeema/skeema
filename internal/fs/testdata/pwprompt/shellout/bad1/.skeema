@@ -1,0 +1,2 @@
+host=badshellout1
+password=`some-invalid-command`
