@@ -103,8 +103,12 @@ func NewDDLStatement(diff tengo.ObjectDiff, mods tengo.StatementModifiers, targe
 		if connOpts, err = util.RealConnectOptions(target.Dir.Config.Get("connect-options")); err != nil {
 			return nil, ConfigError(err.Error())
 		}
-		user := target.Dir.Config.GetAllowEnvVar("user")                       // TODO use a separate method
-		password, _ := target.Dir.Password(user + "@" + ddl.instance.String()) // will use pre-cached value, so error can be ignored
+
+		// Error can be ignored on user/password. Target instantation will have
+		// already exposed any config errors, or cached any successful dynamic value.
+		user, _ := target.Dir.User(ddl.instance.String())
+		password, _ := target.Dir.Password(user + "@" + ddl.instance.String())
+
 		variables := map[string]string{
 			"HOST":        ddl.instance.Host,
 			"PORT":        port,

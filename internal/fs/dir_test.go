@@ -798,7 +798,11 @@ func TestDirPassword(t *testing.T) {
 		if len(hosts) == 0 || err != nil {
 			t.Fatalf("Bad host configuration for dir %s", dir)
 		}
-		user := dir.Config.GetAllowEnvVar("user") // TODO use a new method here
+		// TODO FIXME this isn't passing as host:port correctly
+		user, err := dir.Config.GetAllowEnvVar(hosts[0])
+		if err != nil {
+			t.Fatalf("Bad user configuration for dir %s", dir)
+		}
 		userHostPairs := make([]string, len(hosts))
 		for n := range hosts {
 			userHostPairs[n] = user + "@" + hosts[n]
@@ -949,6 +953,10 @@ func TestDirPassword(t *testing.T) {
 	assertPassword(dir, "pw-for-db-a")
 	dir = getDir(t, "testdata/pwprompt/shellout/hostvar/b")
 	assertPassword(dir, "pw-for-db-b")
+}
+
+func TestDirUser(t *testing.T) {
+	t.Error("TODO test not implemented yet")
 }
 
 func getValidConfigWithCLI(t *testing.T, cliOptions string) *mybase.Config {
