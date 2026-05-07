@@ -1,0 +1,2 @@
+host=badshelloutcmd
+user=`some-invalid-command`

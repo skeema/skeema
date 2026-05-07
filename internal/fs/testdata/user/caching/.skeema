@@ -1,0 +1,3 @@
+# This is designed to test shellout caching behaviors: even though two subdirs
+# inherit this config, the command should only get run once
+user=`echo cached_once >>test_user_append.txt; cat test_user_append.txt`

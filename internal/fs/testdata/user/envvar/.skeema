@@ -1,0 +1,3 @@
+host=envvar
+port=3307
+user=$GOOD_ENV

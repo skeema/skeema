@@ -1,0 +1,2 @@
+host=badshelloutblank
+user=`echo " "`

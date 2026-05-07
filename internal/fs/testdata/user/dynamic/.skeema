@@ -1,0 +1,1 @@
+user=`echo user_{HOST}_{PORT}`

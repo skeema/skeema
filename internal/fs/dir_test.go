@@ -601,7 +601,7 @@ func TestDirInstances(t *testing.T) {
 	assertInstances(map[string]string{"host": "some.db.host:3307", "port": "3307"}, false, "some.db.host:3307")
 	assertInstances(map[string]string{"host": "some.db.host:3307", "port": "3306"}, true) // mismatched port option not ignored if supplied explicitly, even if default
 	assertInstances(map[string]string{"host": "localhost"}, false, "localhost:/tmp/mysql.sock")
-	assertInstances(map[string]string{"host": "localhost", "port": "1234"}, false, "localhost:1234")
+	assertInstances(map[string]string{"host": "localhost", "port": "1234"}, false, "127.0.0.1:1234")
 	assertInstances(map[string]string{"host": "localhost", "socket": "/var/run/mysql.sock"}, false, "localhost:/var/run/mysql.sock")
 	assertInstances(map[string]string{"host": "localhost", "port": "1234", "socket": "/var/lib/mysql/mysql.sock"}, false, "localhost:/var/lib/mysql/mysql.sock")
 
@@ -798,7 +798,10 @@ func TestDirPassword(t *testing.T) {
 		if len(hosts) == 0 || err != nil {
 			t.Fatalf("Bad host configuration for dir %s", dir)
 		}
-		user := dir.Config.GetAllowEnvVar("user") // TODO use a new method here
+		user, err := dir.User(hosts[0])
+		if err != nil {
+			t.Fatalf("Bad user configuration for dir %s", dir)
+		}
 		userHostPairs := make([]string, len(hosts))
 		for n := range hosts {
 			userHostPairs[n] = user + "@" + hosts[n]
@@ -949,6 +952,61 @@ func TestDirPassword(t *testing.T) {
 	assertPassword(dir, "pw-for-db-a")
 	dir = getDir(t, "testdata/pwprompt/shellout/hostvar/b")
 	assertPassword(dir, "pw-for-db-b")
+}
+
+func TestDirUser(t *testing.T) {
+	// Setup required for some of the testdata
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Cannot get working directory: %v", err)
+	}
+	t.Chdir(t.TempDir())            // see testdata/user/caching/.skeema
+	t.Setenv("GOOD_ENV", "envuser") // see testdata/user/envvar/.skeema
+
+	// Keys are subdirs of testdata/user/, values are expected user return
+	cases := map[string]string{
+		"static":                      "staticuser",
+		"envvar":                      "envuser",
+		"cmd":                         "cmduser",
+		filepath.Join("dynamic", "a"): "user_a_3306",
+		filepath.Join("dynamic", "b"): "user_b_3307",
+		filepath.Join("dynamic", "c"): "user_c_3308",
+		filepath.Join("dynamic", "d"): "user_localhost_",
+		filepath.Join("caching", "a"): "cached_once",
+		filepath.Join("caching", "b"): "cached_once",
+	}
+	for subdir, expected := range cases {
+		dir := getDir(t, filepath.Join(wd, "testdata", "user", subdir))
+		hosts, err := dir.Hostnames()
+		if len(hosts) == 0 || err != nil {
+			t.Fatalf("Bad host configuration for dir %s", dir)
+		}
+		actual, err := dir.User(hosts[0])
+		if err != nil {
+			t.Errorf("Unexpected error from User for dir %s: %v", dir, err)
+		} else if actual != expected {
+			t.Errorf("Expected User for dir %s to return %q, instead returned %q", dir, expected, actual)
+		}
+	}
+
+	expectError := []string{
+		"badcmdbin",
+		"badcmdblank",
+		"badcmdvars",
+		"badenv",
+		"badstatic",
+	}
+	for _, subdir := range expectError {
+		dir := getDir(t, filepath.Join(wd, "testdata", "user", subdir))
+		hosts, err := dir.Hostnames()
+		if len(hosts) == 0 || err != nil {
+			t.Fatalf("Bad host configuration for dir %s", dir)
+		}
+		actual, err := dir.User(hosts[0])
+		if err == nil || actual != "" {
+			t.Errorf("Expected error from User for dir %s, instead returned %q,%v", dir, actual, err)
+		}
+	}
 }
 
 func getValidConfigWithCLI(t *testing.T, cliOptions string) *mybase.Config {

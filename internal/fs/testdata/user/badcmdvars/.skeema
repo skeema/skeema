@@ -1,0 +1,2 @@
+host=badshelloutvars
+user=`echo {BADVARIABLE}`

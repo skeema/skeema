@@ -169,11 +169,13 @@ func (dir *Dir) CreateOptionFile(optionFile *mybase.File) (err error) {
 	return nil
 }
 
-// Hostnames returns 0 or more hosts that the directory maps to. This properly
-// handles the host option being set to a comma-separated list of multiple
-// hosts, or the host-wrapper option being used to shell out to an external
-// script to obtain hosts.
+// Hostnames returns 0 or more hosts that the directory maps to. The returned
+// values will be in the format hostname:port or localhost:/path/to/socket as
+// appropriate. This properly handles the host option being set to a comma-
+// separated list of multiple hosts, or the host-wrapper option being used to
+// shell out to an external program to obtain hosts.
 func (dir *Dir) Hostnames() ([]string, error) {
+	var hosts []string
 	if dir.Config.Changed("host-wrapper") {
 		variables := map[string]string{
 			"HOST":        dir.Config.GetAllowEnvVar("host"),
@@ -186,9 +188,36 @@ func (dir *Dir) Hostnames() ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		return shellOut.RunCaptureSplit()
+		hosts, err = shellOut.RunCaptureSplit()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		hosts = dir.Config.GetSliceAllowEnvVar("host", ',', true)
 	}
-	return dir.Config.GetSliceAllowEnvVar("host", ',', true), nil
+	if len(hosts) == 0 {
+		return hosts, nil
+	}
+
+	// Append port or socket to values, if not already present
+	portValue, portWasSupplied := dir.Port()
+	socketValue := dir.Config.GetAllowEnvVar("socket")
+	socketWasSupplied := dir.Config.Supplied("socket")
+	for n := range hosts {
+		if hosts[n] == "localhost" && !socketWasSupplied && portWasSupplied {
+			hosts[n] = "127.0.0.1" // assume user actually wants TCP/IP in this case; port applied below
+		}
+		if hosts[n] == "localhost" {
+			hosts[n] = "localhost:" + socketValue
+		} else if _, splitPort, err := tengo.SplitHostOptionalPort(hosts[n]); err != nil {
+			return nil, err
+		} else if splitPort == 0 { // no :port suffix already inside hosts[n]
+			hosts[n] += ":" + strconv.Itoa(portValue) // use value from port option (typically its default of 3306)
+		} else if portWasSupplied && splitPort != portValue {
+			return nil, ConfigErrorf("Port was supplied as %d inside hostname %s, but as %d in port option", splitPort, hosts[n], portValue)
+		}
+	}
+	return hosts, nil
 }
 
 // Port returns the port number in the directory's configuration (often the
@@ -270,46 +299,18 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 		return nil, nil
 	}
 
-	// Track ports in a separate slice, extracting them from hosts if present, and
-	// ensure they do not conflict with the "port" option if also set explicitly
-	ports := make([]int, len(hosts))
-	portValue, portWasSupplied := dir.Port()
-	socketValue := dir.Config.GetAllowEnvVar("socket")
-	socketWasSupplied := dir.Config.Supplied("socket")
-	for n := range hosts {
-		if hosts[n] == "localhost" && (socketWasSupplied || !portWasSupplied) {
-			continue // intentionally leave ports[n] at 0
-		}
-		splitHost, splitPort, err := tengo.SplitHostOptionalPort(hosts[n])
-		if err != nil {
-			return nil, err
-		} else if splitPort == 0 { // no :port suffix already inside hosts[n]
-			ports[n] = portValue // use value from port option (typically its default of 3306)
-		} else if portWasSupplied && splitPort != portValue {
-			return nil, ConfigErrorf("Port was supplied as %d inside hostname %s, but as %d in port option", splitPort, hosts[n], portValue)
-		} else {
-			hosts[n] = splitHost
-			ports[n] = splitPort
-		}
+	// Do a single lookup of user, password, connect-options
+	user, err := dir.User(hosts[0])
+	if err != nil { // blank env var, or user=`shellout command` returned blank output or nonzero exit code
+		return nil, err
 	}
-
-	// Before looping over hostnames, do a single lookup of user, password,
-	// connect-options
-	user := dir.Config.GetAllowEnvVar("user") // TODO: use a separate method
 	userHostPairs := make([]string, len(hosts))
 	for n := range hosts {
-		// Dir.Password() expects hostnames to match format of Instance.String()
-		var suffix string
-		if ports[n] > 0 {
-			suffix = ":" + strconv.Itoa(ports[n])
-		} else if hosts[n] == "localhost" {
-			suffix = ":" + socketValue
-		}
-		userHostPairs[n] = user + "@" + hosts[n] + suffix
+		userHostPairs[n] = user + "@" + hosts[n]
 	}
 	password, err := dir.Password(userHostPairs...)
-	if err != nil {
-		return nil, err // need interactive password but STDIN isn't a TTY, or nonzero shellout exit code
+	if err != nil { // need interactive password but STDIN isn't a TTY, or shellout nonzero exit code
+		return nil, err
 	}
 	var userAndPass string
 	if password == "" {
@@ -324,12 +325,13 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 
 	// For each hostname, construct a DSN and use it to create an Instance
 	var instances []*tengo.Instance
-	for n, host := range hosts {
+	socketValue := dir.Config.GetAllowEnvVar("socket")
+	for _, host := range hosts {
 		var net, addr string
-		if host == "localhost" && ports[n] == 0 {
+		if strings.HasPrefix(host, "localhost:") {
 			net, addr = "unix", socketValue
 		} else {
-			net, addr = "tcp", host+":"+strconv.Itoa(ports[n])
+			net, addr = "tcp", host
 		}
 		dsn := fmt.Sprintf("%s@%s(%s)/?%s", userAndPass, net, addr, params)
 		instance, err := util.NewInstance("mysql", dsn)
@@ -442,13 +444,11 @@ func (dir *Dir) SchemaNames(instance *tengo.Instance) (names []string, err error
 
 	rawSchemaValue := dir.Config.GetRaw("schema")                  // Does not strip quotes
 	if rawSchemaValue != schemaValue && rawSchemaValue[0] == '`' { // no need to check len: since non-raw value isn't empty, raw value can't be empty
-		user := dir.Config.GetAllowEnvVar("user")                   // TODO use a method
-		password, _ := dir.Password(user + "@" + instance.String()) // will use pre-cached value, so error can be ignored
 		variables := map[string]string{
 			"HOST":        instance.Host,
 			"PORT":        strconv.Itoa(instance.Port),
-			"USER":        user,
-			"PASSWORD":    password,
+			"USER":        instance.User,
+			"PASSWORD":    instance.Password,
 			"ENVIRONMENT": dir.Config.Get("environment"),
 			"DIRNAME":     dir.BaseName(),
 			"DIRPATH":     dir.Path,
@@ -743,8 +743,8 @@ var dynamicPasswordCache = make(map[string]string)
 // An error is returned if a password should be prompted but cannot, for example
 // due to STDIN not being a TTY; or if a shellout command returns nonzero exit.
 func (dir *Dir) Password(userHostPairs ...string) (result string, err error) {
-	rawValue := dir.Config.GetRaw("password")           // Does not strip quotes
-	cleanValue := dir.Config.GetAllowEnvVar("password") // Strips quotes and backticks; handles $ENV vars
+	rawValue := dir.Config.GetRaw("password")           // Does not strip quotes/backticks
+	cleanValue := dir.Config.GetAllowEnvVar("password") // Strips quotes/backticks; handles $ENV vars
 
 	// Handle simple common case first, of a static password or $ENV var.
 	// Important: If pw was supplied with an equals sign but no/blank value, mybase
@@ -781,16 +781,11 @@ func (dir *Dir) Password(userHostPairs ...string) (result string, err error) {
 		if !ok {
 			panic(fmt.Errorf("Dir.Password invalid args: user@host of %q", userHostPairs[0]))
 		}
-		var firstPort string
-		if splitHost, splitPort, err := tengo.SplitHostOptionalPort(firstHost); err != nil && strings.HasPrefix(firstHost, "localhost:") {
-			// Arg was supplied as "localhost:/path/to/socket" due to behavior of
-			// tengo.Instance.String(): strip the socket and leave port as empty string
-			firstHost = "localhost"
-		} else if splitPort > 0 {
-			firstHost = splitHost
-			firstPort = strconv.Itoa(splitPort)
-		} else {
-			firstPort = "3306"
+		// Host supplied as either "host:port" or "localhost:/path/to/socket" (as per
+		// Dir.Hostnames or tengo.Instance.String); don't set port if actually socket
+		firstHost, firstPort, _ := strings.Cut(firstHost, ":")
+		if firstHost == "localhost" {
+			firstPort = ""
 		}
 		variables := map[string]string{
 			"ENVIRONMENT": dir.Config.Get("environment"),
@@ -803,11 +798,11 @@ func (dir *Dir) Password(userHostPairs ...string) (result string, err error) {
 		}
 		command, err := shellout.New(cleanValue).WithVariables(variables)
 		if err != nil {
-			return "", fmt.Errorf("Invalid password shellout configuration: %w", err)
+			return "", ConfigErrorf("Invalid password shellout configuration: %w", err)
 		}
 		result, err = command.RunCaptureOnce() // internally caches based on command-line after variable interpolation
 		if err != nil {
-			return "", fmt.Errorf("Cannot obtain dynamic password: %w", err)
+			return "", ConfigErrorf("Cannot obtain dynamic password: %w", err)
 		}
 		result = strings.TrimSpace(result)
 	} else { // wantPrompt
@@ -825,7 +820,7 @@ func (dir *Dir) Password(userHostPairs ...string) (result string, err error) {
 		}
 		result, err = util.PromptPassword("Enter password%s: ", promptArg)
 		if err != nil {
-			return "", fmt.Errorf("Unable to prompt password%s: %w", promptArg, err)
+			return "", ConfigErrorf("Unable to prompt password%s: %w", promptArg, err)
 		}
 	}
 
@@ -833,6 +828,60 @@ func (dir *Dir) Password(userHostPairs ...string) (result string, err error) {
 		dynamicPasswordCache[key] = result
 	}
 
+	return result, nil
+}
+
+// User returns the configured user name (for DB auth) for this dir, based on
+// either a static value, an env variable value, the STDOUT of an external
+// command shellout, or a cached value from a previous identical shellout
+// command-line.
+//
+// A single "host:port" (or "localhost:/path/to/socket") string must be
+// supplied. This is for shellouts which can optionally use {HOST} and/or
+// {PORT} placeholder vars.
+//
+// An error is returned if a shellout command returns nonzero exit or has no
+// non-whitespace STDOUT text.
+func (dir *Dir) User(host string) (result string, err error) {
+	// Get both the raw value (doesn't strip quotes/backticks) and the clean one
+	rawValue := dir.Config.GetRaw("user")
+	cleanValue := strings.TrimSpace(dir.Config.GetAllowEnvVar("user"))
+
+	// Most common case: raw value is NOT wrapped in backticks, so it's static or
+	// an env var
+	if len(rawValue) < 3 || rawValue[0] != '`' || rawValue[len(rawValue)-1] != '`' {
+		if cleanValue == "" { // typically an empty $ENV_VAR
+			err = ConfigErrorf("User configuration in %s returned blank value", dir.Config.Source("user"))
+		}
+		return cleanValue, err
+	}
+
+	// Arg supplied as either "host:port" or "localhost:/path/to/socket" (as per
+	// Dir.Hostnames or tengo.Instance.String); don't set port if actually socket
+	host, port, _ := strings.Cut(host, ":")
+	if host == "localhost" {
+		port = ""
+	}
+	variables := map[string]string{
+		"ENVIRONMENT": dir.Config.Get("environment"),
+		"DIRNAME":     dir.BaseName(),
+		"DIRPATH":     dir.Path,
+		"SCHEMA":      dir.Config.GetAllowEnvVar("schema"),
+		"HOST":        host,
+		"PORT":        port,
+	}
+	command, err := shellout.New(cleanValue).WithVariables(variables)
+	if err != nil {
+		return "", ConfigErrorf("Invalid user shellout configuration: %w", err)
+	}
+	result, err = command.RunCaptureOnce() // internally caches based on command-line after variable interpolation
+	if err != nil {
+		return "", ConfigErrorf("Cannot obtain dynamic user: %w", err)
+	}
+	result = strings.TrimSpace(result)
+	if result == "" {
+		return "", ConfigErrorf("User configuration in %s returned blank value", dir.Config.Source("user"))
+	}
 	return result, nil
 }
 

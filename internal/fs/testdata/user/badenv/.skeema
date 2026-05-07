@@ -1,0 +1,2 @@
+host=badenv
+user=$SOME_UNSET_ENV_VAR
