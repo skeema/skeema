@@ -82,7 +82,9 @@ func pullWalker(dir *fs.Dir, maxDepth int) error {
 		if instance == nil {
 			log.Errorf("Skipping %s: No host defined for environment %q", dir, dir.Config.Get("environment"))
 			if dir.Config.Changed("host-wrapper") {
-				log.Error("The host-wrapper option controls which hosts this directory maps to, but the executed script returned no hostnames.")
+				log.Error("The host-wrapper option controls which hosts this directory maps to, but the executed command did not output any hostnames.")
+			} else if rawHost := dir.Config.GetRaw("host"); rawHost != "" && rawHost[0] == '`' {
+				log.Error("The host option is set to a backtick-wrapped external command, but that command did not output any hostnames.")
 			} else {
 				log.Errorf("This command requires a hostname to pull from, which can be specified using the host option in a [%s] section of the .skeema file in this directory, or in a parent directory.", dir.Config.Get("environment"))
 			}

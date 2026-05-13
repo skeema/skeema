@@ -172,19 +172,27 @@ func (dir *Dir) CreateOptionFile(optionFile *mybase.File) (err error) {
 // Hostnames returns 0 or more hosts that the directory maps to. The returned
 // values will be in the format hostname:port or localhost:/path/to/socket as
 // appropriate. This properly handles the host option being set to a comma-
-// separated list of multiple hosts, or the host-wrapper option being used to
-// shell out to an external program to obtain hosts.
+// separated list of multiple hosts, or an $ENV_VAR, or an `external-command`,
+// or the host-wrapper option being used to specify an external command.
 func (dir *Dir) Hostnames() ([]string, error) {
 	var hosts []string
-	if dir.Config.Changed("host-wrapper") {
-		variables := map[string]string{
-			"HOST":        dir.Config.GetAllowEnvVar("host"),
-			"ENVIRONMENT": dir.Config.Get("environment"),
-			"DIRNAME":     dir.BaseName(),
-			"DIRPATH":     dir.Path,
-			"SCHEMA":      dir.Config.GetAllowEnvVar("schema"),
-		}
-		shellOut, err := shellout.New(dir.Config.Get("host-wrapper")).WithVariables(variables)
+	var externalCommand string
+	variables := map[string]string{}
+	if wrapper := dir.Config.Get("host-wrapper"); wrapper != "" {
+		externalCommand = wrapper
+		variables["HOST"] = dir.Config.GetAllowEnvVar("host")
+	} else if rawHost := dir.Config.GetRaw("host"); len(rawHost) > 2 && rawHost[0] == '`' && rawHost[len(rawHost)-1] == '`' {
+		externalCommand = dir.Config.Get("host")
+	}
+
+	if externalCommand == "" {
+		hosts = dir.Config.GetSliceAllowEnvVar("host", ',', true)
+	} else {
+		variables["ENVIRONMENT"] = dir.Config.Get("environment")
+		variables["DIRNAME"] = dir.BaseName()
+		variables["DIRPATH"] = dir.Path
+		variables["SCHEMA"] = dir.Config.GetAllowEnvVar("schema")
+		shellOut, err := shellout.New(externalCommand).WithVariables(variables)
 		if err != nil {
 			return nil, err
 		}
@@ -192,29 +200,26 @@ func (dir *Dir) Hostnames() ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		hosts = dir.Config.GetSliceAllowEnvVar("host", ',', true)
-	}
-	if len(hosts) == 0 {
-		return hosts, nil
 	}
 
-	// Append port or socket to values, if not already present
-	portValue, portWasSupplied := dir.Port()
-	socketValue := dir.Config.GetAllowEnvVar("socket")
-	socketWasSupplied := dir.Config.Supplied("socket")
-	for n := range hosts {
-		if hosts[n] == "localhost" && !socketWasSupplied && portWasSupplied {
-			hosts[n] = "127.0.0.1" // assume user actually wants TCP/IP in this case; port applied below
-		}
-		if hosts[n] == "localhost" {
-			hosts[n] = "localhost:" + socketValue
-		} else if _, splitPort, err := tengo.SplitHostOptionalPort(hosts[n]); err != nil {
-			return nil, err
-		} else if splitPort == 0 { // no :port suffix already inside hosts[n]
-			hosts[n] += ":" + strconv.Itoa(portValue) // use value from port option (typically its default of 3306)
-		} else if portWasSupplied && splitPort != portValue {
-			return nil, ConfigErrorf("Port was supplied as %d inside hostname %s, but as %d in port option", splitPort, hosts[n], portValue)
+	if len(hosts) > 0 {
+		// Append port or socket to values, if not already present
+		portValue, portWasSupplied := dir.Port()
+		socketValue := dir.Config.GetAllowEnvVar("socket")
+		socketWasSupplied := dir.Config.Supplied("socket")
+		for n := range hosts {
+			if hosts[n] == "localhost" && !socketWasSupplied && portWasSupplied {
+				hosts[n] = "127.0.0.1" // assume user actually wants TCP/IP in this case; port applied below
+			}
+			if hosts[n] == "localhost" {
+				hosts[n] = "localhost:" + socketValue
+			} else if _, splitPort, err := tengo.SplitHostOptionalPort(hosts[n]); err != nil {
+				return nil, err
+			} else if splitPort == 0 { // no :port suffix already inside hosts[n]
+				hosts[n] += ":" + strconv.Itoa(portValue) // use value from port option (typically its default of 3306)
+			} else if portWasSupplied && splitPort != portValue {
+				return nil, ConfigErrorf("Port was supplied as %d inside hostname %s, but as %d in port option", splitPort, hosts[n], portValue)
+			}
 		}
 	}
 	return hosts, nil

@@ -46,8 +46,9 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	// Specifying an unreachable host should fail with fatal error
 	s.handleCommand(t, CodeFatalError, ".", "skeema init --dir baddb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port-100)
 
-	// host-wrapper with no output should fail
+	// host-wrapper with no output should fail; ditto for host=`...`
 	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir baddb -h xyz --host-wrapper='echo \" \"'")
+	s.handleCommand(t, CodeBadConfig, ".", "skeema init --dir baddb -h '`echo \" \"`'")
 
 	// Test successful init with --user specified on CLI, persisting to .skeema
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema init --dir withuser -h %s -P %d --user root", s.d.Instance.Host, s.d.Instance.Port)

@@ -122,7 +122,9 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 		if onlyInstance == nil && err == nil {
 			log.Warnf("Skipping %s: directory maps to an empty list of database servers", dir)
 			if dir.Config.Changed("host-wrapper") {
-				log.Warnf("The host-wrapper option controls which hosts this directory maps to, but the executed script returned no hostnames.\n")
+				log.Warn("The host-wrapper option controls which hosts this directory maps to, but the executed command did not output any hostnames.\n")
+			} else if rawHost := dir.Config.GetRaw("host"); rawHost != "" && rawHost[0] == '`' {
+				log.Warn("The host option is set to a backtick-wrapped external command, but that command did not output any hostnames.\n")
 			}
 			return nil, 0
 		} else if err != nil {
@@ -141,7 +143,9 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 	} else if len(rawInstances) == 0 {
 		log.Warnf("Skipping %s: directory maps to an empty list of database servers", dir)
 		if dir.Config.Changed("host-wrapper") {
-			log.Warnf("The host-wrapper option controls which hosts this directory maps to, but the executed script returned no hostnames.\n")
+			log.Warn("The host-wrapper option controls which hosts this directory maps to, but the executed command did not output any hostnames.\n")
+		} else if rawHost := dir.Config.GetRaw("host"); rawHost != "" && rawHost[0] == '`' {
+			log.Warn("The host option is set to a backtick-wrapped external command, but that command did not output any hostnames.\n")
 		}
 		return nil, 0
 	}
