@@ -1,9 +1,9 @@
-# filippo.io/edwards25519 v1.1.0
-## explicit; go 1.20
+# filippo.io/edwards25519 v1.2.0
+## explicit; go 1.24.0
 filippo.io/edwards25519
 filippo.io/edwards25519/field
-# github.com/go-sql-driver/mysql v1.9.3
-## explicit; go 1.21.0
+# github.com/go-sql-driver/mysql v1.10.0
+## explicit; go 1.24.0
 github.com/go-sql-driver/mysql
 # github.com/mitchellh/go-wordwrap v1.0.1
 ## explicit; go 1.14
