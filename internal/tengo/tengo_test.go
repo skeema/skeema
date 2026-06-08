@@ -189,6 +189,9 @@ func flavorTestFiles(flavor Flavor) []string {
 		}
 	}
 
+	if flavor.IsMariaDB() { // depending on version, may include inet6, inet4, uuid, xmltype
+		result = append(result, "coltypes-maria.sql")
+	}
 	if flavor.MinMariaDB(10, 8) { // descending indexes, IN/OUT/INOUT func params
 		result = append(result, "maria108.sql")
 	}

@@ -516,8 +516,8 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 		}
 	}
 
-	// Conversions between string types (char, varchar, *text): unsafe if
-	// new size < old size
+	// Conversions between string types (char, varchar, *text; also xmltype in
+	// MariaDB 12.3+): unsafe if new size < old size
 	if oldSize, oldIsString := oldType.StringMaxBytes(mc.OldColumn.CharSet); oldIsString {
 		if newSize, newIsString := newType.StringMaxBytes(mc.NewColumn.CharSet); newIsString {
 			if newSize < oldSize {
@@ -529,8 +529,8 @@ func (mc ModifyColumn) Unsafe(mods StatementModifiers) (unsafe bool, reason stri
 
 	// MariaDB introduces some new convenience types, which have safe conversions
 	// between specific binary and textual types. This func returns true if one
-	// side of the conversion has coltype typ and the other side has one of the
-	// coltypes listed in other.
+	// side of the conversion has coltype base and the other side has one of the
+	// coltypes listed in others.
 	isConversionBetween := func(base string, others ...string) bool {
 		var comp string
 		if oldType.Base == base {

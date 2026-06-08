@@ -130,7 +130,7 @@ func (ct ColumnType) StringMaxBytes(charset string) (maxBytes uint64, ok bool) {
 		return 65535, true
 	case "mediumtext":
 		return 16777215, true
-	case "longtext":
+	case "longtext", "xmltype":
 		return 4294967295, true
 	case "varchar", "char":
 		return uint64(ct.Size) * uint64(characterMaxBytes(charset)), true
