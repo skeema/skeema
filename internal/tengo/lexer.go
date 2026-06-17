@@ -182,6 +182,7 @@ func (lex *Lexer) Scan() (data []byte, typ TokenType, err error) {
 			} else {
 				typ = TokenNumeric
 				sawDecimalPoint = true
+				// note: can still get set back to TokenSymbol below depending on what follows!
 			}
 		} else if !isWord(p[0]) {
 			// note: negative numbers are intentionally emitted as '-' symbol token
@@ -233,6 +234,11 @@ func (lex *Lexer) Scan() (data []byte, typ TokenType, err error) {
 				if (p[n] == 'e' || p[n] == 'E') && !sawE && len(p) > n+1 && (p[n+1] == '-' || (p[n+1] >= '0' && p[n+1] <= '9')) {
 					sawE = true // allow a single e in a specific allowed position of numerics
 					size++      // skip past that next digit or minus sign as well; simplifies handling for numbers in form 123e-4
+				} else if p[0] == '.' && !sawE && lex.largeData.Len() == 0 {
+					// Treat situations like foo.123abc as [foo . 123abc], not [foo .123 abc]
+					// since identifiers can begin with digits
+					lex.reader.Discard(1)
+					return p[0:1], TokenSymbol, nil
 				} else if sawDecimalPoint {
 					break // demical/float numeric token ends upon encountering non-digit, aside from specific 'e'/'E' cases above
 				} else {
