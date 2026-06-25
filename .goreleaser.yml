@@ -1,6 +1,6 @@
 version: 2
 builds:
-  - 
+  - id: linuxbuild
     binary: skeema
     env:
       - CGO_ENABLED=0
@@ -12,18 +12,39 @@ builds:
     targets:
       - linux_amd64
       - linux_arm64
+  - id: macbuild
+    binary: skeema
+    env:
+      - CGO_ENABLED=0
+    mod_timestamp: "{{.CommitTimestamp}}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.CommitDate}}
+    targets:
       - darwin_amd64
       - darwin_arm64
 archives:
-  -
+  - id: default
+    ids:
+      - linuxbuild
+      - macbuild
     name_template: >-
       {{- .ProjectName }}_
       {{- .Version }}_
       {{- if eq .Os "darwin" }}mac{{ else }}{{ .Os }}{{ end }}_
       {{- .Arch }}
-    format_overrides:
-      - goos: darwin
-        formats: ["zip", "tar.gz"]
+    formats:
+      - tar.gz
+  - id: darwin-zip
+    ids:
+      - macbuild
+    name_template: >-
+      {{- .ProjectName }}_
+      {{- .Version }}_mac_
+      {{- .Arch }}
+    formats:
+      - zip
 checksum:
   name_template: '{{ .ProjectName }}_checksums_{{ .Version }}.txt'
 snapshot:
@@ -56,6 +77,8 @@ nfpms:
 brews:
   -
     name: skeema
+    ids:
+      - darwin-zip
     repository:
       owner: skeema
       name: homebrew-tap
