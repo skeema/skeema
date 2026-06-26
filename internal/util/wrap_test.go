@@ -6,11 +6,10 @@ import (
 )
 
 func TestTerminalWidth(t *testing.T) {
-	stdout := int(os.Stdout.Fd())
-	width, err := TerminalWidth(stdout)
+	width, err := TerminalWidth()
 
-	// Expectation: if running in a CI environment, stdout is not a terminal,
-	// so err should be non-nil. Otherwise, stdout may or may not be a terminal;
+	// Expectation: if running in a CI environment, STDERR is not a terminal,
+	// so err should be non-nil. Otherwise, STDERR may or may not be a terminal;
 	// we can only confirm that the two return values are consistent with each
 	// other.
 	ci := os.Getenv("CI")
@@ -19,7 +18,7 @@ func TestTerminalWidth(t *testing.T) {
 			t.Errorf("Expected TerminalWidth to return non-zero and nil err, OR zero and non-nil err; instead found %d,%v", width, err)
 		}
 	} else if err == nil || width > 0 {
-		t.Errorf("In CI environment, expected STDOUT to not be a terminal, but TerminalWidth returned %d,%v", width, err)
+		t.Errorf("In CI environment, expected STDERR to not be a terminal, but TerminalWidth returned %d,%v", width, err)
 	}
 }
 

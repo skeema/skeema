@@ -184,7 +184,7 @@ func ApplyTarget(t *Target, printer Printer) (Result, error) {
 	var solutionMessage string
 	if len(plan.Unsafe) > 0 {
 		onlyTablesMessage := "or --safe-below-size "
-		stderrTerminalWidth, _ := util.TerminalWidth(int(os.Stderr.Fd())) // safe to ignore error; if STDERR not tty, no line-wrapping is used
+		stderrTerminalWidth, _ := util.TerminalWidth() // safe to ignore error; if STDERR not tty, no line-wrapping is used
 		for _, unsafe := range plan.Unsafe {
 			log.Error(unsafe.Reason + " Generated SQL statement:\n# " + util.WrapStringWithPadding(unsafe.Statement, stderrTerminalWidth-29, "# "))
 			if unsafe.Key.Type != tengo.ObjectTypeTable {

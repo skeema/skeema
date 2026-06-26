@@ -7,7 +7,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
@@ -17,8 +16,7 @@ import (
 
 func init() {
 	formatter := &customFormatter{}
-	stderr := int(os.Stderr.Fd())
-	if width, err := util.TerminalWidth(stderr); err == nil {
+	if width, err := util.TerminalWidth(); err == nil {
 		formatter.isTerminal = true
 		if width >= 80 { // only enable word-wrapping if terminal width is at least 80
 			formatter.width = width
