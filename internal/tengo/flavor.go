@@ -265,12 +265,16 @@ func IdentifyFlavor(versionString, versionComment string) (flavor Flavor) {
 		flavor.Vendor = VendorMariaDB
 	} else if strings.Contains(versionComment, "mysql") {
 		flavor.Vendor = VendorMySQL
-	} else if flavor.Version[0] == 5 || flavor.Version[0] == 8 || flavor.Version[0] == 9 {
-		// Assume MySQL if the major version begins with 5, 8, or 9. We cannot make any
-		// other assumptions though since MySQL 10+ is expected to exist in July 2026
-		// (based on current versioning practices), and that starts to overlap with
-		// version numbering for MariaDB.
+	} else if flavor.Version[0] == 5 || flavor.Version[0] == 8 || flavor.Version[0] == 9 || flavor.Version[0] >= 26 {
+		// This fallback logic isn't expected to be triggered due to the manipulation
+		// of versionComment in Instance.hydrateVars, but for sake of robustness, we
+		// assume MySQL if the major version begins with 5, 8, 9, or a YY value
+		// representing 2026 or higher (as MySQL switches to a YY.M versioning scheme
+		// in July 2026). If no further versioning scheme changes occur for MySQL or
+		// MariaDB, this logic is safe until MariaDB hits version 26.0 in August 2039.
 		flavor.Vendor = VendorMySQL
+	} else if flavor.Version[0] >= 10 {
+		flavor.Vendor = VendorMariaDB
 	}
 
 	return flavor

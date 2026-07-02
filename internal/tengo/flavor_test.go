@@ -42,6 +42,8 @@ func TestParseVersion(t *testing.T) {
 		"5.7.9300000000000000000":              {5, 7, 65535}, // uint64 int overflow on patch number
 		"v1.2.3rc1":                            {1, 2, 3},
 		"10.abc123def.12":                      {10, 0, 12},
+		"26.7.0":                               {26, 7, 0},
+		"28.4.12":                              {28, 4, 12},
 	}
 	for input, expected := range cases {
 		actual, _ := ParseVersion(input)
@@ -166,11 +168,13 @@ func TestIdentifyFlavor(t *testing.T) {
 		{"10.2.15-MariaDB-log", "MariaDB Server", "mariadb:10.2.15"},
 		{"10.3.8-MariaDB-log", "Source distribution", "mariadb:10.3.8"},
 		{"10.3.16-MariaDB", "Homebrew", "mariadb:10.3.16"},
-		{"10.3.8-0ubuntu0.18.04.1", "(Ubuntu)", "unknown:10.3.8"}, // due to major version 10 --> ambiguous after July 2026
-		{"5.7.26", "Homebrew", "mysql:5.7.26"},                    // due to major version 5 --> MySQL
-		{"8.0.13", "Homebrew", "mysql:8.0.13"},                    // due to major version 8 --> MySQL
+		{"10.3.8-0ubuntu0.18.04.1", "(Ubuntu)", "mariadb:10.3.8"},
+		{"26.7.1", "", "mysql:26.7.1"},                    // major version >= 26 --> MySQL
+		{"25.3.2", "", "mariadb:25.3.2"},                  // major version between 10 and 25 --> MariaDB
+		{"5.7.26", "Homebrew", "mysql:5.7.26"},            // major version 5 --> MySQL
+		{"8.0.13", "Homebrew", "mysql:8.0.13"},            // major version 8 --> MySQL
+		{"6.0.3", "Source distribution", "unknown:6.0.3"}, // major version 6 --> never used for MySQL nor MariaDB
 		{"webscalesql", "webscalesql", "unknown:0.0"},
-		{"6.0.3", "Source distribution", "unknown:6.0.3"},
 	}
 	for _, tc := range cases {
 		fl := IdentifyFlavor(tc.versionString, tc.versionComment)
