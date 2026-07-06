@@ -78,7 +78,7 @@ brews:
   -
     name: skeema
     ids:
-      - darwin-zip
+      - default
     repository:
       owner: skeema
       name: homebrew-tap
