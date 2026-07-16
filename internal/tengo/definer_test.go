@@ -1,21 +1,24 @@
 package tengo
 
 import (
+	"strings"
 	"testing"
 )
 
 func TestDefinerType(t *testing.T) {
 	cases := map[string]string{
-		"":          "",
-		"someone@%": "DEFINER=`someone`@`%`",
-		"mrdbrole":  "DEFINER=`mrdbrole`",
+		"":                "",
+		"someone@%":       "DEFINER=`someone`@`%`",
+		"me@myhost.com@%": "DEFINER=`me@myhost.com`@`%`", // see issue #262
+		"mrdbrole":        "DEFINER=`mrdbrole`",
+		"mrdbrole@":       "DEFINER=`mrdbrole`",
 	}
 	for input, expected := range cases {
 		definer := Definer(input)
 		if actual := definer.Clause(); actual != expected {
 			t.Errorf("Expected Definer(%q).Clause() to return %q, instead found %q", input, expected, actual)
 		}
-		if str := definer.String(); str != input {
+		if str := definer.String(); str != strings.TrimSuffix(input, "@") {
 			t.Errorf("Expected Definer(%q).String() to return %q, instead found %q", input, input, str)
 		}
 	}

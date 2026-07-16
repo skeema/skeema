@@ -12,6 +12,16 @@ type StoredObject interface {
 	DefinerUser() string
 }
 
+// splitDefiner separates the user and host portions of a DEFINER value. This
+// does NOT strip quotes if they are present.
+func splitDefiner(input string) (user, host string) {
+	// Must use the LAST index because the user portion is allowed to contain @
+	if pos := strings.LastIndexByte(input, '@'); pos > -1 {
+		return input[0:pos], input[pos+1:]
+	}
+	return input, "" // lack of @host indicates a MariaDB role
+}
+
 // Definer represents a stored object definer user. It typically stores a value
 // in the format user@host (unquoted), or a blank string to mean unavailable
 // or not introspected yet.
@@ -23,17 +33,22 @@ type Definer string
 func (d Definer) Clause() string {
 	if d == "" {
 		return ""
-	} else if user, host, ok := strings.Cut(string(d), "@"); ok {
-		return "DEFINER=" + EscapeIdentifier(user) + "@" + EscapeIdentifier(host)
-	} else {
-		return "DEFINER=" + EscapeIdentifier(user) // MariaDB role: always omits @host
 	}
+	user, host := splitDefiner(string(d))
+	if host == "" {
+		// MariaDB role: always omit @host in CREATE statements, despite trailing @
+		// being erroneously present in some (but not all) information_schema tables
+		return "DEFINER=" + EscapeIdentifier(user)
+	}
+	return "DEFINER=" + EscapeIdentifier(user) + "@" + EscapeIdentifier(host)
 }
 
 // String provides syntactic sugar. (Definers are currently just strings, but
 // may be changed to be a struct in the future.)
 func (d Definer) String() string {
-	return string(d)
+	// Trim trailing @ because it is erroneously present for MariaDB roles in
+	// some information_schema tables
+	return strings.TrimSuffix(string(d), "@")
 }
 
 // UserPattern provides a pattern-matching ability for database users (typically
@@ -50,11 +65,12 @@ type UserPattern struct {
 // represents a MariaDB role name, which is only a bare user value.
 func NewUserPattern(input string) *UserPattern {
 	pattern := &UserPattern{}
-	name, host, hasHost := strings.Cut(input, "@")
+	name, host := splitDefiner(input)
 	name = stripAnyQuote(name)
+	host = stripAnyQuote(host)
+
 	pattern.nameMatcher = buildPartMatcher(name)
-	if hasHost {
-		host = stripAnyQuote(host)
+	if host != "" {
 		pattern.str = name + "@" + host
 		pattern.hostMatcher = buildPartMatcher(host)
 	} else {
@@ -66,7 +82,7 @@ func NewUserPattern(input string) *UserPattern {
 }
 
 // Match returns true if p's pattern matches against the supplied input string,
-// which typically should be a definer string from a stored object.
+// which typically should be an unquoted definer string from a stored object.
 func (p *UserPattern) Match(input string) bool {
 	// Special-case: pattern %@% is always permissive, even against MariaDB
 	// role values
@@ -74,8 +90,8 @@ func (p *UserPattern) Match(input string) bool {
 		return true
 	}
 
-	name, host, hasHost := strings.Cut(input, "@")
-	if hasHost == p.isMariaRole {
+	name, host := splitDefiner(input)
+	if (host == "" && !p.isMariaRole) || (host != "" && p.isMariaRole) {
 		return false
 	} else if !p.nameMatcher.match(name) {
 		return false
