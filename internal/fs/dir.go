@@ -306,7 +306,7 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 
 	// Do a single lookup of user, password, connect-options
 	user, err := dir.User(hosts[0])
-	if err != nil { // blank env var, or user=`shellout command` returned blank output or nonzero exit code
+	if err != nil { // invalid rune, blank env var, or user=`shellout command` returned blank output or nonzero exit code
 		return nil, err
 	}
 	userHostPairs := make([]string, len(hosts))
@@ -856,7 +856,11 @@ func (dir *Dir) User(host string) (result string, err error) {
 	// an env var
 	if len(rawValue) < 3 || rawValue[0] != '`' || rawValue[len(rawValue)-1] != '`' {
 		if cleanValue == "" { // typically an empty $ENV_VAR
-			err = ConfigErrorf("User configuration in %s returned blank value", dir.Config.Source("user"))
+			return "", ConfigErrorf("User configuration in %s returned blank value", dir.Config.Source("user"))
+		} else if strings.ContainsRune(cleanValue, ':') {
+			// See https://github.com/go-sql-driver/mysql/issues/1747
+			// TODO consider switching from DSNs to mysql.Config to avoid this
+			return "", ConfigErrorf("Due to a limitation in the database driver, usernames containing colons are not supported")
 		}
 		return cleanValue, err
 	}
@@ -886,6 +890,10 @@ func (dir *Dir) User(host string) (result string, err error) {
 	result = strings.TrimSpace(result)
 	if result == "" {
 		return "", ConfigErrorf("User configuration in %s returned blank value", dir.Config.Source("user"))
+	} else if strings.ContainsRune(result, ':') {
+		// See https://github.com/go-sql-driver/mysql/issues/1747
+		// TODO consider switching from DSNs to mysql.Config to avoid this
+		return "", ConfigErrorf("Due to a limitation in the database driver, usernames containing colons are not supported")
 	}
 	return result, nil
 }

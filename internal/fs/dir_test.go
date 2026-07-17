@@ -1003,8 +1003,10 @@ func TestDirUser(t *testing.T) {
 		"badcmdbin",
 		"badcmdblank",
 		"badcmdvars",
+		"badcmdcolon",
 		"badenv",
 		"badstatic",
+		"badstaticcolon",
 	}
 	for _, subdir := range expectError {
 		dir := getDir(t, filepath.Join(wd, "testdata", "user", subdir))
