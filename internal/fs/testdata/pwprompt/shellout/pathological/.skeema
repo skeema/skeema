@@ -1,0 +1,2 @@
+password=`echo {USER},{HOST},{PORT}`
+user=hello@example.com

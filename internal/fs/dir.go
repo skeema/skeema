@@ -309,11 +309,7 @@ func (dir *Dir) Instances() ([]*tengo.Instance, error) {
 	if err != nil { // invalid rune, blank env var, or user=`shellout command` returned blank output or nonzero exit code
 		return nil, err
 	}
-	userHostPairs := make([]string, len(hosts))
-	for n := range hosts {
-		userHostPairs[n] = user + "@" + hosts[n]
-	}
-	password, err := dir.Password(userHostPairs...)
+	password, err := dir.Password(user, hosts)
 	if err != nil { // need interactive password but STDIN isn't a TTY, or shellout nonzero exit code
 		return nil, err
 	}
@@ -738,16 +734,17 @@ var dynamicPasswordCache = make(map[string]string)
 // repeated prompts/shellouts for the exact user@host, option file, or shellout
 // command-line).
 //
-// One or more "user@host:port" (or "user@localhost:/path/to/socket") strings
-// must be supplied. These are displayed during interactive prompts to clarify
-// which targets the password is for; and in shellouts which can optionally use
-// {USER}, {HOST}, and/or {PORT} placeholder vars. If multiple user/host pairs
-// are supplied, they are all assumed to have the same password and are cached
-// accordingly; only the first entry is used for purposes of shellout variables.
+// A username and one or more "host:port" (or "localhost:/path/to/socket")
+// strings must be supplied. These are displayed during interactive prompts to
+// clarify which targets the password is for; and in shellouts which can
+// optionally use {USER}, {HOST}, and/or {PORT} placeholder vars. If multiple
+// hostnames are supplied, they are all assumed to have the same password and
+// are cached accordingly; only the first entry is used for purposes of shellout
+// variables.
 //
 // An error is returned if a password should be prompted but cannot, for example
 // due to STDIN not being a TTY; or if a shellout command returns nonzero exit.
-func (dir *Dir) Password(userHostPairs ...string) (result string, err error) {
+func (dir *Dir) Password(username string, hostnames []string) (result string, err error) {
 	rawValue := dir.Config.GetRaw("password")           // Does not strip quotes/backticks
 	cleanValue := dir.Config.GetAllowEnvVar("password") // Strips quotes/backticks; handles $ENV vars
 
@@ -763,11 +760,13 @@ func (dir *Dir) Password(userHostPairs ...string) (result string, err error) {
 	}
 
 	// Implement caching as described in method doc comment
-	if len(userHostPairs) == 0 {
-		panic(fmt.Errorf("Dir.Password invalid args: no user@host pairs supplied, cannot obtain dynamic password"))
+	if len(hostnames) == 0 {
+		panic(fmt.Errorf("Dir.Password invalid args: no hostnames supplied, cannot obtain dynamic password"))
 	}
-	cacheKeys := make([]string, len(userHostPairs), len(userHostPairs)+1)
-	copy(cacheKeys, userHostPairs)
+	cacheKeys := make([]string, len(hostnames), len(hostnames)+1)
+	for n := range hostnames {
+		cacheKeys[n] = username + "@" + hostnames[n]
+	}
 	if wantPrompt {
 		// For interactive prompts, avoid re-prompting based on the same option file.
 		// (For shellouts, we instead cache based on the final command-line after
@@ -782,22 +781,21 @@ func (dir *Dir) Password(userHostPairs ...string) (result string, err error) {
 	}
 
 	if wantShellout {
-		firstUser, firstHost, ok := strings.Cut(userHostPairs[0], "@")
-		if !ok {
-			panic(fmt.Errorf("Dir.Password invalid args: user@host of %q", userHostPairs[0]))
-		}
 		// Host supplied as either "host:port" or "localhost:/path/to/socket" (as per
 		// Dir.Hostnames or tengo.Instance.String); don't set port if actually socket
-		firstHost, firstPort, _ := strings.Cut(firstHost, ":")
-		if firstHost == "localhost" {
-			firstPort = ""
+		firstHost := hostnames[0]
+		var firstPort string
+		if strings.HasPrefix(firstHost, "localhost:") {
+			firstHost = "localhost"
+		} else if pos := strings.LastIndexByte(firstHost, ':'); pos > -1 {
+			firstHost, firstPort = firstHost[0:pos], firstHost[pos+1:]
 		}
 		variables := map[string]string{
 			"ENVIRONMENT": dir.Config.Get("environment"),
 			"DIRNAME":     dir.BaseName(),
 			"DIRPATH":     dir.Path,
 			"SCHEMA":      dir.Config.GetAllowEnvVar("schema"),
-			"USER":        firstUser,
+			"USER":        username,
 			"HOST":        firstHost,
 			"PORT":        firstPort,
 		}
@@ -815,12 +813,12 @@ func (dir *Dir) Password(userHostPairs ...string) (result string, err error) {
 		// have the prompt include at least one of the user@host strings
 		var promptArg string
 		if dir.Config.Source("password") == dir.Config.Source("host") {
-			if len(userHostPairs) == 1 {
-				promptArg = " for " + userHostPairs[0]
-			} else if len(userHostPairs) == 2 {
-				promptArg = " for " + userHostPairs[0] + " and " + userHostPairs[1]
+			if len(hostnames) == 1 {
+				promptArg = " for " + cacheKeys[0]
+			} else if len(hostnames) == 2 {
+				promptArg = " for " + cacheKeys[0] + " and " + cacheKeys[1]
 			} else {
-				promptArg = fmt.Sprintf(" for %s and %d other servers", userHostPairs[0], len(userHostPairs)-1)
+				promptArg = fmt.Sprintf(" for %s and %d other servers", cacheKeys[0], len(hostnames)-1)
 			}
 		}
 		result, err = util.PromptPassword("Enter password%s: ", promptArg)

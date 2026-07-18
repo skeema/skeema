@@ -803,24 +803,21 @@ func TestDirPassword(t *testing.T) {
 		ClearPackagePasswordCache(t)
 	}()
 
-	getUserHostPairs := func(dir *Dir) []string {
-		hosts, err := dir.Hostnames()
+	getUserHosts := func(dir *Dir) (user string, hosts []string) {
+		var err error
+		hosts, err = dir.Hostnames()
 		if len(hosts) == 0 || err != nil {
 			t.Fatalf("Bad host configuration for dir %s", dir)
 		}
-		user, err := dir.User(hosts[0])
+		user, err = dir.User(hosts[0])
 		if err != nil {
 			t.Fatalf("Bad user configuration for dir %s", dir)
 		}
-		userHostPairs := make([]string, len(hosts))
-		for n := range hosts {
-			userHostPairs[n] = user + "@" + hosts[n]
-		}
-		return userHostPairs
+		return user, hosts
 	}
 	assertPassword := func(dir *Dir, expected string) {
 		t.Helper()
-		actual, err := dir.Password(getUserHostPairs(dir)...)
+		actual, err := dir.Password(getUserHosts(dir))
 		if err != nil {
 			t.Errorf("Unexpected error from Password() for dir %s: %v", dir, err)
 		} else if actual != expected {
@@ -829,7 +826,7 @@ func TestDirPassword(t *testing.T) {
 	}
 	assertPasswordError := func(dir *Dir) {
 		t.Helper()
-		if _, err := dir.Password(getUserHostPairs(dir)...); err == nil {
+		if _, err := dir.Password(getUserHosts(dir)); err == nil {
 			t.Errorf("Expected error from Password() for dir %s, but err was nil", dir)
 		}
 	}
@@ -962,6 +959,13 @@ func TestDirPassword(t *testing.T) {
 	assertPassword(dir, "pw-for-db-a")
 	dir = getDir(t, "testdata/pwprompt/shellout/hostvar/b")
 	assertPassword(dir, "pw-for-db-b")
+
+	// Test shellouts that confirm {HOST}, {PORT}, and {USER} still work properly
+	// in edge cases
+	dir = getDir(t, "testdata/pwprompt/shellout/pathological/a")
+	assertPassword(dir, "hello@example.com,localhost,")
+	dir = getDir(t, "testdata/pwprompt/shellout/pathological/b")
+	assertPassword(dir, "hello@example.com,[2001:0db8:85a3:0000:0000:8a2e:0370:7334],3307")
 }
 
 func TestDirUser(t *testing.T) {
