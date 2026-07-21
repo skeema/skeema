@@ -72,14 +72,17 @@ func TestParseStatementsInFileFail(t *testing.T) {
 	if err := os.WriteFile(filePath, []byte(contents), 0777); err != nil {
 		t.Fatalf("Unable to write %s: %v", filePath, err)
 	}
+	lastBacktickPos := strings.LastIndexByte(contents, '`')
+	expectLine := strings.Count(contents[0:lastBacktickPos], "\n") + 1
+	expectCol := lastBacktickPos - strings.LastIndexByte(contents[0:lastBacktickPos], '\n')
 	if _, err := ParseStatementsInFile(filePath); err == nil {
 		t.Error("Expected to get an error about unterminated quote, but err was nil")
 	} else if msg := err.Error(); !strings.Contains(msg, "openbacktick.sql") {
 		t.Errorf("Expected error message to include file path, but it did not: %s", msg)
 	} else if mse, ok := err.(*MalformedSQLError); !ok {
 		t.Errorf("Expected error to be a *MalformedSQLError, instead type is %T", err)
-	} else if mse.lineNumber != 59 || mse.colNumber != 19 {
-		t.Errorf("Unexpected line/col numbers in error: expected line 59, column 19; instead found line %d, column %d", mse.lineNumber, mse.colNumber)
+	} else if mse.lineNumber != expectLine || mse.colNumber != expectCol {
+		t.Errorf("Unexpected line/col numbers in error: expected line %d, column %d; instead found line %d, column %d", expectLine, expectCol, mse.lineNumber, mse.colNumber)
 	}
 
 	contents = strings.Replace(origContents, "use /*wtf*/`analytics`", "use /*wtf`analytics", 1)
@@ -259,10 +262,13 @@ func expectedStatements(filePath string) []*Statement {
 		{File: filePath, LineNo: 49, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: ObjectTypeTable, ObjectName: "tbl2", ObjectQualifier: "uhoh", Text: "CREATE TABLE uhoh.tbl2 (id int unsigned not null primary key);\n", Delimiter: ";", nameClause: "uhoh.tbl2"},
 		{File: filePath, LineNo: 50, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: ObjectTypeTable, ObjectName: "tbl3", ObjectQualifier: "uhoh", Text: "CREATE TABLE /*lol*/ uhoh  .  `tbl3` (id int unsigned not null primary key);\n", Delimiter: ";", nameClause: "uhoh  .  `tbl3`"},
 		{File: filePath, LineNo: 51, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: ObjectTypeFunc, ObjectName: "funcdefquote3", ObjectQualifier: "foo", Text: "create definer=foo@'localhost' /*lol*/ FUNCTION foo.funcdefquote3() RETURNS int RETURN 42;\n", Delimiter: ";", nameClause: "foo.funcdefquote3"},
-		{File: filePath, LineNo: 52, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n", Delimiter: ";"},
-		{File: filePath, LineNo: 53, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "use /*wtf*/`analytics`;", Delimiter: ";"},
-		{File: filePath, LineNo: 53, CharNo: 24, DefaultDatabase: "analytics", Type: StatementTypeCreate, ObjectType: ObjectTypeTable, ObjectName: "comments", Text: "CREATE TABLE  if  NOT    eXiStS     `comments` (\n  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,\n  `post_id` bigint(20) unsigned NOT NULL,\n  `user_id` bigint(20) unsigned NOT NULL,\n  `created_at` datetime DEFAULT NULL,\n  `body` text,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n", Delimiter: ";", nameClause: "`comments`"},
-		{File: filePath, LineNo: 61, CharNo: 1, DefaultDatabase: "analytics", Type: StatementTypeCreate, ObjectType: ObjectTypeTable, ObjectName: "subscriptions", Text: "CREATE TABLE subscriptions (id int unsigned not null primary key)", Delimiter: ";", nameClause: "subscriptions"},
+		{File: filePath, LineNo: 52, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: ObjectTypeFunc, ObjectName: "nodefinerhost", Text: "create definer=foo@ /*lol*/ FUNCTION nodefinerhost() RETURNS int RETURN 42;\n", Delimiter: ";", nameClause: "nodefinerhost"},
+		{File: filePath, LineNo: 53, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: ObjectTypeFunc, ObjectName: "unquoteddefinerhost1", Text: "create definer=foo@1.2.3.4 FUNCTION unquoteddefinerhost1() RETURNS int RETURN 42;\n", Delimiter: ";", nameClause: "unquoteddefinerhost1"},
+		{File: filePath, LineNo: 54, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCreate, ObjectType: ObjectTypeFunc, ObjectName: "unquoteddefinerhost2", Text: "create definer=foo@..wtf$thisisactually_legal. FUNCTION unquoteddefinerhost2() RETURNS int RETURN 42;\n", Delimiter: ";", nameClause: "unquoteddefinerhost2"},
+		{File: filePath, LineNo: 55, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeNoop, Text: "\n", Delimiter: ";"},
+		{File: filePath, LineNo: 56, CharNo: 1, DefaultDatabase: "product", Type: StatementTypeCommand, Text: "use /*wtf*/`analytics`;", Delimiter: ";"},
+		{File: filePath, LineNo: 56, CharNo: 24, DefaultDatabase: "analytics", Type: StatementTypeCreate, ObjectType: ObjectTypeTable, ObjectName: "comments", Text: "CREATE TABLE  if  NOT    eXiStS     `comments` (\n  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,\n  `post_id` bigint(20) unsigned NOT NULL,\n  `user_id` bigint(20) unsigned NOT NULL,\n  `created_at` datetime DEFAULT NULL,\n  `body` text,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n", Delimiter: ";", nameClause: "`comments`"},
+		{File: filePath, LineNo: 64, CharNo: 1, DefaultDatabase: "analytics", Type: StatementTypeCreate, ObjectType: ObjectTypeTable, ObjectName: "subscriptions", Text: "CREATE TABLE subscriptions (id int unsigned not null primary key)", Delimiter: ";", nameClause: "subscriptions"},
 	}
 }
 

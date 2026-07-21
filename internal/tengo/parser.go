@@ -722,16 +722,19 @@ func processCreateWithDefiner(p *parser, tokens []Token) (*Statement, error) {
 		return processUntilDelimiter(p, tokens) // cannot parse, unexpected tokens
 	}
 
-	// Consume the tokens with the definer value. Typical format is user @ host,
-	// but can also be CURRENT_USER with or without parens, or even a role name
-	// (which always omits @ host in MariaDB, and optionally omits it in MySQL).
+	// Consume the tokens with the definer value. Typical format is [user @host],
+	// i.e. server permits whitespace/comments between the user and @ but not
+	// between @ and host; this is why we lex @host / @'host' / @`host` as single
+	// token.
+	// Or it can be CURRENT_USER with or without parens, or even a role name
+	// (which always omits @host in MariaDB, and optionally omits it in MySQL).
 	if matched, tokens = p.matchNextSequence(tokens, "CURRENT_USER", "CURRENT_USER ( )", "CURRENT_ROLE", "CURRENT_ROLE ( )"); matched == nil {
-		if len(tokens) >= 4 && tokens[1].typ == TokenSymbol && tokens[1].val == "@" {
-			tokens = tokens[3:]
+		if len(tokens) >= 3 && tokens[1].val[0] == '@' {
+			tokens = tokens[2:] // skip past 2 tokens: [user @host]
 		} else if tokens[0].typ == TokenWord || tokens[0].typ == TokenString || tokens[0].typ == TokenIdent {
-			tokens = tokens[1:]
+			tokens = tokens[1:] // skip past 1 token: [rolename]
 		} else {
-			return processUntilDelimiter(p, tokens) // cannot parse, expected to find either user @ host, or role name
+			return processUntilDelimiter(p, tokens) // cannot parse, expected to find either user @host, or role name
 		}
 	}
 

@@ -4,6 +4,8 @@ CREATE DEFINER =;
 CREATE DEFINER = `somerole`;
 CREATE DEFINER 'meep'@'moop' PROCEDURE `foo` SELECT 'skipped equals sign in definer';
 CREATE DEFINER = 2 procedure foo select 'invalid definer name';
+CREATE DEFINER = foo @ '%' PROCEDURE bad_definer_spacing SELECT 1;
+CREATE DEFINER = foo@% PROCEDURE bad_definer_unquoted SELECT 1;
 CREATE or RECOMBOBULATE FUNCTION funccuruserparens() RETURNS int RETURN 42;
 CREATE OR REPLACE;
 CREATE definer=root@localhost PROCFUNC `whoops` select 'procfunc is not a valid type of routine';

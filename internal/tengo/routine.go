@@ -502,8 +502,19 @@ func (r *Routine) introspectShowCreate(ctx context.Context, insp *introspector) 
 		r.ReturnDataType = r.CreateStatement[retStart:retEnd]
 	}
 
-	// Attempt to replace r.Body with one that doesn't have character conversion problems
-	if header := r.head(insp.instance.Flavor()); strings.HasPrefix(r.CreateStatement, header) {
+	// Populate r.Body by extracting it from SHOW CREATE, rather than obtaining
+	// from information_schema which has character conversion problems. This is
+	// tricky in one edge case: DEFINERs with empty host in information_schema
+	// may or may not be a role name, and these show up differently in MariaDB's
+	// SHOW CREATE.
+	// TODOv2 switch to using lexer/parser for this; it's more robust (but will
+	// require a fair bit of new code...)
+	header := r.head(insp.instance.Flavor())
+	if strings.Contains(r.CreateStatement, "@``") && !strings.Contains(header, "@``") {
+		definerClause := r.Definer.Clause()
+		header = strings.Replace(header, definerClause, definerClause+"@``", 1)
+	}
+	if strings.HasPrefix(r.CreateStatement, header) {
 		r.Body = r.CreateStatement[len(header):]
 		return nil
 	}

@@ -170,9 +170,14 @@ func (lex *Lexer) Scan() (data []byte, typ TokenType, err error) {
 	}
 
 	var sawDecimalPoint, sawE bool // used in building numerics
+	var isUnquotedHost bool        // used in building unquoted hostname portion of user/definer
 	var size int
 	if p[0] < utf8.RuneSelf { // single-byte rune
 		if p[0] == '\'' || p[0] == '"' || p[0] == '`' {
+			return lex.scanString(p)
+		} else if p[0] == '@' && len(p) > 1 && (p[1] == '\'' || p[1] == '"' || p[1] == '`') {
+			// Treat @'host' / @`host` portion of user/definer as single token, as no
+			// whitespace or comment is permitted by server in between them
 			return lex.scanString(p)
 		} else if p[0] >= '0' && p[0] <= '9' {
 			typ = TokenNumeric
@@ -184,6 +189,12 @@ func (lex *Lexer) Scan() (data []byte, typ TokenType, err error) {
 				sawDecimalPoint = true
 				// note: can still get set back to TokenSymbol below depending on what follows!
 			}
+		} else if p[0] == '@' && len(p) > 1 && (isWord(p[1]) || p[1] == '.') {
+			// Treat @host (unquoted) portion of user/definer as single token, as no
+			// whitespace or comment is permitted by server between them; an unquoted
+			// host can contain any word characters and/or dots in any order
+			typ = TokenWord
+			isUnquotedHost = true
 		} else if !isWord(p[0]) {
 			// note: negative numbers are intentionally emitted as '-' symbol token
 			// followed by a separate positive numeric token. Parser can re-combine if
@@ -222,27 +233,30 @@ func (lex *Lexer) Scan() (data []byte, typ TokenType, err error) {
 		if p[n] < utf8.RuneSelf { // single-byte rune
 			size = 1
 			if isSpace(p[n]) {
-				break
+				break // previous token ended
+			} else if p[n] == '.' && isUnquotedHost {
+				// Intentionally blank case: unquoted hosts can actually contain . in any
+				// position, any number of times
 			} else if p[n] == '.' { // decimal point only part of the token if permitted in this position of a numeric token
 				if typ != TokenNumeric || sawDecimalPoint || sawE || len(p) == n+1 || p[n+1] < '0' || p[n+1] > '9' {
 					break
 				}
 				sawDecimalPoint = true
 			} else if !isWord(p[n]) {
-				break
-			} else if typ == TokenNumeric && (p[n] < '0' || p[n] > '9') {
+				break // previous token ended
+			} else if typ == TokenNumeric && (p[n] < '0' || p[n] > '9') { // encountered non-digit while scanning a numeric
 				if (p[n] == 'e' || p[n] == 'E') && !sawE && len(p) > n+1 && (p[n+1] == '-' || (p[n+1] >= '0' && p[n+1] <= '9')) {
 					sawE = true // allow a single e in a specific allowed position of numerics
 					size++      // skip past that next digit or minus sign as well; simplifies handling for numbers in form 123e-4
 				} else if p[0] == '.' && !sawE && lex.largeData.Len() == 0 {
-					// Treat situations like foo.123abc as [foo . 123abc], not [foo .123 abc]
+					// Treat situations like foo.123abc as ["foo" "." "123abc"], not ["foo" ".123" "abc"]
 					// since identifiers can begin with digits
 					lex.reader.Discard(1)
 					return p[0:1], TokenSymbol, nil
 				} else if sawDecimalPoint {
 					break // demical/float numeric token ends upon encountering non-digit, aside from specific 'e'/'E' cases above
 				} else {
-					typ = TokenWord // otherwise it was actually a word (unquoted identifier which happened to contain digits)
+					typ = TokenWord // otherwise it was actually a word (unquoted identifier which happened to begin with digits)
 				}
 			}
 		} else if r, size = utf8.DecodeRune(p[n:]); size > 3 || unicode.IsSpace(r) {
@@ -251,7 +265,7 @@ func (lex *Lexer) Scan() (data []byte, typ TokenType, err error) {
 			if sawDecimalPoint {
 				break // decimal/float numeric token ends upon encountering 2-3 byte rune
 			}
-			typ = TokenWord // otherwise consider it a word (unquoted identifier which happened to contain digits)
+			typ = TokenWord // otherwise consider it a word (unquoted identifier which happened to begin with digits)
 		}
 		if lex.delimTricky && bytes.HasPrefix(p[n:], lex.delimBytes) {
 			break
@@ -385,8 +399,18 @@ func (lex *Lexer) scanFiller(p []byte) (data []byte, typ TokenType, err error) {
 // scanString scans a quote-wrapped string wrapped in single-quotes, double-
 // quotes, or backticks. The token will be considered TokenIdent in the case of
 // backticks, otherwise TokenString.
+// The opening quote may optionally be preceded by an @ symbol, indicating the
+// string is a quoted hostname of a user/definer; this is parsed as a single
+// token to align with MySQL/MariaDB's handling, which does not permit a space
+// or comment between the @ and the string. It does not affect the emitted type.
 func (lex *Lexer) scanString(p []byte) (data []byte, typ TokenType, err error) {
 	c := p[0]
+	n := 1        // start right after the opening quote
+	if c == '@' { // scanning host part of a user/definer: move past @
+		// Note: we don't guard against len(p)==1 here because caller already checks
+		c = p[1]
+		n++
+	}
 	if c == '`' {
 		typ = TokenIdent
 	} else {
@@ -394,7 +418,6 @@ func (lex *Lexer) scanString(p []byte) (data []byte, typ TokenType, err error) {
 	}
 
 	var done, skipNext, keepLast bool
-	n := 1 // start right after the opening quote
 	for !done && n < len(p) {
 		if skipNext { // previous byte escaped this one
 			skipNext = false
