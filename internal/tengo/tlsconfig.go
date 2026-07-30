@@ -70,11 +70,11 @@ func NewTLSConfig(serverName string, flavor Flavor) *tls.Config {
 func init() {
 	// Configuration that allows connection to MySQL 5.7 and MariaDB 10.1:
 	// these can use TLS 1.2 but need the extra RSA cipher suites
-	oldCipherFlavor := Flavor{Vendor: VendorMySQL, Version: Version{5, 7}}
+	oldCipherFlavor := Flavor{Vendor: VendorMySQL, Version: Version{5, 7, AnyPatch}}
 	mysql.RegisterTLSConfig("oldciphers", NewTLSConfig("", oldCipherFlavor))
 
 	// Configuration that allows connection to MySQL 5.5-5.6: these typically
 	// need TLS 1.0, as well as the RSA cipher suites
-	oldTLSFlavor := Flavor{Vendor: VendorMySQL, Version: Version{5, 6}}
+	oldTLSFlavor := Flavor{Vendor: VendorMySQL, Version: Version{5, 6, AnyPatch}}
 	mysql.RegisterTLSConfig("oldtls", NewTLSConfig("", oldTLSFlavor))
 }

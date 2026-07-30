@@ -2,6 +2,7 @@ package tengo
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"unicode"
@@ -9,39 +10,64 @@ import (
 
 ///// Version //////////////////////////////////////////////////////////////////
 
-// Version represents a (Major, Minor, Patch) version number tuple.
-type Version [3]uint16
+// Version represents a (Major, Minor, Patch) version number tuple. This is an
+// array (rather than a slice) to permit use in map keys.
+type Version [3]int16
 
-// Variables representing the latest major.minor releases of MySQL and MariaDB
-// at the time of this Skeema release, and likewise for the oldest major.minor
-// versions supported by this Skeema release. These intentionally exclude patch
-// release numbers; corresponding logic handles this appropriately.
+// AnyPatch is sometimes used in the last element of Version to represent lack
+// of a specific patch number. This solves the problem of x.y.0 now being a
+// "normal" release starting with MySQL 8.1.0, whereas previously GA releases
+// never used a 0 patch. When comparing versions, AnyPatch is treated as 0,
+// i.e. it is less than or equal to any "real" patch for the same major.minor.
+const AnyPatch = -1
+
+// MaxPatch is similar to AnyPatch, except it always compares *higher*
+// than any "real" patch number for the same major.minor. This is useful when
+// checking if an instance's Version is *below* some major.minor comparison
+// value where the specific patch isn't relevant.
+const MaxPatch = math.MaxInt16
+
+// Variables representing version thresholds: the latest releases of MySQL and
+// MariaDB at the time of this Skeema release; oldest versions supported by this
+// Skeema release (which may or may not be deprecated); and deprecation
+// threshold for this Skeema release. Patch values are specified in ways that
+// make sense for the direction-of-comparison in how these are used.
 var (
-	LatestMySQLVersion   = Version{9, 7}
-	LatestMariaDBVersion = Version{12, 3}
+	LatestMySQLVersion   = Version{9, 7, MaxPatch}
+	LatestMariaDBVersion = Version{12, 3, MaxPatch}
 
-	OldestSupportedMySQLVersion   = Version{5, 5}
-	OldestSupportedMariaDBVersion = Version{10, 1}
+	OldestSupportedMySQLVersion   = Version{5, 5, AnyPatch}
+	OldestSupportedMariaDBVersion = Version{10, 1, AnyPatch}
+
+	OldestNonDeprecatedMySQLVersion   = Version{8, 0, AnyPatch}
+	OldestNonDeprecatedMariaDBVersion = Version{10, 4, AnyPatch}
 )
 
 // Major returns the major component of the version number.
-func (ver Version) Major() uint16 { return ver[0] }
+func (ver Version) Major() int16 { return ver[0] }
 
 // Minor returns the minor component of the version number.
-func (ver Version) Minor() uint16 { return ver[1] }
+func (ver Version) Minor() int16 { return ver[1] }
 
 // Patch returns the patch component of the version number, also known as the
 // point release number.
-func (ver Version) Patch() uint16 { return ver[2] }
+func (ver Version) Patch() int16 { return ver[2] }
 
-// String returns a major.minor.patch string. The patch is always included,
-// even if 0.
+// String returns a major.minor.patch string. The patch is omitted if it is
+// AnyPatch or LatestPatch.
 func (ver Version) String() string {
+	if ver[2] <= AnyPatch || ver[2] == MaxPatch {
+		return fmt.Sprintf("%d.%d", ver[0], ver[1])
+	}
 	return fmt.Sprintf("%d.%d.%d", ver[0], ver[1], ver[2])
 }
 
 func (ver Version) pack() uint64 {
-	return (uint64(ver[0]) << 32) + (uint64(ver[1]) << 16) + uint64(ver[2])
+	var patch uint64
+	if ver[2] > 0 {
+		patch = uint64(ver[2])
+	}
+	return (uint64(ver[0]) << 32) + (uint64(ver[1]) << 16) + patch
 }
 
 // AtLeast returns true if this version is greater than or equal to the supplied
@@ -54,7 +80,7 @@ func (ver Version) AtLeast(other Version) bool {
 // supplied arg. If the arg has less than 3 elements, missing elements are
 // considered to be 0; for example, a 2-element slice arg is interpretted as
 // a major.minor.0 version. Any elements beyond the 3rd are ignored.
-func (ver Version) atLeastSlice(other []uint16) bool {
+func (ver Version) atLeastSlice(other []int16) bool {
 	var comp Version
 	copy(comp[:], other)
 	return ver.pack() >= comp.pack()
@@ -70,7 +96,7 @@ func (ver Version) Below(other Version) bool {
 // example, a 2-element slice will check for equality of the major and minor
 // version parts, but will ignore patch version. Any elements beyond the 3rd
 // are ignored.
-func (ver Version) matchesSlice(other []uint16) bool {
+func (ver Version) matchesSlice(other []int16) bool {
 	if len(other) > 0 && ver[0] != other[0] {
 		return false
 	} else if len(other) > 1 && ver[1] != other[1] {
@@ -85,6 +111,7 @@ func (ver Version) matchesSlice(other []uint16) bool {
 // Version, or returns an error if parsing fails. Any non-digit prefix or suffix
 // is ignored.
 func ParseVersion(s string) (ver Version, err error) {
+	ver[2] = AnyPatch // overridden below if s actually sets a patch version
 	for n, spart := range strings.SplitN(s, ".", 3) {
 		if n == 0 { // strip leading non-digits before major version
 			if firstDigitPos := strings.IndexFunc(spart, unicode.IsDigit); firstDigitPos > -1 {
@@ -96,11 +123,11 @@ func ParseVersion(s string) (ver Version, err error) {
 				spart = spart[0:firstNonDigitPos]
 			}
 		}
-		part, thisErr := strconv.ParseUint(spart, 10, 16)
+		part, thisErr := strconv.ParseInt(spart, 10, 16)
 		if thisErr != nil {
 			err = thisErr
 		}
-		ver[n] = uint16(part)
+		ver[n] = int16(part)
 	}
 	return
 }
@@ -294,12 +321,12 @@ func SplitVersionedIdentifier(s string) (name string, version Version, label str
 	return
 }
 
-// String returns a string in format "vendor:major.minor.patch" if patch is
-// non-zero, or "vendor:major.minor" if patch is zero. Note that this
-// suppression of 0 patch values differs from Version.String(); this is done
-// intentionally since common convention of Docker image tags is to signify
-// "latest patch of this major.minor series" by omitting the patch.
-// The vendor name is replaced by a variant name if one is set.
+// String returns a string in format "vendor:major.minor.patch" if patch is an
+// actual patch version number. However if patch is AnyPatch or MaxPatch, then
+// the value returned omits the patch i.e. "vendor:major.minor". (This is
+// compatible with the common convention of Docker image tags is to signify
+// "latest patch of this major.minor series" by omitting the patch.)
+// The vendor name is replaced by a variant name, if one is set.
 func (fl Flavor) String() string {
 	var base string
 	if fl.Variants != VariantNone {
@@ -307,23 +334,21 @@ func (fl Flavor) String() string {
 	} else {
 		base = fl.Vendor.String()
 	}
-	if fl.Version.Patch() > 0 {
-		return fmt.Sprintf("%s:%d.%d.%d", base, fl.Version[0], fl.Version[1], fl.Version[2])
-	}
-	return fmt.Sprintf("%s:%d.%d", base, fl.Version[0], fl.Version[1])
+	return base + ":" + fl.Version.String()
 }
 
-// Family returns a copy of the receiver with a zeroed-out patch version.
+// Family returns a copy of the receiver with the patch version replaced by
+// AnyPatch.
 func (fl Flavor) Family() Flavor {
-	fl.Version[2] = 0
+	fl.Version[2] = AnyPatch
 	return fl
 }
 
 // Base returns a copy of the receiver without any variants, and the patch
-// version replaced by zero.
+// version replaced by AnyPatch.
 func (fl Flavor) Base() Flavor {
 	fl.Variants = VariantNone
-	fl.Version[2] = 0
+	fl.Version[2] = AnyPatch
 	return fl
 }
 
@@ -338,7 +363,7 @@ func (fl Flavor) HasVariant(variant Variant) bool {
 // Supply 1 arg to compare only major version, 2 args to compare major and
 // minor, or 3 args to compare major, minor, and patch. Extra args beyond 3 are
 // silently ignored.
-func (fl Flavor) MinMySQL(versionParts ...uint16) bool {
+func (fl Flavor) MinMySQL(versionParts ...int16) bool {
 	return fl.Vendor == VendorMySQL && fl.Version.atLeastSlice(versionParts)
 }
 
@@ -347,7 +372,7 @@ func (fl Flavor) MinMySQL(versionParts ...uint16) bool {
 // Supply 1 arg to compare only major version, 2 args to compare major and
 // minor, or 3 args to compare major, minor, and patch. Extra args beyond 3 are
 // silently ignored.
-func (fl Flavor) MinMariaDB(versionParts ...uint16) bool {
+func (fl Flavor) MinMariaDB(versionParts ...int16) bool {
 	return fl.Vendor == VendorMariaDB && fl.Version.atLeastSlice(versionParts)
 }
 
@@ -355,7 +380,7 @@ func (fl Flavor) MinMariaDB(versionParts ...uint16) bool {
 // matches any supplied args. Supply 0 args to only check Vendor. Supply 1 arg
 // to check Vendor and major version, 2 args for Vendor and major and minor
 // versions, or 3 args for Vendor and exact major/minor/patch.
-func (fl Flavor) IsMySQL(versionParts ...uint16) bool {
+func (fl Flavor) IsMySQL(versionParts ...int16) bool {
 	return fl.Vendor == VendorMySQL && fl.Version.matchesSlice(versionParts)
 }
 
@@ -363,17 +388,17 @@ func (fl Flavor) IsMySQL(versionParts ...uint16) bool {
 // Version matches any supplied args. Supply 0 args to only check Vendor. Supply
 // 1 arg to check Vendor and major version, 2 args for Vendor and major and
 // minor versions, or 3 args for Vendor and exact major/minor/patch.
-func (fl Flavor) IsMariaDB(versionParts ...uint16) bool {
+func (fl Flavor) IsMariaDB(versionParts ...int16) bool {
 	return fl.Vendor == VendorMariaDB && fl.Version.matchesSlice(versionParts)
 }
 
 // IsPercona behaves like IsMySQL, with an additional check for VariantPercona.
-func (fl Flavor) IsPercona(versionParts ...uint16) bool {
+func (fl Flavor) IsPercona(versionParts ...int16) bool {
 	return fl.HasVariant(VariantPercona) && fl.IsMySQL(versionParts...)
 }
 
 // IsAurora behaves like IsMySQL, with an additional check for VariantAurora.
-func (fl Flavor) IsAurora(versionParts ...uint16) bool {
+func (fl Flavor) IsAurora(versionParts ...int16) bool {
 	return fl.HasVariant(VariantAurora) && fl.IsMySQL(versionParts...)
 }
 
@@ -389,57 +414,100 @@ func (fl Flavor) Known() bool {
 }
 
 type versionThresholds struct {
-	latest              Version // latest major.minor version at the time of this Skeema release
-	deprecatedUpTo      Version // supported but deprecated, up to and including this version
-	oldestSupportedNow  Version // oldest version supported by this Skeema release
-	oldestSupportedEver Version // oldest version ever supported by Skeema v1.x
+	contemporaryBelow   Version // latest known version at the time of this Skeema release (typically with MaxPatch)
+	deprecatedBelow     Version // deprecated below this version (either specific patch or AnyPatch)
+	oldestSupportedNow  Version // oldest version supported by this Skeema release (either specific patch or AnyPatch)
+	oldestSupportedEver Version // oldest version ever supported by Skeema v1.x, with AnyPatch
 }
 
 var vendorSupport = map[Vendor]versionThresholds{
 	VendorMySQL: {
-		latest:              LatestMySQLVersion,
-		deprecatedUpTo:      Version{5, 7},
+		contemporaryBelow:   LatestMySQLVersion,
+		deprecatedBelow:     OldestNonDeprecatedMySQLVersion,
 		oldestSupportedNow:  OldestSupportedMySQLVersion,
-		oldestSupportedEver: Version{5, 5},
+		oldestSupportedEver: Version{5, 5, AnyPatch},
 	},
 	VendorMariaDB: {
-		latest:              LatestMariaDBVersion,
-		deprecatedUpTo:      Version{10, 3},
+		contemporaryBelow:   LatestMariaDBVersion,
+		deprecatedBelow:     OldestNonDeprecatedMariaDBVersion,
 		oldestSupportedNow:  OldestSupportedMariaDBVersion,
-		oldestSupportedEver: Version{10, 1},
+		oldestSupportedEver: Version{10, 1, AnyPatch},
 	},
 }
 
-// Supported returns a boolean indicating whether the flavor is supported by
-// this version of Skeema, along with a string containing more detailed
-// information (which may be blank, if the flavor is fully supported without
-// any caveats).
+// FlavorSupport enumerates status values indicating whether a flavor is
+// supported, deprecated, too new, etc relative to this release of Skeema.
+type FlavorSupport int
+
+// Constants representing different FlavorSupport statuses
+const (
+	NeverSupportedFlavor FlavorSupport = iota
+	NoLongerSupportedFlavor
+	DeprecatedFlavor // warnings emitted but still considered supported
+	SupportedFlavor  // fully supported, no caveats
+	TooNewFlavor     // warnings emitted but still considered supported
+)
+
+// Supported returns true if the FlavorSupport enum value corresponds to a
+// "supported" status in this version of Skeema, or false if not.
+func (fs FlavorSupport) Supported() bool {
+	return fs == SupportedFlavor || fs == DeprecatedFlavor || fs == TooNewFlavor
+}
+
+func (fs FlavorSupport) warning() string {
+	switch fs {
+	case NeverSupportedFlavor:
+		return "not supported by any version of Skeema."
+	case NoLongerSupportedFlavor:
+		return "not supported by this release of Skeema. To interact with this database server, downgrade to an older major version series of Skeema."
+	case DeprecatedFlavor:
+		return "deprecated in this release of Skeema. The next major version of Skeema will likely drop support for this database server."
+	case TooNewFlavor:
+		return "newer than this release of Skeema. To ensure correct behavior, try updating to a more recent version of Skeema, if one is available."
+	default: // including SupportedFlavor
+		return ""
+	}
+}
+
+// SupportStatus returns the corresponding support level for the flavor in this
+// version of Skeema.
+func (fl Flavor) SupportStatus() FlavorSupport {
+	supportDetails := vendorSupport[fl.Vendor]
+	if !fl.Known() || fl.Version.Below(supportDetails.oldestSupportedEver) {
+		return NeverSupportedFlavor
+	} else if fl.Version.Below(supportDetails.oldestSupportedNow) {
+		return NoLongerSupportedFlavor
+	} else if fl.Version.Below(supportDetails.deprecatedBelow) {
+		return DeprecatedFlavor
+	} else if fl.Version.Below(supportDetails.contemporaryBelow) {
+		return SupportedFlavor
+	} else {
+		return TooNewFlavor
+	}
+}
+
+// Supported returns a boolean indicating whether the flavor is considered
+// supported by this version of Skeema, along with a string containing more
+// detailed information (which may be blank, if the flavor is fully supported
+// without any caveats/warnings).
 func (fl Flavor) Supported() (supported bool, details string) {
 	if !fl.Known() {
 		return false, "Unable to determine database server vendor/version"
 	}
-
-	// Determine threshold versions for never supported < prev supported but dropped < deprecated < fully supported < too new
-	// For some of these, we add 1 to the threshold minor version to get strict
-	// less-than comparisons and ignore patch numbers
-	supportDetails := vendorSupport[fl.Vendor]
-	deprecatedBelow := Version{supportDetails.deprecatedUpTo[0], supportDetails.deprecatedUpTo[1] + 1}
-	contemporaryBelow := Version{supportDetails.latest[0], supportDetails.latest[1] + 1}
-
-	makeDetails := func(body string) string {
-		return fmt.Sprintf("%s %d.%d is %s", fl.Vendor.Pretty(), fl.Version[0], fl.Version[1], body)
+	status := fl.SupportStatus()
+	if warning := status.warning(); warning != "" {
+		// Exclude the point release from the details, unless it's MySQL 8.0, since
+		// deprecation/removal thresholds will be point-release-specific from the time
+		// period in which 8.0 was "evergreen" / had new features in point releases
+		var versionString string
+		if fl.IsMySQL(8, 0) {
+			versionString = fl.Version.String()
+		} else {
+			versionString = fmt.Sprintf("%d.%d", fl.Version[0], fl.Version[1])
+		}
+		details = fl.Vendor.Pretty() + " " + versionString + " is " + warning
 	}
-	if fl.Version.Below(supportDetails.oldestSupportedEver) {
-		return false, makeDetails("not supported by Skeema.")
-	} else if fl.Version.Below(supportDetails.oldestSupportedNow) {
-		return false, makeDetails("not supported by this release of Skeema. To interact with this database server, downgrade to an older major version series of Skeema.")
-	} else if fl.Version.Below(deprecatedBelow) {
-		return true, makeDetails("deprecated in this release of Skeema. The next major version of Skeema will likely drop support for this database server.")
-	} else if fl.Version.Below(contemporaryBelow) {
-		return true, ""
-	} else {
-		return true, makeDetails("newer than this release of Skeema. To ensure correct behavior, upgrade to a more recent release of Skeema.")
-	}
+	return status.Supported(), details
 }
 
 ///// Flavor capability methods ////////////////////////////////////////////////
@@ -509,7 +577,7 @@ func (fl Flavor) SupportsTLS12() bool {
 	// TLS 1.2+ is usable in:
 	// * MySQL 5.7.28+, any variant (note that a point release of "0" means "latest" i.e. 5.7.44)
 	// * MariaDB, any version otherwise supported by this package (10.1+)
-	return fl.MinMySQL(5, 7, 28) || fl.IsMySQL(5, 7, 0) || fl.Vendor == VendorMariaDB
+	return fl.MinMySQL(5, 7, 28) || fl.IsMySQL(5, 7, AnyPatch) || fl.Vendor == VendorMariaDB
 }
 
 // Mapping for when to return true for AlwaysShowCollate: MariaDB releases
@@ -577,12 +645,12 @@ func packMajorMinor(ver Version) uint64 {
 type pointReleaseMap struct {
 	alwaysFalseBelow  Version
 	alwaysTrueAtLeast Version
-	conditionals      map[uint64]uint16 // packed major and minor => minimum patch to return true. (no entry = always false!)
+	conditionals      map[uint64]int16 // packed major and minor => minimum patch to return true. (no entry = always false!)
 }
 
 func newPointReleaseMap(versions ...Version) *pointReleaseMap {
 	prm := &pointReleaseMap{
-		conditionals: make(map[uint64]uint16, len(versions)),
+		conditionals: make(map[uint64]int16, len(versions)),
 	}
 	var minPacked, maxPacked uint64
 	for n, ver := range versions {

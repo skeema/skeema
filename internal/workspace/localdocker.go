@@ -294,6 +294,14 @@ func (ld *LocalDocker) shutdown(args ...any) bool {
 // level repos without an account name), but in some cases we must use a
 // different source, or return an error.
 func DockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
+	// Some of the logic below operates on ranges of old patch numbers, but if the
+	// flavor intentionally omitted a specific patch number (as is common),
+	// we want to treat it as the highest value in these comparisons instead
+	if flavor.Version[2] == tengo.AnyPatch {
+		// Since flavor is a simple scalar we can mutate it directly
+		flavor.Version[2] = tengo.MaxPatch
+	}
+
 	image := flavor.String()
 
 	if flavor.IsPercona() {
@@ -315,21 +323,21 @@ func DockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
 		//   * 8.0.33-8.0.40:    need -aarch64 suffix
 		//   * 8.1, 8.2, 8.3:    need .0-aarch64 suffix
 		//   * 8.4.1-8.4.3:      need -aarch64 suffix
-		// We must skip this logic for 8.0.0 or 8.4.0 due to how Flavor.String() omits
-		// zero patch in order to emit a string meaning "latest patch of this
-		// major.minor series".
 		if arch == "arm64" && flavor.Version[0] == 8 {
 			switch flavor.Version[1] {
 			case 0: // Percona Server 8.0.x
-				if patch := flavor.Version[2]; patch > 0 && patch <= 32 {
+				if flavor.Version[2] <= 32 {
 					return "", fmt.Errorf("%s Docker images for %s are not available", arch, image)
-				} else if patch >= 33 && patch <= 40 {
+				} else if flavor.Version[2] <= 40 {
 					image += "-aarch64"
 				}
-			case 1, 2, 3: // Percona Server 8.1-8.3 (Innovation releases, always .0 patch)
-				image += ".0-aarch64"
+			case 1, 2, 3: // Percona Server 8.1-8.3 (Innovation releases)
+				if flavor.Version[2] == tengo.MaxPatch {
+					image += ".0" // must include explicit .0 patch on arm for these image tags
+				}
+				image += "-aarch64"
 			case 4: // Percona Server 8.4.x
-				if patch := flavor.Version[2]; patch > 0 && patch <= 3 {
+				if flavor.Version[2] <= 3 {
 					image += "-aarch64"
 				}
 			}
@@ -359,9 +367,7 @@ func DockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
 
 	// MySQL on arm64: use mysql/mysql-server for 8.0.12-8.0.28.
 	// Below 8.0.12 (incl all 5.x), arm64 MySQL images are not available at all.
-	// We special-case "mysql:8.0" to avoid having a 0 patch number break numeric
-	// comparisons.
-	if arch == "arm64" && flavor.IsMySQL() && image != "mysql:8.0" {
+	if arch == "arm64" && flavor.IsMySQL() {
 		if !flavor.MinMySQL(8, 0, 12) {
 			return "", fmt.Errorf("%s Docker images for %s are not available", arch, image)
 		} else if !flavor.MinMySQL(8, 0, 29) {

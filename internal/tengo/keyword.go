@@ -364,14 +364,14 @@ var commonReservedWords = []string{
 // Flavor values used in maps below, in places where the same value occurs
 // multiple times
 var (
-	mySQL56    = Flavor{Vendor: VendorMySQL, Version: Version{5, 6}}
-	mySQL57    = Flavor{Vendor: VendorMySQL, Version: Version{5, 7}}
-	mySQL80    = Flavor{Vendor: VendorMySQL, Version: Version{8, 0}}
-	mySQL84    = Flavor{Vendor: VendorMySQL, Version: Version{8, 4}}
-	mariaDB101 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1}}
-	mariaDB102 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2}}
-	mariaDB103 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3}}
-	mariaDB107 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7}}
+	mySQL56    = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, AnyPatch}}
+	mySQL57    = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, AnyPatch}}
+	mySQL80    = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, AnyPatch}}
+	mySQL84    = Flavor{Vendor: VendorMySQL, Version: Version{8, 4, AnyPatch}}
+	mariaDB101 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1, AnyPatch}}
+	mariaDB102 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2, AnyPatch}}
+	mariaDB103 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3, AnyPatch}}
+	mariaDB107 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7, AnyPatch}}
 )
 
 // Mapping of lowercased reserved words to the flavor(s) that added them. A
@@ -438,19 +438,19 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"system":       {mySQL80},
 	"window":       {mySQL80}, // see comment above re: MariaDB
 
-	"parallel":    {{Vendor: VendorMySQL, Version: Version{8, 2}}}, // wrong in I_S.keywords.reserved, see bug 114874
-	"qualify":     {{Vendor: VendorMySQL, Version: Version{8, 3}}}, // wrong in I_S.keywords.reserved, see bug 114874
-	"manual":      {mySQL84},                                       // wrong in I_S.keywords.reserved, see bug 114874
-	"tablesample": {mySQL84},                                       // wrong in I_S.keywords.reserved, see bug 114874
+	"parallel":    {{Vendor: VendorMySQL, Version: Version{8, 2, AnyPatch}}}, // wrong in I_S.keywords.reserved, see bug 114874
+	"qualify":     {{Vendor: VendorMySQL, Version: Version{8, 3, AnyPatch}}}, // wrong in I_S.keywords.reserved, see bug 114874
+	"manual":      {mySQL84},                                                 // wrong in I_S.keywords.reserved, see bug 114874
+	"tablesample": {mySQL84},                                                 // wrong in I_S.keywords.reserved, see bug 114874
 
-	"library":  {{Vendor: VendorMySQL, Version: Version{9, 2}}},
-	"external": {{Vendor: VendorMySQL, Version: Version{9, 4}}}, // wrong in I_S.keywords.reserved, see bug 114874
+	"library":  {{Vendor: VendorMySQL, Version: Version{9, 2, AnyPatch}}},
+	"external": {{Vendor: VendorMySQL, Version: Version{9, 4, AnyPatch}}}, // wrong in I_S.keywords.reserved, see bug 114874
 
 	// This one was reserved only in 9.6.0, and was retroactively considered a bug
 	// as per https://bugs.mysql.com/bug.php?id=119904. Since 9.6 was a rolling
 	// "innovation" release, and those aren't generally used in production, it
 	// doesn't make sense to track it as a normal reserved-then-unreserved word:
-	// "sets":     {{Vendor: VendorMySQL, Version: Version{9, 6}}}, // wrong in I_S.keywords.reserved, see bug 114874
+	// "sets":     {{Vendor: VendorMySQL, Version: Version{9, 6, AnyPatch}}}, // wrong in I_S.keywords.reserved, see bug 114874
 
 	"current_role":            {mariaDB101},
 	"delete_domain_id":        {mariaDB101}, // actual version unclear from docs, see comment above
@@ -468,9 +468,9 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"stats_persistent":        {mariaDB101},
 	"stats_sample_pages":      {mariaDB101},
 
-	"offset": {{Vendor: VendorMariaDB, Version: Version{10, 6}}},
+	"offset": {{Vendor: VendorMariaDB, Version: Version{10, 6, AnyPatch}}},
 
-	"vector": {{Vendor: VendorMariaDB, Version: Version{11, 7}}},
+	"vector": {{Vendor: VendorMariaDB, Version: Version{11, 7, AnyPatch}}},
 }
 
 var reservedWordsRemovedInFlavor = map[string][]Flavor{

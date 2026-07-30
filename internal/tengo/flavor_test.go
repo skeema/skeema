@@ -36,10 +36,10 @@ func TestParseVersion(t *testing.T) {
 		"10.2.16-MariaDB-10.2.16+maria~jessie": {10, 2, 16},
 		"10.3.7-MariaDB-1:10.3.7+maria~jessie": {10, 3, 7},
 		"10.11.14-MariaDB-0ubuntu0.24.04.1":    {10, 11, 14},
-		"invalid":                              {0, 0, 0},
-		"5":                                    {5, 0, 0},
+		"invalid":                              {0, 0, AnyPatch},
+		"5":                                    {5, 0, AnyPatch},
 		"5.6.invalid":                          {5, 6, 0},
-		"5.7.9300000000000000000":              {5, 7, 65535}, // uint64 int overflow on patch number
+		"5.7.9300000000000000000":              {5, 7, 32767}, // int overflow on patch number
 		"v1.2.3rc1":                            {1, 2, 3},
 		"10.abc123def.12":                      {10, 0, 12},
 		"26.7.0":                               {26, 7, 0},
@@ -140,10 +140,10 @@ func TestParseFlavor(t *testing.T) {
 	cases := map[string]Flavor{
 		"mysql:5.5.33":      {VendorMySQL, Version{5, 5, 33}, VariantNone},
 		"percona:5.7.22":    {VendorMySQL, Version{5, 7, 22}, VariantPercona},
-		"mariadb:10.6":      {VendorMariaDB, Version{10, 6}, VariantNone},
-		"supersecretdb:9.9": {VendorUnknown, Version{9, 9}, VariantNone},
+		"mariadb:10.6":      {VendorMariaDB, Version{10, 6, AnyPatch}, VariantNone},
+		"supersecretdb:9.9": {VendorUnknown, Version{9, 9, AnyPatch}, VariantNone},
 		"":                  FlavorUnknown,
-		"aurora:8.0":        {VendorMySQL, Version{8, 0}, VariantAurora},
+		"aurora:8.0":        {VendorMySQL, Version{8, 0, AnyPatch}, VariantAurora},
 	}
 	for input, expected := range cases {
 		if actual := ParseFlavor(input); actual != expected {
@@ -186,11 +186,11 @@ func TestIdentifyFlavor(t *testing.T) {
 
 func TestFlavorString(t *testing.T) {
 	cases := map[Flavor]string{
-		{VendorMySQL, Version{5, 5, 33}, VariantNone}:    "mysql:5.5.33",
-		{VendorMySQL, Version{5, 7, 22}, VariantPercona}: "percona:5.7.22",
-		{VendorMySQL, Version{8, 0}, VariantAurora}:      "aurora:8.0",
-		{VendorMariaDB, Version{10, 6}, VariantNone}:     "mariadb:10.6",
-		{}: "unknown:0.0",
+		{VendorMySQL, Version{5, 5, 33}, VariantNone}:          "mysql:5.5.33",
+		{VendorMySQL, Version{5, 7, 22}, VariantPercona}:       "percona:5.7.22",
+		{VendorMySQL, Version{8, 0, MaxPatch}, VariantAurora}:  "aurora:8.0",
+		{VendorMariaDB, Version{10, 6, AnyPatch}, VariantNone}: "mariadb:10.6",
+		{}: "unknown:0.0.0",
 	}
 	for input, expected := range cases {
 		if actual := input.String(); actual != expected {
@@ -245,13 +245,13 @@ func TestFlavorHasVariant(t *testing.T) {
 	}
 }
 
-func parseVersionArgSlice(s string) (args []uint16) {
+func parseVersionArgSlice(s string) (args []int16) {
 	if s == "" {
 		return
 	}
 	for verStr := range strings.SplitSeq(s, ".") {
-		part, _ := strconv.ParseUint(verStr, 10, 16)
-		args = append(args, uint16(part))
+		part, _ := strconv.ParseInt(verStr, 10, 16)
+		args = append(args, int16(part))
 	}
 	return
 }
@@ -438,16 +438,16 @@ func TestFlavorSupported(t *testing.T) {
 	})
 	vendorSupport = map[Vendor]versionThresholds{
 		VendorMySQL: {
-			latest:              Version{8, 2},
-			deprecatedUpTo:      Version{5, 7},
-			oldestSupportedNow:  Version{5, 6},
-			oldestSupportedEver: Version{5, 5},
+			contemporaryBelow:   Version{8, 2, MaxPatch},
+			deprecatedBelow:     Version{8, 0, 24},
+			oldestSupportedNow:  Version{5, 6, AnyPatch},
+			oldestSupportedEver: Version{5, 5, AnyPatch},
 		},
 		VendorMariaDB: {
-			latest:              Version{11, 2},
-			deprecatedUpTo:      Version{10, 3},
-			oldestSupportedNow:  Version{10, 2},
-			oldestSupportedEver: Version{10, 1},
+			contemporaryBelow:   Version{11, 2, MaxPatch},
+			deprecatedBelow:     Version{10, 4, AnyPatch},
+			oldestSupportedNow:  Version{10, 2, AnyPatch},
+			oldestSupportedEver: Version{10, 1, AnyPatch},
 		},
 	}
 
@@ -458,7 +458,9 @@ func TestFlavorSupported(t *testing.T) {
 		"mysql:5.1":        {false, "not supported"},
 		"mysql:5.5":        {false, "downgrade to an older"},
 		"mysql:5.6.40":     {true, "deprecated"},
-		"mysql:8.0":        {true, ""},
+		"mysql:8.0":        {true, "deprecated"}, // side effect of no patch -> AnyPatch -> compares as 0
+		"mysql:8.0.23":     {true, "deprecated"},
+		"mysql:8.0.24":     {true, ""},
 		"mysql:8.0.123":    {true, ""},
 		"mysql:8.2":        {true, ""},
 		"mysql:8.2.0":      {true, ""},
@@ -467,6 +469,8 @@ func TestFlavorSupported(t *testing.T) {
 		"mysql:8.12":       {true, "newer than"},
 		"mysql:10.6":       {true, "newer than"},
 		"percona:5.6":      {true, "deprecated"},
+		"percona:8.0.23":   {true, "deprecated"},
+		"percona:8.0.24":   {true, ""},
 		"percona:8.2":      {true, ""},
 		"percona:8.3":      {true, "newer than"},
 		"mariadb:10.0.18":  {false, "not supported"},

@@ -147,7 +147,7 @@ func TestContainerNameForImage(t *testing.T) {
 		"thirdparty/percona:8.0":                                   "percona-8.0",
 		"example.com/maria/maria-community:10.11":                  "mariadb-10.11",
 		"percona/percona-server:8.0":                               "percona-8.0",
-		"percona/percona-server:8.1.0-aarch64":                     "percona-8.1",
+		"percona/percona-server:8.1.0-aarch64":                     "percona-8.1.0",
 		"percona/percona-server:8.0-aarch64":                       "percona-8.0",
 		"percona/percona-server:8.0.37-aarch64":                    "percona-8.0.37",
 		"percona/percona-server:8.4-aarch64":                       "percona-8.4",
