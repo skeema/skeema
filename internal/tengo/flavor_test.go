@@ -458,7 +458,7 @@ func TestFlavorSupported(t *testing.T) {
 		"mysql:5.1":        {false, "not supported"},
 		"mysql:5.5":        {false, "downgrade to an older"},
 		"mysql:5.6.40":     {true, "deprecated"},
-		"mysql:8.0":        {true, "deprecated"}, // side effect of no patch -> AnyPatch -> compares as 0
+		"mysql:8.0":        {true, ""}, // tests special handling for AnyPatch vs specific point release thresholds
 		"mysql:8.0.23":     {true, "deprecated"},
 		"mysql:8.0.24":     {true, ""},
 		"mysql:8.0.123":    {true, ""},

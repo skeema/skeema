@@ -402,6 +402,8 @@ func (fl Flavor) IsAurora(versionParts ...int16) bool {
 	return fl.HasVariant(VariantAurora) && fl.IsMySQL(versionParts...)
 }
 
+///// Flavor support status / deprecation status methods ///////////////////////
+
 // Known returns true if both the vendor and major version of this flavor were
 // parsed properly.
 func (fl Flavor) Known() bool {
@@ -471,9 +473,22 @@ func (fs FlavorSupport) warning() string {
 
 // SupportStatus returns the corresponding support level for the flavor in this
 // version of Skeema.
+// As a special case, if the flavor's patch is AnyPatch (typically meaning the
+// flavor was instantiated by parsing a string that only specified major.minor),
+// it is treated as a high value -- just below MaxPatch -- for sake of comparing
+// to version thresholds. For example, if all MySQL versions below 8.0.24 are
+// deprecated, we intentionally want to treat ParseFlavor("mysql:8.0") as NON-
+// deprecated to align with Docker tag conventions of no patch = latest patch.
 func (fl Flavor) SupportStatus() FlavorSupport {
+	if !fl.Known() {
+		return NeverSupportedFlavor
+	}
 	supportDetails := vendorSupport[fl.Vendor]
-	if !fl.Known() || fl.Version.Below(supportDetails.oldestSupportedEver) {
+	if fl.Version[2] == AnyPatch { // see comment above
+		// receiver was passed by value, safe to mutate in place w/o affecting caller!
+		fl.Version[2] = MaxPatch - 1
+	}
+	if fl.Version.Below(supportDetails.oldestSupportedEver) {
 		return NeverSupportedFlavor
 	} else if fl.Version.Below(supportDetails.oldestSupportedNow) {
 		return NoLongerSupportedFlavor
@@ -490,12 +505,17 @@ func (fl Flavor) SupportStatus() FlavorSupport {
 // supported by this version of Skeema, along with a string containing more
 // detailed information (which may be blank, if the flavor is fully supported
 // without any caveats/warnings).
+// As a special case, if the flavor's patch is AnyPatch (typically meaning the
+// flavor was instantiated by parsing a string that only specified major.minor),
+// it is treated as a high value -- just below MaxPatch -- for sake of comparing
+// to version thresholds. For example, if all MySQL versions below 8.0.24 are
+// deprecated, we intentionally want to treat ParseFlavor("mysql:8.0") as NON-
+// deprecated to align with Docker tag conventions of no patch = latest patch.
 func (fl Flavor) Supported() (supported bool, details string) {
-	if !fl.Known() {
-		return false, "Unable to determine database server vendor/version"
-	}
 	status := fl.SupportStatus()
-	if warning := status.warning(); warning != "" {
+	if status == NeverSupportedFlavor && !fl.Known() {
+		details = "Unable to determine database server vendor/version"
+	} else if warning := status.warning(); warning != "" {
 		// Exclude the point release from the details, unless it's MySQL 8.0, since
 		// deprecation/removal thresholds will be point-release-specific from the time
 		// period in which 8.0 was "evergreen" / had new features in point releases
