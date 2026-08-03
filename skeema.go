@@ -18,7 +18,7 @@ const rootDesc = "Skeema is a declarative schema management system for MySQL and
 
 // Globals overridden by GoReleaser's ldflags
 var (
-	version = "1.14.1"
+	version = "2.0.0-development"
 	commit  = "unknown"
 	date    = "unknown"
 )
@@ -78,7 +78,16 @@ func buildInfo() string {
 	// main module's build info, available when compiled with Go module support
 	if commit == "unknown" {
 		if info, ok := debug.ReadBuildInfo(); ok {
-			return strings.TrimPrefix(info.Main.Version, "v") + ", " + edition + " edition, built from source"
+			buildVersion := strings.TrimPrefix(info.Main.Version, "v")
+			buildMajor, _, _ := strings.Cut(buildVersion, ".")
+			hardCodedMajor, _, _ := strings.Cut(version, ".")
+			// If the current commit HEAD is intended to be a different major version
+			// than the most recent git tag, adjust the string accordingly
+			if buildMajor != hardCodedMajor {
+				_, buildVersion, _ = strings.Cut(buildVersion, "-0")
+				buildVersion = version + buildVersion
+			}
+			return buildVersion + ", " + edition + " edition, built from source"
 		}
 	}
 	return versionString() + ", commit " + commit + ", released " + date
