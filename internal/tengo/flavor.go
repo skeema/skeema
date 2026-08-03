@@ -36,11 +36,11 @@ var (
 	LatestMySQLVersion   = Version{9, 7, MaxPatch}
 	LatestMariaDBVersion = Version{12, 3, MaxPatch}
 
-	OldestSupportedMySQLVersion   = Version{5, 5, AnyPatch}
-	OldestSupportedMariaDBVersion = Version{10, 1, AnyPatch}
+	OldestSupportedMySQLVersion   = Version{8, 0, AnyPatch}
+	OldestSupportedMariaDBVersion = Version{10, 4, AnyPatch}
 
-	OldestNonDeprecatedMySQLVersion   = Version{8, 0, AnyPatch}
-	OldestNonDeprecatedMariaDBVersion = Version{10, 4, AnyPatch}
+	OldestNonDeprecatedMySQLVersion   = Version{8, 0, 23}
+	OldestNonDeprecatedMariaDBVersion = Version{10, 6, AnyPatch}
 )
 
 // Major returns the major component of the version number.
