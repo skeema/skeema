@@ -74,9 +74,8 @@ func (c *Column) Definition(flavor Flavor) string {
 		clauses = append(clauses, "NULL")
 	}
 
-	// SRID in MySQL 8.0+
-	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
-	if c.HasSpatialReference && flavor.MinMySQL(8) {
+	// SRID in MySQL
+	if c.HasSpatialReference && flavor.IsMySQL() {
 		// Although MariaDB also attribute syntax for this (REF_SYSTEM_ID), it isn't
 		// exposed in SHOW CREATE TABLE, so here we restrict to MySQL only
 		clauses = append(clauses, fmt.Sprintf("/*!80003 SRID %d */", c.SpatialReferenceID))

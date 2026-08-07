@@ -576,10 +576,11 @@ func (instance *Instance) introspectionParams() string {
 
 	flavor := instance.Flavor()
 
-	// In MySQL 8, ensure we get up-to-date values for table sizes as well as next
-	// auto_increment value
-	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
-	if flavor.MinMySQL(8) {
+	// In MySQL, ensure we get up-to-date values for table sizes. (This also
+	// provides up-to-date values for auto_increment counters, but we no longer
+	// obtain those from I_S anyway.)
+	// TODOv2 consider only setting this for queries on table sizes
+	if flavor.IsMySQL() {
 		v.Set("information_schema_stats_expiry", "0")
 	}
 
@@ -592,9 +593,10 @@ func (instance *Instance) introspectionParams() string {
 	// * information_schema does not return 4-byte chars properly, regardless of
 	//   collation; we must reparse from SHOW CREATE TABLE
 	// * In MariaDB, SHOW CREATE TABLE does not return 4-byte chars correctly
-	//   regardless of collation
-	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL() after verifying
-	// that the MariaDB bug in last bullet still applies
+	//   regardless of collation [TODO: this was fixed at some point!]
+	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL() and then
+	// determine which MariaDB version fixed the last bullet and update
+	// conditional/fixups/tests depending on whether binary is needed there too
 	if flavor.MinMySQL(5, 7) {
 		v.Set("collation", "binary")
 	}
@@ -1070,10 +1072,9 @@ func tablesToPartitions(db *sql.DB, schema string, flavor Flavor) (map[string][]
 		return nil, fmt.Errorf("Error querying information_schema.partitions: %w", err)
 	}
 
-	// MySQL 8's new data dictionary actually includes views in
-	// information_schema.partitions, so remove them explicitly.
-	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
-	if checkViews && flavor.MinMySQL(8) {
+	// MySQL's data dictionary actually includes views in I_S.partitions, so
+	// remove them explicitly.
+	if checkViews && flavor.IsMySQL() {
 		query := `SELECT table_name FROM information_schema.views WHERE table_schema = ?`
 		rows, err := db.Query(query, schema)
 		if err != nil {

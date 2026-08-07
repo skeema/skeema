@@ -169,23 +169,12 @@ func (s *SkeemaIntegrationSuite) verifyFiles(t *testing.T, cfg *mybase.Config, d
 
 	// Hackily manipulate dirExpectedBase if testing against a database backend
 	// with different SHOW CREATE TABLE rules:
-	// In MariaDB 10.2+, default values are no longer quoted if non-strings; the
-	// blob and text types now permit default values; partitions are formatted
-	// differently; default values and on-update rules for CURRENT_TIMESTAMP always
-	// include parens and lowercase the function name.
-	// In MySQL 5.5, DATETIME columns cannot have default or on-update of
-	// CURRENT_TIMESTAMP; only one TIMESTAMP column can have on-update;
-	// CURRENT_TIMESTAMP does not take an arg for specifying sub-second precision
-	// In MySQL 8.0+, partitions are formatted differently; the default character
-	// set is now utf8mb4; the default collation for utf8mb4 has also changed.
-	// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB 10.1-10.3, adjust this
-	if s.d.Flavor().MinMariaDB(10, 2) {
-		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mariadb102", 1)
-	} else if s.d.Flavor().IsMySQL(5, 5) {
-		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mysql55", 1)
-	} else if s.d.Flavor().MinMySQL(8) {
-		dirExpectedBase = strings.Replace(dirExpectedBase, "golden", "golden-mysql80", 1)
-	}
+	// In MariaDB, default values are no longer quoted if non-strings; the blob and
+	// text types now permit default values; partitions are formatted differently;
+	// default values and on-update rules for CURRENT_TIMESTAMP always include
+	// parens and lowercase the function name; default charset and collation can
+	// differ.
+	dirExpectedBase = strings.ReplaceAll(dirExpectedBase, "VENDOR", s.d.Flavor().Vendor.String())
 
 	expected, err := fs.ParseDir(dirExpectedBase, cfg)
 	if err != nil {
@@ -359,7 +348,7 @@ func (s *SkeemaIntegrationSuite) reinitAndVerifyFiles(t *testing.T, extraInitOpt
 	t.Helper()
 
 	if comparePath == "" {
-		comparePath = "../golden/init"
+		comparePath = "../golden-VENDOR/init"
 	}
 	if err := os.RemoveAll("mydb"); err != nil {
 		t.Fatalf("Unable to clean directory: %s", err)

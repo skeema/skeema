@@ -137,18 +137,9 @@ func SkeemaTestImages(t *testing.T) []string {
 		t.SkipNow()
 	}
 
-	arch, err := DockerEngineArchitecture()
-	if err != nil {
-		t.Fatalf("Unable to obtain Docker engine architecture: %v", err)
-	}
-
 	images := strings.Split(envString, ",")
 	for n, image := range images {
-		// TODOv2: MySQL 5.x will be dropped, so this logic can be simplified
-		if arch == "arm64" && (strings.HasPrefix(image, "percona:5") || strings.HasPrefix(image, "mysql:5")) {
-			// No MySQL 5.x or Percona Server 5.x builds available for arm64
-			t.Fatalf("SKEEMA_TEST_IMAGES env var includes %s, but this image is not available for %s", image, arch)
-		} else if strings.HasPrefix(image, "percona:8") {
+		if strings.HasPrefix(image, "percona:") {
 			// Top-level (Docker Inc maintained) images for Percona Server 8.0 appear to
 			// not be updated frequently anymore and lack arm builds, so always use
 			// percona/percona-server instead

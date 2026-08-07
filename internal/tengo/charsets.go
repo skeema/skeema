@@ -84,7 +84,7 @@ var knownCharSets = map[string]CharacterSet{
 	"dec8":     {Name: "dec8", DefaultCollation: "dec8_swedish_ci", MaxLength: 1},
 	"eucjpms":  {Name: "eucjpms", DefaultCollation: "eucjpms_japanese_ci", MaxLength: 3},
 	"euckr":    {Name: "euckr", DefaultCollation: "euckr_korean_ci", MaxLength: 2},
-	"gb18030":  {Name: "gb18030", DefaultCollation: "gb18030_chinese_ci", MaxLength: 4}, // added in MySQL 5.7
+	"gb18030":  {Name: "gb18030", DefaultCollation: "gb18030_chinese_ci", MaxLength: 4}, // added in MySQL 5.7; not in MariaDB
 	"gb2312":   {Name: "gb2312", DefaultCollation: "gb2312_chinese_ci", MaxLength: 2},
 	"gbk":      {Name: "gbk", DefaultCollation: "gbk_chinese_ci", MaxLength: 2},
 	"geostd8":  {Name: "geostd8", DefaultCollation: "geostd8_general_ci", MaxLength: 1},
@@ -127,17 +127,13 @@ func characterSetsForFlavor(flavor Flavor) map[string]CharacterSet {
 	}
 
 	result := maps.Clone(knownCharSets)
-	// TODOv2: MySQL 5.x will be dropped, update logic accordingly
-	if flavor.IsMySQL(5, 5) {
-		delete(result, "utf16le")
-	}
-	if !flavor.MinMySQL(5, 7) {
+	if flavor.IsMariaDB() {
 		delete(result, "gb18030")
 	}
-	if flavor.MinMySQL(8) {
+	if flavor.IsMySQL() {
 		result["utf8mb4"] = CharacterSet{Name: "utf8mb4", DefaultCollation: "utf8mb4_0900_ai_ci", MaxLength: 4}
 	}
-	if flavor.MinMySQL(8, 0, 30) || flavor.MinMariaDB(10, 6) {
+	if flavor.MinMySQL(8, 0, 30) || flavor.MinMariaDB(10, 6) { // TODOv3 MariaDB 10.6 will be the minimum in Skeema v3
 		delete(result, "utf8")
 	} else if flavor.IsMySQL(8, 0, 29) {
 		delete(result, "utf8")

@@ -78,10 +78,10 @@ func TestParseDirErrors(t *testing.T) {
 	cmd := mybase.NewCommand("fstest", "", "", nil)
 	cmd.AddArg("environment", "production", false)
 	cfg := mybase.ParseFakeCLI(t, cmd, "fstest")
-	if _, err := ParseDir(mainTestdata+"/golden/init/mydb", cfg); err == nil {
+	if _, err := ParseDir(mainTestdata+"/golden-mysql/init/mydb", cfg); err == nil {
 		t.Error("Expected error from ParseDir(), but instead err is nil")
 	}
-	if _, err := ParseDir(mainTestdata+"/golden/init/mydb/product", cfg); err == nil {
+	if _, err := ParseDir(mainTestdata+"/golden-mysql/init/mydb/product", cfg); err == nil {
 		t.Error("Expected error from ParseDir(), but instead err is nil")
 	}
 }
@@ -216,7 +216,7 @@ func TestDirGenerator(t *testing.T) {
 
 func TestDirNamedSchemaStatements(t *testing.T) {
 	// Test against a dir that has no named-schema statements
-	dir := getDir(t, mainTestdata+"/golden/init/mydb/product")
+	dir := getDir(t, mainTestdata+"/golden-mysql/init/mydb/product")
 	if len(dir.NamedSchemaStatements) > 0 {
 		t.Errorf("Expected dir %s to have no named schema statements; instead found %d", dir, len(dir.NamedSchemaStatements))
 	}
@@ -467,14 +467,14 @@ func TestDirParseDirCasingConflict(t *testing.T) {
 }
 
 func TestDirBaseName(t *testing.T) {
-	dir := getDir(t, mainTestdata+"/golden/init/mydb/product")
+	dir := getDir(t, mainTestdata+"/golden-mysql/init/mydb/product")
 	if bn := dir.BaseName(); bn != "product" {
 		t.Errorf("Unexpected base name: %s", bn)
 	}
 }
 
 func TestDirSubdirs(t *testing.T) {
-	dir := getDir(t, mainTestdata+"/golden/init/mydb")
+	dir := getDir(t, mainTestdata+"/golden-mysql/init/mydb")
 	subs, err := dir.Subdirs()
 	if err != nil || countParseErrors(subs) > 0 {
 		t.Fatalf("Unexpected error from Subdirs(): %s", err)
@@ -691,44 +691,27 @@ func TestDirInstanceDefaultParams(t *testing.T) {
 		}
 	}
 
-	// Test valid ssl-mode values with mix of flavors.
-	// Map key is "ssl-mode flavor", value is expected params section of DSN
-	// TODOv2: old flavors with TLS limitations are being dropped, so this test logic should be modified
+	// Test ssl-mode: map key is ssl-mode, value is expected DSN params
 	expectTLS := map[string]string{
-		// These flavors support modern cipher suites and TLS 1.2+
-		"disabled mariadb:10.2": strings.Replace(baseDefaults, "tls=preferred", "tls=false", 1),
-		"preferred mysql:8.0":   baseDefaults,
-		"required percona:5.7":  strings.Replace(baseDefaults, "tls=preferred", "tls=skip-verify", 1),
-
-		// These flavors support TLS 1.2+, but not modern cipher suites
-		"disabled mysql:5.6":    strings.Replace(baseDefaults, "tls=preferred", "tls=false", 1),
-		"preferred mysql:5.7":   strings.Replace(baseDefaults, "tls=preferred", "tls=oldciphers&allowFallbackToPlaintext=true", 1),
-		"required mariadb:10.1": strings.Replace(baseDefaults, "tls=preferred", "tls=oldciphers", 1),
-
-		// These flavors do not support TLS 1.2+ nor modern cipher suites
-		"disabled mysql:5.5":    strings.Replace(baseDefaults, "tls=preferred", "tls=false", 1),
-		"preferred percona:5.5": strings.Replace(baseDefaults, "tls=preferred", "tls=oldtls&allowFallbackToPlaintext=true", 1),
-		"required mysql:5.6":    strings.Replace(baseDefaults, "tls=preferred", "tls=oldtls", 1),
-
-		// Unknown flavors should work like oldtls case above
-		"disabled ":  strings.Replace(baseDefaults, "tls=preferred", "tls=false", 1),
-		"preferred ": strings.Replace(baseDefaults, "tls=preferred", "tls=oldtls&allowFallbackToPlaintext=true", 1),
-		"required ":  strings.Replace(baseDefaults, "tls=preferred", "tls=oldtls", 1),
+		"disabled":  strings.Replace(baseDefaults, "tls=preferred", "tls=false", 1),
+		"preferred": baseDefaults,
+		"required":  strings.Replace(baseDefaults, "tls=preferred", "tls=skip-verify", 1),
 	}
 	dir := &Dir{Path: "/tmp/dummydir"}
-	for input, expected := range expectTLS {
-		sslMode, flavorString, _ := strings.Cut(input, " ")
-		dir.Config = mybase.SimpleConfig(map[string]string{"connect-options": "", "ssl-mode": sslMode, "flavor": flavorString})
-		if parsed, err := url.ParseQuery(expected); err != nil {
-			t.Fatalf("Bad expected value %q: %s", expected, err)
-		} else {
-			expected = parsed.Encode() // re-sort expected so we can just compare strings
-		}
-		actual, err := dir.InstanceDefaultParams()
-		if err != nil {
-			t.Errorf("Unexpected error from ssl-mode=%q: %s", sslMode, err)
-		} else if actual != expected {
-			t.Errorf("Expected flavor=%s ssl-mode=%q to yield default params %q, instead found %q", flavorString, sslMode, expected, actual)
+	for sslMode, expected := range expectTLS {
+		for _, flavorString := range []string{"mysql:8.4", "mariadb:12.3", ""} {
+			dir.Config = mybase.SimpleConfig(map[string]string{"connect-options": "", "ssl-mode": sslMode, "flavor": flavorString})
+			if parsed, err := url.ParseQuery(expected); err != nil {
+				t.Fatalf("Bad expected value %q: %s", expected, err)
+			} else {
+				expected = parsed.Encode() // re-sort expected so we can just compare strings
+			}
+			actual, err := dir.InstanceDefaultParams()
+			if err != nil {
+				t.Errorf("Unexpected error from ssl-mode=%q: %s", sslMode, err)
+			} else if actual != expected {
+				t.Errorf("Expected flavor=%s ssl-mode=%q to yield default params %q, instead found %q", flavorString, sslMode, expected, actual)
+			}
 		}
 	}
 

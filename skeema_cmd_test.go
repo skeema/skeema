@@ -38,7 +38,7 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	// Successful standard execution. Also confirm user is not persisted to .skeema
 	// since not specified on CLI.
 	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
-	s.verifyFiles(t, cfg, "../golden/init")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 	if _, setsOption := getOptionFile(t, "mydb", cfg).OptionValue("user"); setsOption {
 		t.Error("Did not expect user to be persisted to .skeema, but it was")
 	}
@@ -68,8 +68,7 @@ func (s SkeemaIntegrationSuite) TestInitHandler(t *testing.T) {
 	// Using --ssl-mode=required should only work "out of the box" if the flavor
 	// supports automatic self-signed server certs upon initialization
 	expectedCode := CodeFatalError
-	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
-	if flavor := s.d.Flavor(); flavor.MinMySQL(5, 7) || flavor.MinMariaDB(11, 4) {
+	if flavor := s.d.Flavor(); flavor.IsMySQL() || flavor.MinMariaDB(11, 4) {
 		expectedCode = CodeSuccess
 	}
 	cfg = s.handleCommand(t, expectedCode, ".", "skeema init --dir tlsrequired -h %s -P %d --ssl-mode=required", s.d.Instance.Host, s.d.Instance.Port)
@@ -172,7 +171,7 @@ func (s SkeemaIntegrationSuite) TestAddEnvHandler(t *testing.T) {
 	s.handleCommand(t, CodeBadConfig, ".", "skeema add-environment --dir mydb staging")
 
 	// None of the above failed commands should have modified any files
-	s.verifyFiles(t, cfg, "../golden/init")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 	origFile := getOptionFile(t, "mydb", cfg)
 
 	// valid dir should succeed and add the section to the .skeema file
@@ -229,7 +228,7 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	// Create a new db and put one table in it
 	s.d.SourceSQL(t, "../pull1.sql")
 	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull")
-	s.verifyFiles(t, cfg, "../golden/pull1")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/pull1")
 
 	// Revert db back to previous state, and pull again to test the opposite
 	// behaviors: delete dir for new schema, restore charset/collation in .skeema,
@@ -239,7 +238,7 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	s.d.SourceSQL(t, "../setup.sql")
 	fs.WriteTestFile(t, "mydb/.skeema", strings.Replace(fs.ReadTestFile(t, "mydb/.skeema"), "flavor", "#flavor", 1))
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull")
-	s.verifyFiles(t, cfg, "../golden/init")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 
 	// Files with invalid SQL should still be corrected upon pull. Files with
 	// nonstandard formatting of their CREATE TABLE should be normalized, even if
@@ -259,14 +258,14 @@ func (s SkeemaIntegrationSuite) TestPullHandler(t *testing.T) {
 	contents = fs.ReadTestFile(t, "mydb/.skeema")
 	fs.WriteTestFile(t, "mydb/.skeema", strings.Replace(contents, generatorString(), "skeema:1.4.7-community", 1))
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --debug")
-	s.verifyFiles(t, cfg, "../golden/init")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 	contents = fs.ReadTestFile(t, "mydb/product/posts.sql")
 	if !strings.Contains(contents, "# random comment") {
 		t.Error("Expected mydb/product/posts.sql to retain its extraneous comment, but it was removed")
 	}
 	fs.WriteTestFile(t, "mydb/product/posts.sql", strings.ReplaceAll(contents, "`", ""))
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --debug")
-	s.verifyFiles(t, cfg, "../golden/init")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 	if !strings.Contains(contents, "# random comment") {
 		t.Error("Expected mydb/product/posts.sql to retain its extraneous comment, but it was removed")
 	}
@@ -331,7 +330,7 @@ func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
 
 	// Initial lint should be a no-op that returns exit code 0
 	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema lint")
-	s.verifyFiles(t, cfg, "../golden/init")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 
 	// Invalid options should error with CodeBadConfig
 	s.handleCommand(t, CodeBadConfig, ".", "skeema lint --workspace=doesnt-exist")
@@ -372,7 +371,7 @@ func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
 	rewriteFiles(false)
 	s.handleCommand(t, CodeSuccess, ".", "skeema lint --skip-format")
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint")
-	s.verifyFiles(t, cfg, "../golden/init")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 
 	// Add a new file with invalid SQL, and also make the previous valid rewrites.
 	// Lint should rewrite the valid files but return exit code CodeFatalError due
@@ -385,7 +384,7 @@ func (s SkeemaIntegrationSuite) TestLintHandler(t *testing.T) {
 	// reformatted; re-linting should yield no changes.
 	contents := fs.ReadTestFile(t, commentsFilePath)
 	fs.WriteTestFile(t, commentsFilePath, strings.Replace(contents, "DEFALUT", "DEFAULT", 1))
-	s.verifyFiles(t, cfg, "../golden/init")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 	s.handleCommand(t, CodeSuccess, ".", "skeema lint")
 
 	// Files with SQL statements unsupported by this package should yield a
@@ -403,7 +402,7 @@ func (s SkeemaIntegrationSuite) TestFormatHandler(t *testing.T) {
 
 	// Initial format should be a no-op that returns exit code 0
 	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema format")
-	s.verifyFiles(t, cfg, "../golden/init")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 
 	// Invalid options should error with CodeBadConfig
 	s.handleCommand(t, CodeBadConfig, ".", "skeema format --workspace=doesnt-exist")
@@ -445,7 +444,7 @@ func (s SkeemaIntegrationSuite) TestFormatHandler(t *testing.T) {
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema format --skip-write")
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema format")
 	s.handleCommand(t, CodeSuccess, ".", "skeema format")
-	s.verifyFiles(t, cfg, "../golden/init")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 
 	// Change a file to contain invalid SQL; format should return
 	// CodeDifferencesFound repeatedly
@@ -458,7 +457,7 @@ func (s SkeemaIntegrationSuite) TestFormatHandler(t *testing.T) {
 	// reformatted; re-formatting again should yield no changes.
 	contents := fs.ReadTestFile(t, commentsFilePath)
 	fs.WriteTestFile(t, commentsFilePath, strings.Replace(contents, "DEFALUT", "DEFAULT", 1))
-	s.verifyFiles(t, cfg, "../golden/init")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 	s.handleCommand(t, CodeSuccess, ".", "skeema format")
 
 	// Files with SQL statements unsupported by this package should not affect
@@ -698,12 +697,7 @@ func (s SkeemaIntegrationSuite) TestIndexOrdering(t *testing.T) {
 	// Edit posts.sql to put the new indexes first again, and ensure
 	// push --exact-match actually reorders them.
 	fs.WriteTestFile(t, "mydb/product/posts.sql", contentsIndexesFirst)
-	// TODOv2: MySQL 5.5 will be dropped
-	if s.d.Flavor().IsMySQL(5, 5) {
-		s.handleCommand(t, CodeSuccess, "", "skeema push --exact-match")
-	} else {
-		s.handleCommand(t, CodeSuccess, "", "skeema push --exact-match --alter-algorithm=copy")
-	}
+	s.handleCommand(t, CodeSuccess, "", "skeema push --exact-match --alter-algorithm=copy")
 	s.handleCommand(t, CodeSuccess, "", "skeema diff")
 	s.handleCommand(t, CodeSuccess, "", "skeema diff --exact-match")
 	s.handleCommand(t, CodeSuccess, "", "skeema pull")
@@ -815,13 +809,13 @@ func (s SkeemaIntegrationSuite) TestAutoInc(t *testing.T) {
 
 	// pull and lint should make no changes
 	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull")
-	s.verifyFiles(t, cfg, "../golden/init")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema lint")
-	s.verifyFiles(t, cfg, "../golden/init")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 
 	// pull with --include-auto-inc should include auto-inc values greater than 1
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --include-auto-inc")
-	s.verifyFiles(t, cfg, "../golden/autoinc")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/autoinc")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
 	// Inserting another row should still be ignored by diffs
@@ -837,7 +831,7 @@ func (s SkeemaIntegrationSuite) TestAutoInc(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
 	// init with --include-auto-inc should include auto-inc values greater than 1
-	s.reinitAndVerifyFiles(t, "--include-auto-inc", "../golden/autoinc")
+	s.reinitAndVerifyFiles(t, "--include-auto-inc", "../golden-VENDOR/autoinc")
 
 	// now that the file has a next auto-inc value, subsequent pull operations
 	// should update the value, even without --include-auto-inc
@@ -853,17 +847,17 @@ func (s SkeemaIntegrationSuite) TestUnsupportedAlter(t *testing.T) {
 	s.d.SourceSQL(t, "../unsupported1.sql")
 
 	// init should work fine with an unsupported table
-	s.reinitAndVerifyFiles(t, "", "../golden/unsupported")
+	s.reinitAndVerifyFiles(t, "", "../golden-VENDOR/unsupported")
 
 	// Back to clean slate for db and files
 	s.d.NukeData(t)
 	s.d.SourceSQL(t, "../setup.sql")
-	s.reinitAndVerifyFiles(t, "", "../golden/init")
+	s.reinitAndVerifyFiles(t, "", "../golden-VENDOR/init")
 
 	// apply change to db directly, and confirm pull still works
 	s.d.SourceSQL(t, "../unsupported1.sql")
 	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull --debug --update-partitioning")
-	s.verifyFiles(t, cfg, "../golden/unsupported")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/unsupported")
 
 	// back to clean slate for db only
 	s.d.NukeData(t)
@@ -873,7 +867,7 @@ func (s SkeemaIntegrationSuite) TestUnsupportedAlter(t *testing.T) {
 	contents := fs.ReadTestFile(t, "mydb/product/subscriptions.sql")
 	fs.WriteTestFile(t, "mydb/product/subscriptions.sql", strings.ReplaceAll(contents, "`", ""))
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint")
-	s.verifyFiles(t, cfg, "../golden/unsupported")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/unsupported")
 
 	// diff should return CodeDifferencesFound, vs push should return
 	// CodePartialError
@@ -931,12 +925,12 @@ func (s SkeemaIntegrationSuite) TestIgnoreOptions(t *testing.T) {
 
 	// init: valid regexes should work properly and persist to option files
 	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d --ignore-schema='^archives$' --ignore-table='^_'", s.d.Instance.Host, s.d.Instance.Port)
-	s.verifyFiles(t, cfg, "../golden/ignore")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/ignore")
 
 	// pull: nothing should be updated due to ignore options. Ditto even if we add
 	// a dir with schema name corresponding to ignored schema.
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull")
-	s.verifyFiles(t, cfg, "../golden/ignore")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/ignore")
 	fs.WriteTestFile(t, "mydb/archives/.skeema", "schema=archives")
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	if _, err := os.Stat("mydb/archives/foo.sql"); err == nil {
@@ -1054,13 +1048,9 @@ func (s SkeemaIntegrationSuite) TestDirEdgeCases(t *testing.T) {
 // information_schema. Skeema ignores/strips these clauses so that they do not
 // trip up its "unsupported table" validation logic.
 func (s SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
-	// MariaDB does not consider STORAGE or COLUMN_FORMAT clauses as valid SQL.
-	// Ditto for MySQL 5.5.
-	// TODOv2: MySQL 5.5 will be dropped
+	// MariaDB does not consider STORAGE or COLUMN_FORMAT clauses as valid SQL
 	if s.d.Flavor().IsMariaDB() {
 		t.Skip("Test not relevant for MariaDB-based image", s.d.Flavor())
-	} else if s.d.Flavor().IsMySQL(5, 5) {
-		t.Skip("Test not relevant for 5.5-based image", s.d.Flavor())
 	}
 
 	withClauses := "CREATE TABLE `problems` (\n" +
@@ -1137,7 +1127,7 @@ func (s SkeemaIntegrationSuite) TestReuseTempSchema(t *testing.T) {
 		// Need --skip-format in order for pull to use temp schema
 		cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-format --reuse-temp-schema --temp-schema=verytemp")
 		s.assertTableExists(t, "verytemp", "", "")
-		s.verifyFiles(t, cfg, "../golden/init")
+		s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 	}
 
 	// Invalid workspace option should error
@@ -1292,7 +1282,7 @@ func (s SkeemaIntegrationSuite) TestFlavorConfig(t *testing.T) {
 	// commands will forcibly override it using the dir config one!)
 	inst.ForceFlavor(badFlavor)
 	cfg = s.handleCommand(t, CodeSuccess, "mydb", "skeema pull --debug")
-	s.verifyFiles(t, cfg, "../golden/init")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 
 	// Doing init again to new dir mydbnf, confirm no flavor in mydbnf/.skeema
 	inst.ForceFlavor(badFlavor)
@@ -1323,7 +1313,7 @@ func (s SkeemaIntegrationSuite) TestFlavorConfig(t *testing.T) {
 
 	// pull should fix flavor line
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema pull --debug")
-	s.verifyFiles(t, cfg, "../golden/init")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 }
 
 func (s SkeemaIntegrationSuite) TestRoutines(t *testing.T) {
@@ -1338,14 +1328,14 @@ END`
 	s.d.ExecSQL(t, "USE product; "+create)
 
 	// Confirm init works properly with one function present
-	s.reinitAndVerifyFiles(t, "", "../golden/routines")
+	s.reinitAndVerifyFiles(t, "", "../golden-VENDOR/routines")
 
 	// diff, pull, lint should all be no-ops at this point
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 	cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull")
-	s.verifyFiles(t, cfg, "../golden/routines")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/routines")
 	cfg = s.handleCommand(t, CodeSuccess, ".", "skeema lint")
-	s.verifyFiles(t, cfg, "../golden/routines")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/routines")
 
 	// Change routine1.sql to use Windows-style CRLF line-end in two spots. No
 	// diff should be present. Pull should restore UNIX-style LFs.
@@ -1383,25 +1373,22 @@ END`
 		s.handleCommand(t, CodeFatalError, ".", "skeema push --safe-below-size=10000")
 		cfg = s.handleCommand(t, CodeSuccess, ".", "skeema push --temp-schema-mode=extreme --allow-unsafe")
 	}
-	s.verifyFiles(t, cfg, "../golden/routines")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/routines")
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff")
 
-	// In flavors with roles, a DEFINER can be a role. In MariaDB specifically,
-	// roles are represented without the @host portion of the name, which required
-	// special handling in Skeema.
+	// Roles may be used as the DEFINER. In MariaDB specifically, roles are
+	// represented without the @host portion of the name, which involves special
+	// handling in Skeema.
 	// Create a role and drop/recreate routine1 to use the role as its DEFINER.
 	// Confirm that the diff shows a difference. No need to test dumping (pull)
 	// here because the logic after this does that already.
-	// TODOv2: MySQL 5.x will be dropped, so this if statement will always be true
-	if s.d.Flavor().MinMySQL(8) || s.d.Flavor().IsMariaDB() {
-		s.d.ExecSQL(t, "CREATE ROLE IF NOT EXISTS mytestrole; DROP FUNCTION product.routine1")
-		create = strings.Replace(create, "root@'%'", "mytestrole", 1)
-		if !strings.Contains(create, "mytestrole") {
-			t.Fatal("Test setup incorrect")
-		}
-		s.d.ExecSQL(t, "USE product; "+create)
-		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
+	s.d.ExecSQL(t, "CREATE ROLE IF NOT EXISTS mytestrole; DROP FUNCTION product.routine1")
+	create = strings.Replace(create, "root@'%'", "mytestrole", 1)
+	if !strings.Contains(create, "mytestrole") {
+		t.Fatal("Test setup incorrect")
 	}
+	s.d.ExecSQL(t, "USE product; "+create)
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
 
 	// Delete routine1's file and do a pull; file should be back, even with
 	// --skip-format
@@ -1503,8 +1490,7 @@ END`
 	// Also confirm that --lax-comments does not suppress these diffs, since other
 	// characteristics besides the comment are also being changed.
 	s.d.ExecSQL(t, "ALTER PROCEDURE product.routine2 SQL SECURITY INVOKER READS SQL DATA COMMENT 'whatever'")
-	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
-	if s.d.Flavor().MinMySQL(8) {
+	if s.d.Flavor().IsMySQL() {
 		s.handleCommand(t, CodeFatalError, ".", "skeema diff --lax-comments")
 		s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe --lax-comments")
 		s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe --lax-comments")
@@ -1778,7 +1764,7 @@ func (s SkeemaIntegrationSuite) TestPartitioning(t *testing.T) {
 	fs.WriteTestFile(t, "mydb/analytics/activity.sql", contentsHashPart)
 	s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema push --partitioning=remove")
 	cfg := s.handleCommand(t, CodeSuccess, "mydb/analytics", "skeema pull --update-partitioning")
-	s.verifyFiles(t, cfg, "../golden/init")
+	s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 
 	// Repartition with 2 partitions and push. Confirm that dropping the table
 	// works correctly regardless of partitioning option.
@@ -1806,7 +1792,7 @@ func (s SkeemaIntegrationSuite) TestStripPartitioning(t *testing.T) {
 	}
 	assertUnpartitioned := func(cfg *mybase.Config) {
 		t.Helper()
-		s.verifyFiles(t, cfg, "../golden/init")
+		s.verifyFiles(t, cfg, "../golden-VENDOR/init")
 	}
 	reinitWithPartitions := func() {
 		t.Helper()
@@ -1817,9 +1803,9 @@ func (s SkeemaIntegrationSuite) TestStripPartitioning(t *testing.T) {
 		assertPartitioned()
 	}
 
-	// test init --strip-partitioning, which should leave files identical to
-	// golden/init/ since the only change made to the DB was the partitioning
-	s.reinitAndVerifyFiles(t, "--strip-partitioning", "../golden/init")
+	// test init --strip-partitioning, which should leave files identical to the
+	// golden init dir since the only change made to the DB was the partitioning
+	s.reinitAndVerifyFiles(t, "--strip-partitioning", "../golden-VENDOR/init")
 
 	// Test behavior of format with and without --strip-partitioning
 	reinitWithPartitions()

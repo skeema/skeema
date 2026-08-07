@@ -2,15 +2,10 @@ package workspace
 
 import (
 	"net/url"
-	"os"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/skeema/mybase"
-	"github.com/skeema/skeema/internal/fs"
 	"github.com/skeema/skeema/internal/tengo"
-	"github.com/skeema/skeema/internal/util"
 )
 
 func (s WorkspaceIntegrationSuite) TestLocalDockerErrors(t *testing.T) {
@@ -213,64 +208,6 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerConnParams(t *testing.T) {
 	}
 }
 
-// When requesting a MySQL 5.x Docker workspace on arm64, MySQL 8.0 is used
-// instead, since no earlier arm64 Docker images are available. In this case
-// Skeema sets a session variable to avoid the new default collation for utf8mb4
-// in MySQL 8.0. This test confirms the behavior. It is separate from
-// WorkspaceIntegrationSuite because it is independent of the normal test image
-// logic from the SKEEMA_TEST_IMAGES env var.
-// TODOv2: MySQL 5.x will be dropped, so remove this test as well as the
-// testdata/utf8mb4/ directory
-func TestLocalDockerArm64MySQL5(t *testing.T) {
-	// Despite this test being independent of the normal integration test suite,
-	// we should still skip it if Docker-based testing is not requested
-	if strings.TrimSpace(os.Getenv("SKEEMA_TEST_IMAGES")) == "" {
-		t.Skip("this Docker-related test is skipped when other integration test suites are skipped, due to blank SKEEMA_TEST_IMAGES")
-	}
-	if arch, err := tengo.DockerEngineArchitecture(); err != nil {
-		t.Skipf("unable to check Docker Engine architecture: %v", err)
-	} else if arch != "arm64" {
-		t.Skipf("test can only be run if architecture is \"arm64\", but Docker Engine reported %q", arch)
-	}
-
-	cmd := mybase.NewCommand("workspacetest", "", "", nil)
-	util.AddGlobalOptions(cmd)
-	AddCommandOptions(cmd)
-	cmd.AddArg("environment", "production", false)
-	cfg := mybase.ParseFakeCLI(t, cmd, "workspacetest")
-	dir, err := fs.ParseDir("testdata/utf8mb4", cfg)
-	if err != nil {
-		t.Fatalf("Unexpectedly cannot parse working dir: %v", err)
-	}
-	opts, err := OptionsForDir(dir, nil)
-	if err != nil {
-		t.Fatalf("Unexpected error from OptionsForDir: %v", err)
-	}
-
-	defer Shutdown()
-	wsSchema, err := ExecLogicalSchema(dir.LogicalSchemas[0], opts)
-	if err != nil {
-		t.Errorf("Unexpected error from ExecLogicalSchema: %v", err)
-	} else if len(wsSchema.Failures) > 0 {
-		t.Errorf("Unexpected %d failures from ExecLogicalSchema; first err %v from %s", len(wsSchema.Failures), wsSchema.Failures[0].Err, wsSchema.Failures[0].Statement.Location())
-	}
-
-	if wsSchema.Schema.Collation != "utf8mb4_general_ci" {
-		t.Errorf("Workspace schema default collation is unexpectedly %s", wsSchema.Schema.Collation)
-	}
-	for _, tbl := range wsSchema.Schema.Tables {
-		if tbl.Collation != "utf8mb4_general_ci" {
-			t.Errorf("Table %s default collation is unexpectedly %s", tbl.Name, tbl.Collation)
-		}
-		col := tbl.Columns[1] // all tables in testdata/utf8mb4/tables.sql put a varchar col in this position
-		if col.Collation != "utf8mb4_general_ci" {
-			t.Errorf("Table %s, column %s unexpectedly using collation %s", tbl.Name, col.Name, col.Collation)
-		}
-	}
-}
-
-// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, so adjust
-// test cases below
 func TestDockerImageForFlavor(t *testing.T) {
 	testcases := []struct {
 		flavor      string
@@ -286,10 +223,6 @@ func TestDockerImageForFlavor(t *testing.T) {
 		{"mysql:8.0.29", "arm64", "mysql:8.0.29", false},
 		{"mysql:8.0.10", "amd64", "mysql:8.0.10", false},
 		{"mysql:8.0.10", "arm64", "", true},
-		{"mysql:5.7", "amd64", "mysql:5.7", false},
-		{"mysql:5.7", "arm64", "", true},
-		{"percona:5.7", "amd64", "percona:5.7", false},
-		{"percona:5.7", "arm64", "", true},
 		{"percona:8.0", "amd64", "percona/percona-server:8.0", false},
 		{"percona:8.0", "arm64", "percona/percona-server:8.0", false},
 		{"percona:8.0.33", "amd64", "percona/percona-server:8.0.33", false},
@@ -314,17 +247,13 @@ func TestDockerImageForFlavor(t *testing.T) {
 		{"percona:9.7", "arm64", "percona/percona-server:9.7", false},
 		{"percona:9.7.1", "amd64", "percona/percona-server:9.7.1", false},
 		{"percona:9.7.1", "arm64", "percona/percona-server:9.7.1", false},
-		{"aurora:5.6.10", "amd64", "mysql:5.6", false},
-		{"aurora:5.6.10", "arm64", "", true},
-		{"aurora:5.7.12", "amd64", "mysql:5.7", false},
-		{"aurora:5.7.12", "arm64", "", true},
 		{"aurora:8.0", "amd64", "mysql:8.0", false},
 		{"aurora:8.0", "arm64", "mysql:8.0", false},
 		{"aurora:8.0.26", "amd64", "mysql:8.0.26", false},
 		{"aurora:8.0.26", "arm64", "mysql/mysql-server:8.0.26", false},
 		{"aurora:8.0.32", "amd64", "mysql:8.0.32", false},
 		{"aurora:8.0.32", "arm64", "mysql:8.0.32", false},
-		{"mariadb:10.1", "arm64", "mariadb:10.1", false},
+		{"mariadb:10.6", "arm64", "mariadb:10.6", false},
 		{"mariadb:11.2", "arm64", "mariadb:11.2", false},
 	}
 	for _, tc := range testcases {

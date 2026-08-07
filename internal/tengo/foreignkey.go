@@ -39,12 +39,10 @@ func (fk *ForeignKey) Definition(flavor Flavor) string {
 	}
 	parentCols := strings.Join(colParts, ", ")
 
-	// MySQL 8 omits NO ACTION clauses, but includes RESTRICT clauses. In all other
-	// flavors the opposite is true. (Even though NO ACTION and RESTRICT are
-	// completely equivalent...)
-	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
+	// MySQL omits NO ACTION clauses, but includes RESTRICT clauses; in MariaDB the
+	// opposite is true. (NO ACTION and RESTRICT are completely equivalent.)
 	var hiddenRule, deleteRule, updateRule string
-	if flavor.MinMySQL(8) {
+	if flavor.IsMySQL() {
 		hiddenRule = "NO ACTION"
 	} else {
 		hiddenRule = "RESTRICT"
@@ -56,7 +54,7 @@ func (fk *ForeignKey) Definition(flavor Flavor) string {
 		updateRule = fmt.Sprintf(" ON UPDATE %s", fk.UpdateRule)
 	}
 
-	return fmt.Sprintf("CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)%s%s", EscapeIdentifier(fk.Name), childCols, referencedTable, parentCols, deleteRule, updateRule)
+	return "CONSTRAINT " + EscapeIdentifier(fk.Name) + " FOREIGN KEY (" + childCols + ") REFERENCES " + referencedTable + " (" + parentCols + ")" + deleteRule + updateRule
 }
 
 // Equals returns true if two ForeignKeys are completely identical (even in

@@ -191,20 +191,10 @@ func (s LinterIntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 	// Restore wsSchema.Flavor to match the integration test's Dockerized instance
 	wsSchema.Flavor = s.d.Flavor()
 
-	// If the Dockerized test instance's Flavor supports page compression, verify
-	// that the regexp used by tableCompressionMode() works properly.
-	// Store a mapping of table name -> expected 2nd return value of tableCompressionMode().
-	// TODOv2: All supported non-Aurora flavors will support page compression, but
-	// this will still need the MySQL-vs-Maria conditional
+	// Verify that the regexp used by tableCompressionMode() works properly: store
+	// a mapping of table name -> expected 2nd return value of tableCompressionMode()
 	var tableExpectedClause map[string]string
-	if s.d.Flavor().MinMySQL(5, 7) {
-		dir = getDir(t, "testdata/pagecomprmysql")
-		tableExpectedClause = map[string]string{
-			"page_comp_zlib": "COMPRESSION='zlib'",
-			"page_comp_lz4":  "COMPRESSION='lz4'",
-			"page_comp_none": "",
-		}
-	} else if s.d.Flavor().MinMariaDB(10, 2) {
+	if s.d.Flavor().IsMariaDB() {
 		dir = getDir(t, "testdata/pagecomprmaria")
 		tableExpectedClause = map[string]string{
 			"page_comp_1":   "`PAGE_COMPRESSED`=1",
@@ -212,35 +202,40 @@ func (s LinterIntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 			"page_comp_0":   "",
 			"page_comp_off": "",
 		}
+	} else {
+		dir = getDir(t, "testdata/pagecomprmysql")
+		tableExpectedClause = map[string]string{
+			"page_comp_zlib": "COMPRESSION='zlib'",
+			"page_comp_lz4":  "COMPRESSION='lz4'",
+			"page_comp_none": "",
+		}
 	}
-	if tableExpectedClause != nil {
-		logicalSchema := dir.LogicalSchemas[0]
-		wsOpts, err := workspace.OptionsForDir(dir, s.d.Instance)
-		if err != nil {
-			t.Fatalf("Unexpected error from workspace.OptionsForDir: %v", err)
+	logicalSchema = dir.LogicalSchemas[0]
+	wsOpts, err = workspace.OptionsForDir(dir, s.d.Instance)
+	if err != nil {
+		t.Fatalf("Unexpected error from workspace.OptionsForDir: %v", err)
+	}
+	wsSchema, err = workspace.ExecLogicalSchema(logicalSchema, wsOpts)
+	if err != nil {
+		t.Fatalf("Unexpected error from workspace.ExecLogicalSchema: %v", err)
+	}
+	if len(wsSchema.Failures) > 0 {
+		t.Fatalf("%d of the CREATEs in %s unexpectedly failed: %+v", len(wsSchema.Failures), dir, wsSchema.Failures)
+	}
+	for _, tbl := range wsSchema.Tables {
+		expectedClause, ok := tableExpectedClause[tbl.Name]
+		if !ok {
+			t.Fatalf("Unexpectedly found table %s in dir %s, not present in tableExpectedClause mapping for flavor %s", tbl.Name, dir, s.d.Flavor())
 		}
-		wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, wsOpts)
-		if err != nil {
-			t.Fatalf("Unexpected error from workspace.ExecLogicalSchema: %v", err)
+		var expectedMode string
+		if expectedClause == "" {
+			expectedMode = "none"
+		} else {
+			expectedMode = "page"
 		}
-		if len(wsSchema.Failures) > 0 {
-			t.Fatalf("%d of the CREATEs in %s unexpectedly failed: %+v", len(wsSchema.Failures), dir, wsSchema.Failures)
-		}
-		for _, tbl := range wsSchema.Tables {
-			expectedClause, ok := tableExpectedClause[tbl.Name]
-			if !ok {
-				t.Fatalf("Unexpectedly found table %s in dir %s, not present in tableExpectedClause mapping for flavor %s", tbl.Name, dir, s.d.Flavor())
-			}
-			var expectedMode string
-			if expectedClause == "" {
-				expectedMode = "none"
-			} else {
-				expectedMode = "page"
-			}
-			actualMode, actualClause := tableCompressionMode(tbl)
-			if actualMode != expectedMode || actualClause != expectedClause {
-				t.Errorf("Unexpected return value from tableCompressionMode(%s): got %q,%q; expected %q,%q", tbl.Name, actualMode, actualClause, expectedMode, expectedClause)
-			}
+		actualMode, actualClause := tableCompressionMode(tbl)
+		if actualMode != expectedMode || actualClause != expectedClause {
+			t.Errorf("Unexpected return value from tableCompressionMode(%s): got %q,%q; expected %q,%q", tbl.Name, actualMode, actualClause, expectedMode, expectedClause)
 		}
 	}
 }
@@ -349,8 +344,7 @@ func (s LinterIntegrationSuite) TestCheckSchemaStripAnnotationNewlines(t *testin
 // TestCheckSchemaSpatialIndexSRID confirms that the dupe-index checker will
 // flag SPATIAL indexes in MySQL 8 if their column lacks an SRID.
 func (s LinterIntegrationSuite) TestCheckSchemaSpatialIndexSRID(t *testing.T) {
-	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
-	if !s.d.Flavor().MinMySQL(8) {
+	if !s.d.Flavor().IsMySQL() {
 		t.Skip("Test only relevant for MySQL 8.0+")
 	}
 	dir := getDir(t, "testdata/spatialmysql8")

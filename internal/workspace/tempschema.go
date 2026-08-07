@@ -69,8 +69,8 @@ func NewTempSchema(opts Options) (_ *TempSchema, retErr error) {
 	// which means the TempSchema may not be fully isolated from non-workspace
 	// workloads and their own usage of metadata locks. As a result, we must force
 	// a low lock_wait_timeout on any TempSchema DDL in MySQL 8.
-	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
-	if ts.inst.Flavor().MinMySQL(8) {
+	// TODOv2: evaluate whether any MariaDB implications from their current FK locking scheme
+	if ts.inst.Flavor().IsMySQL() {
 		wantLockWait := 5
 		if testing.Testing() {
 			wantLockWait = 2 // use lower value in test suites so MDL-related tests aren't super slow

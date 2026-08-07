@@ -226,8 +226,7 @@ func (rd *RoutineDiff) Statement(mods StatementModifiers) (stmt string, err erro
 
 	if rd.Type == DiffTypeDrop {
 		// Omit the DROP part of the pair entirely in cases where we're doing an atomic replacement or alter
-		// TODOv2: MySQL 5.x will be dropped, update conditional accordingly
-		if mariaReplace || (clearCommentReplace && !mods.Flavor.MinMySQL(8)) {
+		if mariaReplace {
 			return "", nil
 		}
 		stmt = rd.From.DropStatement()
@@ -248,10 +247,9 @@ func (rd *RoutineDiff) Statement(mods StatementModifiers) (stmt string, err erro
 		return stmt, err
 
 	} else if rd.Type == DiffTypeCreate {
-		// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL(), but also
-		// ensure this has integration coverage in case MySQL ever fixes the relevant
-		// bug preventing clearing a COMMENT clause
-		if clearCommentReplace && !mods.Flavor.MinMySQL(8) {
+		// MySQL cannot remove a COMMENT using ALTER due to a bug, but MariaDB can
+		// TODOv2: add integration coverage in case MySQL ever fixes the bug
+		if clearCommentReplace && mods.Flavor.IsMariaDB() {
 			return rd.alterStatement(mods)
 		}
 		stmt = rd.To.CreateStatement
@@ -424,8 +422,7 @@ func introspectRoutines(ctx context.Context, insp *introspector) error {
 	// If mysql.proc doesn't exist or that query errors in any way, we then run a
 	// SHOW CREATE per routine, using multiple goroutines for performance reasons.
 	var alreadyObtained int
-	// TODOv2: MySQL 5.x will be dropped, so only MariaDB will have mysql.proc; replace with IsMariaDB()
-	if !flavor.MinMySQL(8) {
+	if flavor.IsMariaDB() {
 		query := `
 			SELECT name, type, body, param_list, returns
 			FROM   mysql.proc

@@ -885,11 +885,7 @@ func TestModifyColumnUnsafe(t *testing.T) {
 
 func (s TengoIntegrationSuite) TestAlterPageCompression(t *testing.T) {
 	flavor := s.d.Flavor()
-	// Skip test if flavor doesn't support page compression
-	// Note that although MariaDB 10.1 supports this feature, we exclude it here
-	// since it does not seem to work out-of-the-box in Docker images
-	// TODOv2: All supported non-Aurora flavors will support page compression
-	if !flavor.MinMySQL(5, 7) && !flavor.MinMariaDB(10, 2) {
+	if flavor.IsAurora() {
 		t.Skipf("InnoDB page compression not supported in flavor %s", flavor)
 	}
 

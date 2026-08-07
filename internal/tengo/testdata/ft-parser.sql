@@ -1,5 +1,5 @@
 # Table with two fulltext indexes, incl one using ngram parser (which is
-# preinstalled in MySQL 5.7+)
+# preinstalled in MySQL)
 
 use testing;
 

@@ -140,14 +140,10 @@ func TestInstanceIntrospectionParams(t *testing.T) {
 			t.Errorf("Expected param map %v, instead found %v", parsedExpected, parsedResult)
 		}
 	}
-	// TODOv2: MySQL 5.x will be dropped, remove the 5.7 test cases below
-	assertParams("mysql:5.7", "", "sql_quote_show_create=1&collation=binary")
-	assertParams("mysql:8.0", "", "sql_quote_show_create=1&information_schema_stats_expiry=0&collation=binary")
-	assertParams("mysql:5.7", "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1&collation=binary")
-	assertParams("mysql:8.0", "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1&information_schema_stats_expiry=0&collation=binary")
-	assertParams("mariadb:10.5", "ANSI_QUOTES", "sql_quote_show_create=1&sql_mode=%27%27")
-	assertParams("mysql:5.7", "REAL_AS_FLOAT,PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE,ONLY_FULL_GROUP_BY,ANSI", "sql_quote_show_create=1&collation=binary&sql_mode=%27REAL_AS_FLOAT%2CPIPES_AS_CONCAT%2CIGNORE_SPACE%2CONLY_FULL_GROUP_BY%27")
-	assertParams("mysql:8.0", "NO_FIELD_OPTIONS,NO_BACKSLASH_ESCAPES,NO_KEY_OPTIONS,NO_TABLE_OPTIONS", "sql_quote_show_create=1&collation=binary&information_schema_stats_expiry=0&sql_mode=%27NO_BACKSLASH_ESCAPES%27")
+	assertParams("mysql:9.7", "", "sql_quote_show_create=1&information_schema_stats_expiry=0&collation=binary")
+	assertParams("mysql:8.4", "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1&information_schema_stats_expiry=0&collation=binary")
+	assertParams("mysql:9.7", "NO_FIELD_OPTIONS,NO_BACKSLASH_ESCAPES,NO_KEY_OPTIONS,NO_TABLE_OPTIONS", "sql_quote_show_create=1&collation=binary&information_schema_stats_expiry=0&sql_mode=%27NO_BACKSLASH_ESCAPES%27")
+	assertParams("mariadb:10.6", "ANSI_QUOTES", "sql_quote_show_create=1&sql_mode=%27%27")
 }
 
 func (s TengoIntegrationSuite) TestInstanceCachedConnectionPool(t *testing.T) {
@@ -299,9 +295,8 @@ func (s TengoIntegrationSuite) TestInstanceNameCaseMode(t *testing.T) {
 func (s TengoIntegrationSuite) TestInstanceLockWaitTimeout(t *testing.T) {
 	var expected int
 	// lock_wait_timeout defaults to a ridiculous 1 year in MySQL. MariaDB lowered
-	// it to a slightly-less-ridiculous 1 day in MariaDB 10.2.
-	// TODOv2: MariaDB below 10.4 will be dropped, so replace with IsMariaDB()
-	if s.d.Flavor().MinMariaDB(10, 2) {
+	// it to a slightly-less-ridiculous 1 day.
+	if s.d.Flavor().IsMariaDB() {
 		expected = 86400
 	} else {
 		expected = 86400 * 365
@@ -717,8 +712,7 @@ func (s TengoIntegrationSuite) TestInstanceDropTablesSkipsViews(t *testing.T) {
 		t.Fatalf("Unable to iterate over result set: %v", err)
 	}
 	var expected int
-	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
-	if s.d.Flavor().MinMySQL(8) {
+	if s.d.Flavor().IsMySQL() {
 		expected = 2
 	}
 	if found != expected {

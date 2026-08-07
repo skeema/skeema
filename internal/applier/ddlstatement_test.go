@@ -31,7 +31,6 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 	instSchema := getSchema("analytics")
 
 	// Hackily set up test args manually
-	flavor := s.d[0].Flavor()
 	configMap := map[string]string{
 		"user":                   "root",
 		"password":               s.d[0].Instance.Password,
@@ -45,11 +44,6 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 		"safe-below-size":        "0",
 		"connect-options":        "",
 		"environment":            "production",
-	}
-	// TODOv2: MySQL 5.5 support will be dropped
-	if flavor.IsMySQL(5, 5) {
-		delete(configMap, "alter-algorithm")
-		delete(configMap, "alter-lock")
 	}
 	if runtime.GOOS == "windows" {
 		configMap["ddl-wrapper"] = `echo "ddl-wrapper {SCHEMA}.{NAME} {TYPE} {CLASS}"`
@@ -78,10 +72,10 @@ func (s ApplierIntegrationSuite) TestNewDDLStatement(t *testing.T) {
 		t.Fatalf("Expected 5 object diffs, instead found %d %#v", len(objDiffs), objDiffs)
 	}
 
-	mods := tengo.StatementModifiers{AllowUnsafe: true}
-	// TODOv2: MySQL 5.5 support will be dropped
-	if !flavor.IsMySQL(5, 5) {
-		mods.LockClause, mods.AlgorithmClause = "none", "inplace"
+	mods := tengo.StatementModifiers{
+		AllowUnsafe:     true,
+		LockClause:      "none",
+		AlgorithmClause: "inplace",
 	}
 	for _, diff := range objDiffs {
 		ddl, err := NewDDLStatement(diff, mods, target)

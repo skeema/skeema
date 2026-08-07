@@ -114,8 +114,8 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Test introspection of default expressions, if flavor supports them
-	// TODOv2: MariaDB below 10.4 will be dropped, so replace with IsMariaDB()
-	if flavor.MinMariaDB(10, 2) || flavor.MinMySQL(8, 0, 13) {
+	// TODOv3: early point releases of MySQL 8.0 will be dropped in Skeema v3, so this will always be true
+	if flavor.IsMariaDB() || flavor.MinMySQL(8, 0, 13) {
 		table := getTable(t, schema, "testdefaults")
 		// Ensure 3-byte chars in default expression are introspected properly
 		if !strings.Contains(table.CreateStatement, "\u20AC") {
@@ -131,35 +131,33 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Test introspection of generated columns, if flavor supports them
-	if flavor.GeneratedColumns() { // TODOv2: this will always be true in supported v2 flavors, remove if statement
-		table := getTable(t, schema, "staff")
-		// Ensure 3-byte chars in generation expression are introspected properly
-		if !strings.Contains(table.CreateStatement, "\u20AC") {
-			t.Errorf("Expected generation expression to contain 3-byte char \u20AC, but it did not. CREATE statement:\n%s", table.CreateStatement)
-		}
-
-		// In MySQL, ensure 4-byte chars in default expressions are introspected
-		// properly. (MariaDB does not appear to handle them properly in generated
-		// column expressions at all, it's corrupted at creation time and on a
-		// functional level, not just introspection.)
-		if flavor.Vendor != VendorMariaDB && !strings.Contains(table.CreateStatement, "\U0001F4A9") {
-			t.Errorf("Expected generation expression to contain 4-byte char \U0001F4A9, but it did not. CREATE statement:\n%s", table.CreateStatement)
-		}
-
-		// Test generation expression fix, even if test image isn't MySQL
-		for _, col := range table.Columns {
-			if col.GenerationExpr != "" {
-				col.GenerationExpr = "length(_latin1\\'fixme\\')"
-			}
-		}
-		fixGenerationExpr(table, flavor)
-		if table.GeneratedCreateStatement(flavor) != table.CreateStatement {
-			t.Error("fixGenerationExpr did not behave as expected")
-		}
+	table := getTable(t, schema, "staff")
+	// Ensure 3-byte chars in generation expression are introspected properly
+	if !strings.Contains(table.CreateStatement, "\u20AC") {
+		t.Errorf("Expected generation expression to contain 3-byte char \u20AC, but it did not. CREATE statement:\n%s", table.CreateStatement)
 	}
 
-	// Test advanced index functionality in MySQL 8+
-	if flavor.MinMySQL(8) { // TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
+	// In MySQL, ensure 4-byte chars in default expressions are introspected
+	// properly. (MariaDB does not appear to handle them properly in generated
+	// column expressions at all, it's corrupted at creation time and on a
+	// functional level, not just introspection.)
+	if flavor.Vendor != VendorMariaDB && !strings.Contains(table.CreateStatement, "\U0001F4A9") {
+		t.Errorf("Expected generation expression to contain 4-byte char \U0001F4A9, but it did not. CREATE statement:\n%s", table.CreateStatement)
+	}
+
+	// Test generation expression fix, even if test image isn't MySQL
+	for _, col := range table.Columns {
+		if col.GenerationExpr != "" {
+			col.GenerationExpr = "length(_latin1\\'fixme\\')"
+		}
+	}
+	fixGenerationExpr(table, flavor)
+	if table.GeneratedCreateStatement(flavor) != table.CreateStatement {
+		t.Error("fixGenerationExpr did not behave as expected")
+	}
+
+	// Test flavor-specific index functionality
+	if flavor.IsMySQL() {
 		table := getTable(t, schema, "my8idx")
 		if !strings.Contains(table.CreateStatement, "\u20AC") {
 			t.Errorf("Expected functional index expression to contain 3-byte char \u20AC, but it did not. CREATE statement:\n%s", table.CreateStatement)
@@ -177,7 +175,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		if idx.Parts[0].Expression != "" || idx.Parts[1].Expression == "" {
 			t.Errorf("Unexpected index part expressions found: [0].Expression=%q, [1].Expression=%q", idx.Parts[0].Expression, idx.Parts[1].Expression)
 		}
-	} else if flavor.MinMariaDB(10, 6) {
+	} else if flavor.MinMariaDB(10, 6) { // TODOv3: MariaDB below 10.6 will be dropped in Skeema v3, so replace with IsMariaDB
 		table := getTable(t, schema, "maria106idx")
 		idx := table.SecondaryIndexes[0]
 		if !idx.Invisible {
@@ -186,8 +184,8 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Test invisible column support in flavors supporting it
-	// TODOv2: MariaDB below 10.4 will be dropped, so replace with IsMariaDB()
-	if flavor.MinMariaDB(10, 3) || flavor.MinMySQL(8, 0, 23) {
+	// TODOv3: early point releases of MySQL 8.0 will be dropped in Skeema v3, so this will always be true
+	if flavor.IsMariaDB() || flavor.MinMySQL(8, 0, 23) {
 		table := getTable(t, schema, "invistest")
 		for n, col := range table.Columns {
 			expectInvis := (n == 0 || n == 4 || n == 5)
@@ -197,10 +195,9 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 		}
 	}
 
-	// Include coverage for fulltext parsers if MySQL 5.7+. (Although these are
-	// supported in other flavors too, no alternative parsers ship with them.)
-	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
-	if flavor.MinMySQL(5, 7) {
+	// Include coverage for fulltext parsers if MySQL. (Although these are
+	// supported in MariaDB too, no alternative parsers ship with the server.)
+	if flavor.IsMySQL() {
 		table := getTable(t, schema, "ftparser")
 		indexes := table.SecondaryIndexesByName()
 		if idx := indexes["ftdesc"]; idx.FullTextParser != "ngram" || idx.Type != "FULLTEXT" {
@@ -215,13 +212,12 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 	}
 
 	// Coverage for column compression
-	// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, can simplify conditions
-	if flavor.IsPercona() && flavor.MinMySQL(5, 6, 33) {
+	if flavor.IsPercona() {
 		table := getTable(t, schema, "colcompr")
 		if table.Columns[1].Compression != "COMPRESSED" {
 			t.Errorf("Unexpected value for compression column attribute: found %q", table.Columns[1].Compression)
 		}
-	} else if flavor.MinMariaDB(10, 3) {
+	} else if flavor.IsMariaDB() {
 		table := getTable(t, schema, "colcompr")
 		if table.Columns[1].Compression != "COMPRESSED" {
 			t.Errorf("Unexpected value for compression column attribute: found %q", table.Columns[1].Compression)

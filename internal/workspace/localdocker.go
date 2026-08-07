@@ -68,29 +68,20 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	}
 
 	// Determine image and container name
-	// TODOv2: Once MySQL 5.x support is dropped, this logic can be simplified a
-	// bit, but must still partially remain to account for lack of ARM with low
-	// point releases of MySQL 8.0 and especially Percona Server 8.0.
 	arch, err := tengo.DockerEngineArchitecture()
 	if err != nil {
 		return nil, err
 	}
 	ld.image, err = DockerImageForFlavor(opts.Flavor, arch)
 	if err != nil {
-		log.Warn(err.Error() + ". Substituting mysql:8.0 instead for workspace purposes, which may cause behavior differences.")
-		ld.image = "mysql:8.0"
-
-		// If the original requested flavor was MySQL 5.x but we're substituting 8.0
-		// (since there's no 5.x images for ARM), force session-level variable
-		// default_collation_for_utf8mb4=utf8mb4_general_ci so that any usage of
-		// utf8mb4 without an explicit collation clause will behave like it did in
-		// 5.x. The MySQL Manual warns against setting this, but it works successfully
-		// at the session level in all versions of 8.0; and our motivation here is
-		// conceptually similar to the logical replication use-case that this variable
-		// was introduced to handle.
-		if opts.Flavor.IsMySQL(5) {
-			ld.defaultConnParams += "&default_collation_for_utf8mb4=utf8mb4_general_ci"
-			ld.defaultConnParams = strings.TrimPrefix(ld.defaultConnParams, "&")
+		// Try again without a specific patch number, as that is the only potential
+		// source of errors (old patches not available for arm64)
+		var err2 error
+		ld.image, err2 = DockerImageForFlavor(opts.Flavor.Family(), arch)
+		if err2 != nil {
+			return nil, err
+		} else {
+			log.Warnf("%s. Substituting %s instead for workspace purposes.", err, ld.image)
 		}
 	}
 	if opts.ContainerName == "" {
@@ -195,9 +186,8 @@ func (ld *LocalDocker) ConnectionPool(params string) (*sql.DB, error) {
 	// In the rare situation where OptionsForDir obtained sql_mode from a live
 	// instance of different flavor than our Docker image's flavor, connections may
 	// hit Error 1231 (42000): Variable 'sql_mode' can't be set to the value ...
-	// This can happen if overriding flavor on the command-line, or even
-	// automatically if the real server runs 5.7 but local machine is ARM.
-	// In this case, try conn again with all non-portable sql_mode values removed.
+	// This can happen if overriding flavor on the command-line. In this case, try
+	// conn again with all non-portable sql_mode values removed.
 	if tengo.IsSessionVarValueError(err) && strings.Contains(err.Error(), "sql_mode") && strings.Contains(finalParams, "sql_mode") {
 		v, _ := url.ParseQuery(finalParams)
 		if sqlMode := v.Get("sql_mode"); len(sqlMode) > 1 {
@@ -305,18 +295,6 @@ func DockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
 	image := flavor.String()
 
 	if flavor.IsPercona() {
-		// Percona Server 5.x:
-		// on arm64, no images available
-		// on amd64, use top-level percona:5.x images as-is
-		// TODOv2: no longer will be necessary
-		if flavor.IsMySQL(5) {
-			if arch == "arm64" {
-				return "", fmt.Errorf("%s Docker images for %s are not available", arch, image)
-			} else {
-				return image, nil
-			}
-		}
-
 		// In some Percona 8.x cases, arm64 requires special handling due to unusual
 		// tagging on DockerHub:
 		//   * 8.0.32 and below: not available on arm64
@@ -344,29 +322,22 @@ func DockerImageForFlavor(flavor tengo.Flavor, arch string) (string, error) {
 		}
 
 		// The top-level "percona" images lack arm64 support, and they don't have 8.1+
-		// at all anyway. So for 8.0+ we always use percona/percona-server instead,
-		// even on amd64 just for consistency across archs.
+		// at all anyway. So we always use percona/percona-server instead, even on
+		// amd64 just for consistency across archs.
 		return strings.Replace(image, "percona:", "percona/percona-server:", 1), nil
 	}
 
-	// Aurora flavors from Skeema Premium: use corresponding MySQL image, but
-	// without any patch version for 5.X.Y since Aurora historically used very
-	// low patch versions.
+	// Aurora flavors from Skeema Premium: use corresponding MySQL image
 	// This chunk intentionally doesn't return early! It is designed to fall
 	// through to the regular MySQL logic below it.
-	// TODOv2: MySQL 5.x will be dropped, simplify this logic
 	if flavor.IsAurora() {
-		if strings.HasPrefix(image, "aurora:5.6.") {
-			image = "mysql:5.6"
-		} else if strings.HasPrefix(image, "aurora:5.7.") {
-			image = "mysql:5.7"
-		} else {
-			image = strings.Replace(image, "aurora:", "mysql:", 1)
-		}
+		image = strings.Replace(image, "aurora:", "mysql:", 1)
 	}
 
 	// MySQL on arm64: use mysql/mysql-server for 8.0.12-8.0.28.
-	// Below 8.0.12 (incl all 5.x), arm64 MySQL images are not available at all.
+	// Below 8.0.12, arm64 MySQL images are not available at all.
+	// TODOv3: early point releases of MySQL 8.0 were deprecated as of Skeema v2
+	// and will be dropped in v3, so this can be simplified eventually
 	if arch == "arm64" && flavor.IsMySQL() {
 		if !flavor.MinMySQL(8, 0, 12) {
 			return "", fmt.Errorf("%s Docker images for %s are not available", arch, image)

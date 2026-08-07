@@ -126,11 +126,11 @@ func IsUnreservedWord(word string, flavor Flavor) bool {
 // Below this point are unexported variables containing keyword lists. If adding
 // new keywords to these variables, be sure to only use lowercase!
 
-// These reserved words are present in both MySQL 5.5 and MariaDB 10.1, which
-// are the oldest flavors this package supports. This list should not ever
-// change, unless it is found to contain mistakes.
-// TODOv2: rework this list and logic to account for dropping MySQL 5.x and
-// MariaDB 10.1-10.3 in Skeema v2.
+// These reserved words are present in both MySQL and MariaDB for the oldest
+// server versions supported by this version of Skeema. Generally this list
+// should only ever change when a new major version of Skeema is released:
+// dropping support for very old server versions may cause some reserved words
+// to move from the flavor-specific maps into this commonReservedWords slice.
 var commonReservedWords = []string{
 	"accessible",
 	"add",
@@ -194,6 +194,7 @@ var commonReservedWords = []string{
 	"elseif",
 	"enclosed",
 	"escaped",
+	"except", // added in MySQL 8.0 and MariaDB 10.3
 	"exists",
 	"exit",
 	"explain",
@@ -230,6 +231,7 @@ var commonReservedWords = []string{
 	"int4",
 	"int8",
 	"integer",
+	"intersect", // added in MySQL 8.0 and MariaDB 10.3
 	"interval",
 	"into",
 	"is",
@@ -279,6 +281,8 @@ var commonReservedWords = []string{
 	"out",
 	"outer",
 	"outfile",
+	"over",      // added in MySQL 8.0 and MariaDB 10.2
+	"partition", // added in MySQL 5.6 and MariaDB 10.0
 	"precision",
 	"primary",
 	"procedure",
@@ -288,6 +292,7 @@ var commonReservedWords = []string{
 	"reads",
 	"read_write",
 	"real",
+	"recursive", // added in MySQL 8.0 and MariaDB 10.2
 	"references",
 	"regexp",
 	"release",
@@ -301,6 +306,7 @@ var commonReservedWords = []string{
 	"revoke",
 	"right",
 	"rlike",
+	"rows", // added in MySQL 8.0 and MariaDB 10.2
 	"schema",
 	"schemas",
 	"second_microsecond",
@@ -361,29 +367,24 @@ var commonReservedWords = []string{
 	"_filename", // special case mentioned separately in MySQL manual; also seems to apply to MariaDB
 }
 
-// Flavor values used in maps below, in places where the same value occurs
-// multiple times
+// Flavor values used in maps below
 var (
-	mySQL56    = Flavor{Vendor: VendorMySQL, Version: Version{5, 6, AnyPatch}}
-	mySQL57    = Flavor{Vendor: VendorMySQL, Version: Version{5, 7, AnyPatch}}
-	mySQL80    = Flavor{Vendor: VendorMySQL, Version: Version{8, 0, AnyPatch}}
-	mySQL84    = Flavor{Vendor: VendorMySQL, Version: Version{8, 4, AnyPatch}}
-	mariaDB101 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1, AnyPatch}}
-	mariaDB102 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2, AnyPatch}}
-	mariaDB103 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3, AnyPatch}}
-	mariaDB107 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7, AnyPatch}}
+	oldestMySQL   = Flavor{Vendor: VendorMySQL, Version: OldestSupportedMySQLVersion}
+	mySQL82       = Flavor{Vendor: VendorMySQL, Version: Version{8, 2, AnyPatch}}
+	mySQL83       = Flavor{Vendor: VendorMySQL, Version: Version{8, 3, AnyPatch}}
+	mySQL84       = Flavor{Vendor: VendorMySQL, Version: Version{8, 4, AnyPatch}}
+	mySQL92       = Flavor{Vendor: VendorMySQL, Version: Version{9, 2, AnyPatch}}
+	mySQL94       = Flavor{Vendor: VendorMySQL, Version: Version{9, 4, AnyPatch}}
+	oldestMariaDB = Flavor{Vendor: VendorMariaDB, Version: OldestSupportedMariaDBVersion}
+	mariaDB106    = Flavor{Vendor: VendorMariaDB, Version: Version{10, 6, AnyPatch}}
+	mariaDB107    = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7, AnyPatch}}
+	mariaDB117    = Flavor{Vendor: VendorMariaDB, Version: Version{11, 7, AnyPatch}}
 )
 
 // Mapping of lowercased reserved words to the flavor(s) that added them. A
 // few notes on keeping this list manageable:
 //   - We do not track point (aka dot or patch) releases here. The only edge
 //     case in the past few years is "intersect" (reserved in 8.0.31+).
-//   - Some of the entries associated with mariaDB101 were actually
-//     introduced prior to that, but this package does not support pre-10.1,
-//     so 10.1 is used as a placeholder for simplicity's sake. A few other entries
-//     are inconsistently documented by the MariaDB manual, so 10.1 is used as a
-//     guess for: "delete_domain_id", "page_checksum", "parse_vcol_expr", and
-//     "position".
 //   - This list assumes the information in the MySQL and MariaDB manuals is
 //     correct, but that is not always the case. Please open a pull request if
 //     you discover a missing or incorrect entry.
@@ -399,78 +400,71 @@ var (
 //     reserved word only in the context of table name *aliases*, which largely
 //     means it isn't relevant to this package at this time.
 var reservedWordsAddedInFlavor = map[string][]Flavor{
-	"get":             {mySQL56},
-	"io_after_gtids":  {mySQL56},
-	"io_before_gtids": {mySQL56},
-	"master_bind":     {mySQL56}, // removed in MySQL 8.4, see reservedWordsRemovedInFlavor
-	"partition":       {mySQL56, mariaDB101},
+	"cube":            {oldestMySQL}, // added in MySQL 8.0; still reserved in 8.4, despite 8.4.0's I_S.keywords.reserved being 0, see bug 114874
+	"cume_dist":       {oldestMySQL}, // added in MySQL 8.0
+	"dense_rank":      {oldestMySQL}, // added in MySQL 8.0
+	"empty":           {oldestMySQL}, // added in MySQL 8.0
+	"first_value":     {oldestMySQL}, // added in MySQL 8.0
+	"function":        {oldestMySQL}, // added in MySQL 8.0
+	"generated":       {oldestMySQL}, // added in MySQL 5.7
+	"get":             {oldestMySQL}, // added in MySQL 5.6
+	"grouping":        {oldestMySQL}, // added in MySQL 8.0
+	"groups":          {oldestMySQL}, // added in MySQL 8.0
+	"io_after_gtids":  {oldestMySQL}, // added in MySQL 5.6
+	"io_before_gtids": {oldestMySQL}, // added in MySQL 5.6
+	"json_table":      {oldestMySQL}, // added in MySQL 8.0
+	"lag":             {oldestMySQL}, // added in MySQL 8.0
+	"last_value":      {oldestMySQL}, // added in MySQL 8.0
+	"lateral":         {oldestMySQL}, // added in MySQL 8.0
+	"lead":            {oldestMySQL}, // added in MySQL 8.0
+	"master_bind":     {oldestMySQL}, // added in MySQL 5.6; removed in MySQL 8.4, see reservedWordsRemovedInFlavor
+	"nth_value":       {oldestMySQL}, // added in MySQL 8.0
+	"ntile":           {oldestMySQL}, // added in MySQL 8.0
+	"of":              {oldestMySQL}, // added in MySQL 8.0
+	"optimizer_costs": {oldestMySQL}, // added in MySQL 5.7
+	"percent_rank":    {oldestMySQL}, // added in MySQL 8.0
+	"rank":            {oldestMySQL}, // added in MySQL 8.0
+	"row":             {oldestMySQL}, // added in MySQL 8.0
+	"stored":          {oldestMySQL}, // added in MySQL 5.7
+	"system":          {oldestMySQL}, // added in MySQL 8.0
+	"virtual":         {oldestMySQL}, // added in MySQL 5.7
+	"window":          {oldestMySQL}, // added in MySQL 8.0; see comment above re: omitting contextual MariaDB case
 
-	"generated":       {mySQL57},
-	"optimizer_costs": {mySQL57},
-	"stored":          {mySQL57},
-	"virtual":         {mySQL57},
+	"row_number": {oldestMySQL, mariaDB107}, // added in MySQL 8.0 and MariaDB 10.7
 
-	"cube":         {mySQL80}, // still reserved in 8.4, despite 8.4.0's I_S.keywords.reserved being 0, see bug 114874
-	"cume_dist":    {mySQL80},
-	"dense_rank":   {mySQL80},
-	"empty":        {mySQL80},
-	"except":       {mySQL80, mariaDB103},
-	"first_value":  {mySQL80},
-	"function":     {mySQL80},
-	"grouping":     {mySQL80},
-	"groups":       {mySQL80},
-	"intersect":    {mySQL80, mariaDB103},
-	"json_table":   {mySQL80},
-	"lag":          {mySQL80},
-	"last_value":   {mySQL80},
-	"lateral":      {mySQL80},
-	"lead":         {mySQL80},
-	"nth_value":    {mySQL80},
-	"ntile":        {mySQL80},
-	"of":           {mySQL80},
-	"over":         {mySQL80, mariaDB102},
-	"percent_rank": {mySQL80},
-	"rank":         {mySQL80},
-	"recursive":    {mySQL80, mariaDB102},
-	"row":          {mySQL80},
-	"rows":         {mySQL80, mariaDB102},
-	"row_number":   {mySQL80, mariaDB107},
-	"system":       {mySQL80},
-	"window":       {mySQL80}, // see comment above re: MariaDB
+	"parallel":    {mySQL82}, // wrong in I_S.keywords.reserved, see bug 114874
+	"qualify":     {mySQL83}, // wrong in I_S.keywords.reserved, see bug 114874
+	"manual":      {mySQL84}, // wrong in I_S.keywords.reserved, see bug 114874
+	"tablesample": {mySQL84}, // wrong in I_S.keywords.reserved, see bug 114874
 
-	"parallel":    {{Vendor: VendorMySQL, Version: Version{8, 2, AnyPatch}}}, // wrong in I_S.keywords.reserved, see bug 114874
-	"qualify":     {{Vendor: VendorMySQL, Version: Version{8, 3, AnyPatch}}}, // wrong in I_S.keywords.reserved, see bug 114874
-	"manual":      {mySQL84},                                                 // wrong in I_S.keywords.reserved, see bug 114874
-	"tablesample": {mySQL84},                                                 // wrong in I_S.keywords.reserved, see bug 114874
-
-	"library":  {{Vendor: VendorMySQL, Version: Version{9, 2, AnyPatch}}},
-	"external": {{Vendor: VendorMySQL, Version: Version{9, 4, AnyPatch}}}, // wrong in I_S.keywords.reserved, see bug 114874
+	"library":  {mySQL92},
+	"external": {mySQL94}, // wrong in I_S.keywords.reserved, see bug 114874
 
 	// This one was reserved only in 9.6.0, and was retroactively considered a bug
 	// as per https://bugs.mysql.com/bug.php?id=119904. Since 9.6 was a rolling
 	// "innovation" release, and those aren't generally used in production, it
 	// doesn't make sense to track it as a normal reserved-then-unreserved word:
-	// "sets":     {{Vendor: VendorMySQL, Version: Version{9, 6, AnyPatch}}}, // wrong in I_S.keywords.reserved, see bug 114874
+	// "sets":     {mysql96}, // wrong in I_S.keywords.reserved, see bug 114874
 
-	"current_role":            {mariaDB101},
-	"delete_domain_id":        {mariaDB101}, // actual version unclear from docs, see comment above
-	"do_domain_ids":           {mariaDB101},
-	"general":                 {mariaDB101},
-	"ignore_domain_ids":       {mariaDB101},
-	"ignore_server_ids":       {mariaDB101},
-	"master_heartbeat_period": {mariaDB101},
-	"page_checksum":           {mariaDB101}, // actual version unclear from docs, see comment above
-	"parse_vcol_expr":         {mariaDB101}, // actual version unclear from docs, see comment above
-	"ref_system_id":           {mariaDB101},
-	"returning":               {mariaDB101},
-	"slow":                    {mariaDB101},
-	"stats_auto_recalc":       {mariaDB101},
-	"stats_persistent":        {mariaDB101},
-	"stats_sample_pages":      {mariaDB101},
+	"current_role":            {oldestMariaDB},
+	"delete_domain_id":        {oldestMariaDB},
+	"do_domain_ids":           {oldestMariaDB},
+	"general":                 {oldestMariaDB},
+	"ignore_domain_ids":       {oldestMariaDB},
+	"ignore_server_ids":       {oldestMariaDB},
+	"master_heartbeat_period": {oldestMariaDB},
+	"page_checksum":           {oldestMariaDB},
+	"parse_vcol_expr":         {oldestMariaDB},
+	"ref_system_id":           {oldestMariaDB},
+	"returning":               {oldestMariaDB},
+	"slow":                    {oldestMariaDB},
+	"stats_auto_recalc":       {oldestMariaDB},
+	"stats_persistent":        {oldestMariaDB},
+	"stats_sample_pages":      {oldestMariaDB},
 
-	"offset": {{Vendor: VendorMariaDB, Version: Version{10, 6, AnyPatch}}},
+	"offset": {mariaDB106},
 
-	"vector": {{Vendor: VendorMariaDB, Version: Version{11, 7, AnyPatch}}},
+	"vector": {mariaDB117},
 }
 
 var reservedWordsRemovedInFlavor = map[string][]Flavor{

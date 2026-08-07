@@ -537,74 +537,26 @@ func (fl Flavor) Supported() (supported bool, details string) {
 //    release and the logic needs to be repeated in multiple places. In all
 //    other situations, generally avoid introducing new capability methods!
 
-// GeneratedColumns returns true if the flavor supports generated columns
-// using MySQL's native syntax. (Although MariaDB 10.1 has support for generated
-// columns, its syntax is borrowed from other DBMS, so false is returned.)
-// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, can remove
-// this method and adjust any callsites to assume always available
-func (fl Flavor) GeneratedColumns() bool {
-	return fl.MinMySQL(5, 7) || fl.MinMariaDB(10, 2)
-}
-
-// SortedForeignKeys returns true if the flavor sorts foreign keys
-// lexicographically in SHOW CREATE TABLE.
-func (fl Flavor) SortedForeignKeys() bool {
-	// MySQL sorts lexicographically in 5.6 through 8.0.18; MariaDB always does
-	// TODOv2: MySQL 5.x will be dropped, adjust accordingly
-	return !fl.IsMySQL(5, 5) && !fl.MinMySQL(8, 0, 19)
-}
-
 // OmitIntDisplayWidth returns true if the flavor omits inclusion of display
 // widths from column types in the int family, aside from special cases like
 // tinyint(1).
+// TODOv3: early MySQL 8.0 point releases will be dropped in Skeema v3; replace
+// all callsites with IsMySQL at that time and remove this method
 func (fl Flavor) OmitIntDisplayWidth() bool {
 	return fl.MinMySQL(8, 0, 19)
 }
 
 // HasCheckConstraints returns true if the flavor supports check constraints
 // and exposes them in information_schema.
-// TODOv2: MariaDB below 10.4 will be dropped, simplify logic accordingly
+// TODOv3: early MySQL 8.0 point releases will be dropped in Skeema v3, at which point this will always be true
 func (fl Flavor) HasCheckConstraints() bool {
-	if fl.MinMySQL(8, 0, 16) || fl.MinMariaDB(10, 3, 10) {
-		return true
-	}
-	return fl.IsMariaDB(10, 2) && fl.Version.Patch() >= 22
-}
-
-// ModernCipherSuites returns true if the flavor is typically compiled with
-// OpenSSL 1.1+ and supports elliptic curve cipher suites compatible with the
-// default set of cipher suites in Go 1.22+. If the flavor is not known, this
-// method returns false, with an intended use-case of permissively allowing a
-// TLS connection to a server whose flavor has not been introspected yet.
-// TODOv2: MySQL 5.x and MariaDB 10.1 will be dropped, can remove this method
-// and adjust any callsites to assume always available
-func (fl Flavor) ModernCipherSuites() bool {
-	// Elliptic curve ciphers are usable in:
-	// * MySQL 8.0+, any variant
-	// * Percona Server 5.7 (but not other variants of 5.7)
-	// * MariaDB 10.2+
-	// All other flavors need TLS_RSA_WITH_AES_... ciphers
-	return fl.MinMySQL(8, 0) || fl.MinMariaDB(10, 2) || fl.IsPercona(5, 7)
-}
-
-// SupportsTLS12 returns true if the flavor typically supports TLS 1.2+. If
-// the flavor is not known, this method returns false, with an intended use-
-// case of permissively allowing a TLS connection to a server whose flavor
-// has not been introspected yet.
-// TODOv2: MySQL 5.x will be dropped, can remove this method and adjust any
-// callsites to assume always available
-func (fl Flavor) SupportsTLS12() bool {
-	// TLS 1.2+ is usable in:
-	// * MySQL 5.7.28+, any variant (note that a point release of "0" means "latest" i.e. 5.7.44)
-	// * MariaDB, any version otherwise supported by this package (10.1+)
-	return fl.MinMySQL(5, 7, 28) || fl.IsMySQL(5, 7, AnyPatch) || fl.Vendor == VendorMariaDB
+	return fl.MinMySQL(8, 0, 16) || fl.IsMariaDB()
 }
 
 // Mapping for when to return true for AlwaysShowCollate: MariaDB releases
 // from Nov 2022 onward. See https://jira.mariadb.org/browse/MDEV-29446
-// TODOv2: MariaDB 10.3 will be dropped, remove that entry
+// TODOv3: MariaDB 10.4-10.5 will be dropped in Skeema v3
 var mariaAlwaysCollate = newPointReleaseMap(
-	Version{10, 3, 37}, // MariaDB 10.3:  10.3.37+
 	Version{10, 4, 27}, // MariaDB 10.4:  10.4.27+
 	Version{10, 5, 18}, // MariaDB 10.5:  10.5.18+
 	Version{10, 6, 11}, // MariaDB 10.6:  10.6.11+
@@ -627,6 +579,7 @@ func (fl Flavor) AlwaysShowCollate() bool {
 
 // Mapping for when to use /*M! style comments for compressed columns: MariaDB
 // releases from Aug 2024 onward. See https://jira.mariadb.org/browse/MDEV-34318
+// TODOv3: MariaDB 10.5 will be dropped in Skeema v3
 var mariaNewCompressedColMarker = newPointReleaseMap(
 	Version{10, 5, 26}, // MariaDB 10.5:  10.5.26+
 	Version{10, 6, 19}, // MariaDB 10.6:  10.6.19+

@@ -8,16 +8,13 @@ import (
 )
 
 // TestFlavorForcedTLS provides coverage for using encrypted connections in
-// older flavors which don't auto-configure self-signed certs out-of-the-box.
-// This also inherently tests legacy TLS edge-cases: TLS 1.0 support for MySQL
-// 5.5-5.6, and RSA kex cipher suites in MariaDB 10.1.
-// Because this test involves reconfiguring and restarting the database, this
-// test uses its own separate ephemeral container.
+// older MariaDB versions which don't auto-configure self-signed certs out-of-
+// the-box. Because this test involves reconfiguring and restarting the
+// database, this test uses its own separate ephemeral container.
 func (s SkeemaIntegrationSuite) TestFlavorForcedTLS(t *testing.T) {
 	// For flavors *with* out-of-the-box support, TLS connection already tested by
 	// SkeemaIntegrationSuite.InitHandler, so no need to repeat it
-	// TODOv2: MySQL 5.x will be dropped, adjust conditional and comments above
-	if flavor := s.d.Flavor(); flavor.MinMySQL(5, 7) || flavor.MinMariaDB(11, 4) {
+	if flavor := s.d.Flavor(); flavor.IsMySQL() || flavor.MinMariaDB(11, 4) {
 		t.Skipf("Flavor %s already includes TLS support out-of-the-box", flavor)
 	}
 

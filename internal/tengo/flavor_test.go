@@ -7,11 +7,6 @@ import (
 	"testing"
 )
 
-// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, and many of
-// the test cases in this file should be revised to use modern versions (AFTER
-// removing the capability functions that are no longer needed, which will also
-// entail removing some of these test functions entirely)
-
 func TestParseVendor(t *testing.T) {
 	cases := map[string]Vendor{
 		"mysql":    VendorMySQL,
@@ -28,22 +23,20 @@ func TestParseVendor(t *testing.T) {
 
 func TestParseVersion(t *testing.T) {
 	cases := map[string]Version{
-		"5.6.40":                               {5, 6, 40},
-		"5.7.22":                               {5, 7, 22},
-		"5.6.40-84.0":                          {5, 6, 40},
-		"5.7.22-22":                            {5, 7, 22},
-		"10.1.34-MariaDB-1~jessie":             {10, 1, 34},
-		"10.2.16-MariaDB-10.2.16+maria~jessie": {10, 2, 16},
-		"10.3.7-MariaDB-1:10.3.7+maria~jessie": {10, 3, 7},
-		"10.11.14-MariaDB-0ubuntu0.24.04.1":    {10, 11, 14},
-		"invalid":                              {0, 0, AnyPatch},
-		"5":                                    {5, 0, AnyPatch},
-		"5.6.invalid":                          {5, 6, 0},
-		"5.7.9300000000000000000":              {5, 7, 32767}, // int overflow on patch number
-		"v1.2.3rc1":                            {1, 2, 3},
-		"10.abc123def.12":                      {10, 0, 12},
-		"26.7.0":                               {26, 7, 0},
-		"28.4.12":                              {28, 4, 12},
+		"8.4.9":                                    {8, 4, 9},
+		"8.0.46-37":                                {8, 0, 46},
+		"10.6.24-MariaDB-1~jessie":                 {10, 6, 24},
+		"10.11.16-MariaDB-10.11.16+maria~jessie":   {10, 11, 16},
+		"10.11.15-MariaDB-1:10.11.15+maria~jessie": {10, 11, 15},
+		"10.11.14-MariaDB-0ubuntu0.24.04.1":        {10, 11, 14},
+		"invalid":                                  {0, 0, AnyPatch},
+		"5":                                        {5, 0, AnyPatch},
+		"9.7.invalid":                              {9, 7, 0},
+		"10.4.9300000000000000000":                 {10, 4, 32767}, // int overflow on patch number
+		"v1.2.3rc1":                                {1, 2, 3},
+		"10.abc123def.12":                          {10, 0, 12},
+		"26.7.0":                                   {26, 7, 0},
+		"28.4.12":                                  {28, 4, 12},
 	}
 	for input, expected := range cases {
 		actual, _ := ParseVersion(input)
@@ -121,8 +114,8 @@ func TestSplitVersionedIdentifier(t *testing.T) {
 		version Version
 		label   string
 	}{
-		"mysql:8.0.22":                  {"mysql", Version{8, 0, 22}, ""},
-		"mysql/mysql-server:5.7.22-log": {"mysql/mysql-server", Version{5, 7, 22}, "log"},
+		"mysql:8.4.22":                  {"mysql", Version{8, 4, 22}, ""},
+		"mysql/mysql-server:9.7.22-log": {"mysql/mysql-server", Version{9, 7, 22}, "log"},
 		"skeema:1.7.0-community-rc1":    {"skeema", Version{1, 7, 0}, "community-rc1"},
 	}
 	for input, expected := range cases {
@@ -138,12 +131,12 @@ func TestSplitVersionedIdentifier(t *testing.T) {
 
 func TestParseFlavor(t *testing.T) {
 	cases := map[string]Flavor{
-		"mysql:5.5.33":      {VendorMySQL, Version{5, 5, 33}, VariantNone},
-		"percona:5.7.22":    {VendorMySQL, Version{5, 7, 22}, VariantPercona},
-		"mariadb:10.6":      {VendorMariaDB, Version{10, 6, AnyPatch}, VariantNone},
+		"mysql:8.4.13":      {VendorMySQL, Version{8, 4, 13}, VariantNone},
+		"percona:9.7.2":     {VendorMySQL, Version{9, 7, 2}, VariantPercona},
+		"mariadb:12.3":      {VendorMariaDB, Version{12, 3, AnyPatch}, VariantNone},
 		"supersecretdb:9.9": {VendorUnknown, Version{9, 9, AnyPatch}, VariantNone},
 		"":                  FlavorUnknown,
-		"aurora:8.0":        {VendorMySQL, Version{8, 0, AnyPatch}, VariantAurora},
+		"aurora:8.4":        {VendorMySQL, Version{8, 4, AnyPatch}, VariantAurora},
 	}
 	for input, expected := range cases {
 		if actual := ParseFlavor(input); actual != expected {
@@ -159,16 +152,15 @@ func TestIdentifyFlavor(t *testing.T) {
 		expected       string
 	}
 	cases := []testcase{
-		{"5.6.42", "MySQL Community Server (GPL)", "mysql:5.6.42"},
-		{"5.7.26-0ubuntu0.18.04.1", "(Ubuntu)", "mysql:5.7.26"},
-		{"8.0.16", "MySQL Community Server - GPL", "mysql:8.0.16"},
-		{"5.7.23-23", "Percona Server (GPL), Release 23, Revision 500fcf5", "percona:5.7.23"},
-		{"10.1.34-MariaDB-1~bionic", "mariadb.org binary distribution", "mariadb:10.1.34"},
+		{"8.0.42", "MySQL Community Server (GPL)", "mysql:8.0.42"},
+		{"9.7.26-0ubuntu0.18.04.1", "(Ubuntu)", "mysql:9.7.26"},
+		{"8.0.46-37", "Percona Server (GPL), Release 37, Revision abcd123", "percona:8.0.46"},
+		{"10.11.34-MariaDB-1~bionic", "mariadb.org binary distribution", "mariadb:10.11.34"},
 		{"10.11.14-MariaDB-0ubuntu0.24.04.1", "Ubuntu 24.04", "mariadb:10.11.14"},
-		{"10.2.15-MariaDB-log", "MariaDB Server", "mariadb:10.2.15"},
-		{"10.3.8-MariaDB-log", "Source distribution", "mariadb:10.3.8"},
-		{"10.3.16-MariaDB", "Homebrew", "mariadb:10.3.16"},
-		{"10.3.8-0ubuntu0.18.04.1", "(Ubuntu)", "mariadb:10.3.8"},
+		{"11.8.15-MariaDB-log", "MariaDB Server", "mariadb:11.8.15"},
+		{"12.3.8-MariaDB-log", "Source distribution", "mariadb:12.3.8"},
+		{"11.4.16-MariaDB", "Homebrew", "mariadb:11.4.16"},
+		{"12.3.8-0ubuntu0.18.04.1", "(Ubuntu)", "mariadb:12.3.8"},
 		{"26.7.1", "", "mysql:26.7.1"},                    // major version >= 26 --> MySQL
 		{"25.3.2", "", "mariadb:25.3.2"},                  // major version between 10 and 25 --> MariaDB
 		{"5.7.26", "Homebrew", "mysql:5.7.26"},            // major version 5 --> MySQL
@@ -186,10 +178,10 @@ func TestIdentifyFlavor(t *testing.T) {
 
 func TestFlavorString(t *testing.T) {
 	cases := map[Flavor]string{
-		{VendorMySQL, Version{5, 5, 33}, VariantNone}:          "mysql:5.5.33",
-		{VendorMySQL, Version{5, 7, 22}, VariantPercona}:       "percona:5.7.22",
-		{VendorMySQL, Version{8, 0, MaxPatch}, VariantAurora}:  "aurora:8.0",
-		{VendorMariaDB, Version{10, 6, AnyPatch}, VariantNone}: "mariadb:10.6",
+		{VendorMySQL, Version{8, 4, 33}, VariantNone}:           "mysql:8.4.33",
+		{VendorMySQL, Version{9, 7, 22}, VariantPercona}:        "percona:9.7.22",
+		{VendorMySQL, Version{8, 0, MaxPatch}, VariantAurora}:   "aurora:8.0",
+		{VendorMariaDB, Version{10, 11, AnyPatch}, VariantNone}: "mariadb:10.11",
 		{}: "unknown:0.0.0",
 	}
 	for input, expected := range cases {
@@ -201,11 +193,11 @@ func TestFlavorString(t *testing.T) {
 
 func TestFlavorFamily(t *testing.T) {
 	cases := map[string]string{
-		"mysql:5.7":        "mysql:5.7",
-		"mysql:5.7.22":     "mysql:5.7",
+		"mysql:9.7":        "mysql:9.7",
+		"mysql:9.7.22":     "mysql:9.7",
 		"mysql:8":          "mysql:8.0",
 		"mariadb:10.10.10": "mariadb:10.10",
-		"percona:8.0.35":   "percona:8.0",
+		"percona:8.4.35":   "percona:8.4",
 	}
 	for input, expected := range cases {
 		if actual := ParseFlavor(input).Family().String(); actual != expected {
@@ -216,12 +208,12 @@ func TestFlavorFamily(t *testing.T) {
 
 func TestFlavorBase(t *testing.T) {
 	cases := map[string]string{
-		"mysql:5.7":        "mysql:5.7",
-		"mysql:5.7.22":     "mysql:5.7",
+		"mysql:9.7":        "mysql:9.7",
+		"mysql:9.7.22":     "mysql:9.7",
 		"mysql:8":          "mysql:8.0",
 		"mariadb:10.10.10": "mariadb:10.10",
-		"percona:8.0.35":   "mysql:8.0",
-		"aurora:5.7.12":    "mysql:5.7",
+		"percona:8.4.35":   "mysql:8.4",
+		"aurora:8.0.44":    "mysql:8.0",
 	}
 	for input, expected := range cases {
 		if actual := ParseFlavor(input).Base().String(); actual != expected {
@@ -231,15 +223,15 @@ func TestFlavorBase(t *testing.T) {
 }
 
 func TestFlavorHasVariant(t *testing.T) {
-	flavor := Flavor{VendorMySQL, Version{5, 5, 33}, VariantNone}
+	flavor := Flavor{VendorMySQL, Version{8, 4, 33}, VariantNone}
 	if flavor.HasVariant(VariantPercona) {
 		t.Error("Unexpected result from HasVariant")
 	}
-	flavor = Flavor{VendorMySQL, Version{5, 7, 22}, VariantPercona}
+	flavor = Flavor{VendorMySQL, Version{8, 4, 22}, VariantPercona}
 	if !flavor.HasVariant(VariantPercona) {
 		t.Error("Unexpected result from HasVariant")
 	}
-	flavor = Flavor{VendorMySQL, Version{5, 7, 22}, VariantPercona}
+	flavor = Flavor{VendorMySQL, Version{8, 4, 22}, VariantPercona}
 	if flavor.HasVariant(VariantAurora) {
 		t.Error("Unexpected result from HasVariant")
 	}
@@ -263,24 +255,23 @@ func TestFlavorMinMySQL(t *testing.T) {
 		expected bool
 	}
 	cases := []testcase{
-		{"mysql:5.6", "5.6", true},
-		{"mysql:5.6", "5.5", true},
-		{"mysql:5.6", "5.7", false},
-		{"mysql:8.0", "5.7", true},
-		{"mariadb:10.3", "8.0", false},
-		{"mysql:5.7.20", "5.7", true},
-		{"mysql:5.7.20", "5.6", true},
-		{"mysql:5.7.20", "5", true},
-		{"mysql:5.7.20", "8.0", false},
-		{"mysql:5.7", "5.7.20", false},
-		{"mysql:8.0", "5.7.20", true},
-		{"mysql:8", "5.7.20", true},
+		{"mysql:8.4", "8.4", true},
+		{"mysql:8.3", "8.2", true},
+		{"mysql:8.3", "8.4", false},
+		{"mysql:9.7", "8.4", true},
+		{"mariadb:12.3", "8.0", false},
+		{"mysql:9.7.20", "9.7", true},
+		{"mysql:9.7.20", "9.6", true},
+		{"mysql:9.7.20", "8", true},
+		{"mysql:9.7.20", "26.7", false},
+		{"mysql:9.7", "9.7.20", false},
+		{"mysql:26.7", "9.7.20", true},
 		{"aurora:8", "8.0", true},
-		{"mysql:5.7.20", "5.6.30", true},
-		{"mysql:5.6.30", "5.7.20", false},
-		{"mysql:5.7.20", "5.7.20", true},
-		{"percona:5.7.20", "5.7.15", true},
-		{"percona:5.7.15", "5.7.20", false},
+		{"mysql:9.7.20", "9.6.30", true},
+		{"mysql:9.6.30", "9.7.20", false},
+		{"mysql:9.7.20", "9.7.20", true},
+		{"percona:9.7.20", "9.7.15", true},
+		{"percona:9.7.15", "9.7.20", false},
 		{"mysql:8.1", "", true},
 		{"mariadb:11.1", "", false},
 	}
@@ -309,8 +300,8 @@ func TestFlavorMinMariaDB(t *testing.T) {
 		{"mariadb:11", "10.6.3", true},
 		{"mariadb:11", "11", true},
 		{"mariadb:11", "11.1", false},
-		{"mysql:5.7.44", "10.1.10", false},
-		{"percona:5.7.44", "10.1.10", false},
+		{"mysql:9.7.44", "10.6.10", false},
+		{"percona:9.7.44", "10.6.10", false},
 		{"mysql:8.3.0", "", false},
 		{"aurora:8.0.32", "", false},
 	}
@@ -330,15 +321,15 @@ func TestFlavorIsMySQL(t *testing.T) {
 		expected bool
 	}
 	cases := []testcase{
-		{"mysql:8.0.32", "", true},
-		{"percona:8.0.32", "", true},
-		{"aurora:8.0.32", "", true},
+		{"mysql:8.4.32", "", true},
+		{"percona:8.4.32", "", true},
+		{"aurora:8.4.32", "", true},
 		{"mariadb:11.3.2", "", false},
-		{"mysql:8.0.32", "8", true},
-		{"mysql:8.0.32", "8.0", true},
-		{"aurora:8.0.32", "8.0.32", true},
-		{"mysql:8.0.32", "8.0.33", false},
-		{"mysql:8.0.32", "5.7.32", false},
+		{"mysql:8.4.32", "8", true},
+		{"mysql:8.4.32", "8.0", false},
+		{"aurora:8.4.32", "8.4.32", true},
+		{"mysql:8.4.32", "8.4.33", false},
+		{"mysql:8.4.32", "5.0.32", false},
 		{"mysql:8.1", "8", true},
 		{"mysql:8.1", "8.0", false},
 	}
@@ -526,74 +517,18 @@ func TestFlavorKnown(t *testing.T) {
 	}
 }
 
-// TODOv2: remove this test, all Skeema v2 supported flavors have generated columns
-func TestFlavorGeneratedColumns(t *testing.T) {
-	type testcase struct {
-		receiver string
-		expected bool
-	}
-	cases := []testcase{
-		{"mysql:5.5", false},
-		{"mysql:5.6", false},
-		{"mysql:5.7", true},
-		{"mysql:8.0", true},
-		{"mariadb:10.1", false},
-		{"mariadb:10.2", true},
-		{"percona:5.6", false},
-		{"percona:5.7", true},
-		{"unknown:0.0", false},
-	}
-	for _, tc := range cases {
-		actual := ParseFlavor(tc.receiver).GeneratedColumns()
-		if actual != tc.expected {
-			t.Errorf("Expected %s.GeneratedColumns() to return %t, instead found %t", tc.receiver, tc.expected, actual)
-		}
-	}
-}
-
-func TestFlavorSortedForeignKeys(t *testing.T) {
-	type testcase struct {
-		receiver string
-		expected bool
-	}
-	cases := []testcase{
-		{"mysql:5.5", false},
-		{"mysql:5.6", true},
-		{"mysql:8.0", true},
-		{"mysql:8.0.19", false},
-		{"percona:5.5", false},
-		{"percona:5.7", true},
-		{"percona:8.0.19", false},
-		{"mariadb:10.1", true},
-		{"mariadb:10.2", true},
-		{"mariadb:10.3", true},
-		{"unknown:5.6", true},
-	}
-	for _, tc := range cases {
-		actual := ParseFlavor(tc.receiver).SortedForeignKeys()
-		if actual != tc.expected {
-			t.Errorf("Expected %s.SortedForeignKeys() to return %t, instead found %t", tc.receiver, tc.expected, actual)
-		}
-	}
-}
-
 func TestFlavorOmitIntDisplayWidth(t *testing.T) {
 	type testcase struct {
 		receiver string
 		expected bool
 	}
 	cases := []testcase{
-		{"mysql:5.5", false},
-		{"mysql:5.6", false},
 		{"mysql:8.0", false},
 		{"mysql:8.0.18", false},
 		{"mysql:8.0.19", true},
-		{"percona:5.5", false},
-		{"percona:5.7", false},
-		{"mysql:8.0.19", true},
 		{"percona:8.0.20", true},
-		{"mariadb:10.1", false},
-		{"mariadb:10.4", false},
+		{"mariadb:11.1", false},
+		{"mariadb:12.3", false},
 	}
 	for _, tc := range cases {
 		actual := ParseFlavor(tc.receiver).OmitIntDisplayWidth()
@@ -605,20 +540,12 @@ func TestFlavorOmitIntDisplayWidth(t *testing.T) {
 
 func TestFlavorHasCheckConstraints(t *testing.T) {
 	cases := map[string]bool{
-		"mysql:5.7":       false,
-		"mysql:8.0":       false,
-		"mysql:8.0.15":    false,
-		"percona:8.0.14":  false,
-		"mysql:8.0.16":    true,
-		"percona:8.0.17":  true,
-		"mariadb:10.2":    false,
-		"mariadb:10.3":    false,
-		"mariadb:10.4":    true,
-		"mariadb:10.1.30": false,
-		"mariadb:10.2.21": false,
-		"mariadb:10.2.22": true,
-		"mariadb:10.3.9":  false,
-		"mariadb:10.3.10": true,
+		"mysql:8.0":      false,
+		"mysql:8.0.15":   false,
+		"percona:8.0.14": false,
+		"mysql:8.0.16":   true,
+		"percona:8.0.17": true,
+		"mariadb:10.4":   true,
 	}
 	for input, expected := range cases {
 		if ParseFlavor(input).HasCheckConstraints() != expected {
@@ -627,59 +554,11 @@ func TestFlavorHasCheckConstraints(t *testing.T) {
 	}
 }
 
-// TODOv2: remove this test, all Skeema v2 supported flavors will support modern cipher suites
-func TestFlavorModernCipherSuites(t *testing.T) {
-	cases := map[string]bool{
-		"mysql:5.5":       false,
-		"mysql:5.6.33":    false,
-		"mysql:5.7.44":    false,
-		"percona:5.6":     false,
-		"percona:5.7":     true,
-		"mysql:8.0":       true,
-		"aurora:8.0.32":   true,
-		"mariadb:10.1.30": false,
-		"mariadb:10.2.15": true,
-		"mariadb:10.3":    true,
-		"mariadb:11.0":    true,
-	}
-	for input, expected := range cases {
-		if ParseFlavor(input).ModernCipherSuites() != expected {
-			t.Errorf("Expected %s.ModernCipherSuites() to return %t, but it did not", input, expected)
-		}
-	}
-}
-
-// TODOv2: remove this test, all Skeema v2 supported flavors will support TLS 1.2
-func TestFlavorSupportsTLS12(t *testing.T) {
-	cases := map[string]bool{
-		"mysql:5.5":       false,
-		"mysql:5.6.33":    false,
-		"mysql:5.7.44":    true,
-		"percona:5.6":     false,
-		"percona:5.7":     true,
-		"mysql:8.0":       true,
-		"aurora:5.7.44":   true,
-		"mariadb:10.1.30": true,
-		"mariadb:10.2.15": true,
-		"mariadb:10.3":    true,
-		"mariadb:11.0":    true,
-	}
-	for input, expected := range cases {
-		if ParseFlavor(input).SupportsTLS12() != expected {
-			t.Errorf("Expected %s.SupportsTLS12() to return %t, but it did not", input, expected)
-		}
-	}
-}
-
 func TestFlavorAlwaysShowCollate(t *testing.T) {
 	cases := map[string]bool{
-		"mysql:5.7":       false,
 		"mysql:8.0":       false,
+		"mysql:9.7":       false,
 		"percona:8.1":     false,
-		"mariadb:10.1.30": false,
-		"mariadb:10.2.20": false,
-		"mariadb:10.3.36": false,
-		"mariadb:10.3.40": true,
 		"mariadb:10.4.25": false,
 		"mariadb:10.4.27": true,
 		"mariadb:10.10.1": false,

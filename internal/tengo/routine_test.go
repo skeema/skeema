@@ -45,8 +45,7 @@ func (s TengoIntegrationSuite) TestInstanceRoutineIntrospection(t *testing.T) {
 
 	// If this flavor supports using mysql.proc to bulk-fetch routines, confirm
 	// the result is identical to using the individual SHOW CREATE queries
-	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
-	if !s.d.Flavor().MinMySQL(8) {
+	if s.d.Flavor().IsMariaDB() {
 		insp := &introspector{
 			instance: s.d.Instance,
 			db:       db,

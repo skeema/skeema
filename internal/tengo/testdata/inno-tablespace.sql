@@ -1,4 +1,4 @@
-# Tables using explicit InnoDB tablespace clauses (MySQL 5.7+)
+# Tables using explicit InnoDB tablespace clauses (MySQL only)
 
 USE testing;
 

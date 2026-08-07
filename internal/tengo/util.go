@@ -236,26 +236,23 @@ var IntrospectionBadSQLModes = sqlModeFilter{
 
 // NonPortableSQLModes indicates which sql_mode values are not available in all
 // flavors.
-// TODOv2: update comments once MySQL 5.x and MariaDB < 10.4 are dropped
 var NonPortableSQLModes = sqlModeFilter{
-	"NO_AUTO_CREATE_USER": true, // Not present in MySQL 8.0+
-	"NO_FIELD_OPTIONS":    true, // Not present in MySQL 8.0+
-	"NO_KEY_OPTIONS":      true, // Not present in MySQL 8.0+
-	"NO_TABLE_OPTIONS":    true, // Not present in MySQL 8.0+
-	"DB2":                 true, // Not present in MySQL 8.0+
-	"MAXDB":               true, // Not present in MySQL 8.0+
-	"MSSQL":               true, // Not present in MySQL 8.0+
-	"MYSQL323":            true, // Not present in MySQL 8.0+
-	"MYSQL40":             true, // Not present in MySQL 8.0+
-	"ORACLE":              true, // Not present in MySQL 8.0+
-	"POSTGRESQL":          true, // Not present in MySQL 8.0+
-
-	"TIME_TRUNCATE_FRACTIONAL": true, // Only present in MySQL 8.0+
-
+	"NO_AUTO_CREATE_USER":      true, // Only present in MariaDB
+	"NO_FIELD_OPTIONS":         true, // Only present in MariaDB
+	"NO_KEY_OPTIONS":           true, // Only present in MariaDB
+	"NO_TABLE_OPTIONS":         true, // Only present in MariaDB
+	"DB2":                      true, // Only present in MariaDB
+	"MAXDB":                    true, // Only present in MariaDB
+	"MSSQL":                    true, // Only present in MariaDB
+	"MYSQL323":                 true, // Only present in MariaDB
+	"MYSQL40":                  true, // Only present in MariaDB
+	"ORACLE":                   true, // Only present in MariaDB
+	"POSTGRESQL":               true, // Only present in MariaDB
 	"IGNORE_BAD_TABLE_OPTIONS": true, // Only present in MariaDB
-	"EMPTY_STRING_IS_NULL":     true, // Only present in MariaDB 10.3+
-	"SIMULTANEOUS_ASSIGNMENT":  true, // Only present in MariaDB 10.3+
-	"TIME_ROUND_FRACTIONAL":    true, // Only present in MariaDB 10.4+
+	"EMPTY_STRING_IS_NULL":     true, // Only present in MariaDB
+	"SIMULTANEOUS_ASSIGNMENT":  true, // Only present in MariaDB
+	"TIME_ROUND_FRACTIONAL":    true, // Only present in MariaDB
+	"TIME_TRUNCATE_FRACTIONAL": true, // Only present in MySQL
 }
 
 // FilterSQLMode splits the supplied comma-separated orig sql_mode value and

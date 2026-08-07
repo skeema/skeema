@@ -75,51 +75,34 @@ func TestObjectKeyString(t *testing.T) {
 func TestUnitTableFlavors(t *testing.T) {
 	orig := aTable(1)
 
-	// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, rework ALL
-	// test cases in this function!
-
-	table := aTableForFlavor(ParseFlavor("mysql:5.7"), 1)
+	table := aTableForFlavor(ParseFlavor("mysql:8.0"), 1)
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 0 {
-		t.Errorf("MySQL 5.7: Expected no diff; instead found %d differences, supported=%t", len(clauses), supported)
-	}
-	table = aTableForFlavor(ParseFlavor("mariadb:10.1"), 1)
-	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 0 {
-		t.Errorf("MariaDB 10.1: Expected no diff; instead found %d differences, supported=%t", len(clauses), supported)
+		t.Errorf("MySQL 8.0: Expected no diff; instead found %d differences, supported=%t", len(clauses), supported)
 	}
 
-	table = aTableForFlavor(ParseFlavor("mysql:5.5"), 1)
-	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 1 {
-		t.Errorf("MySQL 5.5: Expected 1 diff clause; instead found %d differences, supported=%t", len(clauses), supported)
-	}
-	for _, check := range []string{table.Columns[3].Type.String(), table.Columns[3].OnUpdate, table.Columns[3].Default} {
-		if strings.HasSuffix(check, ")") {
-			t.Error("MySQL 5.5: Expected all traces of fractional timestamp precision to be removed, but still present")
-		}
-	}
-
-	table = aTableForFlavor(ParseFlavor("mariadb:10.3"), 1)
+	table = aTableForFlavor(ParseFlavor("mariadb:10.5"), 1)
 	if clauses, supported := table.Diff(&orig); !supported || len(clauses) != 2 {
-		t.Errorf("MariaDB 10.3: Expected 2 diff clauses; instead found %d differences, supported=%t", len(clauses), supported)
+		t.Errorf("MariaDB 10.5: Expected 2 diff clauses; instead found %d differences, supported=%t", len(clauses), supported)
 	}
 	if table.Columns[5].Default[0] == '\'' {
-		t.Error("MariaDB 10.3: Expected int column to not have quoted default, but it still does")
+		t.Error("MariaDB 10.5: Expected int column to not have quoted default, but it still does")
 	}
 	if table.Columns[3].OnUpdate != "current_timestamp(2)" || table.Columns[3].Default != "current_timestamp(2)" {
-		t.Error("MariaDB 10.3: Expected current_timestamp to be lowercased, but it is not")
+		t.Error("MariaDB 10.5: Expected current_timestamp to be lowercased, but it is not")
 	}
-	if table.GeneratedCreateStatement(ParseFlavor("mariadb:10.3")) != table.CreateStatement {
-		t.Error("MariaDB 10.3: Expected function to reset CreateStatement to GeneratedCreateStatement, but it did not")
+	if table.GeneratedCreateStatement(ParseFlavor("mariadb:10.5")) != table.CreateStatement {
+		t.Error("MariaDB 10.5: Expected function to reset CreateStatement to GeneratedCreateStatement, but it did not")
 	}
 
 	orig2 := supportedTable()
-	flavor := ParseFlavor("mariadb:10.2")
+	flavor := ParseFlavor("mariadb:10.6")
 	table2 := supportedTableForFlavor(flavor)
 	if table2.GeneratedCreateStatement(flavor) == orig2.GeneratedCreateStatement(FlavorUnknown) {
-		t.Errorf("MariaDB 10.2: Expected GeneratedCreateStatement to differ vs FlavorUnknown, but it did not")
+		t.Errorf("MariaDB 10.6: Expected GeneratedCreateStatement to differ vs FlavorUnknown, but it did not")
 	}
 	colClause := table2.Columns[3].Definition(flavor)
 	if !strings.Contains(colClause, "DEFAULT NULL") {
-		t.Errorf("MariaDB 10.2: Expected text column to now emit a default value, but it did not")
+		t.Errorf("MariaDB 10.6: Expected text column to now emit a default value, but it did not")
 	}
 }
 
@@ -132,74 +115,53 @@ func flavorTestFiles(flavor Flavor) []string {
 	// Non-flavor-specific
 	result := []string{"integration-ext.sql", "partition.sql", "rows.sql", "views.sql", "spatial.sql"}
 
-	if flavor.MinMySQL(8, 0, 13) {
-		result = append(result, "default-expr.sql")
-	} else if flavor.MinMariaDB(10, 2) { // TODOv2: MariaDB below 10.4 will be dropped, so replace with IsMariaDB()
-		result = append(result, "default-expr-maria.sql") // No support for 4-byte chars in the expressions
-	}
-
-	// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, so all
-	// remaining flavors will support generated columns
-	if flavor.GeneratedColumns() {
-		if flavor.IsMariaDB() {
-			result = append(result, "generatedcols-maria.sql") // no support for NOT NULL generated cols or 4-byte chars in generation expressions
-		} else {
-			result = append(result, "generatedcols.sql")
+	if flavor.IsMySQL() {
+		result = append(result,
+			"generatedcols.sql",
+			"index-mysql8.sql",    // functional indexes, descending indexes, invisible indexes
+			"ft-parser.sql",       // only MySQL ships with alternative parsers
+			"inno-tablespace.sql", // MySQL-specific feature
+		)
+		if flavor.IsPercona() {
+			result = append(result, "colcompression-percona.sql")
 		}
-	}
-
-	if flavor.MinMySQL(8) { // TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
-		result = append(result, "index-mysql8.sql") // functional indexes, descending indexes, invisible indexes
-	} else if flavor.MinMariaDB(10, 6) {
-		result = append(result, "index-maria106.sql") // ignored indexes
-	}
-
-	// TODOv2: MariaDB below 10.4 will be dropped, so replace with IsMariaDB()
-	if flavor.MinMariaDB(10, 3) || flavor.MinMySQL(8, 0, 23) {
-		result = append(result, "inviscols.sql")
-	}
-
-	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL() and also adjust
-	// comments in the .sql files accordingly
-	if flavor.MinMySQL(5, 7) {
-		// other flavors may support FT parsers but don't ship with any alternatives;
-		// other flavors do not support TABLESPACE clauses in InnoDB tables
-		result = append(result, "ft-parser.sql", "inno-tablespace.sql")
-	}
-
-	// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, can simplify conditions
-	if flavor.IsPercona() && flavor.MinMySQL(5, 6, 33) {
-		result = append(result, "colcompression-percona.sql")
-	} else if flavor.MinMariaDB(10, 3) {
-		result = append(result, "colcompression-maria.sql")
-	}
-
-	// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, can simplify conditions
-	if flavor.MinMySQL(5, 7) {
-		result = append(result, "pagecompression.sql")
-	} else if flavor.MinMariaDB(10, 2) {
-		result = append(result, "pagecompression-maria.sql")
-	}
-
-	if flavor.HasCheckConstraints() {
-		if flavor.IsMariaDB() {
-			result = append(result, "check-maria.sql")
-		} else {
+		if !flavor.IsAurora() {
+			result = append(result, "pagecompression.sql")
+		}
+		if flavor.MinMySQL(8, 0, 13) {
+			// TODOv3: early point releases of MySQL 8.0 will be dropped in Skeema v3 so this will always be true then
+			result = append(result, "default-expr.sql")
+		}
+		if flavor.HasCheckConstraints() { // 8.0.16+
+			// TODOv3: early point releases of MySQL 8.0 will be dropped in Skeema v3 so this will always be true then
 			result = append(result, "check.sql")
 		}
-	}
-
-	if flavor.IsMariaDB() { // depending on version, may include inet6, inet4, uuid, xmltype
-		result = append(result, "coltypes-maria.sql")
-	}
-	if flavor.MinMariaDB(10, 8) { // descending indexes, IN/OUT/INOUT func params
-		result = append(result, "maria108.sql")
-	}
-	if flavor.MinMariaDB(10, 10) { // uca1400 collations
-		result = append(result, "uca1400.sql")
-	}
-	if flavor.MinMariaDB(11, 7) { // vectors and vector indexes
-		result = append(result, "vector-maria117.sql")
+		if flavor.MinMySQL(8, 0, 23) {
+			// TODOv3: early point releases of MySQL 8.0 will be dropped in Skeema v3 so this will always be true then
+			result = append(result, "inviscols.sql")
+		}
+	} else if flavor.IsMariaDB() {
+		result = append(result,
+			"default-expr-maria.sql",    // No support for 4-byte chars in the expressions - TODOv2 depends on the version?
+			"generatedcols-maria.sql",   // no support for NOT NULL generated cols or 4-byte chars in generation expressions - TODOv2 ditto?
+			"inviscols.sql",             // Always in MariaDB (vs version-specific in MySQL)
+			"colcompression-maria.sql",  // Always in MariaDB (vs Percona-specific for MySQL)
+			"pagecompression-maria.sql", // Always in MariaDB (vs absent in Aurora for MySQL)
+			"check-maria.sql",           // Always in MariaDB (vs version-specific in MySQL)
+			"coltypes-maria.sql",        // depending on version, may include inet6, inet4, uuid, xmltype
+		)
+		if flavor.MinMariaDB(10, 6) { // TODOv3: MariaDB below 10.6 will be dropped in Skeema v3 so replace with IsMariaDB at that time
+			result = append(result, "index-maria106.sql") // ignored indexes
+		}
+		if flavor.MinMariaDB(10, 8) { // descending indexes, IN/OUT/INOUT func params
+			result = append(result, "maria108.sql")
+		}
+		if flavor.MinMariaDB(10, 10) { // uca1400 collations
+			result = append(result, "uca1400.sql")
+		}
+		if flavor.MinMariaDB(11, 7) { // vectors and vector indexes
+			result = append(result, "vector-maria117.sql")
+		}
 	}
 
 	for n := range result {
@@ -242,14 +204,7 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 		OnUpdate: "CURRENT_TIMESTAMP(2)",
 	}
 	lastUpdateDef := "`last_update` timestamp(2) NOT NULL DEFAULT CURRENT_TIMESTAMP(2) ON UPDATE CURRENT_TIMESTAMP(2)"
-	// TODOv2: MySQL 5.x will be dropped, ditto with MariaDB below 10.4, can simplify next two conditions
-	if flavor.IsMySQL(5, 5) { // No fractional timestamps in 5.5
-		lastUpdateCol.Type = ParseColumnType("timestamp")
-		lastUpdateCol.Default = "CURRENT_TIMESTAMP"
-		lastUpdateCol.OnUpdate = "CURRENT_TIMESTAMP"
-		lastUpdateDef = "`last_update` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
-	}
-	if flavor.MinMariaDB(10, 2) {
+	if flavor.IsMariaDB() {
 		lastUpdateCol.Default = strings.ToLower(lastUpdateCol.Default)
 		lastUpdateCol.OnUpdate = strings.ToLower(lastUpdateCol.OnUpdate)
 		lastUpdateDef = strings.Replace(lastUpdateDef, "CURRENT_TIMESTAMP", "current_timestamp", 2)
@@ -261,8 +216,7 @@ func aTableForFlavor(flavor Flavor, nextAutoInc uint64) Table {
 		Default: "'1'",
 	}
 	aliveDef := "`alive` tinyint(1) unsigned NOT NULL DEFAULT '1'"
-	// TODOv2: MariaDB below 10.4 will be dropped, so replace with IsMariaDB()
-	if flavor.MinMariaDB(10, 2) {
+	if flavor.IsMariaDB() {
 		aliveCol.Default = "1"
 		aliveDef = "`alive` tinyint(1) unsigned NOT NULL DEFAULT 1"
 	}
@@ -417,11 +371,11 @@ func anotherTableForFlavor(flavor Flavor) Table {
 func unsupportedTable() Table {
 	t := supportedTable()
 	t.CreateStatement += `
-/*!50100 PARTITION BY RANGE (user_id)
+ PARTITION BY RANGE (user_id)
 SUBPARTITION BY HASH (post_id)
 SUBPARTITIONS 2
 (PARTITION p0 VALUES LESS THAN (123) ENGINE = InnoDB,
- PARTITION p1 VALUES LESS THAN MAXVALUE ENGINE = InnoDB) */`
+ PARTITION p1 VALUES LESS THAN MAXVALUE ENGINE = InnoDB)`
 	t.Partitioning = &TablePartitioning{
 		Method:        "RANGE",
 		SubMethod:     "HASH",
@@ -481,8 +435,7 @@ func supportedTableForFlavor(flavor Flavor) Table {
   ~metadata~ text,
   PRIMARY KEY (~post_id~,~user_id~)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1`, "~", "`", -1)
-	// TODOv2: MariaDB below 10.4 will be dropped, so replace with IsMariaDB()
-	if flavor.MinMariaDB(10, 2) { // allow explicit DEFAULT NULL for blob/text
+	if flavor.IsMariaDB() { // allow explicit DEFAULT NULL for blob/text
 		columns[3].Default = "NULL"
 		stmt = strings.Replace(stmt, " text", " text DEFAULT NULL", 1)
 	}

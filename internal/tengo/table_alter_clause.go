@@ -150,13 +150,12 @@ func (mi ModifyIndex) Clause(mods StatementModifiers) string {
 	// This logic intentionally must stay prior to the visibility-change logic, in
 	// case the latter has been split into a separate AlterIndex.
 	if mi.FromIndex.Name != mi.ToIndex.Name {
-		// RENAME KEY can only be used in MySQL 5.7+ or MariaDB 10.5+
-		// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
-		if mods.Flavor.MinMySQL(5, 7) || mods.Flavor.MinMariaDB(10, 5) {
-			return "RENAME KEY " + EscapeIdentifier(mi.FromIndex.Name) + " TO " + EscapeIdentifier(mi.ToIndex.Name)
+		// RENAME KEY is not present in MariaDB 10.4, fall back to drop-and-re-create
+		// TODOv3: MariaDB below 10.6 will be dropped in Skeema v3
+		if mods.Flavor.IsMariaDB(10, 4) {
+			return rebuild
 		}
-		// Fall back to drop-and-re-create
-		return rebuild
+		return "RENAME KEY " + EscapeIdentifier(mi.FromIndex.Name) + " TO " + EscapeIdentifier(mi.ToIndex.Name)
 	}
 
 	// Changing index visibility: delegate to AlterIndex
@@ -196,8 +195,8 @@ func (ai AlterIndex) Clause(mods StatementModifiers) string {
 	base := "ALTER INDEX " + EscapeIdentifier(ai.Name)
 
 	// Syntax differs between MySQL and MariaDB
-	// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
-	if mods.Flavor.MinMySQL(8) {
+	// TODOv3: MariaDB below 10.6 will be dropped in Skeema v3
+	if mods.Flavor.IsMySQL() {
 		if ai.Invisible {
 			return base + " INVISIBLE"
 		} else {
