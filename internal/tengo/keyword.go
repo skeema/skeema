@@ -379,6 +379,7 @@ var (
 	mariaDB106    = Flavor{Vendor: VendorMariaDB, Version: Version{10, 6, AnyPatch}}
 	mariaDB107    = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7, AnyPatch}}
 	mariaDB117    = Flavor{Vendor: VendorMariaDB, Version: Version{11, 7, AnyPatch}}
+	mariaDB123    = Flavor{Vendor: VendorMariaDB, Version: Version{12, 3, AnyPatch}}
 )
 
 // Mapping of lowercased reserved words to the flavor(s) that added them. A
@@ -465,6 +466,9 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"offset": {mariaDB106},
 
 	"vector": {mariaDB117},
+
+	"conversion": {mariaDB123},
+	"to_date":    {mariaDB123},
 }
 
 var reservedWordsRemovedInFlavor = map[string][]Flavor{
