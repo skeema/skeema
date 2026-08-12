@@ -576,14 +576,6 @@ func (instance *Instance) introspectionParams() string {
 
 	flavor := instance.Flavor()
 
-	// In MySQL, ensure we get up-to-date values for table sizes. (This also
-	// provides up-to-date values for auto_increment counters, but we no longer
-	// obtain those from I_S anyway.)
-	// TODOv2 consider only setting this for queries on table sizes
-	if flavor.IsMySQL() {
-		v.Set("information_schema_stats_expiry", "0")
-	}
-
 	// In MySQL, we need a binary collation in order for SHOW CREATE TABLE to
 	// correctly return 4-byte chars in generated column expressions (5.7+), column
 	// default expressions (8.0+), check constraint clauses (8.0+), and
@@ -624,11 +616,12 @@ func (instance *Instance) ShowCreateTable(schema, table string) (string, error) 
 // information_schema. As a special case, if the table has no rows, the returned
 // value will be 0 even though empty InnoDB tables typically take up 16KB. If
 // the table or schema does not exist on this instance, an error is returned.
-// Use of innodb_stats_persistent negatively impacts the result accuracy; see
-// https://bugs.mysql.com/bug.php?id=75428.
+// Note that the result may often be inaccurate/stale due to the default of
+// innodb_stats_persistent=ON; see https://bugs.mysql.com/bug.php?id=75428.
 func (instance *Instance) TableSize(schema, table string) (int64, error) {
 	var result int64
-	db, err := instance.CachedConnectionPool("", instance.introspectionParams())
+	ctx := context.Background()
+	db, err := instance.CachedConnectionPool("", "")
 	if err != nil {
 		return 0, err
 	}
@@ -638,7 +631,24 @@ func (instance *Instance) TableSize(schema, table string) (int64, error) {
 		FROM    information_schema.tables
 		WHERE   table_schema = ? and table_name = ?`,
 		EscapeIdentifier(schema), EscapeIdentifier(table))
-	err = db.QueryRow(query, schema, table).Scan(&result)
+
+	// In MySQL, bypass the I_S stat cache, which is a separate source of
+	// potential staleness. A conn is obtained for setting session-level
+	// information_schema_stats_expiry=0 prior to running the query on the same
+	// conn; we leave it enabled for that conn since it's harmless, but this way it
+	// doesn't need to be set unnecessarily on EVERY conn, since it doesn't affect
+	// any other Skeema code paths. Unfortunately we can't use SET_VAR hints here!
+	if instance.Flavor().IsMySQL() {
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			return 0, err
+		}
+		defer conn.Close()
+		conn.ExecContext(ctx, "SET SESSION information_schema_stats_expiry = 0") // Intentionally ignoring error
+		err = conn.QueryRowContext(ctx, query, schema, table).Scan(&result)
+		return result, err
+	}
+	err = db.QueryRowContext(ctx, query, schema, table).Scan(&result)
 	return result, err
 }
 

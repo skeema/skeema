@@ -140,9 +140,9 @@ func TestInstanceIntrospectionParams(t *testing.T) {
 			t.Errorf("Expected param map %v, instead found %v", parsedExpected, parsedResult)
 		}
 	}
-	assertParams("mysql:9.7", "", "sql_quote_show_create=1&information_schema_stats_expiry=0&collation=binary")
-	assertParams("mysql:8.4", "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1&information_schema_stats_expiry=0&collation=binary")
-	assertParams("mysql:9.7", "NO_FIELD_OPTIONS,NO_BACKSLASH_ESCAPES,NO_KEY_OPTIONS,NO_TABLE_OPTIONS", "sql_quote_show_create=1&collation=binary&information_schema_stats_expiry=0&sql_mode=%27NO_BACKSLASH_ESCAPES%27")
+	assertParams("mysql:9.7", "", "sql_quote_show_create=1&collation=binary")
+	assertParams("mysql:8.4", "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE", "sql_quote_show_create=1&collation=binary")
+	assertParams("mysql:9.7", "NO_FIELD_OPTIONS,NO_BACKSLASH_ESCAPES,NO_KEY_OPTIONS,NO_TABLE_OPTIONS", "sql_quote_show_create=1&collation=binary&sql_mode=%27NO_BACKSLASH_ESCAPES%27")
 	assertParams("mariadb:10.6", "ANSI_QUOTES", "sql_quote_show_create=1&sql_mode=%27%27")
 }
 
