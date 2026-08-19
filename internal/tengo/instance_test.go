@@ -337,7 +337,7 @@ func (s TengoIntegrationSuite) TestInstanceCloseAll(t *testing.T) {
 func (s TengoIntegrationSuite) TestInstanceSetFlavor(t *testing.T) {
 	// Ensure flavor is hydrated already
 	actualFlavor := s.d.Flavor()
-	if actualFlavor == FlavorUnknown {
+	if !actualFlavor.Known() {
 		t.Fatal("Unable to determine test instance flavor")
 	}
 

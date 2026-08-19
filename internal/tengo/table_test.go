@@ -332,7 +332,7 @@ func TestTableAlterAddOrDropIndex(t *testing.T) {
 	if tableAlters[0].Clause(StatementModifiers{LaxComments: true}) != "" {
 		t.Error("Clause unexpectedly returns non-blank string")
 	}
-	mysql8 := Flavor{VendorMySQL, Version{8}, VariantNone}
+	mysql8 := Flavor{VendorMySQL, Version{8, 0, AnyPatch}, VariantNone}
 	to.SecondaryIndexes[1].Invisible = true
 	to.CreateStatement = to.GeneratedCreateStatement(mysql8)
 	tableAlters, supported = from.Diff(&to)
@@ -567,8 +567,8 @@ func TestTableAlterAddIndexOrder(t *testing.T) {
 	// second index, which returns a blank string even with strict ordering mod.
 	to.SecondaryIndexes[1].Parts[1].PrefixLength = from.SecondaryIndexes[1].Parts[1].PrefixLength
 	to.SecondaryIndexes[0].Invisible = true
-	mysql8 := Flavor{VendorMySQL, Version{8}, VariantNone}
-	maria106 := Flavor{VendorMariaDB, Version{10, 6}, VariantNone}
+	mysql8 := Flavor{VendorMySQL, Version{8, 0, AnyPatch}, VariantNone}
+	maria106 := Flavor{VendorMariaDB, Version{10, 6, AnyPatch}, VariantNone}
 	to.CreateStatement = to.GeneratedCreateStatement(mysql8)
 	tableAlters, supported = from.Diff(&to)
 	if len(tableAlters) != 12 || !supported {
@@ -632,7 +632,7 @@ func TestTableAlterIndexReorder(t *testing.T) {
 	}
 
 	// Most test logic here uses these MySQL 8 based statement modifiers
-	mysql8 := Flavor{VendorMySQL, Version{8}, VariantNone}
+	mysql8 := Flavor{VendorMySQL, Version{8, 0, AnyPatch}, VariantNone}
 	loose8 := StatementModifiers{Flavor: mysql8}
 	strict8 := StatementModifiers{Flavor: mysql8, StrictIndexOrder: true}
 
@@ -739,8 +739,8 @@ func TestTableAlterIndexReorder(t *testing.T) {
 	// RENAME KEY related tests need additional statement modifiers, since rename
 	// syntax isn't present in MariaDB 10.4
 	// TODOv3: Skeema v3 will drop MariaDB 10.4, at which point these tests can be simplified
-	maria104 := Flavor{VendorMariaDB, Version{10, 4}, VariantNone}
-	maria106 := Flavor{VendorMariaDB, Version{10, 6}, VariantNone}
+	maria104 := Flavor{VendorMariaDB, Version{10, 4, AnyPatch}, VariantNone}
+	maria106 := Flavor{VendorMariaDB, Version{10, 6, AnyPatch}, VariantNone}
 	strict104 := StatementModifiers{Flavor: maria104, StrictIndexOrder: true}
 	strict106 := StatementModifiers{Flavor: maria106, StrictIndexOrder: true}
 	loose104 := StatementModifiers{Flavor: maria104}

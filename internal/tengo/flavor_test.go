@@ -62,7 +62,7 @@ func TestVersionComparisons(t *testing.T) {
 	v309 := Version{3, 0, 9}
 	v310 := Version{3, 1, 0}
 	v328 := Version{3, 2, 8}
-	v400 := Version{4}
+	v400 := Version{4, 0, 0}
 	if v310.Below(v310) || !v310.AtLeast(v310) {
 		t.Error("Expected Below to be exclusive and AtLeast to be inclusive, but this was not the case")
 	}
