@@ -238,6 +238,14 @@ func (s LinterIntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 				expectedMode = "page"
 			}
 			actualMode, actualClause := tableCompressionMode(tbl)
+
+			// MariaDB releases from Aug 2026 onwards wrap option values in single quotes
+			// and we need to prevent test failures from that discrepancy
+			// See MDEV-39776 https://github.com/MariaDB/server/commit/d5d741a307
+			if expectedClause == "`PAGE_COMPRESSED`=1" && actualClause == "`PAGE_COMPRESSED`='1'" {
+				expectedClause = actualClause
+			}
+
 			if actualMode != expectedMode || actualClause != expectedClause {
 				t.Errorf("Unexpected return value from tableCompressionMode(%s): got %q,%q; expected %q,%q", tbl.Name, actualMode, actualClause, expectedMode, expectedClause)
 			}
