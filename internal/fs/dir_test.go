@@ -371,8 +371,7 @@ func TestParseDirIgnorePatterns(t *testing.T) {
 	if err == nil {
 		t.Fatal("In dir testdata/ignore/invalidregex, expected error from ParseDir(), but instead err is nil")
 	}
-	var ce ConfigError
-	if !errors.As(err, &ce) {
+	if _, ok := errors.AsType[ConfigError](err); !ok {
 		t.Errorf("Expected err to be ConfigError, instead type is %T and it does not unwrap to ConfigError", err)
 	}
 }

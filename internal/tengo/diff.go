@@ -276,8 +276,8 @@ func (e *UnsafeDiffError) Error() string {
 // IsUnsafeDiff returns true if err represents an "unsafe" alteration that
 // has not explicitly been permitted by the supplied StatementModifiers.
 func IsUnsafeDiff(err error) bool {
-	var errUnsafe *UnsafeDiffError
-	return errors.As(err, &errUnsafe)
+	_, ok := errors.AsType[*UnsafeDiffError](err)
+	return ok
 }
 
 // UnsupportedDiffError can be returned by ObjectDiff.Statement if Tengo is
@@ -315,6 +315,6 @@ func (e *UnsupportedDiffError) Unwrap() error {
 // IsUnsupportedDiff returns true if err represents an object that cannot be
 // diff'ed due to use of features not supported by this package.
 func IsUnsupportedDiff(err error) bool {
-	var errUnsupported *UnsupportedDiffError
-	return errors.As(err, &errUnsupported)
+	_, ok := errors.AsType[*UnsupportedDiffError](err)
+	return ok
 }

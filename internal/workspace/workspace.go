@@ -126,8 +126,7 @@ func (se *StatementError) String() string {
 // ErrorNumber returns the server error code corresponding to Err if it is a
 // driver-provided error. Otherwise, it returns 0.
 func (se *StatementError) ErrorNumber() uint16 {
-	var merr *mysql.MySQLError
-	if errors.As(se.Err, &merr) {
+	if merr, ok := errors.AsType[*mysql.MySQLError](se.Err); ok {
 		return merr.Number
 	}
 	return 0

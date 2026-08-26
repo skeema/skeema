@@ -53,8 +53,7 @@ func RunSuite(t *testing.T, suite any, opts RunSuiteOptions) {
 	}
 	beforeTester, hasBeforeTest := suite.(BeforeTester)
 
-	for n := range suiteType.NumMethod() {
-		method := suiteType.Method(n)
+	for method := range suiteType.Methods() {
 		if strings.HasPrefix(method.Name, "Test") {
 			t.Run(suiteName+"."+method.Name+suffix, func(subt *testing.T) {
 				defer func() {
