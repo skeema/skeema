@@ -471,6 +471,9 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"offset": {{Vendor: VendorMariaDB, Version: Version{10, 6}}},
 
 	"vector": {{Vendor: VendorMariaDB, Version: Version{11, 7}}},
+
+	"conversion": {{Vendor: VendorMariaDB, Version: Version{12, 3}}},
+	"to_date":    {{Vendor: VendorMariaDB, Version: Version{12, 3}}},
 }
 
 var reservedWordsRemovedInFlavor = map[string][]Flavor{
