@@ -146,11 +146,10 @@ func VerifyDiff(altersInDiff []*tengo.TableDiff, vopts VerifierOptions) error {
 // second diff returns a non-empty ALTER, an error, or an unsupported diff, it
 // means the first diff did not properly do its job, so verification fails.
 func verifyTable(actual, desired *tengo.Table, mods tengo.StatementModifiers) error {
-	var errUnsupported *tengo.UnsupportedDiffError
 	td := tengo.NewAlterTable(actual, desired)
 	stmt, err := td.Statement(mods)
 	header := "Diff verification failure on table " + tengo.EscapeIdentifier(desired.Name)
-	if errors.As(err, &errUnsupported) {
+	if errUnsupported, ok := errors.AsType[*tengo.UnsupportedDiffError](err); ok {
 		errUnsupported.Reason = strings.Replace(errUnsupported.Reason, "original state", "post-verification state", 1)
 		errUnsupported.ExpectedDesc = strings.Replace(errUnsupported.ExpectedDesc, "original state", "post-verification state", 1)
 		errUnsupported.ActualDesc = strings.Replace(errUnsupported.ActualDesc, "original state", "post-verification state", 1)

@@ -89,8 +89,7 @@ func ExitCode(err error) int {
 	if err == nil {
 		return CodeSuccess
 	}
-	var ec ExitCoder
-	if errors.As(err, &ec) {
+	if ec, ok := errors.AsType[ExitCoder](err); ok {
 		return ec.ExitCode()
 	}
 	return CodeFatalError

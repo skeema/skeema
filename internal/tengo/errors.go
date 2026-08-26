@@ -36,8 +36,7 @@ const (
 // If one or more specificErrors are supplied, IsDatabaseError only returns true
 // if the database error code also matched one of those numbers.
 func IsDatabaseError(err error, specificErrors ...uint16) bool {
-	var merr *mysql.MySQLError
-	if errors.As(err, &merr) {
+	if merr, ok := errors.AsType[*mysql.MySQLError](err); ok {
 		if len(specificErrors) == 0 { // caller is just checking if err is ANY db error
 			return true
 		}
