@@ -17,6 +17,6 @@ CREATE TABLE `has_checks1` (
 CREATE TABLE has_checks2 (
 	foo1 varchar(30) NOT NULL CHECK (foo1 <> 'hello world this is intentionally a long string in order to test the logic for clauses exceeding 64 bytes'),
 	foo2 int unsigned NOT NULL CHECK (foo2 > 0),
-	CONSTRAINT foo1 CHECK (foo1 <> 'C:\\foo\\bar'),
-	CONSTRAINT foo2 CHECK (length(foo1) + foo2 != 123)
+	CONSTRAINT foo3 CHECK (foo1 <> 'C:\\foo\\bar'),
+	CONSTRAINT foo4 CHECK (length(foo1) + foo2 != 123)
 );
