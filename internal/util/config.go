@@ -344,7 +344,7 @@ func RealConnectOptions(connectOpts string) (string, error) {
 		"serverpubkey":             true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
 		"timeout":                  true,
 		"timetruncate":             true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
-		"tls":                      true,
+		"tls":                      true, // banned in Dir.InstanceDefaultParams, listed here for sake of completeness
 		"writetimeout":             true,
 	}
 

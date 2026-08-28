@@ -577,9 +577,10 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 		"parsetime":                true,
 		"serverpubkey":             true,
 		"timetruncate":             true,
+		"tls":                      true, // banned since Skeema v2; use dedicated ssl-mode option from Skeema v1.6+ instead
 
-		// mysql session options that should not be overridden
-		"autocommit":             true, // always enabled by default in MySQL
+		// server session options that should not be overridden
+		"autocommit":             true, // always enabled by default in MySQL/MariaDB
 		"foreign_key_checks":     true, // always disabled explicitly later in this method
 		"default_storage_engine": true, // always set to InnoDB later in this method
 	}
@@ -616,13 +617,6 @@ func (dir *Dir) InstanceDefaultParams() (string, error) {
 	for name, value := range options {
 		if banned[strings.ToLower(name)] {
 			return "", ConfigErrorf("connect-options is not allowed to contain %s", name)
-		}
-		if name == "tls" {
-			if dir.Config.Supplied("ssl-mode") {
-				return "", ConfigErrorf("When using the ssl-mode option, connect-options should not also set the tls field")
-			} else {
-				log.Warn("Setting the tls option in connect-options is deprecated, and will no longer be allowed in Skeema v2. Use the dedicated ssl-mode option instead.")
-			}
 		}
 		v.Set(name, value)
 	}
