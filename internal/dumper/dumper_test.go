@@ -191,7 +191,6 @@ func (s *DumperIntegrationSuite) setupDirAndDB(t *testing.T, subdir string) (*fs
 	wsOpts := workspace.Options{
 		Type:          workspace.TypeTempSchema,
 		Instance:      s.d.Instance,
-		CleanupAction: workspace.CleanupActionDrop,
 		SchemaName:    "dumper_test",
 		LockTimeout:   30 * time.Second,
 		CreateThreads: 5,

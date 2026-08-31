@@ -11,7 +11,7 @@ import (
 func (s WorkspaceIntegrationSuite) TestLocalDockerErrors(t *testing.T) {
 	opts := Options{
 		Type:                TypeLocalDocker,
-		CleanupAction:       CleanupActionNone,
+		ShutdownAction:      ShutdownActionNone,
 		Flavor:              tengo.FlavorUnknown,
 		SchemaName:          "_skeema_tmp",
 		DefaultCharacterSet: "latin1",
@@ -37,7 +37,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerErrors(t *testing.T) {
 func (s WorkspaceIntegrationSuite) TestLocalDocker(t *testing.T) {
 	opts := Options{
 		Type:                TypeLocalDocker,
-		CleanupAction:       CleanupActionNone,
+		ShutdownAction:      ShutdownActionNone,
 		Flavor:              s.d.Flavor().Family(),
 		SchemaName:          "_skeema_tmp",
 		DefaultCharacterSet: "latin1",
@@ -90,7 +90,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDocker(t *testing.T) {
 func (s WorkspaceIntegrationSuite) TestLocalDockerShutdown(t *testing.T) {
 	opts := Options{
 		Type:                TypeLocalDocker,
-		CleanupAction:       CleanupActionNone,
+		ShutdownAction:      ShutdownActionNone,
 		Flavor:              s.d.Flavor().Family(),
 		SchemaName:          "_skeema_tmp",
 		DefaultCharacterSet: "latin1",
@@ -100,7 +100,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerShutdown(t *testing.T) {
 		CreateThreads:       4,
 	}
 
-	// Test with CleanupActionNone
+	// Test with ShutdownActionNone
 	ws, err := New(opts)
 	if err != nil {
 		t.Fatalf("Unexpected error from New(): %s", err)
@@ -115,13 +115,13 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerShutdown(t *testing.T) {
 	if has, err := ld.d.HasSchema(opts.SchemaName); has || err != nil {
 		t.Fatalf("Schema persisted despite Cleanup(): has=%t err=%s", has, err)
 	}
-	Shutdown() // should have no effect, since CleanupActionNone
+	Shutdown() // should have no effect, since ShutdownActionNone
 	if ok, err := ld.d.CanConnect(); !ok {
 		t.Errorf("Unexpected failure from CanConnect(): %t / %v", ok, err)
 	}
 
-	// Test with CleanupActionStop
-	opts.CleanupAction = CleanupActionStop
+	// Test with ShutdownActionStop
+	opts.ShutdownAction = ShutdownActionStop
 	if ld, err = NewLocalDocker(opts); err != nil {
 		t.Fatalf("Unexpected error from NewLocalDocker(): %s", err)
 	}
@@ -140,8 +140,8 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerShutdown(t *testing.T) {
 		t.Errorf("Unable to re-fetch container %s by name: %s", containerName, err)
 	}
 
-	// Test with CleanupActionDestroy
-	opts.CleanupAction = CleanupActionDestroy
+	// Test with ShutdownActionDestroy
+	opts.ShutdownAction = ShutdownActionDestroy
 	if ld, err = NewLocalDocker(opts); err != nil {
 		t.Fatalf("Unexpected NewLocalDocker error: %v", err)
 	}
@@ -169,7 +169,7 @@ func (s WorkspaceIntegrationSuite) TestLocalDockerConnParams(t *testing.T) {
 	// LocalDocker.ConnectionPool().
 	opts := Options{
 		Type:                TypeLocalDocker,
-		CleanupAction:       CleanupActionNone,
+		ShutdownAction:      ShutdownActionNone,
 		Flavor:              s.d.Flavor().Family(),
 		SchemaName:          "_skeema_tmp",
 		DefaultCharacterSet: "latin1",

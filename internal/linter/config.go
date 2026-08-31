@@ -36,11 +36,6 @@ func AddCommandOptions(cmd *mybase.Command) {
 			cmd.AddOptions("linter rule", r.RelatedOption)
 		}
 	}
-
-	// Prior to Skeema v1.3 (Sept 2019), linter checks were configured using these
-	// two centralized list-style options, which have been deprecated since then
-	cmd.AddOptions("linter rule", mybase.StringOption("warnings", 0, "", "(deprecated and hidden)").Hidden().MarkDeprecated("This option will be removed in Skeema v2."))
-	cmd.AddOptions("linter rule", mybase.StringOption("errors", 0, "", "(deprecated and hidden)").Hidden().MarkDeprecated("This option will be removed in Skeema v2."))
 }
 
 // Options contains parsed settings controlling linter behavior.
@@ -126,29 +121,6 @@ func OptionsForDir(dir *fs.Dir) (*Options, error) {
 			return nil, ConfigError{Dir: dir, err: err}
 		}
 		opts.RuleSeverity[name] = Severity(val)
-	}
-
-	// Backwards-compat for the deprecated "warnings" and "errors" options (in that
-	// order, so in case of duplicate entries, errors take precedence).
-	// Note that these used different names for the rules, and only 3 existed at
-	// the time, so they're hard-coded here.
-	deprecatedNames := map[string]string{
-		"bad-charset": "charset",
-		"bad-engine":  "engine",
-		"no-pk":       "pk",
-	}
-	for _, severity := range []Severity{SeverityWarning, SeverityError} {
-		oldOptionName := fmt.Sprintf("%ss", severity)
-		for _, oldName := range dir.Config.GetSlice(oldOptionName, ',', true) {
-			oldName = strings.ToLower(oldName)
-			if newName, ok := deprecatedNames[oldName]; !ok {
-				return nil, NewConfigError(dir, "Option %s is deprecated and cannot include value %s. Please see individual lint-* options instead.", oldOptionName, oldName)
-			} else if dir.Config.Changed(fmt.Sprintf("lint-%s", newName)) && severity != opts.RuleSeverity[newName] {
-				return nil, NewConfigError(dir, "Deprecated option %s has been set to a value that conflicts with newer option %s. Please remove %s from your configuration to resolve this.", oldOptionName, newName, oldOptionName)
-			} else {
-				opts.RuleSeverity[newName] = severity
-			}
-		}
 	}
 
 	// Process supplemental configuration of rules where needed

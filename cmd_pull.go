@@ -29,7 +29,6 @@ func init() {
 	cmd := mybase.NewCommand("pull", summary, desc, PullHandler)
 	cmd.AddOption(mybase.BoolOption("include-auto-inc", 0, false, "Include starting auto-inc values in new table files, and update in existing files"))
 	cmd.AddOption(mybase.BoolOption("format", 0, true, "Reformat SQL statements to match canonical SHOW CREATE"))
-	cmd.AddOption(mybase.BoolOption("normalize", 0, true, "(deprecated alias for format)").Hidden().MarkDeprecated("This option will be removed in Skeema v2. Use the equivalent --format option instead, which currently defaults to true, but will default to false in Skeema v2."))
 	cmd.AddOption(mybase.BoolOption("new-schemas", 0, true, "Detect any new schemas and populate new dirs for them"))
 	cmd.AddOption(mybase.BoolOption("update-partitioning", 0, false, "Update PARTITION BY clauses in existing table files"))
 	cmd.AddOption(mybase.BoolOption("strip-partitioning", 0, false, "Omit PARTITION BY clause when writing partitioned tables to filesystem"))
@@ -47,7 +46,7 @@ func PullHandler(cfg *mybase.Config) error {
 	if err := dir.CheckGenerator(generatorString()); err != nil {
 		return err
 	}
-	if !dir.Config.Supplied("format") && !dir.Config.Supplied("normalize") {
+	if !dir.Config.Supplied("format") {
 		log.Debug("Upgrade notice: the --format option, which currently defaults to true in Skeema v1, will change to default to false in Skeema v2. For more information, visit https://www.skeema.io/v2-changes")
 	}
 
@@ -214,7 +213,7 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 	// actual functional modifications, NOT just cosmetic/formatting differences.
 	// To make this distinction, we need to actually execute the *.sql files in a
 	// Workspace and run a diff against it.
-	if !dir.Config.GetBool("format") || !dir.Config.GetBool("normalize") {
+	if !dir.Config.GetBool("format") {
 		mods := statementModifiersForPull(dir.Config, instance)
 		opts, err := workspace.OptionsForDir(dir, instance)
 		if err != nil {

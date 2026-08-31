@@ -39,14 +39,14 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	assertOptsError("--workspace=temp-schema --temp-schema-mode=purple", true)
 	assertOptsError("--workspace=temp-schema --temp-schema-binlog=potato", true)
 
-	// Test default configuration, which should use temp-schema with drop cleanup
-	if opts := getOpts(""); opts.Type != TypeTempSchema || opts.CleanupAction != CleanupActionDrop {
+	// Test default configuration, which should use temp-schema
+	if opts := getOpts(""); opts.Type != TypeTempSchema {
 		t.Errorf("Unexpected type %v returned", opts.Type)
 	}
 
 	// Test temp-schema with some non-default options
-	opts := getOpts("--workspace=temp-schema --temp-schema=override --reuse-temp-schema")
-	if opts.Type != TypeTempSchema || opts.CleanupAction != CleanupActionNone || opts.SchemaName != "override" {
+	opts := getOpts("--workspace=temp-schema --temp-schema=override")
+	if opts.Type != TypeTempSchema || opts.SchemaName != "override" {
 		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
 	} else if opts.CreateThreads != 6 || opts.CreateChunkSize > 3 || opts.DropChunkSize < 2 || opts.DropChunkSize > 4 {
 		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
@@ -66,10 +66,7 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	if opts := getOpts("--temp-schema-mode=heavy"); opts.Type != TypeTempSchema || opts.CreateThreads != 12 || opts.CreateChunkSize < 2 || opts.CreateChunkSize > 4 || opts.DropChunkSize < 3 || opts.DropChunkSize > 5 {
 		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
 	}
-	if opts := getOpts("--temp-schema-mode=extreme"); opts.CreateThreads != 24 || opts.CreateChunkSize < 4 || opts.CreateChunkSize > 8 || opts.CleanupAction != CleanupActionDropOneShot {
-		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
-	}
-	if opts := getOpts("--temp-schema-mode=extreme --reuse-temp-schema"); opts.CreateThreads != 24 || opts.CreateChunkSize < 4 || opts.CreateChunkSize > 8 || opts.CleanupAction != CleanupActionNone || opts.DropChunkSize < 4 || opts.DropChunkSize > 6 {
+	if opts := getOpts("--temp-schema-mode=extreme"); opts.CreateThreads != 24 || opts.CreateChunkSize < 4 || opts.CreateChunkSize > 8 || opts.DropChunkSize != DropSizeOneShot {
 		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
 	}
 
@@ -77,15 +74,15 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	// flavor of suite's DockerizedInstance
 	expectFlavorString := s.d.Flavor().Family().String()
 	opts = getOpts("--workspace=docker")
-	if opts.Type != TypeLocalDocker || opts.CleanupAction != CleanupActionNone || opts.Flavor.String() != expectFlavorString {
+	if opts.Type != TypeLocalDocker || opts.ShutdownAction != ShutdownActionNone || opts.Flavor.String() != expectFlavorString {
 		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
 	}
 
 	// Test docker with other cleanup actions
-	if opts = getOpts("--workspace=docker --docker-cleanup=StOp"); opts.CleanupAction != CleanupActionStop {
+	if opts = getOpts("--workspace=docker --docker-cleanup=StOp"); opts.ShutdownAction != ShutdownActionStop {
 		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
 	}
-	if opts = getOpts("--workspace=docker --docker-cleanup=destroy"); opts.CleanupAction != CleanupActionDestroy {
+	if opts = getOpts("--workspace=docker --docker-cleanup=destroy"); opts.ShutdownAction != ShutdownActionDestroy {
 		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
 	}
 

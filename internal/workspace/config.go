@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"errors"
+	"math"
 	"net/url"
 	"time"
 
@@ -20,41 +21,37 @@ const (
 	TypeLocalDocker             // A schema on an ephemeral Docker container on localhost
 )
 
-// CleanupAction represents how to clean up a workspace.
-type CleanupAction int
+// DropSizeOneShot can be specified for Options.DropChunkSize to indicate that a
+// temp-schema workspace should be dropped in a single statement, instead of
+// carefully dropping tables first to minimize locking impact. Only affects
+// TypeTempSchema.
+const DropSizeOneShot = math.MaxInt
 
-// Constants enumerating different cleanup actions. These may affect the
-// behavior of Workspace.Cleanup() and/or Shutdown().
+// ShutdownAction enumerates different actions for workspace containers (via
+// TypeLocalDocker) when this Skeema process exits: leave containers running,
+// stop containers, or delete containers.
+type ShutdownAction int
+
+// Constants enumerating different shutdown actions for TypeLocalDocker
 const (
-	// CleanupActionNone means to perform no special cleanup
-	CleanupActionNone CleanupAction = iota
+	// ShutdownActionNone keeps the container running as-is (no-op)
+	ShutdownActionNone ShutdownAction = iota
 
-	// CleanupActionDrop means to drop the schema in Workspace.Cleanup(). Only
-	// used with TypeTempSchema.
-	CleanupActionDrop
+	// ShutdownActionStop stops the DB instance container in Shutdown()
+	ShutdownActionStop
 
-	// CleanupActionDropOneShot means to drop the schema in Workspace.Cleanup() in
-	// a manner which doesn't drop individual tables first. Only used with
-	// TypeTempSchema.
-	CleanupActionDropOneShot
-
-	// CleanupActionStop means to stop the MySQL instance container in Shutdown().
-	// Only used with TypeLocalDocker.
-	CleanupActionStop
-
-	// CleanupActionDestroy means to destroy the MySQL instance container in
-	// Shutdown(). Only used with TypeLocalDocker.
-	CleanupActionDestroy
+	// ShutdownActionDestroy deletes the DB instance container in Shutdown()
+	ShutdownActionDestroy
 )
 
 // Options represent different parameters controlling the workspace that is
 // used. Some options are specific to a Type.
 type Options struct {
 	Type                Type
-	CleanupAction       CleanupAction
 	Instance            *tengo.Instance // only TypeTempSchema
 	Flavor              tengo.Flavor    // only TypeLocalDocker
 	ContainerName       string          // only TypeLocalDocker
+	ShutdownAction      ShutdownAction  // only TypeLocalDocker
 	SchemaName          string
 	DefaultCharacterSet string
 	DefaultCollation    string
@@ -87,7 +84,6 @@ func OptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 func tempSchemaOptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, error) {
 	opts := Options{
 		Type:                TypeTempSchema,
-		CleanupAction:       CleanupActionDrop,
 		Instance:            instance,
 		SchemaName:          dir.Config.GetAllowEnvVar("temp-schema"),
 		DefaultCharacterSet: dir.Config.Get("default-character-set"),
@@ -136,8 +132,7 @@ func tempSchemaOptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, er
 		opts.CreateChunkSize = latencyBucket + 1
 		opts.CreateThreads = 12
 	case "extreme": // DropChunkSize = one-shot; CreateChunkSize = 4 to 8; CreateThreads = 24
-		opts.CleanupAction = CleanupActionDropOneShot
-		opts.DropChunkSize = dropChunkBase + 3 // only applied if reuse-temp-schema also set
+		opts.DropChunkSize = DropSizeOneShot
 		opts.CreateChunkSize = (latencyBucket + 1) * 2
 		opts.CreateThreads = 24
 	}
@@ -160,9 +155,6 @@ func tempSchemaOptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, er
 		}
 	}
 
-	if dir.Config.GetBool("reuse-temp-schema") {
-		opts.CleanupAction = CleanupActionNone
-	}
 	binlogEnum, err := dir.Config.GetEnum("temp-schema-binlog", "on", "off", "auto")
 	if err != nil {
 		return Options{}, err
@@ -178,7 +170,7 @@ func tempSchemaOptionsForDir(dir *fs.Dir, instance *tengo.Instance) (Options, er
 func localDockerOptionsForDir(dir *fs.Dir, instance *tengo.Instance) (opts Options, err error) {
 	opts = Options{
 		Type:            TypeLocalDocker,
-		CleanupAction:   CleanupActionNone,
+		ShutdownAction:  ShutdownActionNone,
 		Flavor:          tengo.ParseFlavor(dir.Config.Get("flavor")),
 		SchemaName:      dir.Config.GetAllowEnvVar("temp-schema"),
 		LockTimeout:     30 * time.Second,
@@ -218,9 +210,9 @@ func localDockerOptionsForDir(dir *fs.Dir, instance *tengo.Instance) (opts Optio
 	if cleanup, err := dir.Config.GetEnum("docker-cleanup", "none", "stop", "destroy"); err != nil {
 		return Options{}, err
 	} else if cleanup == "stop" {
-		opts.CleanupAction = CleanupActionStop
+		opts.ShutdownAction = ShutdownActionStop
 	} else if cleanup == "destroy" {
-		opts.CleanupAction = CleanupActionDestroy
+		opts.ShutdownAction = ShutdownActionDestroy
 	}
 	return opts, nil
 }
@@ -235,6 +227,5 @@ func AddCommandOptions(cmd *mybase.Command) {
 		mybase.StringOption("temp-schema-threads", 0, "5", "Deprecated manner of controlling workspace load with workspace=temp-schema").MarkDeprecated("This option will be removed in Skeema v2. Use the new temp-schema-mode enum option instead. See --help or visit https://www.skeema.io/docs/options/#temp-schema-mode"),
 		mybase.StringOption("workspace", 'w', "temp-schema", `Specifies where to run intermediate operations (valid values: "temp-schema", "docker")`),
 		mybase.StringOption("docker-cleanup", 0, "none", `With --workspace=docker, specifies how to clean up containers (valid values: "none", "stop", "destroy")`),
-		mybase.BoolOption("reuse-temp-schema", 0, false, "(deprecated and hidden)").Hidden().MarkDeprecated("This option will be removed in Skeema v2."),
 	)
 }

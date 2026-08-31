@@ -174,7 +174,6 @@ func (s ApplierIntegrationSuite) TestCreatePlanForTarget(t *testing.T) {
 		"temp-schema-binlog":     "auto",
 		"temp-schema-mode":       "regular",
 		"temp-schema-threads":    "",
-		"reuse-temp-schema":      "false",
 	}
 	dir := &fs.Dir{
 		Path:   "/var/tmp/fakedir",

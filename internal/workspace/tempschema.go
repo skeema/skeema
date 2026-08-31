@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +16,6 @@ import (
 // workspace.
 type TempSchema struct {
 	schemaName    string
-	keepSchema    bool
 	dropChunkSize int
 	skipBinlog    bool
 	inst          *tengo.Instance
@@ -41,14 +39,9 @@ func NewTempSchema(opts Options) (_ *TempSchema, retErr error) {
 	var err error
 	ts := &TempSchema{
 		schemaName:    opts.SchemaName,
-		keepSchema:    opts.CleanupAction == CleanupActionNone,
 		inst:          opts.Instance,
 		skipBinlog:    opts.SkipBinlog,
 		dropChunkSize: opts.DropChunkSize,
-	}
-
-	if opts.CleanupAction == CleanupActionDropOneShot {
-		ts.dropChunkSize = math.MaxInt
 	}
 
 	lockName := fmt.Sprintf("skeema.%s", ts.schemaName)
@@ -114,7 +107,7 @@ func NewTempSchema(opts Options) (_ *TempSchema, retErr error) {
 func (ts *TempSchema) bulkDropOptions() tengo.BulkDropOptions {
 	return tengo.BulkDropOptions{
 		ChunkSize:       ts.dropChunkSize,
-		OneShot:         (ts.dropChunkSize == math.MaxInt),
+		OneShot:         (ts.dropChunkSize == DropSizeOneShot),
 		OnlyIfEmpty:     !ts.newlyCreated,
 		SkipBinlog:      ts.skipBinlog,
 		PartitionsFirst: true,
@@ -149,9 +142,8 @@ func (ts *TempSchema) IntrospectSchema() (IntrospectionResult, error) {
 	return result, err
 }
 
-// Cleanup either drops the temporary schema (if not using reuse-temp-schema)
-// or just drops all tables in the schema (if using reuse-temp-schema). If the
-// underlying database wasn't newly created by NewTempSchema, we confirm that
+// Cleanup drops the temporary schema in a safe manner. If the underlying schema
+// wasn't tracked as being newly created by NewTempSchema, we confirm that
 // tables have no rows prior to dropping.
 func (ts *TempSchema) Cleanup(schema *tengo.Schema) error {
 	if ts.releaseLock == nil {
@@ -165,14 +157,7 @@ func (ts *TempSchema) Cleanup(schema *tengo.Schema) error {
 	dropOpts := ts.bulkDropOptions()
 	dropOpts.Schema = schema // may be nil, not a problem
 
-	if ts.keepSchema {
-		if err := ts.inst.DropTablesInSchema(ts.schemaName, dropOpts); err != nil {
-			return fmt.Errorf("Cannot drop tables in temporary schema on %s: %s", ts.inst, err)
-		}
-		if err := ts.inst.DropRoutinesInSchema(ts.schemaName, dropOpts); err != nil {
-			return fmt.Errorf("Cannot drop routines in temporary schema on %s: %s", ts.inst, err)
-		}
-	} else if err := ts.inst.DropSchema(ts.schemaName, dropOpts); err != nil {
+	if err := ts.inst.DropSchema(ts.schemaName, dropOpts); err != nil {
 		return fmt.Errorf("Cannot drop temporary schema on %s: %s", ts.inst, err)
 	}
 	return nil

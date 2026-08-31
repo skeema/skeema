@@ -21,7 +21,7 @@ type LocalDocker struct {
 	schemaName        string
 	d                 *tengo.DockerizedInstance
 	releaseLock       releaseFunc
-	cleanupAction     CleanupAction
+	shutdownAction    ShutdownAction
 	defaultConnParams string
 }
 
@@ -63,7 +63,7 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 
 	ld := &LocalDocker{
 		schemaName:        opts.SchemaName,
-		cleanupAction:     opts.CleanupAction,
+		shutdownAction:    opts.ShutdownAction,
 		defaultConnParams: opts.DefaultConnParams,
 	}
 
@@ -105,7 +105,7 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 			Name:         opts.ContainerName,
 			Image:        ld.image,
 			RootPassword: opts.RootPassword,
-			DataTmpfs:    (ld.cleanupAction == CleanupActionDestroy),
+			DataTmpfs:    (ld.shutdownAction == ShutdownActionDestroy),
 		}
 		// If real inst had lower_case_table_names=1, use that in the container as
 		// well. (No need for similar logic with lower_case_table_names=2; that cannot
@@ -254,12 +254,12 @@ func (ld *LocalDocker) shutdown(args ...any) bool {
 	cstore.Lock()
 	defer cstore.Unlock()
 
-	if ld.cleanupAction == CleanupActionStop {
+	if ld.shutdownAction == ShutdownActionStop {
 		log.Infof("Stopping container %s", ld.d.ContainerName())
 		if err := ld.d.Stop(); err != nil {
 			log.Warnf("Failed to stop container %s: %v", ld.d.ContainerName(), err)
 		}
-	} else if ld.cleanupAction == CleanupActionDestroy {
+	} else if ld.shutdownAction == ShutdownActionDestroy {
 		log.Infof("Destroying container %s", ld.d.ContainerName())
 		if err := ld.d.Destroy(); err != nil {
 			log.Warnf("Failed to destroy container %s: %v", ld.d.ContainerName(), err)

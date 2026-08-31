@@ -249,7 +249,7 @@ func (s WorkspaceIntegrationSuite) TestExecLogicalSchemaLarge(t *testing.T) {
 
 	// Increase concurrency to "extreme" mode equivalents; introduce an error in a
 	// random number of objects
-	opts.CleanupAction = CleanupActionDropOneShot
+	opts.DropChunkSize = DropSizeOneShot
 	opts.CreateChunkSize = 8
 	opts.CreateThreads = 24
 	typos := 5 + rand.Intn(15)

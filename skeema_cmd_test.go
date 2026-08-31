@@ -1087,9 +1087,9 @@ func (s SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 	s.handleCommand(t, CodeSuccess, ".", "skeema pull")
 	assertFileNormalized()
 
-	// lint normalizes files to remove the clauses
+	// format normalizes files to remove the clauses
 	fs.WriteTestFile(t, "mydb/product/problems.sql", withClauses)
-	s.handleCommand(t, CodeDifferencesFound, ".", "skeema lint --errors=''")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema format")
 	assertFileNormalized()
 
 	// diff views the clauses as no-ops if present in file but not db, or vice versa
@@ -1116,22 +1116,6 @@ func (s SkeemaIntegrationSuite) TestNonInnoClauses(t *testing.T) {
 	s.d.ExecSQL(t, "USE product; DROP TABLE problems; "+withoutClauses+"; ALTER TABLE problems DROP KEY idx2")
 	fs.WriteTestFile(t, "mydb/product/problems.sql", withClauses)
 	s.handleCommand(t, CodeSuccess, ".", "skeema push")
-}
-
-func (s SkeemaIntegrationSuite) TestReuseTempSchema(t *testing.T) {
-	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", s.d.Instance.Host, s.d.Instance.Port)
-
-	// Ensure that re-using temp schema works as expected, and does not confuse
-	// subsequent commands
-	for range 2 {
-		// Need --skip-format in order for pull to use temp schema
-		cfg := s.handleCommand(t, CodeSuccess, ".", "skeema pull --skip-format --reuse-temp-schema --temp-schema=verytemp")
-		s.assertTableExists(t, "verytemp", "", "")
-		s.verifyFiles(t, cfg, "../golden-VENDOR/init")
-	}
-
-	// Invalid workspace option should error
-	s.handleCommand(t, CodeBadConfig, ".", "skeema pull --workspace=doesnt-exist --skip-format --reuse-temp-schema --temp-schema=verytemp")
 }
 
 func (s SkeemaIntegrationSuite) TestShardedSchemas(t *testing.T) {
@@ -1510,7 +1494,7 @@ END`
 
 // TestTempSchemaBinlog provides coverage for the temp-schema-binlog option.
 // Because we ordinarily create containerized test DBs with binlogging disabled
-// (even in MySQL 8 where it normally defaults to enabled), this test has to
+// (even in MySQL where it normally defaults to enabled), this test has to
 // create a new separate container for its logic.
 // This test is run in CI, or when SKEEMA_TEST_BINLOG env var is set to any non-
 // blank value.
@@ -1618,10 +1602,6 @@ END`
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
 	pos = assertNotLogged(pos)
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --temp-schema-binlog=off")
-	pos = assertNotLogged(pos)
-	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --temp-schema-binlog=off --reuse-temp-schema")
-	pos = assertNotLogged(pos)
-	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --temp-schema-binlog=OFF")
 	pos = assertNotLogged(pos)
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --temp-schema-binlog=ON")
 	pos = assertLogged(pos)

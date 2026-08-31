@@ -11,14 +11,17 @@ import (
 func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 	opts := Options{
 		Type:                TypeTempSchema,
-		CleanupAction:       CleanupActionNone,
 		Instance:            s.d.Instance,
 		SchemaName:          "_skeema_tmp",
 		DefaultCharacterSet: "latin1",
 		DefaultCollation:    "latin1_swedish_ci",
 		LockTimeout:         100 * time.Millisecond,
 		CreateThreads:       6,
+		CreateChunkSize:     1,
+		DropChunkSize:       1,
 	}
+
+	// First confirm the normal flow of creation and cleanup works as expected
 	ts, err := NewTempSchema(opts)
 	if err != nil {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
@@ -35,28 +38,38 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 	if err := ts.Cleanup(nil); err != nil {
 		t.Errorf("Unexpected error from cleanup: %s", err)
 	}
+	if has, _ := ts.inst.HasSchema(opts.SchemaName); has {
+		t.Fatal("Schema persisted despite having run Cleanup")
+	}
 	if err := ts.Cleanup(nil); err == nil {
 		t.Error("Expected repeated calls to Cleanup() to error, but err was nil")
 	}
-	if has, err := ts.inst.HasSchema(opts.SchemaName); !has {
-		t.Fatalf("Schema did not persist despite CleanupActionNone: has=%t err=%s", has, err)
-	}
-	if schema, err := ts.inst.Schema(opts.SchemaName); err != nil {
-		t.Fatalf("Unexpectedly unable to obtain schema: %v", err)
-	} else if objCount := len(schema.Objects()); objCount > 0 {
-		t.Errorf("Expected temp schema to have 0 objects after cleanup, instead found %d", objCount)
-	}
 
-	// After above, _skeema_tmp exists but is empty. Calling NewTempSchema should
-	// succeed, but then if we insert rows after that, Cleanup should fail: if the
-	// schema already existed before NewTempSchema, Cleanup performs emptiness
-	// checks before proceeding with drops.
-	if ts, err = NewTempSchema(opts); err != nil {
+	// Create the workspace again and this time don't run Cleanup; instead just
+	// hackily release the lock, to simulate an unclean state
+	ts, err = NewTempSchema(opts)
+	if err != nil {
 		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
 	}
+	ts.releaseLock()
+	ts.releaseLock = nil
+
+	// After above, _skeema_tmp exists and has tables but without any rows. Calling
+	// NewTempSchema should succeed since it will do initial cleanup automatically
+	// as long as the tables don't have rows.
+	ts, err = NewTempSchema(opts)
+	if err != nil {
+		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
+	}
+	if has, err := ts.inst.HasSchema(opts.SchemaName); !has {
+		t.Errorf("Instance does not have expected schema: has=%t err=%s", has, err)
+	}
+
+	// Insert a row and then attempt to call Cleanup, which should fail because a
+	// table is non-empty
 	s.d.SourceSQL(t, "testdata/tempschema1.sql")
 	if err := ts.Cleanup(nil); err == nil {
-		t.Error("Expected cleanup error since a table had rows, but err was nil")
+		t.Fatal("Expected cleanup error since a table wasn't empty, but err was nil")
 	}
 
 	// NewTempSchema should fail if schema already exists and a table has rows,
@@ -68,52 +81,6 @@ func (s WorkspaceIntegrationSuite) TestTempSchema(t *testing.T) {
 		t.Errorf("Unexpected error getting schema _skeema_tmp: %s", err)
 	} else if !schema.HasTable("bar") {
 		t.Error("Expected table bar to still exist, but it does not")
-	}
-}
-
-func (s WorkspaceIntegrationSuite) TestTempSchemaCleanupDrop(t *testing.T) {
-	opts := Options{
-		Type:                TypeTempSchema,
-		CleanupAction:       CleanupActionDrop,
-		Instance:            s.d.Instance,
-		SchemaName:          "_skeema_tmp",
-		DefaultCharacterSet: "latin1",
-		DefaultCollation:    "latin1_swedish_ci",
-		LockTimeout:         100 * time.Millisecond,
-		CreateThreads:       6,
-	}
-	ts, err := NewTempSchema(opts)
-	if err != nil {
-		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
-	}
-	if has, err := ts.inst.HasSchema(opts.SchemaName); !has {
-		t.Fatalf("Temp schema unexpectedly does not exist: has=%t err=%s", has, err)
-	}
-
-	// Coverage for successful CleanupActionDrop
-	if err := ts.Cleanup(nil); err != nil {
-		t.Errorf("Unexpected error from cleanup: %s", err)
-	}
-	if has, err := ts.inst.HasSchema(opts.SchemaName); has || err != nil {
-		t.Fatalf("Schema persisted despite CleanupActionDrop: has=%t err=%s", has, err)
-	}
-
-	// Coverage for failed CleanupActionDrop re-using existing schema and erroring
-	// due to row being inserted after NewTempSchema but before Cleanup
-	opts.CleanupAction = CleanupActionNone
-	if ts, err = NewTempSchema(opts); err != nil {
-		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
-	}
-	if err := ts.Cleanup(nil); err != nil {
-		t.Errorf("Unexpected error from cleanup: %s", err)
-	}
-	opts.CleanupAction = CleanupActionDrop
-	if ts, err = NewTempSchema(opts); err != nil {
-		t.Fatalf("Unexpected error from NewTempSchema: %s", err)
-	}
-	s.d.SourceSQL(t, "testdata/tempschema1.sql")
-	if err := ts.Cleanup(nil); err == nil {
-		t.Error("Expected cleanup error since a table had rows, but err was nil")
 	}
 }
 
@@ -232,7 +199,6 @@ func (s WorkspaceIntegrationSuite) TestTempSchemaCrossDBFK(t *testing.T) {
 func TestTempSchemaNilInstance(t *testing.T) {
 	opts := Options{
 		Type:                TypeTempSchema,
-		CleanupAction:       CleanupActionNone,
 		Instance:            nil,
 		SchemaName:          "_skeema_tmp",
 		DefaultCharacterSet: "latin1",

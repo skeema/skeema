@@ -52,9 +52,6 @@ func TestOptionsForDir(t *testing.T) {
 
 	// Coverage for error conditions
 	badOptions := []string{
-		"--errors=made-up-problem",
-		"--warnings='bad-charset,made-up-problem,bad-engine'",
-		"--lint-engine=ignore --warnings=bad-engine",
 		"--allow-charset=''",
 		"--allow-engine=''",
 		"--lint-engine=gentle-nudge",
