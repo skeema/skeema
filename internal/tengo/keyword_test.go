@@ -7,32 +7,32 @@ import (
 
 func TestReservedWordMap(t *testing.T) {
 	words80 := ReservedWordMap(ParseFlavor("mysql:8.0"))
-	words84 := ReservedWordMap(ParseFlavor("mysql:8.4"))
-	words84p := ReservedWordMap(ParseFlavor("percona:8.4"))
+	words97 := ReservedWordMap(ParseFlavor("mysql:9.7"))
+	words97p := ReservedWordMap(ParseFlavor("percona:9.7"))
 
-	// Confirm the maps are different; 8.4 map should be larger than 8.0 map
-	if len(words84) <= len(words80) {
-		t.Errorf("Expected the MySQL 8.4 reserved word map (%d entries) to be larger than the 8.0 one (%d entries), but it is not", len(words84), len(words80))
+	// Confirm the maps are different; 9.7 map should be larger than 8.0 map
+	if len(words97) <= len(words80) {
+		t.Errorf("Expected the MySQL 9.7 reserved word map (%d entries) to be larger than the 8.0 one (%d entries), but it is not", len(words97), len(words80))
 	}
 
-	// Percona 8.4 map should be at least the same size as the stock 8.4 map
-	if len(words84p) < len(words84) {
-		t.Errorf("Expected the Percona Server 8.4 reserved word map (%d entries) to be at least as large as the 8.4 one (%d entries), but it is not", len(words84p), len(words84))
+	// Percona 9.7 map should be at least the same size as the stock 9.7 map
+	if len(words97p) < len(words97) {
+		t.Errorf("Expected the Percona Server 9.7 reserved word map (%d entries) to be at least as large as the 9.7 one (%d entries), but it is not", len(words97p), len(words97))
 	}
 
 	// Confirm that two identical calls return a reference to the same underlying
 	// map, whereas two different flavor values do not
-	prevLen84p := len(words84p)
-	words84dupe1 := ReservedWordMap(ParseFlavor("mysql:8.4"))
-	words84["FAKE FOR TEST"] = true
-	words84dupe2 := ReservedWordMap(ParseFlavor("mysql:8.4"))
-	if len(words84) != len(words84dupe1) || len(words84) != len(words84dupe2) {
-		t.Errorf("Expected maps for identical flavor value to reference the same data, but they did not: counts %d, %d, %d", len(words84), len(words84dupe1), len(words84dupe2))
+	prevLen97p := len(words97p)
+	words97dupe1 := ReservedWordMap(ParseFlavor("mysql:9.7"))
+	words97["FAKE FOR TEST"] = true
+	words97dupe2 := ReservedWordMap(ParseFlavor("mysql:9.7"))
+	if len(words97) != len(words97dupe1) || len(words97) != len(words97dupe2) {
+		t.Errorf("Expected maps for identical flavor value to reference the same data, but they did not: counts %d, %d, %d", len(words97), len(words97dupe1), len(words97dupe2))
 	}
-	if len(words84p) != prevLen84p {
+	if len(words97p) != prevLen97p {
 		t.Error("Expected maps for different flavor values to be distinct, but they are not")
 	}
-	delete(words84, "FAKE FOR TEST")
+	delete(words97, "FAKE FOR TEST")
 
 	// Other tests in this file properly cover the underlying contents of the maps,
 	// so that is not duplicated here.

@@ -11,7 +11,7 @@ import (
 // as well as for solving issues like #175 and #199.
 
 // This constant is used for determining map capacity for reserved word maps.
-// This is padded slightly; currently MySQL 8.4 has 265 reserved words, vs 251
+// This is padded slightly; currently MySQL 9.7 has 265 reserved words, vs 251
 // in recent MariaDB releases.
 const countReservedWordsPerFlavor = 275
 
@@ -370,7 +370,6 @@ var commonReservedWords = []string{
 // Flavor values used in maps below
 var (
 	oldestMySQL   = Flavor{Vendor: VendorMySQL, Version: OldestSupportedMySQLVersion}
-	mySQL82       = Flavor{Vendor: VendorMySQL, Version: Version{8, 2, AnyPatch}}
 	mySQL83       = Flavor{Vendor: VendorMySQL, Version: Version{8, 3, AnyPatch}}
 	mySQL84       = Flavor{Vendor: VendorMySQL, Version: Version{8, 4, AnyPatch}}
 	mySQL92       = Flavor{Vendor: VendorMySQL, Version: Version{9, 2, AnyPatch}}
@@ -401,7 +400,7 @@ var (
 //     reserved word only in the context of table name *aliases*, which largely
 //     means it isn't relevant to this package at this time.
 var reservedWordsAddedInFlavor = map[string][]Flavor{
-	"cube":            {oldestMySQL}, // added in MySQL 8.0; still reserved in 8.4, despite 8.4.0's I_S.keywords.reserved being 0, see bug 114874
+	"cube":            {oldestMySQL}, // added in MySQL 8.0
 	"cume_dist":       {oldestMySQL}, // added in MySQL 8.0
 	"dense_rank":      {oldestMySQL}, // added in MySQL 8.0
 	"empty":           {oldestMySQL}, // added in MySQL 8.0
@@ -433,19 +432,24 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 
 	"row_number": {oldestMySQL, mariaDB107}, // added in MySQL 8.0 and MariaDB 10.7
 
-	"parallel":    {mySQL82}, // wrong in I_S.keywords.reserved, see bug 114874
-	"qualify":     {mySQL83}, // wrong in I_S.keywords.reserved, see bug 114874
-	"manual":      {mySQL84}, // wrong in I_S.keywords.reserved, see bug 114874
-	"tablesample": {mySQL84}, // wrong in I_S.keywords.reserved, see bug 114874
-
-	"library":  {mySQL92},
-	"external": {mySQL94}, // wrong in I_S.keywords.reserved, see bug 114874
+	"qualify":     {mySQL83},
+	"tablesample": {mySQL84},
+	"library":     {mySQL92},
+	"external":    {mySQL94},
 
 	// This one was reserved only in 9.6.0, and was retroactively considered a bug
 	// as per https://bugs.mysql.com/bug.php?id=119904. Since 9.6 was a rolling
 	// "innovation" release, and those aren't generally used in production, it
 	// doesn't make sense to track it as a normal reserved-then-unreserved word:
-	// "sets":     {mysql96}, // wrong in I_S.keywords.reserved, see bug 114874
+	// "sets":     {mysql96},
+
+	// These next two were reserved in 8.2.0 and 8.4.0 (respectively), and then
+	// retroactively considered a bug per https://bugs.mysql.com/bug.php?id=114874
+	// and unreserved in 8.4.11, 9.7.2, and 26.7.0+. Due to the complexity of
+	// tracking their un-reserving across different LTS point releases, they are
+	// not tracked as normal reserved-then-unreserved words.
+	// "parallel":    {mySQL82},
+	// "manual":      {mySQL84},
 
 	"current_role":            {oldestMariaDB},
 	"delete_domain_id":        {oldestMariaDB},
@@ -463,10 +467,8 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"stats_persistent":        {oldestMariaDB},
 	"stats_sample_pages":      {oldestMariaDB},
 
-	"offset": {mariaDB106},
-
-	"vector": {mariaDB117},
-
+	"offset":     {mariaDB106},
+	"vector":     {mariaDB117},
 	"conversion": {mariaDB123},
 	"to_date":    {mariaDB123},
 }
