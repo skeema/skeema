@@ -11,7 +11,7 @@ import (
 // as well as for solving issues like #175 and #199.
 
 // This constant is used for determining map capacity for reserved word maps.
-// This is padded slightly; currently MySQL 8.4 has 265 reserved words, vs 251
+// This is padded slightly; currently MySQL 9.7 has 265 reserved words, vs 251
 // in recent MariaDB releases.
 const countReservedWordsPerFlavor = 275
 
@@ -410,7 +410,7 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"stored":          {mySQL57},
 	"virtual":         {mySQL57},
 
-	"cube":         {mySQL80}, // still reserved in 8.4, despite 8.4.0's I_S.keywords.reserved being 0, see bug 114874
+	"cube":         {mySQL80},
 	"cume_dist":    {mySQL80},
 	"dense_rank":   {mySQL80},
 	"empty":        {mySQL80},
@@ -438,19 +438,25 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"system":       {mySQL80},
 	"window":       {mySQL80}, // see comment above re: MariaDB
 
-	"parallel":    {{Vendor: VendorMySQL, Version: Version{8, 2}}}, // wrong in I_S.keywords.reserved, see bug 114874
-	"qualify":     {{Vendor: VendorMySQL, Version: Version{8, 3}}}, // wrong in I_S.keywords.reserved, see bug 114874
-	"manual":      {mySQL84},                                       // wrong in I_S.keywords.reserved, see bug 114874
-	"tablesample": {mySQL84},                                       // wrong in I_S.keywords.reserved, see bug 114874
+	"qualify":     {{Vendor: VendorMySQL, Version: Version{8, 3}}},
+	"tablesample": {mySQL84},
 
 	"library":  {{Vendor: VendorMySQL, Version: Version{9, 2}}},
-	"external": {{Vendor: VendorMySQL, Version: Version{9, 4}}}, // wrong in I_S.keywords.reserved, see bug 114874
+	"external": {{Vendor: VendorMySQL, Version: Version{9, 4}}},
 
 	// This one was reserved only in 9.6.0, and was retroactively considered a bug
 	// as per https://bugs.mysql.com/bug.php?id=119904. Since 9.6 was a rolling
 	// "innovation" release, and those aren't generally used in production, it
 	// doesn't make sense to track it as a normal reserved-then-unreserved word:
-	// "sets":     {{Vendor: VendorMySQL, Version: Version{9, 6}}}, // wrong in I_S.keywords.reserved, see bug 114874
+	// "sets":     {{Vendor: VendorMySQL, Version: Version{9, 6}}},
+
+	// These next two were reserved in 8.2.0 and 8.4.0 (respectively), and then
+	// retroactively considered a bug per https://bugs.mysql.com/bug.php?id=114874
+	// and unreserved in 8.4.11, 9.7.2, and 26.7.0+. Due to the complexity of
+	// tracking their un-reserving across different LTS point releases, they are
+	// not tracked as normal reserved-then-unreserved words.
+	// "parallel":    {{Vendor: VendorMySQL, Version: Version{8, 2}}},
+	// "manual":      {mySQL84},
 
 	"current_role":            {mariaDB101},
 	"delete_domain_id":        {mariaDB101}, // actual version unclear from docs, see comment above
