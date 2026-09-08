@@ -33,7 +33,7 @@ const MaxPatch = math.MaxInt16
 // threshold for this Skeema release. Patch values are specified in ways that
 // make sense for the direction-of-comparison in how these are used.
 var (
-	LatestMySQLVersion   = Version{9, 7, MaxPatch}
+	LatestMySQLVersion   = Version{26, 7, MaxPatch}
 	LatestMariaDBVersion = Version{12, 3, MaxPatch}
 
 	OldestSupportedMySQLVersion   = Version{8, 0, AnyPatch}
