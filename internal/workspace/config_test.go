@@ -74,12 +74,12 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	// flavor of suite's DockerizedInstance
 	expectFlavorString := s.d.Flavor().Family().String()
 	opts = getOpts("--workspace=docker")
-	if opts.Type != TypeLocalDocker || opts.ShutdownAction != ShutdownActionNone || opts.Flavor.String() != expectFlavorString {
+	if opts.Type != TypeLocalDocker || opts.ShutdownAction != ShutdownActionStop || opts.Flavor.String() != expectFlavorString || !opts.DataTmpfs {
 		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
 	}
 
 	// Test docker with other cleanup actions
-	if opts = getOpts("--workspace=docker --docker-cleanup=StOp"); opts.ShutdownAction != ShutdownActionStop {
+	if opts = getOpts("--workspace=docker --docker-cleanup=NoNe --docker-durability"); opts.ShutdownAction != ShutdownActionNone || opts.DataTmpfs {
 		t.Errorf("Unexpected return from OptionsForDir: %+v", opts)
 	}
 	if opts = getOpts("--workspace=docker --docker-cleanup=destroy"); opts.ShutdownAction != ShutdownActionDestroy {

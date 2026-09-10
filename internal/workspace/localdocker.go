@@ -99,13 +99,11 @@ func NewLocalDocker(opts Options) (_ *LocalDocker, retErr error) {
 	} else {
 		// DefaultConnParams is intentionally not set here at the DockerizedInstance
 		// level; see important comment in LocalDocker.ConnectionPool() for reasoning.
-		// DataTmpfs is enabled automatically here if the container is going to be
-		// destroyed at end-of-process anyway, since this improves perf.
 		dopts := tengo.DockerizedInstanceOptions{
 			Name:         opts.ContainerName,
 			Image:        ld.image,
 			RootPassword: opts.RootPassword,
-			DataTmpfs:    (ld.shutdownAction == ShutdownActionDestroy),
+			DataTmpfs:    opts.DataTmpfs,
 		}
 		// If real inst had lower_case_table_names=1, use that in the container as
 		// well. (No need for similar logic with lower_case_table_names=2; that cannot

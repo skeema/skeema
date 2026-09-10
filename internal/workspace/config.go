@@ -52,6 +52,7 @@ type Options struct {
 	Flavor              tengo.Flavor    // only TypeLocalDocker
 	ContainerName       string          // only TypeLocalDocker
 	ShutdownAction      ShutdownAction  // only TypeLocalDocker
+	DataTmpfs           bool            // only TypeLocalDocker
 	SchemaName          string
 	DefaultCharacterSet string
 	DefaultCollation    string
@@ -171,6 +172,7 @@ func localDockerOptionsForDir(dir *fs.Dir, instance *tengo.Instance) (opts Optio
 	opts = Options{
 		Type:            TypeLocalDocker,
 		ShutdownAction:  ShutdownActionNone,
+		DataTmpfs:       !dir.Config.GetBool("docker-durability"),
 		Flavor:          tengo.ParseFlavor(dir.Config.Get("flavor")),
 		SchemaName:      dir.Config.GetAllowEnvVar("temp-schema"),
 		LockTimeout:     30 * time.Second,
@@ -226,6 +228,7 @@ func AddCommandOptions(cmd *mybase.Command) {
 		mybase.StringOption("temp-schema-mode", 0, "regular", `Tunes workspace load with workspace=temp-schema; heavier load makes Skeema faster but may disrupt other workloads on the database (valid values: "serial", "light", "regular", "heavy", "extreme")`),
 		mybase.StringOption("temp-schema-threads", 0, "5", "Deprecated manner of controlling workspace load with workspace=temp-schema").MarkDeprecated("This option will be removed in Skeema v2. Use the new temp-schema-mode enum option instead. See --help or visit https://www.skeema.io/docs/options/#temp-schema-mode"),
 		mybase.StringOption("workspace", 'w', "temp-schema", `Specifies where to run intermediate operations (valid values: "temp-schema", "docker")`),
-		mybase.StringOption("docker-cleanup", 0, "none", `With --workspace=docker, specifies how to clean up containers (valid values: "none", "stop", "destroy")`),
+		mybase.StringOption("docker-cleanup", 0, "stop", `With --workspace=docker, specifies container cleanup action when Skeema exits (valid values: "none", "stop", "destroy")`),
+		mybase.BoolOption("docker-durability", 0, false, `With --workspace=docker, use a real volume for data, instead of tmpfs`),
 	)
 }
