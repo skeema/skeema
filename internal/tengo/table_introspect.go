@@ -158,8 +158,8 @@ func fixupTables(schema *Schema, flavor Flavor) {
 			fixChecks(t, flavor)
 		}
 		// MariaDB's VECTOR indexes can have M and/or DISTANCE attributes, which
-		// aren't exposed anywhere in I_S
-		if flavor.MinMariaDB(11, 7) && strings.Contains(t.CreateStatement, "VECTOR KEY") {
+		// aren't exposed anywhere in I_S until 13.0
+		if flavor.MinMariaDB(11, 7) && !flavor.MinMariaDB(13, 0) && strings.Contains(t.CreateStatement, "VECTOR KEY") {
 			fixVectorIndexes(t, flavor)
 		}
 
@@ -206,6 +206,8 @@ func introspectColumns(ctx context.Context, insp *introspector) error {
 	if flavor.IsMariaDB() {
 		mariaCompressedColMarker = " " + flavor.compressedColumnOpenComment() + "COMPRESSED"
 	}
+	// Note: MariaDB 13.0 added a create_options column here (see MDEV-36444) but
+	// we do not currently query it due to lack of known use for InnoDB tables.
 	query := `
 		SELECT   SQL_BUFFER_RESULT
 		         column_name, table_name, column_type, is_nullable, extra,
@@ -360,11 +362,11 @@ func introspectIndexes(ctx context.Context, insp *introspector) error {
 		SELECT   SQL_BUFFER_RESULT
 		         index_name, table_name, index_type, %s AS is_visible, index_comment,
 		         non_unique, seq_in_index, sub_part, column_name, collation,
-		         %s AS expression
+		         %s AS expression, %s AS create_options
 		FROM     information_schema.statistics
 		WHERE    table_schema = ?
 		ORDER BY table_name, index_name, seq_in_index`
-	visSelect, exprSelect := "'YES'", "NULL"
+	visSelect, exprSelect, optSelect := "'YES'", "NULL", "''"
 	if flavor := insp.instance.Flavor(); flavor.IsMySQL() {
 		// Index expressions in MySQL 8.0.13+; not present in MariaDB
 		// TODOv3: early point releases of MySQL 8 will be dropped, so we can always assume this is true
@@ -375,8 +377,11 @@ func introspectIndexes(ctx context.Context, insp *introspector) error {
 	} else if flavor.MinMariaDB(10, 6) {
 		// MariaDB I_S uses the inverse: YES for ignored (invisible), NO for visible
 		visSelect = "IF(ignored = 'YES', 'NO', 'YES')"
+		if flavor.MinMariaDB(13, 0) {
+			optSelect = "create_options" // see MDEV-36444
+		}
 	}
-	query = fmt.Sprintf(query, visSelect, exprSelect)
+	query = fmt.Sprintf(query, visSelect, exprSelect, optSelect)
 	rows, err := insp.db.QueryContext(ctx, query, insp.schema.Name)
 	if err != nil {
 		return fmt.Errorf("Error querying information_schema.statistics for schema %s: %v", insp.schema.Name, err)
@@ -387,11 +392,11 @@ func introspectIndexes(ctx context.Context, insp *introspector) error {
 	secondaryIndexesByTableName := make(map[string][]*Index)
 	indexesByTableAndName := make(map[string]*Index) // used for stitching together multi-part indexes
 	for rows.Next() {
-		var idxName, tableName, idxType, visible, comment string
+		var idxName, tableName, idxType, visible, comment, createOptions string
 		var nonUnique, seq uint8
 		var subPart sql.NullInt64
 		var colName, direction, expr sql.NullString
-		err := rows.Scan(&idxName, &tableName, &idxType, &visible, &comment, &nonUnique, &seq, &subPart, &colName, &direction, &expr)
+		err := rows.Scan(&idxName, &tableName, &idxType, &visible, &comment, &nonUnique, &seq, &subPart, &colName, &direction, &expr, &createOptions)
 		if err != nil {
 			return fmt.Errorf("Error querying information_schema.statistics for schema %s: %v", insp.schema.Name, err)
 		}
@@ -415,12 +420,13 @@ func introspectIndexes(ctx context.Context, insp *introspector) error {
 		}
 
 		index := &Index{
-			Name:      idxName,
-			Unique:    nonUnique == 0,
-			Comment:   comment,
-			Type:      idxType,
-			Invisible: (visible == "NO"),
-			Parts:     []IndexPart{part},
+			Name:       idxName,
+			Unique:     nonUnique == 0,
+			Comment:    comment,
+			Type:       idxType,
+			Invisible:  (visible == "NO"),
+			Parts:      []IndexPart{part},
+			Attributes: createOptions,
 		}
 		if strings.EqualFold(idxName, "PRIMARY") {
 			index.PrimaryKey = true
@@ -936,8 +942,9 @@ func fixChecks(t *Table, flavor Flavor) {
 }
 
 // fixVectorIndexes examines SHOW CREATE TABLE to obtain the optional M and
-// DISTANCE attributes for MariaDB vector indexes. These attributes are not
-// currently exposed in information_schema.
+// DISTANCE attributes for MariaDB vector indexes. Although vector indexes
+// were added in MariaDB 11.7+, these attributes are not exposed anywhere in
+// information_schema until MariaDB 13.0.
 func fixVectorIndexes(t *Table, flavor Flavor) {
 	for _, idx := range t.SecondaryIndexes {
 		if idx.Type != "VECTOR" {

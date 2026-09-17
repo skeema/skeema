@@ -34,7 +34,7 @@ const MaxPatch = math.MaxInt16
 // make sense for the direction-of-comparison in how these are used.
 var (
 	LatestMySQLVersion   = Version{26, 7, MaxPatch}
-	LatestMariaDBVersion = Version{12, 3, MaxPatch}
+	LatestMariaDBVersion = Version{13, 0, MaxPatch}
 
 	OldestSupportedMySQLVersion   = Version{8, 0, AnyPatch}
 	OldestSupportedMariaDBVersion = Version{10, 4, AnyPatch}
