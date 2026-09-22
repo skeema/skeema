@@ -61,7 +61,7 @@ func PullHandler(cfg *mybase.Config) error {
 
 func pullWalker(dir *fs.Dir, maxDepth int) error {
 	if dir.ParseError != nil {
-		log.Warnf("Skipping %s: %s", dir, dir.ParseError)
+		log.Warnf("Skipping %s: %s", dir.ShortName, dir.ParseError)
 		return NewExitValue(CodeBadConfig, "")
 	}
 
@@ -70,7 +70,7 @@ func pullWalker(dir *fs.Dir, maxDepth int) error {
 	if dir.Config.Changed("host") {
 		instance, err = dir.FirstInstance()
 		if err != nil {
-			log.Warnf("Skipping %s: %s", dir, err)
+			log.Warnf("Skipping %s: %s", dir.ShortName, err)
 			return NewExitValue(CodePartialError, "")
 		}
 	}
@@ -79,7 +79,7 @@ func pullWalker(dir *fs.Dir, maxDepth int) error {
 	if dir.HasSchema() {
 		// If we cannot pull due to lack of an instance, make it clear to the user
 		if instance == nil {
-			log.Errorf("Skipping %s: No host defined for environment %q", dir, dir.Config.Get("environment"))
+			log.Errorf("Skipping %s: No host defined for environment %q", dir.ShortName, dir.Config.Get("environment"))
 			if dir.Config.Changed("host-wrapper") {
 				log.Error("The host-wrapper option controls which hosts this directory maps to, but the executed command did not output any hostnames.")
 			} else if rawHost := dir.Config.GetRaw("host"); rawHost != "" && rawHost[0] == '`' {
@@ -101,10 +101,10 @@ func pullWalker(dir *fs.Dir, maxDepth int) error {
 
 	subdirs, err := dir.Subdirs()
 	if err != nil {
-		log.Errorf("Cannot list subdirs of %s: %s", dir, err)
+		log.Errorf("Cannot list subdirs of %s: %s", dir.ShortName, err)
 		return NewExitValue(CodePartialError, "")
 	} else if len(subdirs) > 0 && maxDepth <= 0 {
-		log.Errorf("Not walking subdirs of %s: max depth reached", dir)
+		log.Errorf("Not walking subdirs of %s: max depth reached", dir.ShortName)
 		return NewExitValue(CodePartialError, "")
 	}
 
@@ -130,7 +130,7 @@ func pullWalker(dir *fs.Dir, maxDepth int) error {
 		updateGenerator(dir)
 		if dir.Config.GetBool("new-schemas") && err == nil {
 			if err = findNewSchemas(dir, instance, allSchemaNames); err != nil {
-				log.Warnf("Unable to populate new schemas from %s: %s", dir, err)
+				log.Warnf("Unable to populate new schemas from %s: %s", dir.ShortName, err)
 				return NewExitValue(CodePartialError, "")
 			}
 		}
@@ -143,7 +143,7 @@ func pullWalker(dir *fs.Dir, maxDepth int) error {
 // along with any error encountered.
 func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance) (schemaNames []string, err error) {
 	if dir.ParseError != nil {
-		log.Warnf("Skipping %s: %s", dir, dir.ParseError)
+		log.Warnf("Skipping %s: %s", dir.ShortName, dir.ParseError)
 		return nil, NewExitValue(CodePartialError, "")
 	}
 	if len(dir.LogicalSchemas) > 0 {
@@ -151,7 +151,7 @@ func pullSchemaDir(dir *fs.Dir, instance *tengo.Instance) (schemaNames []string,
 		logicalSchema := dir.LogicalSchemas[0]
 		schemaNames, err = pullLogicalSchema(dir, instance, logicalSchema)
 		if err != nil {
-			log.Errorf("Skipping %s: %s\n", dir, err)
+			log.Errorf("Skipping %s: %s\n", dir.ShortName, err)
 		}
 	}
 	return
@@ -175,19 +175,19 @@ func pullLogicalSchema(dir *fs.Dir, instance *tengo.Instance, logicalSchema *fs.
 		return nil, fmt.Errorf("unable to fetch schema names mapped by this dir: %w", err)
 	}
 	if len(schemaNames) == 0 {
-		log.Warnf("Ignoring directory %s -- did not map to any schema names for environment %q\n", dir, dir.Config.Get("environment"))
+		log.Warnf("Ignoring directory %s -- did not map to any schema names for environment %q\n", dir.ShortName, dir.Config.Get("environment"))
 		return
 	}
 	instSchema, err := instance.Schema(schemaNames[0])
 	if err == sql.ErrNoRows {
-		log.Infof("Deleted directory %s -- schema %s no longer exists\n", dir, schemaNames[0])
+		log.Infof("Deleted directory %s -- schema %s no longer exists\n", dir.ShortName, schemaNames[0])
 		return nil, dir.Delete()
 	} else if err != nil {
 		return nil, fmt.Errorf("Unable to fetch schema %s from %s: %s", schemaNames[0], instance, err)
 	}
 	instSchema.StripMatches(dir.IgnorePatterns)
 
-	log.Infof("Updating %s to reflect %s %s", dir, instance, instSchema.Name)
+	log.Infof("Updating %s to reflect %s %s", dir.ShortName, instance, instSchema.Name)
 
 	// Handle changes in schema's default character set and/or collation by
 	// persisting changes to the dir's option file.

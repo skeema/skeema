@@ -133,15 +133,15 @@ func ApplyTarget(t *Target, printer Printer) (Result, error) {
 	schemaFromInstance, err := t.SchemaFromInstance()
 	if err != nil {
 		result.SkipCount++
-		log.Errorf("Skipping %s schema %s for %s: %s\n", t.Instance, t.SchemaName, t.Dir, err)
+		log.Errorf("Skipping %s schema %s for %s: %s\n", t.Instance, t.SchemaName, t.Dir.ShortName, err)
 		return result, err
 	}
 	schemaFromDir := t.SchemaFromDir()
 
 	if t.Dir.Config.GetBool("dry-run") {
-		log.Infof("Generating diff of %s vs %s%c*.sql", t, t.Dir, os.PathSeparator)
+		log.Infof("Generating diff of %s vs %s%c*.sql", t, t.Dir.ShortName, os.PathSeparator)
 	} else {
-		log.Infof("Pushing changes from %s%c*.sql to %s", t.Dir, os.PathSeparator, t)
+		log.Infof("Pushing changes from %s%c*.sql to %s", t.Dir.ShortName, os.PathSeparator, t)
 	}
 	if len(t.Dir.UnparsedStatements) > 0 {
 		log.Warnf("Ignoring %d unsupported or unparseable statements found in this directory's *.sql files; run `skeema lint` for more info", len(t.Dir.UnparsedStatements))

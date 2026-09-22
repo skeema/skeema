@@ -56,27 +56,27 @@ func FormatHandler(cfg *mybase.Config) error {
 
 func formatWalker(dir *fs.Dir, maxDepth int) error {
 	if dir.ParseError != nil {
-		log.Warnf("Skipping %s: %s", dir.Path, dir.ParseError)
+		log.Warnf("Skipping %s: %s", dir.ShortName, dir.ParseError)
 		return NewExitValue(CodeBadConfig, "")
 	}
 
 	if dir.Config.GetBool("write") {
-		log.Infof("Reformatting %s", dir)
+		log.Infof("Reformatting %s", dir.ShortName)
 	} else {
-		log.Infof("Checking format of %s", dir)
+		log.Infof("Checking format of %s", dir.ShortName)
 	}
 	result := formatDir(dir)
 	if ExitCode(result) > CodeDifferencesFound {
-		log.Errorf("Skipping %s: %s", dir, result)
+		log.Errorf("Skipping %s: %s", dir.ShortName, result)
 		return result // don't walk subdirs if something fatal happened here
 	}
 
 	subdirs, err := dir.Subdirs()
 	if err != nil {
-		log.Errorf("Cannot list subdirs of %s: %s", dir, err)
+		log.Errorf("Cannot list subdirs of %s: %s", dir.ShortName, err)
 		return err
 	} else if len(subdirs) > 0 && maxDepth <= 0 {
-		log.Errorf("Not walking subdirs of %s: max depth reached", dir)
+		log.Errorf("Not walking subdirs of %s: max depth reached", dir.ShortName)
 		return result
 	}
 	for _, sub := range subdirs {

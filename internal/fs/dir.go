@@ -405,11 +405,11 @@ func (dir *Dir) ValidateInstance(instance *tengo.Instance) error {
 	// linting/testing).
 	if confFlavor.Known() {
 		if !instFlavor.Known() {
-			log.Debugf("Database server %s flavor cannot be parsed; using dir %s configured flavor %s instead", instance, dir, confFlavor)
+			log.Debugf("Database server %s flavor cannot be parsed; using dir %s configured flavor %s instead", instance, dir.ShortName, confFlavor)
 			instance.SetFlavor(confFlavor)
 			instFlavor = confFlavor
 		} else if instFlavor.Base() != confFlavor.Base() && !dir.Config.OnCLI("flavor") {
-			log.Warnf("Database server %s actual flavor %s differs from dir %s configured flavor %s\nIf you have recently upgraded your database server version, consider using `skeema pull` to update your schema definitions.", instance, instFlavor, dir, confFlavor)
+			log.Warnf("Database server %s actual flavor %s differs from dir %s configured flavor %s\nIf you have recently upgraded your database server version, consider using `skeema pull` to update your schema definitions.", instance, instFlavor, dir.ShortName, confFlavor)
 		}
 	}
 
@@ -419,7 +419,7 @@ func (dir *Dir) ValidateInstance(instance *tengo.Instance) error {
 	// If it is parsed and supported, but has some detail message (deprecated
 	// or too new), log a warning.
 	if !instFlavor.Known() {
-		log.Warnf(`Unable to determine database server vendor/version of %s. To set manually, use the "flavor" option in %s`, instance, filepath.Join(dir.Path, ".skeema"))
+		log.Warnf(`Unable to determine database server vendor/version of %s. To set manually, use the "flavor" option in %s`, instance, filepath.Join(dir.ShortName, ".skeema"))
 	} else if supported, details := instFlavor.Supported(); !supported {
 		return fmt.Errorf("Database server %s flavor %s", instance, details)
 	} else if details != "" {

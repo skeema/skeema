@@ -90,7 +90,7 @@ func lintWalker(dir *fs.Dir, maxDepth int) *linter.Result {
 		log.Error(fmt.Sprintf("Skipping directory %s due to error: %s", dir.ShortName, dir.ParseError))
 		return linter.BadConfigResult(dir, dir.ParseError)
 	}
-	log.Infof("Linting %s", dir)
+	log.Infof("Linting %s", dir.ShortName)
 	result := lintDir(dir)
 	for _, err := range result.Exceptions {
 		log.Error(fmt.Sprintf("Skipping directory %s due to error: %s", dir.ShortName, err))
@@ -188,7 +188,7 @@ func lintDir(dir *fs.Dir) *linter.Result {
 			dumpOpts.IgnoreKeys(wsSchema.FailedKeys())
 			result.ReformatCount, err = dumper.DumpSchema(wsSchema.Schema, dir, dumpOpts)
 			if err != nil {
-				log.Errorf("Skipping format operation for %s: %s", dir, err)
+				log.Errorf("Skipping format operation for %s: %s", dir.ShortName, err)
 			}
 		}
 

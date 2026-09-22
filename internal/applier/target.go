@@ -58,7 +58,7 @@ type TargetGroup []*Target
 // fatal; a count of skipped dirs is returned instead.
 func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int) {
 	if dir.ParseError != nil {
-		log.Errorf("Skipping %s: %s\n", dir.Path, dir.ParseError)
+		log.Errorf("Skipping %s: %s\n", dir.ShortName, dir.ParseError)
 		return nil, 1
 	}
 
@@ -84,7 +84,7 @@ func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int)
 		}
 	} else if dir.HasSchema() {
 		// If we have a schema defined but no host, display a warning
-		log.Warnf("Skipping %s: no host defined for environment %q", dir, dir.Config.Get("environment"))
+		log.Warnf("Skipping %s: no host defined for environment %q", dir.ShortName, dir.Config.Get("environment"))
 		if dir.Config.Changed("host-wrapper") {
 			log.Warn("The host-wrapper option controls which hosts this directory maps to, but a .skeema file also needs to set the host option to some value (even just a placeholder value) for this command to properly map directories to hosts and schemas.\n")
 		} else {
@@ -94,16 +94,16 @@ func TargetsForDir(dir *fs.Dir, maxDepth int) (targets []*Target, skipCount int)
 	} else if dir.OptionFile != nil && dir.OptionFile.SomeSectionHasOption("schema") {
 		// If we don't have a schema defined, but we would if some other environment
 		// had been selected, display a warning
-		log.Warnf("Skipping %s: no schema defined for environment %q\nOther environments do define a schema name. Refer to the .skeema file in this directory for details.\n", dir, dir.Config.Get("environment"))
+		log.Warnf("Skipping %s: no schema defined for environment %q\nOther environments do define a schema name. Refer to the .skeema file in this directory for details.\n", dir.ShortName, dir.Config.Get("environment"))
 	}
 
 	subdirs, err := dir.Subdirs()
 	if err != nil {
-		log.Warnf("Skipping subdirs of %s: %s\n", dir, err)
+		log.Warnf("Skipping subdirs of %s: %s\n", dir.ShortName, err)
 		skipCount++
 		return
 	} else if len(subdirs) > 0 && maxDepth < 1 {
-		log.Warnf("Skipping subdirs of %s: max depth reached\n", dir)
+		log.Warnf("Skipping subdirs of %s: max depth reached\n", dir.ShortName)
 		skipCount += len(subdirs)
 		return
 	}
@@ -120,7 +120,7 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 	if dir.Config.GetBool("first-only") {
 		onlyInstance, err := dir.FirstInstance()
 		if onlyInstance == nil && err == nil {
-			log.Warnf("Skipping %s: directory maps to an empty list of database servers", dir)
+			log.Warnf("Skipping %s: directory maps to an empty list of database servers", dir.ShortName)
 			if dir.Config.Changed("host-wrapper") {
 				log.Warn("The host-wrapper option controls which hosts this directory maps to, but the executed command did not output any hostnames.\n")
 			} else if rawHost := dir.Config.GetRaw("host"); rawHost != "" && rawHost[0] == '`' {
@@ -128,7 +128,7 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 			}
 			return nil, 0
 		} else if err != nil {
-			log.Errorf("Skipping %s: %s\n", dir, err)
+			log.Errorf("Skipping %s: %s\n", dir.ShortName, err)
 			return nil, 1
 		}
 		// dir.FirstInstance already checks for connectivity and flavor mismatches,
@@ -138,10 +138,10 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 
 	rawInstances, err := dir.Instances()
 	if err != nil {
-		log.Errorf("Skipping %s: %s\n", dir, err)
+		log.Errorf("Skipping %s: %s\n", dir.ShortName, err)
 		return nil, 1
 	} else if len(rawInstances) == 0 {
-		log.Warnf("Skipping %s: directory maps to an empty list of database servers", dir)
+		log.Warnf("Skipping %s: directory maps to an empty list of database servers", dir.ShortName)
 		if dir.Config.Changed("host-wrapper") {
 			log.Warn("The host-wrapper option controls which hosts this directory maps to, but the executed command did not output any hostnames.\n")
 		} else if rawHost := dir.Config.GetRaw("host"); rawHost != "" && rawHost[0] == '`' {
@@ -152,7 +152,7 @@ func instancesForDir(dir *fs.Dir) (instances []*tengo.Instance, skipCount int) {
 	// dir.Instances doesn't pre-check for connectivity problems, so do that now
 	for _, inst := range rawInstances {
 		if err := dir.ValidateInstance(inst); err != nil {
-			log.Errorf("Skipping %s for %s: %s\n", inst, dir, err)
+			log.Errorf("Skipping %s for %s: %s\n", inst, dir.ShortName, err)
 			skipCount++
 			continue
 		}
@@ -167,7 +167,7 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 	// unnamed logical schema (with schema name controlled via .skeema file), OR
 	// all CREATEs should have prior USE commands or db name prefixes.
 	if logicalSchema.Name == "" && len(dir.LogicalSchemas) > 1 && len(dir.NamedSchemaStatements) > 0 {
-		log.Errorf("Skipping %s: some statements reference specific schema names, for example %s line %d.", dir, dir.NamedSchemaStatements[0].File, dir.NamedSchemaStatements[0].LineNo)
+		log.Errorf("Skipping %s: some statements reference specific schema names, for example %s line %d.", dir.ShortName, dir.NamedSchemaStatements[0].File, dir.NamedSchemaStatements[0].LineNo)
 		log.Error("When configuring a schema name in .skeema, please omit schema names entirely from *.sql files.\n")
 		return nil, len(instances)
 	}
@@ -178,7 +178,7 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 		lctn := instances[0].NameCaseMode()
 		for _, other := range instances[1:] {
 			if compare := other.NameCaseMode(); compare != tengo.NameCaseUnknown && compare != lctn {
-				log.Errorf("Skipping %s: all database servers mapped by the same subdirectory and environment must have the same value for lower_case_table_names.", dir)
+				log.Errorf("Skipping %s: all database servers mapped by the same subdirectory and environment must have the same value for lower_case_table_names.", dir.ShortName)
 				log.Errorf("Database server %s has lower_case_table_names=%d, while %s has lower_case_table_names=%d.", instances[0], lctn, other, compare)
 				return nil, len(instances)
 			}
@@ -189,7 +189,7 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 	// workspace
 	opts, err := workspace.OptionsForDir(dir, instances[0])
 	if err != nil {
-		log.Errorf("Skipping %s: %s\n", dir, err)
+		log.Errorf("Skipping %s: %s\n", dir.ShortName, err)
 		return nil, len(instances)
 	}
 	wsSchema, err := workspace.ExecLogicalSchema(logicalSchema, opts)
@@ -199,7 +199,7 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 		if errors.Is(err, tengo.ErrNoDockerCLI) {
 			err = fmt.Errorf("%w\nSkeema v1.11+ no longer includes a built-in Docker client. If you are using workspace=docker while also running `skeema` itself in a container, be sure to put a Linux `docker` client CLI binary in the container as well.\nFor more information, see https://github.com/skeema/skeema/issues/186#issuecomment-1648483625", err)
 		}
-		log.Errorf("Skipping %s: %s\n", dir, err)
+		log.Errorf("Skipping %s: %s\n", dir.ShortName, err)
 		return nil, len(instances)
 	}
 	log.Debugf("Workspace performance for %s using %s:\n%s", dir.ShortName, wsSchema.Info, wsSchema.Timers)
@@ -207,7 +207,7 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 		for _, stmtErr := range wsSchema.Failures {
 			log.Error(stmtErr.Error())
 		}
-		log.Warnf("Skipping %s due to %s\n", dir, countAndNoun(len(wsSchema.Failures), "SQL error"))
+		log.Warnf("Skipping %s due to %s\n", dir.ShortName, countAndNoun(len(wsSchema.Failures), "SQL error"))
 		return nil, len(instances)
 	}
 
@@ -216,7 +216,7 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 		// Obtain the list of schema names configured in .skeema
 		schemaNames, err := dir.SchemaNames(inst)
 		if err != nil {
-			log.Errorf("Skipping %s for %s: %s\n", inst, dir, err)
+			log.Errorf("Skipping %s for %s: %s\n", inst, dir.ShortName, err)
 			skipCount++
 			continue
 		}
@@ -226,7 +226,7 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 		// isn't also a conflicting configuration in the .skeema file.
 		if logicalSchema.Name == "" { // blank means use the schema option from dir config
 			if len(schemaNames) == 0 {
-				log.Warnf("Skipping %s for %s: no schema names returned\n", inst, dir)
+				log.Warnf("Skipping %s for %s: no schema names returned\n", inst, dir.ShortName)
 			} else if dir.Config.GetBool("first-only") {
 				schemaNames = schemaNames[0:1]
 			}
@@ -237,7 +237,7 @@ func targetsForLogicalSchema(logicalSchema *fs.LogicalSchema, dir *fs.Dir, insta
 			// consistently throughout this dir's *.sql files.
 			if len(schemaNames) > 0 {
 				if len(schemaNames) > 1 || len(dir.LogicalSchemas) > 1 || schemaNames[0] != logicalSchema.Name {
-					log.Errorf("Skipping %s: This directory's .skeema file configures a different schema name than its *.sql files.", dir)
+					log.Errorf("Skipping %s: This directory's .skeema file configures a different schema name than its *.sql files.", dir.ShortName)
 					log.Error("When configuring a schema name in .skeema, exclude schema names entirely from *.sql files.\n")
 					return nil, len(instances)
 				}

@@ -191,7 +191,7 @@ func createHostOptionFile(cfg *mybase.Config, hostDir *fs.Dir, inst *tengo.Insta
 	if cfg.Changed("schema") {
 		suffix = "; skipping schema-level subdirs"
 	}
-	log.Infof("Using host dir %s for %s%s\n", hostDir.Path, inst, suffix)
+	log.Infof("Using host dir %s for %s%s\n", hostDir.ShortName, inst, suffix)
 	return nil
 }
 
@@ -263,7 +263,7 @@ func PopulateSchemaDir(s *tengo.Schema, parentDir *fs.Dir, makeSubdir bool) erro
 	} else {
 		dir = parentDir
 	}
-	log.Infof("Populating %s", dir)
+	log.Infof("Populating %s", dir.ShortName)
 
 	dumpOpts := dumper.Options{
 		IncludeAutoInc: dir.Config.GetBool("include-auto-inc"),
