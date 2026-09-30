@@ -2,6 +2,7 @@ package applier
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/skeema/mybase"
@@ -66,7 +67,7 @@ func (p *standardPrinter) Print(stmt PlannedStatement) {
 	}
 
 	if cs.InstanceName != p.lastStdoutInstance {
-		fmt.Printf("-- instance: %s\n", cs.InstanceName)
+		fmt.Println("-- server:", strings.TrimSuffix(cs.InstanceName, ":3306"))
 		p.lastStdoutInstance = cs.InstanceName
 		p.lastStdoutSchema = ""
 	}
