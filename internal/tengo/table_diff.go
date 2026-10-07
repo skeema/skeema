@@ -380,20 +380,6 @@ func (td *TableDiff) alterStatement(mods StatementModifiers) (string, error) {
 		algorithmClause := fmt.Sprintf("ALGORITHM=%s", strings.ToUpper(mods.AlgorithmClause))
 		clauseStrings = append([]string{algorithmClause}, clauseStrings...)
 	}
-	if mods.VirtualColValidation {
-		var canValidate bool
-		for _, clause := range td.alterClauses {
-			switch clause := clause.(type) {
-			case AddColumn:
-				canValidate = canValidate || clause.Column.Virtual
-			case ModifyColumn:
-				canValidate = canValidate || clause.NewColumn.Virtual
-			}
-		}
-		if canValidate {
-			clauseStrings = append(clauseStrings, "WITH VALIDATION")
-		}
-	}
 
 	var spacer string
 	if len(clauseStrings) > 0 && partitionClauseString != "" {
