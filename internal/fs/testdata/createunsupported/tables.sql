@@ -11,7 +11,7 @@ CREATE TABLE `three` (
 	id int
 );
 
--- system versioning is auto-ignored
+-- system versioning was auto-ignored in Skeema v1, no longer in v2+
 CREATE TABLE four (
 	name varchar(30)
 ) with /*lol*/ SYSTEM -- hmm
@@ -25,7 +25,7 @@ create SUPERTABLE fourfourfour (
 	this is intentionally not a valid statement
 );
 
--- bitemporal system versioning is auto-ignored
+-- bitemporal system versioning was auto-ignored in Skeema v1, no longer in v2+
 create TABLE five (
 	mycounter int,
 	apptime1 date,

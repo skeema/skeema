@@ -107,8 +107,8 @@ func TestUnitTableFlavors(t *testing.T) {
 }
 
 // flavorTestFiles returns a slice of .sql filenames that could run for the
-// supplied flavor. The supplied flavor should have a *non-zero* Patch field,
-// as this is especially relevant for MySQL 8.
+// supplied flavor. The supplied flavor should have a fully-populated version
+// including the patch number, as this is especially relevant for MySQL 8.
 // The result omits integration.sql, since that is always run prior to each
 // subtest.
 func flavorTestFiles(flavor Flavor) []string {
@@ -148,6 +148,7 @@ func flavorTestFiles(flavor Flavor) []string {
 			"colcompression-maria.sql",  // Always in MariaDB (vs Percona-specific for MySQL)
 			"pagecompression-maria.sql", // Always in MariaDB (vs absent in Aurora for MySQL)
 			"check-maria.sql",           // Always in MariaDB (vs version-specific in MySQL)
+			"system-versioned.sql",      // Always in MariaDB (vs absent in non-MariaDB)
 			"coltypes-maria.sql",        // depending on version, may include inet6, inet4, uuid, xmltype
 		)
 		if flavor.MinMariaDB(10, 6) { // TODOv3: MariaDB below 10.6 will be dropped in Skeema v3 so replace with IsMariaDB at that time

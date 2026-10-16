@@ -646,13 +646,10 @@ func processCreateTable(p *parser, tokens []Token) (*Statement, error) {
 	//   on database servers using GTID in MySQL before 8.0.21, causes problems
 	//   with Skeema's workspace operation model, and presents potential security
 	//   problems in multi-tenant environments running Skeema with elevated grants
-	// * MariaDB system-versioned tables: these use a nonstandard value in
-	//   information_schema.tables.table_type, and Skeema does not yet introspect
-	//   them, causing `skeema pull` to delete their filesystem definition
 	// * Semicolon used within a table definition despite the DELIMITER being set
 	//   to a nonstandard value: this is typically a typo / user error, and poses
 	//   a risk in situations where multi-statement support is enabled
-	badSequences := []string{"SELECT", "WITH SYSTEM VERSIONING"}
+	badSequences := []string{"SELECT"}
 	if p.lexer.Delimiter() != ";" {
 		badSequences = append(badSequences, ";")
 	}

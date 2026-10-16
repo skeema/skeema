@@ -768,6 +768,42 @@ func (cse ChangeStorageEngine) Unsafe(_ StatementModifiers) (unsafe bool, reason
 	return true, "storage engine changes have significant operational implications"
 }
 
+///// AddSystemVersioning //////////////////////////////////////////////////////
+
+// AddSystemVersioning represents an alteration to add MariaDB's system
+// versioning to a table. This only handles the table-wide attribute (not per-
+// column WITH/WITHOUT clauses) and does not yet represent any edge cases such
+// as named columns in a PERIOD FOR clause. It satisfies the TableAlterClause
+// interface.
+type AddSystemVersioning struct{}
+
+// Clause returns a clause of an ALTER TABLE statement that adds system
+// versioning.
+func (asv AddSystemVersioning) Clause(_ StatementModifiers) string {
+	return "ADD SYSTEM VERSIONING"
+}
+
+///// DropSystemVersioning /////////////////////////////////////////////////////
+
+// DropSystemVersioning represents an alteration to remove MariaDB's system-
+// versioning from an entire table. This only handles the table-wide attribute,
+// not per-column WITH/WITHOUT clauses. It satisfies the TableAlterClause
+// interface.
+type DropSystemVersioning struct{}
+
+// Clause returns a clause of an ALTER TABLE statement that drops system
+// versioning.
+func (dsv DropSystemVersioning) Clause(_ StatementModifiers) string {
+	return "DROP SYSTEM VERSIONING"
+}
+
+// Unsafe returns true if this clause is potentially destructive of data.
+// DropSystemVersioning is always considered unsafe, as the history data is
+// irrevocably lost.
+func (dsv DropSystemVersioning) Unsafe(_ StatementModifiers) (unsafe bool, reason string) {
+	return true, "removal of system versioning drops all history data for the table"
+}
+
 ///// PartitionBy //////////////////////////////////////////////////////////////
 
 // PartitionBy represents initially partitioning a previously-unpartitioned

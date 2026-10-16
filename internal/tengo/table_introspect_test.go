@@ -34,7 +34,7 @@ func (s TengoIntegrationSuite) TestInstanceSchemaIntrospection(t *testing.T) {
 
 	// ensure tables in testing schema are all supported (except where known not to be)
 	for _, table := range schema.Tables {
-		shouldBeUnsupported := (table.Name == unsupportedTable().Name)
+		shouldBeUnsupported := (table.Name == unsupportedTable().Name || strings.Contains(table.Name, "unsupported_diff"))
 		if table.UnsupportedDDL != shouldBeUnsupported {
 			t.Errorf("Table %s: expected UnsupportedDDL==%v, instead found %v\nExpected SHOW CREATE TABLE:\n%s\nActual SHOW CREATE TABLE:\n%s", table.Name, shouldBeUnsupported, !shouldBeUnsupported, table.GeneratedCreateStatement(flavor), table.CreateStatement)
 		}

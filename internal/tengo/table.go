@@ -22,6 +22,7 @@ type Table struct {
 	Tablespace        string             `json:"tablespace,omitempty"`
 	NextAutoIncrement uint64             `json:"nextAutoIncrement,omitempty"`
 	Partitioning      *TablePartitioning `json:"partitioning,omitempty"`       // nil if table isn't partitioned
+	SystemVersioned   bool               `json:"systemVersioned,omitempty"`    // true if table uses MariaDB's system versioning feature
 	UnsupportedDDL    bool               `json:"unsupportedForDiff,omitempty"` // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
 	CreateStatement   string             `json:"showCreateTable"`              // complete SHOW CREATE TABLE obtained from an instance
 }
@@ -91,7 +92,11 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 	if t.Comment != "" {
 		comment = fmt.Sprintf(" COMMENT='%s'", EscapeValueForCreateTable(t.Comment))
 	}
-	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n)%s ENGINE=%s%s %s%s%s%s",
+	var systemVersioning string
+	if t.SystemVersioned {
+		systemVersioning = " WITH SYSTEM VERSIONING"
+	}
+	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n)%s ENGINE=%s%s %s%s%s%s%s",
 		EscapeIdentifier(t.Name),
 		strings.Join(defs, ",\n  "),
 		tablespaceClause,
@@ -100,6 +105,7 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 		t.defaultCharSetClause(flavor),
 		createOptions,
 		comment,
+		systemVersioning,
 		t.Partitioning.Definition(flavor),
 	)
 	return result

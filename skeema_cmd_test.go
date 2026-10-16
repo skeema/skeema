@@ -1878,3 +1878,31 @@ func (s SkeemaIntegrationSuite) TestGeneratorChecks(t *testing.T) {
 	assertExitCodeWithGenerator(CodeSuccess, fmt.Sprintf("%s:%d.%d.%d-%s", program, version[0], version[1], version[2]+5, label))
 	assertExitCodeWithGenerator(CodeSuccess, fmt.Sprintf("otherprogram:%d.%d.%d", version[0]+1, version[1], version[2]))
 }
+
+// TestGeneratorFromV1 confirms that when the filesystem was generated using
+// Skeema v1 (without ever doing a `skeema pull` using v2), diff/push ignore
+// object types that were added in v2+ rather than emitting DROPs.
+func (s SkeemaIntegrationSuite) TestGeneratorFromV1(t *testing.T) {
+	// So far, the only new-in-v2 object types are MariaDB-specific
+	if !s.d.Flavor().IsMariaDB() {
+		t.Skipf("Test not relevant for %s-based image", s.d.Flavor().Vendor.Pretty())
+	}
+
+	// init with the default set of tables, then directly create some v2+ objects
+	// in the database. The subsequent diff/push, when using the CLI --generator
+	// override hack (see comments inside TestGeneratorChecks), shouldn't contain
+	// any DROPs and therefore shouldn't need --allow-unsafe to avoid an error
+	// exit code.
+	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d --schema product", s.d.Instance.Host, s.d.Instance.Port)
+	s.d.SourceSQL(t, "../generator-v1-v2.sql")
+	program, _, label := tengo.SplitVersionedIdentifier(generatorString())
+	s.handleCommand(t, CodeSuccess, ".", "skeema diff --generator '%s:1.14.1-%s'", program, label)
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --generator '%s:1.14.1-%s'", program, label)
+
+	// Without the generator override, DROPs are expected to be emitted, so the
+	// command is unsafe
+	s.handleCommand(t, CodeFatalError, ".", "skeema diff")
+	s.handleCommand(t, CodeFatalError, ".", "skeema push")
+	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
+	s.handleCommand(t, CodeSuccess, ".", "skeema push --allow-unsafe")
+}

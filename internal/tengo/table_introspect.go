@@ -36,7 +36,7 @@ func introspectTables(ctx context.Context, insp *introspector) error {
 		if err := rows.Scan(&name, &typ, &comment, &engine, &collation, &createOpts); err != nil {
 			return fmt.Errorf("Error querying information_schema.tables for schema %s: %w", insp.schema.Name, err)
 		}
-		if typ != "BASE TABLE" {
+		if typ != "BASE TABLE" && typ != "SYSTEM VERSIONED" {
 			haveAltType[typ] = true
 			continue
 		}
@@ -46,10 +46,11 @@ func introspectTables(ctx context.Context, insp *introspector) error {
 		// have a non-NULL tables.auto_increment if the original CREATE specified one.
 		// Instead the value is parsed from SHOW CREATE TABLE.
 		table := &Table{
-			Name:      name,
-			Engine:    engine.String,
-			Collation: collation.String,
-			Comment:   comment,
+			Name:            name,
+			Engine:          engine.String,
+			Collation:       collation.String,
+			Comment:         comment,
+			SystemVersioned: typ == "SYSTEM VERSIONED",
 		}
 		table.CharSet, _, _ = strings.Cut(table.Collation, "_")
 		if flavor.AlwaysShowCollate() {

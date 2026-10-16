@@ -1405,6 +1405,48 @@ func TestTableAlterChangeComment(t *testing.T) {
 	assertChangeCommentLax(&to, &from, true)
 }
 
+func TestTableAlterSystemVersioning(t *testing.T) {
+	flavor := Flavor{VendorMariaDB, Version{12, 3, AnyPatch}, VariantNone}
+	from := aTable(1)
+	to := aTable(1)
+	to.SystemVersioned = true
+	to.CreateStatement = to.GeneratedCreateStatement(flavor)
+
+	tableAlters, supported := from.Diff(&to)
+	if len(tableAlters) != 1 || !supported {
+		t.Fatalf("Incorrect result from Table.Diff(): expected len=1, supported=true; found len=%d, supported=%t", len(tableAlters), supported)
+	}
+	if ta, ok := tableAlters[0].(AddSystemVersioning); !ok {
+		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
+	}
+	expected := "ADD SYSTEM VERSIONING"
+	if actual := tableAlters[0].Clause(StatementModifiers{Flavor: flavor}); actual != expected {
+		t.Errorf("Incorrect ALTER TABLE clause returned; expected: %s; found: %s", expected, actual)
+	}
+	if ta, ok := tableAlters[0].(Unsafer); ok {
+		if unsafe, _ := ta.Unsafe(StatementModifiers{Flavor: flavor}); unsafe {
+			t.Errorf("Alter clause of type %T was unexpectedly unsafe", tableAlters[0])
+		}
+	}
+
+	tableAlters, supported = to.Diff(&from)
+	if len(tableAlters) != 1 || !supported {
+		t.Fatalf("Incorrect result from Table.Diff(): expected len=1, supported=true; found len=%d, supported=%t", len(tableAlters), supported)
+	}
+	if ta, ok := tableAlters[0].(DropSystemVersioning); !ok {
+		t.Fatalf("Incorrect type of table alter returned: expected %T, found %T", ta, tableAlters[0])
+	}
+	expected = "DROP SYSTEM VERSIONING"
+	if actual := tableAlters[0].Clause(StatementModifiers{Flavor: flavor}); actual != expected {
+		t.Errorf("Incorrect ALTER TABLE clause returned; expected: %s; found: %s", expected, actual)
+	}
+	if ta, ok := tableAlters[0].(Unsafer); !ok {
+		t.Errorf("Expected %T to implement Unsafer, but it did not", tableAlters[0])
+	} else if unsafe, _ := ta.Unsafe(StatementModifiers{Flavor: flavor}); !unsafe {
+		t.Errorf("Alter clause of type %T was unexpectedly not unsafe", tableAlters[0])
+	}
+}
+
 func TestTableAlterTablespace(t *testing.T) {
 	getTableWithTablespace := func(tablespace string) *Table {
 		t := aTable(123)

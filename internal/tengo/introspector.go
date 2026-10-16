@@ -37,10 +37,10 @@ type introspectorTask func(context.Context, *introspector) error
 
 type introspectorFixup func(schema *Schema, flavor Flavor)
 
-// Globals that store top-level functions for tasks, fixups, and non-BASE TABLE
-// table types. Values are added to these slices/maps via init() functions in
-// other files in this package, to keep introspection logic for each object
-// type in one place.
+// Globals that store top-level functions for tasks, fixups, and special table
+// types. Values are added to these slices/maps via init() functions in other
+// files in this package, to keep introspection logic for each object type in
+// one place.
 var (
 	// primaryIntrospectorTasks are top-level introspection tasks, each handling a
 	// different object type. They are run concurrently, and may spawn sub-tasks by
@@ -58,7 +58,8 @@ var (
 	// example, once MariaDB sequences are supported, this provides a mechanism
 	// for running the sequence introspectorTask, but only if any sequences are
 	// actually present in the schema. Note: no map entry for "BASE TABLE" is
-	// needed since this is the default table type.
+	// needed since this is the default table type. Ditto for "SYSTEM VERSIONED"
+	// which is handled by the same code path as "BASE TABLE" as a special case.
 	altTableTypeTasks = map[string]introspectorTask{}
 )
 

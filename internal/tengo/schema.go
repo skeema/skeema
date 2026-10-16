@@ -181,6 +181,31 @@ func (s *Schema) AlterStatement(charSet, collation string) string {
 	return "ALTER DATABASE " + EscapeIdentifier(s.Name) + charSetClause + collateClause
 }
 
+// BaseTables returns a copy of s.Tables that excludes any non-BASE TABLE
+// objects. Currently this only removes system-versioned tables, which only
+// exist in MariaDB.
+func (s *Schema) BaseTables() []*Table {
+	tables := make([]*Table, 0, len(s.Tables))
+	for _, t := range s.Tables {
+		if !t.SystemVersioned {
+			tables = append(tables, t)
+		}
+	}
+	return tables
+}
+
+// SystemVersionedTables returns a slice containing pointers to any system-
+// versioned tables among s.Tables.
+func (s *Schema) SystemVersionedTables() []*Table {
+	tables := []*Table{}
+	for _, t := range s.Tables {
+		if t.SystemVersioned {
+			tables = append(tables, t)
+		}
+	}
+	return tables
+}
+
 // tablesToPartitions returns a map whose keys are all tables in the schema
 // (whether partitioned or not), and values are either nil (if unpartitioned or
 // partitioned in a way that doesn't support DROP PARTITION) or a slice of

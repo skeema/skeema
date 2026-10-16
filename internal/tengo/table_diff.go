@@ -585,6 +585,15 @@ func diffTables(from, to *Table) (clauses []TableAlterClause, supported bool) {
 		clauses = append(clauses, ChangeTablespace{NewTablespace: to.Tablespace})
 	}
 
+	// Compare MariaDB system versioning. Only the simplest ADD case (table-wide
+	// system versioning without naming the period columns) is supported for diffs
+	// at this time.
+	if to.SystemVersioned && !from.SystemVersioned {
+		clauses = append(clauses, AddSystemVersioning{})
+	} else if from.SystemVersioned && !to.SystemVersioned {
+		clauses = append(clauses, DropSystemVersioning{})
+	}
+
 	// Compare partitioning. This must be performed last due to a MySQL requirement
 	// of PARTITION BY / REMOVE PARTITIONING occurring last in a multi-clause ALTER
 	// TABLE.
