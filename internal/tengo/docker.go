@@ -141,11 +141,19 @@ func CreateDockerizedInstance(opts DockerizedInstanceOptions) (*DockerizedInstan
 		"--loose-innodb-redo-log-capacity=8388608", // use 8MB total redo log capacity (loose- prefix since only in MySQL 8.0.30+)
 		"--loose-innodb-log-file-size=4194304",     // ditto but for flavors without innodb-redo-log-capacity (loose- prefix since no longer in MySQL 9.3+)
 		"--innodb-buffer-pool-size=33554432",       // use smaller 32MB buffer pool, instead of default of 128MB
-		"--performance-schema=0",                   // disable performance_schema to reduce memory usage and other overhead
 		"--skip-innodb-adaptive-hash-index",        // AHI not beneficial to DDL-based workload
-		"--loose-innodb-log-writer-threads=off",    // log writer threads harm workspace perf (loose- prefix since only in MySQL 8.0.22+)
-		"--loose-query-cache-size=0",               // ensure query cache completely disabled (loose- prefix since no longer in MySQL 8+)
 		"--skip-innodb-doublewrite",                // not needed for an ephemeral DB; perf impact for data dictionary in MySQL 8.0+
+	}
+	if strings.Contains(opts.Image, "mariadb") {
+		serverArgs = append(serverArgs,
+			"--system-versioning-alter-history=KEEP", // Always allow DDL on system-versioned tables for workspaces and tests
+			"--query-cache-size=0",                   // Unlike MySQL, MariaDB still has the query cache, which should be completely disabled
+		)
+	} else { // MySQL or a variant like Percona Server
+		serverArgs = append(serverArgs,
+			"--performance-schema=0",                // MySQL enables performance_schema by default; disable to reduce overhead
+			"--loose-innodb-log-writer-threads=off", // log writer threads harm workspace perf (loose- prefix since only in MySQL 8.0.22+)
+		)
 	}
 	if opts.EnableBinlog {
 		serverArgs = append(serverArgs, "--log-bin", "--server-id=1")
