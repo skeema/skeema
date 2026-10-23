@@ -24,12 +24,7 @@ func init() {
 	RegisterRule(rule)
 }
 
-var (
-	reAnyCompression  = regexp.MustCompile(`(?i)KEY_BLOCK_SIZE|COMPRESSION|page_compressed|ROW_FORMAT`)
-	reKeyBlockSize    = regexp.MustCompile(`KEY_BLOCK_SIZE=(\d+)`)
-	rePageCompression = regexp.MustCompile("(?i)COMPRESSION='(\\w+)'|`?page_compressed`?='?(\\w+)'?")
-	reBlockSizeEnum   = regexp.MustCompile(`^(1|2|4|8|16)kb$`)
-)
+var reAnyCompression = regexp.MustCompile(`(?i)KEY_BLOCK_SIZE|COMPRESSION|page_compressed|ROW_FORMAT=COMPRESSED`)
 
 func compressionChecker(table *tengo.Table, createStatement string, _ *tengo.Schema, opts *Options) *Note {
 	// Only InnoDB tables are checked by this linter rule at this time.
@@ -65,10 +60,10 @@ func compressionChecker(table *tengo.Table, createStatement string, _ *tengo.Sch
 }
 
 // tableCompressionMode is a helper function to determine which compression mode
-// enum value a table is using. This method bases its output entirely on
-// table.CreateOptions, which is typically correct in the vast majority of
-// cases, but does not handle a few rare edge cases involving MySQL global
-// variables:
+// enum value an InnoDB table is using. This method bases its output entirely on
+// the table's CreateOptions (which are parsed from SHOW CREATE TABLE), and this
+// is typically correct in the vast majority of cases, but may be wrong in some
+// rare edge cases involving MySQL global variables:
 //   - Users who override innodb_page_size and also omit key_block_size in
 //     compressed table definitions. In this case this method will return "8kb"
 //     instead of the correct value of innodb_page_size/2.
@@ -78,19 +73,22 @@ func compressionChecker(table *tengo.Table, createStatement string, _ *tengo.Sch
 //     instead of the correct value of "none" (since these settings prevent
 //     compression options from having any effect).
 func tableCompressionMode(table *tengo.Table) (mode string, clause string) {
-	if table.RowFormat() == "COMPRESSED" {
-		matches := reKeyBlockSize.FindStringSubmatch(table.CreateOptions)
-		if matches == nil {
-			return "8kb", "ROW_FORMAT=COMPRESSED" // see explanation in function doc above
+	opts := table.OptionMap()
+	normalizedValue := func(input string) string {
+		if len(input) > 1 && input[0] == '\'' && input[len(input)-1] == '\'' {
+			return strings.ToLower(input[1 : len(input)-1])
 		}
-		return matches[1] + "kb", matches[0]
-	} else if matches := rePageCompression.FindStringSubmatch(table.CreateOptions); matches != nil {
-		value := strings.ToLower(matches[1])
-		if value == "" && matches[2] != "" {
-			value = strings.ToLower(matches[2])
-		}
-		if value != "0" && value != "off" && value != "none" {
-			return "page", matches[0]
+		return strings.ToLower(input)
+	}
+	if value, ok := opts["KEY_BLOCK_SIZE"]; ok {
+		return value + "kb", "KEY_BLOCK_SIZE=" + value
+	} else if rowFormat, _ := opts["ROW_FORMAT"]; rowFormat == "COMPRESSED" {
+		return "8kb", "ROW_FORMAT=COMPRESSED" // see explanation in function doc above
+	} else if mysqlPageComp, ok := opts["COMPRESSION"]; ok && normalizedValue(mysqlPageComp) != "none" {
+		return "page", "COMPRESSION=" + mysqlPageComp
+	} else if mariaPageComp, ok := opts["PAGE_COMPRESSED"]; ok {
+		if nv := normalizedValue(mariaPageComp); nv != "0" && nv != "off" && nv != "false" && nv != "no" {
+			return "page", "PAGE_COMPRESSED=" + mariaPageComp
 		}
 	}
 	return "none", ""
@@ -100,19 +98,22 @@ func tableCompressionMode(table *tengo.Table) (mode string, clause string) {
 // enum strings into a human-friendly message including the list of
 // corresponding allowed CREATE option clauses.
 func makeCompressionMessage(table *tengo.Table, mode, clause string, opts *Options) string {
+	// Obtain allow-compression option slice, and convert to table create options SQL clauses
 	allowed := opts.AllowList("compression")
 	var clauses []string
 	for _, value := range allowed {
-		value = strings.ToLower(value)
-		if value == "page" {
+		switch value = strings.ToLower(value); value {
+		case "none":
+			// Intentionally empty case, don't add to clauses
+		case "page":
 			if opts.flavor.IsMariaDB() {
 				clauses = append(clauses, "PAGE_COMPRESSED=1")
 			} else {
 				clauses = append(clauses, "COMPRESSION='zlib'")
 			}
-		} else if matches := reBlockSizeEnum.FindStringSubmatch(value); matches != nil {
-			clauses = append(clauses, fmt.Sprintf("KEY_BLOCK_SIZE=%s", matches[1]))
-		} else if value != "none" {
+		case "1kb", "2kb", "4kb", "8kb", "16kb":
+			clauses = append(clauses, "KEY_BLOCK_SIZE="+value)
+		default: // invalid allow-compression value
 			if mode == "none" {
 				return fmt.Sprintf("%s is not compressed, but option allow-compression is misconfigured to include unknown value %q. Please refer to Skeema's options reference manual to fix the configuration of this linter rule.", table.ObjectKey(), value)
 			}
@@ -121,7 +122,8 @@ func makeCompressionMessage(table *tengo.Table, mode, clause string, opts *Optio
 	}
 	clausesString := strings.Join(clauses, ", ")
 
-	// Table isn't compressed, but allow-compression *requires* compression
+	// Table isn't compressed, but allow-compression *requires* compression. (This
+	// entire method only gets called if the table's mode is not allowed.)
 	if mode == "none" {
 		if len(clauses) == 1 {
 			return fmt.Sprintf("%s is not compressed, but option allow-compression is configured to only permit compressed tables. Please use compression clause %s.", table.ObjectKey(), clauses[0])
@@ -141,7 +143,7 @@ func makeCompressionMessage(table *tengo.Table, mode, clause string, opts *Optio
 		middle = "Please either leave the table uncompressed, or use"
 	}
 	if len(clauses) == 1 {
-		return fmt.Sprintf("%s%s compression clause %s.", prefix, middle, clauses[0])
+		return prefix + middle + " compression clause " + clauses[0] + "."
 	}
-	return fmt.Sprintf("%s%s one of these compression clauses: %s", prefix, middle, clausesString)
+	return prefix + middle + " one of these compression clauses: " + clausesString
 }

@@ -120,7 +120,7 @@ func flavorTestFiles(flavor Flavor) []string {
 			"generatedcols.sql",
 			"index-mysql8.sql",    // functional indexes, descending indexes, invisible indexes
 			"ft-parser.sql",       // only MySQL ships with alternative parsers
-			"inno-tablespace.sql", // MySQL-specific feature
+			"inno-tablespace.sql", // MySQL-specific TABLESPACE and AUTOEXTEND_SIZE features
 		)
 		if flavor.IsPercona() {
 			result = append(result, "colcompression-percona.sql")

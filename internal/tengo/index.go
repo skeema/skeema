@@ -113,9 +113,8 @@ func (idx *Index) sameAttributes(other *Index) bool {
 			result["M"] = "6"
 			result["DISTANCE"] = "euclidean"
 		}
-		for _, kv := range splitAttributes(index.Attributes) {
-			k, v, _ := strings.Cut(kv, "=")
-			result[strings.ToUpper(stripAnyQuote(k))] = strings.ToLower(stripAnyQuote(v))
+		for k, v := range attributeMap(index.Attributes) {
+			result[k] = strings.ToLower(stripAnyQuote(v))
 		}
 		return result
 	}

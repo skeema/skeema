@@ -3,7 +3,9 @@ package tengo
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -234,8 +236,8 @@ func (td *TableDiff) Statement(mods StatementModifiers) (string, error) {
 		if td.To.Partitioning != nil && mods.Partitioning == PartitioningRemove {
 			stmt = td.To.UnpartitionedCreateStatement(mods.Flavor)
 		}
-		if td.To.HasAutoIncrement() && (mods.NextAutoInc == NextAutoIncIgnore || mods.NextAutoInc == NextAutoIncIfAlready) {
-			stmt, _ = ParseCreateAutoInc(stmt)
+		if td.To.NextAutoIncrement > 1 && (mods.NextAutoInc == NextAutoIncIgnore || mods.NextAutoInc == NextAutoIncIfAlready) {
+			stmt = strings.Replace(stmt, " AUTO_INCREMENT="+strconv.FormatUint(td.To.NextAutoIncrement, 10), "", 1)
 		}
 		return stmt, nil
 	case DiffTypeAlter:
@@ -421,8 +423,8 @@ func diffTables(from, to *Table) (clauses []TableAlterClause, supported bool) {
 	// certainty that the emitted DDL will be incomplete or incorrect. (In other
 	// cases, we still attempt to generate DDL, since the alter MAY just consist
 	// of fully-supported alterations to otherwise-unsupported tables. For example:
-	// a table is unsupported due to having a spatial index, but the alter is just
-	// adding some unrelated column.)
+	// a table is unsupported due to using an unsupported feature, but the alter is
+	// just adding a new column unrelated to that feature.)
 	supported = !from.UnsupportedDDL && !to.UnsupportedDDL
 	if !from.UnsupportedDDL && to.UnsupportedDDL {
 		return nil, false
@@ -568,9 +570,27 @@ func diffTables(from, to *Table) (clauses []TableAlterClause, supported bool) {
 
 	// Compare create options
 	if from.CreateOptions != to.CreateOptions {
-		cco := ChangeCreateOptions{
-			OldCreateOptions: from.CreateOptions,
-			NewCreateOptions: to.CreateOptions,
+		cco := ChangeCreateOptions{}
+		oldOptionMap := from.OptionMap()
+		newOptionMap := to.OptionMap()
+		for _, optionName := range slices.Sorted(maps.Keys(oldOptionMap)) {
+			oldValue := oldOptionMap[optionName]
+			newValue, stillSet := newOptionMap[optionName]
+			if !stillSet {
+				newValue = tableOptionDefault(optionName)
+			}
+			if oldValue != newValue {
+				cco.OptionName = append(cco.OptionName, optionName)
+				cco.OldValue = append(cco.OldValue, oldValue)
+				cco.NewValue = append(cco.NewValue, newValue)
+			}
+			delete(newOptionMap, optionName) // mark as handled
+		}
+		// Remaining items in newOptionMap weren't set in oldOptionMap
+		for _, optionName := range slices.Sorted(maps.Keys(newOptionMap)) {
+			cco.OptionName = append(cco.OptionName, optionName)
+			cco.OldValue = append(cco.OldValue, tableOptionDefault(optionName))
+			cco.NewValue = append(cco.NewValue, newOptionMap[optionName])
 		}
 		clauses = append(clauses, cco)
 	}
@@ -583,6 +603,11 @@ func diffTables(from, to *Table) (clauses []TableAlterClause, supported bool) {
 	// Compare tablespace
 	if from.Tablespace != to.Tablespace {
 		clauses = append(clauses, ChangeTablespace{NewTablespace: to.Tablespace})
+	}
+
+	// Compare autoextend_size
+	if from.AutoextendSize != to.AutoextendSize {
+		clauses = append(clauses, ChangeAutoextendSize{NewSize: to.AutoextendSize})
 	}
 
 	// Compare MariaDB system versioning. Only the simplest ADD case (table-wide
@@ -615,6 +640,19 @@ func diffTables(from, to *Table) (clauses []TableAlterClause, supported bool) {
 	}
 
 	return
+}
+
+// tableOptionDefault returns a value that makes the supplied option be omitted
+// entirely from SHOW CREATE TABLE and information_schema.
+func tableOptionDefault(optionName string) string {
+	switch optionName {
+	case "MIN_ROWS", "MAX_ROWS", "AVG_ROW_LENGTH", "CHECKSUM", "DELAY_KEY_WRITE", "KEY_BLOCK_SIZE":
+		return "0"
+	case "COMPRESSION":
+		return "''" // Undocumented way of removing clause entirely (vs "None" which sticks around)
+	default:
+		return "DEFAULT"
+	}
 }
 
 // Secondary indexes may be added, dropped, renamed, or have visibility changes.
