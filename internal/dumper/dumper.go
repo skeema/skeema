@@ -6,6 +6,8 @@ package dumper
 
 import (
 	"errors"
+	"strconv"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/skeema/skeema/internal/fs"
@@ -78,12 +80,16 @@ func updateCreateStatements(schema *tengo.Schema, dir *fs.Dir, opts Options) err
 			fsCreate, _ = stmt.SplitTextBody()
 		}
 
-		// Include or strip auto_increment clause. (Note that if fs representation
-		// already exists and explicitly had an autoinc value > 1, we keep and update
-		// it regardless.)
+		// If requested, strip auto_increment clause from the canonical statement,
+		// unless a pre-existing fs representation has an explicit AUTO_INCREMENT=x
+		// clause (implying the initial dump of the table intentionally included
+		// auto_increment counters). Note that this only detects pre-existing auto_inc
+		// clauses if they are formatted per SHOW CREATE TABLE's format.
+		// TODO: handle arbitrary formatting here
 		if key.Type == tengo.ObjectTypeTable && !opts.IncludeAutoInc {
-			if _, fsAutoInc := tengo.ParseCreateAutoInc(fsCreate); fsAutoInc <= 1 {
-				canonicalCreate, _ = tengo.ParseCreateAutoInc(canonicalCreate)
+			table := object.(*tengo.Table)
+			if table.NextAutoIncrement > 1 && !strings.Contains(fsCreate, "AUTO_INCREMENT=") {
+				canonicalCreate = strings.Replace(canonicalCreate, " AUTO_INCREMENT="+strconv.FormatUint(table.NextAutoIncrement, 10), "", 1)
 			}
 		}
 

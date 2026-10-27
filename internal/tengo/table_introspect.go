@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -46,10 +47,11 @@ func introspectTables(ctx context.Context, insp *introspector) error {
 		// have a non-NULL tables.auto_increment if the original CREATE specified one.
 		// Instead the value is parsed from SHOW CREATE TABLE.
 		table := &Table{
-			Name:      name,
-			Engine:    engine.String,
-			Collation: collation.String,
-			Comment:   comment,
+			Name:          name,
+			Engine:        engine.String,
+			Collation:     collation.String,
+			CreateOptions: strings.ToUpper(createOpts.String),
+			Comment:       comment,
 		}
 		table.CharSet, _, _ = strings.Cut(table.Collation, "_")
 		if flavor.AlwaysShowCollate() {
@@ -59,11 +61,13 @@ func introspectTables(ctx context.Context, insp *introspector) error {
 		} else if table.CharSet == "utf8mb4" && flavor.MinMySQL(8) { // TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 			table.ShowCollation = true
 		}
-		if createOpts.Valid && createOpts.String != "" {
-			if strings.Contains(strings.ToUpper(createOpts.String), "PARTITIONED") {
+		if table.CreateOptions != "" {
+			// Note that table.CreateOptions typically gets overwritten from a value
+			// parsed out of SHOW CREATE TABLE anyway; it is only set here as a fallback
+			if before, after, ok := strings.Cut(table.CreateOptions, "PARTITIONED"); ok {
 				havePartitions = true
+				table.CreateOptions = strings.TrimSpace(strings.TrimSpace(before) + " " + strings.TrimSpace(after))
 			}
-			table.CreateOptions = reformatCreateOptions(createOpts.String)
 		}
 		tables = append(tables, table)
 	}
@@ -108,11 +112,10 @@ func fixupTables(schema *Schema, flavor Flavor) {
 		if t.Partitioning != nil {
 			fixPartitioningEdgeCases(t, flavor)
 		}
-
+		// If table has an AUTO_INCREMENT column, the counter never starts at 0
 		if t.NextAutoIncrement == 0 && t.HasAutoIncrement() {
 			t.NextAutoIncrement = 1
 		}
-
 		// If multiple secondary indexes are present, parse their relative ordering
 		// from SHOW CREATE TABLE, since this isn't exposed in information_schema in
 		// generic/non-engine-specific way
@@ -124,12 +127,15 @@ func fixupTables(schema *Schema, flavor Flavor) {
 		if !flavor.SortedForeignKeys() && len(t.ForeignKeys) > 1 {
 			fixForeignKeyOrder(t)
 		}
-		// Create options order is unpredictable with the new MySQL 8 data dictionary
+		// Table options in I_S are not always ordered or formatted the same as in
+		// SHOW CREATE TABLE
+		if t.CreateOptions != "" && t.CreateOptions != "PARTITIONED" {
+			fixTableCreateOptions(t, flavor)
+		}
 		// Also need to fix some charset/collation edge cases in SHOW CREATE TABLE
 		// behavior in MySQL 8
 		// TODOv2: MySQL 5.x will be dropped, so replace with IsMySQL()
 		if flavor.MinMySQL(8) {
-			fixCreateOptionsOrder(t, flavor)
 			fixShowCharSets(t)
 		}
 		// MySQL 5.7+ generated column expressions must be reparased from SHOW CREATE
@@ -184,12 +190,28 @@ func (t *Table) introspectShowCreate(ctx context.Context, insp *introspector) (e
 		return fmt.Errorf("Error executing SHOW CREATE TABLE for %s.%s: %w", EscapeIdentifier(insp.schema.Name), EscapeIdentifier(t.Name), err)
 	}
 
-	// Obtain TABLESPACE clause from SHOW CREATE TABLE, if present
-	t.Tablespace = ParseCreateTablespace(t.CreateStatement)
+	// Parse TABLESPACE clause, AUTOEXTEND_SIZE clause, and AUTO_INCREMENT counter
+	// from SHOW CREATE output, if present. The first two prevent the need to query
+	// additional InnoDB-specific information_schema tables, and the latter is to
+	// avoid issues with information_schema discrepancies.
 
-	// Obtain next AUTO_INCREMENT value from SHOW CREATE TABLE, which avoids
-	// potential problems with information_schema discrepancies
-	_, t.NextAutoIncrement = ParseCreateAutoInc(t.CreateStatement)
+	// These table options all appear on the line of SHOW CREATE TABLE which begins
+	// with a non-indented closing paren
+	_, s, _ := strings.Cut(t.CreateStatement, "\n) ")
+	if insp.instance.Flavor().IsMySQL() {
+		if rest, ok := strings.CutPrefix(s, "/*!50100 TABLESPACE `"); ok {
+			t.Tablespace, s, _ = strings.Cut(rest, "` */ ")
+		}
+		if rest, ok := strings.CutPrefix(s, "/*!80023 AUTOEXTEND_SIZE="); ok {
+			var val string
+			val, s, _ = strings.Cut(rest, " */ ")
+			t.AutoextendSize, _ = strconv.ParseUint(val, 10, 64)
+		}
+	}
+	if rest, ok := strings.CutPrefix(s, "ENGINE="+t.Engine+" AUTO_INCREMENT="); ok {
+		val, _, _ := strings.Cut(rest, " ")
+		t.NextAutoIncrement, _ = strconv.ParseUint(val, 10, 64)
+	}
 
 	// Remove column and index attributes which don't affect InnoDB
 	if t.Engine == "InnoDB" {
@@ -670,17 +692,14 @@ func fixForeignKeyOrder(t *Table) {
 	}
 }
 
-// MySQL 8.0 uses a different order for table options in SHOW CREATE TABLE
-// than in information_schema. This function fixes the struct to match SHOW
-// CREATE TABLE's ordering.
-func fixCreateOptionsOrder(t *Table, flavor Flavor) {
-	if !strings.Contains(t.CreateOptions, " ") {
-		return
-	}
-
+// Table options in information_schema have several discrepancies relative to
+// SHOW CREATE TABLE, so this function attempts to parse the value from SHOW
+// CREATE TABLE.
+func fixTableCreateOptions(t *Table, flavor Flavor) {
 	// In SHOW CREATE TABLE, options start right after the default charset clause.
 	// After options, typically it's end-of-string, but could instead be a COMMENT
-	// clause, or a newline before a PARTITION BY clause.
+	// clause, WITH SYSTEM VERSIONING clause, or a newline before a PARTITION BY
+	// clause.
 	charSetClause := t.defaultCharSetClause(flavor)
 	start := strings.Index(t.CreateStatement, charSetClause) + len(charSetClause) + 1
 	end := len(t.CreateStatement)
@@ -691,7 +710,7 @@ func fixCreateOptionsOrder(t *Table, flavor Flavor) {
 	}
 
 	// Above calls to strings.Index should always return correct results with SHOW
-	// CREATE TABLE behavior from all known MySQL 8+ versions, but validate anyway
+	// CREATE TABLE behavior from all known server versions, but validate anyway
 	// just for robustness. If this somehow fails, we just leave CreateOptions
 	// as-is, potentially resulting in the table being unsupported for diffs.
 	if start > len(charSetClause) && start < end {

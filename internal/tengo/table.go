@@ -2,6 +2,7 @@ package tengo
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -19,7 +20,8 @@ type Table struct {
 	ForeignKeys       []*ForeignKey      `json:"foreignKeys,omitempty"`
 	Checks            []*Check           `json:"checks,omitempty"`
 	Comment           string             `json:"comment,omitempty"`
-	Tablespace        string             `json:"tablespace,omitempty"`
+	Tablespace        string             `json:"tablespace,omitempty"`     // MySQL only
+	AutoextendSize    uint64             `json:"autoextendSize,omitempty"` // MySQL only
 	NextAutoIncrement uint64             `json:"nextAutoIncrement,omitempty"`
 	Partitioning      *TablePartitioning `json:"partitioning,omitempty"`       // nil if table isn't partitioned
 	UnsupportedDDL    bool               `json:"unsupportedForDiff,omitempty"` // If true, tengo cannot diff this table or auto-generate its CREATE TABLE
@@ -77,7 +79,11 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 	}
 	var tablespaceClause string
 	if t.Tablespace != "" {
-		tablespaceClause = fmt.Sprintf(" /*!50100 TABLESPACE %s */", EscapeIdentifier(t.Tablespace))
+		tablespaceClause = " /*!50100 TABLESPACE " + EscapeIdentifier(t.Tablespace) + " */"
+	}
+	var autoextendSizeClause string
+	if t.AutoextendSize > 0 {
+		autoextendSizeClause = " /*!80023 AUTOEXTEND_SIZE=" + strconv.FormatUint(t.AutoextendSize, 10) + " */"
 	}
 	var autoIncClause string
 	if t.NextAutoIncrement > 1 {
@@ -91,10 +97,11 @@ func (t *Table) GeneratedCreateStatement(flavor Flavor) string {
 	if t.Comment != "" {
 		comment = fmt.Sprintf(" COMMENT='%s'", EscapeValueForCreateTable(t.Comment))
 	}
-	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n)%s ENGINE=%s%s %s%s%s%s",
+	result := fmt.Sprintf("CREATE TABLE %s (\n  %s\n)%s%s ENGINE=%s%s %s%s%s%s",
 		EscapeIdentifier(t.Name),
 		strings.Join(defs, ",\n  "),
 		tablespaceClause,
+		autoextendSizeClause,
 		t.Engine,
 		autoIncClause,
 		t.defaultCharSetClause(flavor),
@@ -213,6 +220,14 @@ func (t *Table) ClusteredIndexKey() *Index {
 	return nil
 }
 
+// OptionMap converts t.CreateOptions into a map. Keys are normalized to
+// uppercase, without any wrapping backticks. Values are kept as-is, and may or
+// may not be wrapped in single quotes. Note that this only includes options
+// which lack dedicated fields.
+func (t *Table) OptionMap() map[string]string {
+	return attributeMap(t.CreateOptions) // see util.go
+}
+
 // RowFormat returns the table's ROW_FORMAT, if one was specified in the table's
 // creation options. If no ROW_FORMAT clause was specified, but a KEY_BLOCK_SIZE
 // was, "COMPRESSED" will be returned since MySQL applies this automatically. If
@@ -221,13 +236,9 @@ func (t *Table) ClusteredIndexKey() *Index {
 // ROW_FORMAT differs from what was requested in creation options; nor does it
 // query the default row format if none was specified.
 func (t *Table) RowFormat() string {
-	if i := strings.Index(t.CreateOptions, "ROW_FORMAT="); i > -1 {
-		// len("ROW_FORMAT=") is 11; obtain the value after that phrase but before
-		// any space
-		rowFormat, _, _ := strings.Cut(t.CreateOptions[i+11:], " ")
-		return rowFormat
-	}
-	if strings.Contains(t.CreateOptions, "KEY_BLOCK_SIZE") {
+	if value, ok := attributeValue(t.CreateOptions, "ROW_FORMAT"); ok {
+		return value
+	} else if _, ok := attributeValue(t.CreateOptions, "KEY_BLOCK_SIZE"); ok && t.Engine == "InnoDB" {
 		return "COMPRESSED"
 	}
 	return ""
@@ -292,10 +303,9 @@ func (t *Table) HasFulltextIndex() bool {
 }
 
 // Diff returns a set of differences between this table and another table. Some
-// edge cases are not supported, such as sub-partitioning, spatial indexes,
-// MariaDB application time periods, or various non-InnoDB table features; in
-// this case, supported will be false and clauses MAY OR MAY NOT be empty. Any
-// returned clauses in that case must be carefully verified for correctness.
+// edge cases are not supported, e.g. sub-partitioning; in this case, supported
+// will be false and clauses MAY OR MAY NOT be empty. Any returned clauses in
+// that case must be carefully verified for correctness.
 func (t *Table) Diff(to *Table) (clauses []TableAlterClause, supported bool) {
 	return diffTables(t, to)
 }

@@ -1435,6 +1435,40 @@ func TestTableAlterTablespace(t *testing.T) {
 	assertChangeTablespace(explicitFPT, explicitSys, true, "TABLESPACE `innodb_system`")
 }
 
+func TestTableAlterAutoextendSize(t *testing.T) {
+	getTableWithAutoextendSize := func(size uint64) *Table {
+		t := aTable(123)
+		t.AutoextendSize = size
+		t.CreateStatement = t.GeneratedCreateStatement(FlavorUnknown)
+		return &t
+	}
+	assertChangeTablespace := func(a, b *Table, expectDiff bool, expectClause string) {
+		t.Helper()
+		tableAlters, supported := a.Diff(b)
+		var expectedCount int
+		if expectDiff {
+			expectedCount++
+		}
+		if len(tableAlters) != expectedCount || !supported {
+			t.Errorf("Incorrect result from Table.Diff(): %d alter clauses, supported=%t", len(tableAlters), supported)
+		} else if expectDiff {
+			if ta, ok := tableAlters[0].(ChangeAutoextendSize); !ok {
+				t.Errorf("Incorrect type of alter returned: expected %T, found %T", ta, tableAlters[0])
+			} else if actual := ta.Clause(StatementModifiers{}); actual != expectClause {
+				t.Errorf("Incorrect ALTER TABLE clause returned: expected %q, found %q", expectClause, actual)
+			}
+		}
+	}
+
+	noSize := getTableWithAutoextendSize(0)
+	size4 := getTableWithAutoextendSize(4194304)
+	size16 := getTableWithAutoextendSize(16777216)
+	assertChangeTablespace(noSize, size4, true, "AUTOEXTEND_SIZE=4194304")
+	assertChangeTablespace(size4, noSize, true, "AUTOEXTEND_SIZE=0")
+	assertChangeTablespace(size4, size4, false, "")
+	assertChangeTablespace(size4, size16, true, "AUTOEXTEND_SIZE=16777216")
+}
+
 func TestTableAlterUnsupportedTable(t *testing.T) {
 	// Even if a table uses unsupported features, we can generate a diff of just
 	// the supported parts of the ALTER, although it still returns !supported in

@@ -207,8 +207,8 @@ func (s LinterIntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 	} else if s.d.Flavor().MinMariaDB(10, 2) {
 		dir = getDir(t, "testdata/pagecomprmaria")
 		tableExpectedClause = map[string]string{
-			"page_comp_1":   "`PAGE_COMPRESSED`=1",
-			"page_comp_on":  "`PAGE_COMPRESSED`='on'",
+			"page_comp_1":   "PAGE_COMPRESSED=1",
+			"page_comp_on":  "PAGE_COMPRESSED='on'",
 			"page_comp_0":   "",
 			"page_comp_off": "",
 		}
@@ -242,7 +242,7 @@ func (s LinterIntegrationSuite) TestCheckSchemaCompression(t *testing.T) {
 			// MariaDB releases from Aug 2026 onwards wrap option values in single quotes
 			// and we need to prevent test failures from that discrepancy
 			// See MDEV-39776 https://github.com/MariaDB/server/commit/d5d741a307
-			if expectedClause == "`PAGE_COMPRESSED`=1" && actualClause == "`PAGE_COMPRESSED`='1'" {
+			if expectedClause == "PAGE_COMPRESSED=1" && actualClause == "PAGE_COMPRESSED='1'" {
 				expectedClause = actualClause
 			}
 

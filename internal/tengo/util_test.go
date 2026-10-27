@@ -2,6 +2,7 @@ package tengo
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
 	"reflect"
 	"strconv"
@@ -62,46 +63,61 @@ func TestSplitHostOptionalPort(t *testing.T) {
 	assertSplit("[fe80::bd0f:a8bc:6480:238b%11]:123:456", "", 0, true)
 }
 
-func TestParseCreateAutoInc(t *testing.T) {
-	// With auto-inc value <= 1, no AUTO_INCREMENT=%d clause will be put into the
-	// test table's create statement
-	table := aTable(1)
-	stmt := table.CreateStatement
-	if strings.Contains(stmt, "AUTO_INCREMENT=") {
-		t.Fatal("Assertion failed in test setup: CreateStatement unexpectedly contains an AUTO_INCREMENT clause")
+func TestAttributeMap(t *testing.T) {
+	// Note that some tests below include AUTOEXTEND_SIZE just to cover handling of
+	// version-gate comments, but in reality AUTOEXTEND_SIZE in particular is
+	// separate from other table options anyway
+	cases := map[string]map[string]string{
+		"":                                       {},
+		"stats_persistent=1":                     {"STATS_PERSISTENT": "1"},
+		"ROW_format=DYNAMIC stats_auto_recalc=1": {"ROW_FORMAT": "DYNAMIC", "STATS_AUTO_RECALC": "1"},
+		"COMPRESSION=\"zLIB\"":                   {"COMPRESSION": "'zLIB'"}, // MySQL style page compression
+		"/*!80023 AUTOEXTEND_SIZE=8388608 */":    {"AUTOEXTEND_SIZE": "8388608"},
+		"`PAGE_compressed`=1 `page_compression_LEVEL`=9":                        {"PAGE_COMPRESSED": "1", "PAGE_COMPRESSION_LEVEL": "9"}, // MariaDB style page compression
+		"encryption='Y' /*!80023 AUTOEXTEND_SIZE=4194304 */ stats_persistent=1": {"ENCRYPTION": "'Y'", "AUTOEXTEND_SIZE": "4194304", "STATS_PERSISTENT": "1"},
 	}
-	strippedStmt, nextAutoInc := ParseCreateAutoInc(stmt)
-	if strippedStmt != stmt || nextAutoInc > 0 {
-		t.Error("Incorrect result parsing CREATE TABLE")
-	}
-
-	table = aTable(123)
-	stmt = table.CreateStatement
-	if !strings.Contains(stmt, "AUTO_INCREMENT=") {
-		t.Fatal("Assertion failed in test setup: CreateStatement does NOT contain expected AUTO_INCREMENT clause")
-	}
-	strippedStmt, nextAutoInc = ParseCreateAutoInc(stmt)
-	if strings.Contains(strippedStmt, "AUTO_INCREMENT=") {
-		t.Error("Failed to remove AUTO_INCREMENT clause from create statement")
-	}
-	if nextAutoInc != 123 {
-		t.Errorf("Failed to properly parse AUTO_INCREMENT value: expected 123, found %d", nextAutoInc)
+	for input, expected := range cases {
+		if actual := attributeMap(input); !maps.Equal(actual, expected) {
+			t.Errorf("Expected attributeMap(%q) to yield %v, instead found %v", input, expected, actual)
+		}
 	}
 }
 
-func TestReformatCreateOptions(t *testing.T) {
-	cases := map[string]string{
-		"":                                       "",
-		"partitioned":                            "",
-		"partitioned stats_persistent=1":         "STATS_PERSISTENT=1",
-		"stats_persistent=1 partitioned":         "STATS_PERSISTENT=1",
-		"row_format=DYNAMIC stats_auto_recalc=1": "ROW_FORMAT=DYNAMIC STATS_AUTO_RECALC=1",
-		"COMPRESSION=\"zLIB\"":                   "COMPRESSION='zLIB'", // MySQL style page compression
-		"`PAGE_compressed`=1 `page_compression_LEVEL`=9": "`PAGE_compressed`=1 `page_compression_LEVEL`=9", // MariaDB style page compression
+func TestAttributeValue(t *testing.T) {
+	cases := map[string]map[string]string{
+		"":                                       {},
+		"stats_persistent=1":                     {"STATS_PERSISTENT": "1"},
+		"ROW_format=DYNAMIC stats_auto_recalc=1": {"ROW_FORMAT": "DYNAMIC", "STATS_AUTO_RECALC": "1"},
+		"COMPRESSION=\"zLIB\"":                   {"COMPRESSION": "'zLIB'"}, // MySQL style page compression
+		"/*!80023 AUTOEXTEND_SIZE=8388608 */":    {"AUTOEXTEND_SIZE": "8388608"},
+		"`PAGE_compressed`=1 `page_compression_LEVEL`=9":                        {"PAGE_COMPRESSED": "1", "PAGE_COMPRESSION_LEVEL": "9"}, // MariaDB style page compression
+		"encryption='Y' /*!80023 AUTOEXTEND_SIZE=4194304 */ stats_persistent=1": {"ENCRYPTION": "'Y'", "AUTOEXTEND_SIZE": "4194304", "STATS_PERSISTENT": "1"},
 	}
 	for input, expected := range cases {
-		if actual := reformatCreateOptions(input); actual != expected {
-			t.Errorf("Expected reformatCreateOptions(%q) to yield %q, instead found %q", input, expected, actual)
+		for attribute, expectedValue := range expected {
+			if actual, ok := attributeValue(input, attribute); actual != expectedValue || !ok {
+				t.Errorf("Unexpected return from attributeValue(%q, %q): expected %q, true; found %q, %t", input, attribute, expectedValue, actual, ok)
+			}
+		}
+		if actual, ok := attributeValue(input, "UNSET"); actual != "" || ok {
+			t.Errorf("Unexpected return from attributeValue(%q, \"UNSET\"): expected \"\", false; found %q, %t", input, actual, ok)
+		}
+	}
+}
+
+func TestStripVersionGates(t *testing.T) {
+	cases := map[string]string{
+		"":                        "",
+		"abc /*regular!*/ def":    "abc /*regular!*/ def",
+		"abc/*M! maria only*/def": "abcmaria onlydef",
+
+		"abc /*regular*/ /*!50700 mysql only */ 'def*/'": "abc /*regular*/ mysql only  'def*/'",
+
+		"foo /*!50100 TABLESPACE `innodb_file_per_table` */ /*!80023 AUTOEXTEND_SIZE=16777216 */ ENGINE=InnoDB": "foo TABLESPACE `innodb_file_per_table`  AUTOEXTEND_SIZE=16777216  ENGINE=InnoDB",
+	}
+	for input, expected := range cases {
+		if actual := stripVersionGates(input); actual != expected {
+			t.Errorf("Unexpected return from stripVersionGates(%q): expected %q, found %q", input, expected, actual)
 		}
 	}
 }
