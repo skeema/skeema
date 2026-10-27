@@ -65,34 +65,6 @@ func SplitHostOptionalPort(hostaddr string) (string, int, error) {
 	return host, port, nil
 }
 
-var reParseTablespace = regexp.MustCompile(`[)] /\*!50100 TABLESPACE ` + "`((?:[^`]|``)+)`" + ` \*/ ENGINE=`)
-
-// ParseCreateTablespace parses a TABLESPACE clause out of a CREATE TABLE
-// statement.
-func ParseCreateTablespace(createStmt string) string {
-	matches := reParseTablespace.FindStringSubmatch(createStmt)
-	if matches != nil {
-		return matches[1]
-	}
-	return ""
-}
-
-var reParseCreateAutoInc = regexp.MustCompile(`[)/] ENGINE=\w+ (AUTO_INCREMENT=(\d+) )DEFAULT CHARSET=`)
-
-// ParseCreateAutoInc parses a CREATE TABLE statement, formatted in the same
-// manner as SHOW CREATE TABLE, and removes the table-level next-auto-increment
-// clause if present. The modified CREATE TABLE will be returned, along with
-// the next auto-increment value if one was found.
-func ParseCreateAutoInc(createStmt string) (string, uint64) {
-	matches := reParseCreateAutoInc.FindStringSubmatch(createStmt)
-	if matches == nil {
-		return createStmt, 0
-	}
-	nextAutoInc, _ := strconv.ParseUint(matches[2], 10, 64)
-	newStmt := strings.Replace(createStmt, matches[1], "", 1)
-	return newStmt, nextAutoInc
-}
-
 var reParseCreatePartitioning = regexp.MustCompile(`(?is)(\s*(?:/\*!?\d*)?\s*partition\s+by .*)$`)
 
 // ParseCreatePartitioning parses a CREATE TABLE statement, formatted in the
@@ -106,46 +78,87 @@ func ParseCreatePartitioning(createStmt string) (base, partitionClause string) {
 	return createStmt[0 : len(createStmt)-len(matches[1])], matches[1]
 }
 
-// reformatCreateOptions converts a value obtained from
-// information_schema.tables.create_options to the formatting used in SHOW
-// CREATE TABLE.
-func reformatCreateOptions(input string) string {
-	return strings.Join(splitAttributes(input), " ")
-}
-
-// splitAttributes converts a single string of table attributes (from
-// information_schema.tables.create_options) or index attributes (from SHOW
-// CREATE TABLE) into a slice of individual normalized attributes.
-// TODO: currently this strips anything wrapped in /*!...*/ version-gate
-// comments
-func splitAttributes(input string) []string {
-	attributes := []string{}
+// attributeMap converts a single string of table options or index attributes
+// (typically parsed from SHOW CREATE TABLE in either case) into a key/value
+// map. Keys are normalized to uppercase, without any backtick wrappers. Quoted
+// values remain quoted, with the only conversion being from double quotes to
+// single quotes.
+func attributeMap(input string) map[string]string {
+	result := make(map[string]string)
 	if input == "" {
-		return attributes
+		return result
 	}
-	tokens := TokenizeString(input)
+
+	// It is possible that some table option may be wrapped in version-gated
+	// comments, e.g. "/*!80023 FOO=123 */", and Skeema's lexer normally ignores
+	// them as normal comments. Strip the comment markers to prevent this.
+	tokens := TokenizeString(stripVersionGates(input))
 	for n := 0; n < len(tokens); n++ {
-		var field string
-		if tokens[n][0] == '`' {
-			field = tokens[n] // user-supplied casing kept as-is for backquote-wrapped attribute names in MariaDB
-		} else {
-			field = strings.ToUpper(tokens[n])
-		}
+		field := strings.ToUpper(stripBackticks(tokens[n]))
 		if n < len(tokens)-2 && tokens[n+1] == "=" { // field=value
 			value := tokens[n+2]
 			if value[0] == '"' && value[len(value)-1] == '"' {
-				// value was double-quote-wrapped, convert to single-quote-wrapped
-				attributes = append(attributes, field+"='"+value[1:len(value)-1]+"'")
+				result[field] = "'" + value[1:len(value)-1] + "'"
 			} else {
-				// value as-is
-				attributes = append(attributes, field+"="+value)
+				result[field] = value
 			}
 			n += 2 // skip past "=" and value tokens
-		} else if field != "PARTITIONED" { // field without value; strip PARTITIONED as I_S special-case not in SHOW CREATE
-			attributes = append(attributes, field)
+		} else { // field without value
+			result[field] = ""
 		}
 	}
-	return attributes
+	return result
+}
+
+// attributeValue returns a specific field from a single string of table options
+// or index attributes (typically parsed from SHOW CREATE TABLE in either case).
+// The attribute name should be supplied in uppercase and without any backtick
+// wrappers. The returned value will remain quoted if it was quoted in the
+// input, with the only conversion being from double quotes to single quotes.
+func attributeValue(input, attribute string) (value string, ok bool) {
+	if input != "" {
+		tokens := TokenizeString(stripVersionGates(input))
+		for n := 0; n < len(tokens); n++ {
+			hasValue := n < len(tokens)-2 && tokens[n+1] == "="
+			if strings.ToUpper(stripBackticks(tokens[n])) == attribute { // found desired field
+				if hasValue {
+					value = tokens[n+2]
+					if value[0] == '"' && value[len(value)-1] == '"' {
+						value = "'" + value[1:len(value)-1] + "'"
+					}
+				}
+				return value, true
+			}
+			if hasValue {
+				n += 2 // skip past "=" and value tokens
+			}
+		}
+	}
+	return "", false
+}
+
+// stripVersionGates returns a copy of input with any version-gate-commented-out
+// clauses effectively un-commented. In other words, it strips any opening
+// comment markers of the form "/*!" or "/*M!" and corresponding closing "*/",
+// so any gated clauses are effectively now part of the statement(s), as if the
+// version conditional was met. This is typically useful ahead of parsing SQL
+// generated by the server in SHOW CREATE or information_schema, as Skeema's
+// lexer currently treats such comments as normal comments (which are ignored).
+// It should not be used on arbitrarily-formatted user input, since it
+// improperly handles version gate comment markers inside of quoted strings.
+// TODO once proper lexer support is in place, this function can be removed.
+func stripVersionGates(input string) string {
+	for {
+		pos := strings.Index(input, "/*!")
+		if pos == -1 {
+			pos = strings.Index(input, "/*M!")
+		}
+		if pos == -1 {
+			return input
+		}
+		_, after, _ := strings.Cut(input[pos:], " ")
+		input = input[0:pos] + strings.Replace(after, "*/", "", 1)
+	}
 }
 
 var stripNonInnoRegexps = []struct {
