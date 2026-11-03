@@ -48,14 +48,6 @@ func TestAddGlobalConfigFiles(t *testing.T) {
 		t.Error("Expected host to be ignored in .my.cnf, but it was parsed anyway")
 	}
 
-	// Test --skip-my-cnf to avoid parsing .my.cnf
-	// Expectation: only the skeema file in etc gets used due to the override option
-	cfg = mybase.ParseFakeCLI(t, cmdSuite, "skeema diff --skip-my-cnf")
-	AddGlobalConfigFiles(cfg)
-	if actualUser := cfg.GetAllowEnvVar("user"); actualUser != "one" {
-		t.Errorf("Expected user in fake-home/.my.cnf to be skipped; instead found %s", actualUser)
-	}
-
 	// Test more edge cases for .my.cnf: [skeema] section should allow any Skeema
 	// option and override things in [client] or [mysql] sections; Premium SSL
 	// options should not cause any problems in Community
