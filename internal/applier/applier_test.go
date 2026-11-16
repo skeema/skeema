@@ -171,7 +171,6 @@ func (s ApplierIntegrationSuite) TestCreatePlanForTarget(t *testing.T) {
 		"default-collation":      "latin1_swedish_ci",
 		"workspace":              "temp-schema",
 		"temp-schema":            "_skeema_tmp",
-		"temp-schema-binlog":     "auto",
 		"temp-schema-mode":       "regular",
 		"temp-schema-threads":    "",
 	}

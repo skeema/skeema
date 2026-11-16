@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"io"
 	"os"
@@ -1488,125 +1487,6 @@ END`
 	s.handleCommand(t, CodeSuccess, ".", "skeema diff --lax-comments")
 	s.handleCommand(t, CodeSuccess, ".", "skeema push --lax-comments")
 	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --allow-unsafe")
-}
-
-// TestTempSchemaBinlog provides coverage for the temp-schema-binlog option.
-// Because we ordinarily create containerized test DBs with binlogging disabled
-// (even in MySQL where it normally defaults to enabled), this test has to
-// create a new separate container for its logic.
-// This test is run in CI, or when SKEEMA_TEST_BINLOG env var is set to any non-
-// blank value.
-func (s SkeemaIntegrationSuite) TestTempSchemaBinlog(t *testing.T) {
-	if os.Getenv("SKEEMA_TEST_BINLOG") == "" && (os.Getenv("CI") == "" || os.Getenv("CI") == "0" || os.Getenv("CI") == "false") {
-		t.Skip("Skipping temp-schema-binlog testing. To run, set env var SKEEMA_TEST_BINLOG=true and/or CI=1.")
-	}
-
-	// Create an instance with log-bin enabled
-	opts := tengo.DockerizedInstanceOptions{
-		Name:         strings.Replace(s.d.ContainerName(), "skeema-test-", "skeema-test-binlog-", 1),
-		Image:        imageForFlavor(t, s.d.Flavor()),
-		RootPassword: s.d.Password,
-		EnableBinlog: true,
-		DataTmpfs:    true,
-	}
-	dinst, err := tengo.GetOrCreateDockerizedInstance(opts)
-	if err != nil {
-		t.Fatalf("Unable to create Dockerized instance with log-bin enabled: %v", err)
-	}
-	defer func() {
-		if err := dinst.Destroy(); err != nil {
-			t.Errorf("Unable to destroy test instance with log-bin enabled: %v", err)
-		}
-	}()
-	dinst.SourceSQL(t, "../setup.sql")
-
-	getLogPos := func() string {
-		t.Helper()
-		db, err := dinst.CachedConnectionPool("", "")
-		if err != nil {
-			t.Fatalf("Unable to establish connection: %v", err)
-		}
-		noun := "MASTER"
-		if s.d.Flavor().MinMySQL(8, 4) {
-			noun = "BINARY LOG"
-		}
-		// This only returns 1 row, but we can't use QueryRow here since that does
-		// not expose column name information
-		rows, err := db.Query("SHOW " + noun + " STATUS")
-		if err != nil {
-			t.Fatalf("Error running SHOW %s STATUS: %v", noun, err)
-		}
-		defer rows.Close()
-		var file, position string
-		var dests []any
-		colNames, err := rows.Columns()
-		if err != nil {
-			t.Fatalf("Error running SHOW %s STATUS: %v", noun, err)
-		}
-		// Determine which columns are relevant; all others scan into rawbytes (we
-		// don't need them, but there's no syntax to skip them...)
-		dests = make([]any, len(colNames))
-		for n, colName := range colNames {
-			if colName == "File" {
-				dests[n] = &file
-			} else if colName == "Position" {
-				dests[n] = &position
-			} else {
-				var d sql.RawBytes
-				dests[n] = &d
-			}
-		}
-		for rows.Next() {
-			if err := rows.Scan(dests...); err != nil {
-				t.Fatalf("Error running SHOW %s STATUS: %v", noun, err)
-			}
-		}
-		return file + " " + position
-	}
-	assertLogged := func(oldPos string) string {
-		t.Helper()
-		newPos := getLogPos()
-		if oldPos == newPos {
-			t.Errorf("Expected binary log to progress, but it did not; position remains %s", oldPos)
-		}
-		return newPos
-	}
-	assertNotLogged := func(oldPos string) string {
-		t.Helper()
-		newPos := getLogPos()
-		if oldPos != newPos {
-			t.Errorf("Expected binary logging to be skipped, but position moved from %s to %s", oldPos, newPos)
-		}
-		return newPos
-	}
-
-	pos := getLogPos()
-	s.handleCommand(t, CodeSuccess, ".", "skeema init --dir mydb -h %s -P %d", dinst.Instance.Host, dinst.Instance.Port)
-	assertNotLogged(pos)
-	createRoutine := `CREATE definer=root@localhost FUNCTION routine1(a int,
-  b int)
-RETURNS int
-DETERMINISTIC
-BEGIN
-	return a * b;
-END`
-	fs.WriteTestFile(t, "mydb/product/routine1.sql", createRoutine)
-	pos = getLogPos()
-
-	// Default behavior is temp-schema-binlog=auto, which should skip binlogging
-	// since we connect to the Dockerized test db using a privileged account
-	s.handleCommand(t, CodeSuccess, ".", "skeema lint --skip-format")
-	pos = assertNotLogged(pos)
-	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff")
-	pos = assertNotLogged(pos)
-	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --temp-schema-binlog=off")
-	pos = assertNotLogged(pos)
-	s.handleCommand(t, CodeDifferencesFound, ".", "skeema diff --temp-schema-binlog=ON")
-	pos = assertLogged(pos)
-
-	// Push-related writes should still advance the binlog position
-	s.handleCommand(t, CodeSuccess, ".", "skeema push --temp-schema-binlog=off")
-	assertLogged(pos)
 }
 
 // TestPartitioning covers the diff/push commands' --partitioning option, as

@@ -37,7 +37,6 @@ func (s WorkspaceIntegrationSuite) TestOptionsForDir(t *testing.T) {
 	assertOptsError("--workspace=temp-schema --temp-schema-threads=-20", true)
 	assertOptsError("--workspace=temp-schema --temp-schema-threads=banana", true)
 	assertOptsError("--workspace=temp-schema --temp-schema-mode=purple", true)
-	assertOptsError("--workspace=temp-schema --temp-schema-binlog=potato", true)
 
 	// Test default configuration, which should use temp-schema
 	if opts := getOpts(""); opts.Type != TypeTempSchema {
