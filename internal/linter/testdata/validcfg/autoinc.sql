@@ -1,16 +1,22 @@
-CREATE TABLE `okautoinc` (
+CREATE TABLE `uintautoinc` (
   `id` int(10) unsigned NOT NULL auto_increment,
   `name` varchar(30) DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE `signedautoinc` (
-  `id` int(11) NOT NULL auto_increment, /* annotations: auto-inc */
+CREATE TABLE `bigintautoinc` (
+  `id` bigint NOT NULL auto_increment,
   `name` varchar(30) DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE `smallautoinc` (
+CREATE TABLE `medintautoinc` (
+  `id` mediumint NOT NULL auto_increment, /* annotations: auto-inc */
+  `name` varchar(30) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `usmallautoinc` (
   `id` smallint(5) unsigned NOT NULL auto_increment, /* annotations: auto-inc */
   `name` varchar(30) DEFAULT NULL,
   PRIMARY KEY (`id`)

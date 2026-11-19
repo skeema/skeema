@@ -26,7 +26,7 @@ func TestOptionsForDir(t *testing.T) {
 		expectedAllowList := map[string]string{
 			"charset":  "utf8mb4",
 			"engine":   "innodb, myisam",
-			"auto-inc": "int unsigned, bigint unsigned",
+			"auto-inc": "int, int unsigned, bigint, bigint unsigned",
 		}
 		for ruleName, expected := range expectedAllowList {
 			actual := strings.Join(opts.AllowList(ruleName), ", ")

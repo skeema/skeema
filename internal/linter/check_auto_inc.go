@@ -17,7 +17,7 @@ func init() {
 	}
 	rule.RelatedListOption(
 		"allow-auto-inc",
-		"int unsigned, bigint unsigned",
+		"int, int unsigned, bigint, bigint unsigned",
 		"List of allowed auto_increment column data types for --lint-auto-inc",
 		false, // intentionally permit empty list for allow-auto-inc
 	)
