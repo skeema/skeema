@@ -334,6 +334,22 @@ func (s TengoIntegrationSuite) TestInstanceCloseAll(t *testing.T) {
 	assertPoolCount(1)
 }
 
+// TestInstanceFlavor confirms the Flavor detection logic on a live instance
+// matches the originally-requested Docker image, either with or without
+// accounting for a specific patch number in the version. This effectively
+// tests detection of vendor, version, and variants.
+// Note: intentionally mistagging a Docker image can result in this test
+// failing.
+func (s TengoIntegrationSuite) TestInstanceFlavor(t *testing.T) {
+	expected := ParseFlavor(simplifiedImageName(s.image))
+	actual := s.d.Flavor()
+	if expected.Family() != actual.Family() {
+		t.Errorf("Requested image %s (normalized to %s) but instance actually detected as %s", s.image, expected, actual)
+	} else if expectPatch := expected.Version.Patch(); expectPatch != AnyPatch && expectPatch != actual.Version.Patch() {
+		t.Errorf("Requested image %s (patch %d) but instance actually detected as %s (patch %d)", s.image, expectPatch, actual, actual.Version.Patch())
+	}
+}
+
 func (s TengoIntegrationSuite) TestInstanceSetFlavor(t *testing.T) {
 	// Ensure flavor is hydrated already
 	actualFlavor := s.d.Flavor()

@@ -26,7 +26,8 @@ func TestIntegration(t *testing.T) {
 		}
 
 		suite := &TengoIntegrationSuite{
-			d: di,
+			d:     di,
+			image: image,
 		}
 		RunSuite(t, suite, SkeemaSuiteOptions(image))
 
@@ -35,7 +36,8 @@ func TestIntegration(t *testing.T) {
 }
 
 type TengoIntegrationSuite struct {
-	d *DockerizedInstance
+	d     *DockerizedInstance
+	image string
 }
 
 func (s *TengoIntegrationSuite) BeforeTest(t *testing.T) {
