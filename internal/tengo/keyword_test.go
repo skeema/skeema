@@ -1,6 +1,8 @@
 package tengo
 
 import (
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -113,8 +115,8 @@ func TestIsVendorReservedWord(t *testing.T) {
 		{"get", VendorMariaDB, false},
 		{"except", VendorMySQL, true},
 		{"except", VendorMariaDB, true},
-		{"slow", VendorMySQL, false},
-		{"slow", VendorMariaDB, true},
+		{"page_checksum", VendorMySQL, false},
+		{"page_checksum", VendorMariaDB, true},
 		{"master_ssl_verify_server_cert", VendorMySQL, true},
 		{"Master_ssl_verify_server_cert", VendorMariaDB, true},
 		{"master_bind", VendorMySQL, true},
@@ -153,6 +155,69 @@ func TestIsUnreservedWord(t *testing.T) {
 	for _, tc := range cases {
 		if actual := IsUnreservedWord(tc.word, ParseFlavor(tc.flavor)); actual != tc.unreserved {
 			t.Errorf("IsUnreservedWord(%q, %q) returned %t, expected %t", tc.word, tc.flavor, actual, tc.unreserved)
+		}
+	}
+}
+
+// This performs integration testing using all I_S.keywords entries, plus all
+// known reserved words from all vendors. This helps identify cases of
+// documentation mistakes in the MySQL and MariaDB manuals.
+func (s TengoIntegrationSuite) TestFlavorReservedWords(t *testing.T) {
+	db, err := s.d.CachedConnectionPool("testing", "")
+	if err != nil {
+		t.Fatalf("Unexpected connection error: %v", err)
+	}
+	tryWords := VendorReservedWordMap(VendorMySQL)
+	maps.Copy(tryWords, VendorReservedWordMap(VendorMariaDB))
+	rows, err := db.Query("SELECT word FROM information_schema.keywords")
+	if err != nil {
+		t.Fatalf("Unexpected query error: %v", err)
+	}
+	for rows.Next() {
+		var word string
+		if err := rows.Scan(&word); err != nil {
+			t.Fatalf("Unexpected query error: %v", err)
+		}
+		if !isWord(word[0]) { // see lexer.go for isWord
+			continue // MariaDB puts operators in I_S.keywords; skip them
+		}
+		tryWords[strings.ToLower(word)] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("Unexpected query error: %v", err)
+	}
+	rows.Close()
+
+	flavor := s.d.Flavor()
+	reservedWordMap := ReservedWordMap(flavor)
+	for _, word := range slices.Sorted(maps.Keys(tryWords)) {
+		var actual bool
+		if _, err := db.Exec("CREATE TABLE " + word + " (n int)"); IsSyntaxError(err) {
+			actual = true
+		} else if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		expected := reservedWordMap[word]
+		if expected != actual {
+			// Check for known special cases involving point releases or variants; our
+			// current logic does not handle that level of granularity since there's not
+			// enough benefit to users in order to justify the extra complexity
+			if word == "intersect" && flavor.IsMySQL(8, 0) && flavor.Version[2] < 31 {
+				continue
+			} else if word == "master_ssl_verify_server_cert" && flavor.MinMariaDB(11, 8) && !flavor.MinMariaDB(12, 2) {
+				continue
+			} else if word == "sets" && flavor.IsMySQL(9, 6) {
+				continue
+			} else if (word == "parallel" || word == "manual") && flavor.MinMySQL(8, 2) {
+				continue
+			} else if (word == "clustering" || word == "percona_sequence_table") && flavor.IsPercona() {
+				continue
+			}
+		}
+		if expected && !actual {
+			t.Errorf("`%s` does not appear to actually be reserved in %s", word, flavor)
+		} else if actual && !expected {
+			t.Errorf("`%s` is unexpectedly reserved in %s", word, flavor)
 		}
 	}
 }

@@ -132,7 +132,7 @@ func IsUnreservedWord(word string, flavor Flavor) bool {
 // dropping support for very old server versions may cause some reserved words
 // to move from the flavor-specific maps into this commonReservedWords slice.
 var commonReservedWords = []string{
-	"accessible",
+	"accessible", // removed in MariaDB 12.0, see reservedWordsRemovedInFlavor
 	"add",
 	"all",
 	"alter",
@@ -168,7 +168,7 @@ var commonReservedWords = []string{
 	"current_timestamp",
 	"current_user",
 	"cursor",
-	"database",
+	"database", // removed in MariaDB 10.6, see reservedWordsRemovedInFlavor
 	"databases",
 	"day_hour",
 	"day_microsecond",
@@ -231,7 +231,7 @@ var commonReservedWords = []string{
 	"int4",
 	"int8",
 	"integer",
-	"intersect", // added in MySQL 8.0 and MariaDB 10.3
+	"intersect", // added in MySQL 8.0.31 and MariaDB 10.3
 	"interval",
 	"into",
 	"is",
@@ -256,7 +256,7 @@ var commonReservedWords = []string{
 	"longtext",
 	"loop",
 	"low_priority",
-	"master_ssl_verify_server_cert", // removed in MySQL 8.4, see reservedWordsRemovedInFlavor
+	"master_ssl_verify_server_cert", // removed in MySQL 8.4 and MariaDB 11.8.6/12.2.2, see reservedWordsRemovedInFlavor
 	"match",
 	"maxvalue",
 	"mediumblob",
@@ -274,7 +274,6 @@ var commonReservedWords = []string{
 	"numeric",
 	"on",
 	"optimize",
-	"option",
 	"optionally",
 	"or",
 	"order",
@@ -306,8 +305,8 @@ var commonReservedWords = []string{
 	"revoke",
 	"right",
 	"rlike",
-	"rows", // added in MySQL 8.0 and MariaDB 10.2
-	"schema",
+	"rows",   // added in MySQL 8.0 and MariaDB 10.2
+	"schema", // removed in MariaDB 10.6, see reservedWordsRemovedInFlavor
 	"schemas",
 	"second_microsecond",
 	"select",
@@ -364,7 +363,6 @@ var commonReservedWords = []string{
 	"xor",
 	"year_month",
 	"zerofill",
-	"_filename", // special case mentioned separately in MySQL manual; also seems to apply to MariaDB
 }
 
 // Flavor values used in maps below
@@ -377,7 +375,11 @@ var (
 	oldestMariaDB = Flavor{Vendor: VendorMariaDB, Version: OldestSupportedMariaDBVersion}
 	mariaDB106    = Flavor{Vendor: VendorMariaDB, Version: Version{10, 6, AnyPatch}}
 	mariaDB107    = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7, AnyPatch}}
+	mariaDB1010   = Flavor{Vendor: VendorMariaDB, Version: Version{10, 10, AnyPatch}}
+	mariaDB113    = Flavor{Vendor: VendorMariaDB, Version: Version{11, 3, AnyPatch}}
 	mariaDB117    = Flavor{Vendor: VendorMariaDB, Version: Version{11, 7, AnyPatch}}
+	mariaDB118    = Flavor{Vendor: VendorMariaDB, Version: Version{11, 8, AnyPatch}}
+	mariaDB120    = Flavor{Vendor: VendorMariaDB, Version: Version{12, 0, AnyPatch}}
 	mariaDB123    = Flavor{Vendor: VendorMariaDB, Version: Version{12, 3, AnyPatch}}
 )
 
@@ -385,9 +387,6 @@ var (
 // few notes on keeping this list manageable:
 //   - We do not track point (aka dot or patch) releases here. The only edge
 //     case in the past few years is "intersect" (reserved in 8.0.31+).
-//   - This list assumes the information in the MySQL and MariaDB manuals is
-//     correct, but that is not always the case. Please open a pull request if
-//     you discover a missing or incorrect entry.
 //   - For updates to MySQL's list, the best reference documentation page is
 //     https://dev.mysql.com/doc/mysqld-version-reference/en/keywords.html
 //   - Although MySQL's information_schema.keywords table has a column
@@ -395,7 +394,8 @@ var (
 //     accurate, so it cannot be used to rebuild this list automatically.
 //     (Meanwhile, MariaDB's information_schema.keywords doesn't even have that
 //     column at all.)
-//   - We don't yet track anything specific to a Variant (e.g. Percona Server).
+//   - We don't yet track anything specific to a Variant (e.g. Percona Server
+//     reserves "percona_sequence_table", and in some versions "clustering")
 //   - Some situational cases are omitted, for example "window" is a MariaDB
 //     reserved word only in the context of table name *aliases*, which largely
 //     means it isn't relevant to this package at this time.
@@ -422,6 +422,7 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"ntile":           {oldestMySQL}, // added in MySQL 8.0
 	"of":              {oldestMySQL}, // added in MySQL 8.0
 	"optimizer_costs": {oldestMySQL}, // added in MySQL 5.7
+	"option":          {oldestMySQL}, // previously on common list but un-reserved in MariaDB long ago
 	"percent_rank":    {oldestMySQL}, // added in MySQL 8.0
 	"rank":            {oldestMySQL}, // added in MySQL 8.0
 	"row":             {oldestMySQL}, // added in MySQL 8.0
@@ -451,29 +452,48 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	// "parallel":    {mySQL82},
 	// "manual":      {mySQL84},
 
-	"current_role":            {oldestMariaDB},
-	"delete_domain_id":        {oldestMariaDB},
-	"do_domain_ids":           {oldestMariaDB},
-	"general":                 {oldestMariaDB},
-	"ignore_domain_ids":       {oldestMariaDB},
-	"ignore_server_ids":       {oldestMariaDB},
-	"master_heartbeat_period": {oldestMariaDB},
-	"page_checksum":           {oldestMariaDB},
-	"parse_vcol_expr":         {oldestMariaDB},
-	"ref_system_id":           {oldestMariaDB},
-	"returning":               {oldestMariaDB},
-	"slow":                    {oldestMariaDB},
-	"stats_auto_recalc":       {oldestMariaDB},
-	"stats_persistent":        {oldestMariaDB},
-	"stats_sample_pages":      {oldestMariaDB},
+	"current_role":       {oldestMariaDB},
+	"delete_domain_id":   {oldestMariaDB},
+	"do_domain_ids":      {oldestMariaDB},
+	"ignore_domain_ids":  {oldestMariaDB},
+	"page_checksum":      {oldestMariaDB},
+	"parse_vcol_expr":    {oldestMariaDB},
+	"portion":            {oldestMariaDB},
+	"ref_system_id":      {oldestMariaDB},
+	"returning":          {oldestMariaDB},
+	"stats_auto_recalc":  {oldestMariaDB},
+	"stats_persistent":   {oldestMariaDB},
+	"stats_sample_pages": {oldestMariaDB},
 
-	"offset":     {mariaDB106},
-	"vector":     {mariaDB117},
-	"conversion": {mariaDB123},
-	"to_date":    {mariaDB123},
+	// This is a special case which is erroneously mentioned in the MySQL manual,
+	// despite no longer acting as reserved in MySQL 5.7+. Ironically it still
+	// applies to MariaDB, despite not being mentioned in the MariaDB manual.
+	"_filename": {oldestMariaDB},
+
+	"offset":                   {mariaDB106},
+	"master_demote_to_replica": {mariaDB1010},
+	"master_demote_to_slave":   {mariaDB1010},
+	"sql_after_gtids":          {mariaDB113},
+	"sql_before_gtids":         {mariaDB113},
+	"vector":                   {mariaDB117},
+	"conversion":               {mariaDB123},
+	"current_path":             {mariaDB123},
+	"to_date":                  {mariaDB123},
 }
 
+// These words were reserved for long periods and then eventually un-reserved.
+// Note that this doesn't currently capture words that were un-reserved across
+// specific point releases at all, let alone in multiple version series of one
+// vendor. For example, MariaDB un-reserved master_ssl_verify_server_cert in
+// 11.8.6 and 12.2.2; this means it is reserved in 11.8.5 and below, as well as
+// 12.0-12.1. It isn't worth handling that complexity yet for just that case
+// (it's not exactly a common choice for a table or column name, and 12.0-12.1
+// were rolling/innovation short-term releases) but this may need to be
+// revisited if it occurs for a more common keyword in the future.
 var reservedWordsRemovedInFlavor = map[string][]Flavor{
 	"master_bind":                   {mySQL84},
-	"master_ssl_verify_server_cert": {mySQL84},
+	"master_ssl_verify_server_cert": {mySQL84, mariaDB118}, // see comment above re: MariaDB versioning
+	"database":                      {mariaDB106},
+	"schema":                        {mariaDB106},
+	"accessible":                    {mariaDB120},
 }

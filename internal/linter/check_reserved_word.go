@@ -44,10 +44,7 @@ func reservedWordChecker(object tengo.DefKeyer, createStatement string, schema *
 }
 
 func makeReservedWordMessage(word string, flavor tengo.Flavor) string {
-	what := "MySQL"
-	if flavor.IsMariaDB() {
-		what = "MariaDB"
-	}
+	what := flavor.Vendor.Pretty()
 	when := "a later version"
 	why := "This name will become problematic if you upgrade your database version, since names matching reserved words must be backtick-wrapped in SQL queries."
 	if tengo.IsReservedWord(word, flavor) {
