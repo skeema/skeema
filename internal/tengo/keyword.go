@@ -132,7 +132,7 @@ func IsUnreservedWord(word string, flavor Flavor) bool {
 // TODOv2: rework this list and logic to account for dropping MySQL 5.x and
 // MariaDB 10.1-10.3 in Skeema v2.
 var commonReservedWords = []string{
-	"accessible",
+	"accessible", // removed in MariaDB 12.0, see reservedWordsRemovedInFlavor
 	"add",
 	"all",
 	"alter",
@@ -168,7 +168,7 @@ var commonReservedWords = []string{
 	"current_timestamp",
 	"current_user",
 	"cursor",
-	"database",
+	"database", // removed in MariaDB 10.6, see reservedWordsRemovedInFlavor
 	"databases",
 	"day_hour",
 	"day_microsecond",
@@ -254,7 +254,7 @@ var commonReservedWords = []string{
 	"longtext",
 	"loop",
 	"low_priority",
-	"master_ssl_verify_server_cert", // removed in MySQL 8.4, see reservedWordsRemovedInFlavor
+	"master_ssl_verify_server_cert", // removed in MySQL 8.4 and MariaDB 11.8.6/12.2.2, see reservedWordsRemovedInFlavor
 	"match",
 	"maxvalue",
 	"mediumblob",
@@ -272,7 +272,6 @@ var commonReservedWords = []string{
 	"numeric",
 	"on",
 	"optimize",
-	"option",
 	"optionally",
 	"or",
 	"order",
@@ -301,7 +300,7 @@ var commonReservedWords = []string{
 	"revoke",
 	"right",
 	"rlike",
-	"schema",
+	"schema", // removed in MariaDB 10.6, see reservedWordsRemovedInFlavor
 	"schemas",
 	"second_microsecond",
 	"select",
@@ -358,20 +357,26 @@ var commonReservedWords = []string{
 	"xor",
 	"year_month",
 	"zerofill",
-	"_filename", // special case mentioned separately in MySQL manual; also seems to apply to MariaDB
+	"_filename", // special case mentioned separately in MySQL manual; affects MySQL pre-5.7, and all MariaDB
 }
 
 // Flavor values used in maps below, in places where the same value occurs
 // multiple times
 var (
-	mySQL56    = Flavor{Vendor: VendorMySQL, Version: Version{5, 6}}
-	mySQL57    = Flavor{Vendor: VendorMySQL, Version: Version{5, 7}}
-	mySQL80    = Flavor{Vendor: VendorMySQL, Version: Version{8, 0}}
-	mySQL84    = Flavor{Vendor: VendorMySQL, Version: Version{8, 4}}
-	mariaDB101 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1}}
-	mariaDB102 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2}}
-	mariaDB103 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3}}
-	mariaDB107 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7}}
+	mySQL56     = Flavor{Vendor: VendorMySQL, Version: Version{5, 6}}
+	mySQL57     = Flavor{Vendor: VendorMySQL, Version: Version{5, 7}}
+	mySQL80     = Flavor{Vendor: VendorMySQL, Version: Version{8, 0}}
+	mySQL84     = Flavor{Vendor: VendorMySQL, Version: Version{8, 4}}
+	mariaDB101  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1}}
+	mariaDB102  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2}}
+	mariaDB103  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3}}
+	mariaDB106  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 6}}
+	mariaDB107  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7}}
+	mariaDB1010 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 10}}
+	mariaDB113  = Flavor{Vendor: VendorMariaDB, Version: Version{11, 3}}
+	mariaDB118  = Flavor{Vendor: VendorMariaDB, Version: Version{11, 8}}
+	mariaDB120  = Flavor{Vendor: VendorMariaDB, Version: Version{12, 0}}
+	mariaDB123  = Flavor{Vendor: VendorMariaDB, Version: Version{12, 3}}
 )
 
 // Mapping of lowercased reserved words to the flavor(s) that added them. A
@@ -384,9 +389,6 @@ var (
 //     are inconsistently documented by the MariaDB manual, so 10.1 is used as a
 //     guess for: "delete_domain_id", "page_checksum", "parse_vcol_expr", and
 //     "position".
-//   - This list assumes the information in the MySQL and MariaDB manuals is
-//     correct, but that is not always the case. Please open a pull request if
-//     you discover a missing or incorrect entry.
 //   - For updates to MySQL's list, the best reference documentation page is
 //     https://dev.mysql.com/doc/mysqld-version-reference/en/keywords.html
 //   - Although MySQL's information_schema.keywords table has a column
@@ -394,11 +396,14 @@ var (
 //     accurate, so it cannot be used to rebuild this list automatically.
 //     (Meanwhile, MariaDB's information_schema.keywords doesn't even have that
 //     column at all.)
-//   - We don't yet track anything specific to a Variant (e.g. Percona Server).
+//   - We don't yet track anything specific to a Variant (e.g. Percona Server
+//     reserves "percona_sequence_table", and in some versions "clustering")
 //   - Some situational cases are omitted, for example "window" is a MariaDB
 //     reserved word only in the context of table name *aliases*, which largely
 //     means it isn't relevant to this package at this time.
 var reservedWordsAddedInFlavor = map[string][]Flavor{
+	"option": {{Vendor: VendorMySQL, Version: Version{5, 5}}}, // probably added earlier (5.5 is oldest supported in Skeema)
+
 	"get":             {mySQL56},
 	"io_after_gtids":  {mySQL56},
 	"io_before_gtids": {mySQL56},
@@ -458,31 +463,49 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	// "parallel":    {{Vendor: VendorMySQL, Version: Version{8, 2}}},
 	// "manual":      {mySQL84},
 
-	"current_role":            {mariaDB101},
-	"delete_domain_id":        {mariaDB101}, // actual version unclear from docs, see comment above
-	"do_domain_ids":           {mariaDB101},
-	"general":                 {mariaDB101},
-	"ignore_domain_ids":       {mariaDB101},
-	"ignore_server_ids":       {mariaDB101},
-	"master_heartbeat_period": {mariaDB101},
-	"page_checksum":           {mariaDB101}, // actual version unclear from docs, see comment above
-	"parse_vcol_expr":         {mariaDB101}, // actual version unclear from docs, see comment above
-	"ref_system_id":           {mariaDB101},
-	"returning":               {mariaDB101},
-	"slow":                    {mariaDB101},
-	"stats_auto_recalc":       {mariaDB101},
-	"stats_persistent":        {mariaDB101},
-	"stats_sample_pages":      {mariaDB101},
+	"current_role":       {mariaDB101},
+	"delete_domain_id":   {mariaDB101}, // actual version unclear from docs, see comment above
+	"do_domain_ids":      {mariaDB101},
+	"ignore_domain_ids":  {mariaDB101},
+	"page_checksum":      {mariaDB101}, // actual version unclear from docs, see comment above
+	"parse_vcol_expr":    {mariaDB101}, // actual version unclear from docs, see comment above
+	"ref_system_id":      {mariaDB101},
+	"returning":          {mariaDB101},
+	"stats_auto_recalc":  {mariaDB101},
+	"stats_persistent":   {mariaDB101},
+	"stats_sample_pages": {mariaDB101},
 
-	"offset": {{Vendor: VendorMariaDB, Version: Version{10, 6}}},
+	"portion": {Flavor{Vendor: VendorMariaDB, Version: Version{10, 4}}},
+
+	"offset": {mariaDB106},
+
+	"master_demote_to_replica": {mariaDB1010},
+	"master_demote_to_slave":   {mariaDB1010},
+
+	"sql_after_gtids":  {mariaDB113},
+	"sql_before_gtids": {mariaDB113},
 
 	"vector": {{Vendor: VendorMariaDB, Version: Version{11, 7}}},
 
-	"conversion": {{Vendor: VendorMariaDB, Version: Version{12, 3}}},
-	"to_date":    {{Vendor: VendorMariaDB, Version: Version{12, 3}}},
+	"conversion":   {mariaDB123},
+	"current_path": {mariaDB123},
+	"to_date":      {mariaDB123},
 }
 
+// These words were reserved for long periods and then eventually un-reserved.
+// Note that this doesn't currently capture words that were un-reserved across
+// specific point releases at all, let alone in multiple version series of one
+// vendor. For example, MariaDB un-reserved master_ssl_verify_server_cert in
+// 11.8.6 and 12.2.2; this means it is reserved in 11.8.5 and below, as well as
+// 12.0-12.1. It isn't worth handling that complexity yet for just that case
+// (it's not exactly a common choice for a table or column name, and 12.0-12.1
+// were rolling/innovation short-term releases) but this may need to be
+// revisited if it occurs for a more common keyword in the future.
 var reservedWordsRemovedInFlavor = map[string][]Flavor{
+	"_filename":                     {mySQL57},
 	"master_bind":                   {mySQL84},
-	"master_ssl_verify_server_cert": {mySQL84},
+	"master_ssl_verify_server_cert": {mySQL84, mariaDB118}, // see comment above re: MariaDB versioning
+	"database":                      {mariaDB106},
+	"schema":                        {mariaDB106},
+	"accessible":                    {mariaDB120},
 }
