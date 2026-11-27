@@ -214,6 +214,8 @@ func (s TengoIntegrationSuite) TestFlavorReservedWords(t *testing.T) {
 				continue
 			} else if (word == "parallel" || word == "manual") && flavor.MinMySQL(8, 2) {
 				continue
+			} else if (word == "master_demote_to_replica" || word == "master_demote_to_slave") && flavor.MinMariaDB(10, 10) {
+				continue
 			} else if (word == "clustering" || word == "percona_sequence_table") && flavor.IsPercona() {
 				continue
 			}

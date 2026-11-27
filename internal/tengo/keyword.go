@@ -363,20 +363,19 @@ var commonReservedWords = []string{
 // Flavor values used in maps below, in places where the same value occurs
 // multiple times
 var (
-	mySQL56     = Flavor{Vendor: VendorMySQL, Version: Version{5, 6}}
-	mySQL57     = Flavor{Vendor: VendorMySQL, Version: Version{5, 7}}
-	mySQL80     = Flavor{Vendor: VendorMySQL, Version: Version{8, 0}}
-	mySQL84     = Flavor{Vendor: VendorMySQL, Version: Version{8, 4}}
-	mariaDB101  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1}}
-	mariaDB102  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2}}
-	mariaDB103  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3}}
-	mariaDB106  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 6}}
-	mariaDB107  = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7}}
-	mariaDB1010 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 10}}
-	mariaDB113  = Flavor{Vendor: VendorMariaDB, Version: Version{11, 3}}
-	mariaDB118  = Flavor{Vendor: VendorMariaDB, Version: Version{11, 8}}
-	mariaDB120  = Flavor{Vendor: VendorMariaDB, Version: Version{12, 0}}
-	mariaDB123  = Flavor{Vendor: VendorMariaDB, Version: Version{12, 3}}
+	mySQL56    = Flavor{Vendor: VendorMySQL, Version: Version{5, 6}}
+	mySQL57    = Flavor{Vendor: VendorMySQL, Version: Version{5, 7}}
+	mySQL80    = Flavor{Vendor: VendorMySQL, Version: Version{8, 0}}
+	mySQL84    = Flavor{Vendor: VendorMySQL, Version: Version{8, 4}}
+	mariaDB101 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 1}}
+	mariaDB102 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 2}}
+	mariaDB103 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 3}}
+	mariaDB106 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 6}}
+	mariaDB107 = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7}}
+	mariaDB113 = Flavor{Vendor: VendorMariaDB, Version: Version{11, 3}}
+	mariaDB118 = Flavor{Vendor: VendorMariaDB, Version: Version{11, 8}}
+	mariaDB120 = Flavor{Vendor: VendorMariaDB, Version: Version{12, 0}}
+	mariaDB123 = Flavor{Vendor: VendorMariaDB, Version: Version{12, 3}}
 )
 
 // Mapping of lowercased reserved words to the flavor(s) that added them. A
@@ -479,9 +478,6 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 
 	"offset": {mariaDB106},
 
-	"master_demote_to_replica": {mariaDB1010},
-	"master_demote_to_slave":   {mariaDB1010},
-
 	"sql_after_gtids":  {mariaDB113},
 	"sql_before_gtids": {mariaDB113},
 
@@ -490,6 +486,15 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	"conversion":   {mariaDB123},
 	"current_path": {mariaDB123},
 	"to_date":      {mariaDB123},
+
+	// These next two effectively became reserved in MariaDB 10.10, but this was
+	// considered a bug per MDEV-41927 with a Nov 2026 fix merged into 10.11,
+	// 11.4, 11.8, 12.3, and 13.2+. Because these are not commonly used for
+	// identifier names, and due to the complexity of tracking the change across
+	// different point releases, they are not tracked as normal reserved-then-
+	// unreserved words.
+	// "master_demote_to_replica": {mariaDB1010},
+	// "master_demote_to_slave":   {mariaDB1010},
 }
 
 // These words were reserved for long periods and then eventually un-reserved.
