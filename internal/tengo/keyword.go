@@ -375,7 +375,6 @@ var (
 	oldestMariaDB = Flavor{Vendor: VendorMariaDB, Version: OldestSupportedMariaDBVersion}
 	mariaDB106    = Flavor{Vendor: VendorMariaDB, Version: Version{10, 6, AnyPatch}}
 	mariaDB107    = Flavor{Vendor: VendorMariaDB, Version: Version{10, 7, AnyPatch}}
-	mariaDB1010   = Flavor{Vendor: VendorMariaDB, Version: Version{10, 10, AnyPatch}}
 	mariaDB113    = Flavor{Vendor: VendorMariaDB, Version: Version{11, 3, AnyPatch}}
 	mariaDB117    = Flavor{Vendor: VendorMariaDB, Version: Version{11, 7, AnyPatch}}
 	mariaDB118    = Flavor{Vendor: VendorMariaDB, Version: Version{11, 8, AnyPatch}}
@@ -470,15 +469,23 @@ var reservedWordsAddedInFlavor = map[string][]Flavor{
 	// applies to MariaDB, despite not being mentioned in the MariaDB manual.
 	"_filename": {oldestMariaDB},
 
-	"offset":                   {mariaDB106},
-	"master_demote_to_replica": {mariaDB1010},
-	"master_demote_to_slave":   {mariaDB1010},
-	"sql_after_gtids":          {mariaDB113},
-	"sql_before_gtids":         {mariaDB113},
-	"vector":                   {mariaDB117},
-	"conversion":               {mariaDB123},
-	"current_path":             {mariaDB123},
-	"to_date":                  {mariaDB123},
+	"offset":           {mariaDB106},
+	"sql_after_gtids":  {mariaDB113},
+	"sql_before_gtids": {mariaDB113},
+	"vector":           {mariaDB117},
+	"conversion":       {mariaDB123},
+	"current_path":     {mariaDB123},
+	"to_date":          {mariaDB123},
+
+	// These next two effectively became reserved in MariaDB 10.10, but this was
+	// considered a bug per MDEV-41927 with a Nov 2026 fix merged into 10.11,
+	// 11.4, 11.8, 12.3, and 13.2+. Because these are not commonly used for
+	// identifier names, and due to the complexity of tracking the change across
+	// different point releases, they are not tracked as normal reserved-then-
+	// unreserved words.
+	// "master_demote_to_replica": {mariaDB1010},
+	// "master_demote_to_slave":   {mariaDB1010},
+
 }
 
 // These words were reserved for long periods and then eventually un-reserved.
